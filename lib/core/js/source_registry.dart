@@ -126,7 +126,15 @@ class SourceRegistry {
     }
     try {
       if (!await probe.loadScript(text)) {
-        return const SourceImportOutcome.failure('脚本载入失败：语法错误或运行异常');
+        // 具体原因（沙箱给出的可读错误，例如不支持 dns / child_process）
+        // 打在运行日志里；这里给页面一句能自己看懂的失败口径。
+        LumeLog.warn(
+          '[${section.id}] 脚本载入失败，详情见运行日志（引擎原因会记在上一行）',
+        );
+        return const SourceImportOutcome.failure(
+          '脚本载入失败：语法错误、运行异常，或用到了沙箱不支持的能力'
+          '（如 dns / child_process / 自带 HTTP 服务的猫源脚本）',
+        );
       }
       final metadata = SourceMetadata.parseHeader(text) ??
           SourceMetadata.parse(await probe.metadata());

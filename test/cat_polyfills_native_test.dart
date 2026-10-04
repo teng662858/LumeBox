@@ -191,17 +191,22 @@ void main() {
         await evalValue(sandbox, 'JSON.stringify(Buffer.from([1, 255]))'),
         <String, Object?>{'type': 'Buffer', 'data': <int>[1, 255]},
       );
-      // 不支持的编码：友好错误。
+      // 编码白名单：utf8 / utf16le / base64 / hex / latin1，其余友好错误。
+      expect(
+        await evalValue(sandbox, "Buffer.from('猫源', 'utf16le').toString('utf16le')"),
+        '猫源',
+        reason: 'utf16le 已在扩展轮补齐',
+      );
       final encodingError = await evalValue(sandbox, '''
         (function () {
-          try { Buffer.from('x').toString('utf16le'); return 'no-error'; }
+          try { Buffer.from('x').toString('gbk'); return 'no-error'; }
           catch (error) { return error.code + '|' + error.message; }
         })()
       ''');
       expect(encodingError, contains('LUME_UNSUPPORTED'));
     });
 
-    test('require：四个内建可用，其余友好拒绝（fs / http / .node / WASM）', () async {
+    test('require：内建与模块垫片可用，越界模块友好拒绝（net / .node / WASM）', () async {
       final sandbox = catSandbox();
       addTearDown(sandbox.dispose);
 
@@ -215,6 +220,11 @@ void main() {
       );
       expect(await evalValue(sandbox, "typeof require('timers').setInterval"), 'function');
       expect(await evalValue(sandbox, "require('console').log === console.log"), true);
+      // 模块垫片：crypto / path / http 等已就位。
+      expect(await evalValue(sandbox, "typeof require('crypto').createHash"), 'function');
+      expect(await evalValue(sandbox, "typeof require('path').join"), 'function');
+      expect(await evalValue(sandbox, "typeof require('http').request"), 'function');
+      expect(await evalValue(sandbox, "typeof require('fs').readFileSync"), 'function');
 
       Future<String> requireError(String name) async =>
           (await evalValue(sandbox, '''
@@ -224,12 +234,13 @@ void main() {
             })()
           '''))! as String;
 
-      final fs = await requireError('fs');
-      expect(fs, contains('LUME_UNSUPPORTED'));
-      expect(fs, contains('宿主桥接层'), reason: '文件 IO 要指向桥接层的正确路径');
+      // 底层网络与进程能力依旧被拒绝（没有真实 socket / 子进程）。
+      final net = await requireError('node:net');
+      expect(net, contains('LUME_UNSUPPORTED'));
+      expect(net, contains('沙箱不提供进程、线程与底层网络'), reason: '要指向宿主桥接层');
 
-      final http = await requireError('node:http');
-      expect(http, contains('宿主桥接层'));
+      final tls = await requireError('tls');
+      expect(tls, contains('LUME_UNSUPPORTED'));
 
       final native = await requireError('crypto.node');
       expect(native, contains('.node'));

@@ -9,11 +9,34 @@ import 'package:lume_box/core/session/section.dart';
 /// 只对猫源注入、依赖顺序正确、垫片表本身不携带任何 IO 能力。
 void main() {
   const catIds = <String>[
+    // 基础环境
     'lume.cat.unsupported',
     'lume.cat.console',
     'lume.cat.timers',
     'lume.cat.process',
     'lume.cat.buffer',
+    // 平台全局
+    'lume.cat.textcodec',
+    'lume.cat.url',
+    'lume.cat.structuredclone',
+    'lume.cat.storage',
+    // Node 模块
+    'lume.cat.node.crypto',
+    'lume.cat.node.events',
+    'lume.cat.node.path',
+    'lume.cat.node.util',
+    'lume.cat.node.assert',
+    'lume.cat.node.stream',
+    'lume.cat.node.http',
+    'lume.cat.node.fs',
+    'lume.cat.node.os',
+    'lume.cat.node.zlib',
+    'lume.cat.node.tty',
+    'lume.cat.node.async_hooks',
+    'lume.cat.node.diagnostics_channel',
+    'lume.cat.node.perf_hooks',
+    'lume.cat.node.module',
+    'lume.cat.node.timers.promises',
     'lume.cat.require',
   ];
 
@@ -51,17 +74,24 @@ void main() {
     );
   });
 
-  test('依赖顺序：require 在它引用的内建之后注入', () {
+  test('依赖顺序：require 在它引用的内建与模块垫片之后注入', () {
     final ordered = LumeSourcePolyfills.catRegistry.ordered();
     final ids = ordered.map((item) => item.id).toList(growable: false);
 
-    // 依赖先于自身：require 需要 process / Buffer / console / timers。
+    // 依赖先于自身：require 需要基础环境 + 全部模块垫片。
     for (final dependency in <String>[
       'lume.cat.unsupported',
       'lume.cat.console',
       'lume.cat.timers',
       'lume.cat.process',
       'lume.cat.buffer',
+      'lume.cat.node.crypto',
+      'lume.cat.node.stream',
+      'lume.cat.node.http',
+      'lume.cat.node.fs',
+      'lume.cat.url',
+      'lume.cat.node.zlib',
+      'lume.cat.node.timers.promises',
     ]) {
       expect(
         ids.indexOf(dependency),
@@ -69,6 +99,24 @@ void main() {
         reason: '$dependency 必须在 require 之前注入',
       );
     }
+    // 模块自己的依赖也要满足：http / fs / zlib 用到 events 与 stream，
+    // util 用到 textcodec，textcodec 用到 buffer。
+    expect(
+      ids.indexOf('lume.cat.node.events'),
+      lessThan(ids.indexOf('lume.cat.node.http')),
+    );
+    expect(
+      ids.indexOf('lume.cat.node.stream'),
+      lessThan(ids.indexOf('lume.cat.node.fs')),
+    );
+    expect(
+      ids.indexOf('lume.cat.textcodec'),
+      lessThan(ids.indexOf('lume.cat.node.util')),
+    );
+    expect(
+      ids.indexOf('lume.cat.buffer'),
+      lessThan(ids.indexOf('lume.cat.textcodec')),
+    );
     expect(ids.length, ordered.toSet().length, reason: '没有重复注入');
   });
 

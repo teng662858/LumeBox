@@ -14,9 +14,23 @@
 ///   因此每个猫源实例（一个图源一个 JSContext）都拿到全新、互不共享的垫片状态。
 library;
 
+import 'cat_node_extras.dart';
+import 'cat_node_modules.dart';
+import 'cat_web_polyfills.dart';
 import 'sandbox/sandbox_polyfill.dart';
 
 /// 猫源垫片集合（顺序即登记顺序，依赖由 [PolyfillRegistry] 解析）。
+///
+/// 分三层：
+/// - 边界与基础环境（本文件）：WASM/.node 拒绝、console、定时器、process、Buffer；
+/// - 平台全局（`cat_web_polyfills.dart`）：TextEncoder/TextDecoder、URL、
+///   structuredClone、localStorage/sessionStorage；
+/// - Node 模块（`cat_node_modules.dart` + `cat_node_extras.dart`）：crypto /
+///   events / path / util / assert / stream / http（桥接宿主网络）/ fs（内存盘）/
+///   os / url / zlib（解压）/ tty / async_hooks / diagnostics_channel /
+///   perf_hooks / module / timers-promises。
+///
+/// `require` 最后注入：它按名引用前面这些模块。
 class CatPolyfills {
   const CatPolyfills._();
 
@@ -26,6 +40,26 @@ class CatPolyfills {
     CatTimersPolyfill(),
     CatProcessPolyfill(),
     CatBufferPolyfill(),
+    CatTextCodecPolyfill(),
+    CatUrlPolyfill(),
+    CatStructuredClonePolyfill(),
+    CatStoragePolyfill(),
+    CatCryptoPolyfill(),
+    CatEventsPolyfill(),
+    CatPathPolyfill(),
+    CatUtilPolyfill(),
+    CatAssertPolyfill(),
+    CatStreamPolyfill(),
+    CatHttpPolyfill(),
+    CatFsPolyfill(),
+    CatOsPolyfill(),
+    CatZlibPolyfill(),
+    CatTtyPolyfill(),
+    CatAsyncHooksPolyfill(),
+    CatDiagnosticsChannelPolyfill(),
+    CatPerfHooksPolyfill(),
+    CatTimersPromisesPolyfill(),
+    CatModulePolyfill(),
     CatRequirePolyfill(),
   ];
 }
@@ -60,10 +94,13 @@ class CatUnsupportedGuardPolyfill implements SandboxPolyfill {
     if (/\.wasm$/i.test(id) || /(^|[\/_\-])wasm($|[\/_\-])/i.test(id)) {
       return unsupported(id, '沙箱不提供 WebAssembly');
     }
-    if (/^(node:)?(fs|http|https|net|tls|dns|child_process|worker_threads|cluster|module|vm)(\/|$)/i.test(id)) {
-      return unsupported(id, '网络与文件 IO 要经宿主桥接层（fetch / LumeBridge.invoke），沙箱不暴露 Node 的 fs / http');
+    if (/^(node:)?(net|tls|dns|child_process|worker_threads|cluster|vm|diagnostics_channel|async_hooks|perf_hooks|v8)(\/|$)/i.test(id)) {
+      return unsupported(id, '沙箱不提供进程、线程与底层网络：网络请求走 fetch（宿主桥接层）');
     }
-    return unsupported(id, '可用内建模块只有 buffer / process / console / timers');
+    if (/^(node:)?(zlib|readline|repl|inspector|http2|dgram|v8)(\/|$)/i.test(id)) {
+      return unsupported(id, '沙箱暂未内置该模块（已内置：buffer / process / console / timers / crypto / events / path / util / assert / stream / http / https / fs（内存盘）/ os / url / timers/promises）');
+    }
+    return unsupported(id, '可用内建模块：buffer / process / console / timers / crypto / events / path / util / assert / stream / http / https / fs（内存盘）/ os / url / timers/promises');
   };
 
   function rejectWasm() {
@@ -330,6 +367,7 @@ class CatBufferPolyfill implements SandboxPolyfill {
     if (name === 'base64' || name === 'base64url') return 'base64';
     if (name === 'hex') return 'hex';
     if (name === 'latin1' || name === 'binary' || name === 'ascii') return 'latin1';
+    if (name === 'utf16le' || name === 'utf-16le' || name === 'ucs2' || name === 'ucs-2') return 'utf16le';
     return null;
   }
 
@@ -479,9 +517,29 @@ class CatBufferPolyfill implements SandboxPolyfill {
     return bytes;
   }
 
+  // Node 的 utf16le：按 JS 的 UTF-16 码元逐个写出（代理对天然是 4 字节），
+  // 解码时忽略结尾落单的半字符（与 Node 一致）。
+  function utf16leEncode(text) {
+    var bytes = [];
+    for (var i = 0; i < text.length; i++) {
+      var code = text.charCodeAt(i);
+      bytes.push(code & 0xff, (code >> 8) & 0xff);
+    }
+    return bytes;
+  }
+
+  function utf16leDecode(bytes) {
+    var text = '';
+    for (var i = 0; i + 1 < bytes.length; i += 2) {
+      text += String.fromCharCode(bytes[i] | (bytes[i + 1] << 8));
+    }
+    return text;
+  }
+
   function encodeString(text, encoding) {
     switch (encoding) {
       case 'utf8': return utf8Encode(text);
+      case 'utf16le': return utf16leEncode(text);
       case 'base64': return base64Decode(text);
       case 'hex': return hexDecode(text);
       case 'latin1': return latin1Decode(text);
@@ -492,6 +550,7 @@ class CatBufferPolyfill implements SandboxPolyfill {
   function decodeToString(bytes, encoding) {
     switch (encoding) {
       case 'utf8': return utf8Decode(bytes);
+      case 'utf16le': return utf16leDecode(bytes);
       case 'base64': return base64Encode(bytes);
       case 'hex': return hexEncode(bytes);
       case 'latin1': return latin1Encode(bytes);
@@ -501,6 +560,13 @@ class CatBufferPolyfill implements SandboxPolyfill {
 
   function toUint8Array(value, encoding) {
     if (value instanceof Uint8Array) return new Uint8Array(value);
+    if (typeof ArrayBuffer === 'function' && value instanceof ArrayBuffer) {
+      return new Uint8Array(value.slice(0));
+    }
+    if (typeof ArrayBuffer === 'function' && ArrayBuffer.isView && ArrayBuffer.isView(value)) {
+      // DataView 与各种 TypedArray：按底层字节复制（不做共享内存）。
+      return new Uint8Array(value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength));
+    }
     if (Array.isArray(value)) {
       var fromArray = new Uint8Array(value.length);
       for (var i = 0; i < value.length; i++) fromArray[i] = Number(value[i]) & 0xff;
@@ -583,11 +649,271 @@ class CatBufferPolyfill implements SandboxPolyfill {
     return { type: 'Buffer', data: Array.prototype.slice.call(this._b) };
   };
 
+  // ------------------------------------------------------ Node 的二进制读写面
+  // 真实猫源脚本大量用这些方法做协议解析（长度前缀、UTF-16 手工解码、
+  // 校验位提取），少了它们脚本会在运行期直接报「不是函数」。
+  function checkOffset(bytes, offset, size, name) {
+    var index = Math.floor(Number(offset));
+    if (!isFinite(index) || index < 0 || index + size > bytes.length) {
+      throw new RangeError('Buffer.' + name + ' 越界：offset=' + offset + '，buffer 长度=' + bytes.length);
+    }
+    return index;
+  }
+
+  function readUInt(buffer, offset, size, name, littleEndian) {
+    var index = checkOffset(buffer._b, offset, size, name);
+    var value = 0;
+    for (var i = 0; i < size; i++) {
+      var shift = littleEndian ? i : (size - 1 - i);
+      value += buffer._b[index + i] * Math.pow(2, 8 * shift);
+    }
+    return value;
+  }
+
+  function writeUInt(buffer, offset, size, name, value, littleEndian) {
+    var number = Number(value);
+    if (!isFinite(number) || number < 0 || number >= Math.pow(2, 8 * size)) {
+      throw new RangeError('Buffer.' + name + ' 的 value 超出范围：' + value);
+    }
+    var index = checkOffset(buffer._b, offset, size, name);
+    for (var i = 0; i < size; i++) {
+      var shift = littleEndian ? i : (size - 1 - i);
+      buffer._b[index + i] = Math.floor(number / Math.pow(2, 8 * shift)) & 0xff;
+    }
+    return index + size;
+  }
+
+  function signed(value, bits) {
+    var limit = Math.pow(2, bits - 1);
+    return value >= limit ? value - Math.pow(2, bits) : value;
+  }
+
+  function readBigUInt64(buffer, offset, name, littleEndian) {
+    if (typeof BigInt !== 'function') throw fail('沙箱引擎不支持 BigInt，无法使用 ' + name);
+    var index = checkOffset(buffer._b, offset, 8, name);
+    var value = BigInt(0);
+    for (var i = 0; i < 8; i++) {
+      var shift = BigInt(8 * (littleEndian ? i : (7 - i)));
+      value += BigInt(buffer._b[index + i]) << shift;
+    }
+    return value;
+  }
+
+  function writeBigUInt64(buffer, offset, name, value, littleEndian) {
+    if (typeof BigInt !== 'function') throw fail('沙箱引擎不支持 BigInt，无法使用 ' + name);
+    var index = checkOffset(buffer._b, offset, 8, name);
+    var big = BigInt(value);
+    for (var i = 0; i < 8; i++) {
+      var shift = BigInt(8 * (littleEndian ? i : (7 - i)));
+      buffer._b[index + i] = Number((big >> shift) & BigInt(0xff));
+    }
+    return index + 8;
+  }
+
+  function needleBytes(value, encoding) {
+    if (typeof value === 'number') return [Number(value) & 0xff];
+    if (typeof value === 'string') {
+      var name = normalizeEncoding(encoding);
+      if (name === null) throw fail('Buffer 不支持的编码：' + encoding);
+      return encodeString(value, name);
+    }
+    if (value instanceof Buffer) return Array.prototype.slice.call(value._b);
+    if (value instanceof Uint8Array) return Array.prototype.slice.call(value);
+    throw fail('需要数字 / 字符串 / Buffer，收到：' + typeof value);
+  }
+
+  Buffer.prototype.readUInt8 = function (offset) { return readUInt(this, offset, 1, 'readUInt8', true); };
+  Buffer.prototype.readInt8 = function (offset) { return signed(readUInt(this, offset, 1, 'readInt8', true), 8); };
+  Buffer.prototype.readUInt16LE = function (offset) { return readUInt(this, offset, 2, 'readUInt16LE', true); };
+  Buffer.prototype.readUInt16BE = function (offset) { return readUInt(this, offset, 2, 'readUInt16BE', false); };
+  Buffer.prototype.readInt16LE = function (offset) { return signed(readUInt(this, offset, 2, 'readInt16LE', true), 16); };
+  Buffer.prototype.readInt16BE = function (offset) { return signed(readUInt(this, offset, 2, 'readInt16BE', false), 16); };
+  Buffer.prototype.readUInt32LE = function (offset) { return readUInt(this, offset, 4, 'readUInt32LE', true); };
+  Buffer.prototype.readUInt32BE = function (offset) { return readUInt(this, offset, 4, 'readUInt32BE', false); };
+  Buffer.prototype.readInt32LE = function (offset) { return signed(readUInt(this, offset, 4, 'readInt32LE', true), 32); };
+  Buffer.prototype.readInt32BE = function (offset) { return signed(readUInt(this, offset, 4, 'readInt32BE', false), 32); };
+  Buffer.prototype.readBigUInt64LE = function (offset) { return readBigUInt64(this, offset, 'readBigUInt64LE', true); };
+  Buffer.prototype.readBigUInt64BE = function (offset) { return readBigUInt64(this, offset, 'readBigUInt64BE', false); };
+
+  Buffer.prototype.writeUInt8 = function (value, offset) { return writeUInt(this, offset === undefined ? 0 : offset, 1, 'writeUInt8', value, true); };
+  Buffer.prototype.writeInt8 = function (value, offset) {
+    var number = Number(value);
+    return writeUInt(this, offset === undefined ? 0 : offset, 1, 'writeInt8', number < 0 ? number + 256 : number, true);
+  };
+  Buffer.prototype.writeUInt16LE = function (value, offset) { return writeUInt(this, offset === undefined ? 0 : offset, 2, 'writeUInt16LE', value, true); };
+  Buffer.prototype.writeUInt16BE = function (value, offset) { return writeUInt(this, offset === undefined ? 0 : offset, 2, 'writeUInt16BE', value, false); };
+  Buffer.prototype.writeInt16LE = function (value, offset) {
+    var number = Number(value);
+    return writeUInt(this, offset === undefined ? 0 : offset, 2, 'writeInt16LE', number < 0 ? number + 65536 : number, true);
+  };
+  Buffer.prototype.writeInt16BE = function (value, offset) {
+    var number = Number(value);
+    return writeUInt(this, offset === undefined ? 0 : offset, 2, 'writeInt16BE', number < 0 ? number + 65536 : number, false);
+  };
+  Buffer.prototype.writeUInt32LE = function (value, offset) { return writeUInt(this, offset === undefined ? 0 : offset, 4, 'writeUInt32LE', value, true); };
+  Buffer.prototype.writeUInt32BE = function (value, offset) { return writeUInt(this, offset === undefined ? 0 : offset, 4, 'writeUInt32BE', value, false); };
+  Buffer.prototype.writeInt32LE = function (value, offset) {
+    var number = Number(value);
+    return writeUInt(this, offset === undefined ? 0 : offset, 4, 'writeInt32LE', number < 0 ? number + 4294967296 : number, true);
+  };
+  Buffer.prototype.writeInt32BE = function (value, offset) {
+    var number = Number(value);
+    return writeUInt(this, offset === undefined ? 0 : offset, 4, 'writeInt32BE', number < 0 ? number + 4294967296 : number, false);
+  };
+  Buffer.prototype.writeBigUInt64LE = function (value, offset) { return writeBigUInt64(this, offset === undefined ? 0 : offset, 'writeBigUInt64LE', value, true); };
+  Buffer.prototype.writeBigUInt64BE = function (value, offset) { return writeBigUInt64(this, offset === undefined ? 0 : offset, 'writeBigUInt64BE', value, false); };
+
+  Buffer.prototype.write = function (string, offset, length, encoding) {
+    var text = String(string === undefined || string === null ? '' : string);
+    var at = offset;
+    var size = length;
+    var enc = encoding;
+    if (typeof at === 'string') {
+      enc = at;
+      at = 0;
+      size = undefined;
+    } else if (typeof size === 'string') {
+      enc = size;
+      size = undefined;
+    }
+    var name = normalizeEncoding(enc);
+    if (name === null) throw fail('Buffer 不支持的编码：' + enc);
+    var bytes = encodeString(text, name);
+    var start = at === undefined || at === null ? 0 : Math.max(0, Number(at) | 0);
+    var limit = size === undefined || size === null ? bytes.length : Math.max(0, Number(size) | 0);
+    var count = Math.max(0, Math.min(limit, bytes.length, this._b.length - start));
+    for (var i = 0; i < count; i++) this._b[start + i] = bytes[i];
+    return count;
+  };
+
+  // 沙箱不做共享内存：subarray / slice 都是复制语义（与 Node 的「视图」不同）。
+  Buffer.prototype.subarray = function (start, end) {
+    var bytes = this._b;
+    var from = start === undefined || start === null ? 0 : Math.max(0, Number(start) | 0);
+    var to = end === undefined || end === null ? bytes.length : Math.min(bytes.length, Number(end) | 0);
+    if (to < from) to = from;
+    return makeBuffer(bytes.subarray(from, to));
+  };
+
+  Buffer.prototype.indexOf = function (value, byteOffset, encoding) {
+    var haystack = this._b;
+    var needle = needleBytes(value, encoding);
+    var from = byteOffset === undefined || byteOffset === null ? 0 : Math.max(0, Number(byteOffset) | 0);
+    if (needle.length === 0 || needle.length > haystack.length - from) return -1;
+    for (var i = from; i + needle.length <= haystack.length; i++) {
+      var matched = true;
+      for (var j = 0; j < needle.length; j++) {
+        if (haystack[i + j] !== needle[j]) {
+          matched = false;
+          break;
+        }
+      }
+      if (matched) return i;
+    }
+    return -1;
+  };
+
+  Buffer.prototype.lastIndexOf = function (value, byteOffset, encoding) {
+    var haystack = this._b;
+    var needle = needleBytes(value, encoding);
+    if (needle.length === 0 || needle.length > haystack.length) return -1;
+    var from = byteOffset === undefined || byteOffset === null
+      ? haystack.length - needle.length
+      : Math.min(Number(byteOffset) | 0, haystack.length - needle.length);
+    for (var i = from; i >= 0; i--) {
+      var matched = true;
+      for (var j = 0; j < needle.length; j++) {
+        if (haystack[i + j] !== needle[j]) {
+          matched = false;
+          break;
+        }
+      }
+      if (matched) return i;
+    }
+    return -1;
+  };
+
+  Buffer.prototype.includes = function (value, byteOffset, encoding) {
+    return this.indexOf(value, byteOffset, encoding) !== -1;
+  };
+
+  Buffer.prototype.copy = function (target, targetStart, sourceStart, sourceEnd) {
+    if (!Buffer.isBuffer(target)) throw fail('Buffer.copy 的目标必须是 Buffer');
+    var source = this._b;
+    var from = sourceStart === undefined || sourceStart === null ? 0 : Math.max(0, Number(sourceStart) | 0);
+    var to = sourceEnd === undefined || sourceEnd === null ? source.length : Math.min(source.length, Number(sourceEnd) | 0);
+    var start = targetStart === undefined || targetStart === null ? 0 : Math.max(0, Number(targetStart) | 0);
+    var count = Math.max(0, Math.min(to - from, target._b.length - start));
+    for (var i = 0; i < count; i++) target._b[start + i] = source[from + i];
+    return count;
+  };
+
+  Buffer.prototype.fill = function (value, start, end, encoding) {
+    var bytes = this._b;
+    var from = start === undefined || start === null ? 0 : Math.max(0, Number(start) | 0);
+    var to = end === undefined || end === null ? bytes.length : Math.min(bytes.length, Number(end) | 0);
+    var pattern = needleBytes(value, encoding);
+    if (pattern.length === 0) return this;
+    for (var i = from; i < to; i++) bytes[i] = pattern[(i - from) % pattern.length];
+    return this;
+  };
+
+  Buffer.prototype.reverse = function () {
+    this._b.reverse();
+    return this;
+  };
+
+  Buffer.prototype.compare = function (other) {
+    if (!Buffer.isBuffer(other)) throw fail('Buffer.compare 需要另一个 Buffer');
+    var left = this._b;
+    var right = other._b;
+    var limit = Math.min(left.length, right.length);
+    for (var i = 0; i < limit; i++) {
+      if (left[i] !== right[i]) return left[i] < right[i] ? -1 : 1;
+    }
+    if (left.length === right.length) return 0;
+    return left.length < right.length ? -1 : 1;
+  };
+
+  Buffer.prototype.forEach = function (callback, thisArg) {
+    for (var i = 0; i < this._b.length; i++) callback.call(thisArg, this._b[i], i, this);
+  };
+
+  function indexIterator(buffer, pick) {
+    var bytes = Array.prototype.slice.call(buffer._b);
+    var index = 0;
+    var iterator = {
+      next: function () {
+        if (index >= bytes.length) return { done: true, value: undefined };
+        var i = index++;
+        return { done: false, value: pick(bytes, i) };
+      }
+    };
+    if (typeof Symbol === 'function' && Symbol.iterator) {
+      iterator[Symbol.iterator] = function () { return this; };
+    }
+    return iterator;
+  }
+
+  Buffer.prototype.entries = function () { return indexIterator(this, function (bytes, i) { return [i, bytes[i]]; }); };
+  Buffer.prototype.keys = function () { return indexIterator(this, function (bytes, i) { return i; }); };
+  Buffer.prototype.values = function () { return indexIterator(this, function (bytes, i) { return bytes[i]; }); };
+  if (typeof Symbol === 'function' && Symbol.iterator) {
+    Buffer.prototype[Symbol.iterator] = Buffer.prototype.values;
+  }
+
+  Buffer.isEncoding = function (name) { return normalizeEncoding(name) !== null; };
+  Buffer.compare = function (a, b) { return a.compare(b); };
+
   Buffer.__lumeCat = true;
 
-  Buffer.from = function (value, encoding) {
+  Buffer.from = function (value, encodingOrOffset, length) {
     if (value instanceof Buffer) return makeBuffer(new Uint8Array(value._b));
-    return makeBuffer(toUint8Array(value, encoding));
+    if (typeof ArrayBuffer === 'function' && value instanceof ArrayBuffer && typeof encodingOrOffset === 'number') {
+      var view = new Uint8Array(value, Number(encodingOrOffset), length === undefined ? undefined : Number(length));
+      return makeBuffer(view);
+    }
+    return makeBuffer(toUint8Array(value, encodingOrOffset));
   };
 
   Buffer.alloc = function (size) {
@@ -636,10 +962,17 @@ class CatBufferPolyfill implements SandboxPolyfill {
 ''';
 }
 
-/// 基础 `require` 模拟：只识别少数无害内建模块，其余一律给出友好错误。
+/// 基础 `require` 模拟：内建模块白名单 + 友好的越界提示。
 ///
-/// 明确不做的事（任务书第 2、3 条）：不加载任何外置文件（没有文件系统）、
-/// 不暴露 node 的 `fs` / `http`、不支持 `.node` 原生模块与 WASM。
+/// 白名单分两层：
+/// - 环境内建（本文件）：`buffer` / `process` / `console` / `timers`；
+/// - 模块垫片（`cat_node_modules.dart`，经 `globalThis.__lumeModules` 登记）：
+///   `crypto` / `events` / `path` / `util` / `assert` / `stream` / `http` /
+///   `https` / `fs`（内存盘）/ `os` / `timers/promises`。
+///
+/// 明确不做的事：不加载任何**外置文件**（没有真实文件系统）、不暴露真实
+/// `net` / `tls` / `dns` / `child_process`（网络只能经宿主桥）、不支持
+/// `.node` 原生模块与 WASM。越界的模块名一律给出可读错误。
 class CatRequirePolyfill implements SandboxPolyfill {
   const CatRequirePolyfill();
 
@@ -653,6 +986,22 @@ class CatRequirePolyfill implements SandboxPolyfill {
         'lume.cat.timers',
         'lume.cat.process',
         'lume.cat.buffer',
+        'lume.cat.node.crypto',
+        'lume.cat.node.events',
+        'lume.cat.node.path',
+        'lume.cat.node.util',
+        'lume.cat.node.assert',
+        'lume.cat.node.stream',
+        'lume.cat.node.http',
+        'lume.cat.node.fs',
+        'lume.cat.node.os',
+        'lume.cat.url',
+        'lume.cat.node.zlib',
+        'lume.cat.node.tty',
+        'lume.cat.node.async_hooks',
+        'lume.cat.node.diagnostics_channel',
+        'lume.cat.node.perf_hooks',
+        'lume.cat.node.timers.promises',
       ];
 
   @override
@@ -660,7 +1009,7 @@ class CatRequirePolyfill implements SandboxPolyfill {
 (function () {
   if (typeof globalThis.require === 'function' && globalThis.require.__lumeCat) return;
 
-  var modules = {
+  var builtins = {
     buffer: { Buffer: globalThis.Buffer },
     process: globalThis.process,
     console: globalThis.console,
@@ -677,11 +1026,18 @@ class CatRequirePolyfill implements SandboxPolyfill {
   var requireModule = function (name) {
     var id = String(name === undefined || name === null ? '' : name).trim();
     if (id.indexOf('node:') === 0) id = id.slice(5);
-    if (Object.prototype.hasOwnProperty.call(modules, id)) return modules[id];
+    // 'fs/promises' 这类子路径也按整名匹配（register 时用的就是全名）。
+    if (Object.prototype.hasOwnProperty.call(builtins, id)) return builtins[id];
+    var modules = globalThis.__lumeModules;
+    if (modules && Object.prototype.hasOwnProperty.call(modules, id) && modules[id]) {
+      return modules[id];
+    }
     throw globalThis.__lumeUnsupportedModule(id);
   };
   requireModule.__lumeCat = true;
   requireModule.resolve = function (name) { return String(name); };
+  requireModule.cache = {};
+  requireModule.main = undefined;
 
   globalThis.require = requireModule;
   globalThis.module = { exports: {} };
