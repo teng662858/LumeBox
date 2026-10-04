@@ -74,7 +74,7 @@ class PlayerFactory {
       PlayerKernel.avplayer => AvPlayer(),
       // MPV：libmpv（media_kit）绑定挡在端口后面，上层只认 AbstractPlayer。
       PlayerKernel.mpv => MpvPlayer(
-          engine: MediaKitMpvEngine(title: 'Lume Box'),
+          engine: MediaKitMpvEngine.create(title: 'Lume Box'),
           engineLabel: kernel.label,
         ),
       // MDK：只预留接口（上面的可用性判断已拦住，这里保持显式）。

@@ -74,3 +74,40 @@
   反复复现。
 - 熔断是**内存态**：重启 App 会给 MPV 一次新机会（避免一次偶发失败永久禁用）；
   若真机上每次都失败，用户会稳定看到提示并自动用 AVPlayer。
+
+## 4. 后续修复（真机日志定位）：media_kit 初始化顺序
+
+真机「运行日志」给出确凿证据：
+
+```
+错误  Exception: MediaKit.ensureInitialized must be called before using any API
+      from package:media_kit.
+      #0 NativeLibrary.path (media_kit/.../native_library.dart:22)
+      #1 new NativePlayer (media_kit/.../native/player/real.dart)
+警告  [player] MPV 初始化异常，丢弃该实例
+警告  [player] MPV 初始化失败：本次运行内不再提供
+```
+
+**根因**：`Player(...)` 写在 `MediaKitMpvEngine` 的**初始化列表**里，而
+`MediaKit.ensureInitialized()` 写在构造函数**体**里——初始化列表先执行，
+于是 `new NativePlayer(...)` 在 media_kit 初始化之前就摸到了 `NativeLibrary.path`
+的断言，必然抛异常。降级链路（超时/异常/回退/不落库）本身工作正常，
+但 MPV 永远起不来。
+
+**修复**：把创建收口成 `MediaKitMpvEngine.create()`——**第一步**调用
+`MediaKit.ensureInitialized()`（装载 libmpv 原生库），第二步才 `new Player(...)`，
+最后建 `VideoController` 并订阅流；构造改为私有（`._`），外部无法绕过顺序。
+工厂改用它（`PlayerFactory.create` → `MediaKitMpvEngine.create(title: …)`）。
+
+顺序口径说明：media_kit 1.2.6 的 `MediaKit.ensureInitialized()` 是**同步幂等**
+API（`static void`，内部是 `DynamicLibrary.open('Mpv.framework/Mpv')`），
+不存在可 await 的 Future；写成 `await` 会是空操作并被 lint（`await_only_futures`）
+拦下，因此以"调用位置在最前"落实任务书要求的顺序保证。超时、异常捕获、
+自动降级与"不落库"逻辑一行未动。
+
+## 5. 本轮新增单测（纯 Dart，不需要真机硬件播放）
+
+| 文件 | 覆盖 |
+|---|---|
+| `test/source_script_import_test.dart` | ① 无 BOM 脚本解析出 id / name / version（并说明元信息无 `type` 字段，板块归属由导入入口决定）；② 同一脚本的 BOM 版：`stripScriptBom` 精确移除 `\uFEFF`（长度与正文逐字校验）+ 元信息同样解析成功；③ id 含长破折号 U+2014 / 全角句点 U+FF0E：解析器拒绝、`idIssue` 点名字符与码位、`describeImportFailure` 给出「检查 // LumeSource 元信息与 id 字符合法性」的可操作文案（含运行时 id 非法的分支） |
+| `test/mpv_mediakit_init_failure_test.dart` | ④ 用真机日志里的**原文异常**驱动：启动器层（捕获异常 → 回退 AVPlayer + 标准 Toast + 熔断）与页面层（弹 Toast、实际用 AVPlayer、**库里仍是 avplayer**、启动时库里是 MPV 也照样回退且保留倍速/字幕） |

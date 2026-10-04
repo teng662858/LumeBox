@@ -21,20 +21,37 @@ import 'mpv_engine.dart';
 /// 上层不接触任何 mpv 私有属性：需要新参数时在**这一层**取，扩展
 /// [MpvEngineSnapshot] 与 [PlayerStats] 即可。
 class MediaKitMpvEngine implements MpvEngine {
-  MediaKitMpvEngine({Player? player, String? title})
-      : _player = player ??
-            Player(
-              configuration: PlayerConfiguration(
-                title: title ?? 'Lume Box',
-                // 日志交给宿主日志层：media_kit 自己的控制台输出关掉。
-                logLevel: MPVLogLevel.error,
-              ),
-            ) {
-    // 幂等：libmpv 的原生库装载与 media_kit 全局初始化都在这里保证，
-    // 因此上层（含 main）不需要知道播放内核的初始化细节。
-    MediaKit.ensureInitialized();
+  /// 私有构造：只接受**已经**建好的 Player。
+  ///
+  /// 外部只能走 [create]——它保证 media_kit 先初始化、再碰任何 media_kit API。
+  MediaKitMpvEngine._(this._player) {
     _video = VideoController(_player);
     _subscribe();
+  }
+
+  /// 创建引擎：**MPV 初始化的第一步就是 media_kit 初始化**。
+  ///
+  /// 顺序是硬性的：media_kit 的 `Player` / `VideoController` 在未初始化时直接抛
+  /// 「MediaKit.ensureInitialized must be called before using any API from
+  /// package:media_kit.」（真机实测到的就是这个异常，栈顶在 
+  /// `NativeLibrary.path` ← `new NativePlayer`）。因此这里在任何 media_kit API
+  /// 之前先初始化（装载 libmpv 原生库），再建 Player 与视频控制器。
+  ///
+  /// `ensureInitialized` 在 media_kit 1.2.6 是**同步幂等** API（装载原生库），
+  /// 因此无需 await；它本身抛错时由启动器按初始化失败处理（超时/异常一律
+  /// 丢弃实例并回退 AVPlayer）。
+  static MediaKitMpvEngine create({String? title}) {
+    // 第一步：初始化 media_kit（幂等）。
+    MediaKit.ensureInitialized();
+    // 第二步：初始化完成之后才允许创建 Player。
+    final player = Player(
+      configuration: PlayerConfiguration(
+        title: title ?? 'Lume Box',
+        // 日志交给宿主日志层：media_kit 自己的控制台输出关掉。
+        logLevel: MPVLogLevel.error,
+      ),
+    );
+    return MediaKitMpvEngine._(player);
   }
 
   final Player _player;
