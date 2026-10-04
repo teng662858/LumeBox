@@ -1,0 +1,68 @@
+/// 宿主代理调用请求。
+///
+/// JS 侧只能通过 `LumeBridge.invoke(method, payload)` 发起调用，Dart 侧收到后
+/// 组装成该请求交给 [SandboxHost]。沙箱本身不认识任何具体方法名。
+class SandboxHostRequest {
+  const SandboxHostRequest({
+    required this.sandboxId,
+    required this.method,
+    required this.payload,
+  });
+
+  /// 发起调用的沙箱标识，便于宿主做隔离（例如按板块拒绝跨区访问）。
+  final String sandboxId;
+
+  /// 方法名，命名形如 `http.fetch` / `store.read`。
+  final String method;
+
+  /// 已经过 JSON 解码的入参。
+  final Object? payload;
+
+  @override
+  String toString() => 'SandboxHostRequest($sandboxId, $method)';
+}
+
+/// 宿主调用被拒绝或失败。
+class SandboxHostException implements Exception {
+  const SandboxHostException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// JS 侧全部 IO / 网络能力的抽象代理入口。
+///
+/// 实现方是唯一持有系统能力的一侧；JS 里不存在任何绕过它的通路。
+/// 默认实现是 [DenyAllSandboxHost]，即一行代码都不写时沙箱不开放任何外部能力。
+abstract interface class SandboxHost {
+  /// 处理一次代理调用。返回必须是 JSON 可序列化的值；
+  /// 拒绝或失败时抛出 [SandboxHostException]。
+  Future<Object?> invoke(SandboxHostRequest request);
+}
+
+/// 默认宿主：拒绝一切外部能力访问。
+class DenyAllSandboxHost implements SandboxHost {
+  const DenyAllSandboxHost();
+
+  @override
+  Future<Object?> invoke(SandboxHostRequest request) async {
+    throw SandboxHostException('沙箱未开放外部能力: ${request.method}');
+  }
+}
+
+/// 预留的代理方法名常量。具体实现属于后续图源业务，本轮仅登记命名空间。
+class SandboxHostMethods {
+  SandboxHostMethods._();
+
+  /// 网络请求。入参 `{url, method, headers, body}`，
+  /// 返回 `{status, headers, body}`。
+  static const String httpFetch = 'http.fetch';
+
+  /// 沙箱内的键值存储（按沙箱隔离）。
+  static const String storeRead = 'store.read';
+
+  /// 沙箱内的键值写入。
+  static const String storeWrite = 'store.write';
+}

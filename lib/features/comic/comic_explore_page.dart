@@ -1,0 +1,51 @@
+import 'package:flutter/material.dart';
+
+import '../../core/reading/reading.dart';
+import '../../core/session/section.dart';
+import '../../core/source/source.dart';
+import '../reading/explore_view.dart';
+import 'comic_detail_page.dart';
+
+/// 漫画探索页：图源下拉 + 右侧筛选抽屉 + 海报网格。
+///
+/// 内容获取、图源切换与筛选逻辑全在共享的 [ExploreView] 里，本页只提供漫画的
+/// 呈现口径（海报网格）与「点条目进哪一页」。小说板块用的是同一个视图，
+/// 区别只在布局与详情页。
+class ComicExplorePage extends StatelessWidget {
+  const ComicExplorePage({
+    super.key,
+    required this.library,
+    required this.pipeline,
+    this.manager,
+  });
+
+  final ReadingLibrary library;
+  final SectionImagePipeline pipeline;
+  final SourceManager? manager;
+
+  @override
+  Widget build(BuildContext context) {
+    final sourceManager = manager ?? LumeSources.manager(Section.comic);
+    return ExploreView(
+      section: Section.comic,
+      pipeline: pipeline,
+      manager: manager,
+      layout: ExploreLayout.grid,
+      onOpenItem: (selection) => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ComicDetailPage(
+            library: library,
+            manager: sourceManager,
+            target: ReadingTarget(
+              sourceId: selection.sourceId,
+              itemId: selection.item.id,
+              title: selection.item.title,
+              cover: selection.item.cover,
+              subtitle: selection.item.subtitle,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
