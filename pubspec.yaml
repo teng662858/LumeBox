@@ -53,7 +53,18 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # 图标生成工具（只在本地生成 iOS 图标资源，不参与运行时）。
+  flutter_launcher_icons: ^0.14.1
+
 flutter:
   uses-material-design: true
   assets:
     - assets/js/
+
+# 图标生成配置：只生成 iOS 图标；remove_alpha_ios 强制抹除 Alpha 通道
+# （iOS 图标不接受透明通道，实色底才能通过系统图标校验）。
+flutter_launcher_icons:
+  android: false
+  ios: true
+  remove_alpha_ios: true
+  image_path_ios: "assets/icon/app_icon_1024.png"
