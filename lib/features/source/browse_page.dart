@@ -29,9 +29,13 @@ class BrowsePage extends StatelessWidget {
 /// 接口层决定；它不接触沙箱、脚本与网络。嵌进业务页时由外层提供页面骨架。
 /// Phase1 的浏览链路止于详情与章节列表，不进入阅读器。
 class BrowseView extends StatefulWidget {
-  const BrowseView({super.key, required this.dataSource});
+  const BrowseView({super.key, required this.dataSource, this.onItemTap});
 
   final DataSource dataSource;
+
+  /// 条目点击。为空时按通用口径进入详情页（[DetailPage]）；视频板块传自己的
+  /// 回调——它要的是「点条目就起播」，而不是先看详情。
+  final ValueChanged<SourceItem>? onItemTap;
 
   @override
   State<BrowseView> createState() => _BrowseViewState();
@@ -104,6 +108,20 @@ class _BrowseViewState extends State<BrowseView> {
     if (_categoryId == categoryId) return;
     setState(() => _categoryId = categoryId);
     _load();
+  }
+
+  /// 条目点击：外层给了回调就交出去（视频板块起播），否则按通用口径进详情页。
+  void _openItem(SourceItem item) {
+    final hook = widget.onItemTap;
+    if (hook != null) {
+      hook(item);
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DetailPage(dataSource: widget.dataSource, item: item),
+      ),
+    );
   }
 
   @override
@@ -190,12 +208,7 @@ class _BrowseViewState extends State<BrowseView> {
         final item = _items[index];
         return GlassCard(
           padding: const EdgeInsets.all(14),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) =>
-                  DetailPage(dataSource: widget.dataSource, item: item),
-            ),
-          ),
+          onTap: () => _openItem(item),
           child: Row(
             children: <Widget>[
               Expanded(

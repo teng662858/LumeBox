@@ -18,6 +18,8 @@ import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/video/video_page.dart';
 import 'package:lume_box/features/video/video_player_settings.dart';
 
+import 'support/fake_source_manager.dart';
+
 /// 视频板块接线的验证：设置加载与生效、打开媒体、画中画按钮与事件、
 /// 运行时切换内核（拆旧建新 + 位置接回 + 落库）、退出时的资源顺序。
 ///
@@ -55,10 +57,17 @@ void main() {
       log = <String>[];
     });
 
+    /// 切到「播放」页签：首页是图源展示页（浏览），播放器在同板块的第二个页签。
+    Future<void> openPlayerTab(WidgetTester tester) async {
+      await tester.tap(find.widgetWithText(Tab, '播放'));
+      await tester.pumpAndSettle();
+    }
+
     Future<List<_FakePlayer>> pumpVideo(
       WidgetTester tester, {
       required Set<PlayerKernel> available,
       _FakePipBackend? pip,
+      bool withSourceManager = false,
     }) async {
       final created = <_FakePlayer>[];
       await tester.binding.setSurfaceSize(const Size(900, 1400));
@@ -74,10 +83,14 @@ void main() {
               return player;
             },
             pipBackend: pip,
+            // 首页是图源展示页：默认注入空图源管理器（不碰真实板块库），
+            // 交给正版实现时才走真库。
+            sourceManager: withSourceManager ? null : FakeSourceManager(),
           ),
         ),
       );
       await tester.pumpAndSettle();
+      await openPlayerTab(tester);
       return created;
     }
 
@@ -200,9 +213,12 @@ void main() {
               created.add(player);
               return player;
             },
+            sourceManager: FakeSourceManager(),
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(Tab, '播放'));
       await tester.pumpAndSettle();
 
       // 切到 MPV：初始化抛错 → 回退 AVPlayer + 提示。
@@ -342,24 +358,27 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(900, 1400));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     var created = 0;
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: LumeTheme.build(),
-        home: VideoPage(
-          catalog: const _FakeCatalog(<PlayerKernel>{PlayerKernel.avplayer}),
-          playerFactory: (kernel) {
-            created++;
-            return _FakePlayer(kernel, <String>[]);
-          },
-          pipBackend: _FakePipBackend(),
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: LumeTheme.build(),
+          home: VideoPage(
+            catalog: _FakeCatalog(const <PlayerKernel>{PlayerKernel.avplayer}),
+            playerFactory: (kernel) {
+              created++;
+              return _FakePlayer(kernel, <String>[]);
+            },
+            pipBackend: _FakePipBackend(),
+            sourceManager: FakeSourceManager(),
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(Tab, '播放'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('播放器设置库不可用'), findsOneWidget);
-    expect(created, 0);
-  });
+      expect(find.text('播放器设置库不可用'), findsOneWidget);
+      expect(created, 0);
+    });
 
   testWidgets(
     '非 iOS（平台目录）：渲染 UI 骨架占位，不接线播放与画中画',
@@ -367,8 +386,13 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(900, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
-        MaterialApp(theme: LumeTheme.build(), home: const VideoPage()),
+        MaterialApp(
+          theme: LumeTheme.build(),
+          home: VideoPage(sourceManager: FakeSourceManager()),
+        ),
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(Tab, '播放'));
       await tester.pumpAndSettle();
 
       expect(find.text('当前平台在 Phase1 仅保留页面骨架'), findsOneWidget);

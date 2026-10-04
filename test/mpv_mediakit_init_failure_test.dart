@@ -17,6 +17,8 @@ import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/video/video_page.dart';
 import 'package:lume_box/features/video/video_player_settings.dart';
 
+import 'support/fake_source_manager.dart';
+
 /// MPV 初始化抛「MediaKit 未初始化」异常时的自动降级验证。
 ///
 /// 复现的是真机日志里的那条异常：
@@ -107,9 +109,13 @@ void main() {
               created.add(player);
               return player;
             },
+            sourceManager: FakeSourceManager(),
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      // 首页是图源展示页：先切到「播放」页签（设置齿轮在那里）。
+      await tester.tap(find.widgetWithText(Tab, '播放'));
       await tester.pumpAndSettle();
 
       // 在设置里选 MPV：初始化抛异常 → 自动回退。
@@ -170,6 +176,7 @@ void main() {
               }
               return _FakePlayer(kernel);
             },
+            sourceManager: FakeSourceManager(),
           ),
         ),
       );

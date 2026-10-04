@@ -9,17 +9,26 @@ import '../../core/player/player_factory.dart';
 import '../../core/player/player_kernel_launcher.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/session/section.dart';
+import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../shell/board_tabs.dart';
 import '../shell/shell_dock.dart';
 import '../source/add_source_button.dart';
+import '../source/source_home_page.dart';
 import '../source/source_section_page.dart';
 import 'player_hud.dart';
 import 'player_settings_page.dart';
+import 'source_playback.dart';
 import 'video_player_settings.dart';
 
-/// 自定义视频板块：播放本地或网络视频。
+/// 视频板块：**首页是当前图源的内容展示页**（浏览），播放器在同板块的「播放」页签。
+///
+/// 浏览：图源条（切换当前图源）+ 分类 / 搜索 / 列表（[SourceBrowsePane]），点条目
+/// 直接起播——条目自带地址（列表里的 `url`）就直接放；否则走「剧集 → 内容」
+/// 链路（章节选择 → `content` 的视频地址）。没有可用图源时首页给出导入引导，
+/// 播放器仍可手动输入地址使用。
 ///
 /// 播放内核由设置页选择：iOS 上 AVPlayer（video_player）与 MPV（libmpv / media_kit）
 /// 都可用，MDK 只预留接口。页面只认 [AbstractPlayer] 与 [PlayerStats]：内核切换、
@@ -34,6 +43,7 @@ class VideoPage extends StatefulWidget {
     this.playerFactory,
     this.catalog,
     this.pipBackend,
+    this.sourceManager,
   });
 
   /// 播放器创建端口（按内核）。为空时用 [PlayerFactory.create]。
@@ -45,12 +55,27 @@ class VideoPage extends StatefulWidget {
   /// 画中画后端。为空时按平台选择（iOS 走原生通道，其余平台如实降级）。
   final PipBackend? pipBackend;
 
+  /// 图源管理端口（首页的浏览面用它取本板块图源）。为空时用正式实现。
+  final SourceManager? sourceManager;
+
+  /// 页签顺序：0 = 浏览（首页，图源展示页），1 = 播放。
+  static const int browseTabIndex = 0;
+  static const int playerTabIndex = 1;
+
+  /// 页签文案（与其他板块的页签同一套排布，见 [BoardTabs]）。
+  static const List<String> tabLabels = <String>['浏览', '播放'];
+
   @override
   State<VideoPage> createState() => _VideoPageState();
 }
 
-class _VideoPageState extends State<VideoPage> {
+class _VideoPageState extends State<VideoPage>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _input = TextEditingController();
+
+  /// 页签控制器：点条目起播后要主动跳到「播放」。
+  late final TabController _tabs =
+      TabController(length: VideoPage.tabLabels.length, vsync: this);
 
   late final PlayerKernelCatalog _catalog =
       widget.catalog ?? const PlatformPlayerKernelCatalog();
@@ -79,6 +104,9 @@ class _VideoPageState extends State<VideoPage> {
 
   /// 设置库打不开：设置读写不可用，但播放链路继续（用默认设置）。
   bool _storeFailed = false;
+
+  /// 浏览面换代：从图源管理页返回后 +1，重挂浏览面（列表与当前图源重算）。
+  int _browseRevision = 0;
 
   /// 本平台是否提供任一播放内核（没有就是骨架占位）。
   bool get _anyKernelAvailable =>
@@ -118,6 +146,7 @@ class _VideoPageState extends State<VideoPage> {
     }());
     _store?.close();
     _input.dispose();
+    _tabs.dispose();
     super.dispose();
   }
 
@@ -249,12 +278,20 @@ class _VideoPageState extends State<VideoPage> {
   }
 
   /// 打开本板块的图源管理页（启用 / 禁用 / 重命名 / 导出 / 删除都在那里）。
+  ///
+  /// 返回后重挂浏览面：图源可能被导入、停用或删除，列表与当前图源都要重算
+  /// （与小说 / 漫画板块「图源变更后重挂内容」同一套做法）。
   Future<void> _manageSources() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => const SourceSectionPage(section: Section.video),
+        builder: (_) => SourceSectionPage(
+          section: Section.video,
+          manager: widget.sourceManager,
+        ),
       ),
     );
+    if (!mounted) return;
+    setState(() => _browseRevision++);
   }
 
   Future<void> _openSettings() async {
@@ -287,6 +324,85 @@ class _VideoPageState extends State<VideoPage> {
     }
     setState(() => _error = null);
     await _loadMedia(PlayerMedia(uri: uri));
+  }
+
+  // ------------------------------------------------------ 图源条目 → 起播
+
+  /// 图源列表里点一个条目：**能直接播就直接播**，否则走剧集链路。
+  ///
+  /// 直接播的判据是条目自带可播放地址（列表里的 `url` 会落到条目 id 上，见
+  /// `SourceItem.parse` 的宽容口径）——视频类图源最常见的形状就是
+  /// `{title, url}`。条目只有 id 时按「作品 → 剧集 → 内容」取地址。
+  Future<void> _playFromSource(DataSource source, SourceItem item) async {
+    final direct = SourcePlayback.directAddress(item.id);
+    if (direct != null) {
+      await _startPlayback(PlayerMedia(uri: direct, title: item.title));
+      return;
+    }
+
+    final List<SourceChapter> chapters;
+    try {
+      chapters = await source.chapters(item.id);
+    } on SourceException catch (error) {
+      _showPlayerToast(
+        '${error.message}；条目自带播放地址（url）时可直接起播',
+      );
+      return;
+    }
+    if (!mounted) return;
+    if (chapters.isEmpty) {
+      _showPlayerToast('「${item.title}」没有可播放的剧集');
+      return;
+    }
+
+    // 只有一集就不必让用户再选一次。
+    final chapter = chapters.length == 1
+        ? chapters.first
+        : await _pickChapter(item, chapters);
+    if (chapter == null || !mounted) return;
+
+    try {
+      final content = await source.content(
+        itemId: item.id,
+        chapterId: chapter.id,
+      );
+      final address = SourcePlayback.contentAddress(content);
+      if (address == null) {
+        _showPlayerToast('「${chapter.title}」不是视频内容');
+        return;
+      }
+      await _startPlayback(
+        PlayerMedia(uri: address, title: '${item.title} · ${chapter.title}'),
+      );
+    } on SourceException catch (error) {
+      _showPlayerToast(error.message);
+    }
+  }
+
+  /// 交给播放器并切到「播放」页签。播放器不可用时如实提示，不静默失败。
+  Future<void> _startPlayback(PlayerMedia media) async {
+    if (_player == null) {
+      _showPlayerToast(
+        _anyKernelAvailable ? '播放器还在准备，请稍后再试' : '本平台不提供播放内核',
+      );
+      return;
+    }
+    if (!mounted) return;
+    _input.text = media.uri.toString();
+    _tabs.animateTo(VideoPage.playerTabIndex);
+    await _loadMedia(media);
+  }
+
+  /// 剧集选择面板：一集一个条目，取消返回 null。
+  Future<SourceChapter?> _pickChapter(
+    SourceItem item,
+    List<SourceChapter> chapters,
+  ) {
+    return showModalBottomSheet<SourceChapter>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ChapterSheet(title: item.title, chapters: chapters),
+    );
   }
 
   // ---------------------------------------------------------------- 画中画
@@ -338,174 +454,181 @@ class _VideoPageState extends State<VideoPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_anyKernelAvailable) {
-      return GlassScaffold(
-        title: Section.video.label,
-        actions: _buildActions(),
-        child: const _VideoSkeleton(),
-      );
-    }
-    if (_storeFailed) {
-      return GlassScaffold(
-        title: Section.video.label,
-        actions: _buildActions(),
-        child: const Center(
-          child: Text(
-            '播放器设置库不可用',
-            style: TextStyle(color: LumeTheme.muted),
+    return GlassScaffold(
+      title: Section.video.label,
+      actions: _buildActions(),
+      child: BoardTabs(
+        controller: _tabs,
+        labels: VideoPage.tabLabels,
+        children: <Widget>[
+          // 首页：当前图源的内容展示页（右上角已有「图源管理」，图源条不再重复）。
+          SourceBrowsePane(
+            key: ValueKey<int>(_browseRevision),
+            section: Section.video,
+            manager: widget.sourceManager,
+            showSourceActions: false,
+            onItemTap: _playFromSource,
           ),
+          _buildPlayerTab(),
+        ],
+      ),
+    );
+  }
+
+  /// 「播放」页签：播放器本体（骨架 / 设置库故障 / 准备中 / 就绪四态）。
+  ///
+  /// 无论哪种状态，浏览页签都照常可用——图源列表与播放器互不牵连。
+  Widget _buildPlayerTab() {
+    if (!_anyKernelAvailable) return const _VideoSkeleton();
+    if (_storeFailed) {
+      return const Center(
+        child: Text(
+          '播放器设置库不可用',
+          style: TextStyle(color: LumeTheme.muted),
         ),
       );
     }
     final player = _player;
     if (player == null) {
-      return GlassScaffold(
-        title: Section.video.label,
-        actions: _buildActions(),
-        child: const Center(
-          child: SizedBox(
-            width: 28,
-            height: 28,
-            child: CircularProgressIndicator(strokeWidth: 2.5),
-          ),
+      return const Center(
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(strokeWidth: 2.5),
         ),
       );
     }
-    return GlassScaffold(
-      title: Section.video.label,
-      actions: _buildActions(),
-      child: Column(
-        children: <Widget>[
-          Expanded(
-            child: Center(
-              child: ValueListenableBuilder<PlayerSnapshot>(
-                valueListenable: player.snapshot,
-                builder: (context, snapshot, _) => Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: snapshot.error == null
-                      ? Stack(
-                          alignment: Alignment.bottomLeft,
-                          children: <Widget>[
-                            player.buildView(),
-                            // HUD 只吃 AbstractPlayer 暴露的参数：换内核零改动。
-                            PlayerHud(stats: player.stats),
-                          ],
-                        )
-                      : Text(
-                          snapshot.error!,
-                          style: const TextStyle(color: LumeTheme.muted),
-                        ),
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: GlassCard(
-              child: Column(
-                children: <Widget>[
-                  TextField(
-                    controller: _input,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      hintText: '视频地址或本地路径',
-                      hintStyle: TextStyle(color: LumeTheme.muted),
-                      icon: Icon(Icons.link, color: LumeTheme.muted),
-                    ),
-                    onSubmitted: (_) => _open(),
-                  ),
-                  if (_error != null)
-                    Text(
-                      _error!,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFFFF8A80),
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: Center(
+            child: ValueListenableBuilder<PlayerSnapshot>(
+              valueListenable: player.snapshot,
+              builder: (context, snapshot, _) => Padding(
+                padding: const EdgeInsets.all(16),
+                child: snapshot.error == null
+                    ? Stack(
+                        alignment: Alignment.bottomLeft,
+                        children: <Widget>[
+                          player.buildView(),
+                          // HUD 只吃 AbstractPlayer 暴露的参数：换内核零改动。
+                          PlayerHud(stats: player.stats),
+                        ],
+                      )
+                    : Text(
+                        snapshot.error!,
+                        style: const TextStyle(color: LumeTheme.muted),
                       ),
-                    ),
-                  const SizedBox(height: 8),
-                  ValueListenableBuilder<PlayerSnapshot>(
-                    valueListenable: player.snapshot,
-                    builder: (context, snapshot, _) => Column(
-                      children: <Widget>[
-                        Slider(
-                          value: _fraction(snapshot),
-                          onChanged: snapshot.duration.inMilliseconds == 0
-                              ? null
-                              : (value) => player.seek(
-                                    Duration(
-                                      milliseconds:
-                                          (snapshot.duration.inMilliseconds *
-                                                  value)
-                                              .round(),
-                                    ),
-                                  ),
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: <Widget>[
-                            Text(
-                              _format(snapshot.position),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: LumeTheme.muted,
-                              ),
-                            ),
-                            Text(
-                              _format(snapshot.duration),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: LumeTheme.muted,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: <Widget>[
-                            IconButton(
-                              iconSize: 34,
-                              color: Colors.white,
-                              icon: Icon(
-                                snapshot.playing
-                                    ? Icons.pause_circle_filled
-                                    : Icons.play_circle_fill,
-                              ),
-                              onPressed: () => snapshot.playing
-                                  ? player.pause()
-                                  : player.play(),
-                            ),
-                            IconButton(
-                              iconSize: 28,
-                              color: Colors.white,
-                              icon: const Icon(Icons.stop_circle),
-                              onPressed: player.stop,
-                            ),
-                            IconButton(
-                              iconSize: 28,
-                              color: Colors.white,
-                              tooltip: '播放器设置',
-                              icon: const Icon(Icons.tune),
-                              onPressed: _openSettings,
-                            ),
-                            _buildPipButton(),
-                            IconButton(
-                              iconSize: 28,
-                              color: Colors.white,
-                              icon: const Icon(Icons.download),
-                              onPressed: _open,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ),
             ),
           ),
-        ],
-      ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: GlassCard(
+            child: Column(
+              children: <Widget>[
+                TextField(
+                  controller: _input,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    hintText: '视频地址或本地路径',
+                    hintStyle: TextStyle(color: LumeTheme.muted),
+                    icon: Icon(Icons.link, color: LumeTheme.muted),
+                  ),
+                  onSubmitted: (_) => _open(),
+                ),
+                if (_error != null)
+                  Text(
+                    _error!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFFFF8A80),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                ValueListenableBuilder<PlayerSnapshot>(
+                  valueListenable: player.snapshot,
+                  builder: (context, snapshot, _) => Column(
+                    children: <Widget>[
+                      Slider(
+                        value: _fraction(snapshot),
+                        onChanged: snapshot.duration.inMilliseconds == 0
+                            ? null
+                            : (value) => player.seek(
+                                  Duration(
+                                    milliseconds:
+                                        (snapshot.duration.inMilliseconds *
+                                                value)
+                                            .round(),
+                                  ),
+                                ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: <Widget>[
+                          Text(
+                            _format(snapshot.position),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: LumeTheme.muted,
+                            ),
+                          ),
+                          Text(
+                            _format(snapshot.duration),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: LumeTheme.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          IconButton(
+                            iconSize: 34,
+                            color: Colors.white,
+                            icon: Icon(
+                              snapshot.playing
+                                  ? Icons.pause_circle_filled
+                                  : Icons.play_circle_fill,
+                            ),
+                            onPressed: () => snapshot.playing
+                                ? player.pause()
+                                : player.play(),
+                          ),
+                          IconButton(
+                            iconSize: 28,
+                            color: Colors.white,
+                            icon: const Icon(Icons.stop_circle),
+                            onPressed: player.stop,
+                          ),
+                          IconButton(
+                            iconSize: 28,
+                            color: Colors.white,
+                            tooltip: '播放器设置',
+                            icon: const Icon(Icons.tune),
+                            onPressed: _openSettings,
+                          ),
+                          _buildPipButton(),
+                          IconButton(
+                            iconSize: 28,
+                            color: Colors.white,
+                            icon: const Icon(Icons.download),
+                            onPressed: _open,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -612,6 +735,79 @@ class _VideoSkeleton extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13, color: LumeTheme.muted),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 剧集选择面板：图源条目有多集时先选一集再起播。
+///
+/// 与图源切换面板同一套玻璃外观（顶部圆角 + 深色背景），一行一集。
+class _ChapterSheet extends StatelessWidget {
+  const _ChapterSheet({required this.title, required this.chapters});
+
+  /// 作品标题（面板抬头用）。
+  final String title;
+
+  final List<SourceChapter> chapters;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      child: DecoratedBox(
+        decoration: LumeTheme.background,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text(
+                      '选择剧集',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: chapters.length,
+                  itemBuilder: (context, index) {
+                    final chapter = chapters[index];
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        chapter.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      onTap: () => Navigator.of(context).pop(chapter),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
           ),
         ),

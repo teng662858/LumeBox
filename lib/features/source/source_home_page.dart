@@ -10,7 +10,7 @@ import '../../shared/widgets/state_view.dart';
 import 'browse_page.dart';
 import 'source_section_page.dart';
 
-/// 板块业务页（小说 / 漫画）：把板块内的图源接到统一数据源接口上。
+/// 板块业务页：把板块内的图源接到统一数据源接口上。
 ///
 /// 本页只做数据粘合：向 [SourceManager] 要「本板块当前图源」，经它打开一个
 /// [DataSource]（正式实现是 `JsDataSource`），再把分类、列表、搜索交给浏览面。
@@ -19,20 +19,71 @@ import 'source_section_page.dart';
 /// 隔离：管理器按板块构造，图源列表与切换目标都只来自本板块；数据源打开后
 /// 还会再校验一次 [DataSource.section]，不符即拒绝渲染（禁止跨板块调用）。
 ///
+/// 管理入口在**图源条**里（与阅读板块的图源条同一口径），点它进图源管理页，
+/// 返回后自动重新解析当前图源。
+///
 /// 平台边界：没有图源运行时的平台（Android / Windows）按宪法只显示骨架。
-class SourceHomePage extends StatefulWidget {
-  const SourceHomePage({super.key, required this.section, this.manager});
+class SourceHomePage extends StatelessWidget {
+  const SourceHomePage({
+    super.key,
+    required this.section,
+    this.manager,
+    this.onItemTap,
+  });
 
   final Section section;
 
   /// 图源管理端口。为空时使用 [LumeSources.manager] 的正式实现。
   final SourceManager? manager;
 
+  /// 条目点击。为空时浏览面按通用口径进详情页。
+  final void Function(DataSource source, SourceItem item)? onItemTap;
+
   @override
-  State<SourceHomePage> createState() => _SourceHomePageState();
+  Widget build(BuildContext context) => GlassScaffold(
+        title: section.label,
+        child: SourceBrowsePane(
+          section: section,
+          manager: manager,
+          onItemTap: onItemTap,
+        ),
+      );
 }
 
-class _SourceHomePageState extends State<SourceHomePage> {
+/// 板块图源浏览面板：解析当前图源 → 图源条（可切换）+ 浏览面（分类 / 搜索 / 列表）。
+///
+/// 面板不带页面骨架（AppBar 与右上角入口由宿主给）：视频板块把它当首页的
+/// 「浏览」页签，[SourceHomePage] 把它当整页内容。图源条右侧的「图源管理」
+/// 快捷入口可由宿主关掉（[showSourceActions] 为 false），避免与页面右上角的
+/// 同名入口重复。
+///
+/// 生命周期：面板使用（必要时创建）本板块的管理器端口，退出时释放——与
+/// 板块页「进板块打开、退出板块释放」的口径一致。
+class SourceBrowsePane extends StatefulWidget {
+  const SourceBrowsePane({
+    super.key,
+    required this.section,
+    this.manager,
+    this.onItemTap,
+    this.showSourceActions = true,
+  });
+
+  final Section section;
+
+  /// 图源管理端口。为空时使用 [LumeSources.manager] 的正式实现。
+  final SourceManager? manager;
+
+  /// 条目点击（同时给出该条目所属的数据源）。为空时浏览面按通用口径进详情页。
+  final void Function(DataSource source, SourceItem item)? onItemTap;
+
+  /// 图源条右侧是否显示「图源管理」快捷入口。
+  final bool showSourceActions;
+
+  @override
+  State<SourceBrowsePane> createState() => _SourceBrowsePaneState();
+}
+
+class _SourceBrowsePaneState extends State<SourceBrowsePane> {
   late final SourceManager _manager =
       widget.manager ?? LumeSources.manager(widget.section);
 
@@ -40,7 +91,7 @@ class _SourceHomePageState extends State<SourceHomePage> {
   SourceDescriptor? _current;
   DataSource? _source;
 
-  /// 页面状态：五状态统一由 [SourceStateKind] 表达。
+  /// 面板状态：五状态统一由 [SourceStateKind] 表达。
   SourceStateKind _state = SourceStateKind.loading;
 
   /// 状态标题覆盖（同一状态在不同页面说法不同时使用）。
@@ -217,20 +268,7 @@ class _SourceHomePageState extends State<SourceHomePage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return GlassScaffold(
-      title: widget.section.label,
-      actions: <Widget>[
-        if (_manager.runtimeAvailable)
-          IconButton(
-            tooltip: '图源管理',
-            icon: const Icon(Icons.tune),
-            onPressed: _manage,
-          ),
-      ],
-      child: _buildBody(),
-    );
-  }
+  Widget build(BuildContext context) => _buildBody();
 
   Widget _buildBody() {
     if (!_manager.runtimeAvailable) return const SkeletonNotice();
@@ -243,6 +281,7 @@ class _SourceHomePageState extends State<SourceHomePage> {
     }
     final source = _source;
     if (_state == SourceStateKind.ready && source != null) {
+      final onItemTap = widget.onItemTap;
       return Column(
         children: <Widget>[
           _buildSourceBar(),
@@ -250,6 +289,9 @@ class _SourceHomePageState extends State<SourceHomePage> {
             child: BrowseView(
               key: ValueKey<String>(source.id),
               dataSource: source,
+              // 宿主没给回调就走浏览面的通用口径（进详情页）。
+              onItemTap:
+                  onItemTap == null ? null : (item) => onItemTap(source, item),
             ),
           ),
         ],
@@ -293,7 +335,14 @@ class _SourceHomePageState extends State<SourceHomePage> {
                 ),
               ),
             ),
-            const Icon(Icons.expand_more, size: 18, color: LumeTheme.muted),
+            if (widget.showSourceActions)
+              IconButton(
+                tooltip: '图源管理',
+                icon: const Icon(Icons.tune, size: 20),
+                onPressed: _manage,
+              )
+            else
+              const Icon(Icons.expand_more, size: 18, color: LumeTheme.muted),
           ],
         ),
       ),
