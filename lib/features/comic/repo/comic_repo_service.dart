@@ -2,6 +2,7 @@ import '../../../core/session/section.dart';
 import '../../../core/source/source.dart';
 import '../../../core/util/lume_log.dart';
 import 'comic_repo_fetcher.dart';
+import 'comic_repo_mihon_pb_parser.dart';
 import 'comic_repo_models.dart';
 import 'comic_repo_parser.dart';
 import 'comic_repo_store.dart';
@@ -43,29 +44,29 @@ class ComicRepoService {
   /// 已添加的仓库。
   Future<List<ComicRepo>> repos() async => store.repos();
 
-  /// 添加仓库：补全索引地址 → 抓取 → 按类型独立解析 → 落库。
+  /// 添加仓库：解析索引地址 → 抓取 → 按类型独立解析 → 落库。
   ///
-  /// 地址已带 `.json` 时原样使用；否则按仓库类型补全索引文件名
-  /// （Mihon → `index.min.json`，Venera → `index.json`）。
+  /// 地址解析见 [indexUriFor]；Mihon 的根地址优先取 `index.pb`（新格式），
+  /// 取不到再退回 `index.min.json`（旧格式兼容）。
   /// 抓取或解析失败抛出 [SourceException] / [FormatException]，由页面转成提示。
   Future<ComicRepo> addRepo({
     required String url,
     required RepoKind kind,
     String? name,
   }) async {
-    final indexUri = indexUriFor(url, kind);
-    final index = await _fetchIndex(kind, indexUri);
+    final resolved = await _resolveIndex(kind, url);
+    final indexUri = resolved.uri;
     final trimmedName = name?.trim() ?? '';
     final record = ComicRepo(
       id: indexUri.toString(),
       name: trimmedName.isEmpty ? _defaultName(indexUri) : trimmedName,
       url: indexUri,
       kind: kind,
-      extensionCount: index.extensions.length,
+      extensionCount: resolved.index.extensions.length,
       refreshedAt: DateTime.now(),
     );
     store.upsertRepo(record);
-    store.replaceExtensions(record.id, index.extensions);
+    store.replaceExtensions(record.id, resolved.index.extensions);
     return record;
   }
 
@@ -84,7 +85,6 @@ class ComicRepoService {
     store.upsertRepo(updated);
     return updated;
   }
-
   /// 删除仓库。已安装的扩展不随之卸载（它们是独立的漫画图源）。
   Future<void> removeRepo(String repoId) async => store.removeRepo(repoId);
 
@@ -162,12 +162,63 @@ class ComicRepoService {
     if (_ownsFetcher) _fetcher.dispose();
   }
 
+  /// 解析索引：按地址与类型决定取哪个文件、用哪个解析器。
+  ///
+  /// - 地址点名了文件（`.json` / `.pb`）→ 就用它；
+  /// - Mihon 的根地址 → 先试 `index.pb`（Mihon 系仓库的正式格式，keiyoushi
+  ///   这类仓库的 `index.min.json` 只剩升级提示），失败再退回
+  ///   `index.min.json`（旧格式兼容）；
+  /// - Venera 的根地址 → `index.json`。
+  Future<({Uri uri, RepoIndex index})> _resolveIndex(
+    RepoKind kind,
+    String url,
+  ) async {
+    final indexUri = indexUriFor(url, kind);
+
+    // 用户在地址里点名了索引文件：就用它，不再探测。
+    final input = Uri.tryParse(url.trim());
+    if (input != null && _isIndexFile(input)) {
+      return (uri: indexUri, index: await _fetchIndex(kind, indexUri));
+    }
+
+    // 根地址：先试 Mihon 的 index.pb（新格式；keiyoushi 这类仓库的
+    // index.min.json 只剩升级提示），取不到再退回按类型补全的 JSON。
+    if (kind == RepoKind.mihon) {
+      final directory = indexUri.path.substring(
+        0,
+        indexUri.path.length - kind.indexPath.length,
+      );
+      final protobuf = indexUri.replace(path: '${directory}index.pb');
+      try {
+        return (uri: protobuf, index: await _fetchIndex(kind, protobuf));
+      } on SourceException {
+        // 没有 .pb（老仓库）：继续往下走 JSON。
+      }
+    }
+    return (uri: indexUri, index: await _fetchIndex(kind, indexUri));
+  }
+
+  /// 地址是否已经点名了索引文件。
+  static bool _isIndexFile(Uri uri) {
+    final path = uri.path.toLowerCase();
+    return path.endsWith('.json') || path.endsWith('.pb');
+  }
+
+  bool _isProtobufIndex(Uri uri) => uri.path.toLowerCase().endsWith('.pb');
+
   Future<RepoIndex> _fetchIndex(RepoKind kind, Uri indexUri) async {
+    // Mihon 的 protobuf 索引：按字节收，先解 gzip 再按 protobuf 读。
+    if (_isProtobufIndex(indexUri)) {
+      final bytes = await _fetcher.fetchBytes(indexUri);
+      return ComicRepoMihonPbParser.parse(bytes, baseUri: indexUri);
+    }
     final text = await _fetcher.fetchText(indexUri);
     return ComicRepoParser.parseText(kind, text, baseUri: indexUri);
   }
 
-  /// 索引地址：带 `.json` 原样用；否则按仓库类型补全索引文件名。
+  /// 索引地址：点名了索引文件（`.json` / `.pb`）原样用；否则按仓库类型
+  /// 补全索引文件名（Mihon → `index.min.json`，Venera → `index.json`；
+  /// Mihon 的 `.pb` 优先在 [_resolveIndex] 里处理）。
   /// 只接受 http / https 地址（仓库索引一律走网络）。
   static Uri indexUriFor(String url, RepoKind kind) {
     final trimmed = url.trim();
@@ -181,7 +232,7 @@ class ComicRepoService {
         '仓库地址无效（需要 http/https）：$url',
       );
     }
-    if (parsed.path.toLowerCase().endsWith('.json')) return parsed;
+    if (_isIndexFile(parsed)) return parsed;
     final path =
         parsed.path.endsWith('/') ? parsed.path : '${parsed.path}/';
     return parsed.replace(path: '$path${kind.indexPath}');

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../../core/net/lume_http.dart';
 import '../../../core/source/source.dart';
 
@@ -6,8 +8,13 @@ import '../../../core/source/source.dart';
 /// 与 JS 图源同一条纪律：网络只由宿主 Dart 层发出，脚本侧没有网络权限。
 /// 测试注入替身即可在没有网络的机器上跑完整仓库流程。
 abstract interface class RepoFetcher {
-  /// 抓取文本（索引 JSON 或 JS 脚本）；失败抛 [SourceException]。
+  /// 抓取文本（JSON 索引 `index.min.json` / `index.json`、JS 脚本）；
+  /// 失败抛 [SourceException]。
   Future<String> fetchText(Uri url);
+
+  /// 抓取原始字节（Mihon 的 `index.pb` 是 gzip 过的 protobuf，必须按字节收，
+  /// 不能先当文本解码）；失败抛 [SourceException]。
+  Future<Uint8List> fetchBytes(Uri url);
 
   void dispose();
 }
@@ -19,7 +26,12 @@ class LumeHttpRepoFetcher implements RepoFetcher {
   final LumeHttp _http;
 
   @override
-  Future<String> fetchText(Uri url) async {
+  Future<String> fetchText(Uri url) async => (await _fetch(url)).text;
+
+  @override
+  Future<Uint8List> fetchBytes(Uri url) async => (await _fetch(url)).body;
+
+  Future<LumeHttpResponse> _fetch(Uri url) async {
     try {
       final response = await _http.send(url: url.toString());
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -28,7 +40,7 @@ class LumeHttpRepoFetcher implements RepoFetcher {
           'HTTP ${response.statusCode}：$url',
         );
       }
-      return response.text;
+      return response;
     } on SourceException {
       rethrow;
     } catch (error) {

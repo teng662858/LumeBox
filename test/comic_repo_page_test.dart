@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -239,6 +240,12 @@ class _FakeFetcher implements RepoFetcher {
       throw SourceException(SourceErrorKind.network, 'HTTP 404：$url');
     }
     return body;
+  }
+
+  @override
+  Future<Uint8List> fetchBytes(Uri url) async {
+    final text = await fetchText(url);
+    return Uint8List.fromList(utf8.encode(text));
   }
 
   @override

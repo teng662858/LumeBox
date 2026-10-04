@@ -370,8 +370,9 @@ class _AddRepoDialogState extends State<_AddRepoDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               const Text(
-                '仓库类型决定索引格式：Mihon / Tachiyomi 用 index.min.json（APK 扩展，'
-                '本平台只能浏览）；Venera 用 index.json（JS 扩展，可安装运行）。',
+                '仓库类型决定索引格式：Mihon / Tachiyomi 用 index.pb 或 index.min.json'
+                '（APK 扩展，本平台只能浏览）；Venera 用 index.json（JS 扩展，可安装运行）。\n'
+                '填根地址会自动探测索引文件；也可以直接粘贴 index.pb / index.min.json 的完整地址。',
                 style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
               const SizedBox(height: 10),

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -94,7 +95,7 @@ void main() {
     );
   });
 
-  test('添加 Mihon 仓库：地址补 index.min.json，扩展是 APK 载体', () async {
+  test('添加 Mihon 仓库：根地址先探 index.pb，缺 .pb 退回 index.min.json（APK 载体）', () async {
     fetcher.responses['https://repo.example/mihon/index.min.json'] = mihonIndex;
 
     final repo = await service.addRepo(
@@ -104,13 +105,70 @@ void main() {
     );
 
     expect(
-      fetcher.requested.single.toString(),
-      'https://repo.example/mihon/index.min.json',
+      fetcher.requested.map((uri) => uri.path).toList(),
+      <String>['/mihon/index.pb', '/mihon/index.min.json'],
+      reason: '先试新格式 index.pb，404 后回退旧格式',
     );
+    expect(repo.url.path, '/mihon/index.min.json');
     expect(repo.name, 'Mihon 官方', reason: '首尾空白被去掉');
     final extension = (await service.extensions(repo.id)).single;
     expect(extension.artifact, ExtensionArtifact.apk);
     expect(extension.isRunnable, isFalse);
+  });
+
+  test('添加 Mihon 仓库：直接给 index.pb 地址时按 protobuf 解析', () async {
+    const pbUrl = 'https://repo.example/mihon/index.pb';
+    fetcher.binaries[pbUrl] = _samplePbIndex();
+
+    final repo = await service.addRepo(url: pbUrl, kind: RepoKind.mihon);
+
+    expect(fetcher.requested.single.toString(), pbUrl, reason: '不再往 .pb 后面拼 index.min.json');
+    expect(repo.url.toString(), pbUrl);
+    expect(repo.extensionCount, 2);
+    final extension = await extensionOf(repo.id, 'eu.example.one');
+    expect(extension.artifact, ExtensionArtifact.apk);
+    expect(extension.url.toString(), 'https://repo.example/apk/one-v1.2.3.apk');
+  });
+
+  test('添加 Mihon 仓库：根地址优先取 index.pb，缺 .pb 再退回 index.min.json', () async {
+    // 有 .pb：只用 .pb。
+    fetcher.binaries['https://repo.example/pbonly/index.pb'] = _samplePbIndex();
+    final pbRepo = await service.addRepo(
+      url: 'https://repo.example/pbonly',
+      kind: RepoKind.mihon,
+    );
+    expect(pbRepo.url.path, '/pbonly/index.pb');
+    expect(pbRepo.extensionCount, 2);
+
+    // 只有 JSON（老仓库）：先试 .pb 拿 404，再退回 index.min.json。
+    fetcher.responses['https://repo.example/mihon/index.min.json'] = mihonIndex;
+    final jsonRepo = await service.addRepo(
+      url: 'https://repo.example/mihon',
+      kind: RepoKind.mihon,
+    );
+    expect(jsonRepo.url.path, '/mihon/index.min.json');
+    expect(jsonRepo.extensionCount, 1);
+    expect(
+      fetcher.requested.map((uri) => uri.path).toList(),
+      <String>['/pbonly/index.pb', '/mihon/index.pb', '/mihon/index.min.json'],
+      reason: '根地址先探 .pb，404 后回退 JSON',
+    );
+  });
+
+  test('indexUriFor：点名了索引文件就原样用（.json / .pb）', () {
+    expect(
+      ComicRepoService.indexUriFor('https://repo.example/a/index.pb', RepoKind.mihon)
+          .toString(),
+      'https://repo.example/a/index.pb',
+    );
+    expect(
+      ComicRepoService.indexUriFor('https://repo.example/a', RepoKind.mihon).toString(),
+      'https://repo.example/a/index.min.json',
+    );
+    expect(
+      ComicRepoService.indexUriFor('https://repo.example/a', RepoKind.venera).toString(),
+      'https://repo.example/a/index.json',
+    );
   });
 
   test('添加仓库：地址已带 .json 时原样使用；地址非法时拒绝', () async {
@@ -287,6 +345,57 @@ class _FakeFetcher implements RepoFetcher {
     return body;
   }
 
+  /// 二进制索引（Mihon 的 index.pb）：单独一张表，缺省即 404。
+  final Map<String, Uint8List> binaries = <String, Uint8List>{};
+
+  @override
+  Future<Uint8List> fetchBytes(Uri url) async {
+    requested.add(url);
+    final body = binaries[url.toString()];
+    if (body == null) {
+      throw SourceException(SourceErrorKind.network, 'HTTP 404：$url');
+    }
+    return body;
+  }
+
   @override
   void dispose() => disposed = true;
+}
+
+/// 与真实索引同构的最小样例：Index{1:name, 101:{1:Extension…}}。
+Uint8List _samplePbIndex() {
+  List<int> varint(int value) {
+    final out = <int>[];
+    var remaining = value;
+    while (remaining > 0x7f) {
+      out.add((remaining & 0x7f) | 0x80);
+      remaining >>= 7;
+    }
+    out.add(remaining & 0x7f);
+    return out;
+  }
+
+  List<int> str(int field, String value) {
+    final payload = utf8.encode(value);
+    return <int>[...varint((field << 3) | 2), ...varint(payload.length), ...payload];
+  }
+
+  List<int> msg(int field, List<int> child) =>
+      <int>[...varint((field << 3) | 2), ...varint(child.length), ...child];
+
+  final first = <int>[
+    ...str(1, '示例扩展'),
+    ...str(2, 'eu.example.one'),
+    ...msg(3, str(1, 'https://repo.example/apk/one-v1.2.3.apk')),
+    ...str(6, '1.2.3'),
+    ...msg(8, <int>[...str(2, '示例扩展'), ...str(3, 'all')]),
+  ];
+  final second = <int>[
+    ...str(1, '第二个扩展'),
+    ...str(2, 'eu.example.two'),
+    ...msg(3, str(1, 'https://repo.example/apk/two-v1.0.0.apk')),
+    ...str(6, '1.0.0'),
+  ];
+  final list = <int>[...msg(1, first), ...msg(1, second)];
+  return Uint8List.fromList(<int>[...str(1, '示例仓库'), ...msg(101, list)]);
 }
