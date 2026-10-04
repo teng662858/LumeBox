@@ -1,0 +1,221 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/player/media_kit_mpv_engine.dart';
+import 'package:lume_box/core/player/mpv_engine.dart';
+import 'package:lume_box/core/player/mpv_player.dart';
+import 'package:lume_box/core/player/player_settings.dart';
+
+/// MPV 内核的验证：AbstractPlayer 全量契约、命令映射、状态与 HUD 组装。
+///
+/// 用替身引擎驱动 [MpvPlayer]——libmpv 通过 [MpvEngine] 端口挡在外面，
+/// 因此没有原生库的机器（含 CI）也能把这条链路验完。
+void main() {
+  late _FakeMpvEngine engine;
+  late MpvPlayer player;
+
+  setUp(() {
+    engine = _FakeMpvEngine();
+    player = MpvPlayer(engine: engine, engineLabel: 'MPV');
+  });
+
+  tearDown(() async {
+    await player.dispose();
+  });
+
+  test('load：媒体与请求头交给引擎，且不自动播放（与 AVPlayer 同口径）', () async {
+    await player.load(
+      PlayerMedia(
+        uri: Uri.parse('https://example.com/a.mp4'),
+        headers: const <String, String>{'Referer': 'https://example.com'},
+      ),
+    );
+
+    final request = engine.opened!;
+    expect(request.url, 'https://example.com/a.mp4');
+    expect(request.headers, <String, String>{'Referer': 'https://example.com'});
+    expect(request.autoplay, isFalse, reason: 'load 只装载，播放由上层显式发起');
+    expect(request.speed, 1.0, reason: '起播倍速取当前设置');
+    expect(request.startAt, isNull);
+  });
+
+  test('play / pause / seek / stop：逐个映射到引擎', () async {
+    await player.load(PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')));
+    await player.play();
+    await player.pause();
+    await player.seek(const Duration(seconds: 42));
+    await player.stop();
+
+    expect(engine.calls, <String>['open', 'play', 'pause', 'seek:42', 'stop']);
+    // stop 之后上层看到的是「回到起点且未播放」。
+    expect(player.snapshot.value.position, Duration.zero);
+    expect(player.snapshot.value.playing, isFalse);
+  });
+
+  test('applySettings：倍速与字幕开关都下发给引擎', () async {
+    await player.applySettings(
+      const PlayerSettings(kernel: PlayerKernel.mpv, speed: 1.5, subtitlesEnabled: false),
+    );
+
+    expect(engine.speed, 1.5);
+    expect(engine.subtitleEnabled, isFalse);
+
+    await player.applySettings(
+      const PlayerSettings(kernel: PlayerKernel.mpv, speed: 2.0, subtitlesEnabled: true),
+    );
+    expect(engine.speed, 2.0);
+    expect(engine.subtitleEnabled, isTrue);
+  });
+
+  test('状态映射：位置 / 时长 / 播放 / 缓冲 / 错误都取自引擎快照', () async {
+    engine.emit(
+      const MpvEngineSnapshot(
+        position: Duration(seconds: 30),
+        duration: Duration(minutes: 45),
+        playing: true,
+        buffering: true,
+      ),
+    );
+
+    final snapshot = player.snapshot.value;
+    expect(snapshot.position, const Duration(seconds: 30));
+    expect(snapshot.duration, const Duration(minutes: 45));
+    expect(snapshot.playing, isTrue);
+    expect(snapshot.buffering, isTrue);
+    expect(snapshot.error, isNull);
+
+    engine.emit(const MpvEngineSnapshot(error: '打开失败：连接超时'));
+    expect(player.snapshot.value.error, '打开失败：连接超时');
+    expect(player.snapshot.value.playing, isFalse);
+  });
+
+  test('HUD：编码 / 分辨率 / 帧率 / 码率 / 缓冲全部来自引擎', () async {
+    engine.emit(
+      const MpvEngineSnapshot(
+        videoCodec: 'hevc',
+        audioCodec: 'aac',
+        videoBitrateKbps: 1800,
+        fps: 30,
+        width: 1920,
+        height: 1080,
+        buffered: Duration(seconds: 12),
+      ),
+    );
+
+    expect(player.stats.value.chips, <String>[
+      'MPV',
+      'HEVC',
+      '1920×1080',
+      '30FPS',
+      '1.8Mbps',
+      '缓冲 12s',
+    ]);
+  });
+
+  test('HUD：引擎拿不到的项自动省略，不编造', () async {
+    // 纯音频：没有分辨率与帧率。
+    engine.emit(
+      const MpvEngineSnapshot(audioCodec: 'mp3', audioBitrateKbps: 320),
+    );
+
+    expect(player.stats.value.chips, <String>['MPV', 'MP3', '320kbps']);
+
+    // 什么参数都还没有时只剩内核名（HUD 仍标明当前内核）。
+    engine.emit(const MpvEngineSnapshot());
+    expect(player.stats.value.chips, <String>['MPV']);
+    expect(player.stats.value.hasParameters, isFalse);
+  });
+
+  test('HUD：加载新媒体的瞬间清空上一部片子的参数（不留残留）', () async {
+    engine.emit(
+      const MpvEngineSnapshot(videoCodec: 'h264', width: 1280, height: 720),
+    );
+    expect(player.stats.value.chips, contains('1280×720'));
+
+    await player.load(PlayerMedia(uri: Uri.parse('https://example.com/b.mp4')));
+    expect(
+      player.stats.value.chips,
+      <String>['MPV'],
+      reason: '换片后旧参数必须消失，等引擎给出新参数再显示',
+    );
+  });
+
+  test('buildView：用引擎给的渲染面（上层不感知 media_kit）', () {
+    final view = player.buildView();
+    expect(view, isA<Text>());
+    expect((view as Text).data, 'mpv-view');
+  });
+
+  test('dispose：释放引擎且之后的调用安全', () async {
+    await player.dispose();
+    expect(engine.disposed, isTrue);
+
+    await player.load(PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')));
+    await player.play();
+    await player.seek(const Duration(seconds: 1));
+    await player.applySettings(const PlayerSettings(speed: 1.5));
+    expect(engine.opened, isNull, reason: '已释放后不再触达引擎');
+    // 重复释放是安全的。
+    await player.dispose();
+  });
+
+  test('单位换算：mpv 的 bps 在引擎层换算成 kbps（HUD 口径统一）', () {
+    expect(MediaKitMpvEngine.toKbps(1800000), 1800);
+    expect(MediaKitMpvEngine.toKbps(320000), 320);
+    expect(MediaKitMpvEngine.toKbps(null), isNull);
+    expect(MediaKitMpvEngine.toKbps(0), isNull);
+    expect(MediaKitMpvEngine.toKbps(-1), isNull);
+  });
+}
+
+/// 替身 MPV 引擎：记录命令、按需推快照。
+class _FakeMpvEngine implements MpvEngine {
+  final List<String> calls = <String>[];
+  MpvMediaRequest? opened;
+  double? speed;
+  bool? subtitleEnabled;
+  bool disposed = false;
+
+  void Function(MpvEngineSnapshot snapshot)? _listener;
+
+  @override
+  void listen(void Function(MpvEngineSnapshot snapshot) onSnapshot) {
+    _listener = onSnapshot;
+  }
+
+  /// 测试驱动：模拟 libmpv 推来一份快照。
+  void emit(MpvEngineSnapshot snapshot) => _listener?.call(snapshot);
+
+  @override
+  Future<void> open(MpvMediaRequest request) async {
+    calls.add('open');
+    opened = request;
+  }
+
+  @override
+  Future<void> play() async => calls.add('play');
+
+  @override
+  Future<void> pause() async => calls.add('pause');
+
+  @override
+  Future<void> seek(Duration position) async =>
+      calls.add('seek:${position.inSeconds}');
+
+  @override
+  Future<void> stop() async => calls.add('stop');
+
+  @override
+  Future<void> setSpeed(double value) async => speed = value;
+
+  @override
+  Future<void> setSubtitleEnabled(bool enabled) async =>
+      subtitleEnabled = enabled;
+
+  @override
+  Widget buildView() => const Text('mpv-view');
+
+  @override
+  Future<void> dispose() async => disposed = true;
+}

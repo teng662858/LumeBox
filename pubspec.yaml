@@ -43,7 +43,9 @@ dependencies:
   video_player: ^2.14.1
   # 本地导入图源脚本：从文件系统挑选 .js 文件（iOS 走系统文档选择器）。
   file_selector: ^1.1.0
-
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_ios_video: ^1.1.4
 dev_dependencies:
   flutter_test:
     sdk: flutter

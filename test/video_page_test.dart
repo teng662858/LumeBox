@@ -10,6 +10,7 @@ import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/pip.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
+import 'package:lume_box/core/player/player_stats.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
@@ -178,6 +179,53 @@ void main() {
       expect(store.load().kernel, PlayerKernel.mpv);
     });
 
+    testWidgets('HUD：显示当前内核给出的参数，换内核不改上层 UI', (tester) async {
+      final created = await pumpVideo(
+        tester,
+        available: <PlayerKernel>{PlayerKernel.avplayer, PlayerKernel.mpv},
+      );
+      await openMedia(tester);
+
+      // AVPlayer 内核：只有它拿得到的项（分辨率 + 缓冲）。
+      created.single.pushStats(const PlayerStats(
+        engineLabel: 'AVPlayer',
+        width: 1280,
+        height: 720,
+        buffered: Duration(seconds: 4),
+      ));
+      await tester.pump();
+      expect(find.text('AVPlayer'), findsOneWidget);
+      expect(find.text('1280×720'), findsOneWidget);
+      expect(find.text('缓冲 4s'), findsOneWidget);
+
+      // 换成 MPV 内核：同一块 HUD 直接显示 MPV 的参数，页面代码零改动。
+      await tester.tap(find.byTooltip('播放器设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('MPV'));
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      final mpv = created[1];
+      mpv.pushStats(const PlayerStats(
+        engineLabel: 'MPV',
+        videoCodec: 'hevc',
+        videoBitrateKbps: 1800,
+        fps: 30,
+        width: 1920,
+        height: 1080,
+        buffered: Duration(seconds: 9),
+      ));
+      await tester.pump();
+      expect(find.text('MPV'), findsWidgets);
+      expect(find.text('HEVC'), findsOneWidget);
+      expect(find.text('1920×1080'), findsOneWidget);
+      expect(find.text('30FPS'), findsOneWidget);
+      expect(find.text('1.8Mbps'), findsOneWidget);
+      expect(find.text('缓冲 9s'), findsOneWidget);
+      expect(find.text('1280×720'), findsNothing, reason: '旧内核的参数不该残留');
+    });
+
     testWidgets('倍速改动即时生效并落库', (tester) async {
       final created = await pumpVideo(
         tester,
@@ -334,6 +382,11 @@ class _FakePlayer implements AbstractPlayer {
   final ValueNotifier<PlayerSnapshot> _snapshot =
       ValueNotifier<PlayerSnapshot>(const PlayerSnapshot());
 
+  /// 测试可控的 HUD 参数：验证「上层只吃 PlayerStats」。
+  final ValueNotifier<PlayerStats> _stats = ValueNotifier<PlayerStats>(
+    PlayerStats(engineLabel: 'fake'),
+  );
+
   PlayerSettings? applied;
   PlayerMedia? media;
   int disposals = 0;
@@ -342,6 +395,12 @@ class _FakePlayer implements AbstractPlayer {
 
   @override
   ValueListenable<PlayerSnapshot> get snapshot => _snapshot;
+
+  @override
+  ValueListenable<PlayerStats> get stats => _stats;
+
+  /// 测试驱动：模拟内核推来新的 HUD 参数。
+  void pushStats(PlayerStats value) => _stats.value = value;
 
   @override
   Future<void> load(PlayerMedia media) async {

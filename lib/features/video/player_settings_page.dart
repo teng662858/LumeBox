@@ -47,7 +47,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
-          const _SectionTitle('播放内核', '三套内核运行时可切换；未接入的内核不可选'),
+          const _SectionTitle('播放内核', 'AVPlayer 与 MPV 运行时可切换；MDK 只预留接口（不可选）'),
           for (final kernel in PlayerKernel.values) _buildKernelTile(kernel),
           const SizedBox(height: 24),
           const _SectionTitle('播放倍速', '切换后立即生效，播放中不中断'),
@@ -175,7 +175,8 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
           ),
           const SizedBox(height: 8),
           const Text(
-            '字号由支持字幕样式的内核消费；当前 AVPlayer 内核按系统样式渲染。',
+            '字幕开关由内核消费（MPV 走轨道选择，AVPlayer 按系统样式渲染）；'
+            '字号仍待自研字幕层。',
             style: TextStyle(fontSize: 12, color: LumeTheme.muted),
           ),
         ],

@@ -13,13 +13,15 @@ import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../shell/shell_dock.dart';
 import '../source/add_source_button.dart';
+import 'player_hud.dart';
 import 'player_settings_page.dart';
 import 'video_player_settings.dart';
 
 /// 自定义视频板块：播放本地或网络视频。
 ///
-/// 播放内核只有 AVPlayer 可用（iOS，video_player 驱动）；MPV / MDK 尚未接入，
-/// 设置页如实把它们标成不可选。Android / Windows 按宪法只保留 UI 骨架占位，
+/// 播放内核由设置页选择：iOS 上 AVPlayer（video_player）与 MPV（libmpv / media_kit）
+/// 都可用，MDK 只预留接口。页面只认 [AbstractPlayer] 与 [PlayerStats]：内核切换、
+/// 控制栏与 HUD 都不需要跟着改。Android / Windows 按宪法只保留 UI 骨架占位，
 /// 画中画业务逻辑只在 iOS 侧接线（原生实现落地前，设置页与画中画按钮显示为占位）。
 ///
 /// 播放设置（内核 / 倍速 / 字幕）落在本板块自己的库里；页面退出时按顺序释放：
@@ -339,7 +341,14 @@ class _VideoPageState extends State<VideoPage> {
                 builder: (context, snapshot, _) => Padding(
                   padding: const EdgeInsets.all(16),
                   child: snapshot.error == null
-                      ? player.buildView()
+                      ? Stack(
+                          alignment: Alignment.bottomLeft,
+                          children: <Widget>[
+                            player.buildView(),
+                            // HUD 只吃 AbstractPlayer 暴露的参数：换内核零改动。
+                            PlayerHud(stats: player.stats),
+                          ],
+                        )
                       : Text(
                           snapshot.error!,
                           style: const TextStyle(color: LumeTheme.muted),

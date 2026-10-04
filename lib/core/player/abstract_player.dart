@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'player_settings.dart';
+import 'player_stats.dart';
 
 /// 播放器要打开的媒体。
 class PlayerMedia {
@@ -37,10 +38,17 @@ class PlayerSnapshot {
 
 /// 播放器抽象层。
 ///
-/// Phase1 只提供 AVPlayer 实现；MPV / MDK 延后开发，不在本层内集成。
+/// Phase1 提供两套实现：AVPlayer（video_player 驱动）与 MPV（libmpv / media_kit
+/// 驱动）；MDK 只预留接口。
 abstract class AbstractPlayer {
   /// 当前状态。UI 通过 [snapshot] 订阅，无需自行轮询。
   ValueListenable<PlayerSnapshot> get snapshot;
+
+  /// HUD 参数（编码格式 / 码率 / 帧率 / 缓冲状态 / 分辨率）。
+  ///
+  /// **每个内核自己填**自己拿得到的字段，拿不到的留空；上层只渲染
+  /// [PlayerStats.chips]，不认识任何内核私有 API——换内核时 HUD 一行不用改。
+  ValueListenable<PlayerStats> get stats;
 
   Future<void> load(PlayerMedia media);
 

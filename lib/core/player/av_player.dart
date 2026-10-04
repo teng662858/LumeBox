@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 import '../util/lume_log.dart';
 import 'abstract_player.dart';
 import 'player_settings.dart';
+import 'player_stats.dart';
 
 /// 基于 AVPlayer 的播放器实现。
 ///
@@ -21,6 +22,12 @@ class AvPlayer implements AbstractPlayer {
   final ValueNotifier<PlayerSnapshot> _snapshot =
       ValueNotifier<PlayerSnapshot>(const PlayerSnapshot());
 
+  /// HUD 参数：video_player 只暴露分辨率 / 缓冲 / 缓冲中，
+  /// 编码、帧率、码率它拿不到——留空由 HUD 自动省略（不编造）。
+  final ValueNotifier<PlayerStats> _stats = ValueNotifier<PlayerStats>(
+    const PlayerStats(engineLabel: 'AVPlayer'),
+  );
+
   VideoPlayerController? _controller;
   Timer? _ticker;
   bool _disposed = false;
@@ -30,6 +37,9 @@ class AvPlayer implements AbstractPlayer {
 
   @override
   ValueListenable<PlayerSnapshot> get snapshot => _snapshot;
+
+  @override
+  ValueListenable<PlayerStats> get stats => _stats;
 
   @override
   Future<void> load(PlayerMedia media) async {
@@ -114,6 +124,7 @@ class AvPlayer implements AbstractPlayer {
     _ticker = null;
     await _releaseController();
     _snapshot.dispose();
+    _stats.dispose();
   }
 
   Future<void> _releaseController() async {
@@ -141,6 +152,24 @@ class AvPlayer implements AbstractPlayer {
       buffering: value.isBuffering,
       error: value.hasError ? value.errorDescription : null,
     ));
+    _stats.value = PlayerStats(
+      engineLabel: 'AVPlayer',
+      width: value.size.width > 0 ? value.size.width.round() : null,
+      height: value.size.height > 0 ? value.size.height.round() : null,
+      buffered: _bufferedAhead(value),
+      buffering: value.isBuffering,
+    );
+  }
+
+  /// 缓冲状态：当前位置**前方**已缓冲的时长（取最远的一段）。
+  static Duration? _bufferedAhead(VideoPlayerValue value) {
+    Duration? ahead;
+    for (final range in value.buffered) {
+      if (range.end <= value.position) continue;
+      final span = range.end - value.position;
+      if (ahead == null || span > ahead) ahead = span;
+    }
+    return ahead;
   }
 
   void _emit(PlayerSnapshot next, {String? error}) {
