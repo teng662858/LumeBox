@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,18 @@ import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
+import '../../core/util/md5.dart';
+
+/// 一次订阅拉取的结果。
+///
+/// 同时带字节与文本：文本用于「是不是脚本 / 是不是地址清单」的判断，
+/// 字节用于 `.js.md5` 约定的校验（必须校验原始字节，不能拿解码后的字符串算）。
+class SourceFetchResult {
+  const SourceFetchResult({required this.bytes, required this.text});
+
+  final Uint8List bytes;
+  final String text;
+}
 
 /// 板块页右上角的「+」添加图源按钮（小说 / 漫画 / 视频 / 猫源统一入口）。
 ///
@@ -44,7 +57,7 @@ class AddSourceButton extends StatelessWidget {
   final Future<({String name, String text})?> Function()? readLocalScript;
 
   /// 订阅拉取端口（测试注入）；为空时经 [LumeHttp]（宿主网络层）拉取。
-  final Future<String> Function(String url)? fetchSubscription;
+  final Future<SourceFetchResult> Function(String url)? fetchSubscription;
 
   /// 单次订阅最多导入的脚本条数（订阅文本按「一行一个地址」解释时）。
   /// 上限是为了让误填的地址不会把批量导入变成不可控的请求风暴。
@@ -133,14 +146,17 @@ class AddSourceButton extends StatelessWidget {
   }
 
   /// 默认订阅拉取：走宿主网络层（统一 UA），与图源请求同一出口。
-  static Future<String> _fetchSubscriptionText(String url) async {
+  static Future<SourceFetchResult> _fetchSubscriptionText(String url) async {
     final http = LumeHttp();
     try {
       final response = await http.send(url: url);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw StateError('HTTP ${response.statusCode}');
       }
-      return stripScriptBom(response.text);
+      return SourceFetchResult(
+        bytes: response.body,
+        text: stripScriptBom(response.text),
+      );
     } finally {
       http.dispose();
     }
@@ -160,7 +176,7 @@ class _AddSourceDialog extends StatefulWidget {
 
   final Section section;
   final Future<({String name, String text})?> Function() readLocalScript;
-  final Future<String> Function(String url) fetchSubscription;
+  final Future<SourceFetchResult> Function(String url) fetchSubscription;
   final int maxScripts;
 
   @override
@@ -307,7 +323,8 @@ class _AddSourceDialogState extends State<_AddSourceDialog> {
         ),
         const SizedBox(height: 8),
         const Text(
-          '订阅返回单个脚本时直接导入；返回「一行一个脚本地址」的清单时逐个拉取。',
+          '订阅返回单个脚本时直接导入；返回「一行一个脚本地址」的清单时逐个拉取；'
+          '返回 MD5 校验值（.js.md5）时，去掉 .md5 后缀取脚本并校验后再导入。',
           style: TextStyle(fontSize: 12, color: LumeTheme.muted),
         ),
       ];
@@ -386,26 +403,64 @@ class _AddSourceDialogState extends State<_AddSourceDialog> {
     }
   }
 
-  /// 逐个拉取订阅地址：正文是脚本就收下；正文是「一行一个地址」的清单时，
-  /// 再把清单里的地址拉一层（总条数不超过 [AddSourceButton.maxSubscriptionScripts]）。
+  /// 逐个拉取订阅地址：正文是脚本就收下；正文是 `.js.md5` 校验值就按约定
+  /// 取脚本实体并核对校验；正文是「一行一个地址」的清单时再逐个拉一层。
   Future<List<String>> _collect(List<String> urls) async {
     final scripts = <String>[];
+    final visited = <String>{};
     for (final url in urls) {
-      final body = stripScriptBom(await widget.fetchSubscription(url));
-      if (_looksLikeScript(body)) {
-        scripts.add(body);
-        continue;
-      }
-      final nested = _urlsIn(
-        body,
-        limit: widget.maxScripts - scripts.length,
-      );
-      for (final url in nested) {
-        final text = stripScriptBom(await widget.fetchSubscription(url));
-        if (_looksLikeScript(text)) scripts.add(text);
-      }
+      if (scripts.length >= widget.maxScripts) break;
+      scripts.addAll(await _scriptsAt(url, visited));
     }
     return scripts;
+  }
+
+  /// 单个订阅地址 → 脚本清单（0..n 条）。
+  ///
+  /// 递归只对「地址清单」发生，并用 [visited] 挡住互相引用的清单
+  /// （否则一个自引用的订阅能把导入卡死）。
+  Future<List<String>> _scriptsAt(String url, Set<String> visited) async {
+    if (!visited.add(url) || visited.length > widget.maxScripts * 2) {
+      return const <String>[];
+    }
+    final download = await widget.fetchSubscription(url);
+
+    // 形态一：`.js.md5` 约定——正文是 MD5 校验值，脚本实体在去掉 `.md5` 的地址上。
+    final expected = Md5.parseHex(download.text);
+    if (expected != null) {
+      final target = _scriptUrlFor(url);
+      if (target == null) return const <String>[];
+      final entity = await widget.fetchSubscription(target);
+      // 注意用 hex（先摘要再转十六进制），不是 toHex（那是原始字节的十六进制）。
+      final actual = Md5.hex(entity.bytes);
+      if (actual != expected) {
+        throw StateError('MD5 校验不一致（清单 $expected，实际 $actual）');
+      }
+      return <String>[entity.text];
+    }
+
+    // 形态二：正文就是脚本。
+    if (_looksLikeScript(download.text)) return <String>[download.text];
+
+    // 形态三：正文是一行一个脚本地址的清单，逐个再拉（同样支持 `.md5`）。
+    final scripts = <String>[];
+    final nested = _urlsIn(download.text, limit: widget.maxScripts);
+    for (final item in nested) {
+      if (scripts.length >= widget.maxScripts) break;
+      scripts.addAll(await _scriptsAt(item, visited));
+    }
+    return scripts;
+  }
+
+  /// `.js.md5` 约定：清单地址去掉 `.md5` 后缀就是脚本实体地址。
+  static String? _scriptUrlFor(String url) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return null;
+    final path = uri.path;
+    if (!path.toLowerCase().endsWith('.md5')) return null;
+    final target = path.substring(0, path.length - 4);
+    if (target.isEmpty) return null;
+    return uri.replace(path: target).toString();
   }
 
   /// 从文本里挑出 http(s) 地址：一行一个，忽略空行与 `#` 开头的注释行。

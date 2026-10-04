@@ -1,14 +1,26 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
+import 'package:lume_box/core/util/md5.dart';
 import 'package:lume_box/features/source/add_source_button.dart';
 
 import 'support/fake_source_manager.dart';
 
-/// 板块页「+」添加图源按钮的验证：本地文件导入、订阅链接导入（单脚本与
-/// 「一行一个地址」的清单）、失败口径，以及脚本文本的 BOM 剥离。
+/// 板块页「+」添加图源按钮的验证：本地文件导入、订阅链接导入（单脚本 /
+/// 「一行一个地址」的清单 / `.js.md5` 校验清单）、失败口径，以及脚本文本的
+/// BOM 剥离与 MD5 校验。
+///
+/// 测试用：文本 → 订阅拉取结果（字节按 UTF-8 编码，供 `.md5` 校验）。
+SourceFetchResult entity(String text) => SourceFetchResult(
+      bytes: Uint8List.fromList(utf8.encode(text)),
+      text: text,
+    );
+
 void main() {
   late FakeSourceManager manager;
   late List<int> importedCount; // onImported 回调次数（用列表代替可变闭包变量）
@@ -21,7 +33,7 @@ void main() {
   Future<void> pumpButton(
     WidgetTester tester, {
     Future<({String name, String text})?> Function()? readLocalScript,
-    Future<String> Function(String url)? fetchSubscription,
+    Future<SourceFetchResult> Function(String url)? fetchSubscription,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -92,7 +104,7 @@ void main() {
       tester,
       fetchSubscription: (url) async {
         expect(url, 'https://example.com/sub.js');
-        return '\uFEFFvar LumeSource = {id: "sub", name: "订阅源"};';
+        return entity('\uFEFFvar LumeSource = {id: "sub", name: "订阅源"};');
       },
     );
 
@@ -115,9 +127,9 @@ void main() {
       fetchSubscription: (url) async {
         fetched.add(url);
         if (url == 'https://example.com/sub.txt') {
-          return 'https://example.com/a.js\n# 注释行\nhttps://example.com/b.js\n';
+          return entity('https://example.com/a.js\n# 注释行\nhttps://example.com/b.js\n');
         }
-        return 'var LumeSource = {id: "s${fetched.length}", name: "源${fetched.length}"};';
+        return entity('var LumeSource = {id: "s${fetched.length}", name: "源${fetched.length}"};');
       },
     );
 
@@ -143,7 +155,7 @@ void main() {
       tester,
       fetchSubscription: (url) async {
         fetched.add(url);
-        return 'var LumeSource = {id: "s${fetched.length}", name: "源${fetched.length}"};';
+        return entity('var LumeSource = {id: "s${fetched.length}", name: "源${fetched.length}"};');
       },
     );
 
@@ -162,6 +174,110 @@ void main() {
       'https://example.com/b.js',
     ]);
     expect(manager.imported.length, 2);
+  });
+
+  testWidgets('订阅链接导入：.js.md5 校验清单 → 去掉 .md5 取脚本并核对 MD5', (tester) async {
+    // 真实约定：清单里是 MD5 校验值，脚本实体在同名去掉 `.md5` 的地址上。
+    const script = 'var LumeSource = {id: "md5src", name: "校验清单源"};';
+    final expected = Md5.hex(utf8.encode(script));
+    final fetched = <String>[];
+
+    await pumpButton(
+      tester,
+      fetchSubscription: (url) async {
+        fetched.add(url);
+        if (url.endsWith('.md5')) return entity('$expected\n');
+        return entity(script);
+      },
+    );
+
+    await openDialog(tester);
+    await tester.tap(find.text('订阅链接'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField),
+      'https://9280.kstore.vip/cat/index.js.md5',
+    );
+    await tester.tap(find.text('拉取并导入'));
+    await tester.pumpAndSettle();
+
+    expect(fetched, <String>[
+      'https://9280.kstore.vip/cat/index.js.md5',
+      'https://9280.kstore.vip/cat/index.js',
+    ]);
+    expect(manager.imported.single, script);
+    expect(find.text('已导入：新图源'), findsOneWidget);
+  });
+
+  testWidgets('订阅链接导入：MD5 对不上时拒绝导入并说明差异', (tester) async {
+    await pumpButton(
+      tester,
+      fetchSubscription: (url) async => url.endsWith('.md5')
+          ? entity('6c7379bc24a23ec5b923ecf6f9c9d331')
+          : entity('var LumeSource = {id: "tampered"};'),
+    );
+
+    await openDialog(tester);
+    await tester.tap(find.text('订阅链接'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField),
+      'https://9280.kstore.vip/cat/index.js.md5',
+    );
+    await tester.tap(find.text('拉取并导入'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('MD5 校验不一致'), findsOneWidget);
+    expect(manager.imported, isEmpty);
+  });
+
+  testWidgets('订阅链接导入：清单里嵌 .js.md5 也逐个按约定解析', (tester) async {
+    const script = 'var LumeSource = {id: "nested", name: "嵌套校验源"};';
+    final expected = Md5.hex(utf8.encode(script));
+    final fetched = <String>[];
+
+    await pumpButton(
+      tester,
+      fetchSubscription: (url) async {
+        fetched.add(url);
+        if (url == 'https://example.com/list.txt') {
+          return entity('https://example.com/a.js.md5\n');
+        }
+        if (url.endsWith('.md5')) return entity(expected);
+        return entity(script);
+      },
+    );
+
+    await openDialog(tester);
+    await tester.tap(find.text('订阅链接'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'https://example.com/list.txt');
+    await tester.tap(find.text('拉取并导入'));
+    await tester.pumpAndSettle();
+
+    expect(fetched, <String>[
+      'https://example.com/list.txt',
+      'https://example.com/a.js.md5',
+      'https://example.com/a.js',
+    ]);
+    expect(manager.imported.single, script);
+  });
+
+  testWidgets('订阅链接导入：清单里互相引用不会死循环', (tester) async {
+    await pumpButton(
+      tester,
+      fetchSubscription: (url) async => entity('https://example.com/loop.txt\n'),
+    );
+
+    await openDialog(tester);
+    await tester.tap(find.text('订阅链接'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'https://example.com/loop.txt');
+    await tester.tap(find.text('拉取并导入'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('订阅里没有可导入的图源脚本'), findsOneWidget);
+    expect(manager.imported, isEmpty);
   });
 
   testWidgets('订阅链接导入：拉取失败给出可读提示，不导入', (tester) async {
