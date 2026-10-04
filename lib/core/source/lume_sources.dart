@@ -89,6 +89,27 @@ class LumeSources {
     registry.setEnabled(sourceId, enabled);
   }
 
+  /// 重命名图源：只改本板块库里的展示名（脚本与运行时保持原样）。
+  static Future<void> rename(
+    Section section,
+    String sourceId,
+    String name,
+  ) async {
+    if (!runtimeAvailableFor(section)) return;
+    final registry = await SourceRegistry.open(section);
+    registry.rename(sourceId, name);
+  }
+
+  /// 导出图源脚本原文（备份用）；图源不存在或跨板块时返回 null。
+  static Future<String?> exportScript(
+    Section section,
+    String sourceId,
+  ) async {
+    if (!runtimeAvailableFor(section)) return null;
+    final registry = await SourceRegistry.open(section);
+    return registry.scriptOf(sourceId);
+  }
+
   /// 删除图源（含其运行时与脚本）。
   static Future<void> remove(Section section, String sourceId) async {
     if (!runtimeAvailableFor(section)) return;
@@ -162,6 +183,14 @@ class _LumeSourceManager implements SourceManager {
   @override
   Future<void> setEnabled(String sourceId, bool enabled) =>
       LumeSources.setEnabled(_section, sourceId, enabled);
+
+  @override
+  Future<void> rename(String sourceId, String name) =>
+      LumeSources.rename(_section, sourceId, name);
+
+  @override
+  Future<String?> exportScript(String sourceId) =>
+      LumeSources.exportScript(_section, sourceId);
 
   @override
   Future<void> remove(String sourceId) => LumeSources.remove(_section, sourceId);

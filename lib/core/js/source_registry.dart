@@ -164,6 +164,27 @@ class SourceRegistry {
     }
   }
 
+  /// 重命名：只改库里的展示名（脚本、版本、启停状态与运行时都不动）。
+  ///
+  /// 展示名与脚本里声明的 `LumeSource.name` 可以不同——这正是重命名的意义：
+  /// 用户按自己的习惯命名，脚本本身保持原样，更新脚本时也不会被覆盖。
+  void rename(String sourceId, String name) {
+    final record = source(sourceId);
+    if (record == null) return;
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == record.name) return;
+    _database.upsertSource(
+      id: record.id,
+      name: trimmed,
+      version: record.version,
+      section: section.id,
+      script: record.script,
+    );
+  }
+
+  /// 导出脚本原文：图源不存在或跨板块时返回 null。
+  String? scriptOf(String sourceId) => source(sourceId)?.script;
+
   void remove(String sourceId) {
     if (!_owns(sourceId)) return;
     release(sourceId);

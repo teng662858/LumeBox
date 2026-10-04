@@ -145,6 +145,14 @@ void main() {
     expect(find.text('AVPlayer'), findsOneWidget);
     expect(find.text('MPV'), findsOneWidget);
     expect(find.text('MDK'), findsOneWidget);
+
+    // 播放器设置（内核 / 倍速 / 字幕）也从板块页迁到了全局设置。
+    expect(find.text('播放器设置'), findsOneWidget);
+    await tester.tap(find.text('播放器设置'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, '播放器设置'), findsOneWidget);
+    expect(find.text('播放倍速'), findsOneWidget);
+    expect(find.text('字幕'), findsOneWidget);
   });
 
   testWidgets('运行日志：查看、按级别筛选、清空', (tester) async {

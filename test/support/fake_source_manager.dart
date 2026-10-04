@@ -31,6 +31,12 @@ class FakeSourceManager implements SourceManager {
 
   final List<String> imported = <String>[];
   final List<(String, bool)> toggled = <(String, bool)>[];
+  final List<(String, String)> renamed = <(String, String)>[];
+  final List<String> exportedIds = <String>[];
+
+  /// sourceId → 脚本原文（导出用；未登记时导出返回 null）。
+  final Map<String, String> scripts = <String, String>{};
+
   final List<String> removed = <String>[];
   final List<String> openedIds = <String>[];
   final List<String> selectedIds = <String>[];
@@ -104,6 +110,26 @@ class FakeSourceManager implements SourceManager {
         enabled: enabled,
       ),
     );
+  }
+
+  @override
+  Future<void> rename(String sourceId, String name) async {
+    renamed.add((sourceId, name));
+    _replace(
+      sourceId,
+      (source) => SourceDescriptor(
+        id: source.id,
+        name: name,
+        version: source.version,
+        enabled: source.enabled,
+      ),
+    );
+  }
+
+  @override
+  Future<String?> exportScript(String sourceId) async {
+    exportedIds.add(sourceId);
+    return scripts[sourceId];
   }
 
   @override

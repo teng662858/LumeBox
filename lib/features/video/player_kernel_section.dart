@@ -116,7 +116,7 @@ class _PlayerKernelSectionState extends State<PlayerKernelSection> {
               ),
               SizedBox(height: 4),
               Text(
-                '视频板块页面卡住、右上角快捷菜单点不动时，在这里当场切回 AVPlayer。'
+                '视频板块页面卡住、快捷入口点不动时，在这里当场切回 AVPlayer（完整参数改「播放器设置」）。'
                 '内核初始化失败会自动回退并提示，失败的内核不会写进配置反复复现。',
                 style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),

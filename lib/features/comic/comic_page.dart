@@ -9,6 +9,7 @@ import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
 import '../reading/reading_hub_page.dart';
 import '../source/add_source_button.dart';
+import '../source/source_section_page.dart';
 import 'comic_explore_page.dart';
 import 'comic_repo_page.dart';
 import 'comic_shelf_page.dart';
@@ -22,13 +23,17 @@ import 'comic_shelf_page.dart';
 /// 隔离：阅读库、缓存目录、图源都只属于漫画板块；小说板块走同一套代码，
 /// 但拿到的 Section 不同，因此两边数据、缓存、图源完全不交叉。
 class ComicPage extends StatefulWidget {
-  const ComicPage({super.key, this.library, this.manager});
+  const ComicPage({super.key, this.library, this.manager, this.runtimeAvailable});
 
   /// 阅读库；为空时按板块打开正式实现（测试可注入）。
   final ReadingLibrary? library;
 
   /// 图源管理端口；为空时用正式实现。
   final SourceManager? manager;
+
+  /// 平台是否提供图源运行时；为空时取 [LumeSources.runtimeAvailable]。
+  /// 测试注入 true 即可在非 iOS 平台驱动完整板块交互（与设置页同一口径）。
+  final bool? runtimeAvailable;
 
   @override
   State<ComicPage> createState() => _ComicPageState();
@@ -43,12 +48,15 @@ class _ComicPageState extends State<ComicPage> {
   /// 立刻按新的图源列表重新解析（不必等用户切页签）。
   int _revision = 0;
 
+  bool get _runtimeAvailable =>
+      widget.runtimeAvailable ?? LumeSources.runtimeAvailable;
+
   @override
   void initState() {
     super.initState();
     // 平台边界：没有图源运行时的平台（Android / Windows）按宪法只保留骨架，
     // 连阅读库都不打开——不在这些平台上落业务数据。
-    if (!LumeSources.runtimeAvailable) return;
+    if (!_runtimeAvailable) return;
     _boot();
   }
 
@@ -130,7 +138,7 @@ class _ComicPageState extends State<ComicPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (!LumeSources.runtimeAvailable) {
+    if (!_runtimeAvailable) {
       return GlassScaffold(
         title: Section.comic.label,
         child: const SkeletonNotice(),
@@ -156,6 +164,12 @@ class _ComicPageState extends State<ComicPage> {
     return ReadingHubPage(
       section: Section.comic,
       actions: <Widget>[
+        // 右上角「图源管理」：本板块已导入图源的统一入口。
+        IconButton(
+          tooltip: '图源管理',
+          icon: const Icon(Icons.source_outlined),
+          onPressed: _manageSources,
+        ),
         IconButton(
           tooltip: '扩展仓库',
           icon: const Icon(Icons.extension_outlined),
@@ -190,4 +204,18 @@ class _ComicPageState extends State<ComicPage> {
 
   /// 图源导入后重挂书架与探索：两块内容各自重新解析本板块的图源与列表。
   void _onSourcesChanged() => setState(() => _revision++);
+
+  /// 打开本板块的图源管理页；返回后重挂内容（重新解析当前图源）。
+  Future<void> _manageSources() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SourceSectionPage(
+          section: Section.comic,
+          manager: widget.manager,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    _onSourcesChanged();
+  }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/session/section.dart';
@@ -35,13 +36,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  bool browseEnabled(WidgetTester tester) =>
-      tester
-          .widget<IconButton>(
-            find.widgetWithIcon(IconButton, Icons.chevron_right),
-          )
-          .onPressed !=
-      null;
+  /// 打开某行的「更多」菜单。
+  Future<void> openMenu(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('更多操作').first);
+    await tester.pumpAndSettle();
+  }
+
 
   testWidgets('列表：展示图源名称与版本', (tester) async {
     final manager = FakeSourceManager(
@@ -123,13 +123,17 @@ void main() {
       ],
     );
     await pumpPage(tester, manager);
-    expect(browseEnabled(tester), isTrue);
 
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
 
     expect(manager.toggled.single, ('a', false));
-    expect(browseEnabled(tester), isFalse);
+    // 停用后「浏览」不可点：点了也不会打开数据源。
+    manager.openedIds.clear();
+    await openMenu(tester);
+    await tester.tap(find.text('浏览'));
+    await tester.pumpAndSettle();
+    expect(manager.openedIds, isEmpty, reason: '停用后浏览不可点');
     expect(find.byType(Switch), findsOneWidget);
   });
 
@@ -141,7 +145,8 @@ void main() {
     );
     await pumpPage(tester, manager);
 
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.delete_outline));
+    await openMenu(tester);
+    await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
     expect(find.text('删除图源'), findsOneWidget);
     await tester.tap(find.text('取消'));
@@ -149,9 +154,10 @@ void main() {
     expect(manager.removed, isEmpty);
     expect(find.text('示例源'), findsOneWidget);
 
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.delete_outline));
-    await tester.pumpAndSettle();
+    await openMenu(tester);
     await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
     await tester.pumpAndSettle();
 
     expect(manager.removed.single, 'a');
@@ -166,11 +172,89 @@ void main() {
     )..opened['a'] = const MockDataSource(section: Section.novel);
     await pumpPage(tester, manager);
 
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.chevron_right));
+    await openMenu(tester);
+    await tester.tap(find.text('浏览'));
     await tester.pumpAndSettle();
 
     expect(manager.openedIds.single, 'a');
     expect(find.text('小说 · 小说模拟源'), findsOneWidget);
+  });
+
+  testWidgets('重命名：弹窗改名并写回管理器，列表随即刷新', (tester) async {
+    final manager = FakeSourceManager(
+      sources: const <SourceDescriptor>[
+        SourceDescriptor(id: 'a', name: '旧名字', version: '1.0.0', enabled: true),
+      ],
+    );
+    await pumpPage(tester, manager);
+
+    await openMenu(tester);
+    await tester.tap(find.text('重命名'));
+    await tester.pumpAndSettle();
+    expect(find.text('重命名图源'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '新名字');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    expect(manager.renamed.single, ('a', '新名字'));
+    expect(find.text('新名字'), findsOneWidget);
+    expect(find.text('旧名字'), findsNothing);
+    expect(find.textContaining('已重命名为'), findsOneWidget);
+  });
+
+  testWidgets('重命名：空名字不提交，保持原样', (tester) async {
+    final manager = FakeSourceManager(
+      sources: const <SourceDescriptor>[
+        SourceDescriptor(id: 'a', name: '示例源', version: '1.0.0', enabled: true),
+      ],
+    );
+    await pumpPage(tester, manager);
+
+    await openMenu(tester);
+    await tester.tap(find.text('重命名'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '   ');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    expect(manager.renamed, isEmpty);
+    expect(find.text('示例源'), findsOneWidget);
+  });
+
+  testWidgets('导出：弹窗展示脚本全文，可一键复制', (tester) async {
+    String? copied;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied = (call.arguments as Map<Object?, Object?>)['text'] as String?;
+      }
+      return null;
+    });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    final manager = FakeSourceManager(
+      sources: const <SourceDescriptor>[
+        SourceDescriptor(id: 'a', name: '示例源', version: '1.0.0', enabled: true),
+      ],
+    )..scripts['a'] = "var LumeSource = {id: 'a', name: '示例源'};";
+    await pumpPage(tester, manager);
+
+    await openMenu(tester);
+    await tester.tap(find.text('导出脚本'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('导出脚本'), findsWidgets);
+    expect(find.textContaining('var LumeSource'), findsOneWidget);
+    expect(manager.exportedIds.single, 'a');
+
+    await tester.tap(find.text('复制全文'));
+    await tester.pumpAndSettle();
+    expect(copied, contains('LumeSource'));
+    expect(find.textContaining('已复制'), findsOneWidget);
   });
 
   testWidgets('运行时不可用：只显示骨架，无导入入口', (tester) async {

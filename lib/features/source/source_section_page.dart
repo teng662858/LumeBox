@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../core/js/cat_engines.dart';
 import '../../core/session/section.dart';
@@ -116,17 +117,80 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     );
   }
 
+  /// 重命名：只改展示名（脚本与运行时不动），列表随即刷新。
+  Future<void> _rename(SourceDescriptor source) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => _RenameDialog(initialName: source.name),
+    );
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    await _manager.rename(source.id, name);
+    await _reload();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已重命名为：${name.trim()}')),
+    );
+  }
+
+  /// 导出脚本原文：弹窗展示全文，可一键复制（备份 / 迁移用）。
+  Future<void> _export(SourceDescriptor source) async {
+    final script = await _manager.exportScript(source.id);
+    if (!mounted) return;
+    if (script == null || script.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('读不到该图源的脚本')),
+      );
+      return;
+    }
+    var copied = false;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('导出脚本 · ${source.name}'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              script,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: script));
+              copied = true;
+              if (context.mounted) Navigator.of(context).pop();
+            },
+            child: const Text('复制全文'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+    if (copied && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已复制「${source.name}」的脚本全文')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_manager.runtimeAvailable) {
+      // 平台骨架：标题仍按「板块 · 图源管理」口径，页面身份不含糊。
       return GlassScaffold(
-        title: widget.section.label,
+        title: '${widget.section.label} · 图源管理',
         child: const SkeletonNotice(),
       );
     }
     final sources = _sources;
     return GlassScaffold(
-      title: widget.section.label,
+      title: '${widget.section.label} · 图源管理',
       actions: <Widget>[
         if (CatEngines.showsEngineSwitch(widget.section))
           IconButton(
@@ -168,8 +232,10 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
         return _SourceTile(
           source: source,
           onToggle: (enabled) => _toggle(source, enabled),
-          onDelete: () => _delete(source),
           onBrowse: source.enabled ? () => _browse(source) : null,
+          onRename: () => _rename(source),
+          onExport: () => _export(source),
+          onDelete: () => _delete(source),
         );
       },
     );
@@ -179,20 +245,30 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
 /// 停用标记的颜色：与错误文案同色系，避免新造主题项。
 const Color _disabledColor = Color(0xFFFF8A80);
 
+/// 单个图源行上的操作。
+enum _SourceAction { browse, rename, exportScript, delete }
+
 class _SourceTile extends StatelessWidget {
   const _SourceTile({
     required this.source,
     required this.onToggle,
-    required this.onDelete,
     required this.onBrowse,
+    required this.onRename,
+    required this.onExport,
+    required this.onDelete,
   });
 
   final SourceDescriptor source;
   final ValueChanged<bool> onToggle;
-  final VoidCallback onDelete;
 
   /// 停用的图源不可浏览，此时为 null。
   final VoidCallback? onBrowse;
+
+  final VoidCallback onRename;
+
+  final VoidCallback onExport;
+
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -238,18 +314,92 @@ class _SourceTile extends StatelessWidget {
             ),
           ),
           Switch(value: source.enabled, onChanged: onToggle),
-          IconButton(
-            tooltip: '浏览',
-            icon: const Icon(Icons.chevron_right),
-            onPressed: onBrowse,
-          ),
-          IconButton(
-            tooltip: '删除',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: onDelete,
+          // 行内只留开关：浏览 / 重命名 / 导出 / 删除收进「更多」，
+          // 手机窄屏也不会把四个按钮挤成一片。
+          PopupMenuButton<_SourceAction>(
+            tooltip: '更多操作',
+            onSelected: (action) {
+              switch (action) {
+                case _SourceAction.browse:
+                  onBrowse?.call();
+                case _SourceAction.rename:
+                  onRename();
+                case _SourceAction.exportScript:
+                  onExport();
+                case _SourceAction.delete:
+                  onDelete();
+              }
+            },
+            itemBuilder: (context) => <PopupMenuEntry<_SourceAction>>[
+              PopupMenuItem<_SourceAction>(
+                value: _SourceAction.browse,
+                enabled: onBrowse != null,
+                child: const Text('浏览'),
+              ),
+              const PopupMenuItem<_SourceAction>(
+                value: _SourceAction.rename,
+                child: Text('重命名'),
+              ),
+              const PopupMenuItem<_SourceAction>(
+                value: _SourceAction.exportScript,
+                child: Text('导出脚本'),
+              ),
+              const PopupMenuItem<_SourceAction>(
+                value: _SourceAction.delete,
+                child: Text('删除'),
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 重命名弹窗：自己持有输入控制器（页面不跨弹窗生命周期持有它）。
+class _RenameDialog extends StatefulWidget {
+  const _RenameDialog({required this.initialName});
+
+  final String initialName;
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialName);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('重命名图源'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(
+          labelText: '图源名称',
+          hintText: '例如：公开样片测试源',
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (value) => Navigator.of(context).pop(value),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }

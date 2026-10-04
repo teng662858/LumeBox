@@ -14,6 +14,7 @@ import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../shell/shell_dock.dart';
 import '../source/add_source_button.dart';
+import '../source/source_section_page.dart';
 import 'player_hud.dart';
 import 'player_settings_page.dart';
 import 'video_player_settings.dart';
@@ -247,6 +248,15 @@ class _VideoPageState extends State<VideoPage> {
     );
   }
 
+  /// 打开本板块的图源管理页（启用 / 禁用 / 重命名 / 导出 / 删除都在那里）。
+  Future<void> _manageSources() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const SourceSectionPage(section: Section.video),
+      ),
+    );
+  }
+
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -313,15 +323,16 @@ class _VideoPageState extends State<VideoPage> {
 
   // ------------------------------------------------------------------ 构建
 
-  /// 右上角动作：添加图源（四个板块统一入口，只写视频板块）+ 播放器设置。
-  /// 播放器设置只在播放器就绪后才有对象可设置，其余状态只留添加图源。
-  List<Widget> _buildActions({bool withSettings = false}) => <Widget>[
-        if (withSettings)
-          IconButton(
-            tooltip: '播放器设置',
-            icon: const Icon(Icons.tune),
-            onPressed: _openSettings,
-          ),
+  /// 右上角动作（四个板块统一口径）：**图源管理** + 添加图源。
+  ///
+  /// 播放器设置不在这里——它属于播放器本身，放在播放控制栏的齿轮上
+  /// （与文档草图 2 的 [⚙️] 一致），避免和「图源管理」抢同一个位置。
+  List<Widget> _buildActions() => <Widget>[
+        IconButton(
+          tooltip: '图源管理',
+          icon: const Icon(Icons.source_outlined),
+          onPressed: _manageSources,
+        ),
         const AddSourceButton(section: Section.video),
       ];
 
@@ -362,7 +373,7 @@ class _VideoPageState extends State<VideoPage> {
     }
     return GlassScaffold(
       title: Section.video.label,
-      actions: _buildActions(withSettings: true),
+      actions: _buildActions(),
       child: Column(
         children: <Widget>[
           Expanded(
@@ -469,6 +480,13 @@ class _VideoPageState extends State<VideoPage> {
                               color: Colors.white,
                               icon: const Icon(Icons.stop_circle),
                               onPressed: player.stop,
+                            ),
+                            IconButton(
+                              iconSize: 28,
+                              color: Colors.white,
+                              tooltip: '播放器设置',
+                              icon: const Icon(Icons.tune),
+                              onPressed: _openSettings,
                             ),
                             _buildPipButton(),
                             IconButton(

@@ -6,6 +6,7 @@ import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../source/global_source_page.dart';
 import '../video/player_kernel_section.dart';
+import '../video/player_settings_host.dart';
 import 'cache_settings_page.dart';
 import 'log_report.dart';
 import 'log_report_page.dart';
@@ -55,8 +56,17 @@ class SettingsPage extends StatelessWidget {
             onTap: () => _push(context, const GlobalSourcePage()),
           ),
           const SizedBox(height: 12),
+          // 播放器设置（内核 / 倍速 / 字幕）：从视频板块右上角迁到这里——
+          // 板块页右上角只留「图源管理」，两件事不再抢同一个按钮。
+          _SettingsEntry(
+            icon: Icons.play_circle_outline_rounded,
+            title: '播放器设置',
+            subtitle: '播放内核、倍速、字幕基础配置（写视频板块自己的设置库）',
+            onTap: () => _push(context, const PlayerSettingsHost()),
+          ),
+          const SizedBox(height: 12),
           // 故障逃生入口：内核选择列表**内嵌**在设置页里（点得最少、最稳），
-          // 与视频板块右上角的快捷菜单共用同一份列表组件。
+          // 与视频板块的快捷入口共用同一份列表组件。
           const PlayerKernelSection(),
           const SizedBox(height: 12),
           _SettingsEntry(

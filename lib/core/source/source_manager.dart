@@ -29,6 +29,13 @@ abstract interface class SourceManager {
   /// 启用 / 停用图源。停用即释放它的运行时。
   Future<void> setEnabled(String sourceId, bool enabled);
 
+  /// 重命名图源：只改展示名，脚本与运行时保持原样。
+  /// 图源不存在、跨板块或名为空时无操作（不改变现状）。
+  Future<void> rename(String sourceId, String name);
+
+  /// 导出图源脚本原文（备份 / 迁移用）；不存在或跨板块时返回 null。
+  Future<String?> exportScript(String sourceId);
+
   /// 删除图源（含其运行时与脚本）。
   Future<void> remove(String sourceId);
 

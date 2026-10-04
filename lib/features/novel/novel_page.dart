@@ -9,6 +9,7 @@ import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
 import '../reading/reading_hub_page.dart';
 import '../source/add_source_button.dart';
+import '../source/source_section_page.dart';
 import 'novel_explore_page.dart';
 import 'novel_shelf_page.dart';
 
@@ -18,13 +19,17 @@ import 'novel_shelf_page.dart';
 /// Section 是小说，因此阅读库、缓存目录、图源全部落在 `sections/novel/` 之下，
 /// 与漫画互不可见。小说不需要图片缓存（正文是文本），因此不挂缓存管理入口。
 class NovelPage extends StatefulWidget {
-  const NovelPage({super.key, this.library, this.manager});
+  const NovelPage({super.key, this.library, this.manager, this.runtimeAvailable});
 
   /// 阅读库；为空时按板块打开正式实现（测试可注入）。
   final ReadingLibrary? library;
 
   /// 图源管理端口；为空时用正式实现。
   final SourceManager? manager;
+
+  /// 平台是否提供图源运行时；为空时取 [LumeSources.runtimeAvailable]。
+  /// 测试注入 true 即可在非 iOS 平台驱动完整板块交互（与设置页同一口径）。
+  final bool? runtimeAvailable;
 
   @override
   State<NovelPage> createState() => _NovelPageState();
@@ -39,12 +44,15 @@ class _NovelPageState extends State<NovelPage> {
   /// 立刻按新的图源列表重新解析（不必等用户切页签）。
   int _revision = 0;
 
+  bool get _runtimeAvailable =>
+      widget.runtimeAvailable ?? LumeSources.runtimeAvailable;
+
   @override
   void initState() {
     super.initState();
     // 平台边界：没有图源运行时的平台（Android / Windows）按宪法只保留骨架，
     // 连阅读库都不打开——不在这些平台上落业务数据。
-    if (!LumeSources.runtimeAvailable) return;
+    if (!_runtimeAvailable) return;
     _boot();
   }
 
@@ -77,7 +85,7 @@ class _NovelPageState extends State<NovelPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (!LumeSources.runtimeAvailable) {
+    if (!_runtimeAvailable) {
       return GlassScaffold(
         title: Section.novel.label,
         child: const SkeletonNotice(),
@@ -104,6 +112,13 @@ class _NovelPageState extends State<NovelPage> {
     return ReadingHubPage(
       section: Section.novel,
       actions: <Widget>[
+        // 右上角「图源管理」：本板块已导入图源的统一入口（启用 / 禁用 /
+        // 重命名 / 导出 / 删除）。与全局设置的图源总管理不是一回事。
+        IconButton(
+          tooltip: '图源管理',
+          icon: const Icon(Icons.source_outlined),
+          onPressed: _manageSources,
+        ),
         // 右上角统一的「+」添加图源：本地文件 / 订阅链接，只写小说板块。
         AddSourceButton(
           section: Section.novel,
@@ -128,4 +143,18 @@ class _NovelPageState extends State<NovelPage> {
 
   /// 图源导入后重挂书架与探索：两块内容各自重新解析本板块的图源与列表。
   void _onSourcesChanged() => setState(() => _revision++);
+
+  /// 打开本板块的图源管理页；返回后重挂内容（重新解析当前图源）。
+  Future<void> _manageSources() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SourceSectionPage(
+          section: Section.novel,
+          manager: widget.manager,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    _onSourcesChanged();
+  }
 }
