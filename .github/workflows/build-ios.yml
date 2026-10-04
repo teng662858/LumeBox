@@ -1,0 +1,72 @@
+# 只编译、不签名：产出未签名 IPA（在本地用 Sideloadly + 自有证书重签名后安装）。
+#
+# 触发：推送到 main 自动构建；也可在 Actions 页面手动触发（Run workflow）。
+# 额度提醒：私有仓库的 macOS runner 按 10 倍折算 Actions 用量；若只想手动出包，
+# 把 on.push 整段删掉、只留 workflow_dispatch 即可。
+name: Build unsigned IPA (iOS)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    name: Build unsigned IPA
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 固定与开发机一致的版本（pubspec 要求 Dart ^3.13.4）；升级 Flutter 时同步改这里。
+      - name: 安装 Flutter 3.47.5
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.5
+          channel: stable
+          cache: true
+
+      - name: 环境版本
+        run: flutter --version
+
+      - name: 拉取依赖
+        run: flutter pub get
+
+      # 只编译不签名：flutter 会打 xcarchive；签名与导出（exportArchive）由本地重签名流程负责。
+      - name: 编译（--no-codesign）
+        run: flutter build ipa --no-codesign
+
+      - name: 打包未签名 IPA
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          EXISTING=$(ls build/ios/ipa/*.ipa 2>/dev/null | head -n 1 || true)
+          if [ -n "${EXISTING}" ]; then
+            echo "使用 flutter 直接产出的 IPA：${EXISTING}"
+            cp "${EXISTING}" out/LumeBox-unsigned.ipa
+          else
+            # --no-codesign 只保证产出 .xcarchive：从 archive 里的 Runner.app 现场装成 IPA。
+            APP="build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app"
+            if [ ! -d "${APP}" ]; then APP="build/ios/iphoneos/Runner.app"; fi
+            if [ ! -d "${APP}" ]; then
+              echo "找不到 Runner.app：构建产物缺失"
+              echo "--- build/ios 结构（前 50 行）---"
+              ls -R build/ios 2>/dev/null | head -50 || true
+              exit 1
+            fi
+            rm -rf out/Payload && mkdir -p out/Payload
+            cp -R "${APP}" out/Payload/
+            (cd out && zip -qry LumeBox-unsigned.ipa Payload)
+          fi
+          echo "产物："
+          ls -lh out/LumeBox-unsigned.ipa
+          unzip -l out/LumeBox-unsigned.ipa > /dev/null && echo "IPA 结构可解压 ✓"
+
+      - name: 上传 Artifact（未签名 IPA）
+        uses: actions/upload-artifact@v4
+        with:
+          name: LumeBox-unsigned-ipa
+          path: out/LumeBox-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
