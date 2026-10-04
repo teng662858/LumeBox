@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 
 import '../util/lume_log.dart';
 import 'abstract_player.dart';
+import 'player_error.dart';
 import 'player_settings.dart';
 import 'player_stats.dart';
 
@@ -63,7 +64,7 @@ class AvPlayer implements AbstractPlayer {
       _sync();
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
-      _emit(_snapshot.value, error: '$error');
+      _emit(_snapshot.value, error: PlayerErrorText.describe(error));
     }
   }
 
@@ -150,7 +151,7 @@ class AvPlayer implements AbstractPlayer {
       duration: value.duration,
       playing: value.isPlaying,
       buffering: value.isBuffering,
-      error: value.hasError ? value.errorDescription : null,
+      error: value.hasError ? PlayerErrorText.describe(value.errorDescription) : null,
     ));
     _stats.value = PlayerStats(
       engineLabel: 'AVPlayer',

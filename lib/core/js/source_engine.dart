@@ -52,6 +52,13 @@ abstract interface class SourceEngine {
   /// 脚本载入。失败返回 false。
   Future<bool> loadScript(String script);
 
+  /// 最近一次 [loadScript] 失败的原因（可读文本）；成功时为 null。
+  ///
+  /// 引擎侧给出的具体原因（哪个模块沙箱不支持、语法错在哪儿、加载超时）经这里
+  /// 一路带到导入失败的提示里——用户要看到的是「沙箱不支持 dns」这种能行动的
+  /// 原因，而不是一句笼统的「脚本载入失败」。
+  String? get loadFailure;
+
   /// 读取脚本声明的元信息（id / name / version）。
   Future<Map<String, Object?>?> metadata();
 
@@ -190,6 +197,9 @@ class QuickJsSourceEngine implements SourceEngine {
   Future<bool> loadScript(String script) => engine.loadScript(script);
 
   @override
+  String? get loadFailure => engine.lastLoadFailure?.message;
+
+  @override
   Future<Map<String, Object?>?> metadata() => engine.metadata();
 
   @override
@@ -212,6 +222,9 @@ class NodeMobileSourceEngine implements SourceEngine {
 
   @override
   Future<bool> loadScript(String script) => engine.loadScript(script);
+
+  @override
+  String? get loadFailure => engine.loadFailure;
 
   @override
   Future<Map<String, Object?>?> metadata() => engine.metadata();

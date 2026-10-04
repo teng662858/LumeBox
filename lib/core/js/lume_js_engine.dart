@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import '../net/lume_http.dart';
@@ -49,7 +50,15 @@ class LumeJsEngine {
 
   /// Phase1 的图源引擎只随 iOS 提供：插件的原生库仅通过 iOS 的
   /// `DynamicLibrary.process()` 可加载，Android / Windows 按宪法仅保留空页面骨架。
-  static bool get isSupported => Platform.isIOS && LumeSandbox.isSupported;
+  ///
+  /// [debugSupportedOverride] 是测试注入点（与 `CatEngines.debugPlatformOverride`
+  /// 同一套做法）：测试在原生桥可用的机器上（Windows 需先 `flutter build windows`）
+  /// 把它置 true，就能在非 iOS 平台驱动真实引擎与整条导入链路。
+  @visibleForTesting
+  static bool? debugSupportedOverride;
+
+  static bool get isSupported =>
+      (debugSupportedOverride ?? Platform.isIOS) && LumeSandbox.isSupported;
 
   /// 创建引擎。一个引擎对应一个隔离沙箱；垫片按板块选择
   /// （猫源专属垫片只进猫源的上下文，见 [LumeSourcePolyfills.forSection]）。
@@ -77,9 +86,21 @@ class LumeJsEngine {
   /// 上下文是否已被判定污染（超时、引擎级异常等）。
   bool get isPoisoned => _sandbox.isPoisoned;
 
+  /// 最近一次 [loadScript] 失败的原因；成功或尚未载入时为 null。
+  ///
+  /// 沙箱把失败分类与原因都收在 [SandboxError] 里，这里留一份给导入口径用：
+  /// 用户看到的应当是「沙箱不支持 dns」这种能行动的原因，而不是一句笼统的
+  /// 「脚本载入失败」。
+  SandboxError? _loadFailure;
+
+  SandboxError? get lastLoadFailure => _loadFailure;
+
   /// 载入图源脚本。脚本通过全局 `LumeSource` 暴露能力。
-  Future<bool> loadScript(String script) async =>
-      (await _sandbox.load(script)).isOk;
+  Future<bool> loadScript(String script) async {
+    final result = await _sandbox.load(script);
+    _loadFailure = result.isOk ? null : result.error;
+    return result.isOk;
+  }
 
   /// 读取脚本声明的元信息（id / name / version），失败返回 null。
   Future<Map<String, Object?>?> metadata() async {

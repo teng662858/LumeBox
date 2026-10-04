@@ -313,6 +313,9 @@ class _FakeEngine implements SourceEngine {
   Future<bool> loadScript(String script) async => true;
 
   @override
+  String? get loadFailure => null;
+
+  @override
   Future<Map<String, Object?>?> metadata() async => null;
 
   @override

@@ -53,6 +53,11 @@ class NodeMobileEngine {
   bool _poisoned = false;
   int _generation = 0;
 
+  /// 最近一次载入失败的原因（可读文本）；成功时为 null。
+  String? _loadFailure;
+
+  String? get loadFailure => _loadFailure;
+
   /// 原生实例代数：每次重建递增（与 QuickJS 沙箱同一语义）。
   int get generation => _generation;
 
@@ -74,16 +79,28 @@ class NodeMobileEngine {
     }
   }
 
-  /// 载入脚本。失败（含超时回收）返回 false。
+  /// 载入脚本。失败（含超时回收）返回 false，并记下可读原因。
   Future<bool> loadScript(String script) async {
-    if (_disposed) return false;
-    if (!await _ensureStarted()) return false;
+    if (_disposed) {
+      _loadFailure = '引擎已释放';
+      return false;
+    }
+    if (!await _ensureStarted()) {
+      _loadFailure = 'Node-Mobile 原生实例不可用（原生模块未集成或启动失败）';
+      return false;
+    }
     try {
       final loaded = await _channel
           .invokeMethod<bool>('loadScript', <String, Object?>{'script': script})
           .timeout(callTimeout);
-      return loaded ?? false;
+      if (loaded == true) {
+        _loadFailure = null;
+        return true;
+      }
+      _loadFailure = '脚本载入失败（Node-Mobile 未给出原因）';
+      return false;
     } catch (error, stackTrace) {
+      _loadFailure = '$error';
       await _recycle('载入脚本', error, stackTrace);
       return false;
     }

@@ -126,15 +126,11 @@ class SourceRegistry {
     }
     try {
       if (!await probe.loadScript(text)) {
-        // 具体原因（沙箱给出的可读错误，例如不支持 dns / child_process）
-        // 打在运行日志里；这里给页面一句能自己看懂的失败口径。
-        LumeLog.warn(
-          '[${section.id}] 脚本载入失败，详情见运行日志（引擎原因会记在上一行）',
-        );
-        return const SourceImportOutcome.failure(
-          '脚本载入失败：语法错误、运行异常，或用到了沙箱不支持的能力'
-          '（如 dns / child_process / 自带 HTTP 服务的猫源脚本）',
-        );
+        // 引擎给出的原因（沙箱点名了哪个模块不支持 / 语法错在哪儿）直接带给用户：
+        // 「脚本载入失败」一句话解决不了问题，用户需要知道该改哪里。
+        final reason = probe.loadFailure?.trim();
+        LumeLog.warn('[${section.id}] 脚本载入失败: ${reason ?? '（引擎未给出原因）'}');
+        return SourceImportOutcome.failure(describeLoadFailure(reason));
       }
       // 元信息：头部声明优先，退回运行时 LumeSource；两者都不合法时给出
       // 点名到字符的失败原因（哪个 id、哪个字符不合规），而不是一句笼统的报错。
@@ -163,6 +159,31 @@ class SourceRegistry {
       probe.dispose();
     }
   }
+
+  /// 脚本载入失败的展示口径：**引擎给了具体原因就用它**（沙箱会点名「哪个模块不
+  /// 支持」「语法错在哪一行」「加载超时」），引擎没说才回落到笼统提示。
+  ///
+  /// 脚本用到了 socket / 进程 / 端口这类沙箱按设计不提供的能力时，再加一句定向
+  /// 说明：Node 服务端程序（`node index.js` 那种自建服务）不是图源脚本，App 里
+  /// 跑不了它——省得用户在「导入失败」上反复试。
+  static String describeLoadFailure(String? reason) {
+    final detail = reason?.trim() ?? '';
+    if (detail.isEmpty) {
+      return '脚本载入失败：语法错误、运行异常，或用到了沙箱不支持的能力'
+          '（如 child_process / 自建 HTTP 服务）';
+    }
+    final message = '脚本载入失败：$detail';
+    if (!_serverCapabilityPattern.hasMatch(detail)) return message;
+    return '$message\n'
+        '（若这是需要 node 运行的自建服务端程序，它不是图源脚本，App 不能直接运行它；'
+        '图源脚本只需提供 getList / getDetail 这类函数，用 fetch 取数据）';
+  }
+
+  /// 服务端能力特征：socket / 端口 / 进程 / 线程这类「跑服务」才需要的东西。
+  static final RegExp _serverCapabilityPattern = RegExp(
+    r'(net|tls|http2|dgram|dns|child_process|worker_threads|cluster|createServer|listen)',
+    caseSensitive: false,
+  );
 
   /// 重命名：只改库里的展示名（脚本、版本、启停状态与运行时都不动）。
   ///
@@ -219,8 +240,12 @@ class SourceRegistry {
       return null;
     }
     if (!await engine.loadScript(stripScriptBom(record.script))) {
+      // 运行时载入失败的原因同样记全：日志是用户排查「图源为什么打不开」的入口。
+      LumeLog.warn(
+        '[${section.id}] 图源脚本载入失败: $sourceId'
+        '${engine.loadFailure == null ? '' : '：${engine.loadFailure}'}',
+      );
       engine.dispose();
-      LumeLog.warn('[${section.id}] 图源脚本载入失败: $sourceId');
       return null;
     }
     _engines[sourceId] = engine;

@@ -248,11 +248,9 @@ class _VideoPageState extends State<VideoPage>
     if (mounted) setState(() => _loaded = false);
     await player.load(media);
     if (!mounted) return;
-    final failure = player.snapshot.value.error;
-    setState(() {
-      _loaded = failure == null;
-      _error = failure;
-    });
+    // 播放失败的文案由播放器给（已在内核侧归一成人话），在画面位置显示一次；
+    // 地址栏下面那行只留给「地址本身有问题」（例如地址无效），不重复同一句话。
+    setState(() => _loaded = player.snapshot.value.error == null);
   }
 
   /// 设置变更：落库并立即生效；换内核走重建，其余项直接应用到当前内核。
@@ -517,7 +515,11 @@ class _VideoPageState extends State<VideoPage>
                       )
                     : Text(
                         snapshot.error!,
-                        style: const TextStyle(color: LumeTheme.muted),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: LumeTheme.muted,
+                        ),
                       ),
               ),
             ),
