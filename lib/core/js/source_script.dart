@@ -46,6 +46,87 @@ class SourceMetadata {
     ),
   ];
 
+  /// id 的字符白名单：**英文字母、数字、短横「-」、下划线「_」**。
+  ///
+  /// 刻意不收长破折号（—）、全角符号与其他易混淆字符：它们在脚本里肉眼几乎
+  /// 看不出区别，却会让 id 静默失效（图源更新覆盖不生效、当前源选择失配）。
+  static final RegExp _idPattern = RegExp(r'^[A-Za-z0-9_-]{1,64}$');
+
+  /// id 长度上限。
+  static const int maxIdLength = 64;
+
+  /// 校验 id：合法返回 null，否则返回可读原因（点名是哪个字符不合规）。
+  static String? idIssue(String? id) {
+    final value = (id ?? '').trim();
+    if (value.isEmpty) return 'id 为空';
+    if (value.length > maxIdLength) return 'id 超过 $maxIdLength 个字符';
+    if (_idPattern.hasMatch(value)) return null;
+    final illegal = _firstIllegalChar(value);
+    if (illegal == null) return 'id 含不允许的字符';
+    final code =
+        illegal.runes.first.toRadixString(16).toUpperCase().padLeft(4, '0');
+    return 'id 含不允许的字符「$illegal」（U+$code）';
+  }
+
+  /// 头部注释里声明的原始 id（不做合法性判断，只用于失败诊断点名问题在哪）。
+  static String? headerIdOf(String script) {
+    final text = stripScriptBom(script);
+    for (final pattern in _headerPatterns) {
+      final match = pattern.firstMatch(text);
+      if (match == null) continue;
+      final body = match.group(1)!.trim();
+      if (body.startsWith('{')) {
+        try {
+          final json = jsonDecode(body);
+          if (json is Map && json['id'] != null) return '${json['id']}';
+        } catch (_) {
+          // JSON 解不开：落回下面的 key=value 形态。
+        }
+      }
+      final value = _parseKeyValues(body)?['id'];
+      if (value != null) return '$value';
+    }
+    return null;
+  }
+
+  /// 导入失败时的可读原因：区分「没有元信息」与「id 字符合法性不过」。
+  ///
+  /// [runtimeMetadata] 是引擎读到的运行时 `LumeSource` 原始值；给了 [script]
+  /// 时连头部注释里声明的 id 一起诊断——用户最可能改的就是那一行。
+  static String describeImportFailure(
+    Object? runtimeMetadata, {
+    String? script,
+  }) {
+    final runtimeId =
+        runtimeMetadata is Map ? '${runtimeMetadata['id'] ?? ''}' : '';
+    final candidates = <String>[
+      runtimeId.trim(),
+      if (script != null) (headerIdOf(script) ?? '').trim(),
+    ];
+    for (final candidate in candidates) {
+      if (candidate.isEmpty) continue;
+      final issue = idIssue(candidate);
+      if (issue == null) continue;
+      return '图源 id 不合法：「$candidate」$issue。'
+          'id 只允许英文字母、数字、短横「-」、下划线「_」；'
+          '请检查脚本头部的「// LumeSource」元信息，长破折号与全角符号都会被拒绝。';
+    }
+    return '脚本缺少 LumeSource 元信息（id / name）：'
+        '请在脚本头部写一行「// LumeSource: {"id":"…","name":"…"}」，'
+        '或补齐运行时 LumeSource 的 id / name。'
+        'id 只允许英文字母、数字、短横「-」、下划线「_」（长破折号、全角符号都会被拒绝）。';
+  }
+
+  /// 找出第一个不在白名单里的字符（提示里点名它，用户才知道改哪里）。
+  static String? _firstIllegalChar(String value) {
+    for (final rune in value.runes) {
+      final char = String.fromCharCode(rune);
+      if (RegExp(r'[A-Za-z0-9_-]').hasMatch(char)) continue;
+      return char;
+    }
+    return null;
+  }
+
   /// 解析脚本头部的元信息注释；没有声明或声明不合法时返回 null。
   ///
   /// 先剔 BOM（[stripScriptBom]）再匹配，带 BOM 的脚本因此不会被误判成
@@ -90,7 +171,7 @@ class SourceMetadata {
     final id = '${json['id'] ?? ''}'.trim();
     final name = '${json['name'] ?? ''}'.trim();
     if (id.isEmpty || name.isEmpty) return null;
-    if (!RegExp(r'^[A-Za-z0-9_.-]{1,64}$').hasMatch(id)) return null;
+    if (!_idPattern.hasMatch(id)) return null;
     return SourceMetadata(
       id: id,
       name: name,

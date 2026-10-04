@@ -136,11 +136,14 @@ class SourceRegistry {
           '（如 dns / child_process / 自带 HTTP 服务的猫源脚本）',
         );
       }
-      final metadata = SourceMetadata.parseHeader(text) ??
-          SourceMetadata.parse(await probe.metadata());
+      // 元信息：头部声明优先，退回运行时 LumeSource；两者都不合法时给出
+      // 点名到字符的失败原因（哪个 id、哪个字符不合规），而不是一句笼统的报错。
+      final rawMetadata = await probe.metadata();
+      final metadata =
+          SourceMetadata.parseHeader(text) ?? SourceMetadata.parse(rawMetadata);
       if (metadata == null) {
-        return const SourceImportOutcome.failure(
-          '脚本缺少 LumeSource 元信息（id / name），或 id 非法',
+        return SourceImportOutcome.failure(
+          SourceMetadata.describeImportFailure(rawMetadata, script: text),
         );
       }
       _database.upsertSource(

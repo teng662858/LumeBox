@@ -6,6 +6,7 @@ import '../../core/player/abstract_player.dart';
 import '../../core/player/pip.dart';
 import '../../core/player/pip_channel.dart';
 import '../../core/player/player_factory.dart';
+import '../../core/player/player_kernel_launcher.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/session/section.dart';
 import '../../core/theme/lume_theme.dart';
@@ -53,9 +54,11 @@ class _VideoPageState extends State<VideoPage> {
   late final PlayerKernelCatalog _catalog =
       widget.catalog ?? const PlatformPlayerKernelCatalog();
 
-  late final AbstractPlayer? Function(PlayerKernel) _createPlayer =
-      widget.playerFactory ??
-          (kernel) => PlayerFactory.create(kernel: kernel);
+  /// 内核启动器：异步创建 + 8 秒超时 + 失败回退 AVPlayer（见 [PlayerKernelLauncher]）。
+  /// 创建动作因此不会落在 build / initState 的同步路径上。
+  late final PlayerKernelLauncher _launcher = PlayerKernelLauncher(
+    factory: widget.playerFactory,
+  );
 
   VideoPlayerSettingsStore? _store;
   PlayerSettings _settings = const PlayerSettings();
@@ -166,16 +169,35 @@ class _VideoPageState extends State<VideoPage> {
       await previous.dispose();
     }
 
-    final player = _createPlayer(_effectiveKernel);
+    // 先亮出「正在准备播放器」：初始化在异步流程里跑，UI 不阻塞。
+    if (mounted) {
+      setState(() {
+        _player = null;
+        _loaded = false;
+      });
+    }
+
+    final launch = await _launcher.launch(_effectiveKernel);
     if (!mounted) {
-      await player?.dispose();
+      await launch?.player.dispose();
       return;
     }
+    if (launch == null) {
+      // 连兜底内核都起不来：不再落库，页面按骨架/空态处理。
+      setState(() => _player = null);
+      return;
+    }
+    if (launch.didFallback) {
+      // 回退：设置改成实际生效的内核并提示；**失败的内核绝不写进配置**。
+      _settings = _settings.copyWith(kernel: launch.kernel);
+      _showPlayerToast(launch.message);
+    }
+    _store?.save(_settings);
+    final player = launch.player;
     setState(() {
       _player = player;
       _loaded = false;
     });
-    if (player == null) return;
     // 播放状态驱动底部 Dock 的显隐（播放中沉浸）。
     player.snapshot.addListener(_syncDockForPlayback);
 
@@ -206,14 +228,23 @@ class _VideoPageState extends State<VideoPage> {
   /// 设置变更：落库并立即生效；换内核走重建，其余项直接应用到当前内核。
   Future<void> _applySettings(PlayerSettings next) async {
     final kernelChanged = next.kernel != _settings.kernel;
-    _store?.save(next);
     if (!mounted) return;
     setState(() => _settings = next);
     if (kernelChanged) {
+      // 换内核：落库由 _rebuildPlayer 决定——只有真正生效的内核才写得进去。
       await _rebuildPlayer();
     } else {
+      _store?.save(next);
       await _player?.applySettings(next);
     }
+  }
+
+  /// 可读提示（不冒泡异常）。
+  void _showPlayerToast(String? message) {
+    if (message == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   Future<void> _openSettings() async {

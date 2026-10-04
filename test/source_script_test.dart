@@ -36,32 +36,32 @@ void main() {
 
     test('核心回归：带 BOM 的脚本照样解析出头部元信息', () {
       final metadata = SourceMetadata.parseHeader(
-        '\uFEFF// LumeSource: {"id":"bom.source","name":"带 BOM 的源","version":"2.0.0"}\n'
-        'var LumeSource = {id: "bom.source"};',
+        '\uFEFF// LumeSource: {"id":"bom-source","name":"带 BOM 的源","version":"2.0.0"}\n'
+        'var LumeSource = {id: "bom-source"};',
       );
 
       expect(metadata, isNotNull, reason: 'BOM 不许再让元信息正则失配');
-      expect(metadata!.id, 'bom.source');
+      expect(metadata!.id, 'bom-source');
       expect(metadata.name, '带 BOM 的源');
       expect(metadata.version, '2.0.0');
     });
 
     test('块注释 / @ 前缀 / = 分隔符都认', () {
       final metadata = SourceMetadata.parseHeader(
-        '/* @LumeSource = {"id":"blk.src","name":"块注释源","version":"0.1.0"} */\n'
+        '/* @LumeSource = {"id":"blk-src","name":"块注释源","version":"0.1.0"} */\n'
         'var LumeSource = {};',
       );
 
-      expect(metadata?.id, 'blk.src');
+      expect(metadata?.id, 'blk-src');
       expect(metadata?.name, '块注释源');
     });
 
     test('key=value 列表写法', () {
       final metadata = SourceMetadata.parseHeader(
-        '// LumeSource: id=kv.src, name=KV 源, version=3.0.0\nvar x = 1;',
+        '// LumeSource: id=kv-src, name=KV 源, version=3.0.0\nvar x = 1;',
       );
 
-      expect(metadata?.id, 'kv.src');
+      expect(metadata?.id, 'kv-src');
       expect(metadata?.name, 'KV 源');
       expect(metadata?.version, '3.0.0');
     });
@@ -85,8 +85,73 @@ void main() {
       expect(
         SourceMetadata.parseHeader('// LumeSource: {"id":"非法 id","name":"x"}'),
         isNull,
-        reason: 'id 只允许字母数字与 . _ -',
+        reason: 'id 只允许英文字母 / 数字 / - / _（空格被拒绝）',
       );
+    });
+
+    test('id 白名单：拦截长破折号、全角符号与点号', () {
+      const cases = <String>[
+        'lume—demo', // 长破折号 U+2014
+        'lume–demo', // en dash U+2013
+        'ｌｕｍｅ', // 全角字母
+        'lume．demo', // 全角句点
+        'lume．demo2',
+        'lume.demo', // 半角点号也不在白名单里
+        'lume demo',
+        'lume源',
+        'lume/demo',
+      ];
+      for (final id in cases) {
+        expect(
+          SourceMetadata.parseHeader('// LumeSource: {"id":"$id","name":"x"}'),
+          isNull,
+          reason: '$id 不该通过 id 白名单',
+        );
+        expect(SourceMetadata.idIssue(id), isNotNull, reason: '$id 应给出可读原因');
+      }
+
+      // 白名单内的写法照常通过。
+      for (final id in <String>['lume-example', 'lume_example', 'LumeDemo2', 'demo123']) {
+        expect(SourceMetadata.idIssue(id), isNull, reason: '$id 应当合法');
+        expect(
+          SourceMetadata.parseHeader('// LumeSource: {"id":"$id","name":"x"}')?.id,
+          id,
+        );
+      }
+    });
+
+    test('idIssue：空 / 超长 / 非法字符都能点名原因', () {
+      expect(SourceMetadata.idIssue(''), 'id 为空');
+      expect(SourceMetadata.idIssue('   '), 'id 为空');
+      expect(SourceMetadata.idIssue('a' * 65), contains('超过'));
+      expect(SourceMetadata.idIssue('lume—demo'), contains('—'));
+      expect(SourceMetadata.idIssue('lume—demo'), contains('U+2014'));
+      expect(SourceMetadata.idIssue('lume．demo'), contains('U+FF0E'));
+      expect(SourceMetadata.idIssue('lume-demo'), isNull);
+    });
+
+    test('describeImportFailure：点名到字符，并给出可操作提示', () {
+      // 运行时 id 不合法：点名那个字符。
+      final runtimeIssue = SourceMetadata.describeImportFailure(
+        <String, Object?>{'id': 'lume—demo', 'name': 'x'},
+      );
+      expect(runtimeIssue, contains('图源 id 不合法'));
+      expect(runtimeIssue, contains('U+2014'));
+      expect(runtimeIssue, contains('// LumeSource'));
+
+      // 头部声明了非法 id、运行时又没给：诊断要指向头部那一行。
+      final headerIssue = SourceMetadata.describeImportFailure(
+        const <String, Object?>{},
+        script: '// LumeSource: {"id":"lume．demo","name":"x"}\nvar x = 1;',
+      );
+      expect(headerIssue, contains('lume．demo'));
+      expect(headerIssue, contains('全角符号'));
+
+      // 什么都没有：提示补齐元信息与 id 规则。
+      final missing = SourceMetadata.describeImportFailure(null);
+      expect(missing, contains('缺少 LumeSource 元信息'));
+      expect(missing, contains('英文字母、数字'));
+      expect(missing, contains('下划线'));
     });
 
     test('内置示例脚本：声明可解析，且文本本身不带 BOM', () {

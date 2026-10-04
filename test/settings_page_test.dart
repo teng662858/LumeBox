@@ -137,6 +137,16 @@ void main() {
     expect(find.widgetWithText(AppBar, '图源总管理'), findsOneWidget);
   });
 
+  testWidgets('播放器内核：全局设置里保留逃生入口', (tester) async {
+    await pumpSettings(tester);
+
+    // 逃生入口是**内嵌**在设置页里的（点得最少）：同一份内核列表直接可见。
+    expect(find.text('播放器内核 · 故障逃生入口'), findsOneWidget);
+    expect(find.text('AVPlayer'), findsOneWidget);
+    expect(find.text('MPV'), findsOneWidget);
+    expect(find.text('MDK'), findsOneWidget);
+  });
+
   testWidgets('运行日志：查看、按级别筛选、清空', (tester) async {
     LumeLog.info('普通一条');
     LumeLog.warn('警告一条');

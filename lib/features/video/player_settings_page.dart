@@ -4,6 +4,7 @@ import '../../core/player/player_factory.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
+import 'player_kernel_picker.dart';
 
 /// 播放器设置页：内核切换、倍速、字幕基础配置。
 ///
@@ -48,7 +49,12 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
         padding: const EdgeInsets.all(16),
         children: <Widget>[
           const _SectionTitle('播放内核', 'AVPlayer 与 MPV 运行时可切换；MDK 只预留接口（不可选）'),
-          for (final kernel in PlayerKernel.values) _buildKernelTile(kernel),
+          // 与全局设置的逃生入口共用同一份列表（同一个组件，不复制 UI）。
+          PlayerKernelPicker(
+            selected: _settings.kernel,
+            catalog: widget.catalog,
+            onChanged: (kernel) => _update(_settings.copyWith(kernel: kernel)),
+          ),
           const SizedBox(height: 24),
           const _SectionTitle('播放倍速', '切换后立即生效，播放中不中断'),
           _buildSpeedPicker(),
@@ -56,58 +62,6 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
           const _SectionTitle('字幕', '字幕基础配置（开关与字号）'),
           _buildSubtitleCard(),
         ],
-      ),
-    );
-  }
-
-  Widget _buildKernelTile(PlayerKernel kernel) {
-    final available = widget.catalog.isAvailable(kernel);
-    final reason = widget.catalog.unavailableReason(kernel);
-    final selected = _settings.kernel == kernel;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: GlassCard(
-        radius: 14,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        onTap: available ? () => _update(_settings.copyWith(kernel: kernel)) : null,
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    kernel.label,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: available ? Colors.white : LumeTheme.muted,
-                    ),
-                  ),
-                  if (reason != null) ...<Widget>[
-                    const SizedBox(height: 2),
-                    Text(
-                      reason,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: LumeTheme.muted,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (selected)
-              const Icon(Icons.check_circle, size: 20, color: Colors.white)
-            else if (available)
-              const Icon(
-                Icons.radio_button_unchecked,
-                size: 20,
-                color: LumeTheme.muted,
-              ),
-          ],
-        ),
       ),
     );
   }

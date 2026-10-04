@@ -179,6 +179,62 @@ void main() {
       expect(store.load().kernel, PlayerKernel.mpv);
     });
 
+    testWidgets('MPV 初始化失败：自动回退 AVPlayer、弹提示，且绝不把 MPV 写进配置', (tester) async {
+      PlayerFactory.clearMpvInitFailure();
+      addTearDown(PlayerFactory.clearMpvInitFailure);
+      final created = <_FakePlayer>[];
+      await tester.binding.setSurfaceSize(const Size(900, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: LumeTheme.build(),
+          home: VideoPage(
+            catalog: _FakeCatalog(const <PlayerKernel>{
+              PlayerKernel.avplayer,
+              PlayerKernel.mpv,
+            }),
+            playerFactory: (kernel) {
+              // MPV 初始化失败：启动器必须丢弃它并回退 AVPlayer。
+              if (kernel == PlayerKernel.mpv) throw StateError('libmpv 装载失败');
+              final player = _FakePlayer(kernel, <String>[]);
+              created.add(player);
+              return player;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 切到 MPV：初始化抛错 → 回退 AVPlayer + 提示。
+      await tester.tap(find.byTooltip('播放器设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('MPV'));
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('MPV初始化失败，已自动切换回AVPlayer播放器'),
+        findsOneWidget,
+        reason: '必须给用户可读提示',
+      );
+      expect(created, isNotEmpty);
+      expect(
+        created.every((player) => player.kernel == PlayerKernel.avplayer),
+        isTrue,
+        reason: 'MPV 从未被真正采用（创建阶段就失败了）',
+      );
+      expect(created.last.kernel, PlayerKernel.avplayer, reason: '页面回退到 AVPlayer');
+
+      // 关键约束：失败的那次绝不写进库，避免下次进来又卡。
+      final store = await VideoPlayerSettingsStore.open();
+      expect(
+        store.load().kernel,
+        PlayerKernel.avplayer,
+        reason: 'MPV 初始化失败时禁止把 MPV 写入持久化配置',
+      );
+    });
+
     testWidgets('HUD：显示当前内核给出的参数，换内核不改上层 UI', (tester) async {
       final created = await pumpVideo(
         tester,

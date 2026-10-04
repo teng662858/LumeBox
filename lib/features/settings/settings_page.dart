@@ -5,6 +5,7 @@ import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../source/global_source_page.dart';
+import '../video/player_kernel_section.dart';
 import 'cache_settings_page.dart';
 import 'log_report.dart';
 import 'log_report_page.dart';
@@ -53,6 +54,10 @@ class SettingsPage extends StatelessWidget {
             subtitle: '四个板块的图源总览与批量管理（小说 / 漫画 / 视频 / 猫源互相独立）',
             onTap: () => _push(context, const GlobalSourcePage()),
           ),
+          const SizedBox(height: 12),
+          // 故障逃生入口：内核选择列表**内嵌**在设置页里（点得最少、最稳），
+          // 与视频板块右上角的快捷菜单共用同一份列表组件。
+          const PlayerKernelSection(),
           const SizedBox(height: 12),
           _SettingsEntry(
             icon: Icons.cleaning_services_outlined,
