@@ -42,11 +42,14 @@ class SourceItem {
   final String? cover;
   final String? subtitle;
 
+  /// 解析条目。宽容口径：视频类脚本常用 `{title, url}` 表达条目
+  /// （见图源契约的函数式写法），此时 `url` 兼作 id（详情 / 播放都按它取），
+  /// 标题也接受 `name` 写法；两者都缺才判定为不可识别。
   static SourceItem? parse(Object? json) {
     if (json is! Map) return null;
-    final id = '${json['id'] ?? ''}'.trim();
-    final title = '${json['title'] ?? ''}'.trim();
-    if (id.isEmpty || title.isEmpty) return null;
+    final id = _text(json['id']) ?? _text(json['url']);
+    final title = _text(json['title']) ?? _text(json['name']);
+    if (id == null || title == null) return null;
     return SourceItem(
       id: id,
       title: title,

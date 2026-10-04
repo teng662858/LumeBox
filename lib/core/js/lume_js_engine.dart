@@ -7,6 +7,8 @@ import '../net/lume_http.dart';
 import '../session/section.dart';
 import 'cat_polyfills.dart';
 import 'sandbox/sandbox.dart';
+import 'source_bridge.dart';
+import 'source_store.dart';
 
 /// 图源脚本的 JS 运行时。
 ///
@@ -16,14 +18,27 @@ import 'sandbox/sandbox.dart';
 /// 本文件不再直接触碰 QuickJS 句柄。
 ///
 /// 隔离模型：一个图源独占一个 [LumeSandbox]，即独占一个 JSRuntime + JSContext，
-/// 图源之间不共享任何运行时状态。
+/// 图源之间不共享任何运行时状态；沙盒存储（`LumeSource.fs`）同样一图源一份，
+/// 随引擎释放。
+///
+/// 启动顺序（严格，用户口径 1→4；实现落在 [SandboxContext] 与本文件）：
+/// 1. 建虚拟机（JSRuntime + JSContext）；
+/// 2. 注入环境垫片：console / 定时器（沙箱 prelude）、process / Buffer /
+///    简易 require（猫源 Node 垫片）、`fetch`（网络垫片）；
+/// 3. 注入桥接全局 `LumeSource`（见 [LumeSourceBridgePolyfill]：宿主 HTTP 与
+///    沙盒文件 IO 的语法糖 + 五个契约方法的派发器）；
+/// 4. 载入并执行用户图源脚本。
+/// 垫片登记表的顺序就是注入顺序（见 [LumeSourcePolyfills]）。
 class LumeJsEngine {
-  LumeJsEngine._(this.sourceId, this._sandbox);
+  LumeJsEngine._(this.sourceId, this._sandbox, this._host);
 
   /// 图源标识。
   final String sourceId;
 
   final LumeSandbox _sandbox;
+
+  /// 宿主代理：持有沙盒存储（`LumeSource.fs` 的后端），随引擎释放。
+  final LumeSourceHost _host;
 
   /// 单次图源调用的墙钟预算：与沙箱策略一致，收敛在 3–5 秒。
   static const Duration callTimeout = SandboxPolicy.defaultTimeout;
@@ -53,7 +68,7 @@ class LumeJsEngine {
       host: host,
       polyfills: LumeSourcePolyfills.forSection(section),
     );
-    return LumeJsEngine._(sourceId, sandbox);
+    return LumeJsEngine._(sourceId, sandbox, host);
   }
 
   /// 当前上下文代数。污染重建后递增。
@@ -91,16 +106,23 @@ class LumeJsEngine {
   Future<SandboxResult> callResult(String method, [Object? argument]) =>
       _sandbox.call('LumeSource.$method', argument);
 
-  /// 释放沙箱。上下文被同步销毁，内存随之回收。
-  void dispose() => _sandbox.dispose();
+  /// 释放沙箱。上下文被同步销毁，内存随之回收；
+  /// 沙盒存储（`LumeSource.fs` 的进程内表）也在这一步清空。
+  void dispose() {
+    _sandbox.dispose();
+    _host.dispose();
+  }
 }
 
 /// 图源宿主代理：JS 侧唯一的外部能力通道。
 ///
-/// JS 里没有 socket、没有文件、没有 require；`fetch` 只是 [SandboxHostMethods.httpFetch]
-/// 的语法糖，最终由本类的 [invoke] 经 [LumeHttp] 发出真实请求。
+/// JS 里没有 socket、没有文件、没有 require；`fetch` 与桥接对象 `LumeSource` 的
+/// `http.*` 都只是 [SandboxHostMethods.httpFetch] 的语法糖，`LumeSource.fs.*`
+/// 则落在 [SandboxStore]（按图源隔离的进程内存储，不落盘、有上限），
+/// 最终由本类的 [invoke] 经 [LumeHttp] 与存储表落地。
 class LumeSourceHost implements SandboxHost {
-  LumeSourceHost(this._http, {required this.timeout});
+  LumeSourceHost(this._http, {required this.timeout, SandboxStore? store})
+      : _store = store ?? SandboxStore();
 
   /// 网络失败的稳定标记。请求没能完成时打在异常文本前面，上层据此把
   /// 「网络异常」从「脚本报错」里分出来（见数据源层的沙箱失败归一）。
@@ -111,17 +133,62 @@ class LumeSourceHost implements SandboxHost {
   /// 单次请求超时。
   final Duration timeout;
 
+  /// 沙盒文件 IO 的后端（`LumeSource.fs`）。
+  final SandboxStore _store;
+
+  /// 沙盒存储的访问口（测试与诊断用；与 [invoke] 操作的是同一张表）。
+  SandboxStore get store => _store;
+
   @override
   Future<Object?> invoke(SandboxHostRequest request) async {
     switch (request.method) {
       case SandboxHostMethods.httpFetch:
         return _fetch(request.payload);
       case SandboxHostMethods.storeRead:
+        return _storeRead(request.payload);
       case SandboxHostMethods.storeWrite:
-        throw const SandboxHostException('图源存储能力尚未开放');
+        return _storeWrite(request.payload);
+      case SandboxHostMethods.storeHas:
+        return <String, Object?>{'exists': _store.containsKey(_key(request.payload))};
+      case SandboxHostMethods.storeRemove:
+        return <String, Object?>{'removed': _store.remove(_key(request.payload))};
+      case SandboxHostMethods.storeKeys:
+        return <String, Object?>{'keys': _store.keys()};
       default:
         throw SandboxHostException('图源未授权的宿主方法: ${request.method}');
     }
+  }
+
+  /// 释放宿主侧资源：清空沙盒存储（引擎释放时调用）。
+  void dispose() => _store.clear();
+
+  Object? _storeRead(Object? payload) {
+    return <String, Object?>{'value': _store.read(_key(payload))};
+  }
+
+  Object? _storeWrite(Object? payload) {
+    if (payload is! Map) {
+      throw const SandboxHostException('store.write 入参必须是对象');
+    }
+    final key = _key(payload);
+    final value = payload['value'];
+    if (value != null && value is! String) {
+      throw const SandboxHostException('store.write 的 value 必须是字符串');
+    }
+    _store.write(key, value == null ? '' : value as String);
+    return const <String, Object?>{'ok': true};
+  }
+
+  /// 取存储键。路径归一在 [SandboxStore] 里做，这里只保证「有 key」。
+  String _key(Object? payload) {
+    if (payload is! Map) {
+      throw const SandboxHostException('存储调用入参必须是对象');
+    }
+    final key = '${payload['key'] ?? ''}'.trim();
+    if (key.isEmpty) {
+      throw const SandboxHostException('存储调用缺少 key');
+    }
+    return key;
   }
 
   Future<Map<String, Object?>> _fetch(Object? payload) async {
@@ -166,22 +233,33 @@ class LumeSourceHost implements SandboxHost {
   }
 }
 
-/// 图源层的注入垫片：把 `fetch` 接到宿主代理上。
+/// 图源层的注入垫片：把 `fetch` 接到宿主代理上，并注入桥接全局 `LumeSource`。
 ///
 /// 这是沙箱垫片机制的接入示例——沙箱本身不提供任何网络能力，
-/// 图源需要的 `fetch` 由本层按需注册。
+/// 图源需要的 `fetch` 与 `LumeSource` 由本层按需注册。
+///
+/// 登记顺序 = 注入顺序（`PolyfillRegistry.ordered` 按依赖与登记序排）：
+/// 环境垫片在前，`LumeSource` 桥接在最后——脚本执行前，桥接一定已经就位。
 class LumeSourcePolyfills {
   LumeSourcePolyfills._();
 
-  /// 通用图源沙箱使用的垫片登记表（只有网络代理这一项）。
+  /// 通用图源沙箱使用的垫片登记表（网络代理 + 桥接对象）。
   static final PolyfillRegistry registry = PolyfillRegistry(
-    <SandboxPolyfill>[const _FetchPolyfill()],
+    <SandboxPolyfill>[
+      const _FetchPolyfill(),
+      const LumeSourceBridgePolyfill(),
+    ],
   );
 
   /// 猫源沙箱的垫片登记表：通用垫片之上叠加猫源环境垫片
-  /// （process / Buffer / 基础 require / console 补全 / 定时器补全）。
+  /// （process / Buffer / 基础 require / console 补全 / 定时器补全），
+  /// 桥接对象同样在最后注入。
   static final PolyfillRegistry catRegistry = PolyfillRegistry(
-    <SandboxPolyfill>[const _FetchPolyfill(), ...CatPolyfills.all],
+    <SandboxPolyfill>[
+      const _FetchPolyfill(),
+      ...CatPolyfills.all,
+      const LumeSourceBridgePolyfill(),
+    ],
   );
 
   /// 按板块选登记表：**垫片补全只对猫源开放**，其他板块拿到的仍是通用表——

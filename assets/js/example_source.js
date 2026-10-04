@@ -9,13 +9,22 @@
 // 本示例是纯模拟数据，不发任何请求。真实图源按同一套契约实现：
 //   categories()                        → [{id, title}]
 //   list({categoryId?, keyword?, page}) → {items: [{id, title, cover?, subtitle?}], hasMore?}
-//                                         （也接受裸数组）
+//                                         （也接受裸数组与 {list: [...]}）
 //   detail({id})                        → {id, title, cover?, subtitle?, description?} | null
 //   chapters({id})                      → [{id, title}]
 //   content({id, chapterId})            → {kind: 'text', text}
 //                                       | {kind: 'images', images: [...]}
 //                                       | {kind: 'video', url, headers?}
 // 元信息由头部注释或 LumeSource 的 id / name / version 声明；id 仅允许字母数字与 . _ -。
+//
+// 宿主在脚本执行前先注入桥接全局 LumeSource，因此还有两种写法：
+// 1) 只写顶层函数：async function getList(page) { … }（另有 getSearch(keyword, page) /
+//    getDetail(id) / getChapters(id) / getContent(id, chapterId) / getCategories()）。
+//    这类脚本**必须**写头部元信息注释，否则导入时读不到 id / name；
+// 2) 用宿主能力：LumeSource.http.get(url) / .post(url, body) /
+//    .request({url, method, headers, body})，以及 LumeSource.fs.readText(path) /
+//    .writeText(path, text) / .exists(path) / .remove(path) / .list
+//    （沙盒文件 IO：按图源隔离的进程内存储，不落盘）。本示例用 fetch，两者等价。
 var LumeSource = {
   id: 'lume-example',
   name: 'Lume Box 示例源',

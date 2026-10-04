@@ -11,6 +11,7 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
+import 'package:lume_box/features/cat/cat_page.dart';
 import 'package:lume_box/features/comic/comic_page.dart';
 import 'package:lume_box/features/novel/novel_page.dart';
 import 'package:lume_box/features/video/video_page.dart';
@@ -113,6 +114,13 @@ void main() {
 
     // 视频板块管理页（本平台无图源运行时，页面按骨架展示，标题口径一致）。
     expect(find.widgetWithText(AppBar, '视频 · 图源管理'), findsOneWidget);
+  });
+
+  testWidgets('猫源板块：页面本身就是本板块图源管理页', (tester) async {
+    await pumpBoard(tester, const CatPage());
+
+    // 猫源没有独立的业务页：板块页即图源管理页，标题与其他板块同一口径。
+    expect(find.widgetWithText(AppBar, '猫源 · 图源管理'), findsOneWidget);
   });
 
   testWidgets('图源管理页：导入的源可见、可启停，操作收进「更多」', (tester) async {

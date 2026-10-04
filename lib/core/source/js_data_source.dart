@@ -23,6 +23,15 @@ abstract interface class JsSourceRuntime {
 /// - `chapters({id})` → `[{id, title}]`
 /// - `content({id, chapterId})` → `{kind: 'text', text}` /
 ///   `{kind: 'images', images: [...]}` / `{kind: 'video', url, headers?}`
+///
+/// 两种脚本写法引擎都认（见 `LumeSourceBridgePolyfill`）：
+/// 1. **对象式**：脚本自己声明 `LumeSource = { categories, list, … }`（上面这套
+///    入参口径，入参是一个对象）；
+/// 2. **函数式**：脚本只写顶层函数 `getList(page)` / `getSearch(keyword, page)` /
+///    `getDetail(id)` / `getChapters(id)` / `getContent(id, chapterId)` /
+///    `getCategories()`——宿主注入的 `LumeSource` 桥接对象按位置参数把它们接上，
+///    返回值同样按宽容口径解析（`{list: [...]}` 与 `{title, url}` 条目都认）。
+///    函数式脚本没有可供读取 id / name 的对象字段，导入口径要求它写头部注释。
 class JsSourceContract {
   JsSourceContract._();
 
@@ -127,14 +136,17 @@ class JsDataSource implements DataSource {
   }
 }
 
-/// 解析列表信封：接受 `{items: [...], hasMore: bool}` 与裸数组两种形状。
+/// 解析列表信封：接受 `{items: [...], hasMore: bool}`、`{list: [...], hasMore}`
+/// 与裸数组三种形状。
 ///
+/// `list` 是函数式脚本（顶层 `getList(page)`）的常见写法——它与 `items` 同义，
+/// 引擎的桥接层不做改写，宽容解析统一落在这一层。
 /// 与其余集合解析一致保持宽容：无法识别时返回空列表，而不是抛错。
 SourceList parseSourceList(Object? json) {
   if (json is List) return SourceList(items: parseItems(json));
   if (json is Map) {
     return SourceList(
-      items: parseItems(json['items']),
+      items: parseItems(json['items'] ?? json['list']),
       hasMore: json['hasMore'] == true,
     );
   }

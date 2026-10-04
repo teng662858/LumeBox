@@ -48,6 +48,18 @@ void main() {
       expect(items.first.id, 'a');
     });
 
+    test('视频式条目：url 兼作 id，name 兼作标题', () {
+      final items = parseItems(<Object?>[
+        <String, Object?>{'title': '测试视频', 'url': 'https://example.com/a.mp4'},
+        <String, Object?>{'name': '备用写法', 'url': 'https://example.com/b.mp4'},
+        <String, Object?>{'title': '没有地址也没有 id'},
+      ]);
+      expect(items.length, 2);
+      expect(items.first.id, 'https://example.com/a.mp4');
+      expect(items.first.title, '测试视频');
+      expect(items.last.title, '备用写法');
+    });
+
     test('章节缺标题时回退到 id', () {
       final chapters = parseChapters(<Object?>[
         <String, Object?>{'id': 'c1'},
@@ -90,6 +102,31 @@ void main() {
       ]);
       expect(bare.items.single.id, 'b');
       expect(bare.hasMore, isFalse);
+    });
+
+    test('接受函数式脚本的 list 信封', () {
+      // 函数式脚本（顶层 getList）常用 {list: [...], hasMore} 表达列表。
+      final envelope = parseSourceList(<String, Object?>{
+        'list': <Object?>[
+          <String, Object?>{'title': '测试视频', 'url': 'https://example.com/a.mp4'},
+        ],
+        'hasMore': false,
+      });
+      expect(envelope.items.single.title, '测试视频');
+      expect(envelope.items.single.id, 'https://example.com/a.mp4');
+    });
+
+    test('items 优先于 list，两者都缺则为空', () {
+      final both = parseSourceList(<String, Object?>{
+        'items': <Object?>[
+          <String, Object?>{'id': 'a', 'title': '条目 A'},
+        ],
+        'list': <Object?>[
+          <String, Object?>{'id': 'b', 'title': '条目 B'},
+        ],
+      });
+      expect(both.items.single.id, 'a');
+      expect(parseSourceList(<String, Object?>{'hasMore': true}).isEmpty, isTrue);
     });
 
     test('无法识别时返回空列表', () {

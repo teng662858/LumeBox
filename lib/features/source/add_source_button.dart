@@ -307,6 +307,12 @@ class _AddSourceDialogState extends State<_AddSourceDialog> {
             border: OutlineInputBorder(),
           ),
         ),
+        const SizedBox(height: 8),
+        const Text(
+          '脚本头部写一行「// LumeSource: {"id":"…","name":"…"}」即可被识别；'
+          '只写顶层函数（getList(page) 等）的脚本同样支持，元信息走头部注释。',
+          style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+        ),
       ];
 
   List<Widget> _buildSubscription() => <Widget>[

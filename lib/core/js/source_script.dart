@@ -21,6 +21,9 @@ const String _bom = '\uFEFF';
 /// 两个来源，按此顺序解析：
 /// 1. 脚本头部的声明注释 `// LumeSource: {"id":"…","name":"…","version":"…"}`；
 /// 2. 脚本全局 `LumeSource` 的 id / name / version 字段（JS 契约 v2）。
+///
+/// 函数式脚本（只写顶层 `getList(page)` 这类函数，见 `LumeSourceBridgePolyfill`）
+/// 没有可供读取的对象字段，**必须**用头部注释声明 id / name。
 class SourceMetadata {
   const SourceMetadata({
     required this.id,

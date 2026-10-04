@@ -52,7 +52,7 @@ class DenyAllSandboxHost implements SandboxHost {
   }
 }
 
-/// 预留的代理方法名常量。具体实现属于后续图源业务，本轮仅登记命名空间。
+/// 代理方法名常量。图源层按这些名字实现（见 `LumeSourceHost`）。
 class SandboxHostMethods {
   SandboxHostMethods._();
 
@@ -60,9 +60,19 @@ class SandboxHostMethods {
   /// 返回 `{status, headers, body}`。
   static const String httpFetch = 'http.fetch';
 
-  /// 沙箱内的键值存储（按沙箱隔离）。
+  /// 沙箱内的键值存储（按图源隔离）。入参 `{key}`，
+  /// 返回 `{value: string|null}`。
   static const String storeRead = 'store.read';
 
-  /// 沙箱内的键值写入。
+  /// 沙箱内的键值写入。入参 `{key, value}`。
   static const String storeWrite = 'store.write';
+
+  /// 键是否存在。入参 `{key}`，返回 `{exists: bool}`。
+  static const String storeHas = 'store.has';
+
+  /// 删除键。入参 `{key}`，返回 `{removed: bool}`。
+  static const String storeRemove = 'store.remove';
+
+  /// 列出全部键（沙盒文件 IO 的「目录」口径）。返回 `{keys: [string]}`。
+  static const String storeKeys = 'store.keys';
 }
