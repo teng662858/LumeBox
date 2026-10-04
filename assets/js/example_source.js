@@ -1,4 +1,9 @@
+// LumeSource: {"id":"lume-example","name":"Lume Box 示例源","version":"2.0.0"}
 // Lume Box 图源脚本示例（JS 契约 v2）。
+//
+// 第一行是头部元信息声明（可选）：Dart 侧先剥掉 UTF-8 BOM，再正则匹配这行
+// `// LumeSource: {...}`，因此带 BOM 的脚本也能被正确识别；没有这行时退回
+// 读取脚本全局 LumeSource 的 id / name / version。
 //
 // 每个图源在独立 JSContext 中运行；网络请求一律经 fetch 桥接到 Dart 层发出。
 // 本示例是纯模拟数据，不发任何请求。真实图源按同一套契约实现：
@@ -10,7 +15,7 @@
 //   content({id, chapterId})            → {kind: 'text', text}
 //                                       | {kind: 'images', images: [...]}
 //                                       | {kind: 'video', url, headers?}
-// 元信息由 LumeSource 的 id / name / version 声明；id 仅允许字母数字与 . _ -。
+// 元信息由头部注释或 LumeSource 的 id / name / version 声明；id 仅允许字母数字与 . _ -。
 var LumeSource = {
   id: 'lume-example',
   name: 'Lume Box 示例源',

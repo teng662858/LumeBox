@@ -104,6 +104,9 @@ class SourceRegistry {
 
   /// 校验脚本并把元信息写入本板块数据库。
   ///
+  /// 文本预处理：读进来的脚本先剥掉 UTF-8 BOM，再做头部元信息正则、再交给
+  /// 引擎执行，落库的也是剥离后的文本（带 BOM 的合法脚本因此不再误报）。
+  ///
   /// 失败返回带可读原因的失败结果：平台无引擎、脚本载入失败（语法错误或运行
   /// 异常）、脚本缺少 `LumeSource` 元信息（id / name）或 id 非法。
   Future<SourceImportOutcome> import(String script) async {
@@ -111,6 +114,7 @@ class SourceRegistry {
       LumeLog.warn('[${section.id}] 当前平台不提供图源引擎');
       return const SourceImportOutcome.failure('当前平台不提供图源引擎');
     }
+    final text = stripScriptBom(script);
     final probe = await SourceEngineRegistry.create(
       kind: CatEngineSettings.engineKindFor(section, _database),
       sourceId: 'probe${DateTime.now().microsecondsSinceEpoch}',
@@ -121,10 +125,11 @@ class SourceRegistry {
       return const SourceImportOutcome.failure('当前平台不提供该图源引擎（引擎未集成或原生不可用）');
     }
     try {
-      if (!await probe.loadScript(script)) {
+      if (!await probe.loadScript(text)) {
         return const SourceImportOutcome.failure('脚本载入失败：语法错误或运行异常');
       }
-      final metadata = SourceMetadata.parse(await probe.metadata());
+      final metadata = SourceMetadata.parseHeader(text) ??
+          SourceMetadata.parse(await probe.metadata());
       if (metadata == null) {
         return const SourceImportOutcome.failure(
           '脚本缺少 LumeSource 元信息（id / name），或 id 非法',
@@ -135,7 +140,7 @@ class SourceRegistry {
         name: metadata.name,
         version: metadata.version,
         section: section.id,
-        script: script,
+        script: text,
       );
       release(metadata.id);
       final record = _database.source(metadata.id);
@@ -181,7 +186,7 @@ class SourceRegistry {
       LumeLog.warn('[${section.id}] 图源引擎不可用: $sourceId');
       return null;
     }
-    if (!await engine.loadScript(record.script)) {
+    if (!await engine.loadScript(stripScriptBom(record.script))) {
       engine.dispose();
       LumeLog.warn('[${section.id}] 图源脚本载入失败: $sourceId');
       return null;

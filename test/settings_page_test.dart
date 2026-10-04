@@ -94,7 +94,7 @@ void main() {
     // 四个板块各一行；漫画显示缓存与已保存图片。
     expect(find.text('漫画'), findsOneWidget);
     expect(find.text('小说'), findsOneWidget);
-    expect(find.text('自定义视频'), findsOneWidget);
+    expect(find.text('视频'), findsOneWidget);
     expect(find.text('猫源'), findsOneWidget);
     expect(find.textContaining('缓存 100 B'), findsOneWidget);
     expect(find.text('已保存图片 50 B（不参与清理）'), findsOneWidget);
@@ -124,6 +124,17 @@ void main() {
       reason: '小说板块的缓存不受漫画清理影响',
     );
     expect(find.text('缓存 200 B（1 个文件）'), findsOneWidget);
+  });
+
+  testWidgets('图源总管理：设置页内的子页面入口仍在', (tester) async {
+    await pumpSettings(tester);
+
+    expect(find.text('图源总管理'), findsOneWidget);
+
+    await tester.tap(find.text('图源总管理'));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(AppBar, '图源总管理'), findsOneWidget);
   });
 
   testWidgets('运行日志：查看、按级别筛选、清空', (tester) async {
@@ -227,6 +238,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('当前平台在 Phase1 仅保留页面骨架'), findsOneWidget);
+      expect(find.text('图源总管理'), findsNothing);
       expect(find.text('缓存管理'), findsNothing);
       expect(find.text('运行日志'), findsNothing);
       expect(find.text('错误报告'), findsNothing);
@@ -235,11 +247,19 @@ void main() {
   );
 
   test('Section 顺序与设置页展示一致（防未来加板块时漏行）', () {
+    // 展示文案（label）与内部标识（id）是两回事：视频板块显示「视频」，
+    // 但库、缓存、图源归属仍走 id 'video'。
     expect(Section.values.map((section) => section.label).toList(), <String>[
       '小说',
       '漫画',
-      '自定义视频',
+      '视频',
       '猫源',
+    ]);
+    expect(Section.values.map((section) => section.id).toList(), <String>[
+      'novel',
+      'comic',
+      'video',
+      'cat',
     ]);
   });
 }

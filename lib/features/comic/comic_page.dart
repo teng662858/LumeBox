@@ -8,6 +8,7 @@ import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
 import '../reading/reading_hub_page.dart';
+import '../source/add_source_button.dart';
 import 'comic_explore_page.dart';
 import 'comic_repo_page.dart';
 import 'comic_shelf_page.dart';
@@ -37,6 +38,10 @@ class _ComicPageState extends State<ComicPage> {
   ReadingLibrary? _library;
   SectionImagePipeline? _pipeline;
   bool _failed = false;
+
+  /// 图源变更代数：导入新图源后 +1，用它做书架 / 探索的 Key 让两块内容重挂，
+  /// 立刻按新的图源列表重新解析（不必等用户切页签）。
+  int _revision = 0;
 
   @override
   void initState() {
@@ -161,17 +166,28 @@ class _ComicPageState extends State<ComicPage> {
           icon: const Icon(Icons.cleaning_services_outlined),
           onPressed: _manageCache,
         ),
+        // 右上角统一的「+」添加图源：本地文件 / 订阅链接，只写漫画板块。
+        AddSourceButton(
+          section: Section.comic,
+          manager: widget.manager,
+          onImported: _onSourcesChanged,
+        ),
       ],
       shelf: ComicShelfPage(
+        key: ValueKey<int>(_revision),
         library: library,
         pipeline: pipeline,
         manager: widget.manager ?? LumeSources.manager(Section.comic),
       ),
       explore: ComicExplorePage(
+        key: ValueKey<int>(_revision),
         library: library,
         pipeline: pipeline,
         manager: widget.manager,
       ),
     );
   }
+
+  /// 图源导入后重挂书架与探索：两块内容各自重新解析本板块的图源与列表。
+  void _onSourcesChanged() => setState(() => _revision++);
 }

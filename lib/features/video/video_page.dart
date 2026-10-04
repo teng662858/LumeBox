@@ -11,6 +11,8 @@ import '../../core/session/section.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../shell/shell_dock.dart';
+import '../source/add_source_button.dart';
 import 'player_settings_page.dart';
 import 'video_player_settings.dart';
 
@@ -62,6 +64,11 @@ class _VideoPageState extends State<VideoPage> {
   /// 媒体是否已加载成功（画中画的就绪边界检查用它）。
   bool _loaded = false;
 
+  /// 播放中隐藏底部 Dock 用的令牌（从 [ShellDockScope] 取控制器；不在导航壳
+  /// 里时为空，此时也无需隐藏）。播放是沉浸态，暂停 / 停止 / 出错即恢复。
+  final Object _dockToken = Object();
+  ShellDockController? _dock;
+
   String? _error;
 
   /// 设置库打不开：设置读写不可用，但播放链路继续（用默认设置）。
@@ -84,11 +91,20 @@ class _VideoPageState extends State<VideoPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _dock = ShellDockScope.maybeOf(context);
+  }
+
+  @override
   void dispose() {
     final session = _session;
     final player = _player;
     _session = null;
     _player = null;
+    // 离开板块时底部导航必须回来：先摘监听再释放隐藏令牌。
+    player?.snapshot.removeListener(_syncDockForPlayback);
+    _dock?.show(_dockToken);
     // 资源边界：先退画中画再释放播放器，最后关库（顺序不能反）。
     unawaited(() async {
       await session?.dispose();
@@ -97,6 +113,17 @@ class _VideoPageState extends State<VideoPage> {
     _store?.close();
     _input.dispose();
     super.dispose();
+  }
+
+  /// 播放状态变化 → Dock 显隐：播放中隐藏，其余状态恢复。
+  void _syncDockForPlayback() {
+    final dock = _dock;
+    if (dock == null) return;
+    if (_player?.snapshot.value.playing ?? false) {
+      dock.hide(_dockToken);
+    } else {
+      dock.show(_dockToken);
+    }
   }
 
   Future<void> _boot() async {
@@ -132,7 +159,10 @@ class _VideoPageState extends State<VideoPage> {
     final previous = _player;
     final resume = previous == null ? null : _ResumePoint.of(previous);
     _player = null;
-    if (previous != null) await previous.dispose();
+    if (previous != null) {
+      previous.snapshot.removeListener(_syncDockForPlayback);
+      await previous.dispose();
+    }
 
     final player = _createPlayer(_effectiveKernel);
     if (!mounted) {
@@ -144,6 +174,8 @@ class _VideoPageState extends State<VideoPage> {
       _loaded = false;
     });
     if (player == null) return;
+    // 播放状态驱动底部 Dock 的显隐（播放中沉浸）。
+    player.snapshot.addListener(_syncDockForPlayback);
 
     await player.applySettings(_settings);
     final media = _media;
@@ -248,17 +280,31 @@ class _VideoPageState extends State<VideoPage> {
 
   // ------------------------------------------------------------------ 构建
 
+  /// 右上角动作：添加图源（四个板块统一入口，只写视频板块）+ 播放器设置。
+  /// 播放器设置只在播放器就绪后才有对象可设置，其余状态只留添加图源。
+  List<Widget> _buildActions({bool withSettings = false}) => <Widget>[
+        if (withSettings)
+          IconButton(
+            tooltip: '播放器设置',
+            icon: const Icon(Icons.tune),
+            onPressed: _openSettings,
+          ),
+        const AddSourceButton(section: Section.video),
+      ];
+
   @override
   Widget build(BuildContext context) {
     if (!_anyKernelAvailable) {
       return GlassScaffold(
         title: Section.video.label,
+        actions: _buildActions(),
         child: const _VideoSkeleton(),
       );
     }
     if (_storeFailed) {
       return GlassScaffold(
         title: Section.video.label,
+        actions: _buildActions(),
         child: const Center(
           child: Text(
             '播放器设置库不可用',
@@ -271,6 +317,7 @@ class _VideoPageState extends State<VideoPage> {
     if (player == null) {
       return GlassScaffold(
         title: Section.video.label,
+        actions: _buildActions(),
         child: const Center(
           child: SizedBox(
             width: 28,
@@ -282,13 +329,7 @@ class _VideoPageState extends State<VideoPage> {
     }
     return GlassScaffold(
       title: Section.video.label,
-      actions: <Widget>[
-        IconButton(
-          tooltip: '播放器设置',
-          icon: const Icon(Icons.tune),
-          onPressed: _openSettings,
-        ),
-      ],
+      actions: _buildActions(withSettings: true),
       child: Column(
         children: <Widget>[
           Expanded(

@@ -4,13 +4,14 @@ import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
+import '../source/global_source_page.dart';
 import 'cache_settings_page.dart';
 import 'log_report.dart';
 import 'log_report_page.dart';
 import 'log_viewer_page.dart';
 import 'section_cache.dart';
 
-/// 设置：缓存管理、运行日志查看与错误报告导出。
+/// 设置：图源总管理、缓存管理、运行日志查看与错误报告导出。
 ///
 /// 平台边界（任务书第 3 条 + 宪法第 1 条）：完整业务只在 iOS；Android /
 /// Windows 只保留页面骨架占位——不做缓存统计清理，也不做报告导出。
@@ -47,9 +48,16 @@ class SettingsPage extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: <Widget>[
           _SettingsEntry(
+            icon: Icons.tune,
+            title: '图源总管理',
+            subtitle: '四个板块的图源总览与批量管理（小说 / 漫画 / 视频 / 猫源互相独立）',
+            onTap: () => _push(context, const GlobalSourcePage()),
+          ),
+          const SizedBox(height: 12),
+          _SettingsEntry(
             icon: Icons.cleaning_services_outlined,
             title: '缓存管理',
-            subtitle: '按板块查看与清理缓存（漫画 / 小说 / 自定义视频 / 猫源互相独立）',
+            subtitle: '按板块查看与清理缓存（漫画 / 小说 / 视频 / 猫源互相独立）',
             onTap: () => _push(context, CacheSettingsPage(service: cacheService)),
           ),
           const SizedBox(height: 12),

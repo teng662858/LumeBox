@@ -78,7 +78,7 @@ void main() {
     expect(find.text('全部 2/3'), findsOneWidget);
     expect(find.text('小说 1/2'), findsOneWidget);
     expect(find.text('漫画 1/1'), findsOneWidget);
-    expect(find.text('自定义视频 0/0'), findsOneWidget);
+    expect(find.text('视频 0/0'), findsOneWidget);
     expect(find.text('猫源 0/0'), findsOneWidget);
 
     // 分组与条目：名称、版本、停用标记；版本为空时回退项目名。

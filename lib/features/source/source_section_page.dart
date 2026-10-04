@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
 
 import '../../core/js/cat_engines.dart';
 import '../../core/session/section.dart';
@@ -10,6 +9,7 @@ import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
 import '../cat/cat_engine_settings_page.dart';
+import 'add_source_button.dart';
 import 'browse_page.dart';
 
 /// 板块页面：图源管理 + 浏览入口。
@@ -63,32 +63,6 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
       if (!mounted) return;
       setState(() => _failed = true);
     }
-  }
-
-  Future<void> _import() async {
-    final script = await showDialog<String>(
-      context: context,
-      builder: (_) => const _ImportDialog(),
-    );
-    if (script == null || script.trim().isEmpty) return;
-    if (!mounted) return;
-
-    final existing = <String>{
-      for (final source in _sources ?? const <SourceDescriptor>[]) source.id,
-    };
-    final result = await _manager.importScript(script);
-    if (!mounted) return;
-
-    final descriptor = result.descriptor;
-    final message = descriptor == null
-        ? '导入失败：${result.message}'
-        : existing.contains(descriptor.id)
-            ? '已更新：${descriptor.name}'
-            : '已导入：${descriptor.name}';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-    if (descriptor != null) await _reload();
   }
 
   Future<void> _toggle(SourceDescriptor source, bool enabled) async {
@@ -160,13 +134,13 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
             icon: const Icon(Icons.memory_outlined),
             onPressed: _manageEngine,
           ),
+        // 右上角统一的「+」添加图源：本地文件 / 订阅链接，只写本板块。
+        AddSourceButton(
+          section: widget.section,
+          manager: _manager,
+          onImported: _reload,
+        ),
       ],
-      floatingActionButton: sources == null
-          ? null
-          : FloatingActionButton(
-              onPressed: _import,
-              child: const Icon(Icons.add),
-            ),
       child: sources == null
           ? (_failed
               ? const NoticeCard(
@@ -182,7 +156,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     if (sources.isEmpty) {
       return const NoticeCard(
         title: '暂无图源',
-        subtitle: '点击右下角按钮导入图源脚本',
+        subtitle: '点击右上角「+」导入图源脚本',
       );
     }
     return ListView.separated(
@@ -276,61 +250,6 @@ class _SourceTile extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ImportDialog extends StatefulWidget {
-  const _ImportDialog();
-
-  @override
-  State<_ImportDialog> createState() => _ImportDialogState();
-}
-
-class _ImportDialogState extends State<_ImportDialog> {
-  final TextEditingController _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadBuiltin() async {
-    final text = await rootBundle.loadString('assets/js/example_source.js');
-    if (!mounted) return;
-    _controller.text = text;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('导入图源'),
-      content: SizedBox(
-        width: 420,
-        child: TextField(
-          controller: _controller,
-          maxLines: 8,
-          decoration: const InputDecoration(
-            hintText: '粘贴图源脚本内容',
-            border: OutlineInputBorder(),
-          ),
-        ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: _loadBuiltin,
-          child: const Text('载入内置示例'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(_controller.text),
-          child: const Text('导入'),
-        ),
-      ],
     );
   }
 }

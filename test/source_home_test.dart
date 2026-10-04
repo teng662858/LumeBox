@@ -257,7 +257,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.tune));
     await tester.pumpAndSettle();
-    expect(find.byType(FloatingActionButton), findsOneWidget, reason: '应进入图源管理页');
+    expect(find.byTooltip('添加图源'), findsOneWidget, reason: '应进入图源管理页');
 
     // 在图源管理里停用当前图源。
     await tester.tap(find.byType(Switch).first);

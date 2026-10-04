@@ -28,7 +28,7 @@ void main() {
   }
 
   Future<void> importScript(WidgetTester tester, String script) async {
-    await tester.tap(find.byType(FloatingActionButton));
+    await tester.tap(find.byTooltip('添加图源'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), script);
     await tester.tap(find.text('导入'));
@@ -65,7 +65,8 @@ void main() {
     await pumpPage(tester, FakeSourceManager());
 
     expect(find.text('暂无图源'), findsOneWidget);
-    expect(find.byType(FloatingActionButton), findsOneWidget);
+    expect(find.text('点击右上角「+」导入图源脚本'), findsOneWidget);
+    expect(find.byTooltip('添加图源'), findsOneWidget);
   });
 
   testWidgets('导入：成功后刷新列表并提示已导入', (tester) async {
@@ -106,7 +107,7 @@ void main() {
   testWidgets('导入对话框：可载入内置示例脚本', (tester) async {
     await pumpPage(tester, FakeSourceManager());
 
-    await tester.tap(find.byType(FloatingActionButton));
+    await tester.tap(find.byTooltip('添加图源'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('载入内置示例'));
     await tester.pumpAndSettle();
@@ -177,7 +178,7 @@ void main() {
     await pumpPage(tester, manager);
 
     expect(find.text('当前平台在 Phase1 仅保留页面骨架'), findsOneWidget);
-    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(find.byTooltip('添加图源'), findsNothing);
     expect(manager.imported, isEmpty);
   });
 
