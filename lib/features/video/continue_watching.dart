@@ -17,6 +17,7 @@ class ContinueWatchingSection extends StatelessWidget {
     required this.library,
     required this.onResume,
     this.onRemove,
+    this.onShowAll,
     this.maxItems = 10,
   });
 
@@ -29,6 +30,9 @@ class ContinueWatchingSection extends StatelessWidget {
   /// 移除记录（长按）。为空时不提供该操作。
   final void Function(LibraryItem item)? onRemove;
 
+  /// 打开完整播放历史；为空时不显示「全部」入口。
+  final VoidCallback? onShowAll;
+
   /// 最多显示几条。
   final int maxItems;
 
@@ -40,15 +44,32 @@ class ContinueWatchingSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Padding(
-          padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
-          child: Text(
-            '继续观看',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-            ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Row(
+            children: <Widget>[
+              const Expanded(
+                child: Text(
+                  '继续观看',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              if (onShowAll != null)
+                GestureDetector(
+                  onTap: onShowAll,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Text(
+                      '全部',
+                      style: TextStyle(fontSize: 13, color: LumeTheme.muted),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
         for (final entry in entries)

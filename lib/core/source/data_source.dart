@@ -47,6 +47,25 @@ abstract interface class DataSource {
   });
 }
 
+/// 可选的「扩展能力」端口：图源实现它即具备该能力，不实现就是没有。
+///
+/// 为什么不做成 [DataSource] 的必选方法：弹幕、预告这类能力**不是每个图源都有**
+/// （文档也把弹幕列为进阶项）。做成必选会逼所有图源（含模拟源与测试替身）实现
+/// 一堆空方法；做成可选端口，调用方 `source is XxxCapable` 一问即可。
+///
+/// 能力缺失是**正常情况**，不是错误：调用方必须静默降级（如「这集没有弹幕」），
+/// 不能因为图源没实现弹幕就让播放失败。
+abstract interface class DanmakuCapable {
+  /// 取某一集的弹幕。
+  ///
+  /// 返回形状由适配层宽容解析（数组 / `{danmaku: [...]}` 信封皆可）；没有弹幕时
+  /// 返回空数组或 null。失败应抛 [SourceException]，由调用方决定是否降级。
+  Future<Object?> danmaku({
+    required String itemId,
+    required String chapterId,
+  });
+}
+
 /// 列表结果：条目与是否还有下一页。
 class SourceList {
   const SourceList({this.items = const <SourceItem>[], this.hasMore = false});

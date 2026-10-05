@@ -92,17 +92,47 @@ class SourceDetail {
 
 /// 章节条目。
 class SourceChapter {
-  const SourceChapter({required this.id, required this.title});
+  const SourceChapter({
+    required this.id,
+    required this.title,
+    this.publishedAt,
+  });
 
   final String id;
   final String title;
+
+  /// 章节发布时间（可选能力）：追剧日历据此把「更新」归到某一天。
+  ///
+  /// 图源给了就带上（`publishedAt` / `published` / `updatedAt` / `date` 几种写法
+  /// 都认）；没给就是 null——日历只显示播放记录，不编造更新日期。
+  final DateTime? publishedAt;
 
   static SourceChapter? parse(Object? json) {
     if (json is! Map) return null;
     final id = '${json['id'] ?? ''}'.trim();
     if (id.isEmpty) return null;
     final title = '${json['title'] ?? ''}'.trim();
-    return SourceChapter(id: id, title: title.isEmpty ? id : title);
+    return SourceChapter(
+      id: id,
+      title: title.isEmpty ? id : title,
+      publishedAt: _parseTime(
+        json['publishedAt'] ?? json['published'] ?? json['updatedAt'] ?? json['date'],
+      ),
+    );
+  }
+
+  /// 宽容解析发布时间：ISO 字符串 / 毫秒时间戳 / 秒级时间戳。
+  static DateTime? _parseTime(Object? value) {
+    if (value == null) return null;
+    if (value is num) {
+      final millis = value > 100000000000 ? value.toInt() : (value * 1000).round();
+      return DateTime.fromMillisecondsSinceEpoch(millis);
+    }
+    final text = '$value'.trim();
+    if (text.isEmpty) return null;
+    final numeric = num.tryParse(text);
+    if (numeric != null) return _parseTime(numeric);
+    return DateTime.tryParse(text);
   }
 }
 

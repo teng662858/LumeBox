@@ -27,6 +27,12 @@ final class PipController: NSObject {
   private var controller: AVPictureInPictureController?
   private var frameLayer: AVSampleBufferDisplayLayer?
 
+  /// 帧泵：把 Dart 送来的 BGRA 帧包成 CMSampleBuffer 上屏。
+  private let framePump = PipFramePump()
+
+  /// 帧通道：与 Dart 侧 `PipFrameSource` 的帧提交一一对应。
+  private let frameChannelName = "lumebox/pip/frames"
+
   /// 是否已绑定内容源（绑定后才可能开启画中画）。
   private var hasContentSource: Bool { frameLayer != nil }
 
@@ -38,6 +44,60 @@ final class PipController: NSObject {
 
     let events = FlutterEventChannel(name: eventChannelName, binaryMessenger: messenger)
     events.setStreamHandler(self)
+
+    // 帧通道：Dart 每送一帧（BGRA 字节），这里包成 CMSampleBuffer 上屏。
+    let frames = FlutterMethodChannel(name: frameChannelName, binaryMessenger: messenger)
+    frames.setMethodCallHandler { [weak self] call, result in
+      guard let self else {
+        result(nil)
+        return
+      }
+      switch call.method {
+      case "submitFrame":
+        self.handleFrame(call, result: result)
+      case "teardown":
+        self.framePump.teardown()
+        self.frameLayer = nil
+        self.controller = nil
+        result(nil)
+      case "stats":
+        result([
+          "received": self.framePump.receivedFrames,
+          "dropped": self.framePump.droppedFrames,
+        ])
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+  }
+
+  /// 收一帧：BGRA 字节 → CMSampleBuffer → 显示层。
+  private func handleFrame(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any],
+          let data = args["pixels"] as? FlutterStandardTypedData,
+          let width = args["width"] as? Int,
+          let height = args["height"] as? Int
+    else {
+      result(false)
+      return
+    }
+    let timestampMs = (args["timestampMs"] as? Int) ?? 0
+
+    // 首帧到达时才建层并绑定内容源——没有帧就没有内容源，避免「支持但黑屏」。
+    if frameLayer == nil {
+      framePump.ensureDisplayLayer()
+      if let layer = framePump.displayLayer {
+        attach(frameLayer: layer)
+      }
+    }
+
+    let ok = framePump.submit(
+      pixels: data.data,
+      width: width,
+      height: height,
+      timestampMs: timestampMs
+    )
+    result(ok)
   }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

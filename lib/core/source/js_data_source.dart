@@ -55,7 +55,7 @@ class JsSourceContract {
 ///
 /// 本类只做「翻译」：接口方法 → JS 方法名与入参 → 结果解析 → 异常归一。
 /// 它不持有运行时，也不负责脚本载入与沙箱生命周期。
-class JsDataSource implements DataSource {
+class JsDataSource implements DataSource, DanmakuCapable {
   JsDataSource({
     required this.id,
     required this.name,
@@ -121,6 +121,20 @@ class JsDataSource implements DataSource {
       );
     }
   }
+
+  /// 可选能力：弹幕（图源脚本实现 `danmaku({id, chapterId})` 才有）。
+  ///
+  /// 走的是与其它方法同一条调用链；脚本没实现时引擎会给出可读错误，
+  /// 由调用方静默降级成「这集没有弹幕」。
+  @override
+  Future<Object?> danmaku({
+    required String itemId,
+    required String chapterId,
+  }) =>
+      _invoke('danmaku', <String, Object?>{
+        'id': itemId,
+        'chapterId': chapterId,
+      });
 
   Future<Object?> _invoke(String method, [Object? argument]) async {
     try {

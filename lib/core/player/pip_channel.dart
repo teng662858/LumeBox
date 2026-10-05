@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../util/lume_log.dart';
 import 'pip.dart';
+import 'pip_frame_source.dart';
 
 /// iOS 原生画中画的通道契约（Dart 侧）。
 ///
@@ -21,14 +22,20 @@ class MethodChannelPipBackend implements PipBackend {
   MethodChannelPipBackend({
     MethodChannel? methodChannel,
     EventChannel? eventChannel,
+    MethodChannel? frameChannel,
   })  : _methods = methodChannel ?? const MethodChannel(methodChannelName),
-        _events = eventChannel ?? const EventChannel(eventChannelName);
+        _events = eventChannel ?? const EventChannel(eventChannelName),
+        _frames = frameChannel ?? const MethodChannel(frameChannelName);
 
   static const String methodChannelName = 'lumebox/pip';
   static const String eventChannelName = 'lumebox/pip/events';
 
+  /// 帧通道：Dart 帧源每送一帧走这里（BGRA 字节 → 原生 CMSampleBuffer）。
+  static const String frameChannelName = 'lumebox/pip/frames';
+
   final MethodChannel _methods;
   final EventChannel _events;
+  final MethodChannel _frames;
 
   @override
   Future<bool> isSupported() async {
@@ -60,6 +67,35 @@ class MethodChannelPipBackend implements PipBackend {
       throw const PipException('原生画中画未接入');
     } on PlatformException catch (error) {
       throw PipException(error.message ?? error.code);
+    }
+  }
+
+  /// 帧源：内核解码帧 → 本对象 → 原生帧泵。
+  ///
+  /// 通道建好即绑定（[PipFrameSource.attach]）；原生未接入时 `submitFrame`
+  /// 会收到 `MissingPluginException`，帧源如实丢弃并计数，不影响播放。
+  late final PipFrameSource frameSource = PipFrameSource()
+    ..attach(_submitFrame);
+
+  /// 把一帧送到原生（失败只记日志：画中画是增强功能，不该影响播放）。
+  Future<void> _submitFrame(Map<String, Object?> frame) async {
+    try {
+      await _frames.invokeMethod<bool>('submitFrame', frame);
+    } on MissingPluginException {
+      // 原生帧泵未接入：帧源会一直丢弃，`isReady` 语义由调用方判断。
+    } catch (error, stackTrace) {
+      LumeLog.warn('[pip] 帧提交失败: $error');
+      LumeLog.error(error, stackTrace);
+    }
+  }
+
+  /// 释放原生帧泵（退出画中画 / 页面销毁）。
+  Future<void> teardownFrames() async {
+    frameSource.detach();
+    try {
+      await _frames.invokeMethod<void>('teardown');
+    } catch (_) {
+      // 原生未接入：无需处理。
     }
   }
 

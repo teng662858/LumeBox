@@ -20,9 +20,16 @@ import '../source/add_source_button.dart';
 import '../source/source_home_page.dart';
 import '../source/source_section_page.dart';
 import 'continue_watching.dart';
+import 'danmaku/danmaku_models.dart';
+import 'danmaku/danmaku_overlay.dart';
+import 'danmaku/danmaku_settings.dart';
+import 'danmaku/danmaku_settings_sheet.dart';
 import 'player_hud.dart';
 import 'player_settings_page.dart';
 import 'source_playback.dart';
+import 'video_history_page.dart';
+import 'watch_calendar.dart';
+import 'watch_calendar_page.dart';
 import 'video_play_target.dart';
 import 'video_player_settings.dart';
 
@@ -144,6 +151,11 @@ class _VideoPageState extends State<VideoPage>
 
   /// 当前播放的作品（连播下一集要用它的剧集列表）。
   DataSource? _playSource;
+
+  /// 弹幕：设置 + 本集弹幕 + 内存缓存（换集时按 itemId/chapterId 取）。
+  DanmakuSettings _danmakuSettings = DanmakuSettings.defaults;
+  DanmakuTrack _danmaku = DanmakuTrack.empty;
+  final DanmakuCache _danmakuCache = DanmakuCache();
 
   /// 本平台是否提供任一播放内核（没有就是骨架占位）。
   bool get _anyKernelAvailable =>
@@ -289,6 +301,10 @@ class _VideoPageState extends State<VideoPage>
       LumeLog.warn('[video] 阅读库打不开，本次不记录播放进度');
     }
     try {
+      final library = _library;
+      if (library != null) {
+        _danmakuSettings = DanmakuSettingsStore(library).load();
+      }
       final store = await VideoPlayerSettingsStore.open();
       if (!mounted) {
         store.close();
@@ -553,6 +569,93 @@ class _VideoPageState extends State<VideoPage>
     await _loadMedia(media);
     await _restoreProgress();
     _startProgressTicker();
+    // 弹幕按「作品 + 剧集」加载：手动地址没有身份，自然没有弹幕。
+    unawaited(_loadDanmaku(target, source));
+  }
+
+  /// 加载本集弹幕：先查内存缓存，再问图源契约（`danmaku({id, chapterId})`）。
+  ///
+  /// 弹幕是**可选能力**：图源没实现、网络失败、格式不符都只是「这集没弹幕」，
+  /// 绝不能影响播放——因此全程静默降级，只记日志。
+  Future<void> _loadDanmaku(VideoPlayTarget? target, DataSource? source) async {
+    if (target == null || source == null) {
+      if (mounted) setState(() => _danmaku = DanmakuTrack.empty);
+      return;
+    }
+    final cached = _danmakuCache.get(target.itemId, target.chapterId);
+    if (cached != null) {
+      if (mounted) setState(() => _danmaku = cached);
+      return;
+    }
+    if (mounted) setState(() => _danmaku = DanmakuTrack.empty);
+
+    // 能力检测：图源没实现弹幕是正常情况（不是错误），直接当作没有。
+    if (source is! DanmakuCapable) return;
+    try {
+      final raw = await (source as DanmakuCapable).danmaku(
+        itemId: target.itemId,
+        chapterId: target.chapterId,
+      );
+      final track = DanmakuTrack.parse(raw);
+      _danmakuCache.put(target.itemId, target.chapterId, track);
+      if (!mounted) return;
+      // 期间可能已经切集：只在仍是同一集时上屏。
+      if (_target?.isSameEpisode(target) ?? false) {
+        setState(() => _danmaku = track);
+      }
+      if (!track.isEmpty) {
+        LumeLog.info('[video] 本集弹幕 ${track.length} 条');
+      }
+    } catch (error) {
+      // 弹幕失败不影响播放，只记日志（含「脚本没实现 danmaku」这种正常情况）。
+      LumeLog.info('[video] 本集无弹幕（$error）');
+    }
+  }
+
+  /// 打开弹幕设置面板。
+  Future<void> _openDanmakuSettings() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => DanmakuSettingsSheet(
+        settings: _danmakuSettings,
+        danmakuCount: _danmaku.length,
+        onChanged: (next) {
+          setState(() => _danmakuSettings = next);
+          final library = _library;
+          if (library != null) DanmakuSettingsStore(library).save(next);
+        },
+      ),
+    );
+  }
+
+  /// 发一条弹幕：加进本集（内存 + 缓存），立即可见。
+  Future<void> _composeDanmaku() async {
+    final target = _target;
+    final snapshot = _player?.snapshot.value;
+    if (target == null || snapshot == null) {
+      _showPlayerToast('从图源条目起播才能发弹幕（手动地址没有作品身份）');
+      return;
+    }
+    final result = await showDialog<({String text, DanmakuMode mode})>(
+      context: context,
+      builder: (_) => const DanmakuComposeDialog(),
+    );
+    if (result == null || !mounted) return;
+
+    final item = DanmakuItem(
+      time: snapshot.position,
+      text: result.text,
+      mode: result.mode,
+    );
+    final merged = DanmakuTrack.parse(<Object?>[
+      for (final existing in _danmaku.items) existing,
+      item,
+    ]);
+    _danmakuCache.put(target.itemId, target.chapterId, merged);
+    setState(() => _danmaku = merged);
+    _showPlayerToast('弹幕已发送');
   }
 
   /// 从库里恢复上次的时间点：同一集就续播，换了集就从头。
@@ -625,6 +728,96 @@ class _VideoPageState extends State<VideoPage>
     if (mounted && !_disposing) {
       setState(() => _continueWatchingRevision++);
     }
+  }
+
+  /// 打开追剧日历：按月看「哪天有更新 / 哪天看过」。
+  ///
+  /// 更新时间来自图源的章节时间（可选能力）：当前图源支持就带进来，不支持则
+  /// 日历只显示播放记录——如实降级，不编造更新。
+  Future<void> _openCalendar() async {
+    final library = _library;
+    if (library == null) return;
+    final updates = await _collectCalendarUpdates();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => WatchCalendarPage(
+          library: library,
+          updates: updates,
+          onOpen: (entry) => _openFromCalendar(entry),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _continueWatchingRevision++);
+  }
+
+  /// 收集「更新」：对书架上的作品逐个问图源的章节时间。
+  ///
+  /// 逐个串行（网络层有并发限制，且日历不是实时视图）；失败只跳过该作品。
+  Future<List<CalendarUpdate>> _collectCalendarUpdates() async {
+    final library = _library;
+    final manager = widget.sourceManager ?? LumeSources.manager(Section.video);
+    if (library == null) return const <CalendarUpdate>[];
+
+    final updates = <CalendarUpdate>[];
+    for (final item in library.continueWatching(limit: 30)) {
+      if (!mounted) return updates;
+      try {
+        final source = await manager.open(item.sourceId);
+        if (source == null) continue;
+        final chapters = await source.chapters(item.itemId);
+        for (final chapter in chapters) {
+          final published = chapter.publishedAt;
+          if (published == null) continue;
+          updates.add(
+            CalendarUpdate(
+              date: published,
+              entry: CalendarEntry(
+                itemId: item.itemId,
+                title: item.title,
+                chapterTitle: chapter.title,
+              ),
+            ),
+          );
+        }
+      } catch (error) {
+        LumeLog.info('[video] 日历更新取不到（${item.title}）：$error');
+      }
+    }
+    return updates;
+  }
+
+  /// 从日历点条目：按作品找回播放记录并续看。
+  void _openFromCalendar(CalendarEntry entry) {
+    final library = _library;
+    if (library == null) return;
+    final item = library.item(entry.itemId);
+    final progress = library.videoProgress(entry.itemId);
+    if (item == null || progress == null) {
+      _showPlayerToast('「${entry.title}」还没有播放记录，先从图源列表打开一次');
+      return;
+    }
+    _resumeFromProgress(item, progress);
+  }
+
+  /// 打开完整播放历史（首页的「继续观看」只到最近 10 条）。
+  Future<void> _openHistory() async {
+    final library = _library;
+    if (library == null) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => VideoHistoryPage(
+          library: library,
+          onResume: (item, progress) {
+            Navigator.of(context).pop();
+            _resumeFromProgress(item, progress);
+          },
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _continueWatchingRevision++);
   }
 
   /// 继续观看：按记录里的剧集与时间点续播。
@@ -752,6 +945,11 @@ class _VideoPageState extends State<VideoPage>
   /// （与文档草图 2 的 [⚙️] 一致），避免和「图源管理」抢同一个位置。
   List<Widget> _buildActions() => <Widget>[
         IconButton(
+          tooltip: '追剧日历',
+          icon: const Icon(Icons.calendar_month_outlined),
+          onPressed: _openCalendar,
+        ),
+        IconButton(
           tooltip: '图源管理',
           icon: const Icon(Icons.source_outlined),
           onPressed: _manageSources,
@@ -780,6 +978,7 @@ class _VideoPageState extends State<VideoPage>
                     library: _library,
                     onResume: _resumeFromProgress,
                     onRemove: _removeProgress,
+                    onShowAll: _openHistory,
                   ),
                 ),
               Expanded(
@@ -835,6 +1034,15 @@ class _VideoPageState extends State<VideoPage>
                         alignment: Alignment.bottomLeft,
                         children: <Widget>[
                           player.buildView(),
+                          // 弹幕层：吃播放位置与设置，盖在画面上、HUD 之下。
+                          Positioned.fill(
+                            child: DanmakuOverlay(
+                              position: snapshot.position,
+                              playing: snapshot.playing,
+                              track: _danmaku,
+                              settings: _danmakuSettings,
+                            ),
+                          ),
                           // HUD 只吃 AbstractPlayer 暴露的参数：换内核零改动。
                           PlayerHud(stats: player.stats),
                         ],
@@ -932,6 +1140,40 @@ class _VideoPageState extends State<VideoPage>
                             color: Colors.white,
                             icon: const Icon(Icons.stop_circle),
                             onPressed: player.stop,
+                          ),
+                          IconButton(
+                            iconSize: 28,
+                            color: _danmakuSettings.enabled
+                                ? Colors.white
+                                : LumeTheme.muted,
+                            tooltip: _danmakuSettings.enabled
+                                ? '弹幕：开'
+                                : '弹幕：关',
+                            icon: const Icon(Icons.subtitles_outlined),
+                            onPressed: () {
+                              final next = _danmakuSettings.copyWith(
+                                enabled: !_danmakuSettings.enabled,
+                              );
+                              setState(() => _danmakuSettings = next);
+                              final library = _library;
+                              if (library != null) {
+                                DanmakuSettingsStore(library).save(next);
+                              }
+                            },
+                          ),
+                          IconButton(
+                            iconSize: 28,
+                            color: Colors.white,
+                            tooltip: '发弹幕',
+                            icon: const Icon(Icons.chat_bubble_outline),
+                            onPressed: _composeDanmaku,
+                          ),
+                          IconButton(
+                            iconSize: 28,
+                            color: Colors.white,
+                            tooltip: '弹幕设置',
+                            icon: const Icon(Icons.tune),
+                            onPressed: _openDanmakuSettings,
                           ),
                           IconButton(
                             iconSize: 28,

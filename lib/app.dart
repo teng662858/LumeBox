@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/theme/lume_theme.dart';
+import 'features/settings/cache_pruner.dart';
 import 'features/shell/app_shell.dart';
 import 'features/shell/shell_dock.dart';
 
@@ -19,8 +20,18 @@ class LumeBoxApp extends StatefulWidget {
 class _LumeBoxAppState extends State<LumeBoxApp> {
   final ShellDockController _dock = ShellDockController();
 
+  /// 缓存策略的后台执行器：启动后延迟首跑，之后定期复查（只在配了策略时才干活）。
+  final CachePruner _cachePruner = CachePruner();
+
+  @override
+  void initState() {
+    super.initState();
+    _cachePruner.start();
+  }
+
   @override
   void dispose() {
+    _cachePruner.dispose();
     _dock.dispose();
     super.dispose();
   }

@@ -13,6 +13,7 @@ import '../../shared/widgets/state_view.dart';
 import '../cat/cat_engine_settings_page.dart';
 import 'add_source_button.dart';
 import 'browse_page.dart';
+import 'source_editor_page.dart';
 
 /// 板块页面：图源管理 + 浏览入口。
 ///
@@ -138,6 +139,19 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('已重命名为：${name.trim()}')),
     );
+  }
+
+  /// 打开可视化编辑器：表单生成脚本 → 导入（走与「+」相同的校验路径）。
+  Future<void> _openEditor() async {
+    final imported = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => SourceEditorPage(
+          section: widget.section,
+          manager: widget.manager,
+        ),
+      ),
+    );
+    if (imported == true && mounted) await _reload();
   }
 
   /// 更新订阅源：从来源地址重新拉取并覆盖。
@@ -389,6 +403,11 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     return GlassScaffold(
       title: '${widget.section.label} · 图源管理',
       actions: <Widget>[
+        IconButton(
+          tooltip: '可视化编辑器',
+          icon: const Icon(Icons.edit_note),
+          onPressed: _openEditor,
+        ),
         if (_sources != null && _sources!.any((source) => source.subscribed))
           IconButton(
             tooltip: '刷新全部订阅源',
