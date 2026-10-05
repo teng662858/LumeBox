@@ -128,7 +128,21 @@ class ChapterPagination {
 
   int get pageCount => pages.length;
 
-  NovelPage pageAt(int index) => pages[index.clamp(0, pages.length - 1)];
+  /// 取第 [index] 页；空分页（空章）时返回一个空页而不是抛错。
+  ///
+  /// 空章是正常输入（图源返回空白章节），阅读器仍会走「保存进度」等路径——
+  /// 那些路径不该因为「没有页」而崩。
+  NovelPage pageAt(int index) {
+    if (pages.isEmpty) {
+      return const NovelPage(
+        index: 0,
+        segments: <NovelTextSegment>[],
+        charStart: 0,
+        charEnd: 0,
+      );
+    }
+    return pages[index.clamp(0, pages.length - 1)];
+  }
 
   /// 字符偏移 → 页序号。二分查找：取最后一个 `charStart <= offset` 的页。
   int pageIndexForChar(int charOffset) {

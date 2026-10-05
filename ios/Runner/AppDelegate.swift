@@ -6,6 +6,9 @@ import UIKit
   /// 画中画控制器：生命周期跟随 App（方法通道由它注册）。
   private let pip = PipController()
 
+  /// 语音朗读控制器（AVSpeechSynthesizer）：生命周期跟随 App。
+  private let speech = SpeechController()
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -21,6 +24,12 @@ import UIKit
     if let messenger = engineBridge.pluginRegistry
       .registrar(forPlugin: "LumeBoxPip")?.messenger() {
       pip.register(with: messenger)
+    }
+
+    // 语音朗读通道：与 Dart 侧 `MethodChannelSpeechBackend` 的契约一一对应。
+    if let messenger = engineBridge.pluginRegistry
+      .registrar(forPlugin: "LumeBoxSpeech")?.messenger() {
+      speech.register(with: messenger)
     }
   }
 }

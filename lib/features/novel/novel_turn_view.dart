@@ -116,8 +116,12 @@ class NovelTurnViewState extends State<NovelTurnView>
   }
 
   /// 直接跳到某页（目录、进度恢复）。
+  ///
+  /// `pageCount` 为 0（空章）时收到 0 也安全：夹取上下界会退化成 0。
   void jumpTo(int index) {
-    final target = index.clamp(0, widget.pageCount - 1).toDouble();
+    final target = widget.pageCount <= 0
+        ? 0.0
+        : index.clamp(0, widget.pageCount - 1).toDouble();
     _animation.stop();
     setState(() => _position = target);
   }

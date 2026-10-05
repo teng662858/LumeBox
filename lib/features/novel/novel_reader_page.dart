@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
+import '../../core/speech/speech.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/state_view.dart';
 import 'novel_bookmarks.dart';
 import 'novel_page_painter.dart';
 import 'novel_pagination.dart';
+import 'novel_speech_panel.dart';
 import 'novel_turn_view.dart';
 import 'novel_typesetting.dart';
 
@@ -36,6 +38,7 @@ class NovelReaderPage extends StatefulWidget {
     required this.initialChapterIndex,
     this.initialCharOffset = 0,
     this.resumeAtChapterEnd = false,
+    this.speechBackend,
   });
 
   final ReadingLibrary library;
@@ -49,6 +52,12 @@ class NovelReaderPage extends StatefulWidget {
 
   /// 从上一章往回翻时，停在上一章的最后一页。
   final bool resumeAtChapterEnd;
+
+  /// 语音后端；为空时按平台自动选择（iOS 走原生，其余平台如实降级）。
+  ///
+  /// 注入点存在的意义：测试在没有 AVSpeechSynthesizer 的机器上也能验完整条
+  /// 听书链路（与播放器的内核注入同口径）。
+  final SpeechBackend? speechBackend;
 
   @override
   State<NovelReaderPage> createState() => _NovelReaderPageState();
@@ -95,6 +104,30 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   List<int> _searchHits = const <int>[];
   int _searchHitIndex = -1;
 
+  /// 听书：会话 + 设置 + 当前章节的朗读片段。
+  SpeechSession? _speech;
+  SpeechSettings _speechSettings = const SpeechSettings();
+  List<SpeechSegment> _speechSegments = const <SpeechSegment>[];
+
+  /// 听书状态快照（面板与指示条订阅它）。
+  final ValueNotifier<SpeechState> _speechState =
+      ValueNotifier<SpeechState>(SpeechState.unavailable);
+
+  /// 朗读时是否跟随翻页（与设置里的开关同步，单独存一份避免每帧读设置）。
+  bool _speechFollowAlong = true;
+
+  /// 跟读翻页的节流：朗读位置推进很密集，每来一次就翻页会抖。
+  int _lastFollowedPage = -1;
+
+  /// 是否处于「连续听书」模式：本章读完自动进下一章接着读，手动换章也接着读。
+  ///
+  /// 与「用户主动停止」区分开：停止 / 朗读失败都会清掉它，因此不会在用户喊停
+  /// 之后又自己翻到下一章。
+  bool _speechContinuous = false;
+
+  /// 章节加载完成后要接着朗读（连续听书推进 / 手动换章后继续听）。
+  bool _speechResumeAfterLoad = false;
+
   /// 分页结果对应的排版签名，用于判断是否需要重排。
   String? _paginatedSignature;
 
@@ -117,6 +150,11 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
           widget.library.setting(NovelTypesetting.autoPageKey) ?? '',
         ) ??
         15;
+    _speechSettings = SpeechSettings.decode(
+      widget.library.setting(SpeechSettings.settingKey),
+    );
+    _speechFollowAlong = _speechSettings.followAlong;
+    _openSpeech();
     _chapters = widget.chapters;
     _chapterIndex = _chapters.isEmpty
         ? 0
@@ -141,6 +179,11 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     _saveTimer?.cancel();
     _autoPageTimer?.cancel();
     _saveProgress();
+    // 朗读会话先释放：它持有原生合成器，退出阅读器不能继续出声。
+    final speech = _speech;
+    _speech = null;
+    unawaited(speech?.dispose());
+    _speechState.dispose();
     _scrollController?.dispose();
     _disposeCanvases();
     // 退出后不会再有绘制帧，待释放的页画布不必再等下一帧：立刻归还。
@@ -221,6 +264,13 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     });
     final size = _viewport;
     if (size != null) _schedulePagination(size);
+    // 连续听书：新章文本就位后接着读（从章首开始）。
+    if (_speechResumeAfterLoad) {
+      _speechResumeAfterLoad = false;
+      _speechSegments = const <SpeechSegment>[];
+      _lastFollowedPage = -1;
+      unawaited(_startSpeech());
+    }
   }
 
   /// 恢复目标（字符偏移）。分页完成后消费一次即清空。
@@ -657,6 +707,197 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     );
   }
 
+  // ------------------------------------------------------------------ 听书
+
+  /// 建立朗读会话并订阅状态。
+  ///
+  /// 会话在进阅读器时就建好（探测平台能力是异步的），而不是等用户点「开始朗读」
+  /// 才建——面板需要知道平台到底支不支持，才能显示占位而不是一个点了没反应的按钮。
+  void _openSpeech() {
+    final backend = widget.speechBackend ?? createPlatformSpeechBackend();
+    final session = SpeechSession(
+      backend: backend,
+      onPosition: _onSpeechPosition,
+      onSegmentFinished: _onSpeechSegmentFinished,
+      onCompleted: _onSpeechCompleted,
+      onEvent: _onSpeechEvent,
+    );
+    _speech = session;
+    session.state.addListener(_mirrorSpeechState);
+    _mirrorSpeechState();
+  }
+
+  /// 把会话状态镜像到页面自己的快照上。
+  ///
+  /// 页面不直接暴露会话的状态通知器：会话释放时会 dispose 它，而面板可能还在
+  /// 渲染最后一帧——用自己的快照，生命周期就完全由页面掌握。
+  void _mirrorSpeechState() {
+    final state = _speech?.state.value;
+    if (state == null) return;
+    if (_speechState.value == state) return;
+    _speechState.value = state;
+  }
+
+  /// 本章读完：连续听书时自动进下一章。
+  ///
+  /// 用会话的「读完」回调而不是「状态变 idle」：idle 也可能是用户停止、引擎
+  /// 中断或失败收敛，那些情况下都不该自动翻章。
+  void _onSpeechCompleted() {
+    if (!mounted) return;
+    if (!_speechContinuous) return;
+    _speechContinuous = false;
+    _advanceSpeechChapter();
+  }
+
+  /// 本章读完：进下一章接着听（最后一章则停下）。
+  void _advanceSpeechChapter() {
+    if (!mounted) return;
+    if (_chapterIndex >= _chapters.length - 1) {
+      _showSpeechToast('已读完最后一章');
+      return;
+    }
+    _speechResumeAfterLoad = true;
+    unawaited(_openChapter(_chapterIndex + 1));
+  }
+
+  /// 朗读位置推进：按设置跟读翻页。
+  void _onSpeechPosition(int charOffset) {
+    if (!_speechFollowAlong || !mounted) return;
+    final pagination = _pagination;
+    if (pagination == null || pagination.pageCount == 0) return;
+    final page = pagination.pageIndexForChar(charOffset);
+    // 节流：同一页不重复翻（朗读位置推进比翻页频率高得多）。
+    if (page == _lastFollowedPage) return;
+    _lastFollowedPage = page;
+    if (page == _pageIndex) return;
+    _goToPage(page);
+  }
+
+  /// 一段读完：位置推到段末后同样跟读一次（保证段落末尾也翻到位）。
+  void _onSpeechSegmentFinished(int charOffset) {
+    if (!_speechFollowAlong || !mounted) return;
+    final pagination = _pagination;
+    if (pagination == null || pagination.pageCount == 0) return;
+    // 段末偏移落在下一段的开头时，页也该跟着走；用「减一」把位置钉在本段最后一
+    // 个字符上，避免刚好读到段末却被翻到下一页开头。
+    final page = pagination.pageIndexForChar(
+      charOffset <= 0 ? 0 : charOffset - 1,
+    );
+    if (page == _lastFollowedPage) return;
+    _lastFollowedPage = page;
+    if (page == _pageIndex) return;
+    _goToPage(page);
+  }
+
+  void _onSpeechEvent(SpeechEvent event) {
+    if (!mounted) return;
+    if (event.kind != SpeechEventKind.failed) return;
+    final message = event.message;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 3),
+        content: Text('朗读中断：${message ?? '未知原因'}'),
+      ),
+    );
+  }
+
+  /// 面板上的主按钮：未朗读时开始 / 继续，朗读中暂停。
+  Future<void> _toggleSpeech() async {
+    final session = _speech;
+    if (session == null) return;
+    if (session.isPaused) {
+      final rejection = await session.resume();
+      if (rejection != null && mounted) _showSpeechToast(rejection);
+      return;
+    }
+    if (session.isActive) {
+      final rejection = await session.pause();
+      if (rejection != null && mounted) _showSpeechToast(rejection);
+      return;
+    }
+    await _startSpeech();
+  }
+
+  /// 从当前页开始朗读。
+  ///
+  /// 起点取**当前页首字符**而不是章节开头：用户翻到哪就从哪听，这是「继续听」
+  /// 的自然预期；想从头听就先翻到第一页。
+  Future<void> _startSpeech() async {
+    final session = _speech;
+    final text = _text;
+    if (session == null || text == null) return;
+
+    final segments = SpeechSegments.split(
+      text.text,
+      fromOffset: _currentCharOffset,
+      maxChars: _speechSettings.maxCharsPerSegment,
+    );
+    if (segments.isEmpty) {
+      _showSpeechToast('本章没有可朗读的内容');
+      return;
+    }
+    _speechSegments = segments;
+    _lastFollowedPage = _pageIndex;
+    final rejection = await session.start(segments);
+    if (!mounted) return;
+    if (rejection != null) {
+      _showSpeechToast(rejection);
+      return;
+    }
+    // 连听：本章读完自动进下一章（用户主动停止时才清掉）。
+    _speechContinuous = true;
+    setState(() {});
+  }
+
+  Future<void> _stopSpeech() async {
+    final session = _speech;
+    if (session == null) return;
+    _lastFollowedPage = -1;
+    _speechContinuous = false;
+    _speechResumeAfterLoad = false;
+    await session.stop();
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  /// 面板上拖动进度：跳到第 [index] 片。
+  Future<void> _seekSpeech(int index) async {
+    final session = _speech;
+    if (session == null) return;
+    // 跳转后立刻跟读一次：否则要等引擎下一次位置回报才翻页，手感是「卡一下」。
+    final rejection = await session.seekToSegment(index);
+    if (!mounted) return;
+    if (rejection != null) {
+      _showSpeechToast(rejection);
+      return;
+    }
+    if (_speechSegments.isNotEmpty) {
+      _lastFollowedPage = -1;
+      _onSpeechPosition(
+        _speechSegments[index.clamp(0, _speechSegments.length - 1)].start,
+      );
+    }
+  }
+
+  void _updateSpeechSettings(SpeechSettings next) {
+    setState(() {
+      _speechSettings = next;
+      _speechFollowAlong = next.followAlong;
+    });
+    widget.library.setSetting(SpeechSettings.settingKey, next.encode());
+    // 参数改动下发给后端（下一段生效；正在读的那段不打断）。
+    final backend = _speech?.backend;
+    if (backend is MethodChannelSpeechBackend) {
+      backend.applySettings(next);
+    }
+  }
+
+  void _showSpeechToast(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(duration: const Duration(seconds: 2), content: Text(message)),
+    );
+  }
+
   // ------------------------------------------------------------------ 进度
 
   void _scheduleSave() {
@@ -743,6 +984,13 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     }
     _saveTimer?.cancel();
     _saveProgress();
+    // 换章时若正在朗读：先停下当前章节的朗读，等新章文本就位后再接着读
+    // （否则引擎会继续念上一章的内容，位置也会错位）。
+    if (_speech?.isActive ?? false) {
+      _speechContinuous = true;
+      _speechResumeAfterLoad = true;
+      unawaited(_speech?.stop());
+    }
     setState(() {
       _chapterIndex = index;
       _pageIndex = 0;
@@ -816,6 +1064,25 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       body: Stack(
         children: <Widget>[
           Positioned.fill(child: _buildContent()),
+          // 朗读指示条：压在正文底部，只在朗读 / 暂停时出现。
+          //
+          // 必须包在 Positioned.fill 里：它是 Stack 的非定位子项，不朗读时高度为 0，
+          // 而 Stack 会按最大的非定位子项定尺寸——不包的话整页会被压成 0×0。
+          // 包了之后 [Align] 只在药丸那一小块命中，其余触摸照常落到下面的翻页手势。
+          Positioned.fill(
+            child: ValueListenableBuilder<SpeechState>(
+              valueListenable: _speechState,
+              builder: (context, state, _) => NovelSpeechIndicator(
+                state: state,
+                segmentIndex: _speech?.segmentIndex ?? 0,
+                segmentCount: _speech?.segmentCount ?? 0,
+                chromeSurface: _theme.chromeSurface,
+                chromeText: _theme.chromeText,
+                secondary: _theme.secondary,
+                onStop: _stopSpeech,
+              ),
+            ),
+          ),
           if (_toolbar) ...<Widget>[
             _buildTopBar(),
             _buildBottomPanel(),
@@ -945,6 +1212,37 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                   ],
                 ),
               ),
+              // 听书：一键开始 / 暂停朗读（设置在同名面板页签里）。
+              ValueListenableBuilder<SpeechState>(
+                valueListenable: _speechState,
+                builder: (context, state, _) {
+                  final active = state == SpeechState.speaking ||
+                      state == SpeechState.pausing;
+                  final paused = state == SpeechState.paused;
+                  return IconButton(
+                    tooltip: !(_speech?.isSupported ?? false)
+                        ? '当前平台不支持语音朗读'
+                        : active
+                            ? '暂停朗读'
+                            : paused
+                                ? '继续朗读'
+                                : '开始朗读',
+                    icon: Icon(
+                      active
+                          ? Icons.pause_circle_outline
+                          : paused
+                              ? Icons.play_circle_outline
+                              : Icons.headphones_outlined,
+                      color: _theme.chromeText,
+                    ),
+                    onPressed: (_speech?.isSupported ?? false)
+                        ? _toggleSpeech
+                        : () => _showSpeechToast(
+                              _speechUnavailableReason() ?? '当前平台不支持语音朗读',
+                            ),
+                  );
+                },
+              ),
               IconButton(
                 tooltip: _bookmarkHere != null ? '移除书签' : '添加书签',
                 icon: Icon(
@@ -1010,6 +1308,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 child: switch (_panel) {
                   _PanelTab.catalog => _buildCatalog(),
                   _PanelTab.bookmarks => _buildBookmarks(),
+                  _PanelTab.speech => _buildSpeechPanel(),
                   _PanelTab.typesetting => _buildTypesetting(),
                   _PanelTab.theme => _buildThemePanel(),
                   _PanelTab.turn => _buildTurnPanel(),
@@ -1076,6 +1375,43 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   }
 
   /// 书签面板：书签列表 + 章节内查找 + 自动翻页开关。
+  /// 听书面板：朗读控制 + 语速 / 音调 / 音量 + 跟读开关。
+  Widget _buildSpeechPanel() {
+    final session = _speech;
+    return ValueListenableBuilder<SpeechState>(
+      valueListenable: _speechState,
+      builder: (context, state, _) => NovelSpeechPanel(
+        state: state,
+        settings: _speechSettings,
+        chromeText: _theme.chromeText,
+        secondary: _theme.secondary,
+        supported: session?.isSupported ?? false,
+        unavailableReason: _speechUnavailableReason(),
+        segmentIndex: session?.segmentIndex ?? 0,
+        segmentCount: session?.segmentCount ?? 0,
+        onToggle: _toggleSpeech,
+        onStop: _stopSpeech,
+        onSeekSegment: _seekSpeech,
+        onSettingsChanged: _updateSpeechSettings,
+      ),
+    );
+  }
+
+  /// 平台不支持时的原因文案：区分「平台没有能力」与「原生还没接入」。
+  ///
+  /// 两种情况对用户是同一件事（用不了），但写清楚原因能省掉一次「是不是我
+  /// 设置错了」的排查。
+  String? _speechUnavailableReason() {
+    final session = _speech;
+    if (session == null) return '正在探测语音能力…';
+    if (session.isSupported) return null;
+    final backend = session.backend;
+    if (backend is MethodChannelSpeechBackend) {
+      return '语音朗读需要 iOS 15 及以上（原生合成器未就绪）';
+    }
+    return '语音朗读目前仅在 iOS 上提供（Android / Windows 暂不支持）';
+  }
+
   Widget _buildBookmarks() {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1404,6 +1740,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
 enum _PanelTab {
   catalog('目录'),
   bookmarks('书签'),
+  speech('听书'),
   typesetting('排版'),
   theme('主题'),
   turn('翻页');
