@@ -128,6 +128,39 @@ void main() {
     expect(covers.single.url, 'https://example.com/poster.jpg');
   });
 
+  testWidgets('导入源后首页自动刷新出列表（不必手动重试或切页签）', (tester) async {
+    // 空板块起步：首页显示空态与导入引导。
+    manager = FakeSourceManager(
+      // 导入后的新图源（FakeSourceManager 固定用 lume.new / 新图源）可打开。
+      opened: <String, DataSource>{'lume.new': source},
+    );
+    source.items = const <SourceItem>[
+      SourceItem(id: 'https://example.com/after-import.mp4', title: '导入后的条目'),
+    ];
+    await pumpBoard(tester);
+
+    expect(find.text('暂无图源'), findsOneWidget, reason: '起步是空板块');
+
+    // 走右上角「+」导入（与真实导入同一条路径：校验 → 落库 → onImported）。
+    await tester.tap(find.byTooltip('添加图源'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextField),
+      '// LumeSource: {"id":"lume.new","name":"新图源","version":"1.0.0"}',
+    );
+    await tester.tap(find.text('导入'));
+    await tester.pumpAndSettle();
+
+    expect(manager.imported, hasLength(1));
+    // 自动刷新：空态消失，图源条换成新图源，列表直接出现（无需点「重试」）。
+    expect(find.text('暂无图源'), findsNothing, reason: '导入完成即重挂浏览面');
+    expect(find.text('新图源'), findsOneWidget, reason: '图源条切到新导入的图源');
+    expect(find.text('导入后的条目'), findsOneWidget, reason: '列表自动刷出');
+    // 刷新必须是**原地重解析**：管理器不能被拆（拆了会连带拆掉板块共享的
+    // 图源注册表，页面随后就报「图源存储不可用」——真机自测抓到的竞态）。
+    expect(manager.closed, isFalse, reason: '刷新不能释放管理器');
+  });
+
   testWidgets('点条目直接起播：条目自带地址时不再要详情 / 章节', (tester) async {
     source.items = const <SourceItem>[
       SourceItem(id: 'https://example.com/demo.mp4', title: '测试视频'),

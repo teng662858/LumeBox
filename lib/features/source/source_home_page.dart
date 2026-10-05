@@ -68,6 +68,7 @@ class SourceBrowsePane extends StatefulWidget {
     this.onItemTap,
     this.pipeline,
     this.showSourceActions = true,
+    this.revision = 0,
   });
 
   final Section section;
@@ -81,6 +82,15 @@ class SourceBrowsePane extends StatefulWidget {
   /// 封面图管线（可选）：转发给浏览面，条目带封面时列表行左侧显示缩略图。
   /// 为空时列表保持纯文字排布（图源管理里的浏览入口走这条）。
   final SectionImagePipeline? pipeline;
+
+  /// 刷新代数：宿主（板块页）在导入 / 删除图源后 +1，面板据此**原地重解析**
+  /// 当前图源与列表。
+  ///
+  /// 为什么不是换 Key 重挂：重挂会让新旧两个面板实例短暂共存，新实例先取到
+  /// 板块共享的图源注册表、旧实例随后 `dispose` 把它整个拆掉（引擎 + 数据库），
+  /// 新实例随后的读取就撞上「数据库已关闭」——页面上表现为导入成功后反而
+  /// 报「图源存储不可用」。原地重解析走同一个实例，不存在这个竞态。
+  final int revision;
 
   /// 图源条右侧是否显示「图源管理」快捷入口。
   final bool showSourceActions;
@@ -113,6 +123,13 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
   void initState() {
     super.initState();
     if (_manager.runtimeAvailable) _resolve();
+  }
+
+  @override
+  void didUpdateWidget(SourceBrowsePane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 图源变更（导入 / 删除）：原地重解析，不换实例（见 [revision] 的说明）。
+    if (oldWidget.revision != widget.revision) _resolve();
   }
 
   @override
@@ -293,7 +310,9 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
           _buildSourceBar(),
           Expanded(
             child: BrowseView(
-              key: ValueKey<String>(source.id),
+              // 换代时连浏览面一起重挂：换图源要重取列表，图源没换时刷新
+              // 也要求看到当下的内容（与从前「换 Key 重挂」的可见行为一致）。
+              key: ValueKey<String>('${source.id}#${widget.revision}'),
               dataSource: source,
               pipeline: widget.pipeline,
               // 宿主没给回调就走浏览面的通用口径（进详情页）。

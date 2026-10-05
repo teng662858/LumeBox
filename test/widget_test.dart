@@ -53,10 +53,10 @@ void main() {
       await tester.tap(navItem(section.label));
       await tester.pumpAndSettle();
 
-      // 猫源板块页本身就是该板块的图源管理页（标题用「· 图源管理」口径），
+      // 猫源板块页本身就是该板块的源管理页（标题用「· 源管理」口径），
       // 其余板块是内容页，标题就是板块名。
       final expectedTitle =
-          section == Section.cat ? '${section.label} · 图源管理' : section.label;
+          section == Section.cat ? '${section.label} · 源管理' : section.label;
       expect(
         find.widgetWithText(AppBar, expectedTitle),
         findsOneWidget,

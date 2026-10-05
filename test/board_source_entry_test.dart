@@ -71,8 +71,8 @@ void main() {
     await tester.tap(find.byTooltip('图源管理'));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(AppBar, '小说 · 图源管理'), findsOneWidget);
-    expect(find.text('暂无图源'), findsOneWidget, reason: '展示的是本板块图源列表');
+    expect(find.widgetWithText(AppBar, '小说 · 源管理'), findsOneWidget);
+    expect(find.text('暂无源'), findsOneWidget, reason: '展示的是本板块图源列表');
   });
 
   testWidgets('漫画板块：右上角「图源管理」，原有入口照旧', (tester) async {
@@ -88,7 +88,7 @@ void main() {
     await tester.tap(find.byTooltip('图源管理'));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(AppBar, '漫画 · 图源管理'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, '漫画 · 源管理'), findsOneWidget);
   });
 
   testWidgets('视频板块：右上角是「图源管理」，不再是播放器设置', (tester) async {
@@ -113,14 +113,14 @@ void main() {
     await tester.pumpAndSettle();
 
     // 视频板块管理页（本平台无图源运行时，页面按骨架展示，标题口径一致）。
-    expect(find.widgetWithText(AppBar, '视频 · 图源管理'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, '视频 · 源管理'), findsOneWidget);
   });
 
   testWidgets('猫源板块：页面本身就是本板块图源管理页', (tester) async {
     await pumpBoard(tester, const CatPage());
 
     // 猫源没有独立的业务页：板块页即图源管理页，标题与其他板块同一口径。
-    expect(find.widgetWithText(AppBar, '猫源 · 图源管理'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, '猫源 · 源管理'), findsOneWidget);
   });
 
   testWidgets('图源管理页：导入的源可见、可启停，操作收进「更多」', (tester) async {

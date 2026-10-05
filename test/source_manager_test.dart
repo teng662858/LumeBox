@@ -64,8 +64,8 @@ void main() {
   testWidgets('空板块：显示空态与导入入口', (tester) async {
     await pumpPage(tester, FakeSourceManager());
 
-    expect(find.text('暂无图源'), findsOneWidget);
-    expect(find.text('点击右上角「+」导入图源脚本'), findsOneWidget);
+    expect(find.text('暂无源'), findsOneWidget);
+    expect(find.text('点击右上角「+」导入源脚本'), findsOneWidget);
     expect(find.byTooltip('添加图源'), findsOneWidget);
   });
 
@@ -101,7 +101,7 @@ void main() {
     await importScript(tester, 'var LumeSource = (');
 
     expect(find.text('导入失败：脚本载入失败：语法错误或运行异常'), findsOneWidget);
-    expect(find.text('暂无图源'), findsOneWidget);
+    expect(find.text('暂无源'), findsOneWidget);
   });
 
   testWidgets('导入对话框：可载入内置示例脚本', (tester) async {
@@ -161,7 +161,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(manager.removed.single, 'a');
-    expect(find.text('暂无图源'), findsOneWidget);
+    expect(find.text('暂无源'), findsOneWidget);
   });
 
   testWidgets('浏览：经管理器打开数据源并进入浏览页', (tester) async {

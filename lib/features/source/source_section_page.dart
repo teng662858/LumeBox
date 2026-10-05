@@ -389,15 +389,15 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
   @override
   Widget build(BuildContext context) {
     if (!_manager.runtimeAvailable) {
-      // 平台骨架：标题仍按「板块 · 图源管理」口径，页面身份不含糊。
+      // 平台骨架：标题仍按「板块 · 源管理」口径，页面身份不含糊。
       return GlassScaffold(
-        title: '${widget.section.label} · 图源管理',
+        title: '${widget.section.label} · 源管理',
         child: const SkeletonNotice(),
       );
     }
     final sources = _sources;
     return GlassScaffold(
-      title: '${widget.section.label} · 图源管理',
+      title: '${widget.section.label} · 源管理',
       actions: <Widget>[
         IconButton(
           tooltip: '可视化编辑器',
@@ -443,8 +443,8 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
   Widget _buildSources(List<SourceDescriptor> sources) {
     if (sources.isEmpty) {
       return const NoticeCard(
-        title: '暂无图源',
-        subtitle: '点击右上角「+」导入图源脚本',
+        title: '暂无源',
+        subtitle: '点击右上角「+」导入源脚本',
       );
     }
     return ListView.separated(

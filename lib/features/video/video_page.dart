@@ -496,6 +496,12 @@ class _VideoPageState extends State<VideoPage>
     );
   }
 
+  /// 图源变更后重挂浏览面：列表与当前图源重新解析。
+  ///
+  /// 与小说 / 漫画板块的 `_onSourcesChanged` 同一套做法——右上角「+」导入
+  /// 完成后立即刷新，不用手动重试或切页签。
+  void _onSourcesChanged() => setState(() => _browseRevision++);
+
   /// 打开本板块的图源管理页（启用 / 禁用 / 重命名 / 导出 / 删除都在那里）。
   ///
   /// 返回后重挂浏览面：图源可能被导入、停用或删除，列表与当前图源都要重算
@@ -510,7 +516,7 @@ class _VideoPageState extends State<VideoPage>
       ),
     );
     if (!mounted) return;
-    setState(() => _browseRevision++);
+    _onSourcesChanged();
   }
 
   Future<void> _openSettings() async {
@@ -1286,7 +1292,12 @@ class _VideoPageState extends State<VideoPage>
           icon: const Icon(Icons.source_outlined),
           onPressed: _manageSources,
         ),
-        const AddSourceButton(section: Section.video),
+        // 右上角统一的「+」添加图源：导入完成即刷新首页（与小说 / 漫画同口径）。
+        AddSourceButton(
+          section: Section.video,
+          manager: widget.sourceManager,
+          onImported: _onSourcesChanged,
+        ),
       ];
 
   @override
@@ -1315,13 +1326,15 @@ class _VideoPageState extends State<VideoPage>
                 ),
               Expanded(
                 child: SourceBrowsePane(
-                  key: ValueKey<int>(_browseRevision),
                   section: Section.video,
                   manager: widget.sourceManager,
                   showSourceActions: false,
                   // 封面管线的缓存属于视频板块自己，与其他板块不共享。
                   pipeline: _pipeline,
                   onItemTap: _playFromSource,
+                  // 图源变更后原地重解析（不换 Key：重挂会与旧实例的 dispose
+                  // 抢同一份板块注册表，反而报「图源存储不可用」）。
+                  revision: _browseRevision,
                 ),
               ),
             ],
