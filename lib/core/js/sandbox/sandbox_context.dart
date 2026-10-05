@@ -275,6 +275,18 @@ class SandboxContext {
         _fail(SandboxErrorKind.engine, _lastError!.message);
         return null;
       }
+      // 预算补判：求值是同步原生调用，期间 Dart 事件循环无法运行；原生中断通路
+      // 不可用时（JS_SetInterruptHandler 未导出）超时只能在这一刻核对。脚本虽然
+      // 跑完并返回了值，但耗时已越过墙钟预算，同样按超时处理——否则一段 CPU
+      // 空转 8 秒的脚本会被当成正常结果收下，3–5 秒预算形同虚设。
+      final budget = _budget;
+      if (budget != null && budget.isExpired) {
+        final message = '执行超时（${budget.elapsed.inMilliseconds}ms > '
+            '${budget.policy.timeout.inMilliseconds}ms）';
+        _lastError = SandboxError(SandboxErrorKind.timeout, message);
+        _fail(SandboxErrorKind.timeout, message);
+        return null;
+      }
       _lastError = null;
       return text;
     } catch (error, stackTrace) {
@@ -352,6 +364,18 @@ class SandboxContext {
       } catch (error, stackTrace) {
         LumeLog.error(error, stackTrace);
         _fail(SandboxErrorKind.engine, '$error');
+        return false;
+      }
+      // 墙钟补判：单个任务体是同步原生调用，事件循环在它执行期间无法运行，
+      // Dart 侧的 `.timeout()` 也就没机会触发。原生中断通路不可用时，一个
+      // CPU 空转数秒的任务体会被原样收下——必须在这里核对预算，否则 3–5 秒
+      // 的墙钟上限对「跑得完但跑太久」的脚本形同虚设。
+      if (_activeBudget.isExpired) {
+        _fail(
+          SandboxErrorKind.timeout,
+          '执行超时（${_activeBudget.elapsed.inMilliseconds}ms > '
+          '${policy.timeout.inMilliseconds}ms）',
+        );
         return false;
       }
       if (outcome == 0) return true;
@@ -513,19 +537,47 @@ class SandboxContext {
     final raw = payload['text'];
     final text = raw == null ? 'null' : '$raw';
     if (payload['ok'] != true) {
-      if (policy.poisonOnScriptError) {
-        _fail(SandboxErrorKind.script, text);
+      // 走桥的调用（`__lumeInvoke` 的 catch 分支）只会带回异常文本，分类要靠
+      // 文本还原——否则「脚本方法体内堆爆了」会被当成可捕获的普通脚本错误，
+      // 于是一个内存已失控的上下文被原样留着继续用。引擎级错误（内存/栈/
+      // 中断）无论策略如何都必须销毁上下文，这条口径与直接求值路径一致。
+      final kind = _classify(text);
+      _lastError = SandboxError(kind, text);
+      if (kind != SandboxErrorKind.script || policy.poisonOnScriptError) {
+        _fail(kind, text);
       }
-      completer.complete(SandboxFailure(SandboxErrorKind.script, text));
+      _settle(completer, SandboxFailure(kind, text));
       return;
     }
     if (text.length > policy.maxResultChars) {
       final message = '结果超出上限（${text.length} > ${policy.maxResultChars}）';
       _fail(SandboxErrorKind.protocol, message);
-      completer.complete(SandboxFailure(SandboxErrorKind.protocol, message));
+      _settle(completer, SandboxFailure(SandboxErrorKind.protocol, message));
       return;
     }
-    completer.complete(SandboxSuccess(_decode(text)));
+    // 墙钟补判：单个任务体是同步原生调用，事件循环在它执行期间无法运行，
+    // 因此 `.timeout()` 拦不住「跑得完但跑太久」的脚本——结果会在排空微任务时
+    // 直接被投递回来。原生中断通路不可用时，这里是唯一能核对预算的关口：
+    // 已越过 3–5 秒上限的结果一律按超时处理，否则预算形同虚设。
+    if (_activeBudget.isExpired) {
+      final message = '执行超时（${_activeBudget.elapsed.inMilliseconds}ms > '
+          '${policy.timeout.inMilliseconds}ms）';
+      _fail(SandboxErrorKind.timeout, message);
+      _settle(completer, SandboxFailure(SandboxErrorKind.timeout, message));
+      return;
+    }
+    _settle(completer, SandboxSuccess(_decode(text)));
+  }
+
+  /// 投递调用结果，且只投一次。
+  ///
+  /// [_fail] 会立刻把在飞的调用以污染原因结束（保证「超时 → 销毁重建」这条
+  /// 链路的观察结果稳定），因此这里必须允许「已经被完成」——否则判定污染之后
+  /// 再补一次 `complete` 会抛 `Bad state: Future already completed`，
+  /// 把一次正常的超时处理变成引擎级异常。
+  void _settle(Completer<SandboxResult> completer, SandboxResult result) {
+    if (completer.isCompleted) return;
+    completer.complete(result);
   }
 
   /// 结果文本解码：合法 JSON 就解码，否则按字符串返回。

@@ -174,13 +174,24 @@ class SourceRegistry {
       }
       // 元信息：头部声明优先，退回运行时 LumeSource；两者都不合法时给出
       // 点名到字符的失败原因（哪个 id、哪个字符不合规），而不是一句笼统的报错。
+      // 两处声明做合并而不是二选一：category 常常只写在运行时对象上，
+      // 头部命中就整体采用会让这类脚本绕过板块校验。
       final rawMetadata = await probe.metadata();
-      final metadata =
-          SourceMetadata.parseHeader(text) ?? SourceMetadata.parse(rawMetadata);
+      final metadata = SourceMetadata.merge(
+        SourceMetadata.parseHeader(text),
+        SourceMetadata.parse(rawMetadata),
+      );
       if (metadata == null) {
         return SourceImportOutcome.failure(
           SourceMetadata.describeImportFailure(rawMetadata, script: text),
         );
+      }
+      // 板块归属校验：脚本自报的 category 必须与本板块一致，否则在解析阶段
+      // 直接拒绝——跨板块混用图源在这里被拦下，不会落库、不会进入运行期。
+      final mismatch = metadata.sectionMismatch(section);
+      if (mismatch != null) {
+        LumeLog.warn('[${section.id}] 拒绝跨板块图源 ${metadata.id}：$mismatch');
+        return SourceImportOutcome.failure(mismatch);
       }
       _database.upsertSource(
         id: metadata.id,

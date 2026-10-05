@@ -102,11 +102,14 @@ class LumeJsEngine {
     return result.isOk;
   }
 
-  /// 读取脚本声明的元信息（id / name / version），失败返回 null。
+  /// 读取脚本声明的元信息（id / name / version / category），失败返回 null。
+  ///
+  /// `category` 是脚本自报的归属板块（可选）：导入路径据此拒绝跨板块图源。
+  /// 脚本没声明时该字段为空串，归属仍由导入入口决定。
   Future<Map<String, Object?>?> metadata() async {
     final result = await _sandbox.eval(
       'JSON.stringify({id: LumeSource.id, name: LumeSource.name, '
-      'version: LumeSource.version})',
+      'version: LumeSource.version, category: LumeSource.category})',
       fileName: 'metadata.js',
     );
     if (!result.isOk) return null;
