@@ -16,6 +16,7 @@ export 'data_source.dart';
 export 'js_data_source.dart';
 export 'lume_sources.dart';
 export 'mock_data_source.dart';
+export 'source_backup.dart';
 export 'source_manager.dart';
 export 'source_models.dart';
 export 'source_state.dart';

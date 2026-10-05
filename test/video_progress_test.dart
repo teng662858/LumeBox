@@ -460,6 +460,133 @@ void main() {
       expect(list.map((item) => item.itemId), <String>['new', 'old']);
     });
   });
+  group('跨集自动连播', () {
+    testWidgets('播完自动进下一集', (tester) async {
+      source.items = const <SourceItem>[
+        SourceItem(id: 'movie-1', title: '示例影片'),
+      ];
+      source.chapterList = const <SourceChapter>[
+        SourceChapter(id: 'e1', title: '第 1 集'),
+        SourceChapter(id: 'e2', title: '第 2 集'),
+      ];
+      source.contentUrl = 'https://example.com/e2.mp4';
+      final created = await pumpBoard(tester);
+
+      await tester.tap(find.text('示例影片'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('第 1 集'));
+      await tester.pumpAndSettle();
+
+      // 播到结尾（模拟播放器把位置推到总时长）。
+      created.single.emit(
+        position: const Duration(minutes: 45),
+        duration: const Duration(minutes: 45),
+        playing: true,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        created.single.media?.uri.toString(),
+        'https://example.com/e2.mp4',
+        reason: '播完应自动加载下一集',
+      );
+      expect(find.textContaining('已自动播放'), findsOneWidget);
+    });
+
+    testWidgets('最后一集播完：停下，不越界', (tester) async {
+      source.items = const <SourceItem>[
+        SourceItem(id: 'movie-1', title: '示例影片'),
+      ];
+      source.chapterList = const <SourceChapter>[
+        SourceChapter(id: 'e1', title: '第 1 集'),
+      ];
+      source.contentUrl = 'https://example.com/e1.mp4';
+      final created = await pumpBoard(tester);
+
+      await tester.tap(find.text('示例影片'));
+      await tester.pumpAndSettle();
+
+      final mediaBefore = created.single.media?.uri.toString();
+      created.single.emit(
+        position: const Duration(minutes: 45),
+        duration: const Duration(minutes: 45),
+        playing: true,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        created.single.media?.uri.toString(),
+        mediaBefore,
+        reason: '没有下一集就不动',
+      );
+      expect(find.textContaining('已自动播放'), findsNothing);
+    });
+
+    testWidgets('关掉自动连播：播完不跳集', (tester) async {
+      // 独立的作品 id：避免前序用例留下的播放进度影响本用例。
+      source.items = const <SourceItem>[
+        SourceItem(id: 'movie-off', title: '关连播测试片'),
+      ];
+      source.chapterList = const <SourceChapter>[
+        SourceChapter(id: 'e1', title: '第 1 集'),
+        SourceChapter(id: 'e2', title: '第 2 集'),
+      ];
+      source.contentUrl = 'https://example.com/e2.mp4';
+      final created = await pumpBoard(tester);
+
+      await tester.tap(find.text('关连播测试片'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('第 1 集'));
+      await tester.pumpAndSettle();
+
+      // 控制栏在「播放」页签里：先切过去（起播后会自动切，这里显式确保）。
+      await tester.tap(find.widgetWithText(Tab, '播放'));
+      await tester.pumpAndSettle();
+      // 关掉连播开关（按图标点，避免 tooltip 在窄屏上不可见）。
+      await tester.tap(find.byIcon(Icons.skip_next));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('自动连播：关'), findsOneWidget);
+
+      created.single.emit(
+        position: const Duration(minutes: 45),
+        duration: const Duration(minutes: 45),
+        playing: true,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        created.single.media?.uri.toString(),
+        isNot('https://example.com/e2.mp4'),
+        reason: '关掉后不该自动跳集',
+      );
+    });
+
+    testWidgets('时长未知时不连播（宁可不跳，也不半途跳走）', (tester) async {
+      source.items = const <SourceItem>[
+        SourceItem(id: 'movie-nodur', title: '未知时长测试片'),
+      ];
+      source.chapterList = const <SourceChapter>[
+        SourceChapter(id: 'e1', title: '第 1 集'),
+        SourceChapter(id: 'e2', title: '第 2 集'),
+      ];
+      source.contentUrl = 'https://example.com/e2.mp4';
+      final created = await pumpBoard(tester);
+
+      await tester.tap(find.text('未知时长测试片'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('第 1 集'));
+      await tester.pumpAndSettle();
+
+      // 位置在走但时长未知（0）。
+      created.single.emit(position: const Duration(minutes: 10), duration: Duration.zero);
+      await tester.pumpAndSettle();
+
+      expect(
+        created.single.media?.uri.toString(),
+        isNot('https://example.com/e2.mp4'),
+      );
+    });
+  });
 }
 
 /// 视频图源替身。
@@ -498,8 +625,14 @@ class _VideoSource implements DataSource {
   Future<ChapterContent?> content({
     required String itemId,
     required String chapterId,
-  }) async =>
-      VideoContent(url: Uri.parse(contentUrl));
+  }) async {
+    // 每一集给各自的地址：contentUrl 是「当前用例关心的那一集」，
+    // 其余集按 chapterId 推出来（否则每集同址，测试断言会失去意义）。
+    final url = contentUrl.contains(chapterId)
+        ? contentUrl
+        : 'https://example.com/$chapterId.mp4';
+    return VideoContent(url: Uri.parse(url));
+  }
 }
 
 class _FakeCatalog implements PlayerKernelCatalog {

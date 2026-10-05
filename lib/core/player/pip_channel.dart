@@ -44,10 +44,24 @@ class MethodChannelPipBackend implements PipBackend {
   }
 
   @override
-  Future<void> start() => _methods.invokeMethod<void>('start');
+  Future<void> start() => _invoke('start');
 
   @override
-  Future<void> stop() => _methods.invokeMethod<void>('stop');
+  Future<void> stop() => _invoke('stop');
+
+  /// 调用原生并把 [PlatformException] 转成可读的 [PipException]。
+  ///
+  /// 原生会用 `code` / `message` 说明为什么开不了（系统版本、设备能力、内容源
+  /// 未就绪），这些原因要原样带到界面——一句「画中画失败」帮不了用户。
+  Future<void> _invoke(String method) async {
+    try {
+      await _methods.invokeMethod<void>(method);
+    } on MissingPluginException {
+      throw const PipException('原生画中画未接入');
+    } on PlatformException catch (error) {
+      throw PipException(error.message ?? error.code);
+    }
+  }
 
   @override
   Stream<PipEvent> get events => _events

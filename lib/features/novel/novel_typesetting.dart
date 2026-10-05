@@ -33,6 +33,9 @@ class NovelTypesetting {
 
   static const String settingKey = 'novel.typesetting';
 
+  /// 自动翻页间隔（秒）的设置键；与排版参数分开存（它不是排版）。
+  static const String autoPageKey = 'novel.reader.autoPageSeconds';
+
   final double fontSize;
 
   /// 行高倍数（相对字号）。

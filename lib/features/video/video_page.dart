@@ -134,6 +134,17 @@ class _VideoPageState extends State<VideoPage>
   /// 正在销毁：dispose 里还要落一次进度，但那时不能再 setState（元素已 defunct）。
   bool _disposing = false;
 
+  /// 正在自动连播下一集：防止「播完」的多次快照回调触发连播两次。
+  bool _advancing = false;
+
+  /// 自动连播开关（默认开：看完一集接着下一集是追剧的常态）。
+  // 用户可在控制栏切换（setState 改它），因此不是 final。
+  // ignore: prefer_final_fields
+  bool _autoNext = true;
+
+  /// 当前播放的作品（连播下一集要用它的剧集列表）。
+  DataSource? _playSource;
+
   /// 本平台是否提供任一播放内核（没有就是骨架占位）。
   bool get _anyKernelAvailable =>
       PlayerKernel.values.any(_catalog.isAvailable);
@@ -187,10 +198,71 @@ class _VideoPageState extends State<VideoPage>
   /// 播放状态变化 → Dock 显隐；顺带在「从播放转为非播放」时立即落盘进度
   /// （暂停 / 停止 / 播放出错都是该记准的时刻，不能等 5 秒节流）。
   void _onSnapshotChanged() {
-    final playing = _player?.snapshot.value.playing ?? false;
+    final snapshot = _player?.snapshot.value;
+    final playing = snapshot?.playing ?? false;
     if (_wasPlaying && !playing) _saveProgress(force: true);
     _wasPlaying = playing;
     _syncDockForPlayback();
+    if (snapshot != null && _isFinished(snapshot)) _autoAdvance();
+  }
+
+  /// 是否已播到结尾（留 1 秒余量：播放器到结尾前会先停下）。
+  ///
+  /// 时长未知时一律返回 false——宁可不连播，也不在半途跳走。
+  static bool _isFinished(PlayerSnapshot snapshot) {
+    if (snapshot.duration <= Duration.zero) return false;
+    if (snapshot.error != null) return false;
+    return snapshot.position >= snapshot.duration - const Duration(seconds: 1);
+  }
+
+  /// 自动连播下一集。
+  ///
+  /// 只有「从图源条目起播、且还有下一集」时才连播；手动贴地址没有剧集列表，
+  /// 自然不连播。取不到地址就安静停在当前状态，不弹提示打扰（用户没要求跳集）。
+  Future<void> _autoAdvance() async {
+    if (!_autoNext || _advancing) return;
+    final target = _target;
+    final source = _playSource;
+    if (target == null || source == null) return;
+
+    _advancing = true;
+    try {
+      final List<SourceChapter> chapters;
+      try {
+        chapters = await source.chapters(target.itemId);
+      } on SourceException {
+        return;
+      }
+      final nextIndex = target.chapterIndex + 1;
+      if (nextIndex >= chapters.length) return;
+      final next = chapters[nextIndex];
+
+      final content = await source.content(
+        itemId: target.itemId,
+        chapterId: next.id,
+      );
+      final address = SourcePlayback.contentAddress(content);
+      if (address == null || !mounted) return;
+
+      await _startPlayback(
+        PlayerMedia(uri: address, title: '${target.title} · ${next.title}'),
+        target: VideoPlayTarget(
+          sourceId: target.sourceId,
+          itemId: target.itemId,
+          title: target.title,
+          cover: target.cover,
+          chapterIndex: nextIndex,
+          chapterId: next.id,
+          chapterTitle: next.title,
+        ),
+      );
+      if (!mounted) return;
+      _showPlayerToast('已自动播放：${next.title}');
+    } on SourceException {
+      // 连播失败不打扰：用户没主动要求跳集，安静停在当前状态即可。
+    } finally {
+      _advancing = false;
+    }
   }
 
   bool _wasPlaying = false;
@@ -391,6 +463,7 @@ class _VideoPageState extends State<VideoPage>
       // 条目自带地址 = 单集作品：作品身份就是它自己，能记进继续观看。
       await _startPlayback(
         PlayerMedia(uri: direct, title: item.title),
+        source: source,
         target: VideoPlayTarget(
           sourceId: source.id,
           itemId: item.id,
@@ -440,6 +513,7 @@ class _VideoPageState extends State<VideoPage>
       );
       await _startPlayback(
         PlayerMedia(uri: address, title: '${item.title} · ${chapter.title}'),
+        source: source,
         target: VideoPlayTarget(
           sourceId: source.id,
           itemId: item.id,
@@ -458,7 +532,11 @@ class _VideoPageState extends State<VideoPage>
   /// 交给播放器并切到「播放」页签。播放器不可用时如实提示，不静默失败。
   ///
   /// [target] 是作品身份：给了就记进度（继续观看），不给（手动贴地址）不记。
-  Future<void> _startPlayback(PlayerMedia media, {VideoPlayTarget? target}) async {
+  Future<void> _startPlayback(
+    PlayerMedia media, {
+    VideoPlayTarget? target,
+    DataSource? source,
+  }) async {
     if (_player == null) {
       _showPlayerToast(
         _anyKernelAvailable ? '播放器还在准备，请稍后再试' : '本平台不提供播放内核',
@@ -469,6 +547,7 @@ class _VideoPageState extends State<VideoPage>
     // 换作品前先把上一部的进度落盘（切集也走这里）。
     _saveProgress(force: true);
     _target = target;
+    _playSource = source;
     _input.text = media.uri.toString();
     _tabs.animateTo(VideoPage.playerTabIndex);
     await _loadMedia(media);
@@ -597,6 +676,7 @@ class _VideoPageState extends State<VideoPage>
       }
       await _startPlayback(
         PlayerMedia(uri: address, title: '${item.title} · ${chapter.title}'),
+        source: source,
         target: VideoPlayTarget(
           sourceId: item.sourceId,
           itemId: item.itemId,
@@ -852,6 +932,15 @@ class _VideoPageState extends State<VideoPage>
                             color: Colors.white,
                             icon: const Icon(Icons.stop_circle),
                             onPressed: player.stop,
+                          ),
+                          IconButton(
+                            iconSize: 28,
+                            color:
+                                _autoNext ? Colors.white : LumeTheme.muted,
+                            tooltip: _autoNext ? '自动连播：开' : '自动连播：关',
+                            icon: const Icon(Icons.skip_next),
+                            onPressed: () =>
+                                setState(() => _autoNext = !_autoNext),
                           ),
                           IconButton(
                             iconSize: 28,

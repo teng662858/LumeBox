@@ -97,6 +97,19 @@ class PipOutcome {
 
 /// 原生画中画后端：平台侧只做「探测 / 开 / 关 / 报事件」四件事。
 ///
+/// 画中画调用失败（带可读原因）。
+///
+/// 原生侧会说明为什么开不了（系统版本、设备能力、内容源未就绪），这些原因要
+/// 一路带到界面——一句「画中画失败」帮不了用户。
+class PipException implements Exception {
+  const PipException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// 状态机、资源边界检查与事件回调都在 Dart 侧（[PipSession]）完成；后端不允许
 /// 把异常抛给页面——失败经事件流或方法异常归一，由会话转成可读提示。
 abstract interface class PipBackend {
@@ -213,6 +226,11 @@ class PipSession {
     } on TimeoutException {
       _fail('进入画中画超时');
       return const PipOutcome.rejected('进入画中画超时');
+    } on PipException catch (error) {
+      // 原生给了具体原因（系统版本 / 设备能力 / 内容源未就绪）：原样透出。
+      LumeLog.warn('[pip] 进入失败: ${error.message}');
+      _fail(error.message);
+      return PipOutcome.rejected(error.message);
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       _fail('进入画中画失败');

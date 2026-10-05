@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:path/path.dart' as p;
 
 import '../../core/reading/reading.dart';
@@ -401,6 +402,34 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     await _openChapter(selected);
   }
 
+  /// 长按图片：选择「保存图片」或「复制图片地址」。
+  ///
+  /// 用底部选择面板而不是直接保存：长按的意图有两种（存下来 / 分享给别处），
+  /// 直接存会替用户做决定。分享走「复制地址」——不引入分享插件依赖，
+  /// 用户粘到任意 App 都能用。
+  Future<void> _onImageLongPress(int index) async {
+    if (index < 0 || index >= _images.length) return;
+    final action = await showModalBottomSheet<_ImageAction>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => const _ImageActionSheet(),
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case _ImageAction.save:
+        await _saveImage(index);
+      case _ImageAction.copyLink:
+        await Clipboard.setData(ClipboardData(text: _images[index]));
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 1),
+            content: Text('已复制图片地址'),
+          ),
+        );
+    }
+  }
+
   /// 长按保存当前图片：取原始字节写入本板块的导出目录（不经相册权限）。
   Future<void> _saveImage(int index) async {
     if (_saving) return;
@@ -510,7 +539,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
             decodeWidth: _decodeWidth,
             fit: BoxFit.cover,
             doubleTapZoom: _settings.doubleTapZoom,
-            onLongPress: () => _saveImage(index),
+            onLongPress: () => _onImageLongPress(index),
             onRatio: (ratio) => _onRatio(index, ratio),
           ),
         ),
@@ -542,7 +571,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                         index: first,
                         decodeWidth: _decodeWidth,
                         doubleTapZoom: _settings.doubleTapZoom,
-                        onLongPress: () => _saveImage(first),
+                        onLongPress: () => _onImageLongPress(first),
                       ),
                     ),
                     if (first + 1 < _images.length)
@@ -553,7 +582,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                           index: first + 1,
                           decodeWidth: _decodeWidth,
                           doubleTapZoom: _settings.doubleTapZoom,
-                          onLongPress: () => _saveImage(first + 1),
+                          onLongPress: () => _onImageLongPress(first + 1),
                         ),
                       )
                     else
@@ -566,7 +595,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                   index: first,
                   decodeWidth: _decodeWidth,
                   doubleTapZoom: _settings.doubleTapZoom,
-                  onLongPress: () => _saveImage(first),
+                  onLongPress: () => _onImageLongPress(first),
                 ),
         );
       },
@@ -1027,6 +1056,50 @@ class _ChapterSheet extends StatelessWidget {
                     );
                   },
                 ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 长按图片的两种意图。
+enum _ImageAction { save, copyLink }
+
+/// 图片操作选择面板。
+class _ImageActionSheet extends StatelessWidget {
+  const _ImageActionSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      child: DecoratedBox(
+        decoration: LumeTheme.background,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.download, color: Colors.white70),
+                title: const Text('保存图片', style: TextStyle(color: Colors.white)),
+                subtitle: const Text(
+                  '存到本板块的导出目录（不写入系统相册）',
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+                ),
+                onTap: () => Navigator.of(context).pop(_ImageAction.save),
+              ),
+              ListTile(
+                leading: const Icon(Icons.link, color: Colors.white70),
+                title: const Text('复制图片地址', style: TextStyle(color: Colors.white)),
+                subtitle: const Text(
+                  '粘到任意 App 都能用',
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+                ),
+                onTap: () => Navigator.of(context).pop(_ImageAction.copyLink),
               ),
               const SizedBox(height: 8),
             ],

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
@@ -47,6 +48,10 @@ void main() {
 
   tearDown(() async {
     LumeLog.clear();
+    // 缓存管理页会打开各板块的阅读库（策略按板块存）：必须一起释放，
+    // 否则 Windows 上临时目录被库句柄占着删不掉。
+    ReadingLibrary.disposeAll();
+    ReadingStore.disposeAll();
     await SectionScope.closeAll();
     mockPathProvider(null);
     if (root.existsSync()) root.deleteSync(recursive: true);

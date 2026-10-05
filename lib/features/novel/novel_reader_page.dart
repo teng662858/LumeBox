@@ -6,6 +6,7 @@ import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/state_view.dart';
+import 'novel_bookmarks.dart';
 import 'novel_page_painter.dart';
 import 'novel_pagination.dart';
 import 'novel_turn_view.dart';
@@ -82,6 +83,18 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   Timer? _saveTimer;
   ScrollController? _scrollController;
 
+  /// 本书书签（进阅读器时读一次，增删后写回）。
+  List<NovelBookmark> _bookmarks = const <NovelBookmark>[];
+
+  /// 自动翻页：定时器 + 间隔（秒）。null 表示未开启。
+  Timer? _autoPageTimer;
+  int _autoPageSeconds = 15;
+
+  /// 章节内查找：关键词与命中位置。
+  String _searchKeyword = '';
+  List<int> _searchHits = const <int>[];
+  int _searchHitIndex = -1;
+
   /// 分页结果对应的排版签名，用于判断是否需要重排。
   String? _paginatedSignature;
 
@@ -97,6 +110,13 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     _turnMode = NovelTurnMode.fromId(
       widget.library.setting(NovelTurnMode.settingKey),
     );
+    _bookmarks = NovelBookmarks.decode(
+      widget.library.setting(NovelBookmarks.keyFor(widget.target.itemId)),
+    );
+    _autoPageSeconds = int.tryParse(
+          widget.library.setting(NovelTypesetting.autoPageKey) ?? '',
+        ) ??
+        15;
     _chapters = widget.chapters;
     _chapterIndex = _chapters.isEmpty
         ? 0
@@ -119,6 +139,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   @override
   void dispose() {
     _saveTimer?.cancel();
+    _autoPageTimer?.cancel();
     _saveProgress();
     _scrollController?.dispose();
     _disposeCanvases();
@@ -449,6 +470,193 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   String get _chapterTitle =>
       _chapters.isEmpty ? '' : _chapters[_chapterIndex].title;
 
+  // ------------------------------------------------------------------ 书签
+
+  /// 当前位置（章节 + 字符偏移）——书签与查找都用它做锚点。
+  int get _currentCharOffset {
+    final pagination = _pagination;
+    if (pagination == null || _pageIndex >= pagination.pageCount) return 0;
+    return pagination.pageAt(_pageIndex).charStart;
+  }
+
+  /// 当前位置附近的摘录（书签列表展示用）。
+  String _excerptAt(int charOffset) {
+    final text = _text;
+    if (text == null) return '';
+    final raw = text.text;
+    if (raw.isEmpty) return '';
+    final start = charOffset.clamp(0, raw.length);
+    final end = (start + 24).clamp(0, raw.length);
+    final slice = raw.substring(start, end).replaceAll(RegExp(r'\s+'), ' ').trim();
+    return slice;
+  }
+
+  /// 当前位置的书签（没有则为 null）。
+  NovelBookmark? get _bookmarkHere => NovelBookmarks.at(
+        _bookmarks,
+        chapterIndex: _chapterIndex,
+        charOffset: _currentCharOffset,
+      );
+
+  /// 加/删当前位置的书签。
+  void _toggleBookmark() {
+    if (_chapters.isEmpty || _text == null) return;
+    final chapter = _chapters[_chapterIndex];
+    final offset = _currentCharOffset;
+    final existing = _bookmarkHere;
+    final next = existing != null
+        ? NovelBookmarks.remove(_bookmarks, existing)
+        : NovelBookmarks.add(
+            _bookmarks,
+            NovelBookmark(
+              chapterIndex: _chapterIndex,
+              chapterId: chapter.id,
+              chapterTitle: chapter.title,
+              charOffset: offset,
+              createdAt: DateTime.now(),
+              excerpt: _excerptAt(offset),
+            ),
+          );
+    setState(() => _bookmarks = next);
+    widget.library.setSetting(
+      NovelBookmarks.keyFor(widget.target.itemId),
+      NovelBookmarks.encode(next),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 1),
+        content: Text(existing != null ? '已移除书签' : '已添加书签'),
+      ),
+    );
+  }
+
+  /// 跳到某条书签。
+  Future<void> _openBookmark(NovelBookmark bookmark) async {
+    setState(() => _toolbar = false);
+    if (bookmark.chapterIndex == _chapterIndex) {
+      _jumpToCharOffset(bookmark.charOffset);
+      return;
+    }
+    await _openChapter(bookmark.chapterIndex);
+    if (!mounted) return;
+    _jumpToCharOffset(bookmark.charOffset);
+  }
+
+  /// 跳到章节内某个字符偏移对应的页。
+  void _jumpToCharOffset(int charOffset) {
+    final pagination = _pagination;
+    if (pagination == null || pagination.pageCount == 0) return;
+    final page = pagination.pageIndexForChar(charOffset);
+    _goToPage(page);
+  }
+
+  /// 跳到指定页（分页模式与滚动模式各自处理）。
+  void _goToPage(int page) {
+    final pagination = _pagination;
+    if (pagination == null) return;
+    final target = page.clamp(0, pagination.pageCount - 1);
+    if (_turnMode.isPaged) {
+      _turnKey.currentState?.jumpTo(target);
+      setState(() => _pageIndex = target);
+      _scheduleSave();
+      return;
+    }
+    final height = _viewport?.height ?? 0;
+    if (height <= 0) return;
+    _scrollController?.animateTo(
+      target * height,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  // -------------------------------------------------------------- 章节内查找
+
+  /// 在当前章节里查找关键词，记录全部命中位置。
+  void _search(String keyword) {
+    final text = _text;
+    final trimmed = keyword.trim();
+    if (text == null || trimmed.isEmpty) {
+      setState(() {
+        _searchKeyword = '';
+        _searchHits = const <int>[];
+        _searchHitIndex = -1;
+      });
+      return;
+    }
+    final hits = <int>[];
+    final lower = text.text.toLowerCase();
+    final needle = trimmed.toLowerCase();
+    var index = lower.indexOf(needle);
+    while (index >= 0) {
+      hits.add(index);
+      index = lower.indexOf(needle, index + needle.length);
+    }
+    setState(() {
+      _searchKeyword = trimmed;
+      _searchHits = hits;
+      _searchHitIndex = hits.isEmpty ? -1 : 0;
+    });
+    if (hits.isNotEmpty) _jumpToCharOffset(hits.first);
+  }
+
+  /// 跳到下一个 / 上一个命中。
+  void _nextSearchHit(int step) {
+    if (_searchHits.isEmpty) return;
+    final next = (_searchHitIndex + step) % _searchHits.length;
+    final wrapped = next < 0 ? _searchHits.length - 1 : next;
+    setState(() => _searchHitIndex = wrapped);
+    _jumpToCharOffset(_searchHits[wrapped]);
+  }
+
+  // ------------------------------------------------------------------ 自动翻页
+
+  /// 开关自动翻页（按 [NovelTypesetting.autoPageKey] 记住间隔）。
+  void _toggleAutoPage() {
+    if (_autoPageTimer != null) {
+      _autoPageTimer?.cancel();
+      setState(() => _autoPageTimer = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(duration: Duration(seconds: 1), content: Text('已停止自动翻页')),
+      );
+      return;
+    }
+    _startAutoPage(_autoPageSeconds);
+  }
+
+  void _startAutoPage(int seconds) {
+    _autoPageTimer?.cancel();
+    _autoPageSeconds = seconds;
+    widget.library.setSetting(
+      NovelTypesetting.autoPageKey,
+      seconds.toString(),
+    );
+    setState(() {
+      _autoPageTimer = Timer.periodic(Duration(seconds: seconds), (_) {
+        if (!mounted) return;
+        // 到章尾自动进下一章；最后一章停下并关掉定时器（不空转）。
+        final pagination = _pagination;
+        if (pagination == null) return;
+        if (_pageIndex >= pagination.pageCount - 1) {
+          if (_chapterIndex >= _chapters.length - 1) {
+            _autoPageTimer?.cancel();
+            setState(() => _autoPageTimer = null);
+            return;
+          }
+          _openChapter(_chapterIndex + 1);
+          return;
+        }
+        _nextPage();
+      });
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 1),
+        content: Text('自动翻页：每 $seconds 秒'),
+      ),
+    );
+  }
+
   // ------------------------------------------------------------------ 进度
 
   void _scheduleSave() {
@@ -738,6 +946,16 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 ),
               ),
               IconButton(
+                tooltip: _bookmarkHere != null ? '移除书签' : '添加书签',
+                icon: Icon(
+                  _bookmarkHere != null
+                      ? Icons.bookmark
+                      : Icons.bookmark_border,
+                  color: _theme.chromeText,
+                ),
+                onPressed: _toggleBookmark,
+              ),
+              IconButton(
                 tooltip: '上一章',
                 icon: Icon(Icons.skip_previous, color: _theme.chromeText),
                 onPressed: () => _openChapter(_chapterIndex - 1),
@@ -791,6 +1009,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 height: 260,
                 child: switch (_panel) {
                   _PanelTab.catalog => _buildCatalog(),
+                  _PanelTab.bookmarks => _buildBookmarks(),
                   _PanelTab.typesetting => _buildTypesetting(),
                   _PanelTab.theme => _buildThemePanel(),
                   _PanelTab.turn => _buildTurnPanel(),
@@ -852,6 +1071,128 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
             },
           ),
         ),
+      ],
+    );
+  }
+
+  /// 书签面板：书签列表 + 章节内查找 + 自动翻页开关。
+  Widget _buildBookmarks() {
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      children: <Widget>[
+        // 章节内查找
+        TextField(
+          style: TextStyle(color: _theme.chromeText, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: '在本章内查找',
+            hintStyle: TextStyle(color: _theme.secondary, fontSize: 14),
+            prefixIcon: Icon(Icons.search, color: _theme.secondary, size: 20),
+            suffixIcon: _searchKeyword.isEmpty
+                ? null
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        _searchHits.isEmpty
+                            ? '无结果'
+                            : '${_searchHitIndex + 1}/${_searchHits.length}',
+                        style: TextStyle(fontSize: 12, color: _theme.secondary),
+                      ),
+                      IconButton(
+                        tooltip: '上一个',
+                        icon: Icon(
+                          Icons.keyboard_arrow_up,
+                          color: _theme.chromeText,
+                          size: 20,
+                        ),
+                        onPressed: () => _nextSearchHit(-1),
+                      ),
+                      IconButton(
+                        tooltip: '下一个',
+                        icon: Icon(
+                          Icons.keyboard_arrow_down,
+                          color: _theme.chromeText,
+                          size: 20,
+                        ),
+                        onPressed: () => _nextSearchHit(1),
+                      ),
+                    ],
+                  ),
+          ),
+          onSubmitted: _search,
+        ),
+        const SizedBox(height: 12),
+        // 自动翻页
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                '自动翻页',
+                style: TextStyle(fontSize: 14, color: _theme.chromeText),
+              ),
+            ),
+            Switch(
+              value: _autoPageTimer != null,
+              onChanged: (_) => _toggleAutoPage(),
+            ),
+            const SizedBox(width: 8),
+            DropdownButton<int>(
+              value: _autoPageSeconds,
+              dropdownColor: _theme.chromeSurface,
+              style: TextStyle(fontSize: 13, color: _theme.chromeText),
+              items: <DropdownMenuItem<int>>[
+                for (final seconds in <int>[5, 10, 15, 20, 30, 60])
+                  DropdownMenuItem<int>(
+                    value: seconds,
+                    child: Text('$seconds 秒'),
+                  ),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                if (_autoPageTimer != null) {
+                  _startAutoPage(value);
+                } else {
+                  setState(() => _autoPageSeconds = value);
+                }
+              },
+            ),
+          ],
+        ),
+        const Divider(height: 24),
+        if (_bookmarks.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              '还没有书签。点顶部书签图标可把当前位置记下来。',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: _theme.secondary),
+            ),
+          )
+        else
+          for (final bookmark in _bookmarks)
+            ListTile(
+              dense: true,
+              leading: Icon(Icons.bookmark, size: 18, color: _theme.secondary),
+              title: Text(
+                bookmark.describe(),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 13, color: _theme.chromeText),
+              ),
+              trailing: IconButton(
+                tooltip: '移除',
+                icon: Icon(Icons.close, size: 18, color: _theme.secondary),
+                onPressed: () {
+                  final next = NovelBookmarks.remove(_bookmarks, bookmark);
+                  setState(() => _bookmarks = next);
+                  widget.library.setSetting(
+                    NovelBookmarks.keyFor(widget.target.itemId),
+                    NovelBookmarks.encode(next),
+                  );
+                },
+              ),
+              onTap: () => _openBookmark(bookmark),
+            ),
       ],
     );
   }
@@ -1062,6 +1403,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
 
 enum _PanelTab {
   catalog('目录'),
+  bookmarks('书签'),
   typesetting('排版'),
   theme('主题'),
   turn('翻页');

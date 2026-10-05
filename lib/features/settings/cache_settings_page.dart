@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/reading/reading.dart';
+import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
@@ -25,10 +27,53 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
   List<SectionCacheStats>? _stats;
   bool _failed = false;
 
+  /// 各板块的缓存策略（容量上限 + 过期天数）。
+  final Map<Section, SectionCachePolicy> _policies =
+      <Section, SectionCachePolicy>{};
+
   @override
   void initState() {
     super.initState();
     _reload();
+    _loadPolicies();
+  }
+
+  /// 读各板块策略：存本板块阅读库，因此逐个板块打开（失败按「不限制」处理）。
+  Future<void> _loadPolicies() async {
+    for (final section in Section.values) {
+      try {
+        final library = await ReadingLibrary.open(section);
+        final policy = CachePolicyStore(library).load(section);
+        if (!mounted) return;
+        setState(() => _policies[section] = policy);
+      } catch (error, stackTrace) {
+        LumeLog.error(error, stackTrace);
+      }
+    }
+  }
+
+  /// 改某板块策略：落库并立刻按新策略修剪一次（改了上限就该马上生效）。
+  Future<void> _updatePolicy(Section section, SectionCachePolicy policy) async {
+    setState(() => _policies[section] = policy);
+    try {
+      final library = await ReadingLibrary.open(section);
+      CachePolicyStore(library).save(section, policy);
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('策略保存失败：$error')),
+      );
+      return;
+    }
+    final result = await widget.service.prune(section, policy);
+    if (!mounted) return;
+    if (!result.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('按新策略${result.describe()}')),
+      );
+    }
+    await _reload();
   }
 
   Future<void> _reload() async {
@@ -117,7 +162,12 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
         ),
         const SizedBox(height: 12),
         for (final item in stats) ...<Widget>[
-          _CacheTile(stats: item, onClear: () => _clear(item)),
+          _CacheTile(
+            stats: item,
+            policy: _policies[item.section] ?? SectionCachePolicy.unlimited,
+            onClear: () => _clear(item),
+            onPolicyChanged: (policy) => _updatePolicy(item.section, policy),
+          ),
           const SizedBox(height: 12),
         ],
         const Text(
@@ -136,10 +186,20 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
 }
 
 class _CacheTile extends StatelessWidget {
-  const _CacheTile({required this.stats, required this.onClear});
+  const _CacheTile({
+    required this.stats,
+    required this.policy,
+    required this.onClear,
+    required this.onPolicyChanged,
+  });
 
   final SectionCacheStats stats;
+
+  /// 本板块的缓存策略。
+  final SectionCachePolicy policy;
+
   final VoidCallback onClear;
+  final ValueChanged<SectionCachePolicy> onPolicyChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -177,6 +237,29 @@ class _CacheTile extends StatelessWidget {
                       color: LumeTheme.muted,
                     ),
                   ),
+                const SizedBox(height: 4),
+                // 策略摘要：点开逐板块配置（文档要求各板块独立配置）。
+                InkWell(
+                  onTap: () => _openPolicy(context),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      const Icon(
+                        Icons.tune,
+                        size: 14,
+                        color: LumeTheme.muted,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        policy.describe(),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: LumeTheme.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -186,6 +269,110 @@ class _CacheTile extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  /// 打开本板块的策略编辑弹窗。
+  Future<void> _openPolicy(BuildContext context) async {
+    final next = await showDialog<SectionCachePolicy>(
+      context: context,
+      builder: (_) => _CachePolicyDialog(
+        section: stats.section,
+        policy: policy,
+      ),
+    );
+    if (next == null) return;
+    onPolicyChanged(next);
+  }
+}
+
+/// 缓存策略弹窗：容量上限 + 过期天数（档位选择，避免手输离谱数字）。
+class _CachePolicyDialog extends StatefulWidget {
+  const _CachePolicyDialog({required this.section, required this.policy});
+
+  final Section section;
+  final SectionCachePolicy policy;
+
+  @override
+  State<_CachePolicyDialog> createState() => _CachePolicyDialogState();
+}
+
+class _CachePolicyDialogState extends State<_CachePolicyDialog> {
+  late int _maxMb =
+      widget.policy.maxBytes ~/ (1024 * 1024);
+  late int _ageDays = widget.policy.maxAgeDays;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('${widget.section.label} · 缓存策略'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text(
+                '超过上限或过期的缓存会在保存策略时立刻清理一次，之后每次进本页'
+                '也会按策略修剪。用户保存的图片、书架与进度不受影响。',
+                style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '容量上限',
+                style: TextStyle(fontSize: 14, color: Colors.white),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  for (final mb in SectionCachePolicy.capacityOptionsMb)
+                    ChoiceChip(
+                      label: Text(mb == 0 ? '不限制' : '$mb MB'),
+                      selected: _maxMb == mb,
+                      onSelected: (_) => setState(() => _maxMb = mb),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '过期天数',
+                style: TextStyle(fontSize: 14, color: Colors.white),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  for (final days in SectionCachePolicy.ageOptionsDays)
+                    ChoiceChip(
+                      label: Text(days == 0 ? '不过期' : '$days 天'),
+                      selected: _ageDays == days,
+                      onSelected: (_) => setState(() => _ageDays = days),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(
+            SectionCachePolicy(
+              maxBytes: _maxMb * 1024 * 1024,
+              maxAgeDays: _ageDays,
+            ),
+          ),
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }

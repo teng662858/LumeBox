@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../../core/session/section.dart';
@@ -48,6 +49,9 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
   final Set<Section> _failed = <Section>{};
 
   bool _loading = true;
+
+  /// 备份 / 恢复服务（与测试同口径：可注入运行时判定）。
+  final SourceBackupService _backupService = SourceBackupService();
 
   /// 正在测试的图源 id（按钮转圈用）。
   final Set<String> _testing = <String>{};
@@ -154,6 +158,127 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
     if (descriptor != null) await _reloadSection(section);
   }
 
+  /// 导出备份：四个板块的全部图源（只含脚本与配置，不含 Cookie / 缓存）。
+  Future<void> _exportBackup() async {
+    final backup = await _backupService.export();
+    if (!mounted) return;
+
+    if (backup.totalCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('四个板块都没有图源可备份')),
+      );
+      return;
+    }
+
+    final text = backup.encode();
+    var copied = false;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('备份图源（${backup.totalCount} 个）'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text(
+                  '备份只含图源脚本与配置，不含 Cookie、缓存与阅读记录。',
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+                ),
+                const SizedBox(height: 8),
+                SelectableText(
+                  text,
+                  style: const TextStyle(fontSize: 11),
+                  maxLines: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: text));
+              copied = true;
+              if (context.mounted) Navigator.of(context).pop();
+            },
+            child: const Text('复制备份'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+    if (copied && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已复制 ${backup.totalCount} 个图源的备份')),
+      );
+    }
+  }
+
+  /// 从剪贴板 / 粘贴的备份文本恢复图源。
+  Future<void> _restoreBackup() async {
+    final text = await showDialog<String>(
+      context: context,
+      builder: (_) => const _RestoreDialog(),
+    );
+    if (text == null || text.trim().isEmpty || !mounted) return;
+
+    final SourceBackup backup;
+    try {
+      backup = SourceBackup.decode(text);
+    } on FormatException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('备份无法识别：${error.message}')),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('恢复图源'),
+        content: Text(
+          '将恢复 ${backup.totalCount} 个图源（备份时间 '
+          '${_formatTime(backup.createdAt)}）。\n'
+          '同 id 的图源会被备份里的内容覆盖（脚本、启停状态与网络配置）。',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('恢复'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final result = await _backupService.restore(backup);
+    if (!mounted) return;
+    await _reload();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.describe())),
+    );
+  }
+
+  static String _formatTime(DateTime time) {
+    final local = time.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
+
   /// 批量测试全部板块的图源（文档第 4 条：图源总管理支持批量测试）。
   ///
   /// 逐板块、逐图源串行：网络层已有并发限制，但测试会真实打目标站，串行更稳、
@@ -256,12 +381,24 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
     return GlassScaffold(
       title: '图源总管理',
       actions: <Widget>[
-        if (_runtimeAvailable && !_loading && _totalCount > 0)
+        if (_runtimeAvailable && !_loading)
+          IconButton(
+            tooltip: '恢复图源',
+            icon: const Icon(Icons.settings_backup_restore),
+            onPressed: _restoreBackup,
+          ),
+        if (_runtimeAvailable && !_loading && _totalCount > 0) ...<Widget>[
+          IconButton(
+            tooltip: '备份图源',
+            icon: const Icon(Icons.save_alt),
+            onPressed: _exportBackup,
+          ),
           IconButton(
             tooltip: '批量测试连通性',
             icon: const Icon(Icons.network_check),
             onPressed: _testing.isEmpty ? _testAll : null,
           ),
+        ],
       ],
       floatingActionButton: _runtimeAvailable && !_loading
           ? FloatingActionButton(
@@ -604,6 +741,74 @@ class _ImportDialogState extends State<_ImportDialog> {
             _ImportRequest(section: _section, script: _controller.text),
           ),
           child: const Text('导入'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 恢复图源的输入弹窗：粘贴备份文本（或从剪贴板读）。
+class _RestoreDialog extends StatefulWidget {
+  const _RestoreDialog();
+
+  @override
+  State<_RestoreDialog> createState() => _RestoreDialogState();
+}
+
+class _RestoreDialogState extends State<_RestoreDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _paste() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text ?? '';
+    if (!mounted || text.isEmpty) return;
+    _controller.text = text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('恢复图源'),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              '粘贴之前导出的备份内容。同 id 的图源会被覆盖。',
+              style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _controller,
+              maxLines: 10,
+              decoration: const InputDecoration(
+                hintText: '粘贴备份 JSON',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: _paste,
+          child: const Text('从剪贴板读取'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: const Text('下一步'),
         ),
       ],
     );
