@@ -230,21 +230,32 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
 
   /// 测试单个图源的连通性：走「载入脚本 → 取分类 → 取首屏列表」。
   ///
-  /// 结果同时落在列表行上（可用 / 无内容 / 不可用），不只弹一个 Toast——
-  /// 用户往往要连着看好几个源，弹窗一过就没了。
+  /// 结果用**模态弹窗**如实展示（图源名称 / 状态 / 耗时 / 简短日志，底部「关闭」
+  /// 结束，不自动消失）。结论同时落在列表行上——连着测好几个源时，关掉弹窗
+  /// 也能一眼看到每个源的结果。
   Future<void> _test(SourceDescriptor source) async {
     if (_testing.contains(source.id)) return;
     setState(() => _testing.add(source.id));
     try {
       final result = await _manager.testConnectivity(source.id);
       if (!mounted) return;
-      setState(() => _testResults[source.id] = result);
+      setState(() {
+        _testResults[source.id] = result;
+        // 结果已出，转圈到此为止：弹窗展示期间列表行保持可读。
+        _testing.remove(source.id);
+      });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('「${source.name}」：${_describeTest(result)}')),
+      await showDialog<void>(
+        context: context,
+        builder: (_) => _TestResultDialog(
+          sourceName: source.name,
+          result: result,
+        ),
       );
     } finally {
-      if (mounted) setState(() => _testing.remove(source.id));
+      if (mounted && _testing.contains(source.id)) {
+        setState(() => _testing.remove(source.id));
+      }
     }
   }
 
@@ -295,21 +306,6 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
         ),
       ),
     );
-  }
-
-  /// 测试结论的一句话（Toast 用）。
-  static String _describeTest(SourceTestResult result) {
-    switch (result.status) {
-      case SourceTestStatus.ok:
-        final seconds = (result.elapsed?.inMilliseconds ?? 0) / 1000;
-        return '可用 · ${result.itemCount} 条'
-            '${result.categoryCount != null && result.categoryCount! > 0 ? ' · ${result.categoryCount} 个分类' : ''}'
-            '（${seconds.toStringAsFixed(1)}s）';
-      case SourceTestStatus.empty:
-        return '无内容 · ${result.message}';
-      case SourceTestStatus.failed:
-        return '不可用 · ${result.message}';
-    }
   }
 
   /// 网络配置：单图源的 UA / Cookie / 代理，覆盖全局设置（留空即继承）。
@@ -663,6 +659,103 @@ class _SourceTile extends StatelessWidget {
                 child: Text('删除'),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 连通性测试结果弹窗：图源名称 / 状态 / 耗时 / 简短日志，底部「关闭」结束。
+///
+/// 刻意做成**模态且不自动消失**：失败原因与耗时是排障要看的信息，SnackBar
+/// 几秒就没了、长文案还没读完；结论同时保留在列表行上，关掉弹窗不丢。
+class _TestResultDialog extends StatelessWidget {
+  const _TestResultDialog({required this.sourceName, required this.result});
+
+  /// 图源显示名（只用于展示，不认识图源内部状态）。
+  final String sourceName;
+
+  /// 引擎给出的测试结论（三态 + 说明 + 耗时）。
+  final SourceTestResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('连通性测试'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          _InfoRow(label: '图源', value: sourceName),
+          _InfoRow(
+            label: '状态',
+            value: result.status.label,
+            valueColor:
+                result.status == SourceTestStatus.ok ? _okColor : _disabledColor,
+          ),
+          _InfoRow(label: '耗时', value: _elapsedText(result.elapsed)),
+          _InfoRow(label: '日志', value: _logText(result)),
+        ],
+      ),
+      actions: <Widget>[
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('关闭'),
+        ),
+      ],
+    );
+  }
+
+  /// 耗时文本：毫秒 → 「0.8s」；失败可能拿不到耗时，如实给「—」不编造。
+  static String _elapsedText(Duration? elapsed) {
+    if (elapsed == null) return '—';
+    return '${(elapsed.inMilliseconds / 1000).toStringAsFixed(1)}s';
+  }
+
+  /// 简短日志：引擎给的说明优先（空结果 / 失败原因）；成功时给一句摘要。
+  static String _logText(SourceTestResult result) {
+    final message = result.message.trim();
+    if (message.isNotEmpty) return message;
+    final items = result.itemCount ?? 0;
+    final categories = result.categoryCount ?? 0;
+    return '首屏返回 $items 条${categories > 0 ? ' · $categories 个分类' : ''}';
+  }
+}
+
+/// 弹窗里的一行「标签 + 值」：标签定宽，值自动换行。
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.value, this.valueColor});
+
+  final String label;
+  final String value;
+
+  /// 值的颜色（默认白色；状态行用它表达三态）。
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            width: 44,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 13, color: LumeTheme.muted),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: valueColor ?? Colors.white,
+              ),
+            ),
           ),
         ],
       ),

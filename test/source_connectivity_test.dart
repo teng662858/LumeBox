@@ -12,8 +12,9 @@ import 'support/fake_source_manager.dart';
 /// 图源「测试连通性」与「更新订阅源」（文档 Phase1 图源管理 UI 要求：测试图源、
 /// 更新订阅源；第 4 条要求图源总管理支持批量操作）。
 ///
-/// 连通性：单源三态（可用 / 无内容 / 不可用）、结论落在列表行上、批量测试只测
-/// 已启用的源并给出汇总、测试不改变图源状态（只读）。
+/// 连通性：单源三态（可用 / 无内容 / 不可用）由**模态弹窗**展示（名称 / 状态 /
+/// 耗时 / 日志，手动关闭、不自动消失），结论同时留在列表行上；批量测试只测
+/// 已启用的源并给出汇总；测试不改变图源状态（只读）。
 /// 订阅更新：只有订阅导入的图源可更新、四种结论各自的提示、批量刷新、失败不吞。
 void main() {
   const video = Section.video;
@@ -55,7 +56,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('单源测试：可用时给条目数与耗时', (tester) async {
+  testWidgets('单源测试：模态弹窗展示名称 / 状态 / 耗时 / 日志，且不自动消失', (tester) async {
     final manager = managerWith(
       results: <String, SourceTestResult>{
         'demo-1': const SourceTestResult.ok(
@@ -72,9 +73,38 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(manager.testedIds, <String>['demo-1']);
-    expect(find.textContaining('可用 · 12 条 · 3 个分类'), findsOneWidget);
-    // 结论也落在列表行上（不只弹 Toast）。
-    expect(find.text('可用'), findsOneWidget);
+    final dialog = find.byType(AlertDialog);
+    expect(dialog, findsOneWidget);
+    expect(
+      find.descendant(of: dialog, matching: find.text('示例源')),
+      findsOneWidget,
+      reason: '图源名称',
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('可用')),
+      findsOneWidget,
+      reason: '状态',
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.textContaining('0.8s')),
+      findsOneWidget,
+      reason: '耗时',
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.textContaining('12 条')),
+      findsOneWidget,
+      reason: '简短日志',
+    );
+
+    // 模态且不自动消失：等过 SnackBar 的 4 秒仍在，直到点「关闭」。
+    await tester.pump(const Duration(seconds: 10));
+    expect(dialog, findsOneWidget);
+
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    // 结论同时留在列表行上（关掉弹窗也不丢）。
+    expect(find.text('可用'), findsOneWidget, reason: '行内标记');
   });
 
   testWidgets('单源测试：脚本能跑但没内容时区分「无内容」', (tester) async {
@@ -92,8 +122,20 @@ void main() {
     await tester.tap(find.text('测试连通性'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('无内容'), findsWidgets);
-    expect(find.textContaining('图源可能已改版'), findsOneWidget);
+    final dialog = find.byType(AlertDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.text('无内容')),
+      findsOneWidget,
+      reason: '状态：与「不可用」分开',
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.textContaining('图源可能已改版')),
+      findsOneWidget,
+      reason: '日志带上原因',
+    );
+
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
     expect(find.text('无内容'), findsOneWidget, reason: '行内标记');
   });
 
@@ -109,8 +151,76 @@ void main() {
     await tester.tap(find.text('测试连通性'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('不可用 · 网络异常：连接超时'), findsOneWidget);
+    final dialog = find.byType(AlertDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.text('不可用')),
+      findsOneWidget,
+      reason: '状态',
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('网络异常：连接超时')),
+      findsOneWidget,
+      reason: '简短日志',
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('—')),
+      findsOneWidget,
+      reason: '失败拿不到耗时时如实占位，不编造',
+    );
+
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
     expect(find.text('不可用'), findsOneWidget, reason: '行内标记');
+  });
+
+  testWidgets('窄屏：弹窗内容自动换行，长名称与长日志不撑破弹窗', (tester) async {
+    final manager = FakeSourceManager(
+      sources: const <SourceDescriptor>[
+        SourceDescriptor(
+          id: 'demo-1',
+          name: '一个名字相当长的图源',
+          version: '1.0.0',
+          enabled: true,
+        ),
+      ],
+    );
+    manager.testResults.addAll(<String, SourceTestResult>{
+      'demo-1': const SourceTestResult.failed(
+        '打开失败：这是一个刻意写长的失败原因，用来验证窄屏下日志行换行而不是把弹窗撑破。',
+      ),
+    });
+
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        home: SourceSectionPage(section: video, manager: manager),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('更多操作').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('测试连通性'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text('一个名字相当长的图源'),
+      ),
+      findsOneWidget,
+      reason: '长名称在弹窗里完整展示（列表行里也有一份）',
+    );
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.textContaining('刻意写长'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('批量测试：只测已启用的源，给出汇总', (tester) async {
