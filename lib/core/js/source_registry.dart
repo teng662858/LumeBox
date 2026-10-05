@@ -1,6 +1,7 @@
 import '../db/section_database.dart';
 import '../db/source_record.dart';
 import '../net/lume_http.dart';
+import '../net/network_settings.dart';
 import '../session/section.dart';
 import '../session/section_scope.dart';
 import '../util/lume_log.dart';
@@ -36,7 +37,13 @@ class SourceRegistry {
 
   final Section section;
   final SectionDatabase _database;
+
+  /// 共享 HTTP 客户端：用于导入校验与不带图源覆盖的场景。
   final LumeHttp _http;
+
+  /// 图源 → 带该图源网络覆盖（UA / Cookie / 代理）的 HTTP 客户端。
+  /// 惰性创建、随图源释放；不同图源之间不共享 Cookie。
+  final Map<String, LumeHttp> _httpBySource = <String, LumeHttp>{};
 
   static final Map<String, SourceRegistry> _registries =
       <String, SourceRegistry>{};
@@ -66,6 +73,39 @@ class SourceRegistry {
   /// 其余板块维持既有口径（仅 iOS）。
   bool get _engineAvailable =>
       section == Section.cat ? CatEngines.available : LumeJsEngine.isSupported;
+
+  /// 取某图源的 HTTP 客户端：带该图源的 UA / Cookie / 代理覆盖。
+  ///
+  /// 覆盖项为空即继承全局设置（文档要求单图源配置优先于全局）。
+  /// 客户端按图源缓存：同一图源的多条请求共用连接池，Cookie 不跨图源。
+  LumeHttp httpFor(String sourceId) {
+    final existing = _httpBySource[sourceId];
+    if (existing != null) return existing;
+    final record = source(sourceId);
+    final client = LumeHttp(
+      profile: record?.network ?? NetworkProfile.none,
+      source: sourceId,
+    );
+    _httpBySource[sourceId] = client;
+    return client;
+  }
+
+  /// 更新单图源的网络覆盖并丢弃旧客户端（下次请求即用新配置）。
+  void setSourceNetwork(
+    String sourceId, {
+    required String userAgent,
+    required String cookie,
+    required String proxy,
+  }) {
+    if (!_owns(sourceId)) return;
+    _database.setSourceNetwork(
+      sourceId,
+      userAgent: userAgent.trim(),
+      cookie: cookie.trim(),
+      proxy: proxy.trim(),
+    );
+    _httpBySource.remove(sourceId)?.dispose();
+  }
 
   /// 本板块的图源记录。归属标记不符的记录一律不返回。
   List<SourceRecord> get sources =>
@@ -232,7 +272,7 @@ class SourceRegistry {
     final engine = await SourceEngineRegistry.create(
       kind: CatEngineSettings.engineKindFor(section, _database),
       sourceId: sourceId,
-      http: _http,
+      http: httpFor(sourceId),
       section: section,
     );
     if (engine == null) {
@@ -264,8 +304,12 @@ class SourceRegistry {
   /// 库里存在且归属本板块。
   bool _owns(String sourceId) => source(sourceId) != null;
 
-  /// 释放单个图源运行时。超时/内存超限后可据此重建。
-  void release(String sourceId) => _engines.remove(sourceId)?.dispose();
+  /// 释放单个图源运行时（引擎 + 它专属的 HTTP 客户端）。
+  /// 超时 / 内存超限 / 停用 / 删除后据此重建。
+  void release(String sourceId) {
+    _engines.remove(sourceId)?.dispose();
+    _httpBySource.remove(sourceId)?.dispose();
+  }
 
   /// 关闭整个板块：释放引擎、HTTP 客户端与数据库。
   static void close(Section section) => _registries[section.id]?.dispose();
@@ -275,6 +319,10 @@ class SourceRegistry {
       engine.dispose();
     }
     _engines.clear();
+    for (final client in _httpBySource.values) {
+      client.dispose();
+    }
+    _httpBySource.clear();
     _http.dispose();
     _database.dispose();
     _registries.remove(section.id);

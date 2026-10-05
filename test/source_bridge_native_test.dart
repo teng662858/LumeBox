@@ -354,7 +354,7 @@ class _RecordingHttp extends LumeHttp {
     String method = 'GET',
     Map<String, String>? headers,
     String? body,
-    Duration timeout = LumeHttp.defaultTimeout,
+    Duration? timeout,
   }) async {
     urls.add(url);
     return LumeHttpResponse(

@@ -1,3 +1,4 @@
+import 'package:lume_box/core/net/network_settings.dart';
 import 'package:lume_box/core/source/source.dart';
 
 /// 图源管理端口替身：只保留界面依赖的语义，不碰沙箱、数据库与网络。
@@ -122,6 +123,34 @@ class FakeSourceManager implements SourceManager {
         name: name,
         version: source.version,
         enabled: source.enabled,
+      ),
+    );
+  }
+
+  /// 记录网络覆盖设置：(sourceId, UA, Cookie, 代理)。
+  final List<(String, String, String, String)> networks =
+      <(String, String, String, String)>[];
+
+  @override
+  Future<void> setNetwork(
+    String sourceId, {
+    required String userAgent,
+    required String cookie,
+    required String proxy,
+  }) async {
+    networks.add((sourceId, userAgent, cookie, proxy));
+    _replace(
+      sourceId,
+      (source) => SourceDescriptor(
+        id: source.id,
+        name: source.name,
+        version: source.version,
+        enabled: source.enabled,
+        network: NetworkProfile(
+          userAgent: userAgent,
+          cookie: cookie,
+          proxy: proxy,
+        ),
       ),
     );
   }

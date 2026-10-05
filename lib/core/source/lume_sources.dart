@@ -89,6 +89,24 @@ class LumeSources {
     registry.setEnabled(sourceId, enabled);
   }
 
+  /// 设置单图源网络覆盖（UA / Cookie / 代理）；空串表示继承全局设置。
+  static Future<void> setNetwork(
+    Section section,
+    String sourceId, {
+    required String userAgent,
+    required String cookie,
+    required String proxy,
+  }) async {
+    if (!runtimeAvailableFor(section)) return;
+    final registry = await SourceRegistry.open(section);
+    registry.setSourceNetwork(
+      sourceId,
+      userAgent: userAgent,
+      cookie: cookie,
+      proxy: proxy,
+    );
+  }
+
   /// 重命名图源：只改本板块库里的展示名（脚本与运行时保持原样）。
   static Future<void> rename(
     Section section,
@@ -151,6 +169,7 @@ class LumeSources {
         name: record.name,
         version: record.version,
         enabled: record.enabled,
+        network: record.network,
       );
 }
 
@@ -183,6 +202,21 @@ class _LumeSourceManager implements SourceManager {
   @override
   Future<void> setEnabled(String sourceId, bool enabled) =>
       LumeSources.setEnabled(_section, sourceId, enabled);
+
+  @override
+  Future<void> setNetwork(
+    String sourceId, {
+    required String userAgent,
+    required String cookie,
+    required String proxy,
+  }) =>
+      LumeSources.setNetwork(
+        _section,
+        sourceId,
+        userAgent: userAgent,
+        cookie: cookie,
+        proxy: proxy,
+      );
 
   @override
   Future<void> rename(String sourceId, String name) =>

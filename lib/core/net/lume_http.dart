@@ -1,42 +1,31 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
-/// JS 图源的网络请求全部经由此 Dart 层发出，JS 侧不直接持有 socket。
-class LumeHttp {
-  LumeHttp({http.Client? client}) : _client = client ?? http.Client();
+import 'lume_net.dart';
+import 'network_queue.dart';
+import 'network_settings.dart';
 
-  static const Duration defaultTimeout = Duration(seconds: 20);
+/// 网络失败的稳定标记。请求没能完成时打在异常文本前面，上层据此把
+/// 「网络异常」从「脚本报错」里分出来（见数据源层的沙箱失败归一）。
+class LumeSourceNetworkMarker {
+  LumeSourceNetworkMarker._();
 
-  static const String defaultUserAgent =
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
-      'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+  static const String failure = '网络请求失败';
+}
 
-  final http.Client _client;
+/// 宿主网络层异常（连接失败、超时等）。
+class LumeHttpException implements Exception {
+  const LumeHttpException(this.message, {this.cause});
 
-  Future<LumeHttpResponse> send({
-    required String url,
-    String method = 'GET',
-    Map<String, String>? headers,
-    String? body,
-    Duration timeout = defaultTimeout,
-  }) async {
-    final request = http.Request(method.toUpperCase(), Uri.parse(url));
-    if (headers != null) request.headers.addAll(headers);
-    request.headers.putIfAbsent('User-Agent', () => defaultUserAgent);
-    if (body != null) request.body = body;
+  final String message;
+  final Object? cause;
 
-    final streamed = await _client.send(request).timeout(timeout);
-    final bytes = await streamed.stream.toBytes().timeout(timeout);
-    return LumeHttpResponse(
-      statusCode: streamed.statusCode,
-      body: bytes,
-      headers: streamed.headers,
-    );
-  }
-
-  void dispose() => _client.close();
+  @override
+  String toString() => message;
 }
 
 class LumeHttpResponse {
@@ -51,4 +40,168 @@ class LumeHttpResponse {
   final Map<String, String> headers;
 
   String get text => utf8.decode(body, allowMalformed: true);
+}
+
+/// JS 图源的网络请求全部经由此 Dart 层发出，JS 侧不直接持有 socket。
+///
+/// 从本版起所有请求都经 [NetworkQueue] 排队后发出（文档第六条）：
+/// 全局并发与单域名并发在这里生效，429 / 503 在这里退避重试，UA 与代理在这里
+/// 按「图源覆盖 → 全局设置 → 内置默认」的顺序决定。调用方只管发请求，
+/// 防封策略不需要在每个业务点各写一遍。
+///
+/// 隔离：`cookie` 只来自图源自身配置（[NetworkProfile]），不与其他图源共享。
+class LumeHttp {
+  LumeHttp({
+    http.Client? client,
+    NetworkSettings? settings,
+    NetworkProfile? profile,
+    this._source = '宿主',
+    this._queue,
+  })  : _client = client ?? http.Client(),
+        _clientInjected = client != null,
+        _settings = (settings ?? const NetworkSettings()).clamped(),
+        _profile = profile ?? NetworkProfile.none;
+
+  static const Duration defaultTimeout = NetworkSettings.defaultTimeout;
+
+  static const String defaultUserAgent =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
+      'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+
+  final http.Client _client;
+
+  /// 调用方是否显式注入了客户端（决定发送路径，见 [_effectiveQueue]）。
+  final bool _clientInjected;
+
+  final NetworkSettings _settings;
+  final NetworkProfile _profile;
+
+  /// 请求来源标记：日志里区分「哪个图源 / 哪个模块」在发请求。
+  final String _source;
+
+  NetworkQueue? _queue;
+
+  /// 生效的 UA：图源覆盖 → 全局设置 → 内置默认。
+  String get effectiveUserAgent {
+    final merged = _profile.mergedWith(_settings);
+    return merged.userAgent.isEmpty ? defaultUserAgent : merged.userAgent;
+  }
+
+  /// 生效的代理；为空表示直连。
+  String get effectiveProxy => _profile.mergedWith(_settings).proxy;
+
+  /// 生效的单次请求超时。
+  Duration get effectiveTimeout => _settings.timeout;
+
+  /// 队列：优先用注入的（测试替身）；否则用**应用级共享队列**——文档要求的
+  /// 「全局总并发 6~12」只有全应用共用一份额度时才成立，各建各的等于没有限制。
+  NetworkQueue get _effectiveQueue {
+    if (_queue != null) return _queue!;
+    // 显式注入了客户端（测试替身）：额度仍按本实例算，发送走注入的客户端。
+    if (_clientInjected) {
+      return _injectedQueue ??=
+          NetworkQueue(settings: _settings, sender: _sendWithClient);
+    }
+    // 生产：全应用共享一份并发额度。
+    return LumeNet.queue;
+  }
+
+  NetworkQueue? _injectedQueue;
+
+  /// 绑定共享队列：同一板块的图源共用一个队列，并发额度才真的互通。
+  void useQueue(NetworkQueue queue) => _queue = queue;
+
+  Future<LumeHttpResponse> send({
+    required String url,
+    String method = 'GET',
+    Map<String, String>? headers,
+    String? body,
+    Duration? timeout,
+  }) async {
+    final request = NetworkRequest(
+      url: url,
+      method: method.toUpperCase(),
+      headers: _headersFor(headers),
+      body: body,
+      source: _source,
+      // 只有幂等方法参与重试：POST 重试可能造成重复提交。
+      retryOn: _isIdempotent(method),
+      proxy: _profile.mergedWith(_settings).proxy,
+    );
+
+    // 单次请求的超时兜底：队列内部含重试等待，这里按「重试次数 + 1」放宽，
+    // 避免把正常退避误判成超时。
+    final budget = (timeout ?? _settings.timeout) * (_settings.maxRetries + 1);
+    final NetworkResponse response;
+    try {
+      response = await _effectiveQueue.send(request).timeout(budget);
+    } on TimeoutException catch (error) {
+      throw LumeHttpException(
+        '${LumeSourceNetworkMarker.failure}：请求超时（${budget.inSeconds}s）',
+        cause: error,
+      );
+    } on LumeHttpException {
+      rethrow;
+    } catch (error) {
+      if (!_isNetworkFailure(error)) rethrow;
+      throw LumeHttpException(
+        '${LumeSourceNetworkMarker.failure}：$error',
+        cause: error,
+      );
+    }
+
+    return LumeHttpResponse(
+      statusCode: response.statusCode,
+      body: Uint8List.fromList(response.body),
+      headers: response.headers,
+    );
+  }
+
+  /// 用注入客户端发送（队列的 sender）。
+  ///
+  /// 生产路径默认走 [LumeNet.queue]（共享队列 + [LumeNet.sendDirect]，代理在这里
+  /// 生效）；只有显式注入了 `client` 的调用方（测试的失败替身）才用这条路径，
+  /// 保证「注入即生效」的既有语义不变。
+  Future<NetworkResponse> _sendWithClient(NetworkRequest request) async {
+    final outgoing = http.Request(request.method, Uri.parse(request.url));
+    outgoing.headers.addAll(request.headers);
+    if (request.body != null) outgoing.body = request.body!;
+    final streamed = await _client.send(outgoing).timeout(_settings.timeout);
+    final bytes = await streamed.stream.toBytes().timeout(_settings.timeout);
+    return NetworkResponse(
+      statusCode: streamed.statusCode,
+      body: bytes,
+      headers: streamed.headers,
+    );
+  }
+
+  /// 请求头：调用方给的优先，UA 与 Cookie 按「图源覆盖 → 全局」补齐。
+  Map<String, String> _headersFor(Map<String, String>? headers) {
+    final merged = <String, String>{...?headers};
+    merged.putIfAbsent('User-Agent', () => effectiveUserAgent);
+    final cookie = _profile.mergedWith(_settings).cookie.trim();
+    if (cookie.isNotEmpty) merged.putIfAbsent('Cookie', () => cookie);
+    return merged;
+  }
+
+  /// 幂等方法：可安全重试。
+  static bool _isIdempotent(String method) {
+    switch (method.toUpperCase()) {
+      case 'GET':
+      case 'HEAD':
+      case 'OPTIONS':
+      case 'TRACE':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static bool _isNetworkFailure(Object error) =>
+      error is SocketException ||
+      error is HttpException ||
+      error is http.ClientException ||
+      error is TimeoutException;
+
+  void dispose() => _client.close();
 }

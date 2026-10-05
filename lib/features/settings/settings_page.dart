@@ -8,6 +8,7 @@ import '../source/global_source_page.dart';
 import '../video/player_kernel_section.dart';
 import '../video/player_settings_host.dart';
 import 'cache_settings_page.dart';
+import 'network_settings_page.dart';
 import 'log_report.dart';
 import 'log_report_page.dart';
 import 'log_viewer_page.dart';
@@ -68,6 +69,13 @@ class SettingsPage extends StatelessWidget {
           // 故障逃生入口：内核选择列表**内嵌**在设置页里（点得最少、最稳），
           // 与视频板块的快捷入口共用同一份列表组件。
           const PlayerKernelSection(),
+          const SizedBox(height: 12),
+          _SettingsEntry(
+            icon: Icons.wifi_tethering,
+            title: '网络设置',
+            subtitle: '全局并发、单域名并发、UA、代理、超时与重试（四板块共用）',
+            onTap: () => _push(context, const NetworkSettingsPage()),
+          ),
           const SizedBox(height: 12),
           _SettingsEntry(
             icon: Icons.cleaning_services_outlined,

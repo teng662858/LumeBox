@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../core/js/cat_engines.dart';
+import '../../core/net/network_settings.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
@@ -132,6 +133,37 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     );
   }
 
+  /// 网络配置：单图源的 UA / Cookie / 代理，覆盖全局设置（留空即继承）。
+  ///
+  /// 保存后丢弃该图源已建好的 HTTP 客户端与运行时——下次请求用新配置，
+  /// 不会出现「改了配置还在用旧 Cookie」的错觉。
+  Future<void> _editNetwork(SourceDescriptor source) async {
+    final profile = await showDialog<NetworkProfile>(
+      context: context,
+      builder: (_) => _NetworkDialog(source: source),
+    );
+    if (profile == null || !mounted) return;
+    await _manager.setNetwork(
+      source.id,
+      userAgent: profile.userAgent,
+      cookie: profile.cookie,
+      proxy: profile.proxy,
+    );
+    // 运行时重建：旧客户端带着旧 UA / Cookie，必须释放。
+    await _manager.setEnabled(source.id, source.enabled);
+    await _reload();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          profile.isEmpty
+              ? '已恢复「${source.name}」为全局网络设置'
+              : '已保存「${source.name}」的网络配置',
+        ),
+      ),
+    );
+  }
+
   /// 导出脚本原文：弹窗展示全文，可一键复制（备份 / 迁移用）。
   Future<void> _export(SourceDescriptor source) async {
     final script = await _manager.exportScript(source.id);
@@ -234,6 +266,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
           onToggle: (enabled) => _toggle(source, enabled),
           onBrowse: source.enabled ? () => _browse(source) : null,
           onRename: () => _rename(source),
+          onNetwork: () => _editNetwork(source),
           onExport: () => _export(source),
           onDelete: () => _delete(source),
         );
@@ -245,8 +278,11 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
 /// 停用标记的颜色：与错误文案同色系，避免新造主题项。
 const Color _disabledColor = Color(0xFFFF8A80);
 
+/// 「网络已自定义」标记色：与停用区分开的提示色。
+const Color _accentColor = Color(0xFF80D8FF);
+
 /// 单个图源行上的操作。
-enum _SourceAction { browse, rename, exportScript, delete }
+enum _SourceAction { browse, rename, network, exportScript, delete }
 
 class _SourceTile extends StatelessWidget {
   const _SourceTile({
@@ -254,6 +290,7 @@ class _SourceTile extends StatelessWidget {
     required this.onToggle,
     required this.onBrowse,
     required this.onRename,
+    required this.onNetwork,
     required this.onExport,
     required this.onDelete,
   });
@@ -265,6 +302,8 @@ class _SourceTile extends StatelessWidget {
   final VoidCallback? onBrowse;
 
   final VoidCallback onRename;
+
+  final VoidCallback onNetwork;
 
   final VoidCallback onExport;
 
@@ -308,6 +347,13 @@ class _SourceTile extends StatelessWidget {
                         style: TextStyle(fontSize: 12, color: _disabledColor),
                       ),
                     ],
+                    if (source.hasNetworkOverride) ...<Widget>[
+                      const SizedBox(width: 8),
+                      const Text(
+                        '网络已自定义',
+                        style: TextStyle(fontSize: 12, color: _accentColor),
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -324,6 +370,8 @@ class _SourceTile extends StatelessWidget {
                   onBrowse?.call();
                 case _SourceAction.rename:
                   onRename();
+                case _SourceAction.network:
+                  onNetwork();
                 case _SourceAction.exportScript:
                   onExport();
                 case _SourceAction.delete:
@@ -339,6 +387,10 @@ class _SourceTile extends StatelessWidget {
               const PopupMenuItem<_SourceAction>(
                 value: _SourceAction.rename,
                 child: Text('重命名'),
+              ),
+              const PopupMenuItem<_SourceAction>(
+                value: _SourceAction.network,
+                child: Text('网络配置'),
               ),
               const PopupMenuItem<_SourceAction>(
                 value: _SourceAction.exportScript,
@@ -397,6 +449,110 @@ class _RenameDialogState extends State<_RenameDialog> {
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: const Text('保存'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 单图源网络配置弹窗：UA / Cookie / 代理三项，留空即继承全局设置。
+///
+/// 这三项对应文档要求：图源可自定义 UA / Cookie / 代理，且单图源配置优先于
+/// 全局设置；Cookie 按图源隔离，不与其他图源共享。
+class _NetworkDialog extends StatefulWidget {
+  const _NetworkDialog({required this.source});
+
+  final SourceDescriptor source;
+
+  @override
+  State<_NetworkDialog> createState() => _NetworkDialogState();
+}
+
+class _NetworkDialogState extends State<_NetworkDialog> {
+  late final TextEditingController _ua =
+      TextEditingController(text: widget.source.network.userAgent);
+  late final TextEditingController _cookie =
+      TextEditingController(text: widget.source.network.cookie);
+  late final TextEditingController _proxy =
+      TextEditingController(text: widget.source.network.proxy);
+
+  @override
+  void dispose() {
+    _ua.dispose();
+    _cookie.dispose();
+    _proxy.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('网络配置 · ${widget.source.name}'),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text(
+                '留空即继承「设置 → 网络设置」里的全局值。这里的配置只作用于本图源，'
+                'Cookie 不与其他图源共享。',
+                style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _ua,
+                minLines: 1,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'User-Agent',
+                  hintText: '留空 = 用全局 UA',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _cookie,
+                minLines: 1,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Cookie',
+                  hintText: '留空 = 不带 Cookie',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _proxy,
+                decoration: const InputDecoration(
+                  labelText: '代理',
+                  hintText: 'http://127.0.0.1:7890；留空 = 用全局代理',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(NetworkProfile.none),
+          child: const Text('清除覆盖'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(
+            NetworkProfile(
+              userAgent: _ua.text,
+              cookie: _cookie.text,
+              proxy: _proxy.text,
+            ),
+          ),
           child: const Text('保存'),
         ),
       ],

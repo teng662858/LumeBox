@@ -33,6 +33,15 @@ abstract interface class SourceManager {
   /// 图源不存在、跨板块或名为空时无操作（不改变现状）。
   Future<void> rename(String sourceId, String name);
 
+  /// 设置单图源网络覆盖（UA / Cookie / 代理）。空串表示继承全局设置；
+  /// 图源不存在或跨板块时无操作。
+  Future<void> setNetwork(
+    String sourceId, {
+    required String userAgent,
+    required String cookie,
+    required String proxy,
+  });
+
   /// 导出图源脚本原文（备份 / 迁移用）；不存在或跨板块时返回 null。
   Future<String?> exportScript(String sourceId);
 

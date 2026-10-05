@@ -12,7 +12,7 @@ import 'source_record.dart';
 class SectionDatabase {
   SectionDatabase._(this._db, this._sectionId);
 
-  static const int _schemaVersion = 2;
+  static const int _schemaVersion = 3;
 
   /// 库内自证键：本库属于哪个板块。
   static const String _ownerKey = 'owner_section';
@@ -25,7 +25,10 @@ CREATE TABLE IF NOT EXISTS source (
   section    TEXT NOT NULL DEFAULT '',
   script     TEXT NOT NULL,
   enabled    INTEGER NOT NULL DEFAULT 1,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  user_agent TEXT NOT NULL DEFAULT '',
+  cookie     TEXT NOT NULL DEFAULT '',
+  proxy      TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS section_setting (
   key   TEXT PRIMARY KEY,
@@ -71,6 +74,18 @@ CREATE TABLE IF NOT EXISTS section_setting (
         "UPDATE source SET section = ? WHERE section = ''",
         [_sectionId],
       );
+    }
+    if (version < 3) {
+      // 单图源网络覆盖（UA / Cookie / 代理）：空串表示继承全局设置。
+      for (final column in <String>['user_agent', 'cookie', 'proxy']) {
+        try {
+          _db.execute(
+              "ALTER TABLE source ADD COLUMN $column TEXT NOT NULL DEFAULT ''");
+        } catch (error) {
+          // 列已存在（重复迁移或新库）：忽略。
+          LumeLog.warn('迁移 source.$column 跳过: $error');
+        }
+      }
     }
     if (version < _schemaVersion) {
       _db.execute('PRAGMA user_version = $_schemaVersion');
@@ -129,6 +144,19 @@ CREATE TABLE IF NOT EXISTS section_setting (
         script,
         DateTime.now().millisecondsSinceEpoch,
       ],
+    );
+  }
+
+  /// 写入单图源网络覆盖（UA / Cookie / 代理）。空串表示继承全局设置。
+  void setSourceNetwork(
+    String id, {
+    required String userAgent,
+    required String cookie,
+    required String proxy,
+  }) {
+    _db.execute(
+      'UPDATE source SET user_agent = ?, cookie = ?, proxy = ? WHERE id = ?',
+      [userAgent, cookie, proxy, id],
     );
   }
 

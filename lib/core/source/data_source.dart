@@ -1,4 +1,5 @@
 import '../session/section.dart';
+import '../net/network_settings.dart';
 import 'source_models.dart';
 
 /// 统一数据源接口。
@@ -67,12 +68,19 @@ class SourceDescriptor {
     required this.name,
     required this.version,
     required this.enabled,
+    this.network = NetworkProfile.none,
   });
 
   final String id;
   final String name;
   final String version;
   final bool enabled;
+
+  /// 单图源网络覆盖（UA / Cookie / 代理）；空项继承全局设置。
+  final NetworkProfile network;
+
+  /// 是否配置了任意网络覆盖（管理页据此标「已自定义网络」）。
+  bool get hasNetworkOverride => !network.isEmpty;
 }
 
 /// 数据源失败分类。UI 只需区分这三类即可决定提示文案。

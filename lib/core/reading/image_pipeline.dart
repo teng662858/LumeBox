@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import '../net/lume_http.dart';
+import '../net/lume_net.dart';
+import '../net/network_queue.dart';
 import '../util/lume_log.dart';
 import 'reading_store.dart';
 
@@ -252,15 +254,27 @@ class SectionImagePipeline {
     final allowed = await _acquireSlot();
     if (allowed != true || _disposed) return null;
     try {
-      final request = http.Request('GET', Uri.parse(url));
-      request.headers.putIfAbsent('User-Agent', () => LumeHttp.defaultUserAgent);
-      final streamed = await _client.send(request).timeout(timeout);
-      if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-        LumeLog.warn('图片请求失败(${streamed.statusCode}): $url');
+      // 图片同样走全局网络队列：单域名并发（2~3）保护图床，429/503 自动退避。
+      // 队列管「什么时候发」，这里只管「拿到字节后怎么用」。
+      final response = await LumeNet.queue.send(
+        NetworkRequest(
+          url: url,
+          headers: <String, String>{
+            'User-Agent': LumeNet.settings.userAgent.trim().isEmpty
+                ? LumeHttp.defaultUserAgent
+                : LumeNet.settings.userAgent.trim(),
+          },
+          source: '图片缓存',
+          proxy: LumeNet.settings.proxy,
+        ),
+      );
+      if (_disposed) return null;
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        LumeLog.warn('图片请求失败(${response.statusCode}): $url');
         return null;
       }
-      final bytes = await streamed.stream.toBytes().timeout(timeout);
-      return bytes.isEmpty ? null : bytes;
+      final bytes = response.body;
+      return bytes.isEmpty ? null : Uint8List.fromList(bytes);
     } on Object catch (error) {
       // 管线已释放导致的请求中断不算错误。
       if (!_disposed) LumeLog.warn('图片请求异常: $url ($error)');
