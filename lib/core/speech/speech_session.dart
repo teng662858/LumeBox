@@ -104,6 +104,18 @@ abstract interface class SpeechBackend {
   Stream<SpeechEvent> get events;
 }
 
+/// 可选能力：锁屏 / 控制中心信息。
+///
+/// 做成可选端口而不是塞进 [SpeechBackend]：桌面与 Android 的降级后端没有锁屏
+/// 概念，逼所有实现写空方法不如让调用方按能力查询（与 [DanmakuCapable] 同思路）。
+abstract interface class NowPlayingCapable {
+  /// 设置锁屏显示的信息（书名 + 章节名）。
+  Future<void> setNowPlaying({String? title, String? subtitle});
+
+  /// 清除锁屏信息（停止朗读 / 退出阅读器）。
+  Future<void> clearNowPlaying();
+}
+
 /// 不支持语音合成的后端：非 iOS 平台与原生未接入时的降级实现。
 class UnsupportedSpeechBackend implements SpeechBackend {
   const UnsupportedSpeechBackend();
@@ -243,6 +255,34 @@ class SpeechSession {
     _emit(supported ? SpeechState.idle : SpeechState.unavailable);
   }
 
+  /// 设置锁屏 / 控制中心显示的信息（书名 + 章节名）。
+  ///
+  /// 页面在开始朗读时调一次即可；停止 / 释放时由会话自己清掉（见 [stop] /
+  /// [dispose]），页面不需要记得清理。后端没有这个能力（桌面 / Android 降级）
+  /// 时静默跳过——锁屏信息是增强项。
+  Future<void> setNowPlaying({String? title, String? subtitle}) async {
+    if (_destroyed) return;
+    final capability = _nowPlayingCapability;
+    if (capability == null) return;
+    try {
+      await capability.setNowPlaying(title: title, subtitle: subtitle);
+    } catch (error, stackTrace) {
+      LumeLog.warn('[speech] 锁屏信息设置失败: $error');
+      LumeLog.error(error, stackTrace);
+    }
+  }
+
+  /// 后端的锁屏能力；后端没有时返回 null。
+  ///
+  /// 显式转型而不是靠 `is` 提升：`NowPlayingCapable` 与 [SpeechBackend] 是不相干
+  /// 的接口，Dart 不会把变量提升到非子类型，`is` 判完仍需要转型
+  /// （与 `DanmakuCapable` 的用法一致）。
+  NowPlayingCapable? get _nowPlayingCapability {
+    final candidate = backend;
+    if (candidate is NowPlayingCapable) return candidate as NowPlayingCapable;
+    return null;
+  }
+
   /// 开始朗读一串片段（通常是一章的切分结果）。
   ///
   /// [fromIndex] 指定从第几片开始（断点续听）；越界会被收敛到合法范围。
@@ -316,6 +356,8 @@ class SpeechSession {
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
     }
+    // 停止后锁屏控件不该还显示着这本书。
+    unawaited(_clearNowPlayingQuietly());
     _emit(_supported ? SpeechState.idle : SpeechState.unavailable);
   }
 
@@ -352,12 +394,26 @@ class SpeechSession {
         LumeLog.error(error, stackTrace);
       }
     }
+    // 页面退出时把锁屏控件一并收掉（不等原生回调，避免卡住释放路径）。
+    unawaited(_clearNowPlayingQuietly());
     _destroyed = true;
     _cancelWatch();
     final subscription = _subscription;
     _subscription = null;
     unawaited(subscription?.cancel());
     _state.dispose();
+  }
+
+  /// 清锁屏信息；任何失败只记日志（它是增强项，不该影响主链路）。
+  Future<void> _clearNowPlayingQuietly() async {
+    final capability = _nowPlayingCapability;
+    if (capability == null) return;
+    try {
+      await capability.clearNowPlaying();
+    } catch (error, stackTrace) {
+      LumeLog.warn('[speech] 锁屏信息清除失败: $error');
+      LumeLog.error(error, stackTrace);
+    }
   }
 
   // ------------------------------------------------------------------ 内部

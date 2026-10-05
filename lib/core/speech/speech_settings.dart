@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-/// 听书设置：语速、音调、音量、是否跟读翻页、每片字数。
+/// 听书设置：语速、音调、音量、是否跟读翻页、每片字数、后台播放。
 ///
 /// 与排版参数一样按板块存在阅读库里（键 [settingKey]），因此小说板块的设置
 /// 不与其他板块互相污染。所有数值都在 [decode] / [copyWith] 里收敛到合法范围，
@@ -12,6 +12,7 @@ class SpeechSettings {
     this.volume = 1.0,
     this.followAlong = true,
     this.maxCharsPerSegment = 1000,
+    this.backgroundPlayback = true,
   });
 
   static const String settingKey = 'novel.speech.settings';
@@ -47,12 +48,19 @@ class SpeechSettings {
   /// 每次交给引擎的字数上限。
   final int maxCharsPerSegment;
 
+  /// 是否允许后台播放（离开 App 后继续朗读，并由锁屏控件接管）。
+  ///
+  /// 默认开：听书的常见用法就是锁屏听。关掉后离开 App 会停止朗读
+  /// （由原生侧决定是否停用音频会话）。
+  final bool backgroundPlayback;
+
   SpeechSettings copyWith({
     double? rate,
     double? pitch,
     double? volume,
     bool? followAlong,
     int? maxCharsPerSegment,
+    bool? backgroundPlayback,
   }) {
     return SpeechSettings(
       rate: (rate ?? this.rate).clamp(minRate, maxRate).toDouble(),
@@ -61,6 +69,7 @@ class SpeechSettings {
       followAlong: followAlong ?? this.followAlong,
       maxCharsPerSegment: (maxCharsPerSegment ?? this.maxCharsPerSegment)
           .clamp(minSegmentChars, maxSegmentChars),
+      backgroundPlayback: backgroundPlayback ?? this.backgroundPlayback,
     );
   }
 
@@ -70,6 +79,7 @@ class SpeechSettings {
         'volume': volume,
         'followAlong': followAlong,
         'maxCharsPerSegment': maxCharsPerSegment,
+        'backgroundPlayback': backgroundPlayback,
       });
 
   static SpeechSettings decode(String? raw) {
@@ -88,6 +98,9 @@ class SpeechSettings {
         maxCharsPerSegment: decoded['maxCharsPerSegment'] is num
             ? (decoded['maxCharsPerSegment'] as num).round()
             : base.maxCharsPerSegment,
+        backgroundPlayback: decoded['backgroundPlayback'] is bool
+            ? decoded['backgroundPlayback'] as bool
+            : base.backgroundPlayback,
       );
     } on FormatException {
       return const SpeechSettings();

@@ -195,6 +195,11 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   // ------------------------------------------------------------------ 章节
 
   Future<void> _loadChapter({int offset = 0, bool atEnd = false}) async {
+    // 任何一次章节加载都要先把「读完接着听」的意图清掉，再由成功路径决定是否
+    // 续读。不清的话：加载失败 / 章节为空时标志会留到**下一次**加载（可能是用户
+    // 手动翻的章），那一次会莫名其妙开始朗读。
+    final resumeSpeech = _speechResumeAfterLoad;
+    _speechResumeAfterLoad = false;
     if (_chapters.isEmpty) {
       setState(() {
         _loadingChapter = false;
@@ -265,8 +270,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     final size = _viewport;
     if (size != null) _schedulePagination(size);
     // 连续听书：新章文本就位后接着读（从章首开始）。
-    if (_speechResumeAfterLoad) {
-      _speechResumeAfterLoad = false;
+    if (resumeSpeech) {
       _speechSegments = const <SpeechSegment>[];
       _lastFollowedPage = -1;
       unawaited(_startSpeech());
@@ -277,16 +281,33 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   int? _pendingRestoreChar;
 
   /// 预取相邻章节文本，让「下一章」不必等网络。
+  ///
+  /// 深度 2：只预取紧邻的一章时，用户连续翻章会一直「刚好差一章」。
+  /// 去重靠 [_prefetching]——`_cache.text` 只在**完成**后才有值，
+  /// 靠它判重挡不住同一章的并发重复请求（快速来回翻章会重复拉同一章）。
   void _prefetchNeighbours() {
-    for (final index in <int>[_chapterIndex + 1, _chapterIndex - 1]) {
-      if (index < 0 || index >= _chapters.length) continue;
-      final chapter = _chapters[index];
-      if (_cache.text(chapter.id) != null) continue;
-      unawaited(_prefetchChapter(chapter.id));
+    for (var distance = 1; distance <= _prefetchDepth; distance++) {
+      for (final index in <int>[
+        _chapterIndex + distance,
+        _chapterIndex - distance,
+      ]) {
+        if (index < 0 || index >= _chapters.length) continue;
+        final chapter = _chapters[index];
+        if (_cache.text(chapter.id) != null) continue;
+        if (_prefetching.contains(chapter.id)) continue;
+        unawaited(_prefetchChapter(chapter.id));
+      }
     }
   }
 
+  /// 预取深度（前后各 N 章）。
+  static const int _prefetchDepth = 2;
+
+  /// 正在预取的章节 id：挡住同一章的并发重复请求。
+  final Set<String> _prefetching = <String>{};
+
   Future<void> _prefetchChapter(String chapterId) async {
+    if (!_prefetching.add(chapterId)) return;
     try {
       final content = await widget.dataSource.content(
         itemId: widget.target.itemId,
@@ -299,6 +320,8 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
     } catch (error) {
       // 预取失败只记日志：它只是提前准备。
       LumeLog.warn('章节预取失败: $chapterId ($error)');
+    } finally {
+      _prefetching.remove(chapterId);
     }
   }
 
@@ -844,6 +867,13 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       _showSpeechToast(rejection);
       return;
     }
+    // 锁屏 / 控制中心显示「书名 + 章节名」，后台播放时用户才知道在听哪本。
+    unawaited(
+      session.setNowPlaying(
+        title: widget.target.title,
+        subtitle: _chapterTitle,
+      ),
+    );
     // 连听：本章读完自动进下一章（用户主动停止时才清掉）。
     _speechContinuous = true;
     setState(() {});

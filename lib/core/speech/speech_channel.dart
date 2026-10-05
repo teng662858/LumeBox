@@ -20,7 +20,7 @@ import 'speech_settings.dart';
 /// 原生实现（Swift，AVSpeechSynthesizer）尚未接入时：`isSupported` 把
 /// MissingPluginException 如实降级为 false，面板显示占位而不是报错——
 /// 契约由测试固定，原生落地即生效。
-class MethodChannelSpeechBackend implements SpeechBackend {
+class MethodChannelSpeechBackend implements SpeechBackend, NowPlayingCapable {
   MethodChannelSpeechBackend({
     MethodChannel? methodChannel,
     EventChannel? eventChannel,
@@ -65,6 +65,8 @@ class MethodChannelSpeechBackend implements SpeechBackend {
         'rate': _settings.rate,
         'pitch': _settings.pitch,
         'volume': _settings.volume,
+        // 后台播放开关：原生侧据此决定退到后台时是继续读还是暂停。
+        'background': _settings.backgroundPlayback,
       });
     } on MissingPluginException {
       throw const SpeechException('原生语音合成未接入');
@@ -81,6 +83,33 @@ class MethodChannelSpeechBackend implements SpeechBackend {
 
   @override
   Future<void> resume() => _invoke('resume');
+
+  @override
+  Future<void> setNowPlaying({String? title, String? subtitle}) async {
+    try {
+      await _methods.invokeMethod<void>('setNowPlaying', <String, Object?>{
+        'title': title,
+        'subtitle': subtitle,
+      });
+    } on MissingPluginException {
+      // 原生未接入：锁屏信息没有承载方，静默跳过。
+    } catch (error, stackTrace) {
+      LumeLog.warn('[speech] 锁屏信息下发失败: $error');
+      LumeLog.error(error, stackTrace);
+    }
+  }
+
+  @override
+  Future<void> clearNowPlaying() async {
+    try {
+      await _methods.invokeMethod<void>('clearNowPlaying');
+    } on MissingPluginException {
+      // 同上：没有承载方就什么都不用做。
+    } catch (error, stackTrace) {
+      LumeLog.warn('[speech] 锁屏信息清除失败: $error');
+      LumeLog.error(error, stackTrace);
+    }
+  }
 
   Future<void> _invoke(String method) async {
     try {

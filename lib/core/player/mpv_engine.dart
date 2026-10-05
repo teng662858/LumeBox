@@ -46,6 +46,19 @@ abstract interface class MpvEngine {
   Future<void> dispose();
 }
 
+/// 可选能力：**帧节拍**（每解码出一帧给一次信号）。
+///
+/// 为什么做成可选端口：media_kit 的 Dart API 没有解码帧回调（`PlayerStream`
+/// 里没有帧流），但它的 `time-pos` 每次**最多更新一帧**——用它当「帧节拍」
+/// 能把取帧从「固定定时器」变成「跟着画面走」：暂停时不再空转取帧，播放时
+/// 取帧时刻与真实帧对齐。
+///
+/// 引擎没有这个能力时，[PipFramePump] 退回定时器节拍（行为不变）。
+abstract interface class FrameTickCapable {
+  /// 帧节拍：每次画面推进发一个事件（不需要携带数据）。
+  Stream<void> get frameTicks;
+}
+
 /// 一帧视频画面：BGRA8888 像素 + 尺寸 + 行距。
 ///
 /// 行距（stride）由引擎给出：mpv 的帧可能带行对齐填充，因此**不能**假设

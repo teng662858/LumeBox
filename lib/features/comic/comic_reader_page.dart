@@ -150,6 +150,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       _ratios.clear();
     });
     final chapter = _chapters[_chapterIndex];
+    // 本章已经进来了：它的「预取」记录作废（下次接近时应该能重新预取）。
+    _prefetchedChapters.remove(chapter.id);
     try {
       final content = await widget.dataSource.content(
         itemId: widget.target.itemId,
@@ -224,7 +226,10 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       case ComicReadingMode.single:
         _pageController = PageController(initialPage: _page);
       case ComicReadingMode.doublePage:
-        _pageController = PageController(initialPage: _page ~/ 2);
+        // 跨页模式下 PageView 的下标是「屏」，要按配对规则换算。
+        _pageController = PageController(
+          initialPage: _settings.spreadIndexOf(_page),
+        );
     }
     if (oldPage != null || oldScroll != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -281,6 +286,48 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
         _images[i],
     ];
     _pipeline.preload(ahead, targetWidth: _decodeWidth);
+    // 临近章尾时提前拉下一章的头几张：不这么做的话，翻到章尾再等网络，
+    // 用户看到的是「卡一下才出图」。
+    _prefetchNextChapterHead();
+  }
+
+  /// 距章尾还剩多少张时开始预取下一章。
+  static const int _nextChapterPrefetchWindow = 3;
+
+  /// 下一章预取的图数量（够填满首屏即可，多了浪费流量）。
+  static const int _nextChapterPrefetchCount = 3;
+
+  /// 已经发起过预取的章节 id：同一章只预取一次。
+  ///
+  /// 进章时会把这个 id 移出集合（见 [_loadChapter]）：预取只为「马上要进这一章」
+  /// 服务，进完就作废——否则回头再读上一章时，明明图早被内存预算淘汰了，
+  /// 却因为「预取过」而不再预取，用户照样要等。
+  final Set<String> _prefetchedChapters = <String>{};
+
+  /// 预取下一章开头的几张图（只在接近章尾时做）。
+  void _prefetchNextChapterHead() {
+    if (_images.isEmpty) return;
+    if (_page < _images.length - _nextChapterPrefetchWindow) return;
+    final next = _chapterIndex + 1;
+    if (next >= _chapters.length) return;
+    final chapter = _chapters[next];
+    if (!_prefetchedChapters.add(chapter.id)) return;
+    unawaited(_prefetchChapterHead(chapter.id));
+  }
+
+  Future<void> _prefetchChapterHead(String chapterId) async {
+    try {
+      final content = await widget.dataSource.content(
+        itemId: widget.target.itemId,
+        chapterId: chapterId,
+      );
+      if (!mounted || content is! ImageContent) return;
+      final head = content.images.take(_nextChapterPrefetchCount);
+      _pipeline.preload(head, targetWidth: _decodeWidth);
+    } catch (error) {
+      // 预取失败只记日志：它只是提前准备，进章时会正常重试。
+      LumeLog.warn('下一章预取失败: $chapterId ($error)');
+    }
   }
 
   /// 解码宽度：按屏宽（物理像素）解码，长条图不按屏宽解码会占几十 MB。
@@ -291,13 +338,20 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   double get _innerWidth =>
       math.max(1, _viewport.width - _settings.marginOf(_viewport.width) * 2);
 
+  /// 单张图的高度（不含页间距）。
   double _itemHeight(int index) =>
       _innerWidth * (_ratios[index] ?? _placeholderRatio);
+
+  /// 单张图占据的滚动高度（含页间距）。
+  ///
+  /// 间距必须算进来：`itemExtentBuilder` 与这里用的是同一个值，否则
+  /// 「滚动偏移 ↔ 图下标」的换算会随间距累积偏移（滑到后面就错位）。
+  double _itemSlotHeight(int index) => _itemHeight(index) + _settings.pageGap;
 
   double _waterfallOffsetFor(int index) {
     var offset = 0.0;
     for (var i = 0; i < index && i < _images.length; i++) {
-      offset += _itemHeight(i);
+      offset += _itemSlotHeight(i);
     }
     return offset;
   }
@@ -305,7 +359,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   int _waterfallIndexFor(double offset) {
     var sum = 0.0;
     for (var i = 0; i < _images.length; i++) {
-      final height = _itemHeight(i);
+      final height = _itemSlotHeight(i);
       if (offset < sum + height) return i;
       sum += height;
     }
@@ -348,7 +402,12 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   void _toggleToolbar() => setState(() => _toolbar = !_toolbar);
 
   void _onPageChanged(int page) {
-    final next = _settings.mode == ComicReadingMode.doublePage ? page * 2 : page;
+    // 双页模式下 PageView 的下标是「屏」，换算成图序号；首页单独配对时
+    // 第 1 屏就是第 1 张图，因此用配对规则反查而不是简单乘 2。
+    final next = _settings.mode == ComicReadingMode.doublePage
+        ? _settings.imagesOfSpread(page, _images.length).$1
+        : page;
+    if (next < 0) return;
     if (next == _page) return;
     setState(() {
       _page = next;
@@ -363,7 +422,12 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     setState(() {
       _settings = _settings.copyWith(mode: mode);
       // 双页模式按跨页折算，保证切换后仍停在同一个作品位置。
-      _page = mode == ComicReadingMode.doublePage ? (_page ~/ 2) * 2 : _page;
+      _page = mode == ComicReadingMode.doublePage
+          ? _settings.imagesOfSpread(
+              _settings.spreadIndexOf(_page),
+              _images.length,
+            ).$1
+          : _page;
     });
     _settings.save(widget.library);
     _rebuildControllers();
@@ -377,6 +441,9 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
 
   Future<void> _openChapter(int index) async {
     if (index < 0 || index >= _chapters.length || index == _chapterIndex) return;
+    // 加载中不再受理换章：越界手势会连续触发，而 `_chapterIndex` 在加载**开始**时
+    // 就已经改掉了，第二次通知会拿新章的边界再判一次，可能一路连跳好几章。
+    if (_loading) return;
     _saveTimer?.cancel();
     _saveProgress();
     setState(() {
@@ -519,19 +586,55 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     };
   }
 
-  /// 条漫瀑布流：纵向连续，无分页、无间隙，按各图真实比例排布。
+  /// 翻页模式下的越界处理：滑到章尾再往前拉 = 进下一章。
+  ///
+  /// 用「越界拖动」而不是在最后一页加一个「下一章」按钮：前者是漫画阅读器的
+  /// 通用手势，用户不需要学新东西；按钮则会在每一章末尾多出一屏。
+  ///
+  /// 方向必须按阅读方向算：`reverse: true`（从右往左）会把滚动轴整个翻过来，
+  /// 于是「最后一页」落在 minScrollExtent 而不是 maxScrollExtent，越界的正负号
+  /// 也跟着反。直接用像素正负判方向在日漫模式下会完全反过来。
+  bool _onPagedScroll(ScrollNotification notification) {
+    if (notification is! OverscrollNotification) return false;
+    final metrics = notification.metrics;
+    final rtl = _settings.isRightToLeft;
+    // 阅读方向的「章尾 / 章首」在滚动轴上的位置。
+    final atForwardEnd = rtl
+        ? metrics.pixels <= metrics.minScrollExtent + 0.5
+        : metrics.pixels >= metrics.maxScrollExtent - 0.5;
+    final atBackwardEnd = rtl
+        ? metrics.pixels >= metrics.maxScrollExtent - 0.5
+        : metrics.pixels <= metrics.minScrollExtent + 0.5;
+    // 越界的正负号同样随方向翻转。
+    final overscrollingForward = rtl
+        ? notification.overscroll < 0
+        : notification.overscroll > 0;
+    if (atForwardEnd && overscrollingForward) {
+      _openChapter(_chapterIndex + 1);
+    } else if (atBackwardEnd && !overscrollingForward) {
+      _openChapter(_chapterIndex - 1);
+    }
+    return false;
+  }
+
+  /// 条漫瀑布流：纵向连续，按各图真实比例排布。
+  ///
+  /// 页间距在这里是「图与图之间的空隙」：设为 0 时图与图严丝合缝（条漫常见），
+  /// 设大一点则像翻纸质分镜。空隙不占 itemExtent 之外的高度——它算在每项的
+  /// 高度里，否则滚动定位会整体偏移。
   Widget _buildWaterfall() {
     final margin = _settings
         .marginOf(MediaQuery.maybeSizeOf(context)?.width ?? 400);
+    final gap = _settings.pageGap;
     return NotificationListener<ScrollNotification>(
       onNotification: _onScroll,
       child: ListView.builder(
         controller: _scrollController,
         padding: EdgeInsets.zero,
         itemCount: _images.length,
-        itemExtentBuilder: (index, _) => _itemHeight(index),
+        itemExtentBuilder: (index, _) => _itemHeight(index) + gap,
         itemBuilder: (context, index) => Padding(
-          padding: EdgeInsets.symmetric(horizontal: margin),
+          padding: EdgeInsets.fromLTRB(margin, 0, margin, gap),
           child: _ComicImageTile(
             pipeline: _pipeline,
             url: _images[index],
@@ -548,59 +651,80 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   }
 
   /// 单页 / 双页模式：横向翻页，[doublePage] 时一屏并排两页。
+  ///
+  /// 三个设置在这里落地：
+  /// - **翻页方向**：`reverse` 让从右往左的日漫也能「向右滑看下一页」；
+  /// - **跨页配对**：首页是否单独一屏（见 [ComicSpreadMode]），配对由
+  ///   [ComicReaderSettings.imagesOfSpread] 统一算，不再在这里写死 `page * 2`；
+  /// - **页间距**：翻页模式里作为两页之间的水平间隙，瀑布流里作为图之间的空隙。
   Widget _buildPaged({required bool doublePage}) {
     final width = MediaQuery.maybeSizeOf(context)?.width ?? 400;
     final margin = _settings.marginOf(width);
-    final pageCount =
-        doublePage ? (_images.length + 1) ~/ 2 : _images.length;
-    return PageView.builder(
-      controller: _pageController,
-      itemCount: pageCount,
-      onPageChanged: _onPageChanged,
-      itemBuilder: (context, page) {
-        final first = doublePage ? page * 2 : page;
-        return Padding(
-          padding: EdgeInsets.symmetric(horizontal: margin, vertical: 4),
-          child: doublePage
-              ? Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: _ComicImageTile(
-                        pipeline: _pipeline,
-                        url: _images[first],
-                        index: first,
-                        decodeWidth: _decodeWidth,
-                        doubleTapZoom: _settings.doubleTapZoom,
-                        onLongPress: () => _onImageLongPress(first),
-                      ),
-                    ),
-                    if (first + 1 < _images.length)
-                      Expanded(
-                        child: _ComicImageTile(
-                          pipeline: _pipeline,
-                          url: _images[first + 1],
-                          index: first + 1,
-                          decodeWidth: _decodeWidth,
-                          doubleTapZoom: _settings.doubleTapZoom,
-                          onLongPress: () => _onImageLongPress(first + 1),
-                        ),
-                      )
-                    else
-                      const Spacer(),
-                  ],
-                )
-              : _ComicImageTile(
-                  pipeline: _pipeline,
-                  url: _images[first],
-                  index: first,
-                  decodeWidth: _decodeWidth,
-                  doubleTapZoom: _settings.doubleTapZoom,
-                  onLongPress: () => _onImageLongPress(first),
-                ),
-        );
-      },
+    final gap = _settings.pageGap;
+    final pageCount = doublePage
+        ? _settings.spreadCount(_images.length)
+        : _images.length;
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onPagedScroll,
+      child: PageView.builder(
+        controller: _pageController,
+        itemCount: pageCount,
+        // 从右往左：PageView 反向，于是「右滑 = 下一页」符合日漫直觉。
+        reverse: _settings.isRightToLeft,
+        onPageChanged: _onPageChanged,
+        itemBuilder: (context, page) {
+          return Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: margin,
+              vertical: 4 + gap / 2,
+            ),
+            child: doublePage
+                ? _buildSpread(page, gap)
+                : _ComicImageTile(
+                    pipeline: _pipeline,
+                    url: _images[page],
+                    index: page,
+                    decodeWidth: _decodeWidth,
+                    doubleTapZoom: _settings.doubleTapZoom,
+                    onLongPress: () => _onImageLongPress(page),
+                  ),
+          );
+        },
+      ),
     );
   }
+
+  /// 一屏两张：按配对规则取图，落单时给另一半留空位。
+  ///
+  /// 留空的一侧**不画占位**：纸质漫画里落单的那一页就是单独居中偏一侧，
+  /// 加个灰块反而像加载失败。
+  Widget _buildSpread(int spread, double gap) {
+    final (first, second) = _settings.imagesOfSpread(spread, _images.length);
+    if (first < 0) return const SizedBox.shrink();
+    final tiles = <Widget>[
+      Expanded(child: _tileFor(first)),
+      SizedBox(width: gap),
+      if (second > first)
+        Expanded(child: _tileFor(second))
+      else
+        const Spacer(),
+    ];
+    // 从右往左时整屏镜像：两张图的左右顺序也跟着换，否则跨页内容是反的。
+    return Row(
+      children: _settings.isRightToLeft
+          ? tiles.reversed.toList(growable: false)
+          : tiles,
+    );
+  }
+
+  Widget _tileFor(int index) => _ComicImageTile(
+        pipeline: _pipeline,
+        url: _images[index],
+        index: index,
+        decodeWidth: _decodeWidth,
+        doubleTapZoom: _settings.doubleTapZoom,
+        onLongPress: () => _onImageLongPress(index),
+      );
 
   Widget _buildTopBar() {
     final chapter = _chapters.isEmpty ? null : _chapters[_chapterIndex];
@@ -763,6 +887,106 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       ),
                     ],
                   ),
+                  Row(
+                    children: <Widget>[
+                      const SizedBox(
+                        width: 46,
+                        child: Text(
+                          '页间距',
+                          style: TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                      ),
+                      Expanded(
+                        child: Slider(
+                          value: _settings.pageGap,
+                          max: ComicReaderSettings.maxPageGap,
+                          divisions: 12,
+                          label: '${_settings.pageGap.round()}',
+                          onChanged: (value) => _updateSettings(
+                            _settings.copyWith(pageGap: value),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 40,
+                        child: Text(
+                          '${_settings.pageGap.round()}',
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: <Widget>[
+                      const Text(
+                        '翻页方向',
+                        style: TextStyle(fontSize: 12, color: Colors.white70),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: SegmentedButton<ComicReadingDirection>(
+                          segments: <ButtonSegment<ComicReadingDirection>>[
+                            for (final direction
+                                in ComicReadingDirection.values)
+                              ButtonSegment<ComicReadingDirection>(
+                                value: direction,
+                                label: Text(
+                                  direction.label,
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                              ),
+                          ],
+                          selected: <ComicReadingDirection>{_settings.direction},
+                          showSelectedIcon: false,
+                          style: const ButtonStyle(
+                            visualDensity: VisualDensity.compact,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onSelectionChanged: (selection) => _updateSettings(
+                            _settings.copyWith(direction: selection.first),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  // 跨页配对只在双页模式下有意义，其他模式不占版面。
+                  if (_settings.mode == ComicReadingMode.doublePage)
+                    Row(
+                      children: <Widget>[
+                        const Text(
+                          '跨页配对',
+                          style: TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SegmentedButton<ComicSpreadMode>(
+                            segments: <ButtonSegment<ComicSpreadMode>>[
+                              for (final mode in ComicSpreadMode.values)
+                                ButtonSegment<ComicSpreadMode>(
+                                  value: mode,
+                                  label: Text(
+                                    mode.label,
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                ),
+                            ],
+                            selected: <ComicSpreadMode>{_settings.spreadMode},
+                            showSelectedIcon: false,
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onSelectionChanged: (selection) => _updateSettings(
+                              _settings.copyWith(spreadMode: selection.first),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   const Divider(height: 1, color: Colors.white12),
                   Row(
                     children: <Widget>[

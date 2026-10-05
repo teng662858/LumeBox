@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/player/brightness.dart';
 import 'package:lume_box/core/player/pip.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
@@ -67,6 +68,7 @@ void main() {
       WidgetTester tester, {
       required Set<PlayerKernel> available,
       _FakePipBackend? pip,
+      _FakeBrightnessBackend? brightness,
       bool withSourceManager = false,
     }) async {
       final created = <_FakePlayer>[];
@@ -83,6 +85,7 @@ void main() {
               return player;
             },
             pipBackend: pip,
+            brightnessBackend: brightness ?? _FakeBrightnessBackend(),
             // 首页是图源展示页：默认注入空图源管理器（不碰真实板块库），
             // 交给正版实现时才走真库。
             sourceManager: withSourceManager ? null : FakeSourceManager(),
@@ -445,6 +448,82 @@ void main() {
       expect(mask!.color.a, greaterThan(0.2));
     });
 
+    testWidgets('亮度：支持系统亮度时改系统值，不再叠遮罩', (tester) async {
+      final brightness = _FakeBrightnessBackend()..supported = true;
+      brightness.current = 0.6;
+      await pumpVideo(
+        tester,
+        available: <PlayerKernel>{PlayerKernel.avplayer},
+        brightness: brightness,
+      );
+      await openMedia(tester);
+
+      final layer = _gestureLayerRect(tester);
+      // 起点在左半边 → 亮度。下滑变暗。
+      await _dragInSteps(
+        tester,
+        from: Offset(layer.left + 40, layer.center.dy),
+        total: Offset(0, layer.height / 5),
+      );
+
+      expect(brightness.applied, isNotEmpty, reason: '应改系统亮度');
+      expect(
+        brightness.applied.last,
+        closeTo(0.4, 0.08),
+        reason: '从 0.6 下滑 1/5 屏 → 约 0.4',
+      );
+      expect(
+        _brightnessMask(tester),
+        isNull,
+        reason: '系统亮度生效时不该再叠遮罩（否则暗两次）',
+      );
+    });
+
+    testWidgets('亮度：不支持系统亮度时回退为遮罩（画面确实变暗）', (tester) async {
+      final brightness = _FakeBrightnessBackend()..supported = false;
+      await pumpVideo(
+        tester,
+        available: <PlayerKernel>{PlayerKernel.avplayer},
+        brightness: brightness,
+      );
+      await openMedia(tester);
+
+      final layer = _gestureLayerRect(tester);
+      await _dragInSteps(
+        tester,
+        from: Offset(layer.left + 40, layer.center.dy),
+        total: Offset(0, layer.height / 2),
+      );
+
+      expect(brightness.applied, isEmpty, reason: '不支持时不该调用后端');
+      expect(_brightnessMask(tester), isNotNull, reason: '降级路径要看得见变暗');
+    });
+
+    testWidgets('亮度：进页面时对齐当前系统亮度（不跳变）', (tester) async {
+      final brightness = _FakeBrightnessBackend()..supported = true;
+      brightness.current = 0.35;
+      await pumpVideo(
+        tester,
+        available: <PlayerKernel>{PlayerKernel.avplayer},
+        brightness: brightness,
+      );
+      await openMedia(tester);
+
+      final layer = _gestureLayerRect(tester);
+      // 只下滑一点点：若起点没对齐到 0.35，结果会明显偏离。
+      await _dragInSteps(
+        tester,
+        from: Offset(layer.left + 40, layer.center.dy),
+        total: Offset(0, layer.height / 20),
+      );
+
+      expect(
+        brightness.applied.last,
+        closeTo(0.30, 0.06),
+        reason: '起点应是 0.35 而不是 1.0（否则会跳到别的值）',
+      );
+    });
+
     testWidgets('长按临时倍速，松手恢复原倍速', (tester) async {
       final created = await pumpVideo(
         tester,
@@ -585,6 +664,39 @@ Future<void> _dragInSteps(
   }
   await gesture.up();
   await tester.pumpAndSettle();
+}
+
+/// 取当前的亮度遮罩（没有则返回 null）。
+///
+/// 遮罩是「纯黑 + 半透明」的 ColoredBox；用这个特征把它从其他装饰里认出来。
+Color? _brightnessMask(WidgetTester tester) {
+  final found = find.byWidgetPredicate(
+    (widget) =>
+        widget is ColoredBox &&
+        widget.color.a > 0 &&
+        widget.color.a < 1 &&
+        widget.color.r == 0 &&
+        widget.color.g == 0 &&
+        widget.color.b == 0,
+  );
+  if (found.evaluate().isEmpty) return null;
+  return (found.evaluate().first.widget as ColoredBox).color;
+}
+
+/// 替身亮度后端：记录下发的亮度值。
+class _FakeBrightnessBackend implements BrightnessBackend {
+  bool supported = false;
+  double? current;
+  final List<double> applied = <double>[];
+
+  @override
+  Future<bool> isSupported() async => supported;
+
+  @override
+  Future<void> setBrightness(double value) async => applied.add(value);
+
+  @override
+  Future<double?> currentBrightness() async => current;
 }
 
 class _FakeCatalog implements PlayerKernelCatalog {

@@ -124,6 +124,21 @@ class NovelSpeechPanel extends StatelessWidget {
           onChanged: (value) =>
               onSettingsChanged(settings.copyWith(followAlong: value)),
         ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            '后台播放',
+            style: TextStyle(fontSize: 13, color: chromeText),
+          ),
+          subtitle: Text(
+            '离开 App 后继续朗读，锁屏可控制播放',
+            style: TextStyle(fontSize: 11, color: secondary),
+          ),
+          value: settings.backgroundPlayback,
+          onChanged: (value) =>
+              onSettingsChanged(settings.copyWith(backgroundPlayback: value)),
+        ),
       ],
     );
   }

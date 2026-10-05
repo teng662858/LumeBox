@@ -55,7 +55,7 @@ class JsSourceContract {
 ///
 /// 本类只做「翻译」：接口方法 → JS 方法名与入参 → 结果解析 → 异常归一。
 /// 它不持有运行时，也不负责脚本载入与沙箱生命周期。
-class JsDataSource implements DataSource, DanmakuCapable {
+class JsDataSource implements DataSource, DanmakuCapable, DanmakuPostCapable {
   JsDataSource({
     required this.id,
     required this.name,
@@ -135,6 +135,54 @@ class JsDataSource implements DataSource, DanmakuCapable {
         'id': itemId,
         'chapterId': chapterId,
       });
+
+  /// 可选能力：上报弹幕（图源脚本实现 `postDanmaku({...})` 才有）。
+  ///
+  /// 返回值口径：脚本返回 `true` / `{ok: true}` / 有内容都算成功；脚本**没有实现
+  /// 这个方法**（引擎报「方法不存在」）算「不支持写入」，返回 false 而不是抛错——
+  /// 与「能读不能写」的图源占多数这一事实对应，调用方据此提示「本图源不支持
+  /// 发送弹幕」而不是报一个吓人的错误。
+  @override
+  Future<bool> postDanmaku({
+    required String itemId,
+    required String chapterId,
+    required String text,
+    required int positionMs,
+    required String mode,
+    int? color,
+  }) async {
+    try {
+      final result = await runtime.call('postDanmaku', <String, Object?>{
+        'id': itemId,
+        'chapterId': chapterId,
+        'text': text,
+        'position': positionMs,
+        'mode': mode,
+        'color': ?color,
+      });
+      if (result is bool) return result;
+      if (result is Map && result['ok'] is bool) return result['ok'] as bool;
+      // 脚本没显式返回时按成功处理（发出去了就行）。
+      return true;
+    } on SourceException catch (error) {
+      // 「方法不存在」= 图源不支持写入，是正常情况，不当失败。
+      if (_isMissingMethod(error)) return false;
+      rethrow;
+    }
+  }
+
+  /// 判断异常是否为「脚本没实现这个方法」。
+  ///
+  /// 引擎对缺失方法的措辞在不同实现间略有差异（quickjs 报「不是函数」，
+  /// 桥接层报「方法不存在」），因此按关键词宽松匹配——这里只用来区分
+  /// 「不支持写入」（正常）与「调用失败」（要上报）。
+  static bool _isMissingMethod(SourceException error) {
+    final message = error.message;
+    return message.contains('不是函数') ||
+        message.contains('方法不存在') ||
+        message.contains('undefined') ||
+        message.contains('not a function');
+  }
 
   Future<Object?> _invoke(String method, [Object? argument]) async {
     try {

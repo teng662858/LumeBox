@@ -395,6 +395,57 @@ void main() {
     });
   });
 
+  group('锁屏信息（可选能力）', () {
+    test('后端没有锁屏能力时静默跳过（不抛错）', () async {
+      final session = await openSession();
+      addTearDown(session.dispose);
+      // _FakeSpeechBackend 不实现 NowPlayingCapable。
+      await session.setNowPlaying(title: '书名', subtitle: '第 1 章');
+      await session.start(segments(2));
+      await session.stop();
+      // 走到这里没抛错就说明能力缺失被正确降级了。
+      expect(session.state.value, SpeechState.idle);
+    });
+
+    test('后端有能力时下发书名与章节名，停止时清除', () async {
+      final capable = _CapableSpeechBackend();
+      final session = SpeechSession(backend: capable);
+      await pumpEventQueue();
+      addTearDown(session.dispose);
+
+      await session.setNowPlaying(title: '测试小说', subtitle: '第 3 章');
+      expect(capable.nowPlayingTitle, '测试小说');
+      expect(capable.nowPlayingSubtitle, '第 3 章');
+
+      await session.start(segments(2));
+      await session.stop();
+      await pumpEventQueue();
+      expect(capable.cleared, isTrue, reason: '停止后锁屏不该还显示这本书');
+    });
+
+    test('锁屏信息下发失败不影响朗读（增强项）', () async {
+      final capable = _CapableSpeechBackend()..throwOnNowPlaying = true;
+      final session = SpeechSession(backend: capable);
+      await pumpEventQueue();
+      addTearDown(session.dispose);
+
+      await session.setNowPlaying(title: '书名');
+      final rejection = await session.start(segments(1));
+      expect(rejection, isNull, reason: '锁屏失败不该拦住朗读');
+      expect(capable.spoken, hasLength(1));
+    });
+
+    test('释放时清除锁屏信息', () async {
+      final capable = _CapableSpeechBackend();
+      final session = SpeechSession(backend: capable);
+      await pumpEventQueue();
+      await session.start(segments(1));
+      await session.dispose();
+      await pumpEventQueue();
+      expect(capable.cleared, isTrue);
+    });
+  });
+
   group('释放', () {
     test('dispose 时正在朗读：先停止再释放', () async {
       final session = await openSession();
@@ -473,4 +524,28 @@ class _FakeSpeechBackend implements SpeechBackend {
 
   @override
   Stream<SpeechEvent> get events => _events.stream;
+}
+
+/// 带锁屏能力的替身后端（可选端口 NowPlayingCapable）。
+class _CapableSpeechBackend extends _FakeSpeechBackend
+    implements NowPlayingCapable {
+  String? nowPlayingTitle;
+  String? nowPlayingSubtitle;
+  bool cleared = false;
+  bool throwOnNowPlaying = false;
+
+  @override
+  Future<void> setNowPlaying({String? title, String? subtitle}) async {
+    if (throwOnNowPlaying) throw StateError('锁屏不可用');
+    nowPlayingTitle = title;
+    nowPlayingSubtitle = subtitle;
+  }
+
+  @override
+  Future<void> clearNowPlaying() async {
+    if (throwOnNowPlaying) throw StateError('锁屏不可用');
+    cleared = true;
+    nowPlayingTitle = null;
+    nowPlayingSubtitle = null;
+  }
 }

@@ -24,7 +24,55 @@ enum ComicReadingMode {
   }
 }
 
-/// 漫画阅读器设置：阅读模式、侧边距、双击放大开关、预加载半径。
+/// 翻页方向。
+///
+/// 日漫与港漫从右往左读，国漫 / 欧美漫从左往右。方向错了每一页的阅读顺序都是
+/// 反的（双页跨页尤其明显：两页左右颠倒）。
+enum ComicReadingDirection {
+  /// 从左往右（国漫 / 欧美漫，默认）。
+  leftToRight('ltr', '从左往右'),
+
+  /// 从右往左（日漫 / 港漫）。
+  rightToLeft('rtl', '从右往左');
+
+  const ComicReadingDirection(this.id, this.label);
+
+  final String id;
+  final String label;
+
+  static ComicReadingDirection fromId(String? id) {
+    for (final direction in values) {
+      if (direction.id == id) return direction;
+    }
+    return ComicReadingDirection.leftToRight;
+  }
+}
+
+/// 双页跨页的配对方式。
+enum ComicSpreadMode {
+  /// 首页单独一屏，之后每屏两页。
+  ///
+  /// 这是纸质漫画的排法：封面（第 1 页）独立，跨页从第 2、3 页开始配。
+  /// 不这么排的话，单页封面会跟正文第一页挤在一屏，跨页全部错位一格。
+  coverFirst('coverFirst', '首页单独'),
+
+  /// 直接从第一页开始两页一屏。
+  pairFromStart('pairFromStart', '直接配对');
+
+  const ComicSpreadMode(this.id, this.label);
+
+  final String id;
+  final String label;
+
+  static ComicSpreadMode fromId(String? id) {
+    for (final mode in values) {
+      if (mode.id == id) return mode;
+    }
+    return ComicSpreadMode.coverFirst;
+  }
+}
+
+/// 漫画阅读器设置：阅读模式、侧边距、双击放大开关、预加载半径、翻页方向、跨页配对。
 ///
 /// 持久化在本板块的 `reading.db`（reading_setting 表）里，键名带板块前缀，
 /// 因此漫画与小说的阅读偏好各存各的，互不影响。
@@ -34,6 +82,9 @@ class ComicReaderSettings {
     this.marginRatio = 0,
     this.doubleTapZoom = false,
     this.preloadRadius = defaultPreloadRadius,
+    this.direction = ComicReadingDirection.leftToRight,
+    this.spreadMode = ComicSpreadMode.coverFirst,
+    this.pageGap = 0,
   });
 
   /// 侧边距上限：占屏宽 50%。再宽就只剩一条缝，不再是阅读体验。
@@ -44,9 +95,16 @@ class ComicReaderSettings {
   /// 预加载半径上限：前后各 N 张。给得太大等于把整章都拉进内存。
   static const int maxPreloadRadius = 5;
 
+  /// 页间距上限（逻辑像素）：再大就断了条漫的连续感。
+  static const double maxPageGap = 24;
+
   static const String keyMode = 'comic.reader.mode';
   static const String keyMargin = 'comic.reader.margin';
   static const String keyDoubleTapZoom = 'comic.reader.doubleTapZoom';
+  static const String keyPreloadRadius = 'comic.reader.preloadRadius';
+  static const String keyDirection = 'comic.reader.direction';
+  static const String keySpreadMode = 'comic.reader.spreadMode';
+  static const String keyPageGap = 'comic.reader.pageGap';
 
   /// 阅读模式。
   final ComicReadingMode mode;
@@ -60,14 +118,70 @@ class ComicReaderSettings {
   /// 滑动预加载半径（前后各 N 张）。
   final int preloadRadius;
 
+  /// 翻页方向（日漫从右往左）。
+  final ComicReadingDirection direction;
+
+  /// 双页跨页的配对方式。
+  final ComicSpreadMode spreadMode;
+
+  /// 页间距（逻辑像素）：条漫里就是图与图之间的空隙，翻页模式里是两页之间。
+  final double pageGap;
+
   /// 由比例换算出的左右边距像素。
   double marginOf(double width) => width * marginRatio.clamp(0.0, maxMarginRatio);
+
+  /// 是否从右往左（翻页控件的 `reverse` 取值）。
+  bool get isRightToLeft => direction == ComicReadingDirection.rightToLeft;
+
+  /// 第 [index] 张图在双页模式下所属的「屏」序号。
+  ///
+  /// 配对规则由 [spreadMode] 决定：
+  /// - `coverFirst`：第 0 张独占一屏，之后每屏两张（1+2、3+4…）；
+  /// - `pairFromStart`：0+1、2+3…
+  ///
+  /// 用图下标算屏序号（而不是反过来）是为了让「当前读到第几张」这个唯一状态
+  /// 同时适用于三种模式：瀑布流按图算位置，单页一图一屏，双页再按屏换算。
+  int spreadIndexOf(int index) {
+    if (index <= 0) return 0;
+    if (spreadMode == ComicSpreadMode.pairFromStart) return index ~/ 2;
+    return (index + 1) ~/ 2;
+  }
+
+  /// 第 [spread] 屏包含的图下标区间（闭区间）；越界时返回空区间。
+  ///
+  /// 返回的区间可能只有一张（首页独占、或末页落单），调用方据此决定要不要
+  /// 给另一半留空位。
+  (int, int) imagesOfSpread(int spread, int imageCount) {
+    if (imageCount <= 0 || spread < 0) return (-1, -2);
+    if (spreadMode == ComicSpreadMode.pairFromStart) {
+      final first = spread * 2;
+      if (first >= imageCount) return (-1, -2);
+      final second = first + 1;
+      return (first, second >= imageCount ? first : second);
+    }
+    if (spread == 0) return (0, 0);
+    final first = spread * 2 - 1;
+    if (first >= imageCount) return (-1, -2);
+    final second = first + 1;
+    return (first, second >= imageCount ? first : second);
+  }
+
+  /// 双页模式下的总屏数。
+  int spreadCount(int imageCount) {
+    if (imageCount <= 0) return 0;
+    if (spreadMode == ComicSpreadMode.pairFromStart) return (imageCount + 1) ~/ 2;
+    // 首页独占 + 其余两两配对。
+    return 1 + (imageCount - 1 + 1) ~/ 2;
+  }
 
   ComicReaderSettings copyWith({
     ComicReadingMode? mode,
     double? marginRatio,
     bool? doubleTapZoom,
     int? preloadRadius,
+    ComicReadingDirection? direction,
+    ComicSpreadMode? spreadMode,
+    double? pageGap,
   }) {
     return ComicReaderSettings(
       mode: mode ?? this.mode,
@@ -78,6 +192,10 @@ class ComicReaderSettings {
       preloadRadius: (preloadRadius ?? this.preloadRadius)
           .clamp(1, maxPreloadRadius)
           .toInt(),
+      direction: direction ?? this.direction,
+      spreadMode: spreadMode ?? this.spreadMode,
+      pageGap:
+          (pageGap ?? this.pageGap).clamp(0.0, maxPageGap).toDouble(),
     );
   }
 
@@ -87,6 +205,15 @@ class ComicReaderSettings {
       mode: ComicReadingMode.fromId(library.setting(keyMode)),
       marginRatio: _parseRatio(library.setting(keyMargin)),
       doubleTapZoom: library.setting(keyDoubleTapZoom) == 'true',
+      preloadRadius: _parseInt(
+        library.setting(keyPreloadRadius),
+        defaultPreloadRadius,
+        1,
+        maxPreloadRadius,
+      ),
+      direction: ComicReadingDirection.fromId(library.setting(keyDirection)),
+      spreadMode: ComicSpreadMode.fromId(library.setting(keySpreadMode)),
+      pageGap: _parseRatio(library.setting(keyPageGap)) * maxPageGap,
     );
   }
 
@@ -95,12 +222,22 @@ class ComicReaderSettings {
     library.setSetting(keyMode, mode.id);
     library.setSetting(keyMargin, marginRatio.toStringAsFixed(4));
     library.setSetting(keyDoubleTapZoom, doubleTapZoom ? 'true' : 'false');
+    library.setSetting(keyPreloadRadius, preloadRadius.toString());
+    library.setSetting(keyDirection, direction.id);
+    library.setSetting(keySpreadMode, spreadMode.id);
+    library.setSetting(keyPageGap, (pageGap / maxPageGap).toStringAsFixed(4));
   }
 
   static double _parseRatio(String? raw) {
     if (raw == null) return 0;
     final value = double.tryParse(raw);
     if (value == null) return 0;
-    return value.clamp(0.0, maxMarginRatio).toDouble();
+    return value.clamp(0.0, 1.0).toDouble();
+  }
+
+  static int _parseInt(String? raw, int fallback, int min, int max) {
+    final value = int.tryParse(raw ?? '');
+    if (value == null) return fallback;
+    return value.clamp(min, max);
   }
 }

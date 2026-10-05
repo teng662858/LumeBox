@@ -66,6 +66,30 @@ abstract interface class DanmakuCapable {
   });
 }
 
+/// 可选的「扩展能力」端口：**上报**弹幕（发一条弹幕到图源）。
+///
+/// 与 [DanmakuCapable] 分成两个端口，因为它们是两个独立能力：能读弹幕的图源
+/// 未必能写（多数聚合源只取公开弹幕库，没有写入接口）。合成一个会逼「只读」
+/// 的图源实现一个永远抛错的写入方法——分开后调用方按能力分别判断。
+///
+/// 返回语义：成功返回 true；图源明确不支持写入时返回 false（**不是异常**，
+/// 它是正常情况）；网络 / 脚本失败抛 [SourceException]。
+abstract interface class DanmakuPostCapable {
+  /// 上报一条弹幕。
+  ///
+  /// [positionMs] 是相对本集开头的毫秒数；[mode] 是弹幕位置（滚动 / 顶部 /
+  /// 底部），用契约里的稳定字符串（`scroll` / `top` / `bottom`）。
+  /// [color] 是可选的十进制颜色值。
+  Future<bool> postDanmaku({
+    required String itemId,
+    required String chapterId,
+    required String text,
+    required int positionMs,
+    required String mode,
+    int? color,
+  });
+}
+
 /// 列表结果：条目与是否还有下一页。
 class SourceList {
   const SourceList({this.items = const <SourceItem>[], this.hasMore = false});

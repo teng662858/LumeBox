@@ -364,7 +364,10 @@ class _PageBuilder {
 /// 两者都按条目数 + 字符预算做 LRU：大章节不会把内存顶穿。
 class NovelLayoutCache {
   NovelLayoutCache({
-    this.maxTextEntries = 4,
+    // 6 = 当前章 + 前后各 2 章预取 + 1 章余量：预取深度是 2（见阅读器的
+    // `_prefetchDepth`），缓存条目数必须容得下它，否则预取刚放进来的章
+    // 会被下一次预取挤掉，等于白拉。
+    this.maxTextEntries = 6,
     this.maxTextChars = 600 * 1024,
     this.maxPaginationEntries = 3,
   });

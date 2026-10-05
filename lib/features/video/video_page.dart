@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/player/abstract_player.dart';
+import '../../core/player/brightness.dart';
 import '../../core/player/pip.dart';
 import '../../core/player/pip_channel.dart';
 import '../../core/player/pip_frame_pump.dart';
@@ -57,6 +58,7 @@ class VideoPage extends StatefulWidget {
     this.playerFactory,
     this.catalog,
     this.pipBackend,
+    this.brightnessBackend,
     this.sourceManager,
     this.library,
   });
@@ -69,6 +71,9 @@ class VideoPage extends StatefulWidget {
 
   /// 画中画后端。为空时按平台选择（iOS 走原生通道，其余平台如实降级）。
   final PipBackend? pipBackend;
+
+  /// 屏幕亮度后端。为空时按平台选择；不支持时亮度手势回退为页面内遮罩。
+  final BrightnessBackend? brightnessBackend;
 
   /// 图源管理端口（首页的浏览面用它取本板块图源）。为空时用正式实现。
   final SourceManager? sourceManager;
@@ -183,8 +188,18 @@ class _VideoPageState extends State<VideoPage>
   /// 快速轻扫时尤其明显（一帧就滑完，累计值接近 0，手势像没生效）。
   Offset? _gestureOrigin;
 
-  /// 屏幕亮度（0..1）。App 内模拟：真实系统亮度需要原生能力，见 [PlayerGestureIntent.brightness]。
+  /// 屏幕亮度（0..1）。
+  ///
+  /// 平台支持改系统亮度时它就是系统亮度；不支持时退化为「页面内遮罩」的强度
+  /// （见播放区里的亮度遮罩），手势手感一致，只是暗得有限度。
   double _brightness = 1.0;
+
+  /// 亮度后端（按平台选择或测试注入）。
+  late final BrightnessBackend _brightnessBackend =
+      widget.brightnessBackend ?? createPlatformBrightnessBackend();
+
+  /// 平台是否支持改系统亮度（探测一次；不支持就走遮罩降级）。
+  bool _systemBrightness = false;
 
   /// 弹幕：设置 + 本集弹幕 + 内存缓存（换集时按 itemId/chapterId 取）。
   DanmakuSettings _danmakuSettings = DanmakuSettings.defaults;
@@ -359,7 +374,22 @@ class _VideoPageState extends State<VideoPage>
       canEnter: () => _loaded && _player != null,
       onEvent: _onPipEvent,
     );
+    await _probeBrightness();
     await _rebuildPlayer();
+  }
+
+  /// 探测系统亮度能力，并把当前值对齐到亮度手势的起点。
+  ///
+  /// 对齐的意义：用户一滑就跳到别的值会让人以为「亮度被重置了」；读到真实值后
+  /// 手势是从当前亮度继续增减。不支持时保持 1.0（遮罩降级，不显示遮罩）。
+  Future<void> _probeBrightness() async {
+    final supported = await _brightnessBackend.isSupported();
+    final current = supported ? await _brightnessBackend.currentBrightness() : null;
+    if (!mounted) return;
+    setState(() {
+      _systemBrightness = supported;
+      if (current != null) _brightness = current;
+    });
   }
 
   /// 按当前设置创建播放器，并把媒体与播放位置接回去。
@@ -664,7 +694,10 @@ class _VideoPageState extends State<VideoPage>
     );
   }
 
-  /// 发一条弹幕：加进本集（内存 + 缓存），立即可见。
+  /// 发一条弹幕：先上报图源（支持写入时），成功后再进本地。
+  ///
+  /// 顺序很重要：先上报再本地显示，用户看到的「已发送」才与事实一致。
+  /// 图源不支持写入时**只进本地**并如实提示「仅本机可见」——不假装发出去了。
   Future<void> _composeDanmaku() async {
     final target = _target;
     final snapshot = _player?.snapshot.value;
@@ -683,13 +716,44 @@ class _VideoPageState extends State<VideoPage>
       text: result.text,
       mode: result.mode,
     );
+
+    // 上报：能写就写，不能写就只进本地（两者都不阻断「本机可见」这件事）。
+    final outcome = await _postDanmaku(target, item);
+    if (!mounted) return;
+
     final merged = DanmakuTrack.parse(<Object?>[
       for (final existing in _danmaku.items) existing,
       item,
     ]);
     _danmakuCache.put(target.itemId, target.chapterId, merged);
     setState(() => _danmaku = merged);
-    _showPlayerToast('弹幕已发送');
+    _showPlayerToast(outcome);
+  }
+
+  /// 上报一条弹幕，返回给用户看的提示文案。
+  Future<String> _postDanmaku(VideoPlayTarget target, DanmakuItem item) async {
+    final source = _playSource;
+    if (source is! DanmakuPostCapable) {
+      return '弹幕已发送（本图源不支持上报，仅本机可见）';
+    }
+    try {
+      final accepted = await (source as DanmakuPostCapable).postDanmaku(
+        itemId: target.itemId,
+        chapterId: target.chapterId,
+        text: item.text,
+        positionMs: item.time.inMilliseconds,
+        mode: item.mode.id,
+        color: item.color,
+      );
+      return accepted ? '弹幕已发送' : '弹幕已发送（本图源不支持上报，仅本机可见）';
+    } on SourceException catch (error) {
+      // 上报失败但本地已经记下了：如实说明「只在本机可见」，不谎报成功。
+      LumeLog.warn('[video] 弹幕上报失败: ${error.message}');
+      return '上报失败（${error.message}），已记在本机';
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      return '上报失败，已记在本机';
+    }
   }
 
   /// 从库里恢复上次的时间点：同一集就续播，换了集就从头。
@@ -937,6 +1001,10 @@ class _VideoPageState extends State<VideoPage>
             active: true,
           );
         });
+        // 平台支持就改系统亮度；不支持时由页面内的亮度遮罩兜底（见播放区）。
+        if (_systemBrightness) {
+          unawaited(_brightnessBackend.setBrightness(next));
+        }
       case PlayerGestureIntent.volume:
         final next = PlayerGesturePolicy.applyVerticalDelta(
           startValue: _gestureStartVolume,
@@ -1293,10 +1361,10 @@ class _VideoPageState extends State<VideoPage>
                             children: <Widget>[
                               // 画面本身居中；黑边留白由外层承担。
                               Center(child: player.buildView()),
-                              // 亮度遮罩：手势调的是「画面亮度」，用一层黑遮罩模拟
-                              // （真实系统亮度需要原生接口，iOS 上不给第三方 App 直接改）。
-                              // 盖在画面上、弹幕与手势层之下，因此调暗时弹幕仍然清楚。
-                              if (_brightness < 1.0)
+                              // 亮度遮罩：**降级路径**用（平台不支持改系统亮度时）。
+                              // 支持系统亮度时画面亮度由系统负责，这里不再叠一层，
+                              // 否则同一手势会被应用两次（暗得比预期快）。
+                              if (!_systemBrightness && _brightness < 1.0)
                                 Positioned.fill(
                                   child: IgnorePointer(
                                     child: ColoredBox(

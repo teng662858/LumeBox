@@ -9,6 +9,9 @@ import UIKit
   /// 语音朗读控制器（AVSpeechSynthesizer）：生命周期跟随 App。
   private let speech = SpeechController()
 
+  /// 屏幕亮度控制器（UIScreen.brightness）：生命周期跟随 App。
+  private let brightness = BrightnessController()
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -30,6 +33,12 @@ import UIKit
     if let messenger = engineBridge.pluginRegistry
       .registrar(forPlugin: "LumeBoxSpeech")?.messenger() {
       speech.register(with: messenger)
+    }
+
+    // 屏幕亮度通道：与 Dart 侧 `MethodChannelBrightnessBackend` 的契约一一对应。
+    if let messenger = engineBridge.pluginRegistry
+      .registrar(forPlugin: "LumeBoxBrightness")?.messenger() {
+      brightness.register(with: messenger)
     }
   }
 }

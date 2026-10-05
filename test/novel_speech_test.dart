@@ -63,6 +63,7 @@ void main() {
     int paragraphCount = 60,
     int chapterCount = 3,
     SpeechBackend? speechBackend,
+    DataSource? dataSource,
   }) async {
     await tester.binding.setSurfaceSize(const Size(400, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -70,10 +71,11 @@ void main() {
       MaterialApp(
         home: NovelReaderPage(
           library: library,
-          dataSource: FakeReadingDataSource(
-            section: Section.novel,
-            paragraphs: paragraphCount,
-          ),
+          dataSource: dataSource ??
+              FakeReadingDataSource(
+                section: Section.novel,
+                paragraphs: paragraphCount,
+              ),
           target: target,
           chapters: chapters(chapterCount),
           initialChapterIndex: 0,
@@ -266,6 +268,45 @@ void main() {
       expect(backend.spoken, isNotEmpty, reason: '新章要继续朗读');
     });
 
+    testWidgets('连听换章失败：重试后不该自动开始朗读（意图必须已作废）', (tester) async {
+      // 复现修复前的缺陷：`_speechResumeAfterLoad` 只在加载**成功**路径上被清掉。
+      // 连听换章时那一章加载失败 → 标志一直挂着 true → 用户之后点「重试」
+      // （或任何一次章节加载）时，页面会莫名其妙自己开始朗读。
+      final flaky = _FlakyReadingDataSource(
+        section: Section.novel,
+        paragraphs: 60,
+      )..failFromChapter = 'item-1-c3';
+      await pumpReader(tester, dataSource: flaky, chapterCount: 8);
+      await openToolbar(tester);
+      await tester.tap(find.byIcon(Icons.headphones_outlined));
+      await tester.pumpAndSettle();
+
+      // 一路读到第 3 章：那一章加载失败（连听意图因此没能被消费掉）。
+      for (var i = 0; i < 12; i++) {
+        if (backend.spoken.isEmpty) break;
+        backend.emit(SpeechEventKind.finished);
+        await tester.pumpAndSettle();
+      }
+      // 失败后页面是错误态：先停掉朗读，再点重试。
+      if (find.text('停止').evaluate().isNotEmpty) {
+        await tester.tap(find.text('停止'));
+        await tester.pumpAndSettle();
+      }
+      final spokenAfterStop = backend.spoken.length;
+      expect(find.text('重试'), findsOneWidget, reason: '这一章应处于失败态');
+
+      // 数据源恢复后点重试：章节加载成功，但不该因此开始朗读。
+      flaky.failFromChapter = null;
+      await tester.tap(find.text('重试'));
+      await tester.pumpAndSettle();
+
+      expect(
+        backend.spoken.length,
+        spokenAfterStop,
+        reason: '重试成功不该自动开始朗读（失败路径上的连听意图必须已作废）',
+      );
+    });
+
     testWidgets('用户停止后不再自动连播', (tester) async {
       await pumpReader(tester);
       await openSpeechPanel(tester);
@@ -371,4 +412,27 @@ class _FakeSpeechBackend implements SpeechBackend {
 
   @override
   Stream<SpeechEvent> get events => _events.stream;
+}
+
+/// 可切换失败状态的数据源替身：用来复现「加载失败」这条路径。
+///
+/// 不能直接用 [FakeReadingDataSource] 的 `fail`——它在构造时就固定了，
+/// 而这条用例要的是「先成功后失败、再成功」。
+class _FlakyReadingDataSource extends FakeReadingDataSource {
+  _FlakyReadingDataSource({required super.section, super.paragraphs});
+
+  /// 章节 id 后缀：从这个后缀起（含）的章节加载都失败；null 表示不失败。
+  String? failFromChapter;
+
+  @override
+  Future<ChapterContent?> content({
+    required String itemId,
+    required String chapterId,
+  }) async {
+    final from = failFromChapter;
+    if (from != null && chapterId.compareTo(from) >= 0) {
+      throw const SourceException(SourceErrorKind.callFailed, '测试源暂时失败');
+    }
+    return super.content(itemId: itemId, chapterId: chapterId);
+  }
 }
