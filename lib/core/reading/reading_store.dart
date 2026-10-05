@@ -262,10 +262,16 @@ CREATE TABLE IF NOT EXISTS reading_setting (
   void saveProgress(ReadingProgress progress) {
     if (_closed) return;
     _requireOwn(progress.section);
+    // position 的含义按形状而定：漫画是页序号、小说是字符偏移、视频是播放毫秒。
     final (position, fraction, chapterLength) = switch (progress) {
       ComicProgress(:final page, :final pageFraction) => (page, pageFraction, 0),
       NovelProgress(:final charOffset, :final chapterLength) =>
         (charOffset, 0.0, chapterLength),
+      VideoProgress(:final position, :final duration) => (
+          position.inMilliseconds,
+          duration.inMilliseconds.toDouble(),
+          0,
+        ),
     };
     _db.execute(
       'INSERT INTO reading_progress (item_id, section, chapter_index, '
@@ -468,7 +474,21 @@ CREATE TABLE IF NOT EXISTS reading_setting (
           charOffset: row['position'] as int,
           chapterLength: row['chapter_length'] as int,
         ),
-      Section.video || Section.cat => null,
+      Section.video => VideoProgress(
+          section: section,
+          itemId: common.itemId,
+          chapterIndex: common.chapterIndex,
+          chapterId: common.chapterId,
+          chapterTitle: common.chapterTitle,
+          updatedAt: common.updatedAt,
+          position: Duration(milliseconds: row['position'] as int),
+          // 时长借 fraction 列存（该列在视频口径下不再表示页内比例）。
+          duration: Duration(
+            milliseconds: (row['fraction'] as num).round(),
+          ),
+        ),
+      // 猫源板块的进度形状尚未定义（站点切换等形态未定），如实返回 null。
+      Section.cat => null,
     };
   }
 

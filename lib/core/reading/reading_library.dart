@@ -105,6 +105,27 @@ class ReadingLibrary {
     return saved is NovelProgress ? saved : null;
   }
 
+  /// 已保存的视频进度；形状不符时返回 null。
+  VideoProgress? videoProgress(String itemId) {
+    final saved = _store.progress(itemId);
+    return saved is VideoProgress ? saved : null;
+  }
+
+  /// 「继续观看」列表：有播放记录的作品，按最近播放倒序。
+  ///
+  /// 只取有进度的条目——没有播放记录的作品不该出现在继续观看里。
+  /// 已播完（≥95%）的也保留：用户可能想重看，标「已看完」比直接藏掉更好。
+  List<LibraryItem> continueWatching({int limit = 20}) {
+    final items = <LibraryItem>[];
+    for (final item in _store.shelf()) {
+      final progress = _store.progress(item.itemId);
+      if (progress is! VideoProgress) continue;
+      items.add(item);
+      if (items.length >= limit) break;
+    }
+    return List<LibraryItem>.unmodifiable(items);
+  }
+
   /// 保存阅读进度，并同步书架上的「已读到第几章」。
   ///
   /// 两件事必须一起做：未读角标的口径来自书架，位置来自进度表；

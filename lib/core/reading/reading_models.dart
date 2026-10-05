@@ -5,8 +5,8 @@
 /// 与打开它的板块不符的记录在读写两条路径上都被拒绝——库文件被挪到别的板块
 /// 目录下也不会被误用。
 ///
-/// 板块差异：漫画与小说的进度形状不同（页位置 / 字符偏移），用密封类
-/// [ReadingProgress] 的两支表达；读取方按板块断言具体类型，两套口径不会混用。
+/// 板块差异：漫画、小说、视频的进度形状不同（页位置 / 字符偏移 / 剧集+时间点），
+/// 用密封类 [ReadingProgress] 的各支表达；读取方按板块断言具体类型，口径不会混用。
 library;
 
 import 'package:sqlite3/sqlite3.dart';
@@ -177,7 +177,7 @@ sealed class ReadingProgress {
 
   final DateTime updatedAt;
 
-  /// 跳到另一章：章内位置归零（漫画回第 1 页，小说回字符 0）。
+  /// 跳到另一章：章内位置归零（漫画回第 1 页，小说回字符 0，视频回 0:00）。
   ReadingProgress withChapter({
     required int chapterIndex,
     required String chapterId,
@@ -275,5 +275,81 @@ final class NovelProgress extends ReadingProgress {
   String describe() {
     final percent = (chapterRatio * 100).round();
     return '第 ${chapterIndex + 1} 章 · $percent%';
+  }
+}
+
+/// 视频进度：剧集序号 + 播放时间点（文档要求「视频记忆到集数 + 播放时间点」）。
+///
+/// 与阅读进度的差别在于「位置」的含义：这里是**播放时间**（毫秒），而漫画是页
+/// 序号、小说是字符偏移。三者共用一张表，靠板块与形状区分（见 [ReadingProgress]）。
+///
+/// 剧集序号沿用 [chapterIndex]：视频的「章」就是剧集，选集列表的下标即它。
+final class VideoProgress extends ReadingProgress {
+  const VideoProgress({
+    required super.section,
+    required super.itemId,
+    required super.chapterIndex,
+    required super.chapterId,
+    required super.chapterTitle,
+    required super.updatedAt,
+    required this.position,
+    this.duration = Duration.zero,
+  });
+
+  /// 已播放到的时间点。
+  final Duration position;
+
+  /// 该视频总时长；[Duration.zero] 表示未知（还没拿到元数据）。
+  final Duration duration;
+
+  /// 是否已接近播完（≥95%）：继续观看列表据此标记「已看完」。
+  ///
+  /// 时长未知时一律返回 false——宁可不标记，也不凭空说人家看完了。
+  bool get isFinished {
+    if (duration <= Duration.zero) return false;
+    return position.inMilliseconds / duration.inMilliseconds >= 0.95;
+  }
+
+  /// 已观看比例 0..1；时长未知时为 0。
+  double get ratio {
+    if (duration <= Duration.zero) return 0;
+    return (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
+  }
+
+  /// 进度文案：`第 3 集 · 12:34 / 45:10`；时长未知时只给已看时间。
+  @override
+  String describe() {
+    final episode = '第 ${chapterIndex + 1} 集';
+    if (duration <= Duration.zero) return '$episode · ${_clock(position)}';
+    return '$episode · ${_clock(position)} / ${_clock(duration)}';
+  }
+
+  /// 跳到另一集：时间点归零（新一集从头播）。
+  @override
+  VideoProgress withChapter({
+    required int chapterIndex,
+    required String chapterId,
+    required String chapterTitle,
+  }) {
+    return VideoProgress(
+      section: section,
+      itemId: itemId,
+      chapterIndex: chapterIndex,
+      chapterId: chapterId,
+      chapterTitle: chapterTitle,
+      updatedAt: DateTime.now(),
+      position: Duration.zero,
+    );
+  }
+
+  /// `12:34` / `1:02:03`。
+  static String _clock(Duration value) {
+    final total = value.inSeconds;
+    final hours = total ~/ 3600;
+    final minutes = (total % 3600) ~/ 60;
+    final seconds = total % 60;
+    final mm = minutes.toString().padLeft(hours > 0 ? 2 : 1, '0');
+    final ss = seconds.toString().padLeft(2, '0');
+    return hours > 0 ? '$hours:$mm:$ss' : '$mm:$ss';
   }
 }

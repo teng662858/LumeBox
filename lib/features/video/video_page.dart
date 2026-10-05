@@ -8,6 +8,7 @@ import '../../core/player/pip_channel.dart';
 import '../../core/player/player_factory.dart';
 import '../../core/player/player_kernel_launcher.dart';
 import '../../core/player/player_settings.dart';
+import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
@@ -18,9 +19,11 @@ import '../shell/shell_dock.dart';
 import '../source/add_source_button.dart';
 import '../source/source_home_page.dart';
 import '../source/source_section_page.dart';
+import 'continue_watching.dart';
 import 'player_hud.dart';
 import 'player_settings_page.dart';
 import 'source_playback.dart';
+import 'video_play_target.dart';
 import 'video_player_settings.dart';
 
 /// 视频板块：**首页是当前图源的内容展示页**（浏览），播放器在同板块的「播放」页签。
@@ -44,6 +47,7 @@ class VideoPage extends StatefulWidget {
     this.catalog,
     this.pipBackend,
     this.sourceManager,
+    this.library,
   });
 
   /// 播放器创建端口（按内核）。为空时用 [PlayerFactory.create]。
@@ -57,6 +61,9 @@ class VideoPage extends StatefulWidget {
 
   /// 图源管理端口（首页的浏览面用它取本板块图源）。为空时用正式实现。
   final SourceManager? sourceManager;
+
+  /// 本板块阅读库（进度与继续观看）；为空时按板块打开正式实现。
+  final ReadingLibrary? library;
 
   /// 页签顺序：0 = 浏览（首页，图源展示页），1 = 播放。
   static const int browseTabIndex = 0;
@@ -108,6 +115,25 @@ class _VideoPageState extends State<VideoPage>
   /// 浏览面换代：从图源管理页返回后 +1，重挂浏览面（列表与当前图源重算）。
   int _browseRevision = 0;
 
+  /// 本板块的阅读库：视频进度（集数 + 时间点）与「继续观看」落在它里面。
+  ReadingLibrary? _library;
+
+  /// 当前正在播的图源条目：有它才记进度（手动贴地址不记，没有作品身份可记）。
+  VideoPlayTarget? _target;
+
+  /// 进度落盘节流：播放中每 5 秒写一次，暂停 / 切集 / 退出时立即写。
+  Timer? _progressTimer;
+  static const Duration _progressInterval = Duration(seconds: 5);
+
+  /// 上次落盘的时间点：避免同一秒重复写库。
+  Duration _lastSavedPosition = Duration.zero;
+
+  /// 「继续观看」列表换代：进度落盘后 +1，首页那一块重算。
+  int _continueWatchingRevision = 0;
+
+  /// 正在销毁：dispose 里还要落一次进度，但那时不能再 setState（元素已 defunct）。
+  bool _disposing = false;
+
   /// 本平台是否提供任一播放内核（没有就是骨架占位）。
   bool get _anyKernelAvailable =>
       PlayerKernel.values.any(_catalog.isAvailable);
@@ -132,12 +158,19 @@ class _VideoPageState extends State<VideoPage>
 
   @override
   void dispose() {
+    // 顺序要紧：进度必须**在摘监听、清空 _player 之前**落盘——那两步之后
+    // 就读不到播放位置了（记录会静默丢掉）。此刻也不能再 setState。
+    _disposing = true;
+    _progressTimer?.cancel();
+    _progressTimer = null;
+    _saveProgress(force: true);
+
     final session = _session;
     final player = _player;
     _session = null;
     _player = null;
     // 离开板块时底部导航必须回来：先摘监听再释放隐藏令牌。
-    player?.snapshot.removeListener(_syncDockForPlayback);
+    player?.snapshot.removeListener(_onSnapshotChanged);
     _dock?.show(_dockToken);
     // 资源边界：先退画中画再释放播放器，最后关库（顺序不能反）。
     unawaited(() async {
@@ -145,10 +178,22 @@ class _VideoPageState extends State<VideoPage>
       await player?.dispose();
     }());
     _store?.close();
+    if (widget.library == null) ReadingLibrary.close(Section.video);
     _input.dispose();
     _tabs.dispose();
     super.dispose();
   }
+
+  /// 播放状态变化 → Dock 显隐；顺带在「从播放转为非播放」时立即落盘进度
+  /// （暂停 / 停止 / 播放出错都是该记准的时刻，不能等 5 秒节流）。
+  void _onSnapshotChanged() {
+    final playing = _player?.snapshot.value.playing ?? false;
+    if (_wasPlaying && !playing) _saveProgress(force: true);
+    _wasPlaying = playing;
+    _syncDockForPlayback();
+  }
+
+  bool _wasPlaying = false;
 
   /// 播放状态变化 → Dock 显隐：播放中隐藏，其余状态恢复。
   void _syncDockForPlayback() {
@@ -162,6 +207,15 @@ class _VideoPageState extends State<VideoPage>
   }
 
   Future<void> _boot() async {
+    // 阅读库（进度 / 继续观看）与播放器设置库分开打开：前者失败不该拦住播放。
+    try {
+      final library = widget.library ?? await ReadingLibrary.open(Section.video);
+      if (!mounted) return;
+      setState(() => _library = library);
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      LumeLog.warn('[video] 阅读库打不开，本次不记录播放进度');
+    }
     try {
       final store = await VideoPlayerSettingsStore.open();
       if (!mounted) {
@@ -229,7 +283,7 @@ class _VideoPageState extends State<VideoPage>
       _loaded = false;
     });
     // 播放状态驱动底部 Dock 的显隐（播放中沉浸）。
-    player.snapshot.addListener(_syncDockForPlayback);
+    player.snapshot.addListener(_onSnapshotChanged);
 
     await player.applySettings(_settings);
     final media = _media;
@@ -334,7 +388,19 @@ class _VideoPageState extends State<VideoPage>
   Future<void> _playFromSource(DataSource source, SourceItem item) async {
     final direct = SourcePlayback.directAddress(item.id);
     if (direct != null) {
-      await _startPlayback(PlayerMedia(uri: direct, title: item.title));
+      // 条目自带地址 = 单集作品：作品身份就是它自己，能记进继续观看。
+      await _startPlayback(
+        PlayerMedia(uri: direct, title: item.title),
+        target: VideoPlayTarget(
+          sourceId: source.id,
+          itemId: item.id,
+          title: item.title,
+          cover: item.cover,
+          chapterIndex: 0,
+          chapterId: item.id,
+          chapterTitle: item.title,
+        ),
+      );
       return;
     }
 
@@ -369,8 +435,20 @@ class _VideoPageState extends State<VideoPage>
         _showPlayerToast('「${chapter.title}」不是视频内容');
         return;
       }
+      final chapterIndex = chapters.indexWhere(
+        (candidate) => candidate.id == chapter.id,
+      );
       await _startPlayback(
         PlayerMedia(uri: address, title: '${item.title} · ${chapter.title}'),
+        target: VideoPlayTarget(
+          sourceId: source.id,
+          itemId: item.id,
+          title: item.title,
+          cover: item.cover,
+          chapterIndex: chapterIndex < 0 ? 0 : chapterIndex,
+          chapterId: chapter.id,
+          chapterTitle: chapter.title,
+        ),
       );
     } on SourceException catch (error) {
       _showPlayerToast(error.message);
@@ -378,7 +456,9 @@ class _VideoPageState extends State<VideoPage>
   }
 
   /// 交给播放器并切到「播放」页签。播放器不可用时如实提示，不静默失败。
-  Future<void> _startPlayback(PlayerMedia media) async {
+  ///
+  /// [target] 是作品身份：给了就记进度（继续观看），不给（手动贴地址）不记。
+  Future<void> _startPlayback(PlayerMedia media, {VideoPlayTarget? target}) async {
     if (_player == null) {
       _showPlayerToast(
         _anyKernelAvailable ? '播放器还在准备，请稍后再试' : '本平台不提供播放内核',
@@ -386,9 +466,158 @@ class _VideoPageState extends State<VideoPage>
       return;
     }
     if (!mounted) return;
+    // 换作品前先把上一部的进度落盘（切集也走这里）。
+    _saveProgress(force: true);
+    _target = target;
     _input.text = media.uri.toString();
     _tabs.animateTo(VideoPage.playerTabIndex);
     await _loadMedia(media);
+    await _restoreProgress();
+    _startProgressTicker();
+  }
+
+  /// 从库里恢复上次的时间点：同一集就续播，换了集就从头。
+  Future<void> _restoreProgress() async {
+    final target = _target;
+    final player = _player;
+    final library = _library;
+    if (target == null || player == null || library == null) return;
+
+    final saved = library.videoProgress(target.itemId);
+    if (saved == null || saved.chapterIndex != target.chapterIndex) return;
+    if (saved.position <= Duration.zero) return;
+    // 已播完的不自动跳回结尾（用户重看时从头开始更自然）。
+    if (saved.isFinished) return;
+
+    await player.seek(saved.position);
+    if (!mounted) return;
+    _lastSavedPosition = saved.position;
+    _showPlayerToast('已从上次位置继续：${_format(saved.position)}');
+  }
+
+  /// 播放中定期落盘：只在播放且有目标时写，节流到 [_progressInterval]。
+  void _startProgressTicker() {
+    _progressTimer?.cancel();
+    _progressTimer = Timer.periodic(_progressInterval, (_) {
+      final snapshot = _player?.snapshot.value;
+      if (snapshot == null || !snapshot.playing) return;
+      _saveProgress();
+    });
+  }
+
+  /// 保存当前播放进度（集数 + 时间点）。
+  ///
+  /// [force] 为 true 时忽略节流（暂停、切集、退出这些「状态改变」的时刻必须写准）。
+  void _saveProgress({bool force = false}) {
+    final target = _target;
+    final library = _library;
+    final snapshot = _player?.snapshot.value;
+    if (target == null || library == null || snapshot == null) return;
+    if (snapshot.error != null) return;
+
+    final position = snapshot.position;
+    // 刚开播还没走表、或位置没动过，不必写库（省掉大量无意义的写）。
+    if (!force && (position - _lastSavedPosition).abs() < const Duration(seconds: 2)) {
+      return;
+    }
+    if (position <= Duration.zero && !force) return;
+
+    _lastSavedPosition = position;
+    library.shelve(
+      sourceId: target.sourceId,
+      itemId: target.itemId,
+      title: target.title,
+      cover: target.cover,
+      chapterCount: 0,
+    );
+    library.saveProgress(
+      VideoProgress(
+        section: Section.video,
+        itemId: target.itemId,
+        chapterIndex: target.chapterIndex,
+        chapterId: target.chapterId,
+        chapterTitle: target.chapterTitle,
+        updatedAt: DateTime.now(),
+        position: position,
+        duration: snapshot.duration,
+      ),
+    );
+    // dispose 期间不触发重建（元素已 defunct）；其余时刻刷新首页那一块。
+    if (mounted && !_disposing) {
+      setState(() => _continueWatchingRevision++);
+    }
+  }
+
+  /// 继续观看：按记录里的剧集与时间点续播。
+  ///
+  /// 记的是剧集 id 而不是序号，因此图源章节改名或重排也能找回同一集；只有剧集
+  /// 取不到（图源改了）才回退到按序号定位。
+  Future<void> _resumeFromProgress(
+    LibraryItem item,
+    VideoProgress progress,
+  ) async {
+    final manager = widget.sourceManager ?? LumeSources.manager(Section.video);
+    final source = await manager.open(item.sourceId);
+    if (!mounted) return;
+    if (source == null) {
+      _showPlayerToast('「${item.title}」的图源不可用（未启用或脚本载入失败）');
+      return;
+    }
+
+    final List<SourceChapter> chapters;
+    try {
+      chapters = await source.chapters(item.itemId);
+    } on SourceException catch (error) {
+      _showPlayerToast(error.message);
+      return;
+    }
+    if (!mounted) return;
+    if (chapters.isEmpty) {
+      _showPlayerToast('「${item.title}」没有可播放的剧集');
+      return;
+    }
+
+    // 优先按剧集 id 找；找不到再按序号；都没有就用第一集。
+    var index = chapters.indexWhere((chapter) => chapter.id == progress.chapterId);
+    if (index < 0 && progress.chapterIndex < chapters.length) {
+      index = progress.chapterIndex;
+    }
+    if (index < 0) index = 0;
+    final chapter = chapters[index];
+
+    try {
+      final content = await source.content(
+        itemId: item.itemId,
+        chapterId: chapter.id,
+      );
+      final address = SourcePlayback.contentAddress(content);
+      if (address == null) {
+        _showPlayerToast('「${chapter.title}」不是视频内容');
+        return;
+      }
+      await _startPlayback(
+        PlayerMedia(uri: address, title: '${item.title} · ${chapter.title}'),
+        target: VideoPlayTarget(
+          sourceId: item.sourceId,
+          itemId: item.itemId,
+          title: item.title,
+          cover: item.cover,
+          chapterIndex: index,
+          chapterId: chapter.id,
+          chapterTitle: chapter.title,
+        ),
+      );
+    } on SourceException catch (error) {
+      _showPlayerToast(error.message);
+    }
+  }
+
+  /// 移除一条播放记录（书架条目一并撤下）。
+  void _removeProgress(LibraryItem item) {
+    final library = _library;
+    if (library == null) return;
+    library.unshelve(item.itemId);
+    setState(() => _continueWatchingRevision++);
   }
 
   /// 剧集选择面板：一集一个条目，取消返回 null。
@@ -459,13 +688,30 @@ class _VideoPageState extends State<VideoPage>
         controller: _tabs,
         labels: VideoPage.tabLabels,
         children: <Widget>[
-          // 首页：当前图源的内容展示页（右上角已有「图源管理」，图源条不再重复）。
-          SourceBrowsePane(
-            key: ValueKey<int>(_browseRevision),
-            section: Section.video,
-            manager: widget.sourceManager,
-            showSourceActions: false,
-            onItemTap: _playFromSource,
+          // 首页：继续观看（有记录才显示）+ 当前图源的内容展示页
+          // （右上角已有「图源管理」，图源条不再重复）。
+          Column(
+            children: <Widget>[
+              if (_library != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: ContinueWatchingSection(
+                    key: ValueKey<int>(_continueWatchingRevision),
+                    library: _library,
+                    onResume: _resumeFromProgress,
+                    onRemove: _removeProgress,
+                  ),
+                ),
+              Expanded(
+                child: SourceBrowsePane(
+                  key: ValueKey<int>(_browseRevision),
+                  section: Section.video,
+                  manager: widget.sourceManager,
+                  showSourceActions: false,
+                  onItemTap: _playFromSource,
+                ),
+              ),
+            ],
           ),
           _buildPlayerTab(),
         ],
