@@ -36,6 +36,9 @@ class AvPlayer implements AbstractPlayer {
   /// 最近一次应用的设置；加载完成后补挂到新控制器上。
   PlayerSettings _settings = const PlayerSettings();
 
+  /// 当前音量（0..1）；加载完成后补挂到新控制器上。
+  double _volume = 1.0;
+
   @override
   ValueListenable<PlayerSnapshot> get snapshot => _snapshot;
 
@@ -57,6 +60,7 @@ class AvPlayer implements AbstractPlayer {
     try {
       await controller.initialize();
       await _applySpeed();
+      await controller.setVolume(_volume);
       _ticker = Timer.periodic(
         const Duration(milliseconds: 500),
         (_) => _sync(),
@@ -85,6 +89,23 @@ class AvPlayer implements AbstractPlayer {
     await controller.seekTo(Duration.zero);
     _sync();
   }
+
+  @override
+  Future<void> setVolume(double volume) async {
+    if (_disposed) return;
+    _volume = volume.clamp(0.0, 1.0);
+    final controller = _controller;
+    if (controller == null) return;
+    try {
+      await controller.setVolume(_volume);
+    } catch (error, stackTrace) {
+      // 音量失败不影响播放主链路。
+      LumeLog.error(error, stackTrace);
+    }
+  }
+
+  /// 当前音量（0..1）。
+  double get volume => _volume;
 
   @override
   Future<void> applySettings(PlayerSettings settings) async {

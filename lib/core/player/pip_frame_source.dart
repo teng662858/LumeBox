@@ -13,12 +13,13 @@ import '../util/lume_log.dart';
 ///
 /// 数据流：
 /// ```
-/// MPV 解码帧（原生） → Dart 帧源（本类） → 方法通道 → Swift 帧泵 → AVSampleBufferDisplayLayer
+/// MPV 解码帧（原生） → Dart 取帧（MpvEngine.captureFrame） → 帧泵（本类 + PipFramePump）
+///   → 方法通道 lumebox/pip/frames → Swift 帧泵 → AVSampleBufferDisplayLayer
 /// ```
 ///
-/// 当前实现状态：**通道与节流策略已就位，帧源接入待内核侧提供帧回调**。
-/// 因此 [submitFrame] 不会被真实调用（没有帧来源），`isReady` 如实反映这一点——
-/// 画中画按钮会报「内容源未就绪」，而不是假装能用。
+/// 取帧是**拉取式**的（mpv 的 `screenshot-raw`），不是解码回调：因此画中画激活
+/// 期间由 [PipFramePump] 按帧率节拍主动拉，而不是内核主动推。拉不到帧（未加载 /
+/// 正在 seek）时如实跳过，[isReady] 与计数反映真实情况。
 ///
 /// 节流：画中画窗口不需要 60fps 全帧率（系统会做插值），默认限制到 30fps 上限，
 /// 减少通道序列化与内存拷贝开销——移动端这两项都很贵。

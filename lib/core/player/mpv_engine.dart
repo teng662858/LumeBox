@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/widgets.dart';
 
 /// MPV 引擎端口（libmpv 的能力面）。
@@ -25,6 +27,16 @@ abstract interface class MpvEngine {
 
   Future<void> setSpeed(double speed);
 
+  /// 音量（0.0~1.0）。
+  Future<void> setVolume(double volume);
+
+  /// 导出一帧当前画面（BGRA 像素），供画中画帧转发使用。
+  ///
+  /// 返回 null 表示当前拿不到帧（未加载 / 已释放 / 引擎不支持）。
+  /// 这是**轮询式**取帧（mpv 的 `screenshot-raw`），不是推流式回调：
+  /// 因此画中画期间由上层按帧率节拍调用，而不是内核主动推。
+  Future<MpvVideoFrame?> captureFrame();
+
   /// 字幕总开关（MPV 由 libmpv 的轨道选择实现；字号仍待自研字幕层）。
   Future<void> setSubtitleEnabled(bool enabled);
 
@@ -32,6 +44,45 @@ abstract interface class MpvEngine {
   Widget buildView();
 
   Future<void> dispose();
+}
+
+/// 一帧视频画面：BGRA8888 像素 + 尺寸 + 行距。
+///
+/// 行距（stride）由引擎给出：mpv 的帧可能带行对齐填充，因此**不能**假设
+/// `stride == width * 4`。转发到原生侧时按行拷贝，避免画面倾斜。
+class MpvVideoFrame {
+  const MpvVideoFrame({
+    required this.pixels,
+    required this.width,
+    required this.height,
+    required this.stride,
+  });
+
+  final Uint8List pixels;
+  final int width;
+  final int height;
+
+  /// 每行字节数（含对齐填充）。
+  final int stride;
+
+  /// 去掉行距填充，得到紧密排列的 BGRA（原生侧期望的格式）。
+  Uint8List toTightBgra() {
+    final rowBytes = width * 4;
+    if (stride == rowBytes) return pixels;
+    final tight = Uint8List(rowBytes * height);
+    for (var row = 0; row < height; row++) {
+      final sourceStart = row * stride;
+      final targetStart = row * rowBytes;
+      if (sourceStart + rowBytes > pixels.length) break;
+      tight.setRange(
+        targetStart,
+        targetStart + rowBytes,
+        pixels,
+        sourceStart,
+      );
+    }
+    return tight;
+  }
 }
 
 /// 打开媒体的请求。

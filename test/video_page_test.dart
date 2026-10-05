@@ -317,6 +317,154 @@ void main() {
       expect(store.load().speed, 1.5);
     });
 
+    testWidgets('手势：右半屏上下滑改音量并下发给内核', (tester) async {
+      final created = await pumpVideo(
+        tester,
+        available: <PlayerKernel>{PlayerKernel.avplayer},
+      );
+      await openMedia(tester);
+
+      final layer = _gestureLayerRect(tester);
+      // 起点在右半边 → 音量。音量初值就是 1.0（最大），因此向下滑才看得出变化。
+      await _dragInSteps(
+        tester,
+        from: Offset(layer.right - 40, layer.center.dy),
+        total: Offset(0, layer.height / 4),
+      );
+
+      expect(created.single.volumes, isNotEmpty, reason: '音量手势必须真的下发给内核');
+      expect(
+        created.single.volumes.last,
+        closeTo(0.75, 0.06),
+        reason: '下滑 1/4 屏 → 1.0 − 0.25',
+      );
+    });
+
+    testWidgets('手势：音量滑过头也不会越界（钳在 0..1）', (tester) async {
+      final created = await pumpVideo(
+        tester,
+        available: <PlayerKernel>{PlayerKernel.avplayer},
+      );
+      await openMedia(tester);
+
+      final layer = _gestureLayerRect(tester);
+      await _dragInSteps(
+        tester,
+        from: Offset(layer.right - 40, layer.center.dy),
+        total: Offset(0, layer.height * 1.5),
+      );
+
+      expect(created.single.volumes, isNotEmpty);
+      for (final volume in created.single.volumes) {
+        expect(volume, inInclusiveRange(0.0, 1.0), reason: '音量越界会炸内核');
+      }
+      expect(created.single.volumes.last, 0.0, reason: '滑到底就是静音');
+    });
+
+    testWidgets('手势：左半屏上下滑只改亮度，不动音量', (tester) async {
+      final created = await pumpVideo(
+        tester,
+        available: <PlayerKernel>{PlayerKernel.avplayer},
+      );
+      await openMedia(tester);
+
+      final layer = _gestureLayerRect(tester);
+      await _dragInSteps(
+        tester,
+        from: Offset(layer.left + 40, layer.center.dy),
+        total: Offset(0, -layer.height / 4),
+      );
+
+      expect(created.single.volumes, isEmpty, reason: '左半边是亮度，不该碰音量');
+      expect(find.textContaining('亮度'), findsNothing, reason: '松手后提示浮层收起');
+    });
+
+    testWidgets('手势：水平拖在松手时才 seek（拖动中不反复 seek）', (tester) async {
+      final created = await pumpVideo(
+        tester,
+        available: <PlayerKernel>{PlayerKernel.avplayer},
+      );
+      await openMedia(tester);
+      created.single.seeks.clear();
+
+      final layer = _gestureLayerRect(tester);
+      final gesture = await tester.startGesture(layer.center);
+      await tester.pump(const Duration(milliseconds: 16));
+      // 分多步移动：真实触摸本来就是一串 move 事件，单步大跳会先被
+      // 识别器的 slop 吃掉，测不出真实行为。
+      for (var i = 0; i < 4; i++) {
+        await gesture.moveBy(Offset(layer.width / 8, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(created.single.seeks, isEmpty, reason: '拖动中只更新预览，不 seek');
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(created.single.seeks, hasLength(1));
+      // 整屏宽对应 90 秒窗口。
+      final expected = 90 * layer.width / 2 / layer.width;
+      expect(
+        created.single.seeks.single.inSeconds.toDouble(),
+        closeTo(expected, 3.0),
+        reason: '滑半屏 ≈ 45 秒',
+      );
+    });
+
+    testWidgets('手势：调暗后画面上真的盖了遮罩（亮度要看得见）', (tester) async {
+      await pumpVideo(
+        tester,
+        available: <PlayerKernel>{PlayerKernel.avplayer},
+      );
+      await openMedia(tester);
+
+      ColoredBox? overlay() {
+        final found = find.byWidgetPredicate(
+          (widget) =>
+              widget is ColoredBox &&
+              widget.color.a > 0 &&
+              widget.color.a < 1 &&
+              widget.color.r == 0 &&
+              widget.color.g == 0 &&
+              widget.color.b == 0,
+        );
+        return found.evaluate().isEmpty ? null : found.evaluate().first.widget as ColoredBox;
+      }
+
+      expect(overlay(), isNull, reason: '默认亮度不该有遮罩');
+
+      final layer = _gestureLayerRect(tester);
+      await _dragInSteps(
+        tester,
+        from: Offset(layer.left + 40, layer.center.dy),
+        total: Offset(0, layer.height / 2),
+      );
+
+      final mask = overlay();
+      expect(mask, isNotNull, reason: '下滑半屏后必须出现变暗遮罩');
+      expect(mask!.color.a, greaterThan(0.2));
+    });
+
+    testWidgets('长按临时倍速，松手恢复原倍速', (tester) async {
+      final created = await pumpVideo(
+        tester,
+        available: <PlayerKernel>{PlayerKernel.avplayer},
+      );
+      await openMedia(tester);
+
+      final layer = _gestureLayerRect(tester);
+      final gesture = await tester.startGesture(layer.center);
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+
+      expect(created.single.applied?.speed, 2.0, reason: '长按在 1.0x 基础上翻倍');
+      expect(find.textContaining('快进'), findsOneWidget);
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(created.single.applied?.speed, 1.0, reason: '松手恢复用户设置倍速');
+    });
+
     testWidgets('退出页面：先退画中画、再释放播放器、最后关库', (tester) async {
       final pip = _FakePipBackend(log);
       addTearDown(pip.close);
@@ -407,6 +555,38 @@ void main() {
   );
 }
 
+/// 手势层覆盖的画面区域（用于按比例计算拖拽位移）。
+///
+/// 手势层是 Positioned.fill 盖在播放区上的 GestureDetector，带 GlobalKey，
+/// 因此直接取它的矩形——它就是手势的真实有效范围（含视频黑边）。
+Rect _gestureLayerRect(WidgetTester tester) {
+  final detector = find.byWidgetPredicate(
+    (widget) => widget is GestureDetector && widget.onPanDown != null,
+  );
+  return tester.getRect(detector.first);
+}
+
+/// 分多步完成一次拖拽。
+///
+/// 必须分步：拖拽识别器要先跨过 slop 才成立，成立的那一帧之前的位移不会
+/// 作为 update 回调出来；单步大跳会让手势「像没生效」。
+Future<void> _dragInSteps(
+  WidgetTester tester, {
+  required Offset from,
+  required Offset total,
+  int steps = 8,
+}) async {
+  final gesture = await tester.startGesture(from);
+  await tester.pump(const Duration(milliseconds: 16));
+  final step = Offset(total.dx / steps, total.dy / steps);
+  for (var i = 0; i < steps; i++) {
+    await gesture.moveBy(step);
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  await gesture.up();
+  await tester.pumpAndSettle();
+}
+
 class _FakeCatalog implements PlayerKernelCatalog {
   const _FakeCatalog(this.available);
 
@@ -472,6 +652,7 @@ class _FakePlayer implements AbstractPlayer {
   int disposals = 0;
   final List<String> calls = <String>[];
   final List<Duration> seeks = <Duration>[];
+  final List<double> volumes = <double>[];
 
   @override
   ValueListenable<PlayerSnapshot> get snapshot => _snapshot;
@@ -488,6 +669,9 @@ class _FakePlayer implements AbstractPlayer {
     this.media = media;
     _snapshot.value = PlayerSnapshot(duration: const Duration(minutes: 2));
   }
+
+  @override
+  Future<void> setVolume(double volume) async => volumes.add(volume);
 
   @override
   Future<void> applySettings(PlayerSettings settings) async {

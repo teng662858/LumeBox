@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import '../../core/player/abstract_player.dart';
 import '../../core/player/pip.dart';
 import '../../core/player/pip_channel.dart';
+import '../../core/player/pip_frame_pump.dart';
+import '../../core/player/mpv_engine.dart';
+import '../../core/player/mpv_player.dart';
 import '../../core/player/player_factory.dart';
 import '../../core/player/player_kernel_launcher.dart';
 import '../../core/player/player_settings.dart';
@@ -24,6 +27,7 @@ import 'danmaku/danmaku_models.dart';
 import 'danmaku/danmaku_overlay.dart';
 import 'danmaku/danmaku_settings.dart';
 import 'danmaku/danmaku_settings_sheet.dart';
+import 'player_gestures.dart';
 import 'player_hud.dart';
 import 'player_settings_page.dart';
 import 'source_playback.dart';
@@ -151,6 +155,36 @@ class _VideoPageState extends State<VideoPage>
 
   /// 当前播放的作品（连播下一集要用它的剧集列表）。
   DataSource? _playSource;
+
+  /// 画中画帧转发泵：画中画激活期间按帧率节拍取帧并转发。
+  ///
+  /// 只在 MPV 内核 + 画中画激活时启动——AVPlayer 自带画中画通路（原生侧
+  /// `AVPlayerLayer`），不需要帧转发。
+  PipFramePump? _framePump;
+
+  /// 手势进行态（亮度 / 音量 / 进度 / 长按倍速）。
+  PlayerGestureState _gesture = PlayerGestureState.idle;
+
+  /// 一次手势的起点数据（按下时记录，拖动过程中用它算增量）。
+  Duration _gestureStartPosition = Duration.zero;
+  double _gestureStartVolume = 1.0;
+  double _gestureStartBrightness = 1.0;
+  double _gestureStartFraction = 0.5;
+  double _gestureSpeedBeforeBoost = 1.0;
+  bool _gestureBoosted = false;
+
+  /// 手势层：既是命中区，也用来把全局坐标换算回本层坐标。
+  final GlobalKey _gestureLayerKey = GlobalKey();
+
+  /// 手势起点（按下时的触点坐标，全局坐标系）。
+  ///
+  /// 用「当前位置 − 起点」算总位移，而不是把每帧的 `delta` 累加：拖拽识别器在
+  /// 判定成立的那一帧会把之前的位移一起吞掉（slop），逐帧累加会少算一截——
+  /// 快速轻扫时尤其明显（一帧就滑完，累计值接近 0，手势像没生效）。
+  Offset? _gestureOrigin;
+
+  /// 屏幕亮度（0..1）。App 内模拟：真实系统亮度需要原生能力，见 [PlayerGestureIntent.brightness]。
+  double _brightness = 1.0;
 
   /// 弹幕：设置 + 本集弹幕 + 内存缓存（换集时按 itemId/chapterId 取）。
   DanmakuSettings _danmakuSettings = DanmakuSettings.defaults;
@@ -801,6 +835,183 @@ class _VideoPageState extends State<VideoPage>
     _resumeFromProgress(item, progress);
   }
 
+  /// 手势层：透明触摸面 + 手势提示浮层。
+  Widget _buildGestureLayer(Size size) {
+    return GestureDetector(
+      key: _gestureLayerKey,
+      behavior: HitTestBehavior.opaque,
+      onLongPressStart: (_) => _onLongPressStart(),
+      onLongPressEnd: (_) => _endBoost(),
+      onLongPressCancel: _endBoost,
+      onPanDown: (details) => _onGestureDown(details, size),
+      onPanStart: (details) => _onGestureStart(details, size),
+      onPanUpdate: (details) => _onGestureUpdate(details, size),
+      onPanEnd: _onGestureEnd,
+      onPanCancel: () {
+        _endBoost();
+        setState(() => _gesture = PlayerGestureState.idle);
+      },
+      child: _gesture.active
+          ? _GestureHint(state: _gesture, brightness: _brightness)
+          : const SizedBox.expand(),
+    );
+  }
+
+  // ------------------------------------------------------------------ 手势
+
+  /// 手势开始：记录起点（位置 / 音量 / 亮度 / 分区）。
+  ///
+  /// 注意起点用 `globalPosition`：拖拽识别器在判定成立的那一帧才回调 `onPanStart`，
+  /// 此时触点已经离手指最初落点有一段距离（slop）。真正的起点由 [onPanDown] 记录，
+  /// 这里只做「没有 down 记录」时的兜底。
+  void _onGestureStart(DragStartDetails details, Size size) {
+    final player = _player;
+    final snapshot = player?.snapshot.value;
+    if (player == null || snapshot == null) return;
+    _gestureOrigin ??= details.globalPosition;
+    _gestureStartPosition = snapshot.position;
+    _gestureStartVolume = _gesture.volume;
+    _gestureStartBrightness = _brightness;
+    final local = _localPositionOf(_gestureOrigin!, size);
+    _gestureStartFraction = size.width <= 0 ? 0.5 : local.dx / size.width;
+  }
+
+  /// 手指落下：记录真正的起点（用于算总位移与分区）。
+  void _onGestureDown(DragDownDetails details, Size size) {
+    _gestureOrigin = details.globalPosition;
+    _gestureStartFraction = size.width <= 0
+        ? 0.5
+        : details.localPosition.dx / size.width;
+  }
+
+  /// 把全局坐标换算成手势层内的局部坐标。
+  Offset _localPositionOf(Offset global, Size size) {
+    final box = _gestureLayerKey.currentContext?.findRenderObject();
+    if (box is RenderBox) {
+      return box.globalToLocal(global);
+    }
+    return global;
+  }
+
+  /// 手势进行：按意图更新亮度 / 音量 / 目标进度。
+  void _onGestureUpdate(DragUpdateDetails details, Size size) {
+    final player = _player;
+    final snapshot = player?.snapshot.value;
+    if (player == null || snapshot == null) return;
+
+    // 总位移 = 当前触点 − 起点（不是逐帧累加，见 [_gestureOrigin]）。
+    final origin = _gestureOrigin ?? details.globalPosition;
+    final current = _localPositionOf(details.globalPosition, size);
+    final start = _localPositionOf(origin, size);
+    final totalDx = current.dx - start.dx;
+    final totalDy = current.dy - start.dy;
+
+    // 已判定的意图优先：中途不换功能（换功能最让人恼火）。
+    var intent = _gesture.intent;
+    if (intent == PlayerGestureIntent.none) {
+      intent = PlayerGesturePolicy.intentFor(
+        dx: totalDx,
+        dy: totalDy,
+        startFraction: _gestureStartFraction,
+      );
+      // 判定为调进度时，以「此刻的播放位置」为基准，位移仍从按下点算起：
+      // 这样预览跟手（滑多远走多远），也不会因为 slop 那点距离而跳变。
+      if (intent == PlayerGestureIntent.seek) {
+        _gestureStartPosition = snapshot.position;
+      }
+    }
+    if (intent == PlayerGestureIntent.none) return;
+
+    switch (intent) {
+      case PlayerGestureIntent.brightness:
+        final next = PlayerGesturePolicy.applyVerticalDelta(
+          startValue: _gestureStartBrightness,
+          dy: totalDy,
+          height: size.height,
+        );
+        setState(() {
+          _brightness = next;
+          _gesture = _gesture.copyWith(
+            intent: intent,
+            brightness: next,
+            active: true,
+          );
+        });
+      case PlayerGestureIntent.volume:
+        final next = PlayerGesturePolicy.applyVerticalDelta(
+          startValue: _gestureStartVolume,
+          dy: totalDy,
+          height: size.height,
+        );
+        setState(() {
+          _gesture = _gesture.copyWith(
+            intent: intent,
+            volume: next,
+            active: true,
+          );
+        });
+        unawaited(player.setVolume(next));
+      case PlayerGestureIntent.seek:
+        final target = PlayerGesturePolicy.applyHorizontalDelta(
+          startPosition: _gestureStartPosition,
+          duration: snapshot.duration,
+          dx: totalDx,
+          width: size.width,
+        );
+        setState(() {
+          _gesture = _gesture.copyWith(
+            intent: intent,
+            seekTarget: target,
+            active: true,
+          );
+        });
+      case PlayerGestureIntent.none:
+      case PlayerGestureIntent.boost:
+        break;
+    }
+  }
+
+  /// 手势结束：调进度的手势在这里才真正 seek（拖动中不反复 seek，省解码开销）。
+  void _onGestureEnd(DragEndDetails details) {
+    final player = _player;
+    final target = _gesture.seekTarget;
+    if (player != null && target != null) {
+      unawaited(player.seek(target));
+    }
+    _endBoost();
+    _gestureOrigin = null;
+    setState(() => _gesture = PlayerGestureState.idle.copyWith(
+          volume: _gesture.volume,
+          brightness: _brightness,
+        ));
+  }
+
+  /// 长按：临时倍速。
+  void _onLongPressStart() {
+    final player = _player;
+    if (player == null) return;
+    _gestureSpeedBeforeBoost = _settings.speed;
+    final boosted = PlayerGesturePolicy.boostSpeed(_settings.speed);
+    _gestureBoosted = true;
+    setState(() {
+      _gesture = _gesture.copyWith(
+        intent: PlayerGestureIntent.boost,
+        boosting: true,
+        active: true,
+      );
+    });
+    unawaited(player.applySettings(_settings.copyWith(speed: boosted)));
+  }
+
+  /// 松手：恢复原倍速。
+  void _endBoost() {
+    if (!_gestureBoosted) return;
+    _gestureBoosted = false;
+    final player = _player;
+    if (player == null) return;
+    unawaited(player.applySettings(_settings.copyWith(speed: _gestureSpeedBeforeBoost)));
+  }
+
   /// 打开完整播放历史（首页的「继续观看」只到最近 10 条）。
   Future<void> _openHistory() async {
     final library = _library;
@@ -922,7 +1133,7 @@ class _VideoPageState extends State<VideoPage>
     }
   }
 
-  /// 画中画事件回调：原生失败给可读提示，其余事件只记录。
+  /// 画中画事件回调：原生失败给可读提示；进入 / 退出时开关帧转发。
   void _onPipEvent(PipEvent event) {
     if (!mounted) return;
     switch (event.kind) {
@@ -931,10 +1142,48 @@ class _VideoPageState extends State<VideoPage>
           SnackBar(content: Text(event.message ?? '画中画失败')),
         );
       case PipEventKind.entered:
+        _startFrameForwarding();
       case PipEventKind.exited:
+        _stopFrameForwarding();
       case PipEventKind.restored:
         LumeLog.info('[video] 画中画事件: ${event.kind.id}');
     }
+  }
+
+  /// 开始帧转发（仅 MPV 内核需要：AVPlayer 走原生 `AVPlayerLayer` 通路）。
+  ///
+  /// 引擎不支持取帧（如 AVPlayer / 未来 MDK）时如实不启动，画中画窗口会由
+  /// 系统显示为空白——这比假装能转发、实际卡住要好。
+  void _startFrameForwarding() {
+    final player = _player;
+    final backend = widget.pipBackend ?? createPlatformPipBackend();
+    final engine = _mpvEngineOf(player);
+    if (player == null || backend is! MethodChannelPipBackend) {
+      LumeLog.info('[video] 当前内核不需要帧转发（或画中画后端非原生）');
+      return;
+    }
+    if (engine == null) {
+      LumeLog.info('[video] 当前内核没有帧导出能力，画中画将显示空白');
+      return;
+    }
+    _framePump ??= PipFramePump(
+      engine: engine,
+      frameSource: backend.frameSource,
+    );
+    _framePump!.start();
+  }
+
+  void _stopFrameForwarding() {
+    _framePump?.stop();
+  }
+
+  /// 取播放器背后的 MPV 引擎（非 MPV 内核返回 null）。
+  ///
+  /// 通过 [MpvPlayer] 暴露的引擎访问点拿；这不是「猜类型」，而是播放器工厂
+  /// 明确约定的能力查询。
+  MpvEngine? _mpvEngineOf(AbstractPlayer? player) {
+    if (player is MpvPlayer) return player.engine;
+    return null;
   }
 
   // ------------------------------------------------------------------ 构建
@@ -1030,22 +1279,56 @@ class _VideoPageState extends State<VideoPage>
               builder: (context, snapshot, _) => Padding(
                 padding: const EdgeInsets.all(16),
                 child: snapshot.error == null
-                    ? Stack(
-                        alignment: Alignment.bottomLeft,
-                        children: <Widget>[
-                          player.buildView(),
-                          // 弹幕层：吃播放位置与设置，盖在画面上、HUD 之下。
-                          Positioned.fill(
-                            child: DanmakuOverlay(
-                              position: snapshot.position,
-                              playing: snapshot.playing,
-                              track: _danmaku,
-                              settings: _danmakuSettings,
-                            ),
-                          ),
-                          // HUD 只吃 AbstractPlayer 暴露的参数：换内核零改动。
-                          PlayerHud(stats: player.stats),
-                        ],
+                    ? LayoutBuilder(
+                        builder: (context, constraints) {
+                          final size = Size(
+                            constraints.maxWidth,
+                            constraints.maxHeight,
+                          );
+                          return Stack(
+                            // 铺满整个播放区域：手势与 HUD 必须覆盖黑边，
+                            // 否则竖屏视频两侧的字母框按不到（手势层只跟着画面走）。
+                            fit: StackFit.expand,
+                            alignment: Alignment.bottomLeft,
+                            children: <Widget>[
+                              // 画面本身居中；黑边留白由外层承担。
+                              Center(child: player.buildView()),
+                              // 亮度遮罩：手势调的是「画面亮度」，用一层黑遮罩模拟
+                              // （真实系统亮度需要原生接口，iOS 上不给第三方 App 直接改）。
+                              // 盖在画面上、弹幕与手势层之下，因此调暗时弹幕仍然清楚。
+                              if (_brightness < 1.0)
+                                Positioned.fill(
+                                  child: IgnorePointer(
+                                    child: ColoredBox(
+                                      color: Colors.black.withValues(
+                                        alpha: (1.0 - _brightness) * 0.75,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              // 弹幕层：吃播放位置与设置，盖在画面上、HUD 之下。
+                              Positioned.fill(
+                                child: DanmakuOverlay(
+                                  position: snapshot.position,
+                                  playing: snapshot.playing,
+                                  track: _danmaku,
+                                  settings: _danmakuSettings,
+                                ),
+                              ),
+                              // 手势层：左侧滑调亮度、右侧滑调音量、横滑调进度、
+                              // 长按临时倍速。盖在画面上（弹幕之上，避免弹幕挡住手势）。
+                              Positioned.fill(
+                                child: _buildGestureLayer(size),
+                              ),
+                              // HUD 只吃 AbstractPlayer 暴露的参数：换内核零改动。
+                              // 贴左下角（StackFit.expand 下子项会被撑满，因此显式对齐）。
+                              Align(
+                                alignment: Alignment.bottomLeft,
+                                child: PlayerHud(stats: player.stats),
+                              ),
+                            ],
+                          );
+                        },
                       )
                     : Text(
                         snapshot.error!,
@@ -1392,5 +1675,99 @@ class _ChapterSheet extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 手势提示浮层：屏幕中央显示当前操作与数值（松手即消失）。
+class _GestureHint extends StatelessWidget {
+  const _GestureHint({required this.state, required this.brightness});
+
+  final PlayerGestureState state;
+  final double brightness;
+
+  @override
+  Widget build(BuildContext context) {
+    final isSeek = state.intent == PlayerGestureIntent.seek;
+    return IgnorePointer(
+      child: Center(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.62),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(
+                      switch (state.intent) {
+                        PlayerGestureIntent.brightness => Icons.brightness_6,
+                        PlayerGestureIntent.volume => Icons.volume_up,
+                        PlayerGestureIntent.seek => Icons.fast_forward,
+                        PlayerGestureIntent.boost => Icons.speed,
+                        PlayerGestureIntent.none => Icons.touch_app,
+                      },
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _label(),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                if (!isSeek &&
+                    state.intent != PlayerGestureIntent.boost) ...<Widget>[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: 140,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: state.intent == PlayerGestureIntent.brightness
+                            ? brightness
+                            : state.volume,
+                        minHeight: 4,
+                        backgroundColor: Colors.white24,
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _label() {
+    switch (state.intent) {
+      case PlayerGestureIntent.brightness:
+        return '亮度 ${(brightness * 100).round()}%';
+      case PlayerGestureIntent.volume:
+        return '音量 ${(state.volume * 100).round()}%';
+      case PlayerGestureIntent.seek:
+        return PlayerGesturePolicy.describe(
+          PlayerGestureIntent.seek,
+          position: state.seekTarget,
+        );
+      case PlayerGestureIntent.boost:
+        return '快进中（松手恢复）';
+      case PlayerGestureIntent.none:
+        return '';
+    }
   }
 }

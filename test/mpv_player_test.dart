@@ -68,6 +68,19 @@ void main() {
     expect(engine.subtitleEnabled, isTrue);
   });
 
+  test('setVolume：钳制到 0..1 后下发给引擎，供手势直接调用', () async {
+    await player.setVolume(0.35);
+    expect(engine.volume, 0.35);
+    expect(player.volume, 0.35);
+
+    // 手势换算可能算出越界值（滑过头），播放器层兜底钳制。
+    await player.setVolume(1.4);
+    expect(engine.volume, 1.0);
+    await player.setVolume(-0.2);
+    expect(engine.volume, 0.0);
+    expect(player.volume, 0.0);
+  });
+
   test('状态映射：位置 / 时长 / 播放 / 缓冲 / 错误都取自引擎快照', () async {
     engine.emit(
       const MpvEngineSnapshot(
@@ -174,6 +187,7 @@ class _FakeMpvEngine implements MpvEngine {
   final List<String> calls = <String>[];
   MpvMediaRequest? opened;
   double? speed;
+  double? volume;
   bool? subtitleEnabled;
   bool disposed = false;
 
@@ -208,6 +222,15 @@ class _FakeMpvEngine implements MpvEngine {
 
   @override
   Future<void> setSpeed(double value) async => speed = value;
+
+  @override
+  Future<void> setVolume(double value) async => volume = value;
+
+  /// 测试可注入的帧（为空时 captureFrame 返回 null，模拟「拿不到帧」）。
+  MpvVideoFrame? nextFrame;
+
+  @override
+  Future<MpvVideoFrame?> captureFrame() async => nextFrame;
 
   @override
   Future<void> setSubtitleEnabled(bool enabled) async =>

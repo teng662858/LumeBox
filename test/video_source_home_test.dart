@@ -325,6 +325,9 @@ class _FakePlayer implements AbstractPlayer {
   }
 
   @override
+  Future<void> setVolume(double volume) async {}
+
+  @override
   Future<void> applySettings(PlayerSettings settings) async {
     applied = settings;
   }

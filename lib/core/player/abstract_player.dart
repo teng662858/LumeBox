@@ -60,6 +60,12 @@ abstract class AbstractPlayer {
 
   Future<void> stop();
 
+  /// 设置音量（0.0~1.0）。手势调音量走这里。
+  ///
+  /// 各内核的实现方式不同（AVPlayer 设 player.volume；MPV 设 libmpv 的 volume
+  /// 属性），但口径统一为 0..1 的线性值。内核不支持时安静忽略。
+  Future<void> setVolume(double volume);
+
   /// 应用播放设置（内核自行消费它支持的部分）。
   ///
   /// 约定：设置逐项按内核能力生效，内核不支持的项安静忽略——页面不做

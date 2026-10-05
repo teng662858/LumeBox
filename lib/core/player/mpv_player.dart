@@ -28,6 +28,10 @@ class MpvPlayer implements AbstractPlayer {
 
   final MpvEngine _engine;
 
+  /// 引擎访问点：画中画帧转发需要直接向引擎取帧（拉取式接口）。
+  /// 上层据此判断「当前内核有没有帧导出能力」，而不是猜类型。
+  MpvEngine get engine => _engine;
+
   /// 内核显示名（HUD 上标明参数来自哪个内核）。
   final String engineLabel;
 
@@ -37,6 +41,7 @@ class MpvPlayer implements AbstractPlayer {
       ValueNotifier<PlayerStats>(PlayerStats(engineLabel: 'MPV'));
 
   PlayerSettings _settings = const PlayerSettings();
+  double _volume = 1.0;
   bool _disposed = false;
 
   @override
@@ -89,6 +94,16 @@ class MpvPlayer implements AbstractPlayer {
       stats: _stats.value,
     );
   }
+
+  @override
+  Future<void> setVolume(double volume) async {
+    if (_disposed) return;
+    _volume = volume.clamp(0.0, 1.0);
+    await _engine.setVolume(_volume);
+  }
+
+  /// 当前音量（0..1）；手势层的基准。
+  double get volume => _volume;
 
   @override
   Future<void> applySettings(PlayerSettings settings) async {

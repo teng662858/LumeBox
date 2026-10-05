@@ -699,6 +699,9 @@ class _FakePlayer implements AbstractPlayer {
   Future<void> stop() async => emit(playing: false, position: Duration.zero);
 
   @override
+  Future<void> setVolume(double volume) async {}
+
+  @override
   Future<void> applySettings(PlayerSettings settings) async {}
 
   @override

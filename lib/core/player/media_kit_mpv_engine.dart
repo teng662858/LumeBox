@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
@@ -140,6 +141,55 @@ class MediaKitMpvEngine implements MpvEngine {
     } catch (error, stackTrace) {
       // 倍速失败不影响播放主链路（与 AVPlayer 内核同口径）。
       LumeLog.error(error, stackTrace);
+    }
+  }
+
+  @override
+  Future<void> setVolume(double volume) async {
+    if (_disposed) return;
+    try {
+      // media_kit 的音量是 0~100；上层口径是 0~1，在这里换算。
+      await _player.setVolume((volume.clamp(0.0, 1.0)) * 100);
+    } catch (error, stackTrace) {
+      // 音量失败不影响播放主链路（与倍速同口径）。
+      LumeLog.error(error, stackTrace);
+    }
+  }
+
+  @override
+  Future<MpvVideoFrame?> captureFrame() async {
+    if (_disposed) return null;
+    try {
+      // format: null → mpv 的 screenshot-raw，返回 BGRA 原始像素（不是编码图片）。
+      // 与「截屏存图」是同一个 mpv 命令，但这里只为取帧转发给画中画。
+      final raw = await _player.screenshot(format: null);
+      if (raw == null || raw.isEmpty) return null;
+
+      final params = _player.state.videoParams;
+      final width = params.dw ?? 0;
+      final height = params.dh ?? 0;
+      if (width <= 0 || height <= 0) return null;
+
+      // mpv 的 screenshot-raw 输出是紧密排列的 BGRA（无行距填充）；
+      // 若原生库将来改成带 stride，这里会通过字节数校验暴露出来。
+      final expected = width * height * 4;
+      if (raw.length < expected) {
+        LumeLog.warn(
+          '[mpv] 帧尺寸不符（${raw.length} < $expected），跳过本帧',
+        );
+        return null;
+      }
+      return MpvVideoFrame(
+        pixels: raw.length == expected ? raw : Uint8List.sublistView(raw, 0, expected),
+        width: width,
+        height: height,
+        stride: width * 4,
+      );
+    } catch (error, stackTrace) {
+      // 取帧失败不影响播放（画中画是增强功能）。
+      LumeLog.warn('[mpv] 取帧失败: $error');
+      LumeLog.error(error, stackTrace);
+      return null;
     }
   }
 
