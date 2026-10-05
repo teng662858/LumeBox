@@ -69,6 +69,7 @@ class SourceDescriptor {
     required this.version,
     required this.enabled,
     this.network = NetworkProfile.none,
+    this.originUrl = '',
   });
 
   final String id;
@@ -81,6 +82,12 @@ class SourceDescriptor {
 
   /// 是否配置了任意网络覆盖（管理页据此标「已自定义网络」）。
   bool get hasNetworkOverride => !network.isEmpty;
+
+  /// 订阅来源地址；本地导入为空。
+  final String originUrl;
+
+  /// 是否来自订阅（管理页据此标「订阅」并允许「更新订阅源」）。
+  bool get subscribed => originUrl.trim().isNotEmpty;
 }
 
 /// 数据源失败分类。UI 只需区分这三类即可决定提示文案。

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -7,21 +6,27 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import '../../core/js/source_script.dart';
 import '../../core/net/lume_http.dart';
+import '../../core/net/source_subscription.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
-import '../../core/util/md5.dart';
 
-/// 一次订阅拉取的结果。
+/// 再导出：既有调用方（含测试）仍可从本文件取到该类型。
+export '../../core/net/source_subscription.dart' show SourceFetchResult;
+
+
+/// 一次导入请求：脚本清单 + 来源地址（订阅导入时非空）。
 ///
-/// 同时带字节与文本：文本用于「是不是脚本 / 是不是地址清单」的判断，
-/// 字节用于 `.js.md5` 约定的校验（必须校验原始字节，不能拿解码后的字符串算）。
-class SourceFetchResult {
-  const SourceFetchResult({required this.bytes, required this.text});
+/// 来源地址要一路带到落库（`source.origin_url`）：它是「更新订阅源」的唯一依据，
+/// 丢了就只能让用户重新导入一遍。
+class _ImportPayload {
+  const _ImportPayload(this.scripts, {this.originUrl = ''});
 
-  final Uint8List bytes;
-  final String text;
+  final List<String> scripts;
+
+  /// 订阅链接（本地导入为空）。
+  final String originUrl;
 }
 
 /// 板块页右上角的「+」添加图源按钮（小说 / 漫画 / 视频 / 猫源统一入口）。
@@ -89,7 +94,7 @@ class AddSourceButton extends StatelessWidget {
   }
 
   Future<void> _open(BuildContext context, SourceManager target) async {
-    final scripts = await showDialog<List<String>>(
+    final result = await showDialog<_ImportPayload>(
       context: context,
       builder: (_) => _AddSourceDialog(
         section: section,
@@ -98,7 +103,8 @@ class AddSourceButton extends StatelessWidget {
         maxScripts: maxSubscriptionScripts,
       ),
     );
-    if (scripts == null || scripts.isEmpty || !context.mounted) return;
+    if (result == null || result.scripts.isEmpty || !context.mounted) return;
+    final scripts = result.scripts;
 
     // 已有图源：用于把提示分成「已导入」与「已更新」两种口径。
     final existing = <String>{};
@@ -116,17 +122,22 @@ class AddSourceButton extends StatelessWidget {
     final messages = <String>[];
     var succeeded = false;
     for (final script in scripts) {
-      final result = await target.importScript(stripScriptBom(script));
-      final descriptor = result.descriptor;
+      final outcome = await target.importScript(
+        stripScriptBom(script),
+        // 订阅导入记下来源地址：之后可以在图源管理页「更新订阅源」重新拉取。
+        originUrl: result.originUrl,
+      );
+      final descriptor = outcome.descriptor;
       if (descriptor == null) {
-        messages.add('导入失败：${result.message}');
+        messages.add('导入失败：${outcome.message}');
         continue;
       }
       succeeded = true;
+      final viaSubscription = result.originUrl.isNotEmpty;
       messages.add(
         existing.contains(descriptor.id)
             ? '已更新：${descriptor.name}'
-            : '已导入：${descriptor.name}',
+            : '已导入：${descriptor.name}${viaSubscription ? '（订阅）' : ''}',
       );
     }
     messenger.showSnackBar(SnackBar(content: Text(messages.join('\n'))));
@@ -345,7 +356,7 @@ class _AddSourceDialogState extends State<_AddSourceDialog> {
       setState(() => _error = '请粘贴脚本内容或选择本地文件');
       return;
     }
-    Navigator.of(context).pop(<String>[text]);
+    Navigator.of(context).pop(_ImportPayload(<String>[text]));
   }
 
   /// 内置示例脚本：新用户先跑通「导入 → 浏览」这套动作的最低门槛。
@@ -383,7 +394,7 @@ class _AddSourceDialogState extends State<_AddSourceDialog> {
   }
 
   Future<void> _pullSubscription() async {
-    final urls = _urlsIn(_url.text, limit: widget.maxScripts);
+    final urls = SourceSubscription.urlsIn(_url.text, limit: widget.maxScripts);
     if (urls.isEmpty) {
       setState(() => _error = '请填写 http / https 订阅地址');
       return;
@@ -399,7 +410,8 @@ class _AddSourceDialogState extends State<_AddSourceDialog> {
         setState(() => _error = '订阅里没有可导入的图源脚本');
         return;
       }
-      Navigator.of(context).pop(scripts);
+      // 来源地址记第一个（`.md5` 清单会解析成实体脚本，但来源仍是用户填的那个）。
+      Navigator.of(context).pop(_ImportPayload(scripts, originUrl: urls.first));
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       if (!mounted) return;
@@ -411,87 +423,13 @@ class _AddSourceDialogState extends State<_AddSourceDialog> {
 
   /// 逐个拉取订阅地址：正文是脚本就收下；正文是 `.js.md5` 校验值就按约定
   /// 取脚本实体并核对校验；正文是「一行一个地址」的清单时再逐个拉一层。
-  Future<List<String>> _collect(List<String> urls) async {
-    final scripts = <String>[];
-    final visited = <String>{};
-    for (final url in urls) {
-      if (scripts.length >= widget.maxScripts) break;
-      scripts.addAll(await _scriptsAt(url, visited));
-    }
-    return scripts;
-  }
-
-  /// 单个订阅地址 → 脚本清单（0..n 条）。
   ///
-  /// 递归只对「地址清单」发生，并用 [visited] 挡住互相引用的清单
-  /// （否则一个自引用的订阅能把导入卡死）。
-  Future<List<String>> _scriptsAt(String url, Set<String> visited) async {
-    if (!visited.add(url) || visited.length > widget.maxScripts * 2) {
-      return const <String>[];
-    }
-    final download = await widget.fetchSubscription(url);
+  /// 解析逻辑在 [SourceSubscription]（与「更新订阅源」共用同一份实现）。
+  Future<List<String>> _collect(List<String> urls) =>
+      SourceSubscription(
+        fetch: widget.fetchSubscription,
+        maxScripts: widget.maxScripts,
+      ).resolve(urls);
 
-    // 形态一：`.js.md5` 约定——正文是 MD5 校验值，脚本实体在去掉 `.md5` 的地址上。
-    final expected = Md5.parseHex(download.text);
-    if (expected != null) {
-      final target = _scriptUrlFor(url);
-      if (target == null) return const <String>[];
-      final entity = await widget.fetchSubscription(target);
-      // 注意用 hex（先摘要再转十六进制），不是 toHex（那是原始字节的十六进制）。
-      final actual = Md5.hex(entity.bytes);
-      if (actual != expected) {
-        throw StateError('MD5 校验不一致（清单 $expected，实际 $actual）');
-      }
-      return <String>[entity.text];
-    }
 
-    // 形态二：正文就是脚本。
-    if (_looksLikeScript(download.text)) return <String>[download.text];
-
-    // 形态三：正文是一行一个脚本地址的清单，逐个再拉（同样支持 `.md5`）。
-    final scripts = <String>[];
-    final nested = _urlsIn(download.text, limit: widget.maxScripts);
-    for (final item in nested) {
-      if (scripts.length >= widget.maxScripts) break;
-      scripts.addAll(await _scriptsAt(item, visited));
-    }
-    return scripts;
-  }
-
-  /// `.js.md5` 约定：清单地址去掉 `.md5` 后缀就是脚本实体地址。
-  static String? _scriptUrlFor(String url) {
-    final uri = Uri.tryParse(url.trim());
-    if (uri == null) return null;
-    final path = uri.path;
-    if (!path.toLowerCase().endsWith('.md5')) return null;
-    final target = path.substring(0, path.length - 4);
-    if (target.isEmpty) return null;
-    return uri.replace(path: target).toString();
-  }
-
-  /// 从文本里挑出 http(s) 地址：一行一个，忽略空行与 `#` 开头的注释行。
-  ///
-  /// 订阅文本本身就是脚本（含 `LumeSource`）时不算地址清单。
-  static List<String> _urlsIn(String text, {required int limit}) {
-    if (limit <= 0 || _looksLikeScript(text)) return const <String>[];
-    final urls = <String>[];
-    for (final line in const LineSplitter().convert(text)) {
-      final trimmed = line.trim();
-      if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
-      if (!_isHttpUrl(trimmed)) continue;
-      urls.add(trimmed);
-      if (urls.length >= limit) break;
-    }
-    return urls;
-  }
-
-  /// 是不是图源脚本：认头部元信息声明，也认脚本里的 `LumeSource` 全局对象。
-  static bool _looksLikeScript(String text) =>
-      SourceMetadata.parseHeader(text) != null || text.contains('LumeSource');
-
-  static bool _isHttpUrl(String value) {
-    final uri = Uri.tryParse(value);
-    if (uri == null) return false;
-    return uri.scheme == 'http' || uri.scheme == 'https';
-  }
 }

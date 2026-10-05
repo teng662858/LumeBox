@@ -49,6 +49,12 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
 
   bool _loading = true;
 
+  /// 正在测试的图源 id（按钮转圈用）。
+  final Set<String> _testing = <String>{};
+
+  /// 测试结论：sourceId → 结果（只存内存，退出即丢）。
+  final Map<String, SourceTestResult> _testResults = <String, SourceTestResult>{};
+
   /// 当前筛选的板块；null 表示「全部」。
   Section? _filter;
 
@@ -148,6 +154,52 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
     if (descriptor != null) await _reloadSection(section);
   }
 
+  /// 批量测试全部板块的图源（文档第 4 条：图源总管理支持批量测试）。
+  ///
+  /// 逐板块、逐图源串行：网络层已有并发限制，但测试会真实打目标站，串行更稳、
+  /// 进度也可读。停用的跳过（测试会如实报「已停用」，没意义）。
+  Future<void> _testAll() async {
+    var ok = 0;
+    var empty = 0;
+    var failed = 0;
+    var tested = 0;
+    for (final section in Section.values) {
+      for (final source in _listOf(section)) {
+        if (!source.enabled) continue;
+        if (!mounted) return;
+        setState(() => _testing.add(source.id));
+        try {
+          final result = await _managers[section]!.testConnectivity(source.id);
+          if (!mounted) return;
+          setState(() => _testResults[source.id] = result);
+          tested++;
+          switch (result.status) {
+            case SourceTestStatus.ok:
+              ok++;
+            case SourceTestStatus.empty:
+              empty++;
+            case SourceTestStatus.failed:
+              failed++;
+          }
+        } finally {
+          if (mounted) setState(() => _testing.remove(source.id));
+        }
+      }
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          tested == 0
+              ? '没有已启用的图源可测试'
+              : '测试完成（$tested 个）：可用 $ok'
+                  '${empty > 0 ? ' · 无内容 $empty' : ''}'
+                  '${failed > 0 ? ' · 不可用 $failed' : ''}',
+        ),
+      ),
+    );
+  }
+
   /// 启停：停用即释放该图源的运行时；只作用于所属板块。
   Future<void> _toggle(
     Section section,
@@ -203,6 +255,14 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
   Widget build(BuildContext context) {
     return GlassScaffold(
       title: '图源总管理',
+      actions: <Widget>[
+        if (_runtimeAvailable && !_loading && _totalCount > 0)
+          IconButton(
+            tooltip: '批量测试连通性',
+            icon: const Icon(Icons.network_check),
+            onPressed: _testing.isEmpty ? _testAll : null,
+          ),
+      ],
       floatingActionButton: _runtimeAvailable && !_loading
           ? FloatingActionButton(
               tooltip: '导入图源',
@@ -317,6 +377,8 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
           padding: const EdgeInsets.only(bottom: 12),
           child: _SourceTile(
             source: source,
+            testing: _testing.contains(source.id),
+            testResult: _testResults[source.id],
             onToggle: (enabled) => _toggle(section, source, enabled),
             onBrowse: source.enabled ? () => _browse(section, source) : null,
             onDelete: () => _delete(section, source),
@@ -349,12 +411,20 @@ class _SectionNote extends StatelessWidget {
 class _SourceTile extends StatelessWidget {
   const _SourceTile({
     required this.source,
+    this.testing = false,
+    this.testResult,
     required this.onToggle,
     required this.onBrowse,
     required this.onDelete,
   });
 
   final SourceDescriptor source;
+
+  /// 正在测试（按钮转圈）。
+  final bool testing;
+
+  /// 最近一次测试结论；未测试过为 null。
+  final SourceTestResult? testResult;
 
   final ValueChanged<bool> onToggle;
 
@@ -403,11 +473,32 @@ class _SourceTile extends StatelessWidget {
                         style: TextStyle(fontSize: 12, color: _disabledColor),
                       ),
                     ],
+                    if (testResult != null) ...<Widget>[
+                      const SizedBox(width: 8),
+                      Text(
+                        testResult!.status.label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: testResult!.isOk
+                              ? const Color(0xFF81C784)
+                              : _disabledColor,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],
             ),
           ),
+          if (testing)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
           Switch(value: source.enabled, onChanged: onToggle),
           IconButton(
             tooltip: '浏览',

@@ -82,9 +82,16 @@ class FakeSourceManager implements SourceManager {
     return opened[sourceId];
   }
 
+  /// 导入时记录的订阅来源（与 imported 一一对应）。
+  final List<String> importedOrigins = <String>[];
+
   @override
-  Future<SourceImportResult> importScript(String script) async {
+  Future<SourceImportResult> importScript(
+    String script, {
+    String originUrl = '',
+  }) async {
     imported.add(script);
+    importedOrigins.add(originUrl);
     final failure = importFailure;
     if (failure != null) return SourceImportResult.failure(failure);
     const descriptor = SourceDescriptor(
@@ -165,6 +172,45 @@ class FakeSourceManager implements SourceManager {
   Future<void> remove(String sourceId) async {
     removed.add(sourceId);
     sources.removeWhere((source) => source.id == sourceId);
+  }
+
+  /// 连通性测试结果（按 sourceId 配置）；未配置时按「能打开就可用」推断。
+  final Map<String, SourceTestResult> testResults = <String, SourceTestResult>{};
+
+  final List<String> testedIds = <String>[];
+
+  @override
+  Future<SourceTestResult> testConnectivity(String sourceId) async {
+    testedIds.add(sourceId);
+    final configured = testResults[sourceId];
+    if (configured != null) return configured;
+    // 默认口径：登记了数据源就当可用，否则按不可用报。
+    if (opened.containsKey(sourceId)) {
+      return const SourceTestResult.ok(
+        itemCount: 1,
+        categoryCount: 0,
+        elapsed: Duration(milliseconds: 1),
+      );
+    }
+    return const SourceTestResult.failed('图源打不开（脚本载入失败或引擎不可用）');
+  }
+
+  /// 订阅更新结果（按 sourceId 配置）；未配置时按「已是最新」推断。
+  final Map<String, SourceUpdateResult> updateResults =
+      <String, SourceUpdateResult>{};
+
+  final List<String> updatedIds = <String>[];
+
+  @override
+  Future<SourceUpdateResult> updateFromSubscription(String sourceId) async {
+    updatedIds.add(sourceId);
+    final configured = updateResults[sourceId];
+    if (configured != null) return configured;
+    final descriptor = _enabled(sourceId);
+    if (descriptor == null) {
+      return const SourceUpdateResult.skipped('本地导入的图源没有订阅地址，无法更新');
+    }
+    return SourceUpdateResult.unchanged(descriptor);
   }
 
   @override

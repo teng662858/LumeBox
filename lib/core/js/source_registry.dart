@@ -149,7 +149,7 @@ class SourceRegistry {
   ///
   /// 失败返回带可读原因的失败结果：平台无引擎、脚本载入失败（语法错误或运行
   /// 异常）、脚本缺少 `LumeSource` 元信息（id / name）或 id 非法。
-  Future<SourceImportOutcome> import(String script) async {
+  Future<SourceImportOutcome> import(String script, {String originUrl = ''}) async {
     if (!_engineAvailable) {
       LumeLog.warn('[${section.id}] 当前平台不提供图源引擎');
       return const SourceImportOutcome.failure('当前平台不提供图源引擎');
@@ -189,6 +189,11 @@ class SourceRegistry {
         section: section.id,
         script: text,
       );
+      // 订阅来源：记在库里供「更新订阅源」重新拉取；本地导入留空。
+      // 覆盖导入（更新）时也照写——来源地址属于用户配置，不随脚本内容丢失。
+      if (originUrl.trim().isNotEmpty) {
+        _database.setSourceOrigin(metadata.id, originUrl);
+      }
       release(metadata.id);
       final record = _database.source(metadata.id);
       if (record == null) {

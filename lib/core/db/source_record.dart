@@ -12,6 +12,7 @@ class SourceRecord {
     required this.script,
     required this.enabled,
     this.network = NetworkProfile.none,
+    this.originUrl = '',
   });
 
   final String id;
@@ -27,6 +28,12 @@ class SourceRecord {
   /// 单图源网络覆盖（UA / Cookie / 代理）；空项继承全局设置。
   final NetworkProfile network;
 
+  /// 订阅来源地址；本地导入的图源为空（没有可更新的来源）。
+  final String originUrl;
+
+  /// 是否来自订阅（可「更新订阅源」）。
+  bool get isSubscribed => originUrl.trim().isNotEmpty;
+
   factory SourceRecord.fromRow(Row row) => SourceRecord(
         id: row['id'] as String,
         name: row['name'] as String,
@@ -39,5 +46,6 @@ class SourceRecord {
           cookie: '${row['cookie'] ?? ''}',
           proxy: '${row['proxy'] ?? ''}',
         ),
+        originUrl: '${row['origin_url'] ?? ''}',
       );
 }

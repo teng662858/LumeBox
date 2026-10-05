@@ -3,9 +3,11 @@ import '../js/cat_engines.dart';
 import '../js/lume_js_engine.dart';
 import '../js/sandbox/sandbox.dart';
 import '../js/source_registry.dart';
+import '../util/lume_log.dart';
 import '../session/section.dart';
 import 'data_source.dart';
 import 'js_data_source.dart';
+import '../net/source_subscription.dart';
 import 'source_manager.dart';
 
 /// 数据源门面：UI 侧访问图源的唯一入口，也是全项目唯一选择实现的地方。
@@ -42,15 +44,16 @@ class LumeSources {
   /// 脚本不合法或平台不支持时返回带原因的失败结果。
   static Future<SourceImportResult> importScript(
     Section section,
-    String script,
-  ) async {
+    String script, {
+    String originUrl = '',
+  }) async {
     if (!runtimeAvailableFor(section)) {
       return const SourceImportResult.failure(
         '当前平台不提供图源运行时',
       );
     }
     final registry = await SourceRegistry.open(section);
-    final outcome = await registry.import(script);
+    final outcome = await registry.import(script, originUrl: originUrl);
     final record = outcome.record;
     if (record == null) {
       return SourceImportResult.failure(outcome.message ?? '图源导入失败');
@@ -156,6 +159,121 @@ class LumeSources {
     );
   }
 
+  /// 更新订阅源：从记录里的订阅地址重新拉取脚本并覆盖导入。
+  ///
+  /// 覆盖走的是与导入完全相同的校验路径（脚本载入 → 元信息 → 落库），因此
+  /// 更新后拿到的必然是一份能跑、且 id 合法的脚本；新脚本的 id 与旧的不同则
+  /// 视为「换了图源」，如实报失败（避免用户以为更新成功、实际多出一个源）。
+  static Future<SourceUpdateResult> updateFromSubscription(
+    Section section,
+    String sourceId, {
+    SourceSubscription? subscription,
+  }) async {
+    if (!runtimeAvailableFor(section)) {
+      return const SourceUpdateResult.skipped('当前平台不提供图源运行时');
+    }
+    final registry = await SourceRegistry.open(section);
+    final record = registry.source(sourceId);
+    if (record == null) {
+      return const SourceUpdateResult.failed('图源不存在或不属于本板块');
+    }
+    if (!record.isSubscribed) {
+      return const SourceUpdateResult.skipped(
+        '本地导入的图源没有订阅地址，无法更新（可重新导入新脚本）',
+      );
+    }
+
+    final resolver = subscription ??
+        SourceSubscription.viaHttp();
+    final List<String> scripts;
+    try {
+      scripts = await resolver.resolve(<String>[record.originUrl]);
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      return SourceUpdateResult.failed('订阅拉取失败：$error');
+    }
+    if (scripts.isEmpty) {
+      return const SourceUpdateResult.failed('订阅里没有可用的图源脚本');
+    }
+
+    final script = scripts.first;
+    if (script.trim() == record.script.trim()) {
+      return SourceUpdateResult.unchanged(_describe(record));
+    }
+
+    final outcome = await registry.import(script, originUrl: record.originUrl);
+    final updated = outcome.record;
+    if (updated == null) {
+      return SourceUpdateResult.failed(outcome.message ?? '更新失败');
+    }
+    if (updated.id != record.id) {
+      return SourceUpdateResult.failed(
+        '订阅里的脚本换了图源 id（原「${record.id}」→ 新「${updated.id}」），'
+        '已按新脚本导入但未覆盖原图源；请检查订阅内容',
+      );
+    }
+    // 覆盖导入不会动网络覆盖与来源地址（它们属于用户配置，不属于脚本）。
+    return SourceUpdateResult.updated(_describe(updated));
+  }
+
+  /// 测试单个图源的连通性：载入脚本 → 取分类 → 取首屏列表。
+  ///
+  /// 只读操作：不动当前图源、不进页面、不改库。走的是与浏览完全相同的数据源
+  /// 接口，因此「测试通过」等价于「浏览能出内容」。
+  static Future<SourceTestResult> testConnectivity(
+    Section section,
+    String sourceId,
+  ) async {
+    if (!runtimeAvailableFor(section)) {
+      return const SourceTestResult.failed('当前平台不提供图源运行时');
+    }
+    final registry = await SourceRegistry.open(section);
+    final record = registry.source(sourceId);
+    if (record == null) {
+      return const SourceTestResult.failed('图源不存在或不属于本板块');
+    }
+    if (!record.enabled) {
+      return const SourceTestResult.failed('图源已停用，先在列表里启用再测试');
+    }
+
+    final watch = Stopwatch()..start();
+    try {
+      final source = await open(section, sourceId);
+      if (source == null) {
+        return const SourceTestResult.failed('图源打不开（脚本载入失败或引擎不可用）');
+      }
+
+      // 分类失败不算致命：拿不到分类就当图源没有分类（与浏览面同一口径）。
+      var categoryCount = 0;
+      try {
+        categoryCount = (await source.categories()).length;
+      } on SourceException catch (error) {
+        LumeLog.warn('[$sourceId] 测试：分类获取失败（不影响结论）: ${error.message}');
+      }
+
+      final list = await source.list(page: 1);
+      watch.stop();
+      if (list.items.isEmpty) {
+        return SourceTestResult.empty(
+          elapsed: watch.elapsed,
+          message: '脚本能运行，但首屏没有返回任何条目（图源可能已改版）',
+        );
+      }
+      return SourceTestResult.ok(
+        itemCount: list.items.length,
+        categoryCount: categoryCount,
+        elapsed: watch.elapsed,
+      );
+    } on SourceException catch (error) {
+      watch.stop();
+      return SourceTestResult.failed(error.message);
+    } catch (error, stackTrace) {
+      watch.stop();
+      LumeLog.error(error, stackTrace);
+      return SourceTestResult.failed('测试异常：$error');
+    }
+  }
+
   /// 释放板块的全部图源运行时与数据库连接（页面退出时调用）。
   static void close(Section section) => SourceRegistry.close(section);
 
@@ -170,6 +288,7 @@ class LumeSources {
         version: record.version,
         enabled: record.enabled,
         network: record.network,
+        originUrl: record.originUrl,
       );
 }
 
@@ -196,8 +315,8 @@ class _LumeSourceManager implements SourceManager {
       LumeSources.selectSource(_section, sourceId);
 
   @override
-  Future<SourceImportResult> importScript(String script) =>
-      LumeSources.importScript(_section, script);
+  Future<SourceImportResult> importScript(String script, {String originUrl = ''}) =>
+      LumeSources.importScript(_section, script, originUrl: originUrl);
 
   @override
   Future<void> setEnabled(String sourceId, bool enabled) =>
@@ -232,6 +351,14 @@ class _LumeSourceManager implements SourceManager {
   @override
   Future<DataSource?> open(String sourceId) =>
       LumeSources.open(_section, sourceId);
+
+  @override
+  Future<SourceTestResult> testConnectivity(String sourceId) =>
+      LumeSources.testConnectivity(_section, sourceId);
+
+  @override
+  Future<SourceUpdateResult> updateFromSubscription(String sourceId) =>
+      LumeSources.updateFromSubscription(_section, sourceId);
 
   @override
   void close() => LumeSources.close(_section);

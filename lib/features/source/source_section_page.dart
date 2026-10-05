@@ -40,6 +40,13 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
   List<SourceDescriptor>? _sources;
   bool _failed = false;
 
+  /// 正在测试的图源 id（按钮转圈用）。
+  final Set<String> _testing = <String>{};
+
+  /// 测试结论：sourceId → 结果。只存在内存里，退出页面即丢（每次测试都要
+  /// 反映当下状态，缓存旧结论会误导）。
+  final Map<String, SourceTestResult> _testResults = <String, SourceTestResult>{};
+
   @override
   void initState() {
     super.initState();
@@ -133,6 +140,164 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     );
   }
 
+  /// 更新订阅源：从来源地址重新拉取并覆盖。
+  Future<void> _updateSubscription(SourceDescriptor source) async {
+    if (_testing.contains(source.id)) return;
+    setState(() => _testing.add(source.id));
+    try {
+      final result = await _manager.updateFromSubscription(source.id);
+      if (!mounted) return;
+      await _reload();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            switch (result.status) {
+              SourceUpdateStatus.updated => '「${source.name}」已更新到最新脚本',
+              SourceUpdateStatus.unchanged => '「${source.name}」已是最新',
+              SourceUpdateStatus.skipped => '跳过：${result.message}',
+              SourceUpdateStatus.failed => '更新失败：${result.message}',
+            },
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _testing.remove(source.id));
+    }
+  }
+
+  /// 批量刷新本板块的全部订阅源。
+  Future<void> _updateAllSubscriptions() async {
+    final targets = (_sources ?? const <SourceDescriptor>[])
+        .where((source) => source.subscribed)
+        .toList(growable: false);
+    if (targets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('本板块没有订阅导入的图源')),
+      );
+      return;
+    }
+
+    var updated = 0;
+    var unchanged = 0;
+    var failed = 0;
+    for (final source in targets) {
+      if (!mounted) return;
+      setState(() => _testing.add(source.id));
+      try {
+        final result = await _manager.updateFromSubscription(source.id);
+        if (!mounted) return;
+        switch (result.status) {
+          case SourceUpdateStatus.updated:
+            updated++;
+          case SourceUpdateStatus.unchanged:
+            unchanged++;
+          case SourceUpdateStatus.skipped:
+          case SourceUpdateStatus.failed:
+            failed++;
+        }
+      } finally {
+        if (mounted) setState(() => _testing.remove(source.id));
+      }
+    }
+    if (!mounted) return;
+    await _reload();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '订阅刷新完成（${targets.length} 个）：更新 $updated'
+          '${unchanged > 0 ? ' · 已最新 $unchanged' : ''}'
+          '${failed > 0 ? ' · 失败 $failed' : ''}',
+        ),
+      ),
+    );
+  }
+
+  /// 测试单个图源的连通性：走「载入脚本 → 取分类 → 取首屏列表」。
+  ///
+  /// 结果同时落在列表行上（可用 / 无内容 / 不可用），不只弹一个 Toast——
+  /// 用户往往要连着看好几个源，弹窗一过就没了。
+  Future<void> _test(SourceDescriptor source) async {
+    if (_testing.contains(source.id)) return;
+    setState(() => _testing.add(source.id));
+    try {
+      final result = await _manager.testConnectivity(source.id);
+      if (!mounted) return;
+      setState(() => _testResults[source.id] = result);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('「${source.name}」：${_describeTest(result)}')),
+      );
+    } finally {
+      if (mounted) setState(() => _testing.remove(source.id));
+    }
+  }
+
+  /// 批量测试本板块全部图源。
+  ///
+  /// 顺序逐个测（不是并发轰炸）：网络层已有并发限制，但测试本身会真实打目标站，
+  /// 串行更稳、也让进度可见。停用的图源跳过（测试会如实报「已停用」，没意义）。
+  Future<void> _testAll() async {
+    final sources = (_sources ?? const <SourceDescriptor>[])
+        .where((source) => source.enabled)
+        .toList(growable: false);
+    if (sources.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('没有已启用的图源可测试')),
+      );
+      return;
+    }
+
+    var ok = 0;
+    var empty = 0;
+    var failed = 0;
+    for (final source in sources) {
+      if (!mounted) return;
+      setState(() => _testing.add(source.id));
+      try {
+        final result = await _manager.testConnectivity(source.id);
+        if (!mounted) return;
+        setState(() => _testResults[source.id] = result);
+        switch (result.status) {
+          case SourceTestStatus.ok:
+            ok++;
+          case SourceTestStatus.empty:
+            empty++;
+          case SourceTestStatus.failed:
+            failed++;
+        }
+      } finally {
+        if (mounted) setState(() => _testing.remove(source.id));
+      }
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '测试完成：可用 $ok'
+          '${empty > 0 ? ' · 无内容 $empty' : ''}'
+          '${failed > 0 ? ' · 不可用 $failed' : ''}',
+        ),
+      ),
+    );
+  }
+
+  /// 测试结论的一句话（Toast 用）。
+  static String _describeTest(SourceTestResult result) {
+    switch (result.status) {
+      case SourceTestStatus.ok:
+        final seconds = (result.elapsed?.inMilliseconds ?? 0) / 1000;
+        return '可用 · ${result.itemCount} 条'
+            '${result.categoryCount != null && result.categoryCount! > 0 ? ' · ${result.categoryCount} 个分类' : ''}'
+            '（${seconds.toStringAsFixed(1)}s）';
+      case SourceTestStatus.empty:
+        return '无内容 · ${result.message}';
+      case SourceTestStatus.failed:
+        return '不可用 · ${result.message}';
+    }
+  }
+
   /// 网络配置：单图源的 UA / Cookie / 代理，覆盖全局设置（留空即继承）。
   ///
   /// 保存后丢弃该图源已建好的 HTTP 客户端与运行时——下次请求用新配置，
@@ -224,6 +389,18 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     return GlassScaffold(
       title: '${widget.section.label} · 图源管理',
       actions: <Widget>[
+        if (_sources != null && _sources!.any((source) => source.subscribed))
+          IconButton(
+            tooltip: '刷新全部订阅源',
+            icon: const Icon(Icons.cloud_sync_outlined),
+            onPressed: _testing.isEmpty ? _updateAllSubscriptions : null,
+          ),
+        if (_sources != null && _sources!.isNotEmpty)
+          IconButton(
+            tooltip: '批量测试连通性',
+            icon: const Icon(Icons.network_check),
+            onPressed: _testing.isEmpty ? _testAll : null,
+          ),
         if (CatEngines.showsEngineSwitch(widget.section))
           IconButton(
             tooltip: '猫源引擎',
@@ -263,8 +440,12 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
         final source = sources[index];
         return _SourceTile(
           source: source,
+          testing: _testing.contains(source.id),
+          testResult: _testResults[source.id],
           onToggle: (enabled) => _toggle(source, enabled),
           onBrowse: source.enabled ? () => _browse(source) : null,
+          onTest: () => _test(source),
+          onUpdate: source.subscribed ? () => _updateSubscription(source) : null,
           onRename: () => _rename(source),
           onNetwork: () => _editNetwork(source),
           onExport: () => _export(source),
@@ -281,14 +462,21 @@ const Color _disabledColor = Color(0xFFFF8A80);
 /// 「网络已自定义」标记色：与停用区分开的提示色。
 const Color _accentColor = Color(0xFF80D8FF);
 
+/// 测试通过的标记色。
+const Color _okColor = Color(0xFF81C784);
+
 /// 单个图源行上的操作。
-enum _SourceAction { browse, rename, network, exportScript, delete }
+enum _SourceAction { browse, test, update, rename, network, exportScript, delete }
 
 class _SourceTile extends StatelessWidget {
   const _SourceTile({
     required this.source,
+    this.testing = false,
+    this.testResult,
     required this.onToggle,
     required this.onBrowse,
+    required this.onTest,
+    required this.onUpdate,
     required this.onRename,
     required this.onNetwork,
     required this.onExport,
@@ -296,10 +484,22 @@ class _SourceTile extends StatelessWidget {
   });
 
   final SourceDescriptor source;
+
+  /// 正在测试（按钮转圈）。
+  final bool testing;
+
+  /// 最近一次测试结论；未测试过为 null。
+  final SourceTestResult? testResult;
+
   final ValueChanged<bool> onToggle;
 
   /// 停用的图源不可浏览，此时为 null。
   final VoidCallback? onBrowse;
+
+  final VoidCallback onTest;
+
+  /// 更新订阅源；本地导入的图源没有来源地址，此时为 null（菜单项置灰）。
+  final VoidCallback? onUpdate;
 
   final VoidCallback onRename;
 
@@ -347,6 +547,13 @@ class _SourceTile extends StatelessWidget {
                         style: TextStyle(fontSize: 12, color: _disabledColor),
                       ),
                     ],
+                    if (source.subscribed) ...<Widget>[
+                      const SizedBox(width: 8),
+                      const Text(
+                        '订阅',
+                        style: TextStyle(fontSize: 12, color: _accentColor),
+                      ),
+                    ],
                     if (source.hasNetworkOverride) ...<Widget>[
                       const SizedBox(width: 8),
                       const Text(
@@ -354,11 +561,34 @@ class _SourceTile extends StatelessWidget {
                         style: TextStyle(fontSize: 12, color: _accentColor),
                       ),
                     ],
+                    if (testResult != null) ...<Widget>[
+                      const SizedBox(width: 8),
+                      Text(
+                        testResult!.status.label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: switch (testResult!.status) {
+                            SourceTestStatus.ok => _okColor,
+                            SourceTestStatus.empty => _disabledColor,
+                            SourceTestStatus.failed => _disabledColor,
+                          },
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],
             ),
           ),
+          if (testing)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
           Switch(value: source.enabled, onChanged: onToggle),
           // 行内只留开关：浏览 / 重命名 / 导出 / 删除收进「更多」，
           // 手机窄屏也不会把四个按钮挤成一片。
@@ -368,6 +598,10 @@ class _SourceTile extends StatelessWidget {
               switch (action) {
                 case _SourceAction.browse:
                   onBrowse?.call();
+                case _SourceAction.test:
+                  onTest();
+                case _SourceAction.update:
+                  onUpdate?.call();
                 case _SourceAction.rename:
                   onRename();
                 case _SourceAction.network:
@@ -383,6 +617,15 @@ class _SourceTile extends StatelessWidget {
                 value: _SourceAction.browse,
                 enabled: onBrowse != null,
                 child: const Text('浏览'),
+              ),
+              const PopupMenuItem<_SourceAction>(
+                value: _SourceAction.test,
+                child: Text('测试连通性'),
+              ),
+              PopupMenuItem<_SourceAction>(
+                value: _SourceAction.update,
+                enabled: onUpdate != null,
+                child: const Text('更新订阅源'),
               ),
               const PopupMenuItem<_SourceAction>(
                 value: _SourceAction.rename,

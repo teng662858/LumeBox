@@ -84,7 +84,12 @@ void main() {
     final imported = manager.imported.single;
     expect(imported.startsWith('\uFEFF'), isFalse, reason: 'BOM 必须在导入前剥掉');
     expect(imported, contains('LumeSource'));
-    expect(find.text('已导入：新图源'), findsOneWidget);
+    expect(find.text('已导入：新图源'), findsOneWidget, reason: '本地导入不带订阅标记');
+    expect(
+      manager.importedOrigins.single,
+      isEmpty,
+      reason: '本地导入没有订阅来源地址',
+    );
     expect(importedCount, <int>[1]);
   });
 
@@ -117,7 +122,12 @@ void main() {
 
     expect(manager.imported.single.startsWith('\uFEFF'), isFalse);
     expect(manager.imported.single, contains('订阅源'));
-    expect(find.text('已导入：新图源'), findsOneWidget);
+    expect(find.text('已导入：新图源（订阅）'), findsOneWidget);
+    expect(
+      manager.importedOrigins.single,
+      isNotEmpty,
+      reason: '订阅来源要记下来，供「更新订阅源」重新拉取',
+    );
   });
 
   testWidgets('订阅链接导入：清单里一行一个地址时逐个拉取', (tester) async {
@@ -146,7 +156,12 @@ void main() {
       'https://example.com/b.js',
     ]);
     expect(manager.imported.length, 2);
-    expect(find.text('已导入：新图源\n已导入：新图源'), findsOneWidget);
+    expect(find.text('已导入：新图源（订阅）\n已导入：新图源（订阅）'), findsOneWidget);
+    expect(
+      manager.importedOrigins,
+      everyElement('https://example.com/sub.txt'),
+      reason: '清单导入时来源记的是用户填的那个地址',
+    );
   });
 
   testWidgets('订阅链接导入：地址栏里直接粘多行地址也逐个拉取', (tester) async {
@@ -206,7 +221,12 @@ void main() {
       'https://9280.kstore.vip/cat/index.js',
     ]);
     expect(manager.imported.single, script);
-    expect(find.text('已导入：新图源'), findsOneWidget);
+    expect(find.text('已导入：新图源（订阅）'), findsOneWidget);
+    expect(
+      manager.importedOrigins.single,
+      'https://9280.kstore.vip/cat/index.js.md5',
+      reason: '来源记用户填的 .md5 清单地址（下次更新仍走同一套校验）',
+    );
   });
 
   testWidgets('订阅链接导入：MD5 对不上时拒绝导入并说明差异', (tester) async {

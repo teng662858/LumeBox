@@ -12,7 +12,7 @@ import 'source_record.dart';
 class SectionDatabase {
   SectionDatabase._(this._db, this._sectionId);
 
-  static const int _schemaVersion = 3;
+  static const int _schemaVersion = 4;
 
   /// 库内自证键：本库属于哪个板块。
   static const String _ownerKey = 'owner_section';
@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS source (
   updated_at INTEGER NOT NULL,
   user_agent TEXT NOT NULL DEFAULT '',
   cookie     TEXT NOT NULL DEFAULT '',
-  proxy      TEXT NOT NULL DEFAULT ''
+  proxy      TEXT NOT NULL DEFAULT '',
+  origin_url TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS section_setting (
   key   TEXT PRIMARY KEY,
@@ -74,6 +75,16 @@ CREATE TABLE IF NOT EXISTS section_setting (
         "UPDATE source SET section = ? WHERE section = ''",
         [_sectionId],
       );
+    }
+    if (version < 4) {
+      // 订阅来源地址：从订阅链接导入时记下，供「更新订阅源」重新拉取。
+      // 本地导入的图源留空（没有可更新的来源）。
+      try {
+        _db.execute(
+            "ALTER TABLE source ADD COLUMN origin_url TEXT NOT NULL DEFAULT ''");
+      } catch (error) {
+        LumeLog.warn('迁移 source.origin_url 跳过: $error');
+      }
     }
     if (version < 3) {
       // 单图源网络覆盖（UA / Cookie / 代理）：空串表示继承全局设置。
@@ -144,6 +155,14 @@ CREATE TABLE IF NOT EXISTS section_setting (
         script,
         DateTime.now().millisecondsSinceEpoch,
       ],
+    );
+  }
+
+  /// 记录图源的订阅来源地址（从订阅链接导入时调用）。
+  void setSourceOrigin(String id, String url) {
+    _db.execute(
+      'UPDATE source SET origin_url = ? WHERE id = ?',
+      [url.trim(), id],
     );
   }
 
