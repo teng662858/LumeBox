@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/state_view.dart';
+import '../reading/poster_card.dart';
 import 'detail_page.dart';
 
 /// 图源浏览页：板块业务页里「进详情」的独立入口。
@@ -28,14 +30,27 @@ class BrowsePage extends StatelessWidget {
 /// 本组件只认识 [DataSource]：分类是否提供、列表怎么取、失败原因是什么，都由
 /// 接口层决定；它不接触沙箱、脚本与网络。嵌进业务页时由外层提供页面骨架。
 /// Phase1 的浏览链路止于详情与章节列表，不进入阅读器。
+///
+/// 封面：宿主提供图片管线（[pipeline]）时，条目行左侧渲染封面缩略图
+/// （与小说 / 漫画的探索列表同一范式：56×76、按 160px 解码）；没提供管线
+/// 的宿主（图源管理里的浏览入口）保持纯文字排布，行为与从前完全一致。
 class BrowseView extends StatefulWidget {
-  const BrowseView({super.key, required this.dataSource, this.onItemTap});
+  const BrowseView({
+    super.key,
+    required this.dataSource,
+    this.onItemTap,
+    this.pipeline,
+  });
 
   final DataSource dataSource;
 
   /// 条目点击。为空时按通用口径进入详情页（[DetailPage]）；视频板块传自己的
   /// 回调——它要的是「点条目就起播」，而不是先看详情。
   final ValueChanged<SourceItem>? onItemTap;
+
+  /// 封面图管线（可选）。条目自带的封面（`SourceItem.cover`）由它取图，
+  /// 取不到时显示占位，不会把列表拖下水。
+  final SectionImagePipeline? pipeline;
 
   @override
   State<BrowseView> createState() => _BrowseViewState();
@@ -180,6 +195,25 @@ class _BrowseViewState extends State<BrowseView> {
     );
   }
 
+  /// 封面缩略图：宿主给了管线、且条目带封面时才占位；否则整块不出现，
+  /// 列表与从前一样是纯文字排布（条目没封面时也不会留一块空图位）。
+  ///
+  /// 尺寸与小说 / 漫画的探索列表一致：56×76、按 160px 解码，取不到图时
+  /// [PosterCover] 显示主题占位，不抛异常。
+  List<Widget> _buildCover(SourceItem item) {
+    final pipeline = widget.pipeline;
+    final cover = item.cover?.trim() ?? '';
+    if (pipeline == null || cover.isEmpty) return const <Widget>[];
+    return <Widget>[
+      SizedBox(
+        width: 56,
+        height: 76,
+        child: PosterCover(pipeline: pipeline, url: cover, width: 160),
+      ),
+      const SizedBox(width: 12),
+    ];
+  }
+
   /// 加载中 / 异常 / 空数据统一走状态视图，失败可重试（重试连分类一起重取）。
   Widget _buildBody() {
     if (_loading) {
@@ -211,6 +245,7 @@ class _BrowseViewState extends State<BrowseView> {
           onTap: () => _openItem(item),
           child: Row(
             children: <Widget>[
+              ..._buildCover(item),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

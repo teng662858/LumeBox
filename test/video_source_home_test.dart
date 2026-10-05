@@ -14,6 +14,7 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
+import 'package:lume_box/features/reading/section_image.dart';
 import 'package:lume_box/features/video/video_page.dart';
 
 import 'support/fake_source_manager.dart';
@@ -100,6 +101,31 @@ void main() {
 
     // 图源管理入口只有右上角一个（图源条不再重复一个同名入口）。
     expect(find.byTooltip('图源管理'), findsOneWidget);
+  });
+
+  testWidgets('列表条目展示封面 / 标题 / 简介：只有带封面的条目占图位', (tester) async {
+    source.items = const <SourceItem>[
+      SourceItem(
+        id: 'movie-1',
+        title: '示例影片',
+        subtitle: '科幻 · 2026',
+        cover: 'https://example.com/poster.jpg',
+      ),
+      SourceItem(id: 'movie-2', title: '无封面影片'),
+    ];
+    await pumpBoard(tester);
+
+    // 标题与简介照常展示。
+    expect(find.text('示例影片'), findsOneWidget);
+    expect(find.text('科幻 · 2026'), findsOneWidget);
+
+    // 封面走本板块的图片管线（与小说 / 漫画列表同一套纪律）；测试环境取不到
+    // 图时显示主题占位，图位本身照常在，不影响断言。
+    final covers = tester
+        .widgetList<SectionImage>(find.byType(SectionImage))
+        .toList(growable: false);
+    expect(covers, hasLength(1), reason: '只有带封面的条目占图位，没封面不留空位');
+    expect(covers.single.url, 'https://example.com/poster.jpg');
   });
 
   testWidgets('点条目直接起播：条目自带地址时不再要详情 / 章节', (tester) async {

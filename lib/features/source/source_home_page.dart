@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
@@ -65,6 +66,7 @@ class SourceBrowsePane extends StatefulWidget {
     required this.section,
     this.manager,
     this.onItemTap,
+    this.pipeline,
     this.showSourceActions = true,
   });
 
@@ -75,6 +77,10 @@ class SourceBrowsePane extends StatefulWidget {
 
   /// 条目点击（同时给出该条目所属的数据源）。为空时浏览面按通用口径进详情页。
   final void Function(DataSource source, SourceItem item)? onItemTap;
+
+  /// 封面图管线（可选）：转发给浏览面，条目带封面时列表行左侧显示缩略图。
+  /// 为空时列表保持纯文字排布（图源管理里的浏览入口走这条）。
+  final SectionImagePipeline? pipeline;
 
   /// 图源条右侧是否显示「图源管理」快捷入口。
   final bool showSourceActions;
@@ -289,6 +295,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
             child: BrowseView(
               key: ValueKey<String>(source.id),
               dataSource: source,
+              pipeline: widget.pipeline,
               // 宿主没给回调就走浏览面的通用口径（进详情页）。
               onItemTap:
                   onItemTap == null ? null : (item) => onItemTap(source, item),

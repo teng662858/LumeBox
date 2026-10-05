@@ -134,6 +134,11 @@ class _VideoPageState extends State<VideoPage>
   /// 本板块的阅读库：视频进度（集数 + 时间点）与「继续观看」落在它里面。
   ReadingLibrary? _library;
 
+  /// 浏览列表的封面图管线：**本板块自己**的（缓存落在 sections/video 之下，
+  /// 与小说 / 漫画板块互不共享）。随阅读库一起建立；建不出来时列表退化为
+  /// 纯文字排布，封面缺失不影响浏览与播放。
+  SectionImagePipeline? _pipeline;
+
   /// 当前正在播的图源条目：有它才记进度（手动贴地址不记，没有作品身份可记）。
   VideoPlayTarget? _target;
 
@@ -249,6 +254,8 @@ class _VideoPageState extends State<VideoPage>
       await session?.dispose();
       await player?.dispose();
     }());
+    // 封面管线先于阅读库释放（它持有网络客户端与解码位图）。
+    _pipeline?.dispose();
     _store?.close();
     if (widget.library == null) ReadingLibrary.close(Section.video);
     _input.dispose();
@@ -344,7 +351,15 @@ class _VideoPageState extends State<VideoPage>
     try {
       final library = widget.library ?? await ReadingLibrary.open(Section.video);
       if (!mounted) return;
-      setState(() => _library = library);
+      setState(() {
+        _library = library;
+        // 封面缩略图管线：与阅读板块同一套纪律（引用计数 + LRU + 磁盘缓存），
+        // 缓存目录属于视频板块自己。
+        _pipeline = SectionImagePipeline(
+          cacheDir: library.imageCacheDir,
+          memoryBudgetBytes: SectionImagePipeline.thumbnailBudgetBytes,
+        );
+      });
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       LumeLog.warn('[video] 阅读库打不开，本次不记录播放进度');
@@ -1304,6 +1319,8 @@ class _VideoPageState extends State<VideoPage>
                   section: Section.video,
                   manager: widget.sourceManager,
                   showSourceActions: false,
+                  // 封面管线的缓存属于视频板块自己，与其他板块不共享。
+                  pipeline: _pipeline,
                   onItemTap: _playFromSource,
                 ),
               ),

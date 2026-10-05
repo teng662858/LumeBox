@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
+import 'package:lume_box/features/reading/section_image.dart';
 import 'package:lume_box/features/source/browse_page.dart';
 
 /// 用模拟实现驱动真实页面，走通「分类 → 列表 → 详情 → 章节 → 阅读器提示」。
@@ -69,6 +70,61 @@ void main() {
     expect(find.text('全部'), findsNothing);
     expect(find.text('条目'), findsOneWidget);
   });
+
+  testWidgets('没给图片管线的宿主：条目带封面也不留空图位', (tester) async {
+    // 图源管理里的「浏览」入口走这条：没有图片管线时列表保持纯文字排布，
+    // 封面渲染只属于提供管线的宿主（视频板块首页）。
+    await pumpBrowse(tester, const _CoverSource());
+    expect(find.text('有封面的条目'), findsOneWidget);
+    expect(find.byType(SectionImage), findsNothing);
+  });
+}
+
+/// 条目带封面、但没有图片管线的数据源：验证「无管线不留空图位」。
+class _CoverSource implements DataSource {
+  const _CoverSource();
+
+  @override
+  String get id => 'lume.test.cover';
+
+  @override
+  String get name => '带封面源';
+
+  @override
+  Section get section => Section.novel;
+
+  @override
+  Future<List<SourceCategory>> categories() async => const <SourceCategory>[];
+
+  @override
+  Future<SourceList> list({
+    String? categoryId,
+    String? keyword,
+    int page = 1,
+  }) async =>
+      const SourceList(
+        items: <SourceItem>[
+          SourceItem(
+            id: 'cover-1',
+            title: '有封面的条目',
+            cover: 'https://example.com/poster.jpg',
+          ),
+        ],
+      );
+
+  @override
+  Future<SourceDetail?> detail(String itemId) async => null;
+
+  @override
+  Future<List<SourceChapter>> chapters(String itemId) async =>
+      const <SourceChapter>[];
+
+  @override
+  Future<ChapterContent?> content({
+    required String itemId,
+    required String chapterId,
+  }) async =>
+      null;
 }
 
 /// 最小实现：没有分类、只有一条条目。
