@@ -83,6 +83,16 @@
 - [ ] 自建聚合服务类「猫源」的 App 侧用法：薄壳图源脚本经 LumeSource.http 转发（服务跑在电脑/NAS）
 - [ ] Android Node‑Mobile 猫源引擎的原生侧集成（Dart 侧契约已就位；需 NDK + libnode）
 - [ ] 若确有只需 dns 的猫源脚本：给沙箱加宿主解析（InternetAddress.lookup）的 dns 垫片
+- [ ] **AVPlayer 内核的 AVPlayer API 适配**（本轮确认**延期，不开发**）
+  - **现状**：AVPlayer 内核由 `video_player` 插件驱动（纹理渲染），插件不暴露
+    `AVPlayer` / `AVPlayerLayer`（源码全文检索 `pictureinpicture` 0 命中）。
+  - **为什么要适配**：系统画中画（PiP）与字幕样式（字号）都要求直接持有 AVPlayer 的
+    原生对象，插件通路下这两件事都无处落地——与「iOS 原生 PiP 接入」「字幕样式生效」
+    两条待办同源，是同一个根因的三种表现。
+  - **落地方向**：自研 Swift 内核（`AVPlayerLayer` + `AVPictureInPictureController`），
+    播放与画中画一体；详见 `.zcode/plans/phase3-player-pip-approved-and-deferred.md`
+    的延后待办 1、2。
+  - **前置条件**：Mac + Xcode 构建与真机验证（当前开发机为 Windows，无法验证 iOS 侧）。
 
 ## 预留扩展（暂不开发）
 - WebDAV同步、Bangumi账号绑定、批量图源校验工具
