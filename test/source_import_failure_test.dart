@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lume_box/core/cache/section_memory_cache.dart';
 import 'package:lume_box/core/js/cat_engines.dart';
 import 'package:lume_box/core/js/lume_js_engine.dart';
 import 'package:lume_box/core/js/qjs_bindings.dart';
@@ -52,9 +53,11 @@ void main() {
     // 这套用例在非 iOS 的平台也能跑真实沙箱。
     CatEngines.debugPlatformOverride = 'android';
     LumeJsEngine.debugSupportedOverride = true;
+    SectionMemoryCache.instance.clearAll();
   });
 
   tearDown(() async {
+    SectionMemoryCache.instance.clearAll();
     SourceRegistry.close(Section.cat);
     SourceRegistry.close(Section.video);
     await SectionScope.closeAll();
@@ -303,8 +306,34 @@ async function getList(page) {
       contains('demo-video'),
     );
   }, skip: skipReason);
-}
 
+  test('读缓存（真实引擎）：生产链路真的写缓存，覆盖导入即作废', () async {
+    final registry = await openRegistry(Section.video);
+    await registry.import('''
+// LumeSource: {"id":"cache-src","name":"缓存源","version":"1.0.0"}
+async function getCategories() { return [{ id: 'c1', title: '旧分类' }]; }
+async function getList(page) { return { list: [{ id: 'a', title: 'A' }] }; }
+''');
+
+    final cache = SectionMemoryCache.instance;
+    final source = await LumeSources.open(Section.video, 'cache-src');
+    expect((await source!.categories()).single.title, '旧分类');
+    expect(
+      cache.usageOf(Section.video).entries,
+      greaterThan(0),
+      reason: '生产链路（LumeSources.open）要把读结果放进本板块的内存缓存',
+    );
+
+    // 覆盖导入换了脚本：缓存必须跟着运行时一起作废，否则会读到上一个脚本的输出。
+    await registry.import('''
+// LumeSource: {"id":"cache-src","name":"缓存源","version":"2.0.0"}
+async function getCategories() { return [{ id: 'c1', title: '新分类' }]; }
+async function getList(page) { return { list: [] }; }
+''');
+    final reopened = await LumeSources.open(Section.video, 'cache-src');
+    expect((await reopened!.categories()).single.title, '新分类');
+  }, skip: skipReason);
+}
 /// Windows 下取构建产物，其他平台走进程镜像（与 sandbox_native_test 一致）。
 DynamicLibrary? _resolveBridge() {
   if (!Platform.isWindows) {

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lume_box/core/cache/section_memory_cache.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
 
@@ -291,6 +292,147 @@ void main() {
       if (Platform.isIOS) return;
       expect(await LumeSources.currentSource(Section.novel), isNull);
       expect(await LumeSources.selectSource(Section.novel, 'demo'), isNull);
+    });
+  });
+
+  /// 读缓存（本轮新增）：分类 / 详情 / 章节按板块进缓存，列表与内容不进。
+  ///
+  /// 缓存由组合根注入（生产走 [SectionMemoryCache]，测试不传就没有缓存行为），
+  /// 因此这里显式传缓存来验证「命中 / 不缓存 / 失败不写 / 清空后重取」四条口径。
+  group('读缓存：元数据进缓存，列表与内容不进', () {
+    final cache = SectionMemoryCache.instance;
+
+    setUp(cache.clearAll);
+    tearDown(cache.clearAll);
+
+    JsDataSource build(_FakeRuntime runtime) => JsDataSource(
+          id: 'demo',
+          name: '示例源',
+          section: Section.novel,
+          runtime: runtime,
+          cache: cache,
+        );
+
+    int callsOf(_FakeRuntime runtime, String method) =>
+        runtime.methods.where((name) => name == method).length;
+
+    test('分类：第二次读命中缓存，不再调脚本', () async {
+      final runtime = _FakeRuntime((method, argument) async => <Object?>[
+            <String, Object?>{'id': 'c1', 'title': '分类一'},
+          ]);
+      final source = build(runtime);
+
+      expect((await source.categories()).single.title, '分类一');
+      expect((await source.categories()).single.title, '分类一');
+      expect(callsOf(runtime, JsSourceContract.categories), 1);
+      expect(cache.usageOf(Section.novel).entries, 1);
+    });
+
+    test('详情与章节按 itemId 分开缓存', () async {
+      final runtime = _FakeRuntime((method, argument) async {
+        final id = (argument as Map)['id'];
+        return switch (method) {
+          JsSourceContract.detail => <String, Object?>{
+              'id': id,
+              'title': '条目 $id',
+            },
+          JsSourceContract.chapters => <Object?>[
+              <String, Object?>{'id': '$id-e1', 'title': '第 1 集'},
+            ],
+          _ => null,
+        };
+      });
+      final source = build(runtime);
+
+      await source.detail('1');
+      await source.detail('1');
+      await source.detail('2');
+      expect(
+        callsOf(runtime, JsSourceContract.detail),
+        2,
+        reason: '同一个 itemId 第二次命中，换 id 要重新取',
+      );
+
+      await source.chapters('1');
+      await source.chapters('1');
+      expect(callsOf(runtime, JsSourceContract.chapters), 1);
+    });
+
+    test('列表与内容永不缓存：每次都走脚本', () async {
+      final runtime = _FakeRuntime(
+        (method, argument) async => switch (method) {
+          JsSourceContract.list => <String, Object?>{
+              'items': <Object?>[
+                <String, Object?>{'id': 'a', 'title': 'A'},
+              ],
+            },
+          JsSourceContract.content => <String, Object?>{
+              'kind': 'video',
+              'url': 'https://example.com/a.mp4',
+            },
+          _ => null,
+        },
+      );
+      final source = build(runtime);
+
+      await source.list();
+      await source.list();
+      await source.content(itemId: 'a', chapterId: 'a-1');
+      await source.content(itemId: 'a', chapterId: 'a-1');
+
+      expect(callsOf(runtime, JsSourceContract.list), 2);
+      expect(callsOf(runtime, JsSourceContract.content), 2);
+      expect(cache.usageOf(Section.novel).isEmpty, isTrue, reason: '一条都不该进缓存');
+    });
+
+    test('失败不进缓存：抛错之后重试仍然走脚本', () async {
+      var attempts = 0;
+      final runtime = _FakeRuntime((method, argument) async {
+        attempts++;
+        if (attempts == 1) {
+          throw const SourceException(SourceErrorKind.callFailed, '脚本报错');
+        }
+        return <Object?>[
+          <String, Object?>{'id': 'c1', 'title': '分类一'},
+        ];
+      });
+      final source = build(runtime);
+
+      await expectLater(source.categories(), throwsA(isA<SourceException>()));
+      expect(cache.usageOf(Section.novel).isEmpty, isTrue, reason: '失败不写缓存');
+      expect((await source.categories()).single.title, '分类一');
+    });
+
+    test('清空板块缓存后重新走脚本（设置页「清空」的效果）', () async {
+      final runtime = _FakeRuntime((method, argument) async => <Object?>[
+            <String, Object?>{'id': 'c1', 'title': '分类一'},
+          ]);
+      final source = build(runtime);
+
+      await source.categories();
+      await source.categories();
+      expect(callsOf(runtime, JsSourceContract.categories), 1);
+
+      cache.clear(Section.novel);
+      await source.categories();
+      expect(callsOf(runtime, JsSourceContract.categories), 2);
+    });
+
+    test('不传 cache 的适配器（测试与旧调用方）没有缓存行为', () async {
+      final runtime = _FakeRuntime((method, argument) async => <Object?>[
+            <String, Object?>{'id': 'c1', 'title': '分类一'},
+          ]);
+      final source = JsDataSource(
+        id: 'demo',
+        name: '示例源',
+        section: Section.novel,
+        runtime: runtime,
+      );
+
+      await source.categories();
+      await source.categories();
+      expect(callsOf(runtime, JsSourceContract.categories), 2);
+      expect(cache.usageOf(Section.novel).isEmpty, isTrue);
     });
   });
 }

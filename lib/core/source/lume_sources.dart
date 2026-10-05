@@ -1,3 +1,4 @@
+import '../cache/section_memory_cache.dart';
 import '../db/source_record.dart';
 import '../js/cat_engines.dart';
 import '../js/lume_js_engine.dart';
@@ -139,7 +140,14 @@ class LumeSources {
   }
 
   /// 打开统一数据源。图源不存在、已禁用或脚本载入失败时返回 null。
-  static Future<DataSource?> open(Section section, String sourceId) async {
+  ///
+  /// [cached] 为真时接入**按板块隔离的内存读缓存**（分类 / 详情 / 章节）；
+  /// 连通性测试等「必须验证当下脚本」的场景传 false，走完全真实的链路。
+  static Future<DataSource?> open(
+    Section section,
+    String sourceId, {
+    bool cached = true,
+  }) async {
     if (!runtimeAvailableFor(section)) return null;
     final registry = await SourceRegistry.open(section);
     SourceRecord? record;
@@ -156,6 +164,7 @@ class LumeSources {
       name: record.name,
       section: section,
       runtime: _EngineRuntime(registry, sourceId),
+      cache: cached ? SectionMemoryCache.instance : null,
     );
   }
 
@@ -238,7 +247,8 @@ class LumeSources {
 
     final watch = Stopwatch()..start();
     try {
-      final source = await open(section, sourceId);
+      // 连通性测试不看缓存：它要验证的是「当下这份脚本能不能跑」。
+      final source = await open(section, sourceId, cached: false);
       if (source == null) {
         return const SourceTestResult.failed('图源打不开（脚本载入失败或引擎不可用）');
       }

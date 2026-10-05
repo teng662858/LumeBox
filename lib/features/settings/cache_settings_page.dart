@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/cache/section_memory_cache.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
@@ -10,10 +11,14 @@ import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
 import 'section_cache.dart';
 
-/// 缓存管理：分板块统计与按板块清理。
+/// 缓存管理：分板块统计与按板块清理（磁盘缓存 + 内存缓存）。
 ///
 /// 四个板块的缓存互相独立：统计只读本板块目录，清理只删本板块文件；
 /// 用户保存的图片（exports）只展示、不参与清理。
+///
+/// 内存缓存（[SectionMemoryCache]）与磁盘缓存分开管理：它是应用级的
+/// 「本次运行」缓存（分类 / 详情 / 章节的读结果），退出应用即消失，
+/// 不落盘、不参与过期策略；这里按板块给一个「清空」按钮。
 class CacheSettingsPage extends StatefulWidget {
   const CacheSettingsPage({super.key, this.service = const SectionCacheService()});
 
@@ -124,6 +129,24 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
     await _reload();
   }
 
+  /// 清空一个板块的内存缓存（只影响本板块；其他板块一条不动）。
+  ///
+  /// 内存缓存是同步的（登记表在应用内存里），因此这里不需要 await——
+  /// 清完直接重建页面，占用数字当场归零。
+  void _clearMemory(Section section) {
+    final removed = SectionMemoryCache.instance.clear(section);
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          removed == 0
+              ? '${section.label}的内存缓存已是空的'
+              : '已清空${section.label}内存缓存（$removed 项）',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
@@ -165,13 +188,16 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
           _CacheTile(
             stats: item,
             policy: _policies[item.section] ?? SectionCachePolicy.unlimited,
+            memory: SectionMemoryCache.instance.usageOf(item.section),
             onClear: () => _clear(item),
+            onClearMemory: () => _clearMemory(item.section),
             onPolicyChanged: (policy) => _updatePolicy(item.section, policy),
           ),
           const SizedBox(height: 12),
         ],
         const Text(
-          '清理只删除可再生缓存；用户保存的图片、书架信息与阅读进度都不在清理范围。',
+          '清理只删除可再生缓存；用户保存的图片、书架信息与阅读进度都不在清理范围。\n'
+          '内存缓存只在本次运行有效，退出应用即消失，不落盘。',
           style: TextStyle(fontSize: 12, color: LumeTheme.muted),
         ),
       ],
@@ -189,7 +215,9 @@ class _CacheTile extends StatelessWidget {
   const _CacheTile({
     required this.stats,
     required this.policy,
+    required this.memory,
     required this.onClear,
+    required this.onClearMemory,
     required this.onPolicyChanged,
   });
 
@@ -198,7 +226,11 @@ class _CacheTile extends StatelessWidget {
   /// 本板块的缓存策略。
   final SectionCachePolicy policy;
 
+  /// 本板块的内存缓存占用（应用级，跨页面保留）。
+  final MemoryCacheUsage memory;
+
   final VoidCallback onClear;
+  final VoidCallback onClearMemory;
   final ValueChanged<SectionCachePolicy> onPolicyChanged;
 
   @override
@@ -259,6 +291,31 @@ class _CacheTile extends StatelessWidget {
                       ),
                     ],
                   ),
+                ),
+                const SizedBox(height: 6),
+                // 内存缓存：应用级、只本次运行有效；按板块清空，别的板块不受影响。
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        '内存缓存 ${memory.describe()}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: LumeTheme.muted,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: memory.isEmpty ? null : onClearMemory,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        minimumSize: const Size(0, 30),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const Text('清空'),
+                    ),
+                  ],
                 ),
               ],
             ),

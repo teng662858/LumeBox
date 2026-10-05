@@ -1,3 +1,4 @@
+import '../cache/section_memory_cache.dart';
 import '../session/section.dart';
 import 'data_source.dart';
 import 'source_models.dart';
@@ -55,12 +56,18 @@ class JsSourceContract {
 ///
 /// 本类只做「翻译」：接口方法 → JS 方法名与入参 → 结果解析 → 异常归一。
 /// 它不持有运行时，也不负责脚本载入与沙箱生命周期。
+///
+/// 可选读缓存（[cache]）：给了就把**元数据读取**（分类 / 详情 / 章节）按板块
+/// 缓存起来，同一份内容第二次读不再走脚本；列表与章节内容不缓存（变化快、
+/// 体积大）。缓存由组合根注入（正式实现是 [SectionMemoryCache]），测试不传
+/// 就没有缓存行为；脚本被覆盖导入 / 图源被删除时由注册表负责作废。
 class JsDataSource implements DataSource, DanmakuCapable, DanmakuPostCapable {
   JsDataSource({
     required this.id,
     required this.name,
     required this.section,
     required this.runtime,
+    this.cache,
   });
 
   @override
@@ -75,9 +82,18 @@ class JsDataSource implements DataSource, DanmakuCapable, DanmakuPostCapable {
   /// 调用运行时。适配器只使用它，不持有也不释放它的生命周期。
   final JsSourceRuntime runtime;
 
+  /// 读缓存（可选，按板块隔离）。为空表示不做任何缓存。
+  final SourceReadCache? cache;
+
   @override
-  Future<List<SourceCategory>> categories() async =>
-      parseCategories(await _invoke(JsSourceContract.categories));
+  Future<List<SourceCategory>> categories() async {
+    const key = 'categories';
+    final cached = cache?.read(section, id, key);
+    if (cached is List<SourceCategory>) return cached;
+    final value = parseCategories(await _invoke(JsSourceContract.categories));
+    cache?.write(section, id, key, value);
+    return value;
+  }
 
   @override
   Future<SourceList> list({
@@ -90,18 +106,34 @@ class JsDataSource implements DataSource, DanmakuCapable, DanmakuPostCapable {
     if (category.isNotEmpty) argument['categoryId'] = category;
     final search = keyword?.trim() ?? '';
     if (search.isNotEmpty) argument['keyword'] = search;
+    // 列表不缓存：分类切换 / 搜索 / 刷新都要求看到当下内容。
     return parseSourceList(await _invoke(JsSourceContract.list, argument));
   }
 
   @override
-  Future<SourceDetail?> detail(String itemId) async => SourceDetail.parse(
-        await _invoke(JsSourceContract.detail, <String, Object?>{'id': itemId}),
-      );
+  Future<SourceDetail?> detail(String itemId) async {
+    final key = 'detail|$itemId';
+    final cached = cache?.read(section, id, key);
+    if (cached is SourceDetail) return cached;
+    final value = SourceDetail.parse(
+      await _invoke(JsSourceContract.detail, <String, Object?>{'id': itemId}),
+    );
+    // 空结果是「条目不存在」，不是可复用的元数据，不进缓存。
+    if (value != null) cache?.write(section, id, key, value);
+    return value;
+  }
 
   @override
-  Future<List<SourceChapter>> chapters(String itemId) async => parseChapters(
-        await _invoke(JsSourceContract.chapters, <String, Object?>{'id': itemId}),
-      );
+  Future<List<SourceChapter>> chapters(String itemId) async {
+    final key = 'chapters|$itemId';
+    final cached = cache?.read(section, id, key);
+    if (cached is List<SourceChapter>) return cached;
+    final value = parseChapters(
+      await _invoke(JsSourceContract.chapters, <String, Object?>{'id': itemId}),
+    );
+    cache?.write(section, id, key, value);
+    return value;
+  }
 
   @override
   Future<ChapterContent?> content({

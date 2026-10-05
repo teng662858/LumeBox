@@ -1,3 +1,4 @@
+import '../cache/section_memory_cache.dart';
 import '../db/section_database.dart';
 import '../db/source_record.dart';
 import '../net/lume_http.dart';
@@ -325,6 +326,9 @@ class SourceRegistry {
   void release(String sourceId) {
     _engines.remove(sourceId)?.dispose();
     _httpBySource.remove(sourceId)?.dispose();
+    // 运行时没了，它之前的读结果（分类 / 详情 / 章节）也一并作废：
+    // 覆盖导入换了脚本、删除换了图源，旧输出不能再被读出来。
+    SectionMemoryCache.instance.removeSource(section, sourceId);
   }
 
   /// 关闭整个板块：释放引擎、HTTP 客户端与数据库。

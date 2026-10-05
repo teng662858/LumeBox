@@ -80,7 +80,7 @@ class SettingsPage extends StatelessWidget {
           _SettingsEntry(
             icon: Icons.cleaning_services_outlined,
             title: '缓存管理',
-            subtitle: '按板块查看与清理缓存（漫画 / 小说 / 视频 / 猫源互相独立）',
+            subtitle: '按板块清理磁盘缓存与内存缓存（漫画 / 小说 / 视频 / 猫源互相独立）',
             onTap: () => _push(context, CacheSettingsPage(service: cacheService)),
           ),
           const SizedBox(height: 12),
