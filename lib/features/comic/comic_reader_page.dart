@@ -12,6 +12,7 @@ import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/state_view.dart';
+import 'comic_bookmarks.dart';
 import 'comic_settings.dart';
 
 /// 漫画阅读器：条漫瀑布流 / 单页左右翻页 / 双页跨页三种模式，共用一套调节控件。
@@ -70,6 +71,9 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   /// 瀑布流模式下的页内比例 0..1。
   double _fraction = 0;
 
+  /// 本作品的书签（按作品存进板块阅读库）。
+  List<ComicBookmark> _bookmarks = const <ComicBookmark>[];
+
   bool _toolbar = false;
   bool _saving = false;
 
@@ -95,6 +99,9 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     super.initState();
     _pipeline = SectionImagePipeline(cacheDir: widget.library.imageCacheDir);
     _settings = ComicReaderSettings.load(widget.library);
+    _bookmarks = ComicBookmarks.decode(
+      widget.library.setting(ComicBookmarks.keyFor(widget.target.itemId)),
+    );
     _chapters = widget.chapters;
     _chapterIndex = widget.chapters.isEmpty
         ? 0
@@ -134,7 +141,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
 
   // ------------------------------------------------------------------ 加载
 
-  Future<void> _loadChapter({bool resume = false}) async {
+  Future<void> _loadChapter({bool resume = false, int? targetPage}) async {
     if (_chapters.isEmpty) {
       setState(() {
         _loading = false;
@@ -165,7 +172,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
             _images = const <String>[];
           });
         case ImageContent(:final images):
-          final start = resume ? widget.initialPage : 0;
+          // 目标页优先（书签跳转要落在指定页上），其次才是续读位置。
+          final start = targetPage ?? (resume ? widget.initialPage : 0);
           setState(() {
             _images = images;
             _page = images.isEmpty ? 0 : start.clamp(0, images.length - 1);
@@ -401,6 +409,66 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
 
   void _toggleToolbar() => setState(() => _toolbar = !_toolbar);
 
+  /// 点按分区：默认呼出 / 收起工具栏；设置成「点击翻页」后，左 1/3 上一页、
+  /// 右 1/3 下一页、中间仍是工具栏。分区方向随阅读方向：从右往左（日漫）时
+  /// 下一页在左边——与滑动方向（`reverse`）一致，用户不必记哪边是前。
+  void _onTapUp(TapUpDetails details, Size size) {
+    final zones = _settings.tapAction == ComicTapAction.pageTurn &&
+        _settings.mode != ComicReadingMode.waterfall;
+    if (!zones) {
+      _toggleToolbar();
+      return;
+    }
+    final x = details.localPosition.dx;
+    final rtl = _settings.isRightToLeft;
+    if (x < size.width / 3) {
+      _turnPage(rtl ? 1 : -1);
+      return;
+    }
+    if (x > size.width * 2 / 3) {
+      _turnPage(rtl ? -1 : 1);
+      return;
+    }
+    _toggleToolbar();
+  }
+
+  /// 分区点击翻页：按逻辑页序前进 / 后退一页。
+  ///
+  /// 越界不动：章尾继续往前的手势交给滑动越界（[_onPagedScroll]）处理，
+  /// 点一下就直接跳章会让「点到最后一页停住」变成意外换章。
+  void _turnPage(int delta) {
+    final controller = _pageController;
+    if (controller == null || !controller.hasClients) return;
+    final fallback = _settings.mode == ComicReadingMode.doublePage
+        ? _settings.spreadIndexOf(_page)
+        : _page;
+    final current = (controller.page ?? fallback.toDouble()).round();
+    final pageCount = _settings.mode == ComicReadingMode.doublePage
+        ? _settings.spreadCount(_images.length)
+        : _images.length;
+    final target = current + delta;
+    if (target < 0 || target >= pageCount) return;
+    controller.animateToPage(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// 跳到本章指定页（书签跳转用）。
+  void _goToPage(int page) {
+    if (_images.isEmpty) return;
+    final target = page.clamp(0, _images.length - 1);
+    if (target == _page) return;
+    setState(() {
+      _page = target;
+      _fraction = 0;
+    });
+    _rebuildControllers();
+    _scheduleSave();
+    _primeWindow();
+  }
+
   void _onPageChanged(int page) {
     // 双页模式下 PageView 的下标是「屏」，换算成图序号；首页单独配对时
     // 第 1 屏就是第 1 张图，因此用配对规则反查而不是简单乘 2。
@@ -439,7 +507,80 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     _settings.save(widget.library);
   }
 
-  Future<void> _openChapter(int index) async {
+  // ------------------------------------------------------------------ 书签
+
+  /// 当前页是否已加书签。
+  bool get _bookmarkedHere =>
+      ComicBookmarks.at(
+        _bookmarks,
+        chapterIndex: _chapterIndex,
+        page: _page,
+      ) !=
+      null;
+
+  /// 加 / 移除当前页的书签（按作品落库）。
+  void _toggleBookmark() {
+    if (_chapters.isEmpty || _images.isEmpty) return;
+    final chapter = _chapters[_chapterIndex];
+    final existing = ComicBookmarks.at(
+      _bookmarks,
+      chapterIndex: _chapterIndex,
+      page: _page,
+    );
+    final next = existing != null
+        ? ComicBookmarks.remove(_bookmarks, existing)
+        : ComicBookmarks.add(
+            _bookmarks,
+            ComicBookmark(
+              chapterIndex: _chapterIndex,
+              chapterId: chapter.id,
+              chapterTitle: chapter.title,
+              page: _page,
+              createdAt: DateTime.now(),
+            ),
+          );
+    _writeBookmarks(next);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(milliseconds: 900),
+        content: Text(existing != null ? '已移除书签' : '已加书签'),
+      ),
+    );
+  }
+
+  /// 删除一条书签（列表面板里删的）。
+  void _removeBookmark(ComicBookmark bookmark) {
+    _writeBookmarks(ComicBookmarks.remove(_bookmarks, bookmark));
+  }
+
+  void _writeBookmarks(List<ComicBookmark> next) {
+    setState(() => _bookmarks = next);
+    widget.library.setSetting(
+      ComicBookmarks.keyFor(widget.target.itemId),
+      ComicBookmarks.encode(next),
+    );
+  }
+
+  /// 书签列表：点一条跳到对应章节的对应页，右侧可删。
+  Future<void> _showBookmarkSheet() async {
+    final selected = await showModalBottomSheet<ComicBookmark>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _BookmarkSheet(
+        bookmarks: _bookmarks,
+        onRemove: _removeBookmark,
+      ),
+    );
+    if (selected == null || !mounted) return;
+    if (selected.chapterIndex == _chapterIndex) {
+      _goToPage(selected.page);
+      return;
+    }
+    await _openChapter(selected.chapterIndex, targetPage: selected.page);
+  }
+
+  Future<void> _openChapter(int index, {int? targetPage}) async {
     if (index < 0 || index >= _chapters.length || index == _chapterIndex) return;
     // 加载中不再受理换章：越界手势会连续触发，而 `_chapterIndex` 在加载**开始**时
     // 就已经改掉了，第二次通知会拿新章的边界再判一次，可能一路连跳好几章。
@@ -452,7 +593,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       _fraction = 0;
       _toolbar = false;
     });
-    await _loadChapter(resume: false);
+    await _loadChapter(resume: false, targetPage: targetPage);
   }
 
   Future<void> _showChapterSheet() async {
@@ -542,15 +683,17 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: _settings.background.color,
       extendBodyBehindAppBar: true,
       body: Stack(
         children: <Widget>[
           Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _toggleToolbar,
-              child: _buildContent(),
+            child: LayoutBuilder(
+              builder: (context, constraints) => GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapUp: (details) => _onTapUp(details, constraints.biggest),
+                child: _buildContent(),
+              ),
             ),
           ),
           if (_toolbar) ...<Widget>[
@@ -777,6 +920,21 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                 ),
               ),
               IconButton(
+                tooltip: _bookmarkedHere ? '移除书签' : '加书签',
+                icon: Icon(
+                  _bookmarkedHere
+                      ? Icons.bookmark
+                      : Icons.bookmark_add_outlined,
+                  color: Colors.white,
+                ),
+                onPressed: _images.isEmpty ? null : _toggleBookmark,
+              ),
+              IconButton(
+                tooltip: '书签列表',
+                icon: const Icon(Icons.bookmarks_outlined, color: Colors.white),
+                onPressed: _showBookmarkSheet,
+              ),
+              IconButton(
                 tooltip: '目录',
                 icon: const Icon(Icons.list, color: Colors.white),
                 onPressed: _showChapterSheet,
@@ -809,215 +967,289 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
             child: GlassCard(
               radius: 18,
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  SegmentedButton<ComicReadingMode>(
-                    segments: <ButtonSegment<ComicReadingMode>>[
-                      for (final mode in ComicReadingMode.values)
-                        ButtonSegment<ComicReadingMode>(
-                          value: mode,
-                          label: Text(
-                            mode.label,
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                        ),
-                    ],
-                    selected: <ComicReadingMode>{_settings.mode},
-                    showSelectedIcon: false,
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    onSelectionChanged: (selection) =>
-                        _switchMode(selection.first),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
+              child: ConstrainedBox(
+                // 小屏 / 横屏兜底：面板行数多，超了就在面板内部滚动，不溢出。
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.62,
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      const SizedBox(
-                        width: 46,
-                        child: Text(
-                          '侧边距',
-                          style: TextStyle(fontSize: 12, color: Colors.white70),
+                      SegmentedButton<ComicReadingMode>(
+                        segments: <ButtonSegment<ComicReadingMode>>[
+                          for (final mode in ComicReadingMode.values)
+                            ButtonSegment<ComicReadingMode>(
+                              value: mode,
+                              label: Text(
+                                mode.label,
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            ),
+                        ],
+                        selected: <ComicReadingMode>{_settings.mode},
+                        showSelectedIcon: false,
+                        style: const ButtonStyle(
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
+                        onSelectionChanged: (selection) =>
+                            _switchMode(selection.first),
                       ),
-                      Expanded(
-                        child: Slider(
-                          value: _settings.marginRatio,
-                          max: ComicReaderSettings.maxMarginRatio,
-                          divisions: 10,
-                          label:
+                      const SizedBox(height: 6),
+                      Row(
+                        children: <Widget>[
+                          const SizedBox(
+                            width: 46,
+                            child: Text(
+                              '侧边距',
+                              style: TextStyle(fontSize: 12, color: Colors.white70),
+                            ),
+                          ),
+                          Expanded(
+                            child: Slider(
+                              value: _settings.marginRatio,
+                              max: ComicReaderSettings.maxMarginRatio,
+                              divisions: 10,
+                              label:
+                                  '${(_settings.marginRatio * 100).round()}%',
+                              onChanged: (value) => _updateSettings(
+                                _settings.copyWith(marginRatio: value),
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 40,
+                            child: Text(
                               '${(_settings.marginRatio * 100).round()}%',
-                          onChanged: (value) => _updateSettings(
-                            _settings.copyWith(marginRatio: value),
+                              textAlign: TextAlign.end,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white70,
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                      SizedBox(
-                        width: 40,
-                        child: Text(
-                          '${(_settings.marginRatio * 100).round()}%',
-                          textAlign: TextAlign.end,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.white70,
+                      Row(
+                        children: <Widget>[
+                          const Text(
+                            '双击放大',
+                            style: TextStyle(fontSize: 12, color: Colors.white70),
                           ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: <Widget>[
-                      const Text(
-                        '双击放大',
-                        style: TextStyle(fontSize: 12, color: Colors.white70),
-                      ),
-                      Switch(
-                        value: _settings.doubleTapZoom,
-                        onChanged: (value) => _updateSettings(
-                          _settings.copyWith(doubleTapZoom: value),
-                        ),
-                      ),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: _images.isEmpty ? null : () => _saveImage(_page),
-                        icon: const Icon(Icons.download, size: 18),
-                        label: const Text('保存本页'),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: <Widget>[
-                      const SizedBox(
-                        width: 46,
-                        child: Text(
-                          '页间距',
-                          style: TextStyle(fontSize: 12, color: Colors.white70),
-                        ),
-                      ),
-                      Expanded(
-                        child: Slider(
-                          value: _settings.pageGap,
-                          max: ComicReaderSettings.maxPageGap,
-                          divisions: 12,
-                          label: '${_settings.pageGap.round()}',
-                          onChanged: (value) => _updateSettings(
-                            _settings.copyWith(pageGap: value),
+                          Switch(
+                            value: _settings.doubleTapZoom,
+                            onChanged: (value) => _updateSettings(
+                              _settings.copyWith(doubleTapZoom: value),
+                            ),
                           ),
-                        ),
-                      ),
-                      SizedBox(
-                        width: 40,
-                        child: Text(
-                          '${_settings.pageGap.round()}',
-                          textAlign: TextAlign.end,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.white70,
+                          const Spacer(),
+                          TextButton.icon(
+                            onPressed: _images.isEmpty ? null : () => _saveImage(_page),
+                            icon: const Icon(Icons.download, size: 18),
+                            label: const Text('保存本页'),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
-                  Row(
-                    children: <Widget>[
-                      const Text(
-                        '翻页方向',
-                        style: TextStyle(fontSize: 12, color: Colors.white70),
+                      Row(
+                        children: <Widget>[
+                          const SizedBox(
+                            width: 46,
+                            child: Text(
+                              '页间距',
+                              style: TextStyle(fontSize: 12, color: Colors.white70),
+                            ),
+                          ),
+                          Expanded(
+                            child: Slider(
+                              value: _settings.pageGap,
+                              max: ComicReaderSettings.maxPageGap,
+                              divisions: 12,
+                              label: '${_settings.pageGap.round()}',
+                              onChanged: (value) => _updateSettings(
+                                _settings.copyWith(pageGap: value),
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 40,
+                            child: Text(
+                              '${_settings.pageGap.round()}',
+                              textAlign: TextAlign.end,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: SegmentedButton<ComicReadingDirection>(
-                          segments: <ButtonSegment<ComicReadingDirection>>[
-                            for (final direction
-                                in ComicReadingDirection.values)
-                              ButtonSegment<ComicReadingDirection>(
-                                value: direction,
-                                label: Text(
-                                  direction.label,
-                                  style: const TextStyle(fontSize: 11),
+                      Row(
+                        children: <Widget>[
+                          const Text(
+                            '背景',
+                            style: TextStyle(fontSize: 12, color: Colors.white70),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: SegmentedButton<ComicReaderBackground>(
+                              segments: <ButtonSegment<ComicReaderBackground>>[
+                                for (final background in ComicReaderBackground.values)
+                                  ButtonSegment<ComicReaderBackground>(
+                                    value: background,
+                                    label: Text(
+                                      background.label,
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                  ),
+                              ],
+                              selected: <ComicReaderBackground>{
+                                _settings.background,
+                              },
+                              showSelectedIcon: false,
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onSelectionChanged: (selection) => _updateSettings(
+                                _settings.copyWith(background: selection.first),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: <Widget>[
+                          const Text(
+                            '点击行为',
+                            style: TextStyle(fontSize: 12, color: Colors.white70),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: SegmentedButton<ComicTapAction>(
+                              segments: <ButtonSegment<ComicTapAction>>[
+                                for (final action in ComicTapAction.values)
+                                  ButtonSegment<ComicTapAction>(
+                                    value: action,
+                                    label: Text(
+                                      action.label,
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                  ),
+                              ],
+                              selected: <ComicTapAction>{_settings.tapAction},
+                              showSelectedIcon: false,
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onSelectionChanged: (selection) => _updateSettings(
+                                _settings.copyWith(tapAction: selection.first),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: <Widget>[
+                          const Text(
+                            '翻页方向',
+                            style: TextStyle(fontSize: 12, color: Colors.white70),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: SegmentedButton<ComicReadingDirection>(
+                              segments: <ButtonSegment<ComicReadingDirection>>[
+                                for (final direction
+                                    in ComicReadingDirection.values)
+                                  ButtonSegment<ComicReadingDirection>(
+                                    value: direction,
+                                    label: Text(
+                                      direction.label,
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                  ),
+                              ],
+                              selected: <ComicReadingDirection>{_settings.direction},
+                              showSelectedIcon: false,
+                              style: const ButtonStyle(
+                                visualDensity: VisualDensity.compact,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onSelectionChanged: (selection) => _updateSettings(
+                                _settings.copyWith(direction: selection.first),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      // 跨页配对只在双页模式下有意义，其他模式不占版面。
+                      if (_settings.mode == ComicReadingMode.doublePage)
+                        Row(
+                          children: <Widget>[
+                            const Text(
+                              '跨页配对',
+                              style: TextStyle(fontSize: 12, color: Colors.white70),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: SegmentedButton<ComicSpreadMode>(
+                                segments: <ButtonSegment<ComicSpreadMode>>[
+                                  for (final mode in ComicSpreadMode.values)
+                                    ButtonSegment<ComicSpreadMode>(
+                                      value: mode,
+                                      label: Text(
+                                        mode.label,
+                                        style: const TextStyle(fontSize: 11),
+                                      ),
+                                    ),
+                                ],
+                                selected: <ComicSpreadMode>{_settings.spreadMode},
+                                showSelectedIcon: false,
+                                style: const ButtonStyle(
+                                  visualDensity: VisualDensity.compact,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onSelectionChanged: (selection) => _updateSettings(
+                                  _settings.copyWith(spreadMode: selection.first),
                                 ),
                               ),
+                            ),
                           ],
-                          selected: <ComicReadingDirection>{_settings.direction},
-                          showSelectedIcon: false,
-                          style: const ButtonStyle(
-                            visualDensity: VisualDensity.compact,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          onSelectionChanged: (selection) => _updateSettings(
-                            _settings.copyWith(direction: selection.first),
-                          ),
                         ),
+                      const Divider(height: 1, color: Colors.white12),
+                      Row(
+                        children: <Widget>[
+                          IconButton(
+                            tooltip: '上一章',
+                            icon: const Icon(Icons.skip_previous),
+                            onPressed: _chapterIndex > 0
+                                ? () => _openChapter(_chapterIndex - 1)
+                                : null,
+                          ),
+                          Expanded(
+                            child: Text(
+                              '第 ${_chapterIndex + 1}/${_chapters.length} 章 · '
+                              '第 $pageLabel 页',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: '下一章',
+                            icon: const Icon(Icons.skip_next),
+                            onPressed: _chapterIndex < _chapters.length - 1
+                                ? () => _openChapter(_chapterIndex + 1)
+                                : null,
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  // 跨页配对只在双页模式下有意义，其他模式不占版面。
-                  if (_settings.mode == ComicReadingMode.doublePage)
-                    Row(
-                      children: <Widget>[
-                        const Text(
-                          '跨页配对',
-                          style: TextStyle(fontSize: 12, color: Colors.white70),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: SegmentedButton<ComicSpreadMode>(
-                            segments: <ButtonSegment<ComicSpreadMode>>[
-                              for (final mode in ComicSpreadMode.values)
-                                ButtonSegment<ComicSpreadMode>(
-                                  value: mode,
-                                  label: Text(
-                                    mode.label,
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                                ),
-                            ],
-                            selected: <ComicSpreadMode>{_settings.spreadMode},
-                            showSelectedIcon: false,
-                            style: const ButtonStyle(
-                              visualDensity: VisualDensity.compact,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            onSelectionChanged: (selection) => _updateSettings(
-                              _settings.copyWith(spreadMode: selection.first),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  const Divider(height: 1, color: Colors.white12),
-                  Row(
-                    children: <Widget>[
-                      IconButton(
-                        tooltip: '上一章',
-                        icon: const Icon(Icons.skip_previous),
-                        onPressed: _chapterIndex > 0
-                            ? () => _openChapter(_chapterIndex - 1)
-                            : null,
-                      ),
-                      Expanded(
-                        child: Text(
-                          '第 ${_chapterIndex + 1}/${_chapters.length} 章 · '
-                          '第 $pageLabel 页',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: '下一章',
-                        icon: const Icon(Icons.skip_next),
-                        onPressed: _chapterIndex < _chapters.length - 1
-                            ? () => _openChapter(_chapterIndex + 1)
-                            : null,
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -1325,6 +1557,105 @@ class _ImageActionSheet extends StatelessWidget {
                 ),
                 onTap: () => Navigator.of(context).pop(_ImageAction.copyLink),
               ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 书签列表面板：点一条跳到对应章节的对应页，右侧可删。
+///
+/// 删除在面板内**就地**生效（面板维护自己的展示副本），宿主回调负责落库——
+/// 删一条就关面板、要再开一次才能删第二条，不是阅读器该有的手感。
+class _BookmarkSheet extends StatefulWidget {
+  const _BookmarkSheet({required this.bookmarks, required this.onRemove});
+
+  final List<ComicBookmark> bookmarks;
+
+  /// 删除一条：宿主负责落库。
+  final ValueChanged<ComicBookmark> onRemove;
+
+  @override
+  State<_BookmarkSheet> createState() => _BookmarkSheetState();
+}
+
+class _BookmarkSheetState extends State<_BookmarkSheet> {
+  late List<ComicBookmark> _items = List<ComicBookmark>.of(widget.bookmarks);
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      // Material 承载面板背景：ListTile 的背景与墨水效果需要它。
+      child: Material(
+        color: const Color(0xFF12121E),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Text(
+                  '书签',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              if (_items.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24, horizontal: 24),
+                  child: Text(
+                    '还没有书签\n阅读时点顶栏的书签按钮即可添加',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, color: LumeTheme.muted),
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _items.length,
+                    itemBuilder: (context, index) {
+                      final bookmark = _items[index];
+                      return ListTile(
+                        dense: true,
+                        title: Text(
+                          bookmark.describe(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                        trailing: IconButton(
+                          tooltip: '删除书签',
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            size: 18,
+                            color: LumeTheme.muted,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _items = <ComicBookmark>[
+                                for (final item in _items)
+                                  if (item.key != bookmark.key) item,
+                              ];
+                            });
+                            widget.onRemove(bookmark);
+                          },
+                        ),
+                        onTap: () => Navigator.of(context).pop(bookmark),
+                      );
+                    },
+                  ),
+                ),
               const SizedBox(height: 8),
             ],
           ),

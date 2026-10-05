@@ -1,3 +1,5 @@
+import 'dart:ui' show Color;
+
 import '../../core/reading/reading.dart';
 
 /// 漫画阅读模式。
@@ -72,7 +74,55 @@ enum ComicSpreadMode {
   }
 }
 
-/// 漫画阅读器设置：阅读模式、侧边距、双击放大开关、预加载半径、翻页方向、跨页配对。
+/// 阅读背景：图片之外的留白底色（只改底色，不动图片本身）。
+///
+/// 与小说侧阅读主题同一套色板（深灰 / 护眼绿 / 纯白取同值），漫画另加纯黑默认。
+enum ComicReaderBackground {
+  black('black', '纯黑', Color(0xFF000000)),
+  gray('gray', '深灰', Color(0xFF1B1B20)),
+  eyeCare('eyeCare', '护眼绿', Color(0xFFCFE8D2)),
+  white('white', '纯白', Color(0xFFFFFFFF));
+
+  const ComicReaderBackground(this.id, this.label, this.color);
+
+  final String id;
+  final String label;
+  final Color color;
+
+  static ComicReaderBackground fromId(String? id) {
+    for (final value in values) {
+      if (value.id == id) return value;
+    }
+    return ComicReaderBackground.black;
+  }
+}
+
+/// 点一下屏幕做什么。
+enum ComicTapAction {
+  /// 呼出 / 收起工具栏（现状默认）。
+  toolbar('toolbar', '呼出工具栏'),
+
+  /// 点击分区翻页：左 1/3 上一页、右 1/3 下一页、中间呼出工具栏。
+  ///
+  /// 只在单页 / 双页模式生效——瀑布流没有「页」可翻，仍是呼出工具栏。
+  /// 分区方向随阅读方向：从右往左（日漫）时左 1/3 是下一页。
+  pageTurn('pageTurn', '点击翻页');
+
+  const ComicTapAction(this.id, this.label);
+
+  final String id;
+  final String label;
+
+  static ComicTapAction fromId(String? id) {
+    for (final value in values) {
+      if (value.id == id) return value;
+    }
+    return ComicTapAction.toolbar;
+  }
+}
+
+/// 漫画阅读器设置：阅读模式、侧边距、双击放大开关、预加载半径、翻页方向、跨页配对、
+/// 阅读背景、点击行为。
 ///
 /// 持久化在本板块的 `reading.db`（reading_setting 表）里，键名带板块前缀，
 /// 因此漫画与小说的阅读偏好各存各的，互不影响。
@@ -85,6 +135,8 @@ class ComicReaderSettings {
     this.direction = ComicReadingDirection.leftToRight,
     this.spreadMode = ComicSpreadMode.coverFirst,
     this.pageGap = 0,
+    this.background = ComicReaderBackground.black,
+    this.tapAction = ComicTapAction.toolbar,
   });
 
   /// 侧边距上限：占屏宽 50%。再宽就只剩一条缝，不再是阅读体验。
@@ -105,6 +157,8 @@ class ComicReaderSettings {
   static const String keyDirection = 'comic.reader.direction';
   static const String keySpreadMode = 'comic.reader.spreadMode';
   static const String keyPageGap = 'comic.reader.pageGap';
+  static const String keyBackground = 'comic.reader.background';
+  static const String keyTapAction = 'comic.reader.tapAction';
 
   /// 阅读模式。
   final ComicReadingMode mode;
@@ -126,6 +180,12 @@ class ComicReaderSettings {
 
   /// 页间距（逻辑像素）：条漫里就是图与图之间的空隙，翻页模式里是两页之间。
   final double pageGap;
+
+  /// 阅读背景（图片之外的留白底色）。
+  final ComicReaderBackground background;
+
+  /// 点一下屏幕做什么（呼出工具栏 / 分区点击翻页）。
+  final ComicTapAction tapAction;
 
   /// 由比例换算出的左右边距像素。
   double marginOf(double width) => width * marginRatio.clamp(0.0, maxMarginRatio);
@@ -182,6 +242,8 @@ class ComicReaderSettings {
     ComicReadingDirection? direction,
     ComicSpreadMode? spreadMode,
     double? pageGap,
+    ComicReaderBackground? background,
+    ComicTapAction? tapAction,
   }) {
     return ComicReaderSettings(
       mode: mode ?? this.mode,
@@ -196,6 +258,8 @@ class ComicReaderSettings {
       spreadMode: spreadMode ?? this.spreadMode,
       pageGap:
           (pageGap ?? this.pageGap).clamp(0.0, maxPageGap).toDouble(),
+      background: background ?? this.background,
+      tapAction: tapAction ?? this.tapAction,
     );
   }
 
@@ -214,6 +278,8 @@ class ComicReaderSettings {
       direction: ComicReadingDirection.fromId(library.setting(keyDirection)),
       spreadMode: ComicSpreadMode.fromId(library.setting(keySpreadMode)),
       pageGap: _parseRatio(library.setting(keyPageGap)) * maxPageGap,
+      background: ComicReaderBackground.fromId(library.setting(keyBackground)),
+      tapAction: ComicTapAction.fromId(library.setting(keyTapAction)),
     );
   }
 
@@ -226,6 +292,8 @@ class ComicReaderSettings {
     library.setSetting(keyDirection, direction.id);
     library.setSetting(keySpreadMode, spreadMode.id);
     library.setSetting(keyPageGap, (pageGap / maxPageGap).toStringAsFixed(4));
+    library.setSetting(keyBackground, background.id);
+    library.setSetting(keyTapAction, tapAction.id);
   }
 
   static double _parseRatio(String? raw) {

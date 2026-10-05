@@ -144,6 +144,28 @@ void main() {
     });
   });
 
+  group('阅读背景与点击行为', () {
+    test('默认：纯黑背景 + 点击呼出工具栏（与改动前行为一致）', () {
+      const settings = ComicReaderSettings();
+      expect(settings.background, ComicReaderBackground.black);
+      expect(settings.tapAction, ComicTapAction.toolbar);
+      expect(settings.background.color, const Color(0xFF000000));
+    });
+
+    test('四个背景预设都有各自底色，坏 id 回退纯黑', () {
+      final colors = <Color>[
+        for (final background in ComicReaderBackground.values) background.color,
+      ];
+      expect(colors.toSet().length, ComicReaderBackground.values.length,
+          reason: '预设之间颜色不能重复');
+      expect(
+        ComicReaderBackground.fromId('彩虹色'),
+        ComicReaderBackground.black,
+      );
+      expect(ComicTapAction.fromId('乱写'), ComicTapAction.toolbar);
+    });
+  });
+
   group('持久化', () {
     test('新增字段都能落库并读回', () {
       const original = ComicReaderSettings(
@@ -154,6 +176,8 @@ void main() {
         direction: ComicReadingDirection.rightToLeft,
         spreadMode: ComicSpreadMode.pairFromStart,
         pageGap: 12,
+        background: ComicReaderBackground.eyeCare,
+        tapAction: ComicTapAction.pageTurn,
       );
       original.save(library);
 
@@ -165,6 +189,8 @@ void main() {
       expect(restored.direction, ComicReadingDirection.rightToLeft);
       expect(restored.spreadMode, ComicSpreadMode.pairFromStart);
       expect(restored.pageGap, closeTo(12, 0.01));
+      expect(restored.background, ComicReaderBackground.eyeCare);
+      expect(restored.tapAction, ComicTapAction.pageTurn);
     });
 
     test('越界值收敛：预加载半径与页间距都在范围内', () {
@@ -188,12 +214,16 @@ void main() {
       library.setSetting(ComicReaderSettings.keyPageGap, '宽一点');
       library.setSetting(ComicReaderSettings.keyDirection, '左右横跳');
       library.setSetting(ComicReaderSettings.keySpreadMode, '随便');
+      library.setSetting(ComicReaderSettings.keyBackground, '彩虹色');
+      library.setSetting(ComicReaderSettings.keyTapAction, '双击');
 
       final restored = ComicReaderSettings.load(library);
       expect(restored.preloadRadius, ComicReaderSettings.defaultPreloadRadius);
       expect(restored.pageGap, 0);
       expect(restored.direction, ComicReadingDirection.leftToRight);
       expect(restored.spreadMode, ComicSpreadMode.coverFirst);
+      expect(restored.background, ComicReaderBackground.black);
+      expect(restored.tapAction, ComicTapAction.toolbar);
     });
 
     test('页间距落库时按比例存（上限变化也不会读出越界值）', () {

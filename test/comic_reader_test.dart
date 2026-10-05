@@ -57,8 +57,12 @@ void main() {
           SourceChapter(id: 'item-1-c$index', title: '第 $index 章'),
       ];
 
-  Future<void> pumpReader(WidgetTester tester, {int imageCount = 6}) async {
-    await tester.binding.setSurfaceSize(const Size(420, 880));
+  Future<void> pumpReader(
+    WidgetTester tester, {
+    int imageCount = 6,
+    Size surface = const Size(420, 880),
+  }) async {
+    await tester.binding.setSurfaceSize(surface);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
@@ -141,6 +145,84 @@ void main() {
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
     expect(ComicReaderSettings.load(library).doubleTapZoom, isTrue);
+  });
+
+  testWidgets('阅读背景：切到纯白后落库，页面底色立即跟着换', (tester) async {
+    await pumpReader(tester);
+    expect(
+      tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+      ComicReaderBackground.black.color,
+      reason: '默认纯黑，与改动前一致',
+    );
+
+    await openToolbar(tester);
+    await tester.tap(find.text('纯白'));
+    await tester.pumpAndSettle();
+
+    expect(
+      ComicReaderSettings.load(library).background,
+      ComicReaderBackground.white,
+      reason: '背景要落库，重进阅读器仍然生效',
+    );
+    expect(
+      tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+      const Color(0xFFFFFFFF),
+    );
+  });
+
+  testWidgets('点击行为：分区点击翻页，中间仍是呼出工具栏', (tester) async {
+    await pumpReader(tester);
+    await openToolbar(tester);
+    await tester.tap(find.text('单页左右翻页'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('点击翻页'));
+    await tester.pumpAndSettle();
+    expect(
+      ComicReaderSettings.load(library).tapAction,
+      ComicTapAction.pageTurn,
+      reason: '点击行为要落库',
+    );
+
+    // 收起面板（分区模式下点中间 = 呼出 / 收起工具栏）。
+    // 注意避开屏幕正中：加载失败的占位在那里画了「点击重试」按钮，
+    // 会把正中点击吞掉（生产环境图能加载，不存在这个按钮）。
+    await tester.tapAt(const Offset(210, 300));
+    await tester.pumpAndSettle();
+    expect(find.byType(Slider), findsNothing);
+
+    // 右 1/3：下一页。
+    await tester.tapAt(const Offset(390, 440));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 900));
+    expect(library.comicProgress(target.itemId)!.page, 1);
+
+    // 左 1/3：回上一页。
+    await tester.tapAt(const Offset(30, 440));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 900));
+    expect(library.comicProgress(target.itemId)!.page, 0);
+  });
+
+  testWidgets('点击翻页在瀑布流不生效：点哪里都是呼出工具栏', (tester) async {
+    const ComicReaderSettings(tapAction: ComicTapAction.pageTurn).save(library);
+    await pumpReader(tester);
+
+    // 瀑布流没有「页」可翻：右 1/3 点击只呼出工具栏，进度不动。
+    await tester.tapAt(const Offset(390, 440));
+    await tester.pumpAndSettle();
+    expect(find.byType(Slider), findsWidgets);
+    expect(library.comicProgress(target.itemId)!.page, 0);
+  });
+
+  testWidgets('小屏 / 横屏：设置面板超限时内部滚动，不溢出', (tester) async {
+    // 双页跨页是最坏情况（多一行「跨页配对」）。
+    const ComicReaderSettings(mode: ComicReadingMode.doublePage).save(library);
+    await pumpReader(tester, surface: const Size(640, 360));
+    await tester.tapAt(const Offset(320, 180));
+    await tester.pumpAndSettle();
+
+    // 溢出会以 FlutterError 直接判失败；能走到这里说明面板被约束住了。
+    expect(find.byType(SingleChildScrollView), findsWidgets);
   });
 
   testWidgets('章节目录面板可跳章', (tester) async {
