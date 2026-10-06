@@ -120,12 +120,28 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final previous = _viewport;
     _viewport = MediaQuery.sizeOf(context);
     final ratio = MediaQuery.devicePixelRatioOf(context);
     _decodeWidthPx = math.max(1, (_viewport.width * ratio).round());
-    if (_bootstrapped) return;
-    _bootstrapped = true;
-    _loadChapter(resume: true);
+    if (!_bootstrapped) {
+      _bootstrapped = true;
+      _loadChapter(resume: true);
+      return;
+    }
+    // 旋屏 / 分屏导致视口变化：滚动与翻页控制器是按旧尺寸建立的，偏移按像素
+    // 保留会偏掉（瀑布流尤其明显，可能偏出半屏）。这里按当前页重建控制器，
+    // 把位置锚回同一页——与换模式走同一条 `_rebuildControllers` 路径。
+    //
+    // `setState` 不能省：控制器是在 `build` 里交给 ListView / PageView 的，
+    // 只换实例不触发重建的话，视图仍拿着旧控制器（实测：新控制器的 offset
+    // 已经算对，界面却纹丝不动）。
+    //
+    // 只比尺寸不比 DPR：DPR 变化（外接屏）不影响几何换算，重建是白费。
+    if (previous != _viewport) {
+      _rebuildControllers();
+      setState(() {});
+    }
   }
 
   @override
@@ -221,6 +237,17 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   ///
   /// 旧控制器推迟到下一帧销毁：同一帧里仍然挂着的滚动视图还持有它，
   /// 立刻 dispose 会在 debug 下报「controller 已释放」。
+  ///
+  /// **为什么还要在挂载后 jumpTo 一次**（实测踩过两次坑）：
+  /// 1. `ScrollController.keepScrollOffset` 默认 true，会把旧像素偏移存进
+  ///    `PageStorage` 并在新位置恢复；
+  /// 2. 但把 `keepScrollOffset` 设成 false **并不能**解决——恢复走的是
+  ///    `ScrollPosition.restoreScrollOffset()`，它按**树的存储位置**取旧值，
+  ///    与控制器实例无关（`ListView` 还在原位，所以旧偏移照样被恢复回来）。
+  ///
+  /// 因此正确做法是：建好控制器后，等它 attach 到新的 Scrollable 上，
+  /// 再把偏移**显式设到**按当前几何算出的位置。旋屏时旧偏移在新几何下对应的是
+  /// 另一页，不设这一次，用户看到的就是「转屏后跳到别处」。
   void _rebuildControllers() {
     final oldPage = _pageController;
     final oldScroll = _scrollController;
@@ -228,9 +255,10 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     _scrollController = null;
     switch (_settings.mode) {
       case ComicReadingMode.waterfall:
-        _scrollController = ScrollController(
-          initialScrollOffset: _waterfallOffsetFor(_page),
-        );
+        final target = _waterfallOffsetFor(_page);
+        _scrollController = ScrollController(initialScrollOffset: target);
+        // 挂载后校正：见方法注释（PageStorage 会把旧偏移恢复回来）。
+        _restoreScrollAfterAttach(target);
       case ComicReadingMode.single:
         _pageController = PageController(initialPage: _page);
       case ComicReadingMode.doublePage:
@@ -245,6 +273,22 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
         oldScroll?.dispose();
       });
     }
+  }
+
+  /// 等控制器挂上 Scrollable 之后，把偏移设到 [target]。
+  ///
+  /// 用 `jumpTo` 而不是 `animateTo`：旋屏是瞬时几何变化，不该有滚动动画。
+  void _restoreScrollAfterAttach(double target) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final controller = _scrollController;
+      if (controller == null || !controller.hasClients) return;
+      if ((controller.offset - target).abs() < 0.5) return;
+      controller.jumpTo(target.clamp(
+        controller.position.minScrollExtent,
+        controller.position.maxScrollExtent,
+      ));
+    });
   }
 
   // ------------------------------------------------------------------ 进度

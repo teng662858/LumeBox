@@ -57,6 +57,26 @@ void main() {
           SourceChapter(id: 'item-1-c$index', title: '第 $index 章'),
       ];
 
+  /// 当前模拟的视口尺寸（[rotate] 会改它，[pumpReader] 建树时读它）。
+  Size viewport = const Size(420, 880);
+
+  /// 建阅读器。刻意包一层 MediaQuery：旋屏要改的正是它的 data。
+  Widget readerApp({int imageCount = 6}) => MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(size: viewport, devicePixelRatio: 1),
+          child: ComicReaderPage(
+            library: library,
+            dataSource: FakeReadingDataSource(
+              section: Section.comic,
+              imageCount: imageCount,
+            ),
+            target: target,
+            chapters: chapters(3),
+            initialChapterIndex: 0,
+          ),
+        ),
+      );
+
   Future<void> pumpReader(
     WidgetTester tester, {
     int imageCount = 6,
@@ -64,25 +84,27 @@ void main() {
   }) async {
     await tester.binding.setSurfaceSize(surface);
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ComicReaderPage(
-          library: library,
-          dataSource: FakeReadingDataSource(
-            section: Section.comic,
-            imageCount: imageCount,
-          ),
-          target: target,
-          chapters: chapters(3),
-          initialChapterIndex: 0,
-        ),
-      ),
-    );
+    viewport = surface;
+    await tester.pumpWidget(readerApp(imageCount: imageCount));
     await tester.pumpAndSettle();
   }
 
   Future<void> openToolbar(WidgetTester tester) async {
     await tester.tapAt(const Offset(210, 440));
+    await tester.pumpAndSettle();
+  }
+
+  /// 模拟旋屏：只换 MediaQuery 的尺寸，**保留同一个阅读器 State**。
+  ///
+  /// 两个坑（都实测过）：
+  /// - `tester.binding.setSurfaceSize` 不触发 `didChangeDependencies`（尺寸变了但
+  ///   依赖没变），测不到旋屏路径；
+  /// - 重新 `pumpWidget` 一棵新树会**新建 State**（位置归零），测的是「重新打开」
+  ///   而不是「旋屏」。真实旋屏是同一次挂载内 MediaQuery 变化，因此这里只在原树上
+  ///   改 data —— widget 类型与 key 不变，State 被复用。
+  Future<void> rotate(WidgetTester tester, Size size) async {
+    viewport = size;
+    await tester.pumpWidget(readerApp());
     await tester.pumpAndSettle();
   }
 
@@ -129,8 +151,67 @@ void main() {
     expect(progress.chapterIndex, 0);
   });
 
-  testWidgets('调节控件：侧边距与双击放大都会落库', (tester) async {
+  testWidgets('旋屏后位置锚回同一页：瀑布流按新几何重建滚动位置', (tester) async {
+    await pumpReader(tester); // 默认瀑布流
+
+    // 先滚下去，让位置离开起点（瀑布流是 ListView.builder）。
+    await tester.drag(find.byType(ListView), const Offset(0, -1200));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 900));
+
+    double offsetNow() =>
+        tester.widget<ListView>(find.byType(ListView)).controller!.offset;
+
+    final before = offsetNow();
+    expect(before, greaterThan(0), reason: '前置条件：已经滚离起点');
+    final pageBefore = library.comicProgress(target.itemId)!.page;
+
+    // 旋屏：宽高对调（420x880 → 880x420）。
+    //
+    // 用 MediaQuery 覆写而不是 `setSurfaceSize`：实测后者不会触发
+    // `didChangeDependencies`（尺寸变了但依赖没变），因此测不到旋屏路径。
+    // 真实设备旋屏会走 MediaQuery 变化 → didChangeDependencies，这正是被测逻辑。
+    await rotate(tester, const Size(880, 420));
+
+    // 瀑布流的每张图高度按屏宽等比放大，因此「同一页」在新几何下的偏移
+    // 也应等比变大。若控制器仍沿用旧像素偏移，偏移会原地不动——那正是
+    // 用户看到的「旋屏后跳到别处」。
+    final after = offsetNow();
+    expect(
+      after,
+      greaterThan(before * 1.5),
+      reason: '旋屏后滚动位置要按新几何重算（旧偏移 $before，新偏移 $after）',
+    );
+    expect(
+      library.comicProgress(target.itemId)!.page,
+      pageBefore,
+      reason: '锚定后仍应停在原来那一页',
+    );
+    expect(tester.takeException(), isNull, reason: '旋屏不应抛异常');
+  });
+
+  testWidgets('旋屏后单页模式仍停在原页', (tester) async {
+    const ComicReaderSettings(mode: ComicReadingMode.single).save(library);
     await pumpReader(tester);
+
+    // 翻到第 2 页。
+    await tester.drag(find.byType(PageView), const Offset(-400, 0));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 900));
+    final before = library.comicProgress(target.itemId)!.page;
+    expect(before, 1);
+
+    await rotate(tester, const Size(880, 420));
+
+    expect(
+      library.comicProgress(target.itemId)!.page,
+      before,
+      reason: '单页模式旋屏后应停在原页',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('调节控件：侧边距与双击放大都会落库', (tester) async {    await pumpReader(tester);
     await openToolbar(tester);
 
     // 侧边距滑杆：面板里第一根滑杆就是它。
