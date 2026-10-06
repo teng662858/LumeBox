@@ -207,6 +207,118 @@ void main() {
       expect(find.text('第 3 章 · 50%'), findsOneWidget);
       expect(find.text('续读'), findsOneWidget);
     });
+
+    testWidgets('网格 / 列表双视图：默认网格，切到列表后布局换掉，可切回', (tester) async {
+      final library = novelLibrary;
+      library.shelve(
+        sourceId: 'src',
+        itemId: 'novel-view',
+        title: '双视图书',
+        chapterCount: 12,
+      );
+      final pipeline = createPipeline(library);
+      addTearDown(pipeline.dispose);
+
+      await pump(
+        tester,
+        NovelShelfPage(
+          library: library,
+          pipeline: pipeline,
+          manager: FakeSourceManager(),
+        ),
+      );
+
+      // 默认列表（小说是文字内容，进度 + 续读比封面有用；也与升级前一致）。
+      expect(
+        find.byType(ListView),
+        findsOneWidget,
+        reason: '默认应为列表视图',
+      );
+      expect(find.byType(GridView), findsNothing);
+
+      // 切到网格：布局换掉。
+      await tester.tap(find.byTooltip('网格'));
+      await tester.pumpAndSettle();
+      expect(find.byType(GridView), findsOneWidget, reason: '切到网格后应是网格布局');
+      expect(find.byType(ListView), findsNothing);
+
+      // 切回列表：双向可切。
+      await tester.tap(find.byTooltip('列表'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ListView), findsOneWidget);
+    });
+
+    testWidgets('视图偏好落库：切到网格后重进书架仍是网格', (tester) async {
+      final library = novelLibrary;
+      library.shelve(
+        sourceId: 'src',
+        itemId: 'novel-persist',
+        title: '记住视图的书',
+        chapterCount: 8,
+      );
+      final pipeline = createPipeline(library);
+      addTearDown(pipeline.dispose);
+
+      await pump(
+        tester,
+        NovelShelfPage(
+          library: library,
+          pipeline: pipeline,
+          manager: FakeSourceManager(),
+        ),
+      );
+      await tester.tap(find.byTooltip('网格'));
+      await tester.pumpAndSettle();
+
+      // 偏好确实写进了本板块阅读库。
+      expect(
+        library.setting(NovelShelfPage.viewModeKey),
+        ShelfViewMode.grid.id,
+        reason: '视图偏好要落库（属于用户阅读习惯）',
+      );
+
+      // 重进书架（新建页面实例）：沿用上次选择。
+      await pump(
+        tester,
+        NovelShelfPage(
+          library: library,
+          pipeline: pipeline,
+          manager: FakeSourceManager(),
+        ),
+      );
+      expect(
+        find.byType(GridView),
+        findsOneWidget,
+        reason: '重进书架应沿用上次的网格视图',
+      );
+      expect(find.byType(ListView), findsNothing);
+    });
+
+    testWidgets('视图偏好是脏值时回退默认视图，不抛错', (tester) async {
+      final library = novelLibrary;
+      library.shelve(
+        sourceId: 'src',
+        itemId: 'novel-bad',
+        title: '坏偏好的书',
+        chapterCount: 3,
+      );
+      // 模拟历史脏值（旧版本写入、或人工改库）。
+      library.setSetting(NovelShelfPage.viewModeKey, 'unknown-mode');
+      final pipeline = createPipeline(library);
+      addTearDown(pipeline.dispose);
+
+      await pump(
+        tester,
+        NovelShelfPage(
+          library: library,
+          pipeline: pipeline,
+          manager: FakeSourceManager(),
+        ),
+      );
+
+      expect(find.byType(ListView), findsOneWidget, reason: '认不出就回退默认列表');
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('探索页', () {
