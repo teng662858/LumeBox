@@ -151,7 +151,7 @@ class _ComicRepoPageState extends State<ComicRepoPage> {
         title: const Text('删除仓库'),
         content: Text(
           '确定删除「${repo.name}」？\n'
-          '已安装的扩展不会被卸载，仍可在「图源管理」里继续使用。',
+          '已安装的扩展不会被卸载，仍可在「源管理」里继续使用。',
         ),
         actions: <Widget>[
           TextButton(

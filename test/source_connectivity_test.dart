@@ -78,7 +78,7 @@ void main() {
     expect(
       find.descendant(of: dialog, matching: find.text('示例源')),
       findsOneWidget,
-      reason: '图源名称',
+      reason: '源名称',
     );
     expect(
       find.descendant(of: dialog, matching: find.text('可用')),
@@ -112,7 +112,7 @@ void main() {
       results: <String, SourceTestResult>{
         'demo-1': const SourceTestResult.empty(
           elapsed: Duration(milliseconds: 400),
-          message: '脚本能运行，但首屏没有返回任何条目（图源可能已改版）',
+          message: '脚本能运行，但首屏没有返回任何条目（源可能已改版）',
         ),
       },
     );
@@ -129,7 +129,7 @@ void main() {
       reason: '状态：与「不可用」分开',
     );
     expect(
-      find.descendant(of: dialog, matching: find.textContaining('图源可能已改版')),
+      find.descendant(of: dialog, matching: find.textContaining('源可能已改版')),
       findsOneWidget,
       reason: '日志带上原因',
     );
@@ -249,7 +249,7 @@ void main() {
     expect(
       manager.testedIds,
       <String>['demo-1'],
-      reason: '停用的图源跳过（测试会如实报「已停用」，没意义）',
+      reason: '停用的源跳过（测试会如实报「已停用」，没意义）',
     );
     expect(find.textContaining('测试完成：可用 1'), findsOneWidget);
   });
@@ -296,7 +296,7 @@ void main() {
     expect(manager.toggled, isEmpty, reason: '测试不得改启停');
     expect(manager.removed, isEmpty);
     expect(manager.renamed, isEmpty);
-    expect(manager.selectedIds, isEmpty, reason: '测试不得改当前图源');
+    expect(manager.selectedIds, isEmpty, reason: '测试不得改当前源');
     expect(manager.sources.single.enabled, isTrue);
   });
 
@@ -333,7 +333,7 @@ void main() {
       expect(
         managers[section]!.testedIds,
         <String>['src-${section.id}'],
-        reason: '${section.label} 板块的图源应当被测到',
+        reason: '${section.label} 板块的源应当被测到',
       );
     }
     expect(find.textContaining('测试完成（4 个）'), findsOneWidget);

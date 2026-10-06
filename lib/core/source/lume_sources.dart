@@ -50,14 +50,14 @@ class LumeSources {
   }) async {
     if (!runtimeAvailableFor(section)) {
       return const SourceImportResult.failure(
-        '当前平台不提供图源运行时',
+        '当前平台不提供源运行时',
       );
     }
     final registry = await SourceRegistry.open(section);
     final outcome = await registry.import(script, originUrl: originUrl);
     final record = outcome.record;
     if (record == null) {
-      return SourceImportResult.failure(outcome.message ?? '图源导入失败');
+      return SourceImportResult.failure(outcome.message ?? '源导入失败');
     }
     return SourceImportResult.success(_describe(record));
   }
@@ -179,16 +179,16 @@ class LumeSources {
     SourceSubscription? subscription,
   }) async {
     if (!runtimeAvailableFor(section)) {
-      return const SourceUpdateResult.skipped('当前平台不提供图源运行时');
+      return const SourceUpdateResult.skipped('当前平台不提供源运行时');
     }
     final registry = await SourceRegistry.open(section);
     final record = registry.source(sourceId);
     if (record == null) {
-      return const SourceUpdateResult.failed('图源不存在或不属于本板块');
+      return const SourceUpdateResult.failed('源不存在或不属于本板块');
     }
     if (!record.isSubscribed) {
       return const SourceUpdateResult.skipped(
-        '本地导入的图源没有订阅地址，无法更新（可重新导入新脚本）',
+        '本地导入的源没有订阅地址，无法更新（可重新导入新脚本）',
       );
     }
 
@@ -202,7 +202,7 @@ class LumeSources {
       return SourceUpdateResult.failed('订阅拉取失败：$error');
     }
     if (scripts.isEmpty) {
-      return const SourceUpdateResult.failed('订阅里没有可用的图源脚本');
+      return const SourceUpdateResult.failed('订阅里没有可用的源脚本');
     }
 
     final script = scripts.first;
@@ -217,8 +217,8 @@ class LumeSources {
     }
     if (updated.id != record.id) {
       return SourceUpdateResult.failed(
-        '订阅里的脚本换了图源 id（原「${record.id}」→ 新「${updated.id}」），'
-        '已按新脚本导入但未覆盖原图源；请检查订阅内容',
+        '订阅里的脚本换了源 id（原「${record.id}」→ 新「${updated.id}」），'
+        '已按新脚本导入但未覆盖原源；请检查订阅内容',
       );
     }
     // 覆盖导入不会动网络覆盖与来源地址（它们属于用户配置，不属于脚本）。
@@ -234,15 +234,15 @@ class LumeSources {
     String sourceId,
   ) async {
     if (!runtimeAvailableFor(section)) {
-      return const SourceTestResult.failed('当前平台不提供图源运行时');
+      return const SourceTestResult.failed('当前平台不提供源运行时');
     }
     final registry = await SourceRegistry.open(section);
     final record = registry.source(sourceId);
     if (record == null) {
-      return const SourceTestResult.failed('图源不存在或不属于本板块');
+      return const SourceTestResult.failed('源不存在或不属于本板块');
     }
     if (!record.enabled) {
-      return const SourceTestResult.failed('图源已停用，先在列表里启用再测试');
+      return const SourceTestResult.failed('源已停用，先在列表里启用再测试');
     }
 
     final watch = Stopwatch()..start();
@@ -250,7 +250,7 @@ class LumeSources {
       // 连通性测试不看缓存：它要验证的是「当下这份脚本能不能跑」。
       final source = await open(section, sourceId, cached: false);
       if (source == null) {
-        return const SourceTestResult.failed('图源打不开（脚本载入失败或引擎不可用）');
+        return const SourceTestResult.failed('源打不开（脚本载入失败或引擎不可用）');
       }
 
       // 分类失败不算致命：拿不到分类就当图源没有分类（与浏览面同一口径）。
@@ -266,7 +266,7 @@ class LumeSources {
       if (list.items.isEmpty) {
         return SourceTestResult.empty(
           elapsed: watch.elapsed,
-          message: '脚本能运行，但首屏没有返回任何条目（图源可能已改版）',
+          message: '脚本能运行，但首屏没有返回任何条目（源可能已改版）',
         );
       }
       return SourceTestResult.ok(
@@ -408,7 +408,7 @@ class _EngineRuntime implements JsSourceRuntime {
     if (engine == null) {
       throw const SourceException(
         SourceErrorKind.notFound,
-        '图源不可用（未启用或脚本载入失败）',
+        '源不可用（未启用或脚本载入失败）',
       );
     }
     final result = await engine.callResult(method, argument);

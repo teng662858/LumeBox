@@ -134,12 +134,12 @@ void main() {
   testWidgets('图源总管理：设置页内的子页面入口仍在', (tester) async {
     await pumpSettings(tester);
 
-    expect(find.text('图源总管理'), findsOneWidget);
+    expect(find.text('源总管理'), findsOneWidget);
 
-    await tester.tap(find.text('图源总管理'));
+    await tester.tap(find.text('源总管理'));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(AppBar, '图源总管理'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, '源总管理'), findsOneWidget);
   });
 
   testWidgets('播放器内核：全局设置里保留逃生入口', (tester) async {
@@ -261,7 +261,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('当前平台在 Phase1 仅保留页面骨架'), findsOneWidget);
-      expect(find.text('图源总管理'), findsNothing);
+      expect(find.text('源总管理'), findsNothing);
       expect(find.text('缓存管理'), findsNothing);
       expect(find.text('运行日志'), findsNothing);
       expect(find.text('错误报告'), findsNothing);

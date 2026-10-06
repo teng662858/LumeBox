@@ -189,13 +189,13 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
           setState(() {
             _loading = false;
             _failed = true;
-            _failureDetail = '该章节不是图片内容：图源返回了文本';
+            _failureDetail = '该章节不是图片内容：源返回了文本';
           });
         case VideoContent():
           setState(() {
             _loading = false;
             _failed = true;
-            _failureDetail = '该章节不是图片内容：图源返回了视频地址';
+            _failureDetail = '该章节不是图片内容：源返回了视频地址';
           });
       }
     } on SourceException catch (error) {

@@ -74,7 +74,7 @@ void main() {
     final engine = NodeMobileEngine(sourceId: 'cat-1');
     expect(await engine.loadScript('var LumeSource = {};'), isTrue);
     expect(engine.generation, 1, reason: '首次调用起实例');
-    expect(startedSourceId, 'cat-1', reason: '实例隔离：start 必须带图源标识');
+    expect(startedSourceId, 'cat-1', reason: '实例隔离：start 必须带源标识');
 
     final metadata = await engine.metadata();
     expect(metadata?['id'], 'cat.demo');

@@ -115,7 +115,7 @@ class _NovelPageState extends State<NovelPage> {
         // 右上角「图源管理」：本板块已导入图源的统一入口（启用 / 禁用 /
         // 重命名 / 导出 / 删除）。与全局设置的图源总管理不是一回事。
         IconButton(
-          tooltip: '图源管理',
+          tooltip: '源管理',
           icon: const Icon(Icons.source_outlined),
           onPressed: _manageSources,
         ),

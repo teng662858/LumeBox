@@ -247,7 +247,7 @@ CREATE TABLE section_setting (
       expect(
         novel.selectSource('comic-only'),
         isNull,
-        reason: '漫画板块的记录不能成为小说板块的当前图源',
+        reason: '漫画板块的记录不能成为小说板块的当前源',
       );
       expect(comic.selectSource('comic-only')!.id, 'comic-only');
 
@@ -268,11 +268,11 @@ CREATE TABLE section_setting (
       registry.selectSource('b');
 
       registry.setEnabled('b', false);
-      expect(registry.currentSource()!.id, 'a', reason: '停用后回退到下一个启用图源');
+      expect(registry.currentSource()!.id, 'a', reason: '停用后回退到下一个启用源');
 
       registry.selectSource('a');
       registry.remove('a');
-      expect(registry.currentSource(), isNull, reason: '没有启用图源时为 null');
+      expect(registry.currentSource(), isNull, reason: '没有启用源时为 null');
 
       registry.setEnabled('b', true);
       expect(registry.currentSource()!.id, 'b', reason: '重新启用后重新可用');

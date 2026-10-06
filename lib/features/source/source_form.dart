@@ -73,11 +73,11 @@ class SourceFormDraft {
 
   /// 校验：返回 null 表示合法，否则给出可读原因。
   String? validate() {
-    if (id.trim().isEmpty) return '请填写图源 id';
+    if (id.trim().isEmpty) return '请填写源 id';
     if (!RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(id.trim())) {
       return 'id 只允许英文字母、数字、短横「-」、下划线「_」';
     }
-    if (name.trim().isEmpty) return '请填写图源名称';
+    if (name.trim().isEmpty) return '请填写源名称';
     if (baseUrl.trim().isEmpty) return '请填写站点地址';
     final uri = Uri.tryParse(baseUrl.trim());
     if (uri == null || !uri.hasScheme) return '站点地址要以 http:// 或 https:// 开头';

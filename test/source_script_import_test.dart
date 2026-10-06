@@ -137,7 +137,7 @@ var LumeSource = {
         <String, Object?>{'id': 'lume${longDash}demo', 'name': '坏 id 源'},
       );
 
-      expect(message, contains('图源 id 不合法'));
+      expect(message, contains('源 id 不合法'));
       expect(message, contains('U+2014'));
     });
 

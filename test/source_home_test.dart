@@ -125,17 +125,17 @@ void main() {
 
     await tester.tap(find.text('小说示例源'));
     await tester.pumpAndSettle();
-    expect(find.text('切换图源'), findsOneWidget);
+    expect(find.text('切换源'), findsOneWidget);
     expect(find.text('备用图源'), findsOneWidget);
     expect(find.text('2.0.0'), findsOneWidget, reason: '面板里带版本号');
-    expect(find.text('停用图源'), findsNothing, reason: '停用的图源不应出现在切换候选里');
+    expect(find.text('停用图源'), findsNothing, reason: '停用的源不应出现在切换候选里');
 
     await tester.tap(find.text('备用图源'));
     await tester.pumpAndSettle();
 
     expect(manager.selectedIds, <String>['novel-2']);
     expect(find.text('备用条目'), findsOneWidget);
-    expect(find.text('备用图源'), findsOneWidget, reason: '图源条应显示新的当前图源');
+    expect(find.text('备用图源'), findsOneWidget, reason: '源条应显示新的当前源');
     expect(find.text('最新 · 模拟条目 1'), findsNothing);
   });
 
@@ -151,7 +151,7 @@ void main() {
     );
     await pumpHome(tester, manager);
 
-    expect(find.text('图源板块不符，已拒绝加载'), findsOneWidget);
+    expect(find.text('源板块不符，已拒绝加载'), findsOneWidget);
     expect(find.text('全部'), findsNothing, reason: '跨板块数据源不应渲染出任何列表');
   });
 
@@ -168,29 +168,29 @@ void main() {
     );
     await pumpHome(tester, manager);
 
-    expect(find.text('图源已停用'), findsOneWidget);
-    expect(find.text('板块内的图源都被停用，去图源管理里启用'), findsOneWidget);
-    expect(find.text('图源管理'), findsOneWidget);
-    expect(find.text('暂无图源'), findsNothing, reason: '有图源只是被停用，不算空数据');
-    expect(manager.openedIds, isEmpty, reason: '没有可用图源时不应打开数据源');
+    expect(find.text('源已停用'), findsOneWidget);
+    expect(find.text('板块内的源都被停用，去源管理里启用'), findsOneWidget);
+    expect(find.text('源管理'), findsOneWidget);
+    expect(find.text('暂无源'), findsNothing, reason: '有源只是被停用，不算空数据');
+    expect(manager.openedIds, isEmpty, reason: '没有可用源时不应打开数据源');
   });
 
   testWidgets('空数据：板块内一个图源都没有时引导导入', (tester) async {
     await pumpHome(tester, FakeSourceManager());
 
-    expect(find.text('暂无图源'), findsOneWidget);
-    expect(find.text('进入图源管理导入并启用图源'), findsOneWidget);
-    expect(find.text('图源已停用'), findsNothing);
+    expect(find.text('暂无源'), findsOneWidget);
+    expect(find.text('进入源管理导入并启用源'), findsOneWidget);
+    expect(find.text('源已停用'), findsNothing);
   });
 
   testWidgets('脚本报错：当前图源打不开时给出重试与管理入口', (tester) async {
     final manager = managerWithNovelSource(opened: <String, DataSource>{});
     await pumpHome(tester, manager);
 
-    expect(find.text('图源脚本报错'), findsOneWidget);
-    expect(find.text('当前图源打不开（脚本载入失败或图源不可用）'), findsOneWidget);
+    expect(find.text('源脚本报错'), findsOneWidget);
+    expect(find.text('当前源打不开（脚本载入失败或源不可用）'), findsOneWidget);
     expect(find.text('重试'), findsOneWidget);
-    expect(find.text('图源管理'), findsOneWidget);
+    expect(find.text('源管理'), findsOneWidget);
   });
 
   testWidgets('网络异常：浏览面单独呈现，重试后恢复', (tester) async {
@@ -210,7 +210,7 @@ void main() {
 
     expect(find.text('网络异常'), findsOneWidget);
     expect(find.text('网络请求失败：连接被拒绝'), findsOneWidget);
-    expect(find.text('图源脚本报错'), findsNothing, reason: '网络异常不能被算作脚本报错');
+    expect(find.text('源脚本报错'), findsNothing, reason: '网络异常不能被算作脚本报错');
 
     await tester.tap(find.text('重试'));
     await tester.pumpAndSettle();
@@ -232,7 +232,7 @@ void main() {
     );
     await pumpHome(tester, manager);
 
-    expect(find.text('图源脚本报错'), findsOneWidget);
+    expect(find.text('源脚本报错'), findsOneWidget);
     expect(find.text('TypeError: x is not a function'), findsOneWidget);
     expect(find.text('网络异常'), findsNothing);
   });
@@ -257,7 +257,7 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.tune));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('添加图源'), findsOneWidget, reason: '应进入图源管理页');
+    expect(find.byTooltip('添加源'), findsOneWidget, reason: '应进入源管理页');
 
     // 在图源管理里停用当前图源。
     await tester.tap(find.byType(Switch).first);

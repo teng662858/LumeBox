@@ -123,8 +123,8 @@ class _ExploreViewState extends State<ExploreView> {
       if (sources.isEmpty) {
         _settle(
           state: SourceStateKind.empty,
-          title: '暂无图源',
-          detail: '导入并启用图源后即可探索',
+          title: '暂无源',
+          detail: '导入并启用源后即可探索',
           sources: sources,
         );
         return;
@@ -132,7 +132,7 @@ class _ExploreViewState extends State<ExploreView> {
       if (enabled.isEmpty) {
         _settle(
           state: SourceStateKind.disabled,
-          detail: '板块内的图源都被停用，去图源管理里启用',
+          detail: '板块内的源都被停用，去源管理里启用',
           sources: sources,
         );
         return;
@@ -141,7 +141,7 @@ class _ExploreViewState extends State<ExploreView> {
       if (current == null || !mounted) {
         _settle(
           state: SourceStateKind.disabled,
-          detail: '板块内没有可用的图源',
+          detail: '板块内没有可用的源',
           sources: sources,
         );
         return;
@@ -151,7 +151,7 @@ class _ExploreViewState extends State<ExploreView> {
       if (source == null) {
         _settle(
           state: SourceStateKind.scriptError,
-          detail: '当前图源打不开（脚本载入失败或图源不可用）',
+          detail: '当前源打不开（脚本载入失败或源不可用）',
           sources: sources,
           current: current,
         );
@@ -165,8 +165,8 @@ class _ExploreViewState extends State<ExploreView> {
         );
         _settle(
           state: SourceStateKind.disabled,
-          title: '图源不可用',
-          detail: '图源板块不符，已拒绝加载',
+          title: '源不可用',
+          detail: '源板块不符，已拒绝加载',
           sources: sources,
           current: current,
         );
@@ -184,7 +184,7 @@ class _ExploreViewState extends State<ExploreView> {
       await _loadCategories();
       await _loadPage();
     } on SourceException catch (error) {
-      LumeLog.warn('[${widget.section.id}] 探索页图源状态异常: $error');
+      LumeLog.warn('[${widget.section.id}] 探索页源状态异常: $error');
       _settle(state: stateForError(error), detail: error.message);
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
@@ -304,7 +304,7 @@ class _ExploreViewState extends State<ExploreView> {
     setState(() => _switching = false);
     if (selected == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('该图源不可用')),
+        const SnackBar(content: Text('该源不可用')),
       );
       return;
     }
@@ -448,7 +448,7 @@ class _ExploreViewState extends State<ExploreView> {
         onRetry: _state == SourceStateKind.loading ? null : _bootstrap,
         action: _state == SourceStateKind.loading
             ? null
-            : FilledButton(onPressed: _manageSources, child: const Text('图源管理')),
+            : FilledButton(onPressed: _manageSources, child: const Text('源管理')),
       );
     }
     final failure = _failure;
@@ -723,7 +723,7 @@ class _FilterDrawer extends StatelessWidget {
                     const Padding(
                       padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
                       child: Text(
-                        '当前图源没有提供分类',
+                        '当前源没有提供分类',
                         style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                       ),
                     ),
@@ -733,7 +733,7 @@ class _FilterDrawer extends StatelessWidget {
             const Divider(height: 1, color: Colors.white12),
             ListTile(
               leading: const Icon(Icons.tune, color: Colors.white70),
-              title: const Text('图源管理'),
+              title: const Text('源管理'),
               onTap: onManage,
             ),
           ],

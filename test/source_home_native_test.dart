@@ -100,7 +100,7 @@ void main() {
       expect(
         find.text('Lume Box 示例源'),
         findsOneWidget,
-        reason: '${section.label}：图源条应显示当前图源',
+        reason: '${section.label}：源条应显示当前源',
       );
       expect(find.text('分类一'), findsOneWidget);
       expect(find.text('分类二'), findsOneWidget);

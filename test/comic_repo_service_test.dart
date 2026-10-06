@@ -212,7 +212,7 @@ void main() {
     expect(
       manager.imported.single,
       'var LumeSource = {id: "lume.copy"};',
-      reason: '落到图源表的就是下载到的脚本',
+      reason: '落到源表的就是下载到的脚本',
     );
     final installed = await service.installed(repo.id);
     expect(installed.keys, <String>['copy_manga.js']);
@@ -278,7 +278,7 @@ void main() {
 
     await service.removeRepo(repo.id);
 
-    expect(manager.removed, isEmpty, reason: '已安装扩展是独立图源，不随仓库删除');
+    expect(manager.removed, isEmpty, reason: '已安装扩展是独立源，不随仓库删除');
     expect(await service.repos(), isEmpty);
     expect(await service.extensions(repo.id), isEmpty);
   });

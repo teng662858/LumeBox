@@ -121,7 +121,7 @@ class SourceMetadata {
       if (candidate.isEmpty) continue;
       final issue = idIssue(candidate);
       if (issue == null) continue;
-      return '图源 id 不合法：「$candidate」$issue。'
+      return '源 id 不合法：「$candidate」$issue。'
           'id 只允许英文字母、数字、短横「-」、下划线「_」；'
           '请检查脚本头部的「// LumeSource」元信息，长破折号与全角符号都会被拒绝。';
     }
@@ -226,14 +226,14 @@ class SourceMetadata {
     final normalized = _normalizeSection(declared);
     if (normalized == target.id) return null;
     if (normalized == null) {
-      return '图源声明的板块「$declared」不是有效板块：'
+      return '源声明的板块「$declared」不是有效板块：'
           '只能是 ${_sectionNames()}（或对应中文名）。'
           '请检查脚本头部的「// LumeSource」元信息或运行时 LumeSource.category。';
     }
     final label = _labelOf(normalized) ?? normalized;
-    return '跨板块图源被拒绝：脚本声明归属「$label」（$normalized），'
+    return '跨板块源被拒绝：脚本声明归属「$label」（$normalized），'
         '当前导入目标是「${target.label}」（${target.id}）。'
-        '一个板块只能使用本板块的图源，请把脚本导入「$label」板块，'
+        '一个板块只能使用本板块的源，请把脚本导入「$label」板块，'
         '或改正脚本里声明的 category。';
   }
 

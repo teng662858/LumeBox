@@ -165,7 +165,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
 
     if (backup.totalCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('四个板块都没有图源可备份')),
+        const SnackBar(content: Text('四个板块都没有源可备份')),
       );
       return;
     }
@@ -175,7 +175,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('备份图源（${backup.totalCount} 个）'),
+        title: Text('备份源（${backup.totalCount} 个）'),
         content: SizedBox(
           width: 460,
           child: SingleChildScrollView(
@@ -184,7 +184,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 const Text(
-                  '备份只含图源脚本与配置，不含 Cookie、缓存与阅读记录。',
+                  '备份只含源脚本与配置，不含 Cookie、缓存与阅读记录。',
                   style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
                 const SizedBox(height: 8),
@@ -215,7 +215,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
     );
     if (copied && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已复制 ${backup.totalCount} 个图源的备份')),
+        SnackBar(content: Text('已复制 ${backup.totalCount} 个源的备份')),
       );
     }
   }
@@ -243,11 +243,11 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('恢复图源'),
+        title: const Text('恢复源'),
         content: Text(
-          '将恢复 ${backup.totalCount} 个图源（备份时间 '
+          '将恢复 ${backup.totalCount} 个源（备份时间 '
           '${_formatTime(backup.createdAt)}）。\n'
-          '同 id 的图源会被备份里的内容覆盖（脚本、启停状态与网络配置）。',
+          '同 id 的源会被备份里的内容覆盖（脚本、启停状态与网络配置）。',
         ),
         actions: <Widget>[
           TextButton(
@@ -316,7 +316,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
       SnackBar(
         content: Text(
           tested == 0
-              ? '没有已启用的图源可测试'
+              ? '没有已启用的源可测试'
               : '测试完成（$tested 个）：可用 $ok'
                   '${empty > 0 ? ' · 无内容 $empty' : ''}'
                   '${failed > 0 ? ' · 不可用 $failed' : ''}',
@@ -340,7 +340,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除图源'),
+        title: const Text('删除源'),
         content: Text(
           '确定删除「${source.name}」（${section.label}）？'
           '其脚本与运行时将一并移除。',
@@ -367,7 +367,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
     if (!mounted) return;
     if (dataSource == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('图源不可用')),
+        const SnackBar(content: Text('源不可用')),
       );
       return;
     }
@@ -379,17 +379,17 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
-      title: '图源总管理',
+      title: '源总管理',
       actions: <Widget>[
         if (_runtimeAvailable && !_loading)
           IconButton(
-            tooltip: '恢复图源',
+            tooltip: '恢复源',
             icon: const Icon(Icons.settings_backup_restore),
             onPressed: _restoreBackup,
           ),
         if (_runtimeAvailable && !_loading && _totalCount > 0) ...<Widget>[
           IconButton(
-            tooltip: '备份图源',
+            tooltip: '备份源',
             icon: const Icon(Icons.save_alt),
             onPressed: _exportBackup,
           ),
@@ -402,7 +402,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
       ],
       floatingActionButton: _runtimeAvailable && !_loading
           ? FloatingActionButton(
-              tooltip: '导入图源',
+              tooltip: '导入源',
               onPressed: () => _import(),
               child: const Icon(Icons.add),
             )
@@ -418,11 +418,11 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
     final allEmpty = Section.values.every((section) => _listOf(section).isEmpty);
     if (allEmpty && _failed.isEmpty) {
       return NoticeCard(
-        title: '四板块均无图源',
-        subtitle: '图源由用户导入：点右下角按钮，并选择导入的目标板块',
+        title: '四板块均无源',
+        subtitle: '源由用户导入：点右下角按钮，并选择导入的目标板块',
         action: FilledButton(
           onPressed: () => _import(),
-          child: const Text('导入图源'),
+          child: const Text('导入源'),
         ),
       );
     }
@@ -506,9 +506,9 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
         ),
       ),
       if (_failed.contains(section))
-        const _SectionNote('该板块图源存储不可用')
+        const _SectionNote('该板块源存储不可用')
       else if (sources.isEmpty)
-        const _SectionNote('暂无图源'),
+        const _SectionNote('暂无源'),
       for (final source in sources)
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
@@ -689,7 +689,7 @@ class _ImportDialogState extends State<_ImportDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('导入图源'),
+      title: const Text('导入源'),
       content: SizedBox(
         width: 460,
         child: SingleChildScrollView(
@@ -698,7 +698,7 @@ class _ImportDialogState extends State<_ImportDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               const Text(
-                '目标板块：图源只写入所选板块，不会跨板块共用。',
+                '目标板块：源只写入所选板块，不会跨板块共用。',
                 style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
               const SizedBox(height: 8),
@@ -719,7 +719,7 @@ class _ImportDialogState extends State<_ImportDialog> {
                 controller: _controller,
                 maxLines: 8,
                 decoration: const InputDecoration(
-                  hintText: '粘贴图源脚本内容',
+                  hintText: '粘贴源脚本内容',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -774,7 +774,7 @@ class _RestoreDialogState extends State<_RestoreDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('恢复图源'),
+      title: const Text('恢复源'),
       content: SizedBox(
         width: 460,
         child: Column(
@@ -782,7 +782,7 @@ class _RestoreDialogState extends State<_RestoreDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             const Text(
-              '粘贴之前导出的备份内容。同 id 的图源会被覆盖。',
+              '粘贴之前导出的备份内容。同 id 的源会被覆盖。',
               style: TextStyle(fontSize: 12, color: LumeTheme.muted),
             ),
             const SizedBox(height: 8),

@@ -152,8 +152,8 @@ class SourceRegistry {
   /// 异常）、脚本缺少 `LumeSource` 元信息（id / name）或 id 非法。
   Future<SourceImportOutcome> import(String script, {String originUrl = ''}) async {
     if (!_engineAvailable) {
-      LumeLog.warn('[${section.id}] 当前平台不提供图源引擎');
-      return const SourceImportOutcome.failure('当前平台不提供图源引擎');
+      LumeLog.warn('[${section.id}] 当前平台不提供源引擎');
+      return const SourceImportOutcome.failure('当前平台不提供源引擎');
     }
     final text = stripScriptBom(script);
     final probe = await SourceEngineRegistry.create(
@@ -163,7 +163,7 @@ class SourceRegistry {
       section: section,
     );
     if (probe == null) {
-      return const SourceImportOutcome.failure('当前平台不提供该图源引擎（引擎未集成或原生不可用）');
+      return const SourceImportOutcome.failure('当前平台不提供该源引擎（引擎未集成或原生不可用）');
     }
     try {
       if (!await probe.loadScript(text)) {
@@ -191,7 +191,7 @@ class SourceRegistry {
       // 直接拒绝——跨板块混用图源在这里被拦下，不会落库、不会进入运行期。
       final mismatch = metadata.sectionMismatch(section);
       if (mismatch != null) {
-        LumeLog.warn('[${section.id}] 拒绝跨板块图源 ${metadata.id}：$mismatch');
+        LumeLog.warn('[${section.id}] 拒绝跨板块源 ${metadata.id}：$mismatch');
         return SourceImportOutcome.failure(mismatch);
       }
       _database.upsertSource(
@@ -209,7 +209,7 @@ class SourceRegistry {
       release(metadata.id);
       final record = _database.source(metadata.id);
       if (record == null) {
-        return const SourceImportOutcome.failure('图源写入本板块库失败');
+        return const SourceImportOutcome.failure('源写入本板块库失败');
       }
       return SourceImportOutcome.success(record);
     } finally {
@@ -232,8 +232,8 @@ class SourceRegistry {
     final message = '脚本载入失败：$detail';
     if (!_serverCapabilityPattern.hasMatch(detail)) return message;
     return '$message\n'
-        '（若这是需要 node 运行的自建服务端程序，它不是图源脚本，App 不能直接运行它；'
-        '图源脚本只需提供 getList / getDetail 这类函数，用 fetch 取数据）';
+        '（若这是需要 node 运行的自建服务端程序，它不是源脚本，App 不能直接运行它；'
+        '源脚本只需提供 getList / getDetail 这类函数，用 fetch 取数据）';
   }
 
   /// 服务端能力特征：socket / 端口 / 进程 / 线程这类「跑服务」才需要的东西。
@@ -293,13 +293,13 @@ class SourceRegistry {
       section: section,
     );
     if (engine == null) {
-      LumeLog.warn('[${section.id}] 图源引擎不可用: $sourceId');
+      LumeLog.warn('[${section.id}] 源引擎不可用: $sourceId');
       return null;
     }
     if (!await engine.loadScript(stripScriptBom(record.script))) {
       // 运行时载入失败的原因同样记全：日志是用户排查「图源为什么打不开」的入口。
       LumeLog.warn(
-        '[${section.id}] 图源脚本载入失败: $sourceId'
+        '[${section.id}] 源脚本载入失败: $sourceId'
         '${engine.loadFailure == null ? '' : '：${engine.loadFailure}'}',
       );
       engine.dispose();

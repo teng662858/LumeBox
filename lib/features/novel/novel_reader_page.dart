@@ -232,7 +232,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
             _pagination = null;
             _failure = content == null
                 ? '本章暂无内容'
-                : '该章节不是文本内容（图源返回了其他类型）';
+                : '该章节不是文本内容（源返回了其他类型）';
           });
           return;
         }

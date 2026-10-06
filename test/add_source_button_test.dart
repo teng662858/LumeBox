@@ -58,7 +58,7 @@ void main() {
   }
 
   Future<void> openDialog(WidgetTester tester) async {
-    await tester.tap(find.byTooltip('添加图源'));
+    await tester.tap(find.byTooltip('添加源'));
     await tester.pumpAndSettle();
   }
 
@@ -296,7 +296,7 @@ void main() {
     await tester.tap(find.text('拉取并导入'));
     await tester.pumpAndSettle();
 
-    expect(find.text('订阅里没有可导入的图源脚本'), findsOneWidget);
+    expect(find.text('订阅里没有可导入的源脚本'), findsOneWidget);
     expect(manager.imported, isEmpty);
   });
 
@@ -355,6 +355,6 @@ void main() {
     manager = FakeSourceManager(runtimeAvailable: false);
     await pumpButton(tester);
 
-    expect(find.byTooltip('添加图源'), findsNothing);
+    expect(find.byTooltip('添加源'), findsNothing);
   });
 }

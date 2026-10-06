@@ -68,7 +68,7 @@ class LumeJsEngine {
     required Section section,
   }) async {
     if (!isSupported) {
-      throw UnsupportedError('Phase1 图源引擎仅随 iOS 提供');
+      throw UnsupportedError('Phase1 源引擎仅随 iOS 提供');
     }
     final host = LumeSourceHost(http, timeout: callTimeout);
     final sandbox = LumeSandbox.create(
@@ -179,7 +179,7 @@ class LumeSourceHost implements SandboxHost {
       case SandboxHostMethods.storeKeys:
         return <String, Object?>{'keys': _store.keys()};
       default:
-        throw SandboxHostException('图源未授权的宿主方法: ${request.method}');
+        throw SandboxHostException('源未授权的宿主方法: ${request.method}');
     }
   }
 

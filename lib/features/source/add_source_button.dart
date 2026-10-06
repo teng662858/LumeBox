@@ -71,7 +71,7 @@ class AddSourceButton extends StatelessWidget {
   /// 文件选择器的可选项：iOS 只认 UTI、Windows 只认扩展名，两边都给。
   /// 末项 `public.data` 是对未登记脚本扩展名的兜底（宁可多显示，不可选不中）。
   static const XTypeGroup _scriptTypeGroup = XTypeGroup(
-    label: '图源脚本',
+    label: '源脚本',
     extensions: <String>['js', 'md5', 'txt'],
     uniformTypeIdentifiers: <String>[
       'com.netscape.javascript-source',
@@ -87,7 +87,7 @@ class AddSourceButton extends StatelessWidget {
     // 与板块页的骨架占位同一口径——按钮不出现。
     if (!target.runtimeAvailable) return const SizedBox.shrink();
     return IconButton(
-      tooltip: '添加图源',
+      tooltip: '添加源',
       icon: const Icon(Icons.add),
       onPressed: () => _open(context, target),
     );
@@ -215,7 +215,7 @@ class _AddSourceDialogState extends State<_AddSourceDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('添加图源 · ${widget.section.label}'),
+      title: Text('添加源 · ${widget.section.label}'),
       content: SizedBox(
         width: 460,
         child: SingleChildScrollView(
@@ -224,7 +224,7 @@ class _AddSourceDialogState extends State<_AddSourceDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               const Text(
-                '图源只写入当前板块，不会跨板块共用。',
+                '源只写入当前板块，不会跨板块共用。',
                 style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
               const SizedBox(height: 12),
@@ -314,7 +314,7 @@ class _AddSourceDialogState extends State<_AddSourceDialog> {
           maxLines: 6,
           enabled: !_busy,
           decoration: const InputDecoration(
-            hintText: '或直接粘贴图源脚本内容',
+            hintText: '或直接粘贴源脚本内容',
             border: OutlineInputBorder(),
           ),
         ),
@@ -407,7 +407,7 @@ class _AddSourceDialogState extends State<_AddSourceDialog> {
       final scripts = await _collect(urls);
       if (!mounted) return;
       if (scripts.isEmpty) {
-        setState(() => _error = '订阅里没有可导入的图源脚本');
+        setState(() => _error = '订阅里没有可导入的源脚本');
         return;
       }
       // 来源地址记第一个（`.md5` 清单会解析成实体脚本，但来源仍是用户填的那个）。

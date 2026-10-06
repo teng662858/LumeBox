@@ -79,7 +79,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
       if (source == null) {
         setState(() {
           _loading = false;
-          _failure = '图源不可用（已停用或脚本载入失败），去探索页的图源管理里检查';
+          _failure = '源不可用（已停用或脚本载入失败），去探索页的源管理里检查';
         });
         return;
       }
@@ -267,7 +267,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
               height: 150,
               child: SourceStateView(
                 state: SourceStateKind.empty,
-                detail: '该图源没有提供章节',
+                detail: '该源没有提供章节',
               ),
             ),
           )

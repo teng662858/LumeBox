@@ -166,7 +166,7 @@ class _ComicPageState extends State<ComicPage> {
       actions: <Widget>[
         // 右上角「图源管理」：本板块已导入图源的统一入口。
         IconButton(
-          tooltip: '图源管理',
+          tooltip: '源管理',
           icon: const Icon(Icons.source_outlined),
           onPressed: _manageSources,
         ),

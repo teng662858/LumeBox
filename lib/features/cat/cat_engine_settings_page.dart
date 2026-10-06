@@ -71,7 +71,7 @@ class _CatEngineSettingsPageState extends State<CatEngineSettingsPage> {
     settings.save(kind);
     setState(() => _current = kind);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已切换为 ${kind.label}，下次打开图源时生效')),
+      SnackBar(content: Text('已切换为 ${kind.label}，下次打开源时生效')),
     );
   }
 
@@ -87,7 +87,7 @@ class _CatEngineSettingsPageState extends State<CatEngineSettingsPage> {
     if (_failed) {
       return const NoticeCard(
         title: '引擎设置不可用',
-        subtitle: '猫源板块的图源库打不开，请重启应用后重试',
+        subtitle: '猫源板块的源库打不开，请重启应用后重试',
       );
     }
     if (_settings == null) {
@@ -98,8 +98,8 @@ class _CatEngineSettingsPageState extends State<CatEngineSettingsPage> {
       padding: const EdgeInsets.all(16),
       children: <Widget>[
         const Text(
-          '猫源脚本需要 JS 引擎。切换只影响猫源板块，下次打开图源时生效；'
-          '每个图源仍然独占一个独立引擎实例。',
+          '猫源脚本需要 JS 引擎。切换只影响猫源板块，下次打开源时生效；'
+          '每个源仍然独占一个独立引擎实例。',
           style: TextStyle(fontSize: 12, color: LumeTheme.muted),
         ),
         const SizedBox(height: 12),
@@ -131,7 +131,7 @@ class _EngineTile extends StatelessWidget {
   final VoidCallback onTap;
 
   String get _description => switch (kind) {
-        CatEngineKind.quickjs => '轻量沙箱引擎，一图源一独立上下文（iOS / Android）',
+        CatEngineKind.quickjs => '轻量沙箱引擎，一源一独立上下文（iOS / Android）',
         CatEngineKind.nodeMobile => 'Node 运行时（Android 专属；原生模块未集成时不可用）',
       };
 

@@ -221,7 +221,7 @@ void main() {
     test('运行时异常归一：SourceException 透传，其余包成 callFailed', () async {
       final passthrough = _FakeRuntime(
         (method, argument) async =>
-            throw const SourceException(SourceErrorKind.notFound, '图源不可用'),
+            throw const SourceException(SourceErrorKind.notFound, '源不可用'),
       );
       await expectLater(
         build(passthrough).categories(),
@@ -263,7 +263,7 @@ void main() {
       );
       expect(imported.isSuccess, isFalse);
       expect(imported.descriptor, isNull);
-      expect(imported.message, contains('图源运行时'));
+      expect(imported.message, contains('源运行时'));
 
       await LumeSources.setEnabled(Section.novel, 'demo', false);
       await LumeSources.remove(Section.novel, 'demo');

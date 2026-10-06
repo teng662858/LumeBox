@@ -122,7 +122,7 @@ void main() {
         final comic = await openRegistryFor(Section.comic);
         final outcome = await comic.import(fixture('section_mismatch_novel.js'));
 
-        expect(outcome.isSuccess, isFalse, reason: '跨板块图源必须被拒绝');
+        expect(outcome.isSuccess, isFalse, reason: '跨板块源必须被拒绝');
         expect(outcome.message, contains('跨板块'));
         expect(outcome.message, contains('novel'));
         expect(outcome.message, contains('comic'));
@@ -131,7 +131,7 @@ void main() {
 
         // 明确错误日志：点名被拒的图源与两个板块。
         final rejected =
-            logLinesContaining('拒绝跨板块图源').where((l) => l.contains('test-section-novel'));
+            logLinesContaining('拒绝跨板块源').where((l) => l.contains('test-section-novel'));
         expect(rejected, isNotEmpty, reason: '拒绝行为必须在日志里留痕');
       },
       skip: skipReason,

@@ -23,7 +23,7 @@ void main() {
     test('id 缺失或含非法字符给出可读原因', () {
       expect(
         base.copyWith(id: '').validate(),
-        contains('请填写图源 id'),
+        contains('请填写源 id'),
       );
       expect(
         base.copyWith(id: 'bad id!').validate(),
@@ -34,7 +34,7 @@ void main() {
     });
 
     test('名称与地址必填，地址要有协议', () {
-      expect(base.copyWith(name: '  ').validate(), contains('请填写图源名称'));
+      expect(base.copyWith(name: '  ').validate(), contains('请填写源名称'));
       expect(base.copyWith(baseUrl: '').validate(), contains('请填写站点地址'));
       expect(
         base.copyWith(baseUrl: 'example.com').validate(),

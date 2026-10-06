@@ -111,7 +111,7 @@ class MockDataSource implements DataSource {
     switch (section) {
       case Section.novel:
         return TextContent(
-          '模拟正文：$itemId / $chapterId。真实图源按所属板块返回文本、'
+          '模拟正文：$itemId / $chapterId。真实源按所属板块返回文本、'
           '图片列表或视频地址之一。',
         );
       case Section.comic:

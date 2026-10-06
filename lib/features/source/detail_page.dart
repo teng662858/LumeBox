@@ -132,7 +132,7 @@ class _DetailPageState extends State<DetailPage> {
               height: 180,
               child: SourceStateView(
                 state: SourceStateKind.empty,
-                detail: '该图源没有提供章节',
+                detail: '该源没有提供章节',
               ),
             )
           else

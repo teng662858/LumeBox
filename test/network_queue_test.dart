@@ -245,9 +245,9 @@ void main() {
       );
       final merged = override.mergedWith(global);
 
-      expect(merged.userAgent, 'source-UA', reason: '图源 UA 优先');
-      expect(merged.proxy, 'http://global:1080', reason: '图源没配代理就继承全局');
-      expect(merged.cookie, 'session=abc', reason: 'Cookie 只来自图源自身');
+      expect(merged.userAgent, 'source-UA', reason: '源 UA 优先');
+      expect(merged.proxy, 'http://global:1080', reason: '源没配代理就继承全局');
+      expect(merged.cookie, 'session=abc', reason: 'Cookie 只来自源自身');
     });
 
     test('全空覆盖 = 完全继承全局', () {
@@ -264,7 +264,7 @@ void main() {
       final first = const NetworkProfile(cookie: 'a=1').mergedWith(global);
       final second = const NetworkProfile().mergedWith(global);
       expect(first.cookie, 'a=1');
-      expect(second.cookie, '', reason: '另一个图源不会拿到别人的 Cookie');
+      expect(second.cookie, '', reason: '另一个源不会拿到别人的 Cookie');
     });
   });
   group('LumeHttp 与队列接线', () {

@@ -188,7 +188,7 @@ var LumeSource = {
         expect(
           identical(novelEngine, videoEngine),
           isFalse,
-          reason: '两个板块的同一 id 图源必须是各自独立的引擎实例',
+          reason: '两个板块的同一 id 源必须是各自独立的引擎实例',
         );
 
         // 释放一个板块不影响另一个。

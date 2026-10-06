@@ -192,7 +192,7 @@ class FakeSourceManager implements SourceManager {
         elapsed: Duration(milliseconds: 1),
       );
     }
-    return const SourceTestResult.failed('图源打不开（脚本载入失败或引擎不可用）');
+    return const SourceTestResult.failed('源打不开（脚本载入失败或引擎不可用）');
   }
 
   /// 订阅更新结果（按 sourceId 配置）；未配置时按「已是最新」推断。
@@ -208,7 +208,7 @@ class FakeSourceManager implements SourceManager {
     if (configured != null) return configured;
     final descriptor = _enabled(sourceId);
     if (descriptor == null) {
-      return const SourceUpdateResult.skipped('本地导入的图源没有订阅地址，无法更新');
+      return const SourceUpdateResult.skipped('本地导入的源没有订阅地址，无法更新');
     }
     return SourceUpdateResult.unchanged(descriptor);
   }

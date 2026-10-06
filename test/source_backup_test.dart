@@ -146,7 +146,7 @@ async function getList(page) { return { list: [] }; }
           isA<FormatException>().having(
             (error) => error.message,
             'message',
-            contains('不是 Lume Box 图源备份'),
+            contains('不是 Lume Box 源备份'),
           ),
         ),
       );

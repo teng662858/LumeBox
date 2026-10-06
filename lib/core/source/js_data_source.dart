@@ -224,7 +224,7 @@ class JsDataSource implements DataSource, DanmakuCapable, DanmakuPostCapable {
     } catch (error) {
       throw SourceException(
         SourceErrorKind.callFailed,
-        '图源方法 $method 调用异常: $error',
+        '源方法 $method 调用异常: $error',
       );
     }
   }

@@ -155,8 +155,8 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
       if (sources.isEmpty) {
         _settle(
           state: SourceStateKind.empty,
-          title: '暂无图源',
-          detail: '进入图源管理导入并启用图源',
+          title: '暂无源',
+          detail: '进入源管理导入并启用源',
           sources: sources,
         );
         return;
@@ -166,7 +166,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
       if (!sources.any((source) => source.enabled)) {
         _settle(
           state: SourceStateKind.disabled,
-          detail: '板块内的图源都被停用，去图源管理里启用',
+          detail: '板块内的源都被停用，去源管理里启用',
           sources: sources,
         );
         return;
@@ -176,7 +176,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
       if (current == null) {
         _settle(
           state: SourceStateKind.disabled,
-          detail: '板块内没有可用的图源',
+          detail: '板块内没有可用的源',
           sources: sources,
         );
         return;
@@ -187,7 +187,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
         // 管理器打不开它：多半是脚本载入失败。
         _settle(
           state: SourceStateKind.scriptError,
-          detail: '当前图源打不开（脚本载入失败或图源不可用）',
+          detail: '当前源打不开（脚本载入失败或源不可用）',
           sources: sources,
           current: current,
         );
@@ -201,8 +201,8 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
         );
         _settle(
           state: SourceStateKind.disabled,
-          title: '图源不可用',
-          detail: '图源板块不符，已拒绝加载',
+          title: '源不可用',
+          detail: '源板块不符，已拒绝加载',
           sources: sources,
           current: current,
         );
@@ -220,7 +220,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
         _failed = false;
       });
     } on SourceException catch (error) {
-      LumeLog.warn('[${widget.section.id}] 图源状态异常: $error');
+      LumeLog.warn('[${widget.section.id}] 源状态异常: $error');
       _settle(state: stateForError(error), detail: error.message);
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
@@ -270,7 +270,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
     if (!mounted) return;
     if (record == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('该图源不可用')),
+        const SnackBar(content: Text('该源不可用')),
       );
     }
     await _resolve();
@@ -297,7 +297,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
     if (!_manager.runtimeAvailable) return const SkeletonNotice();
     if (_failed) {
       return NoticeCard(
-        title: '图源存储不可用',
+        title: '源存储不可用',
         subtitle: LumeTheme.appName,
         action: _manageButton(),
       );
@@ -351,7 +351,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                current?.name ?? '未选择图源',
+                current?.name ?? '未选择源',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -363,7 +363,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
             ),
             if (widget.showSourceActions)
               IconButton(
-                tooltip: '图源管理',
+                tooltip: '源管理',
                 icon: const Icon(Icons.tune, size: 20),
                 onPressed: _manage,
               )
@@ -377,7 +377,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
 
   Widget _manageButton() => FilledButton(
         onPressed: _manage,
-        child: const Text('图源管理'),
+        child: const Text('源管理'),
       );
 }
 
@@ -401,7 +401,7 @@ class _SourceSwitchSheet extends StatelessWidget {
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 14),
                 child: Text(
-                  '切换图源',
+                  '切换源',
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,

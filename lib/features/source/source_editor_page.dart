@@ -145,7 +145,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
-      title: '${widget.section.label} · 图源编辑器',
+      title: '${widget.section.label} · 源编辑器',
       actions: <Widget>[
         IconButton(
           tooltip: '复制脚本',
@@ -218,13 +218,13 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
             children: <Widget>[
               const _Label('基本信息'),
               _text(
-                label: '图源 id',
+                label: '源 id',
                 value: _draft.id,
                 hint: '字母数字与 - _，例如 my-site',
                 onChanged: (value) => _updateDraft(_draft.copyWith(id: value)),
               ),
               _text(
-                label: '图源名称',
+                label: '源名称',
                 value: _draft.name,
                 hint: '显示在列表里的名字',
                 onChanged: (value) => _updateDraft(_draft.copyWith(name: value)),
@@ -413,7 +413,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
         style: const TextStyle(fontSize: 12, height: 1.4, fontFamily: 'monospace'),
         decoration: const InputDecoration(
           border: OutlineInputBorder(),
-          hintText: '图源脚本（函数式契约：getList / getDetail / getChapters / getContent）',
+          hintText: '源脚本（函数式契约：getList / getDetail / getChapters / getContent）',
         ),
         onChanged: (_) {
           if (!_scriptDirty) setState(() => _scriptDirty = true);

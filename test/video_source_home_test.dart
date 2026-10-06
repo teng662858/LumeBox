@@ -100,7 +100,7 @@ void main() {
     expect(find.byTooltip('播放器设置'), findsNothing);
 
     // 图源管理入口只有右上角一个（图源条不再重复一个同名入口）。
-    expect(find.byTooltip('图源管理'), findsOneWidget);
+    expect(find.byTooltip('源管理'), findsOneWidget);
   });
 
   testWidgets('列表条目展示封面 / 标题 / 简介：只有带封面的条目占图位', (tester) async {
@@ -139,10 +139,10 @@ void main() {
     ];
     await pumpBoard(tester);
 
-    expect(find.text('暂无图源'), findsOneWidget, reason: '起步是空板块');
+    expect(find.text('暂无源'), findsOneWidget, reason: '起步是空板块');
 
     // 走右上角「+」导入（与真实导入同一条路径：校验 → 落库 → onImported）。
-    await tester.tap(find.byTooltip('添加图源'));
+    await tester.tap(find.byTooltip('添加源'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(TextField),
@@ -153,8 +153,8 @@ void main() {
 
     expect(manager.imported, hasLength(1));
     // 自动刷新：空态消失，图源条换成新图源，列表直接出现（无需点「重试」）。
-    expect(find.text('暂无图源'), findsNothing, reason: '导入完成即重挂浏览面');
-    expect(find.text('新图源'), findsOneWidget, reason: '图源条切到新导入的图源');
+    expect(find.text('暂无源'), findsNothing, reason: '导入完成即重挂浏览面');
+    expect(find.text('新图源'), findsOneWidget, reason: '源条切到新导入的源');
     expect(find.text('导入后的条目'), findsOneWidget, reason: '列表自动刷出');
     // 刷新必须是**原地重解析**：管理器不能被拆（拆了会连带拆掉板块共享的
     // 图源注册表，页面随后就报「图源存储不可用」——真机自测抓到的竞态）。
@@ -231,7 +231,7 @@ void main() {
     ];
     source.chaptersFailure = const SourceException(
       SourceErrorKind.callFailed,
-      '图源脚本没有实现 chapters 方法：请定义顶层函数 getChapters',
+      '源脚本没有实现 chapters 方法：请定义顶层函数 getChapters',
     );
     final created = await pumpBoard(tester);
 
@@ -250,8 +250,8 @@ void main() {
     manager = FakeSourceManager();
     await pumpBoard(tester);
 
-    expect(find.text('暂无图源'), findsOneWidget);
-    expect(find.text('图源管理'), findsOneWidget, reason: '给一个去导入的按钮');
+    expect(find.text('暂无源'), findsOneWidget);
+    expect(find.text('源管理'), findsOneWidget, reason: '给一个去导入的按钮');
 
     // 播放器页签照常可用（手动输入地址的兜底路径不受图源影响）。
     await tester.tap(find.widgetWithText(Tab, '播放'));

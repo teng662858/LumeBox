@@ -67,12 +67,12 @@ void main() {
       NovelPage(runtimeAvailable: true, manager: FakeSourceManager()),
     );
 
-    expect(find.byTooltip('图源管理'), findsOneWidget);
-    await tester.tap(find.byTooltip('图源管理'));
+    expect(find.byTooltip('源管理'), findsOneWidget);
+    await tester.tap(find.byTooltip('源管理'));
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(AppBar, '小说 · 源管理'), findsOneWidget);
-    expect(find.text('暂无源'), findsOneWidget, reason: '展示的是本板块图源列表');
+    expect(find.text('暂无源'), findsOneWidget, reason: '展示的是本板块源列表');
   });
 
   testWidgets('漫画板块：右上角「图源管理」，原有入口照旧', (tester) async {
@@ -81,11 +81,11 @@ void main() {
       ComicPage(runtimeAvailable: true, manager: FakeSourceManager()),
     );
 
-    expect(find.byTooltip('图源管理'), findsOneWidget);
+    expect(find.byTooltip('源管理'), findsOneWidget);
     expect(find.byTooltip('扩展仓库'), findsOneWidget);
     expect(find.byTooltip('图片缓存'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('图源管理'));
+    await tester.tap(find.byTooltip('源管理'));
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(AppBar, '漫画 · 源管理'), findsOneWidget);
@@ -95,7 +95,7 @@ void main() {
     await pumpBoard(tester, const VideoPage(catalog: _NoKernelCatalog()));
 
     // 关键回归：右上角不再有「播放器设置」。
-    expect(find.byTooltip('图源管理'), findsOneWidget);
+    expect(find.byTooltip('源管理'), findsOneWidget);
     expect(
       find.descendant(
         of: find.byType(AppBar),
@@ -106,10 +106,10 @@ void main() {
     );
     if (Platform.isIOS) {
       // 「+」导入按平台边界只在有图源运行时的平台出现。
-      expect(find.byTooltip('添加图源'), findsOneWidget);
+      expect(find.byTooltip('添加源'), findsOneWidget);
     }
 
-    await tester.tap(find.byTooltip('图源管理'));
+    await tester.tap(find.byTooltip('源管理'));
     await tester.pumpAndSettle();
 
     // 视频板块管理页（本平台无图源运行时，页面按骨架展示，标题口径一致）。
@@ -138,7 +138,7 @@ void main() {
       tester,
       NovelPage(runtimeAvailable: true, manager: manager),
     );
-    await tester.tap(find.byTooltip('图源管理'));
+    await tester.tap(find.byTooltip('源管理'));
     await tester.pumpAndSettle();
 
     expect(find.text('公开样片测试源'), findsOneWidget);

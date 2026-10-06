@@ -86,8 +86,8 @@ class SourceStateView extends StatelessWidget {
   /// 没有具体原因时的默认说明。
   static String _defaultDetail(SourceStateKind state) => switch (state) {
         SourceStateKind.empty => '换个条件试试',
-        SourceStateKind.disabled => '去图源管理里启用它',
-        SourceStateKind.scriptError => '图源脚本执行失败，可重试或检查图源',
+        SourceStateKind.disabled => '去源管理里启用它',
+        SourceStateKind.scriptError => '源脚本执行失败，可重试或检查源',
         SourceStateKind.networkError => '网络请求没能完成，检查网络后重试',
         _ => LumeTheme.appName,
       };

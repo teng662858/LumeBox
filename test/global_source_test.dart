@@ -91,7 +91,7 @@ void main() {
     expect(find.text('漫画源'), findsOneWidget);
 
     // 没有图源的板块给出空提示。
-    expect(find.text('暂无图源'), findsNWidgets(2));
+    expect(find.text('暂无源'), findsNWidgets(2));
   });
 
   testWidgets('筛选：只显示所选板块的分组', (tester) async {
@@ -147,7 +147,7 @@ void main() {
 
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pumpAndSettle();
-    expect(find.text('导入图源'), findsOneWidget);
+    expect(find.text('导入源'), findsOneWidget);
 
     await tester.tap(
       find.descendant(of: find.byType(AlertDialog), matching: find.text('猫源')),
@@ -232,7 +232,7 @@ void main() {
 
     await tester.tap(find.byTooltip('删除'));
     await tester.pumpAndSettle();
-    expect(find.text('删除图源'), findsOneWidget);
+    expect(find.text('删除源'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(managers[comic]!.removed, isEmpty);
@@ -244,7 +244,7 @@ void main() {
 
     expect(managers[comic]!.removed.single, 'c1');
     expect(managers[novel]!.removed, isEmpty);
-    expect(find.text('暂无图源'), findsOneWidget);
+    expect(find.text('暂无源'), findsOneWidget);
   });
 
   testWidgets('浏览：经所属板块端口打开数据源', (tester) async {
@@ -275,7 +275,7 @@ void main() {
     );
     await pumpPage(tester, managers);
 
-    expect(find.text('该板块图源存储不可用'), findsOneWidget);
+    expect(find.text('该板块源存储不可用'), findsOneWidget);
     expect(find.text('漫画源'), findsOneWidget);
     expect(find.text('漫画 1/1'), findsOneWidget);
   });
@@ -284,8 +284,8 @@ void main() {
     final managers = fakeManagers();
     await pumpPage(tester, managers);
 
-    expect(find.text('四板块均无图源'), findsOneWidget);
-    expect(find.text('导入图源'), findsOneWidget);
+    expect(find.text('四板块均无源'), findsOneWidget);
+    expect(find.text('导入源'), findsOneWidget);
     expect(find.byType(FloatingActionButton), findsOneWidget);
   });
 

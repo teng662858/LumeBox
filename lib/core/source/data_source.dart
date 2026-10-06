@@ -136,13 +136,13 @@ class SourceDescriptor {
 /// 数据源失败分类。UI 只需区分这三类即可决定提示文案。
 enum SourceErrorKind {
   /// 当前平台不提供图源运行时（Phase1 只在 iOS 提供）。
-  unsupported('unsupported', '当前平台不提供图源运行时'),
+  unsupported('unsupported', '当前平台不提供源运行时'),
 
   /// 图源不存在、已禁用，或其运行时已经释放。
-  notFound('notFound', '图源不存在或已禁用'),
+  notFound('notFound', '源不存在或已禁用'),
 
   /// 调用失败：脚本错误、超时、返回格式不符契约等。
-  callFailed('callFailed', '图源调用失败'),
+  callFailed('callFailed', '源调用失败'),
 
   /// 网络异常：图源的 HTTP 请求没能完成（连接失败、超时、协议中断）。
   ///

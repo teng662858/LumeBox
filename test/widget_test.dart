@@ -74,7 +74,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('当前平台在 Phase1 仅保留页面骨架'), findsOneWidget);
-      expect(find.byTooltip('添加图源'), findsNothing);
+      expect(find.byTooltip('添加源'), findsNothing);
     },
     skip: Platform.isIOS,
   );

@@ -135,7 +135,7 @@ void main() {
       final runtimeIssue = SourceMetadata.describeImportFailure(
         <String, Object?>{'id': 'lume—demo', 'name': 'x'},
       );
-      expect(runtimeIssue, contains('图源 id 不合法'));
+      expect(runtimeIssue, contains('源 id 不合法'));
       expect(runtimeIssue, contains('U+2014'));
       expect(runtimeIssue, contains('// LumeSource'));
 

@@ -224,8 +224,8 @@ void main() {
         ),
       );
 
-      expect(find.text('暂无图源'), findsOneWidget);
-      expect(find.text('图源管理'), findsWidgets);
+      expect(find.text('暂无源'), findsOneWidget);
+      expect(find.text('源管理'), findsWidgets);
       expect(find.text('筛选'), findsNothing);
     });
 

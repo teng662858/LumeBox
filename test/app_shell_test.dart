@@ -158,10 +158,10 @@ void main() {
     await pumpShell(tester, desktopRail: false);
 
     // 非 iOS 平台没有图源运行时：按钮按平台边界隐藏（与板块页骨架同口径）。
-    expect(find.byTooltip('添加图源'), findsNothing);
+    expect(find.byTooltip('添加源'), findsNothing);
 
     await tester.tap(inDock(Section.video.label));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('添加图源'), findsNothing);
+    expect(find.byTooltip('添加源'), findsNothing);
   });
 }

@@ -99,7 +99,7 @@ class _ComicExtensionPageState extends State<ComicExtensionPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('卸载扩展'),
-        content: Text('确定卸载「${extension.name}」？对应的漫画图源会一并移除。'),
+        content: Text('确定卸载「${extension.name}」？对应的漫画源会一并移除。'),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),

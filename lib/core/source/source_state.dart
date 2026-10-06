@@ -12,10 +12,10 @@ enum SourceStateKind {
   empty('empty', '暂无内容'),
 
   /// 图源禁用：图源不存在、已停用，或其运行时已经释放。
-  disabled('disabled', '图源已停用'),
+  disabled('disabled', '源已停用'),
 
   /// 脚本报错：脚本 bug、执行超时、返回格式不符契约。
-  scriptError('scriptError', '图源脚本报错'),
+  scriptError('scriptError', '源脚本报错'),
 
   /// 网络异常：图源的 HTTP 请求没能完成。
   networkError('networkError', '网络异常'),

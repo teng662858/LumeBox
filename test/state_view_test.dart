@@ -59,8 +59,8 @@ void main() {
   testWidgets('图源禁用：默认引导去图源管理启用', (tester) async {
     await pumpView(tester, state: SourceStateKind.disabled);
 
-    expect(find.text('图源已停用'), findsOneWidget);
-    expect(find.text('去图源管理里启用它'), findsOneWidget);
+    expect(find.text('源已停用'), findsOneWidget);
+    expect(find.text('去源管理里启用它'), findsOneWidget);
   });
 
   testWidgets('脚本报错：标题 + 数据层原始原因原样可见', (tester) async {
@@ -70,7 +70,7 @@ void main() {
       detail: 'TypeError: x is not a function',
     );
 
-    expect(find.text('图源脚本报错'), findsOneWidget);
+    expect(find.text('源脚本报错'), findsOneWidget);
     expect(find.text('TypeError: x is not a function'), findsOneWidget);
   });
 
@@ -93,14 +93,14 @@ void main() {
     await pumpView(
       tester,
       state: SourceStateKind.empty,
-      title: '暂无图源',
-      detail: '进入图源管理导入并启用图源',
-      action: FilledButton(onPressed: () {}, child: const Text('图源管理')),
+      title: '暂无源',
+      detail: '进入源管理导入并启用源',
+      action: FilledButton(onPressed: () {}, child: const Text('源管理')),
     );
 
-    expect(find.text('暂无图源'), findsOneWidget);
+    expect(find.text('暂无源'), findsOneWidget);
     expect(find.text('暂无内容'), findsNothing);
-    expect(find.text('图源管理'), findsOneWidget);
+    expect(find.text('源管理'), findsOneWidget);
   });
 
   testWidgets('就绪态不渲染任何提示', (tester) async {

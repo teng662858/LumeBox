@@ -115,7 +115,7 @@ void main() {
       expect(
         File('${root.path}/sections/cat/cat.db').existsSync(),
         isTrue,
-        reason: '选择落在猫源自己的图源库里',
+        reason: '选择落在猫源自己的源库里',
       );
 
       final novel = await SectionDatabase.open(await SectionScope.open(Section.novel));
@@ -243,7 +243,7 @@ void main() {
       await tester.tap(find.text('Node-Mobile'));
       await tester.pumpAndSettle();
 
-      expect(find.text('已切换为 Node-Mobile，下次打开图源时生效'), findsOneWidget);
+      expect(find.text('已切换为 Node-Mobile，下次打开源时生效'), findsOneWidget);
       expect(settings.load(), CatEngineKind.nodeMobile);
 
       final checkOn = find.descendant(

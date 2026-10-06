@@ -723,7 +723,7 @@ class _VideoPageState extends State<VideoPage>
     final target = _target;
     final snapshot = _player?.snapshot.value;
     if (target == null || snapshot == null) {
-      _showPlayerToast('从图源条目起播才能发弹幕（手动地址没有作品身份）');
+      _showPlayerToast('从源条目起播才能发弹幕（手动地址没有作品身份）');
       return;
     }
     final result = await showDialog<({String text, DanmakuMode mode})>(
@@ -755,7 +755,7 @@ class _VideoPageState extends State<VideoPage>
   Future<String> _postDanmaku(VideoPlayTarget target, DanmakuItem item) async {
     final source = _playSource;
     if (source is! DanmakuPostCapable) {
-      return '弹幕已发送（本图源不支持上报，仅本机可见）';
+      return '弹幕已发送（本源不支持上报，仅本机可见）';
     }
     try {
       final accepted = await (source as DanmakuPostCapable).postDanmaku(
@@ -766,7 +766,7 @@ class _VideoPageState extends State<VideoPage>
         mode: item.mode.id,
         color: item.color,
       );
-      return accepted ? '弹幕已发送' : '弹幕已发送（本图源不支持上报，仅本机可见）';
+      return accepted ? '弹幕已发送' : '弹幕已发送（本源不支持上报，仅本机可见）';
     } on SourceException catch (error) {
       // 上报失败但本地已经记下了：如实说明「只在本机可见」，不谎报成功。
       LumeLog.warn('[video] 弹幕上报失败: ${error.message}');
@@ -914,7 +914,7 @@ class _VideoPageState extends State<VideoPage>
     final item = library.item(entry.itemId);
     final progress = library.videoProgress(entry.itemId);
     if (item == null || progress == null) {
-      _showPlayerToast('「${entry.title}」还没有播放记录，先从图源列表打开一次');
+      _showPlayerToast('「${entry.title}」还没有播放记录，先从源列表打开一次');
       return;
     }
     _resumeFromProgress(item, progress);
@@ -1132,7 +1132,7 @@ class _VideoPageState extends State<VideoPage>
     final source = await manager.open(item.sourceId);
     if (!mounted) return;
     if (source == null) {
-      _showPlayerToast('「${item.title}」的图源不可用（未启用或脚本载入失败）');
+      _showPlayerToast('「${item.title}」的源不可用（未启用或脚本载入失败）');
       return;
     }
 
@@ -1288,7 +1288,7 @@ class _VideoPageState extends State<VideoPage>
           onPressed: _openCalendar,
         ),
         IconButton(
-          tooltip: '图源管理',
+          tooltip: '源管理',
           icon: const Icon(Icons.source_outlined),
           onPressed: _manageSources,
         ),

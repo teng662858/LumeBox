@@ -57,7 +57,7 @@ class ReadingSourceBar extends StatelessWidget {
                   color: LumeTheme.muted,
                 ),
                 hint: const Text(
-                  '未选择图源',
+                  '未选择源',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -84,7 +84,7 @@ class ReadingSourceBar extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: '图源管理',
+            tooltip: '源管理',
             icon: const Icon(Icons.tune, size: 20),
             onPressed: onManage,
           ),

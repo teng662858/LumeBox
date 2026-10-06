@@ -29,7 +29,7 @@ void main() {
   }
 
   Future<void> importScript(WidgetTester tester, String script) async {
-    await tester.tap(find.byTooltip('添加图源'));
+    await tester.tap(find.byTooltip('添加源'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), script);
     await tester.tap(find.text('导入'));
@@ -66,7 +66,7 @@ void main() {
 
     expect(find.text('暂无源'), findsOneWidget);
     expect(find.text('点击右上角「+」导入源脚本'), findsOneWidget);
-    expect(find.byTooltip('添加图源'), findsOneWidget);
+    expect(find.byTooltip('添加源'), findsOneWidget);
   });
 
   testWidgets('导入：成功后刷新列表并提示已导入', (tester) async {
@@ -107,7 +107,7 @@ void main() {
   testWidgets('导入对话框：可载入内置示例脚本', (tester) async {
     await pumpPage(tester, FakeSourceManager());
 
-    await tester.tap(find.byTooltip('添加图源'));
+    await tester.tap(find.byTooltip('添加源'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('载入内置示例'));
     await tester.pumpAndSettle();
@@ -148,7 +148,7 @@ void main() {
     await openMenu(tester);
     await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
-    expect(find.text('删除图源'), findsOneWidget);
+    expect(find.text('删除源'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(manager.removed, isEmpty);
@@ -191,7 +191,7 @@ void main() {
     await openMenu(tester);
     await tester.tap(find.text('重命名'));
     await tester.pumpAndSettle();
-    expect(find.text('重命名图源'), findsOneWidget);
+    expect(find.text('重命名源'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), '新名字');
     await tester.tap(find.widgetWithText(FilledButton, '保存'));
@@ -262,7 +262,7 @@ void main() {
     await pumpPage(tester, manager);
 
     expect(find.text('当前平台在 Phase1 仅保留页面骨架'), findsOneWidget);
-    expect(find.byTooltip('添加图源'), findsNothing);
+    expect(find.byTooltip('添加源'), findsNothing);
     expect(manager.imported, isEmpty);
   });
 

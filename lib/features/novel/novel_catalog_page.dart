@@ -88,7 +88,7 @@ class _NovelCatalogPageState extends State<NovelCatalogPage> {
         child: widget.chapters.isEmpty
             ? const SourceStateView(
                 state: SourceStateKind.empty,
-                detail: '该图源没有提供章节',
+                detail: '该源没有提供章节',
               )
             : ListView.builder(
                 padding: EdgeInsets.fromLTRB(

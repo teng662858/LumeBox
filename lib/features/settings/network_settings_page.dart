@@ -89,7 +89,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
         children: <Widget>[
           _SectionCard(
             title: '并发控制',
-            subtitle: '所有请求（图源 / 订阅 / 图片）共用这一份额度，防止多图源批量'
+            subtitle: '所有请求（源 / 订阅 / 图片）共用这一份额度，防止多源批量'
                 '搜索把同一个网站打爆、导致 IP 被封锁。',
             children: <Widget>[
               _IntSlider(
@@ -142,7 +142,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
           const SizedBox(height: 12),
           _SectionCard(
             title: '身份与代理',
-            subtitle: '留空即用内置默认（移动端 Safari UA / 直连）。单个图源可以在自己的'
+            subtitle: '留空即用内置默认（移动端 Safari UA / 直连）。单个源可以在自己的'
                 '管理页里单独覆盖，覆盖优先于这里。',
             children: <Widget>[
               TextField(

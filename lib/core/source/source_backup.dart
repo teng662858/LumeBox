@@ -58,7 +58,7 @@ class SourceBackup {
     }
     if (json is! Map) throw const FormatException('备份内容不是对象');
     if (json['format'] != 'lume.sources') {
-      throw const FormatException('不是 Lume Box 图源备份（缺少 format 标记）');
+      throw const FormatException('不是 Lume Box 源备份（缺少 format 标记）');
     }
     final version = json['version'];
     if (version is! int || version > currentVersion) {

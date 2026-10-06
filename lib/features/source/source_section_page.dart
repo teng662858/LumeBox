@@ -85,7 +85,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除图源'),
+        title: const Text('删除源'),
         content: Text('确定删除「${source.name}」？其脚本与运行时将一并移除。'),
         actions: <Widget>[
           TextButton(
@@ -117,7 +117,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     if (!mounted) return;
     if (dataSource == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('图源不可用')),
+        const SnackBar(content: Text('源不可用')),
       );
       return;
     }
@@ -187,7 +187,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
         .toList(growable: false);
     if (targets.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('本板块没有订阅导入的图源')),
+        const SnackBar(content: Text('本板块没有订阅导入的源')),
       );
       return;
     }
@@ -269,7 +269,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
         .toList(growable: false);
     if (sources.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('没有已启用的图源可测试')),
+        const SnackBar(content: Text('没有已启用的源可测试')),
       );
       return;
     }
@@ -345,7 +345,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     if (!mounted) return;
     if (script == null || script.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('读不到该图源的脚本')),
+        const SnackBar(content: Text('读不到该源的脚本')),
       );
       return;
     }
@@ -432,7 +432,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
       child: sources == null
           ? (_failed
               ? const NoticeCard(
-                  title: '图源存储不可用',
+                  title: '源存储不可用',
                   subtitle: LumeTheme.appName,
                 )
               : const SourceStateView(state: SourceStateKind.loading))
@@ -687,7 +687,7 @@ class _TestResultDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          _InfoRow(label: '图源', value: sourceName),
+          _InfoRow(label: '源', value: sourceName),
           _InfoRow(
             label: '状态',
             value: result.status.label,
@@ -786,12 +786,12 @@ class _RenameDialogState extends State<_RenameDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('重命名图源'),
+      title: const Text('重命名源'),
       content: TextField(
         controller: _controller,
         autofocus: true,
         decoration: const InputDecoration(
-          labelText: '图源名称',
+          labelText: '源名称',
           hintText: '例如：公开样片测试源',
           border: OutlineInputBorder(),
         ),
@@ -852,8 +852,8 @@ class _NetworkDialogState extends State<_NetworkDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               const Text(
-                '留空即继承「设置 → 网络设置」里的全局值。这里的配置只作用于本图源，'
-                'Cookie 不与其他图源共享。',
+                '留空即继承「设置 → 网络设置」里的全局值。这里的配置只作用于本源，'
+                'Cookie 不与其他源共享。',
                 style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
               const SizedBox(height: 12),

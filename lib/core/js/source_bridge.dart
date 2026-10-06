@@ -199,7 +199,7 @@ class LumeSourceBridgePolyfill implements SandboxPolyfill {
 
   function describe(name, extra) {
     var names = namesOf(name);
-    return '图源脚本没有实现 ' + name + ' 方法：请定义顶层函数 ' + names[0] + (extra || '')
+    return '源脚本没有实现 ' + name + ' 方法：请定义顶层函数 ' + names[0] + (extra || '')
       + '，或在脚本里给 LumeSource.' + name + ' 赋值';
   }
 

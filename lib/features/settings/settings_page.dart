@@ -52,8 +52,8 @@ class SettingsPage extends StatelessWidget {
         children: <Widget>[
           _SettingsEntry(
             icon: Icons.tune,
-            title: '图源总管理',
-            subtitle: '四个板块的图源总览与批量管理（小说 / 漫画 / 视频 / 猫源互相独立）',
+            title: '源总管理',
+            subtitle: '四个板块的源总览与批量管理（小说 / 漫画 / 视频 / 猫源互相独立）',
             onTap: () => _push(context, const GlobalSourcePage()),
           ),
           const SizedBox(height: 12),

@@ -123,7 +123,7 @@ class _VideoHistoryPageState extends State<VideoHistoryPage> {
     if (_entries.isEmpty) {
       return const NoticeCard(
         title: '还没有播放记录',
-        subtitle: '从图源列表点开一个视频，这里就会记下进度',
+        subtitle: '从源列表点开一个视频，这里就会记下进度',
       );
     }
     return ListView.separated(

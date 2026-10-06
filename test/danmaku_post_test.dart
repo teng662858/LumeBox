@@ -98,7 +98,7 @@ void main() {
           mode: 'scroll',
         ),
         isFalse,
-        reason: '只读图源是正常情况，不该报错',
+        reason: '只读源是正常情况，不该报错',
       );
     });
 
