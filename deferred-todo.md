@@ -117,9 +117,13 @@
       `assert(list_empty(&rt->gc_obj_list))` 在断言构建里必然失败（实测 Debug
       exit=3 / Release exit=0），因此 Dart 侧只能 `Qjs.reclaimRuntime = false`，
       每次销毁只释放 context、**runtime 被漏掉不回收**（`Qjs.abandonedRuntimes` 累加）。
+      **实测泄漏速率（Phase3 复测基线，供修复后对照）**：**1.00 个 JSRuntime / 每次
+      上下文销毁**、进程 RSS 约 **0.2MB / 轮**（50 轮正常循环 +9MB、20 轮失控重建 +10MB）。
+      `JSContext` 侧回收干净（差值 0），泄漏只在这一处。
       修好 = 长跑 App 不再漏 runtime、Debug 构建不再 abort；代价 = 要动插件上下文创建
       的既有行为，且 `test/sandbox_native_test.dart` 里「放弃回收」的断言要改成
       「真的回收」。本轮刻意未与中断补丁混在一起改（同一文件两处改动，出问题难定位）。
+      观测装置：`test/js_sandbox/ffi_memory_observation_test.dart`。
 - [ ] 导入后自动跑一次连通性检测：与既有「批量测试连通性」重叠；批量导入时每条
       3–5s，会让导入明显变慢。等有真实使用反馈再定（落点：`source_import_flow.dart`
       的导入循环后追加一次 `testConnectivity`，结果并进结果弹窗）。
