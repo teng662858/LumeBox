@@ -343,7 +343,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
         onTap: _switchSource,
         child: Row(
           children: <Widget>[
-            const Icon(
+            Icon(
               Icons.source_outlined,
               size: 18,
               color: LumeTheme.muted,
@@ -354,7 +354,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
                 current?.name ?? '未选择源',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
@@ -368,7 +368,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
                 onPressed: _manage,
               )
             else
-              const Icon(Icons.expand_more, size: 18, color: LumeTheme.muted),
+              Icon(Icons.expand_more, size: 18, color: LumeTheme.muted),
           ],
         ),
       ),
@@ -398,7 +398,7 @@ class _SourceSwitchSheet extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(vertical: 14),
                 child: Text(
                   '切换源',
@@ -413,17 +413,17 @@ class _SourceSwitchSheet extends StatelessWidget {
                 ListTile(
                   title: Text(
                     source.name,
-                    style: const TextStyle(color: LumeTheme.textPrimary),
+                    style: TextStyle(color: LumeTheme.textPrimary),
                   ),
                   subtitle: Text(
                     source.version.isEmpty ? LumeTheme.appName : source.version,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       color: LumeTheme.muted,
                     ),
                   ),
                   trailing: source.id == currentId
-                      ? const Icon(Icons.check, color: LumeTheme.textPrimary)
+                      ? Icon(Icons.check, color: LumeTheme.textPrimary)
                       : null,
                   onTap: () => Navigator.of(context).pop(source.id),
                 ),

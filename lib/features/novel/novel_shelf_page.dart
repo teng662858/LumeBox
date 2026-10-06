@@ -228,7 +228,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                 item.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   height: 1.25,
                   color: LumeTheme.textPrimary,
@@ -239,7 +239,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                 progress?.describe() ?? '共 ${item.chapterCount} 章',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 10, color: LumeTheme.muted),
+                style: TextStyle(fontSize: 10, color: LumeTheme.muted),
               ),
             ],
           ),
@@ -290,7 +290,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                         item.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: LumeTheme.textPrimary,
@@ -301,7 +301,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                         progress?.describe() ?? '共 ${item.chapterCount} 章',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: LumeTheme.muted,
                         ),
@@ -315,7 +315,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                     child: const Text('续读'),
                   )
                 else
-                  const Icon(Icons.chevron_right, color: LumeTheme.muted),
+                  Icon(Icons.chevron_right, color: LumeTheme.muted),
               ],
             ),
           ),

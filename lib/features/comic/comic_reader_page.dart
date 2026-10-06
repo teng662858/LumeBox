@@ -952,7 +952,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
         // 阅读器顶栏是压在画面上的浮层：用玻璃（半透明白 + 模糊）而不是实色块，
         // 图片会从栏下隐约透出来；底色与全局顶栏同一套。
         color: LumeTheme.glassStrong,
-        border: const Border(
+        border: Border(
           bottom: BorderSide(color: LumeTheme.hairline),
         ),
         child: SafeArea(
@@ -960,7 +960,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
           child: Row(
             children: <Widget>[
               IconButton(
-                icon: const Icon(Icons.arrow_back, color: LumeTheme.textPrimary),
+                icon: Icon(Icons.arrow_back, color: LumeTheme.textPrimary),
                 onPressed: () => Navigator.of(context).maybePop(),
               ),
               Expanded(
@@ -972,7 +972,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       widget.target.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: LumeTheme.textPrimary,
@@ -983,7 +983,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                           '第 ${_chapterIndex + 1}/${_chapters.length} 章',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         color: LumeTheme.textSecondary,
                       ),
@@ -1003,7 +1003,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
               ),
               IconButton(
                 tooltip: '书签列表',
-                icon: const Icon(
+                icon: Icon(
                   Icons.bookmarks_outlined,
                   color: LumeTheme.textPrimary,
                 ),
@@ -1011,7 +1011,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
               ),
               IconButton(
                 tooltip: '目录',
-                icon: const Icon(Icons.list, color: LumeTheme.textPrimary),
+                icon: Icon(Icons.list, color: LumeTheme.textPrimary),
                 onPressed: _showChapterSheet,
               ),
             ],
@@ -1078,7 +1078,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       const SizedBox(height: 6),
                       Row(
                         children: <Widget>[
-                          const SizedBox(
+                          SizedBox(
                             width: 46,
                             child: Text(
                               '侧边距',
@@ -1102,7 +1102,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                             child: Text(
                               '${(_settings.marginRatio * 100).round()}%',
                               textAlign: TextAlign.end,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 color: LumeTheme.textSecondary,
                               ),
@@ -1112,7 +1112,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       ),
                       Row(
                         children: <Widget>[
-                          const Text(
+                          Text(
                             '双击放大',
                             style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                           ),
@@ -1132,7 +1132,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       ),
                       Row(
                         children: <Widget>[
-                          const SizedBox(
+                          SizedBox(
                             width: 46,
                             child: Text(
                               '页间距',
@@ -1155,7 +1155,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                             child: Text(
                               '${_settings.pageGap.round()}',
                               textAlign: TextAlign.end,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 color: LumeTheme.textSecondary,
                               ),
@@ -1165,7 +1165,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       ),
                       Row(
                         children: <Widget>[
-                          const Text(
+                          Text(
                             '背景',
                             style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                           ),
@@ -1199,7 +1199,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       ),
                       Row(
                         children: <Widget>[
-                          const Text(
+                          Text(
                             '点击行为',
                             style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                           ),
@@ -1231,7 +1231,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       ),
                       Row(
                         children: <Widget>[
-                          const Text(
+                          Text(
                             '翻页方向',
                             style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                           ),
@@ -1266,7 +1266,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       if (_settings.mode == ComicReadingMode.doublePage)
                         Row(
                           children: <Widget>[
-                            const Text(
+                            Text(
                               '跨页配对',
                               style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                             ),
@@ -1296,7 +1296,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                             ),
                           ],
                         ),
-                      const Divider(height: 1, color: LumeTheme.divider),
+                      Divider(height: 1, color: LumeTheme.divider),
                       Row(
                         children: <Widget>[
                           IconButton(
@@ -1311,7 +1311,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                               '第 ${_chapterIndex + 1}/${_chapters.length} 章 · '
                               '第 $pageLabel 页',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 color: LumeTheme.textPrimary,
                               ),
@@ -1553,7 +1553,7 @@ class _ChapterSheet extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(vertical: 14),
                 child: Text(
                   '目录',
@@ -1621,30 +1621,30 @@ class _ImageActionSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.download,
                   color: LumeTheme.textSecondary,
                 ),
-                title: const Text(
+                title: Text(
                   '保存图片',
                   style: TextStyle(color: LumeTheme.textPrimary),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   '存到本板块的导出目录（不写入系统相册）',
                   style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
                 onTap: () => Navigator.of(context).pop(_ImageAction.save),
               ),
               ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.link,
                   color: LumeTheme.textSecondary,
                 ),
-                title: const Text(
+                title: Text(
                   '复制图片地址',
                   style: TextStyle(color: LumeTheme.textPrimary),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   '粘到任意 App 都能用',
                   style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
@@ -1689,7 +1689,7 @@ class _BookmarkSheetState extends State<_BookmarkSheet> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(vertical: 14),
                 child: Text(
                   '书签',
@@ -1701,7 +1701,7 @@ class _BookmarkSheetState extends State<_BookmarkSheet> {
                 ),
               ),
               if (_items.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(vertical: 24, horizontal: 24),
                   child: Text(
                     '还没有书签\n阅读时点顶栏的书签按钮即可添加',
@@ -1722,14 +1722,14 @@ class _BookmarkSheetState extends State<_BookmarkSheet> {
                           bookmark.describe(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             color: LumeTheme.textPrimary,
                           ),
                         ),
                         trailing: IconButton(
                           tooltip: '删除书签',
-                          icon: const Icon(
+                          icon: Icon(
                             Icons.delete_outline,
                             size: 18,
                             color: LumeTheme.muted,

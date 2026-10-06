@@ -233,7 +233,7 @@ class _CatalogTile extends StatelessWidget {
               ),
             ),
             if (current)
-              const Text(
+              Text(
                 '在读',
                 style: TextStyle(fontSize: 11, color: LumeTheme.textPrimary),
               ),
@@ -262,7 +262,7 @@ class NovelChapterSummary extends StatelessWidget {
       saved == null
           ? '共 $chapterCount 章'
           : '共 $chapterCount 章 · 读至 ${saved.describe()}',
-      style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+      style: TextStyle(fontSize: 12, color: LumeTheme.muted),
     );
   }
 }

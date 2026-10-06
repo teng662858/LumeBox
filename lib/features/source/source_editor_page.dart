@@ -187,7 +187,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
                 _error!,
-                style: const TextStyle(fontSize: 12, color: LumeTheme.danger),
+                style: TextStyle(fontSize: 12, color: LumeTheme.danger),
               ),
             ),
           Expanded(
@@ -221,7 +221,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
           const Spacer(),
           Text(
             _formMode ? '改表单即时生成脚本' : '直接编辑脚本',
-            style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
           ),
         ],
       ),
@@ -311,7 +311,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               const _Label('解析'),
-              const Text(
+              Text(
                 '列表来源',
                 style: TextStyle(fontSize: 13, color: LumeTheme.textPrimary),
               ),
@@ -359,7 +359,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
                       _updateDraft(_draft.copyWith(jsonCoverField: value)),
                 ),
               ] else
-                const Text(
+                Text(
                   'HTML 模式用内置正则抓取页面里的链接（<a href>），'
                   '生成后可在高级模式里按站点结构调整。',
                   style: TextStyle(fontSize: 12, color: LumeTheme.muted),
@@ -410,11 +410,11 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
       child: TextFormField(
         initialValue: value,
         maxLines: maxLines,
-        style: const TextStyle(color: LumeTheme.textPrimary, fontSize: 14),
+        style: TextStyle(color: LumeTheme.textPrimary, fontSize: 14),
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          hintStyle: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+          hintStyle: TextStyle(fontSize: 12, color: LumeTheme.muted),
           border: const OutlineInputBorder(),
         ),
         onChanged: onChanged,
@@ -455,7 +455,7 @@ class _Label extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 4),
         child: Text(
           text,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: LumeTheme.textPrimary,

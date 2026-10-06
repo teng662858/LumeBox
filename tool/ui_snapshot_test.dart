@@ -85,7 +85,7 @@ ThemeData _snapshotTheme() {
       titleTextStyle:
           base.appBarTheme.titleTextStyle?.copyWith(fontFamily: 'CJK'),
     ),
-    tabBarTheme: const TabBarThemeData(
+    tabBarTheme: TabBarThemeData(
       labelColor: LumeTheme.accent,
       unselectedLabelColor: LumeTheme.textSecondary,
       labelStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
@@ -195,7 +195,7 @@ void main() {
                   ),
               ],
             ),
-            const Positioned(
+            Positioned(
               top: 0,
               left: 0,
               right: 0,

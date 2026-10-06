@@ -182,7 +182,7 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
         Text(
           '合计缓存 ${_formatBytes(totalCache)}'
           '${totalSaved > 0 ? ' · 已保存图片 ${_formatBytes(totalSaved)}' : ''}',
-          style: const TextStyle(fontSize: 13, color: LumeTheme.muted),
+          style: TextStyle(fontSize: 13, color: LumeTheme.muted),
         ),
         const SizedBox(height: 12),
         for (final item in stats) ...<Widget>[
@@ -196,7 +196,7 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
           ),
           const SizedBox(height: 12),
         ],
-        const Text(
+        Text(
           '清理只删除可再生缓存；用户保存的图片、书架信息与阅读进度都不在清理范围。\n'
           '内存缓存只在本次运行有效，退出应用即消失，不落盘。',
           style: TextStyle(fontSize: 12, color: LumeTheme.muted),
@@ -248,7 +248,7 @@ class _CacheTile extends StatelessWidget {
               children: <Widget>[
                 Text(
                   stats.section.label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
@@ -258,14 +258,14 @@ class _CacheTile extends StatelessWidget {
                 Text(
                   '缓存 ${_CacheSettingsPageState._formatBytes(stats.cacheBytes)}'
                   '（${stats.cacheFiles} 个文件）',
-                  style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
                 if (stats.savedBytes > 0)
                   Text(
                     '已保存图片 '
                     '${_CacheSettingsPageState._formatBytes(stats.savedBytes)}'
                     '（不参与清理）',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       color: LumeTheme.muted,
                     ),
@@ -277,7 +277,7 @@ class _CacheTile extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      const Icon(
+                      Icon(
                         Icons.tune,
                         size: 14,
                         color: LumeTheme.muted,
@@ -285,7 +285,7 @@ class _CacheTile extends StatelessWidget {
                       const SizedBox(width: 4),
                       Text(
                         policy.describe(),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: LumeTheme.muted,
                         ),
@@ -300,7 +300,7 @@ class _CacheTile extends StatelessWidget {
                     Expanded(
                       child: Text(
                         '内存缓存 ${memory.describe()}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: LumeTheme.muted,
                         ),
@@ -371,13 +371,13 @@ class _CachePolicyDialogState extends State<_CachePolicyDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const Text(
+              Text(
                 '超过上限或过期的缓存会在保存策略时立刻清理一次，之后每次进本页'
                 '也会按策略修剪。用户保存的图片、书架与进度不受影响。',
                 style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 '容量上限',
                 style: TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
               ),
@@ -395,7 +395,7 @@ class _CachePolicyDialogState extends State<_CachePolicyDialog> {
                 ],
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 '过期天数',
                 style: TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
               ),

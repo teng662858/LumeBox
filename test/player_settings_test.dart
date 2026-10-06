@@ -48,8 +48,10 @@ void main() {
       expect(PlayerKernel.fromId('vlc'), PlayerKernel.avplayer);
       expect(PlayerKernel.fromId(null), PlayerKernel.avplayer);
       expect(PlayerKernel.fromId('mpv'), PlayerKernel.mpv);
-      expect(SubtitleSize.fromId('huge'), SubtitleSize.standard);
+      expect(SubtitleSize.fromId('gigantic'), SubtitleSize.standard);
       expect(SubtitleSize.fromId('large'), SubtitleSize.large);
+      expect(SubtitleSize.fromId('huge'), SubtitleSize.huge,
+          reason: '「特大」是新增的合法档位，不再是无法识别的值');
     });
   });
 
@@ -102,7 +104,7 @@ void main() {
       library.setSetting(VideoPlayerSettingsStore.keyKernel, 'vlc');
       library.setSetting(VideoPlayerSettingsStore.keySpeed, '1.30');
       library.setSetting(VideoPlayerSettingsStore.keySubtitles, 'maybe');
-      library.setSetting(VideoPlayerSettingsStore.keySubtitleSize, 'huge');
+      library.setSetting(VideoPlayerSettingsStore.keySubtitleSize, 'gigantic');
 
       final loaded = store.load();
       expect(loaded.kernel, PlayerKernel.avplayer);

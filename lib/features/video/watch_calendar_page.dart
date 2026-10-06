@@ -80,7 +80,7 @@ class _WatchCalendarPageState extends State<WatchCalendarPage> {
           _buildHeader(activeDays),
           _buildWeekdayRow(),
           _buildGrid(grid),
-          const Divider(height: 1, color: LumeTheme.divider),
+          Divider(height: 1, color: LumeTheme.divider),
           Expanded(child: _buildDayDetail(grid)),
         ],
       ),
@@ -103,7 +103,7 @@ class _WatchCalendarPageState extends State<WatchCalendarPage> {
                 Text(
                   '${_month.year} 年 ${_month.month} 月',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
@@ -111,7 +111,7 @@ class _WatchCalendarPageState extends State<WatchCalendarPage> {
                 ),
                 Text(
                   activeDays == 0 ? '本月暂无记录' : '本月 $activeDays 天有记录',
-                  style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
               ],
             ),
@@ -137,7 +137,7 @@ class _WatchCalendarPageState extends State<WatchCalendarPage> {
               child: Text(
                 label,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
             ),
         ],
@@ -177,7 +177,7 @@ class _WatchCalendarPageState extends State<WatchCalendarPage> {
   Widget _buildDayDetail(List<CalendarDay> grid) {
     final selected = _selected;
     if (selected == null) {
-      return const Center(
+      return Center(
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Text(
@@ -197,7 +197,7 @@ class _WatchCalendarPageState extends State<WatchCalendarPage> {
           padding: const EdgeInsets.all(24),
           child: Text(
             '${day.date.month} 月 ${day.date.day} 日没有记录',
-            style: const TextStyle(fontSize: 13, color: LumeTheme.muted),
+            style: TextStyle(fontSize: 13, color: LumeTheme.muted),
           ),
         ),
       );
@@ -297,7 +297,7 @@ class _SectionLabel extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(4, 8, 4, 6),
         child: Text(
           text,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
             color: LumeTheme.muted,
@@ -339,7 +339,7 @@ class _EntryTile extends StatelessWidget {
                     entry.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       color: LumeTheme.textPrimary,
@@ -350,7 +350,7 @@ class _EntryTile extends StatelessWidget {
                       entry.chapterTitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         color: LumeTheme.muted,
                       ),
@@ -360,7 +360,7 @@ class _EntryTile extends StatelessWidget {
             ),
             Text(
               entry.kind.label,
-              style: const TextStyle(fontSize: 11, color: LumeTheme.muted),
+              style: TextStyle(fontSize: 11, color: LumeTheme.muted),
             ),
           ],
         ),

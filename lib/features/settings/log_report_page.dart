@@ -88,7 +88,7 @@ class _LogReportPageState extends State<LogReportPage> {
                     : summary.hasProblems
                         ? '发现 ${summary.errors} 个错误、${summary.warnings} 个警告'
                         : '本次运行没有错误与警告',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
@@ -98,16 +98,16 @@ class _LogReportPageState extends State<LogReportPage> {
               Text(
                 '日志条数：共 ${summary.total} 条'
                 '（信息 ${summary.total - summary.errors - summary.warnings}）',
-                style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
               if (!summary.isEmpty)
                 Text(
                   '时间范围：${LogExporter.formatTime(summary.first!)} ~ '
                   '${LogExporter.formatTime(summary.last!)}',
-                  style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '报告只包含本次运行的日志（重启后清空），导出为应用目录下的 '
                 'logs/ 文本文件。',
                 style: TextStyle(fontSize: 12, color: LumeTheme.muted),
@@ -140,7 +140,7 @@ class _LogReportPageState extends State<LogReportPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                const Text(
+                Text(
                   '最近一次导出',
                   style: TextStyle(
                     fontSize: 13,
@@ -151,12 +151,12 @@ class _LogReportPageState extends State<LogReportPage> {
                 const SizedBox(height: 4),
                 Text(
                   result.file.path,
-                  style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '${result.entries} 条日志 · ${_formatBytes(result.bytes)}',
-                  style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
               ],
             ),

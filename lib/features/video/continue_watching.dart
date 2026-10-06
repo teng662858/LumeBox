@@ -48,7 +48,7 @@ class ContinueWatchingSection extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
           child: Row(
             children: <Widget>[
-              const Expanded(
+              Expanded(
                 child: Text(
                   '继续观看',
                   style: TextStyle(
@@ -61,7 +61,7 @@ class ContinueWatchingSection extends StatelessWidget {
               if (onShowAll != null)
                 GestureDetector(
                   onTap: onShowAll,
-                  child: const Padding(
+                  child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     child: Text(
                       '全部',
@@ -139,7 +139,7 @@ class _ContinueTile extends StatelessWidget {
                   item.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
@@ -147,12 +147,12 @@ class _ContinueTile extends StatelessWidget {
                 ),
               ),
               if (finished)
-                const Text(
+                Text(
                   '已看完',
                   style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 )
               else
-                const Icon(
+                Icon(
                   Icons.play_circle_outline,
                   size: 20,
                   color: LumeTheme.muted,
@@ -164,7 +164,7 @@ class _ContinueTile extends StatelessWidget {
             progress.describe(),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
           ),
           const SizedBox(height: 8),
           ClipRRect(

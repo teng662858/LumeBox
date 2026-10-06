@@ -184,7 +184,7 @@ class _ComicExtensionPageState extends State<ComicExtensionPage> {
 }
 
 /// 停用标记的颜色：与其他管理页同色系。
-const Color _disabledColor = LumeTheme.danger;
+Color get _disabledColor => LumeTheme.danger;
 
 class _ExtensionTile extends StatelessWidget {
   const _ExtensionTile({
@@ -227,7 +227,7 @@ class _ExtensionTile extends StatelessWidget {
                   extension.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
@@ -248,7 +248,7 @@ class _ExtensionTile extends StatelessWidget {
               if (extension.nsfw) 'NSFW',
               if (installedHere) '已安装 v${installed!.version}',
             ].join(' · '),
-            style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
           ),
           if (extension.sourceNames.isNotEmpty) ...<Widget>[
             const SizedBox(height: 2),
@@ -256,12 +256,12 @@ class _ExtensionTile extends StatelessWidget {
               '来源：${extension.sourceNames.join('、')}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+              style: TextStyle(fontSize: 12, color: LumeTheme.muted),
             ),
           ],
           if (!extension.isRunnable) ...<Widget>[
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'APK 载体需要 Android 运行时，本平台不能运行——只能浏览',
               style: TextStyle(fontSize: 12, color: _disabledColor),
             ),

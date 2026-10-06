@@ -51,7 +51,7 @@ class SourceStateView extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               state.label,
-              style: const TextStyle(fontSize: 13, color: LumeTheme.muted),
+              style: TextStyle(fontSize: 13, color: LumeTheme.muted),
             ),
           ],
         ),

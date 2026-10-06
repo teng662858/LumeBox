@@ -1626,7 +1626,7 @@ class _VideoPageState extends State<VideoPage>
               : Text(
                   snapshot.error!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     color: LumeTheme.muted,
                   ),
@@ -1648,8 +1648,8 @@ class _VideoPageState extends State<VideoPage>
           children: <Widget>[
             TextField(
               controller: _input,
-              style: const TextStyle(color: LumeTheme.textPrimary),
-              decoration: const InputDecoration(
+              style: TextStyle(color: LumeTheme.textPrimary),
+              decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: '视频地址或本地路径',
                 hintStyle: TextStyle(color: LumeTheme.muted),
@@ -1660,7 +1660,7 @@ class _VideoPageState extends State<VideoPage>
             if (_error != null)
               Text(
                 _error!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   color: LumeTheme.danger,
                 ),
@@ -1687,14 +1687,14 @@ class _VideoPageState extends State<VideoPage>
                     children: <Widget>[
                       Text(
                         _format(snapshot.position),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: LumeTheme.muted,
                         ),
                       ),
                       Text(
                         _format(snapshot.duration),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: LumeTheme.muted,
                         ),
@@ -1892,7 +1892,7 @@ class _PlayerStageNotice extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
@@ -1902,7 +1902,7 @@ class _PlayerStageNotice extends StatelessWidget {
               Text(
                 detail,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   height: 1.5,
                   color: LumeTheme.muted,
@@ -1954,7 +1954,7 @@ class _VideoSkeleton extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const Text(
+              Text(
                 LumeTheme.appName,
                 style: TextStyle(
                   fontSize: 16,
@@ -1963,13 +1963,13 @@ class _VideoSkeleton extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '当前平台在 Phase1 仅保留页面骨架',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13, color: LumeTheme.muted),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '播放器设置与画中画为 iOS 专属模块：本平台仅 UI 骨架占位',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13, color: LumeTheme.muted),
@@ -2009,7 +2009,7 @@ class _ChapterSheet extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    const Text(
+                    Text(
                       '选择剧集',
                       style: TextStyle(
                         fontSize: 15,
@@ -2022,7 +2022,7 @@ class _ChapterSheet extends StatelessWidget {
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                      style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                     ),
                   ],
                 ),
@@ -2039,7 +2039,7 @@ class _ChapterSheet extends StatelessWidget {
                         chapter.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: LumeTheme.textPrimary),
+                        style: TextStyle(color: LumeTheme.textPrimary),
                       ),
                       onTap: () => Navigator.of(context).pop(chapter),
                     );

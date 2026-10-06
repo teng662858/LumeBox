@@ -15,7 +15,7 @@ class GlassPanel extends StatelessWidget {
     required this.child,
     this.radius = 0,
     this.blur = 24,
-    this.color = LumeTheme.glass,
+    this.color,
     this.border,
     this.padding,
   });
@@ -29,7 +29,10 @@ class GlassPanel extends StatelessWidget {
   final double blur;
 
   /// 玻璃底色（默认半透明白）。
-  final Color color;
+  /// 玻璃底色；为空时用当前主题的 [LumeTheme.glass]。
+  ///
+  /// 不能写成构造参数默认值：主题色随亮度变化，是取值而非常量。
+  final Color? color;
 
   /// 描边；为空时给一圈极浅边。
   final Border? border;
@@ -45,7 +48,7 @@ class GlassPanel extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: color,
+            color: color ?? LumeTheme.glass,
             borderRadius: borderRadius,
             border: border ?? Border.all(color: LumeTheme.hairline),
           ),
@@ -168,7 +171,7 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 0,
-      flexibleSpace: const ClipRect(
+      flexibleSpace: ClipRect(
         child: GlassPanel(
           border: Border(
             bottom: BorderSide(color: LumeTheme.hairline),

@@ -291,4 +291,195 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     expect(manager.closed, isTrue);
   });
+
+  // ==========================================================================
+  // 图源分组与失效标记（文档「图源导入/导出模块规范」）
+  // ==========================================================================
+
+  group('图源分组', () {
+    testWidgets('设置分组：写回管理器，列表上显示分组名', (tester) async {
+      final manager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(id: 'a', name: '示例源', version: '1.0.0', enabled: true),
+        ],
+      );
+      await pumpPage(tester, manager);
+
+      await openMenu(tester);
+      await tester.tap(find.text('设置分组'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '主力');
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+
+      expect(manager.groups.single, ('a', '主力'));
+      expect(find.text('主力'), findsOneWidget, reason: '列表上要能看出分组');
+      expect(find.textContaining('已归入分组'), findsOneWidget);
+    });
+
+    testWidgets('取消分组：留空保存即取消', (tester) async {
+      final manager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(
+            id: 'a',
+            name: '示例源',
+            version: '1.0.0',
+            enabled: true,
+            group: '主力',
+          ),
+        ],
+      );
+      await pumpPage(tester, manager);
+      expect(find.text('主力'), findsOneWidget);
+
+      await openMenu(tester);
+      await tester.tap(find.text('设置分组'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '');
+      await tester.tap(find.widgetWithText(FilledButton, '保存'));
+      await tester.pumpAndSettle();
+
+      expect(manager.groups.single, ('a', ''));
+      expect(find.textContaining('已取消'), findsOneWidget);
+    });
+
+    testWidgets('已有分组作为快捷选项出现', (tester) async {
+      final manager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(
+            id: 'a',
+            name: '甲源',
+            version: '1.0.0',
+            enabled: true,
+            group: '主力',
+          ),
+          SourceDescriptor(
+            id: 'b',
+            name: '乙源',
+            version: '1.0.0',
+            enabled: true,
+            group: '备用',
+          ),
+          SourceDescriptor(id: 'c', name: '丙源', version: '1.0.0', enabled: true),
+        ],
+      );
+      await pumpPage(tester, manager);
+
+      // 打开丙源（未分组）的菜单：第三行的「更多」。
+      await tester.tap(find.byTooltip('更多操作').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('设置分组'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('已有分组'), findsOneWidget);
+      // 两个已有分组都在（快捷 chip）。
+      expect(find.widgetWithText(ActionChip, '主力'), findsOneWidget);
+      expect(find.widgetWithText(ActionChip, '备用'), findsOneWidget);
+    });
+  });
+
+  group('失效标记', () {
+    testWidgets('失效的源在列表上标出「已失效」并给出失败次数', (tester) async {
+      final manager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(
+            id: 'a',
+            name: '坏源',
+            version: '1.0.0',
+            enabled: true,
+            failureCount: 3,
+            broken: true,
+          ),
+        ],
+      );
+      await pumpPage(tester, manager);
+
+      expect(find.textContaining('已失效'), findsOneWidget);
+      expect(find.textContaining('连错 3 次'), findsOneWidget);
+    });
+
+    testWidgets('失效的源才有「恢复」菜单项', (tester) async {
+      final manager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(
+            id: 'a',
+            name: '坏源',
+            version: '1.0.0',
+            enabled: true,
+            failureCount: 3,
+            broken: true,
+          ),
+        ],
+      );
+      await pumpPage(tester, manager);
+      await openMenu(tester);
+      expect(find.text('恢复（解除失效标记）'), findsOneWidget);
+    });
+
+    testWidgets('正常的源没有「恢复」菜单项', (tester) async {
+      final manager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(id: 'a', name: '好源', version: '1.0.0', enabled: true),
+        ],
+      );
+      await pumpPage(tester, manager);
+      await openMenu(tester);
+      expect(find.text('恢复（解除失效标记）'), findsNothing);
+    });
+
+    testWidgets('恢复：二次确认后写回管理器，标记消失', (tester) async {
+      final manager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(
+            id: 'a',
+            name: '坏源',
+            version: '1.0.0',
+            enabled: true,
+            failureCount: 3,
+            broken: true,
+          ),
+        ],
+      );
+      await pumpPage(tester, manager);
+
+      await openMenu(tester);
+      await tester.tap(find.text('恢复（解除失效标记）'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('恢复源'), findsOneWidget);
+      expect(find.textContaining('连续失败 3 次'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '恢复'));
+      await tester.pumpAndSettle();
+
+      expect(manager.recoveredIds, <String>['a']);
+      expect(find.textContaining('已失效'), findsNothing);
+      expect(find.textContaining('已恢复'), findsOneWidget);
+    });
+
+    testWidgets('恢复：取消则不写回', (tester) async {
+      final manager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(
+            id: 'a',
+            name: '坏源',
+            version: '1.0.0',
+            enabled: true,
+            failureCount: 3,
+            broken: true,
+          ),
+        ],
+      );
+      await pumpPage(tester, manager);
+
+      await openMenu(tester);
+      await tester.tap(find.text('恢复（解除失效标记）'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, '取消'));
+      await tester.pumpAndSettle();
+
+      expect(manager.recoveredIds, isEmpty);
+      expect(find.textContaining('已失效'), findsOneWidget);
+    });
+  });
 }

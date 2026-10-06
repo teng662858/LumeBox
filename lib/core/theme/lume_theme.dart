@@ -1,102 +1,261 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// 全局浅色主题：分层底 + 玻璃磨砂 + 极淡阴影。
+/// 全局主题色板：**浅色与深色两套值**，由 [LumeTheme.of] 按当前亮度取用。
 ///
-/// 三条分层规则（其它颜色都是它们的派生）：
-/// 1. **底与卡不同色**——页面最底层是极浅米灰 [base]，卡片是纯白 [surface]，
-///    靠微弱色差分出第一层；页面背景另带一层几乎看不见的渐变，避免大色块死板；
+/// ## 为什么是「色板对象 + 静态转发」而不是直接换成 ThemeExtension
+///
+/// 全仓库有 300 多处 `LumeTheme.textPrimary` 这类引用，其中 78 处写在 `const`
+/// 构造里。若把它们逐个改成 `Theme.of(context).extension<...>()`，改动面覆盖
+/// 每个页面，且每处都要处理 const 展开——风险远大于收益。这里的做法是：
+///
+/// - 颜色值收进 [LumePalette]（浅色 / 深色两套）；
+/// - [LumeTheme] 保留原来的静态名，**按当前生效亮度转发**到对应色板；
+/// - 亮度由 [LumeTheme.applyBrightness] 在 MaterialApp 构建时写入（见 `app.dart`）。
+///
+/// 代价是「颜色读取依赖一个进程级当前亮度」，因此有一条硬约束：
+/// **必须在使用前设置亮度**（`LumeTheme.build()` 内部会按传入的 brightness
+/// 设定）。阅读器不读这套颜色（见下），所以不存在「阅读页被全局主题带跑」的问题。
+///
+/// ## 阅读器为什么不在这里
+///
+/// 小说阅读页有自己的一套阅读主题（羊皮纸 / 夜间深灰 / 护眼绿 / 纯白 / 自定义），
+/// 漫画阅读页的底色由阅读设置决定——两者都**不受全局主题控制**（文档要求）。
+/// 它们读的是 `NovelTypesetting` / `ComicSettings` 里的颜色，与本文件无关。
+class LumePalette {
+  const LumePalette({
+    required this.accent,
+    required this.base,
+    required this.surface,
+    required this.surfaceAlt,
+    required this.glass,
+    required this.glassStrong,
+    required this.textPrimary,
+    required this.textSecondary,
+    required this.textHint,
+    required this.divider,
+    required this.hairline,
+    required this.fill,
+    required this.fillStrong,
+    required this.success,
+    required this.danger,
+    required this.warning,
+    required this.info,
+    required this.cardShadow,
+    required this.floatShadow,
+    required this.backgroundGradient,
+    required this.overlayStyle,
+    required this.snackBar,
+    required this.onAccent,
+  });
+
+  final Color accent;
+  final Color base;
+  final Color surface;
+  final Color surfaceAlt;
+  final Color glass;
+  final Color glassStrong;
+  final Color textPrimary;
+  final Color textSecondary;
+  final Color textHint;
+  final Color divider;
+  final Color hairline;
+  final Color fill;
+  final Color fillStrong;
+  final Color success;
+  final Color danger;
+  final Color warning;
+  final Color info;
+  final List<BoxShadow> cardShadow;
+  final List<BoxShadow> floatShadow;
+  final List<Color> backgroundGradient;
+
+  /// 状态栏图标明暗（浅色主题要深色图标，反之亦然）。
+  final Brightness overlayStyle;
+
+  /// 深色条：SnackBar 在两种主题下都用它（两种底上都能读）。
+  final Color snackBar;
+
+  /// 品牌紫上的前景色（按钮文字 / 选中芯片文字）。
+  final Color onAccent;
+
+  /// 浅色主题：极浅分层底 + 白卡。
+  static const LumePalette light = LumePalette(
+    accent: Color(0xFF7C5CFF),
+    base: Color(0xFFF7F7F9),
+    surface: Color(0xFFFFFFFF),
+    surfaceAlt: Color(0xFFFBFBFC),
+    glass: Color(0xB8FFFFFF),
+    glassStrong: Color(0xE0FFFFFF),
+    textPrimary: Color(0xFF1A1A1A),
+    textSecondary: Color(0xFF707076),
+    textHint: Color(0xFF99999F),
+    divider: Color(0x12000000),
+    hairline: Color(0x14000000),
+    fill: Color(0x0A000000),
+    fillStrong: Color(0x14000000),
+    success: Color(0xFF2E7D4F),
+    danger: Color(0xFFC0392B),
+    warning: Color(0xFFB26A00),
+    info: Color(0xFF2F6FB5),
+    cardShadow: <BoxShadow>[
+      BoxShadow(color: Color(0x0D1A1A1A), blurRadius: 16, offset: Offset(0, 4)),
+    ],
+    floatShadow: <BoxShadow>[
+      BoxShadow(color: Color(0x141A1A1A), blurRadius: 24, offset: Offset(0, 8)),
+      BoxShadow(color: Color(0x0A1A1A1A), blurRadius: 6, offset: Offset(0, 2)),
+    ],
+    backgroundGradient: <Color>[Color(0xFFF9F9FB), Color(0xFFF5F5F8)],
+    overlayStyle: Brightness.dark,
+    snackBar: Color(0xF21A1A22),
+    onAccent: Colors.white,
+  );
+
+  /// 深色主题：分层同样成立——**底比卡更暗**，靠色差分层次（不是纯黑一色到底）。
+  ///
+  /// 取值与浅色主题对偶：浅色是「极浅底 + 纯白卡」，深色是「近黑底 + 稍亮卡」；
+  /// 玻璃改成半透明深色，文字三档整体反转；语义色换成深底上可读的**亮色版本**
+  /// （浅色那套深色语义色在深底上看不清，正是浅色主题当初反过来的理由）。
+  static const LumePalette dark = LumePalette(
+    accent: Color(0xFF9B84FF),
+    base: Color(0xFF121214),
+    surface: Color(0xFF1C1C1F),
+    surfaceAlt: Color(0xFF242428),
+    glass: Color(0xB81C1C1F),
+    glassStrong: Color(0xE02A2A2F),
+    textPrimary: Color(0xFFF2F2F4),
+    textSecondary: Color(0xFFA0A0A8),
+    textHint: Color(0xFF7A7A82),
+    divider: Color(0x14FFFFFF),
+    hairline: Color(0x1AFFFFFF),
+    fill: Color(0x0FFFFFFF),
+    fillStrong: Color(0x1FFFFFFF),
+    success: Color(0xFF5FBF85),
+    danger: Color(0xFFEF6F62),
+    warning: Color(0xFFE0A24C),
+    info: Color(0xFF6FA8E8),
+    cardShadow: <BoxShadow>[
+      BoxShadow(color: Color(0x40000000), blurRadius: 16, offset: Offset(0, 4)),
+    ],
+    floatShadow: <BoxShadow>[
+      BoxShadow(color: Color(0x59000000), blurRadius: 24, offset: Offset(0, 8)),
+      BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2)),
+    ],
+    backgroundGradient: <Color>[Color(0xFF16161A), Color(0xFF111113)],
+    overlayStyle: Brightness.light,
+    snackBar: Color(0xF22E2E36),
+    onAccent: Color(0xFF1A1030),
+  );
+
+  /// 按亮度取色板。
+  static LumePalette of(Brightness brightness) =>
+      brightness == Brightness.dark ? dark : light;
+}
+
+/// 全局主题：分层底 + 玻璃磨砂 + 极淡阴影，**浅色与深色两套**。
+///
+/// 三条分层规则（其它颜色都是它们的派生，两套主题都成立）：
+/// 1. **底与卡不同色**——页面最底层是 [base]，卡片是 [surface]，靠微弱色差分出
+///    第一层；页面背景另带一层几乎看不见的渐变，避免大色块死板；
 /// 2. **玻璃只给「浮在内容之上」的条**——顶部栏 / 底部导航 / 覆盖面板走
 ///    [glass] + 模糊（见 `GlassPanel`），滚动内容从下面透出来；
 /// 3. **卡片靠阴影而不是描边浮起**——[cardShadow] 透明度极低，只做「轻微浮起」。
 ///
 /// 文字三档：[textPrimary] / [textSecondary] / [textHint]；装饰与交互元素一律用
-/// 低饱和品牌紫 [accent]——纯白不再充当文字色（浅底上会看不见）。
+/// 低饱和品牌紫 [accent]。
 ///
 /// **阅读器不属于这里**：小说阅读页有自己的一套阅读主题（浅色 / 暗色 / 护眼等），
 /// 漫画阅读页的底色与工具栏也由阅读设置决定，两者都不读本文件的颜色。
+///
+/// ## 当前亮度从哪来
+///
+/// 静态色名（[textPrimary] 等）按 [_brightness] 转发，而它由 [build] 设定——
+/// `MaterialApp` 构建时先调 `LumeTheme.build(brightness: ...)`，页面随后构建，
+/// 因此读取时拿到的总是与当前主题一致的色板。这是「保住 300 处静态引用、
+/// 不逐个改 ThemeExtension」的代价，约束写在 [LumePalette] 的文档里。
 class LumeTheme {
   LumeTheme._();
 
   /// App 内所有标题与页面文字统一使用项目名称。
   static const String appName = 'Lume Box';
 
+  /// 当前生效亮度。由 [build] 写入；默认浅色（未设定时的历史行为）。
+  static Brightness _brightness = Brightness.light;
+
+  /// 当前生效色板。
+  static LumePalette get palette => LumePalette.of(_brightness);
+
+  /// 按亮度取色板（供需要显式区分的场合，如阅读页的工具栏）。
+  static LumePalette paletteOf(Brightness brightness) =>
+      LumePalette.of(brightness);
+
+  /// 显式设定当前亮度（[build] 会调；测试也可直接调来验深色）。
+  static void applyBrightness(Brightness brightness) {
+    _brightness = brightness;
+  }
+
   // ------------------------------------------------------------------ 色板
 
   /// 品牌紫（低饱和）：按钮、高亮、交互元素专用。
-  static const Color accent = Color(0xFF7C5CFF);
+  static Color get accent => palette.accent;
 
-  /// 页面最底层：极浅米灰。
-  static const Color base = Color(0xFFF7F7F9);
+  /// 页面最底层。
+  static Color get base => palette.base;
 
-  /// 卡片：比底色更白，第一层层次由此分出。
-  static const Color surface = Color(0xFFFFFFFF);
+  /// 卡片：与底色区分出的第一层。
+  static Color get surface => palette.surface;
 
-  /// 卡内嵌块 / 次级面板：比卡片略灰、比底色略白，第三层。
-  static const Color surfaceAlt = Color(0xFFFBFBFC);
+  /// 卡内嵌块 / 次级面板：第三层。
+  static Color get surfaceAlt => palette.surfaceAlt;
 
-  /// 玻璃层底色：半透明白（顶栏 / 底栏 / 覆盖面板），叠加模糊成磨砂。
-  static const Color glass = Color(0xB8FFFFFF);
+  /// 玻璃层底色：半透明（顶栏 / 底栏 / 覆盖面板），叠加模糊成磨砂。
+  static Color get glass => palette.glass;
 
-  /// 玻璃层上更实一点的白（在图片 / 视频之上需要更强可读性的面板）。
-  static const Color glassStrong = Color(0xE0FFFFFF);
+  /// 玻璃层上更实一点（在图片 / 视频之上需要更强可读性的面板）。
+  static Color get glassStrong => palette.glassStrong;
 
   /// 主文本。
-  static const Color textPrimary = Color(0xFF1A1A1A);
+  static Color get textPrimary => palette.textPrimary;
 
   /// 辅助说明。
-  static const Color textSecondary = Color(0xFF707076);
+  static Color get textSecondary => palette.textSecondary;
 
   /// 占位提示。
-  static const Color textHint = Color(0xFF99999F);
+  static Color get textHint => palette.textHint;
 
   /// 旧名兼容：全仓库大量使用 `LumeTheme.muted` 作辅助说明色。
-  static const Color muted = textSecondary;
+  static Color get muted => textSecondary;
 
   /// 极浅分隔线：替代硬横线，能不用就不用（优先靠间距分层）。
-  static const Color divider = Color(0x12000000);
+  static Color get divider => palette.divider;
 
-  /// 极浅描边：白卡在浅底上的边界。
-  static const Color hairline = Color(0x14000000);
+  /// 极浅描边：卡片在底上的边界。
+  static Color get hairline => palette.hairline;
 
   /// 极浅填充：芯片 / 内嵌块 / 未选中段。
-  static const Color fill = Color(0x0A000000);
+  static Color get fill => palette.fill;
 
   /// 稍重一点的填充（选中态底座、进度条槽）。
-  static const Color fillStrong = Color(0x14000000);
+  static Color get fillStrong => palette.fillStrong;
 
-  /// 语义色：浅底上可读的深色版本（原来的亮色系在白底上看不清）。
-  static const Color success = Color(0xFF2E7D4F);
-  static const Color danger = Color(0xFFC0392B);
-  static const Color warning = Color(0xFFB26A00);
-  static const Color info = Color(0xFF2F6FB5);
+  /// 品牌紫上的前景色。
+  static Color get onAccent => palette.onAccent;
+
+  /// 语义色：各自主题下可读的版本（浅色用深色版，深色用亮色版）。
+  static Color get success => palette.success;
+  static Color get danger => palette.danger;
+  static Color get warning => palette.warning;
+  static Color get info => palette.info;
 
   // ------------------------------------------------------------------ 阴影
 
   /// 卡片阴影：极柔和，只做出「轻微浮起」。
-  static const List<BoxShadow> cardShadow = <BoxShadow>[
-    BoxShadow(
-      color: Color(0x0D1A1A1A),
-      blurRadius: 16,
-      offset: Offset(0, 4),
-    ),
-  ];
+  static List<BoxShadow> get cardShadow => palette.cardShadow;
 
   /// 浮得更高一档的阴影（底部导航这种悬在内容之上的元素）。
-  static const List<BoxShadow> floatShadow = <BoxShadow>[
-    BoxShadow(
-      color: Color(0x141A1A1A),
-      blurRadius: 24,
-      offset: Offset(0, 8),
-    ),
-    BoxShadow(
-      color: Color(0x0A1A1A1A),
-      blurRadius: 6,
-      offset: Offset(0, 2),
-    ),
-  ];
+  static List<BoxShadow> get floatShadow => palette.floatShadow;
 
-  /// 卡片的标准装饰：纯白 + 极浅描边 + 柔和阴影。
+  /// 卡片的标准装饰。
   static BoxDecoration cardDecoration({double radius = 16}) {
     return BoxDecoration(
       color: surface,
@@ -108,27 +267,27 @@ class LumeTheme {
 
   // ------------------------------------------------------------------ 背景
 
-  /// 页面统一背景：极浅米灰，带一层几乎看不见的渐变（避免大色块死板）。
-  static const BoxDecoration background = BoxDecoration(
-    gradient: LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: <Color>[
-        Color(0xFFF9F9FB),
-        Color(0xFFF5F5F8),
-      ],
-    ),
-  );
+  /// 页面统一背景：带一层几乎看不见的渐变（避免大色块死板）。
+  static BoxDecoration get background => BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: palette.backgroundGradient,
+        ),
+      );
 
   // ------------------------------------------------------------------ 主题
 
-  static ThemeData build() {
+  /// 构建主题。[brightness] 决定用哪套色板。
+  static ThemeData build({Brightness brightness = Brightness.light}) {
+    applyBrightness(brightness);
+    final isDark = brightness == Brightness.dark;
     final scheme = ColorScheme.fromSeed(
       seedColor: accent,
-      brightness: Brightness.light,
+      brightness: brightness,
     ).copyWith(
       primary: accent,
-      onPrimary: Colors.white,
+      onPrimary: onAccent,
       surface: surface,
       onSurface: textPrimary,
       onSurfaceVariant: textSecondary,
@@ -138,24 +297,28 @@ class LumeTheme {
     );
     return ThemeData(
       useMaterial3: true,
+      brightness: brightness,
       colorScheme: scheme,
       scaffoldBackgroundColor: base,
       canvasColor: surface,
       dividerColor: divider,
-      dividerTheme: const DividerThemeData(
+      dividerTheme: DividerThemeData(
         color: divider,
         thickness: 1,
         space: 1,
       ),
       splashColor: accent.withValues(alpha: 0.06),
       highlightColor: accent.withValues(alpha: 0.04),
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
-        systemOverlayStyle: SystemUiOverlayStyle.dark,
+        // 状态栏图标明暗跟着主题走（深色主题要浅色图标，否则看不见）。
+        systemOverlayStyle: isDark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark,
         titleTextStyle: TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w600,
@@ -165,7 +328,7 @@ class LumeTheme {
         iconTheme: IconThemeData(color: textPrimary),
         actionsIconTheme: IconThemeData(color: textPrimary),
       ),
-      dialogTheme: const DialogThemeData(
+      dialogTheme: DialogThemeData(
         backgroundColor: surface,
         surfaceTintColor: Colors.transparent,
         titleTextStyle: TextStyle(
@@ -175,17 +338,18 @@ class LumeTheme {
         ),
         contentTextStyle: TextStyle(fontSize: 14, color: textSecondary),
       ),
-      bottomSheetTheme: const BottomSheetThemeData(
+      bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: surface,
         surfaceTintColor: Colors.transparent,
         modalBackgroundColor: surface,
-        modalBarrierColor: Color(0x33101018),
+        modalBarrierColor:
+            isDark ? const Color(0x99000000) : const Color(0x33101018),
       ),
-      listTileTheme: const ListTileThemeData(
+      listTileTheme: ListTileThemeData(
         textColor: textPrimary,
         iconColor: textSecondary,
       ),
-      textTheme: const TextTheme(
+      textTheme: TextTheme(
         titleLarge: TextStyle(color: textPrimary),
         titleMedium: TextStyle(color: textPrimary),
         titleSmall: TextStyle(color: textPrimary),
@@ -194,15 +358,15 @@ class LumeTheme {
         bodySmall: TextStyle(color: textSecondary),
         labelLarge: TextStyle(color: textPrimary),
       ),
-      iconTheme: const IconThemeData(color: textPrimary),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(color: accent),
-      sliderTheme: const SliderThemeData(
+      iconTheme: IconThemeData(color: textPrimary),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: accent),
+      sliderTheme: SliderThemeData(
         activeTrackColor: accent,
         thumbColor: accent,
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) =>
-            states.contains(WidgetState.selected) ? Colors.white : surface),
+            states.contains(WidgetState.selected) ? onAccent : surface),
         trackColor: WidgetStateProperty.resolveWith((states) =>
             states.contains(WidgetState.selected) ? accent : fillStrong),
         trackOutlineColor: WidgetStateProperty.resolveWith((states) =>
@@ -214,53 +378,53 @@ class LumeTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: accent,
-          foregroundColor: Colors.white,
+          foregroundColor: onAccent,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: accent,
-          side: const BorderSide(color: hairline),
+          side: BorderSide(color: hairline),
         ),
       ),
-      chipTheme: const ChipThemeData(
+      chipTheme: ChipThemeData(
         backgroundColor: surfaceAlt,
         selectedColor: accent,
         side: BorderSide(color: hairline),
         labelStyle: TextStyle(color: textPrimary, fontSize: 12),
-        secondaryLabelStyle: TextStyle(color: Colors.white, fontSize: 12),
+        secondaryLabelStyle: TextStyle(color: onAccent, fontSize: 12),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: surfaceAlt,
-        hintStyle: const TextStyle(color: textHint, fontSize: 14),
-        labelStyle: const TextStyle(color: textSecondary, fontSize: 14),
+        hintStyle: TextStyle(color: textHint, fontSize: 14),
+        labelStyle: TextStyle(color: textSecondary, fontSize: 14),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
           vertical: 12,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: hairline),
+          borderSide: BorderSide(color: hairline),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: hairline),
+          borderSide: BorderSide(color: hairline),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: accent, width: 1.4),
+          borderSide: BorderSide(color: accent, width: 1.4),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: const Color(0xF21A1A22),
+        backgroundColor: palette.snackBar,
         contentTextStyle: const TextStyle(color: Colors.white, fontSize: 13),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
       ),
-      popupMenuTheme: const PopupMenuThemeData(
+      popupMenuTheme: PopupMenuThemeData(
         color: surface,
         surfaceTintColor: Colors.transparent,
         textStyle: TextStyle(color: textPrimary, fontSize: 14),
@@ -271,12 +435,12 @@ class LumeTheme {
               states.contains(WidgetState.selected) ? accent : textSecondary),
           backgroundColor: WidgetStateProperty.resolveWith((states) =>
               states.contains(WidgetState.selected) ? fill : surface),
-          side: const WidgetStatePropertyAll<BorderSide>(
+          side: WidgetStatePropertyAll<BorderSide>(
             BorderSide(color: hairline),
           ),
         ),
       ),
-      tabBarTheme: const TabBarThemeData(
+      tabBarTheme: TabBarThemeData(
         labelColor: accent,
         unselectedLabelColor: textSecondary,
         dividerColor: Colors.transparent,

@@ -174,7 +174,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
                 _hasSectionPicker
                     ? '源只写入所选板块，不会跨板块共用。'
                     : '源只写入当前板块，不会跨板块共用。',
-                style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
               const SizedBox(height: 12),
               SegmentedButton<_ImportMode>(
@@ -212,7 +212,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
                     const SizedBox(width: 8),
                     Text(
                       _progress!,
-                      style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                      style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                     ),
                   ],
                 ),
@@ -221,14 +221,14 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
                 const SizedBox(height: 8),
                 Text(
                   _hint!,
-                  style: const TextStyle(fontSize: 12, color: LumeTheme.success),
+                  style: TextStyle(fontSize: 12, color: LumeTheme.success),
                 ),
               ],
               if (_error != null) ...<Widget>[
                 const SizedBox(height: 8),
                 Text(
                   _error!,
-                  style: const TextStyle(fontSize: 12, color: LumeTheme.danger),
+                  style: TextStyle(fontSize: 12, color: LumeTheme.danger),
                 ),
               ],
             ],
@@ -298,7 +298,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
             children: <Widget>[
               Text(
                 '已选 ${_files.length} 个文件',
-                style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
               const Spacer(),
               TextButton(
@@ -321,7 +321,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
+        Text(
           '脚本头部写一行「// LumeSource: {"id":"…","name":"…"}」即可被识别；'
           '只写顶层函数（getList(page) 等）的脚本同样支持。'
           '也可以选择「一行一个地址」的清单文件（.txt / .js.md5），'
@@ -347,7 +347,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
               file.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: LumeTheme.textPrimary),
+              style: TextStyle(fontSize: 12, color: LumeTheme.textPrimary),
             ),
           ),
           const SizedBox(width: 8),
@@ -382,7 +382,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
           label: const Text('从剪贴板'),
         ),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           '订阅返回单个脚本时直接导入；返回「一行一个脚本地址」的清单时逐个拉取；'
           '返回 MD5 校验值（.js.md5）时，去掉 .md5 后缀取脚本并校验后再导入。',
           style: TextStyle(fontSize: 12, color: LumeTheme.muted),

@@ -383,7 +383,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                           detail?.title ?? widget.target.title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
                             color: LumeTheme.textPrimary,
@@ -396,7 +396,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                               detail?.subtitle ?? widget.target.subtitle!,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 color: LumeTheme.muted,
                               ),
@@ -405,7 +405,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                         const SizedBox(height: 8),
                         Text(
                           '共 ${_chapters.length} 章',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             color: LumeTheme.muted,
                           ),
@@ -415,7 +415,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
                               '读至 ${progress.describe()}',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 color: LumeTheme.textPrimary,
                               ),
@@ -500,7 +500,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
         padding: const EdgeInsets.all(14),
         child: Text(
           description,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
             height: 1.6,
             color: LumeTheme.textSecondary,
@@ -519,7 +519,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
         children: <Widget>[
           Text(
             '章节（${_chapters.length}）',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
@@ -618,7 +618,7 @@ class _DownloadScopeSheet extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Text(
+                Text(
                   '批量下载',
                   style: TextStyle(
                     fontSize: 16,
@@ -627,7 +627,7 @@ class _DownloadScopeSheet extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   '图片存到应用内的导出目录（按作品 / 章节分目录），'
                   '已下过的图会自动跳过，可随时取消。',
                   style: TextStyle(
@@ -647,7 +647,7 @@ class _DownloadScopeSheet extends StatelessWidget {
                         : null,
                     title: Text(
                       scope.label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         color: LumeTheme.textPrimary,
                       ),
@@ -661,13 +661,13 @@ class _DownloadScopeSheet extends StatelessWidget {
                             ? '暂无可下载章节'
                             : '只下第 ${(readChapterIndex ?? 0) + 1} 章',
                       },
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         color: LumeTheme.muted,
                       ),
                     ),
                     trailing: count > 0
-                        ? const Icon(Icons.chevron_right, color: LumeTheme.muted)
+                        ? Icon(Icons.chevron_right, color: LumeTheme.muted)
                         : null,
                   ),
               ],
@@ -717,7 +717,7 @@ class _DownloadCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   _title(),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
@@ -744,13 +744,13 @@ class _DownloadCard extends StatelessWidget {
               _runningDetail(),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+              style: TextStyle(fontSize: 12, color: LumeTheme.muted),
             ),
           ] else ...<Widget>[
             const SizedBox(height: 4),
             Text(
               _summary(),
-              style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+              style: TextStyle(fontSize: 12, color: LumeTheme.muted),
             ),
             for (final failure in progress.failures.take(3))
               Padding(
@@ -759,7 +759,7 @@ class _DownloadCard extends StatelessWidget {
                   failure,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     color: LumeTheme.danger,
                   ),
@@ -770,7 +770,7 @@ class _DownloadCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 3),
                 child: Text(
                   '…另有 ${progress.failures.length - 3} 章失败',
-                  style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
               ),
             const SizedBox(height: 2),
@@ -781,7 +781,7 @@ class _DownloadCard extends StatelessWidget {
                     progress.destination,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11, color: LumeTheme.muted),
+                    style: TextStyle(fontSize: 11, color: LumeTheme.muted),
                   ),
                 ),
                 TextButton.icon(
@@ -863,7 +863,7 @@ class _ChapterTile extends StatelessWidget {
               ),
             ),
             if (current)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(left: 6),
                 child: Text(
                   '在读',
@@ -871,7 +871,7 @@ class _ChapterTile extends StatelessWidget {
                 ),
               )
             else if (read)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(left: 6),
                 child: Icon(Icons.done, size: 14, color: LumeTheme.muted),
               ),

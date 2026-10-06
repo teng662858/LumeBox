@@ -141,7 +141,7 @@ class SourceGeneratorPage extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '生成的脚本会走对应板块的正常导入链路（与手动导入同一套校验），'
                 '不会绕过板块隔离。',
                 style: TextStyle(fontSize: 12, color: LumeTheme.muted),
@@ -168,13 +168,13 @@ class _PendingBanner extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Icon(
+          Icon(
             Icons.construction_outlined,
             size: 22,
             color: LumeTheme.accent,
           ),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -217,7 +217,7 @@ class _ReservedNote extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const <Widget>[
+        children: <Widget>[
           Text(
             '预留扩展项',
             style: TextStyle(
@@ -261,7 +261,7 @@ class _SectionCard extends StatelessWidget {
         children: <Widget>[
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
@@ -270,7 +270,7 @@ class _SectionCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             subtitle,
-            style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
           ),
           const SizedBox(height: 12),
           ...children,
@@ -316,7 +316,7 @@ class _DisabledField extends StatelessWidget {
         decoration: InputDecoration(
           isDense: true,
           hintText: hint,
-          hintStyle: const TextStyle(color: LumeTheme.muted, fontSize: 13),
+          hintStyle: TextStyle(color: LumeTheme.muted, fontSize: 13),
           icon: Icon(icon, size: 18, color: LumeTheme.muted),
           border: const OutlineInputBorder(),
         ),

@@ -52,7 +52,7 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         '弹幕设置',
                         style: TextStyle(
@@ -65,7 +65,7 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
                     if (widget.danmakuCount != null)
                       Text(
                         '本集 ${widget.danmakuCount} 条',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: LumeTheme.muted,
                         ),
@@ -75,7 +75,7 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
                 const SizedBox(height: 4),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text(
+                  title: Text(
                     '显示弹幕',
                     style: TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
                   ),
@@ -168,12 +168,12 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
+                style: TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
               ),
             ),
             Text(
               display,
-              style: const TextStyle(fontSize: 13, color: LumeTheme.muted),
+              style: TextStyle(fontSize: 13, color: LumeTheme.muted),
             ),
           ],
         ),

@@ -419,8 +419,8 @@ class _ExploreViewState extends State<ExploreView> {
               controller: _search,
               autofocus: true,
               textInputAction: TextInputAction.search,
-              style: const TextStyle(color: LumeTheme.textPrimary),
-              decoration: const InputDecoration(
+              style: TextStyle(color: LumeTheme.textPrimary),
+              decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: '搜索',
                 hintStyle: TextStyle(color: LumeTheme.muted),
@@ -542,7 +542,7 @@ class _ExploreViewState extends State<ExploreView> {
                         item.title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: LumeTheme.textPrimary,
@@ -554,7 +554,7 @@ class _ExploreViewState extends State<ExploreView> {
                           item.subtitle!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             color: LumeTheme.muted,
                           ),
@@ -563,7 +563,7 @@ class _ExploreViewState extends State<ExploreView> {
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right, color: LumeTheme.muted),
+                Icon(Icons.chevron_right, color: LumeTheme.muted),
               ],
             ),
           );
@@ -605,7 +605,7 @@ class _ExploreViewState extends State<ExploreView> {
       );
     }
     if (!_hasMore && _items.isNotEmpty) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.symmetric(vertical: 14),
         child: Center(
           child: Text(
@@ -639,7 +639,7 @@ class _PosterTile extends StatelessWidget {
         item.title,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           height: 1.25,
           color: LumeTheme.textPrimary,
@@ -705,7 +705,7 @@ class _FilterDrawer extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
               child: Text(
                 '筛选',
@@ -728,7 +728,7 @@ class _FilterDrawer extends StatelessWidget {
                       () => onSelect(category.id),
                     ),
                   if (categories.isEmpty)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
                       child: Text(
                         '当前源没有提供分类',
@@ -738,9 +738,9 @@ class _FilterDrawer extends StatelessWidget {
                 ],
               ),
             ),
-            const Divider(height: 1, color: LumeTheme.divider),
+            Divider(height: 1, color: LumeTheme.divider),
             ListTile(
-              leading: const Icon(Icons.tune, color: LumeTheme.textSecondary),
+              leading: Icon(Icons.tune, color: LumeTheme.textSecondary),
               title: const Text('源管理'),
               onTap: onManage,
             ),
@@ -762,7 +762,7 @@ class _FilterDrawer extends StatelessWidget {
         ),
       ),
       trailing: selected
-          ? const Icon(Icons.check, size: 18, color: LumeTheme.textPrimary)
+          ? Icon(Icons.check, size: 18, color: LumeTheme.textPrimary)
           : null,
       onTap: onTap,
     );

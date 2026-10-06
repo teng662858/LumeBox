@@ -441,4 +441,171 @@ void main() {
       expect(manager.closed, isTrue);
     }
   });
+
+  // ==========================================================================
+  // 批量刷新全部订阅源（文档第 4 条点名项）
+  // ==========================================================================
+
+  group('批量刷新订阅源', () {
+    /// 一条「有订阅地址」的源（可刷新）。
+    const novelSubscribed = SourceDescriptor(
+      id: 'n-sub',
+      name: '订阅小说源',
+      version: '1.0.0',
+      enabled: true,
+      originUrl: 'https://example.com/novel.js',
+    );
+
+    /// 一条本地导入的源（没有订阅地址，不该被刷新）。
+    const novelLocal = SourceDescriptor(
+      id: 'n-local',
+      name: '本地小说源',
+      version: '1.0.0',
+      enabled: true,
+    );
+
+    const comicSubscribed = SourceDescriptor(
+      id: 'c-sub',
+      name: '订阅漫画源',
+      version: '2.0.0',
+      enabled: true,
+      originUrl: 'https://example.com/comic.js',
+    );
+
+    testWidgets('只刷新有订阅地址的源，本地导入的源一个都不碰', (tester) async {
+      final managers = fakeManagers(sources: <Section, List<SourceDescriptor>>{
+        novel: const <SourceDescriptor>[novelSubscribed, novelLocal],
+        comic: const <SourceDescriptor>[comicSubscribed],
+      });
+      await pumpPage(tester, managers);
+
+      await tester.tap(find.byTooltip('批量刷新订阅源'));
+      await tester.pumpAndSettle();
+
+      // 先确认（会改动多份源）。
+      expect(find.textContaining('刷新 2 个订阅源？'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '刷新'));
+      await tester.pumpAndSettle();
+
+      // 只有两条带订阅地址的被刷新，本地导入的那条没被碰。
+      expect(managers[novel]!.updatedIds, <String>['n-sub']);
+      expect(managers[comic]!.updatedIds, <String>['c-sub']);
+      expect(
+        managers[novel]!.updatedIds,
+        isNot(contains('n-local')),
+        reason: '本地导入的源没有订阅地址，不该出现在刷新范围里',
+      );
+      // 其他板块没被误伤。
+      expect(managers[Section.video]!.updatedIds, isEmpty);
+      expect(managers[Section.cat]!.updatedIds, isEmpty);
+    });
+
+    testWidgets('刷新按板块隔离：小说源只经小说板块的端口', (tester) async {
+      final managers = fakeManagers(sources: <Section, List<SourceDescriptor>>{
+        novel: const <SourceDescriptor>[novelSubscribed],
+      });
+      await pumpPage(tester, managers);
+
+      await tester.tap(find.byTooltip('批量刷新订阅源'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '刷新'));
+      await tester.pumpAndSettle();
+
+      expect(managers[novel]!.updatedIds, <String>['n-sub']);
+      for (final section in Section.values) {
+        if (section == novel) continue;
+        expect(
+          managers[section]!.updatedIds,
+          isEmpty,
+          reason: '${section.label} 板块不该收到刷新调用',
+        );
+      }
+    });
+
+    testWidgets('结果汇总：更新 / 失败分别计数，失败原因逐条列出', (tester) async {
+      final managers = fakeManagers(sources: <Section, List<SourceDescriptor>>{
+        novel: const <SourceDescriptor>[novelSubscribed],
+        comic: const <SourceDescriptor>[comicSubscribed],
+      });
+      managers[novel]!.updateResults['n-sub'] = const SourceUpdateResult.updated(
+        SourceDescriptor(
+          id: 'n-sub',
+          name: '订阅小说源',
+          version: '2.0.0',
+          enabled: true,
+          originUrl: 'https://example.com/novel.js',
+        ),
+      );
+      managers[comic]!.updateResults['c-sub'] =
+          const SourceUpdateResult.failed('订阅拉取失败：连接超时');
+      await pumpPage(tester, managers);
+
+      await tester.tap(find.byTooltip('批量刷新订阅源'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '刷新'));
+      await tester.pumpAndSettle();
+
+      // 有失败 → 模态弹窗（失败原因是排障要看的信息）。
+      expect(find.text('订阅刷新结果'), findsOneWidget);
+      expect(find.textContaining('更新 1'), findsWidgets);
+      expect(find.textContaining('失败 1'), findsWidgets);
+      expect(
+        find.textContaining('订阅拉取失败：连接超时'),
+        findsOneWidget,
+        reason: '失败原因要逐条列出，不能只给个数字',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, '关闭'));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('取消确认：一个源都不刷新', (tester) async {
+      final managers = fakeManagers(sources: <Section, List<SourceDescriptor>>{
+        novel: const <SourceDescriptor>[novelSubscribed],
+      });
+      await pumpPage(tester, managers);
+
+      await tester.tap(find.byTooltip('批量刷新订阅源'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, '取消'));
+      await tester.pumpAndSettle();
+
+      expect(managers[novel]!.updatedIds, isEmpty);
+    });
+
+    testWidgets('没有订阅源：直接说明，不弹确认框', (tester) async {
+      final managers = fakeManagers(sources: <Section, List<SourceDescriptor>>{
+        novel: const <SourceDescriptor>[novelLocal],
+      });
+      await pumpPage(tester, managers);
+
+      await tester.tap(find.byTooltip('批量刷新订阅源'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('没有订阅源可刷新'), findsOneWidget);
+      expect(find.textContaining('刷新 1 个订阅源？'), findsNothing);
+    });
+
+    testWidgets('一条失败不中断整批：后面的源照常刷新', (tester) async {
+      final managers = fakeManagers(sources: <Section, List<SourceDescriptor>>{
+        novel: const <SourceDescriptor>[novelSubscribed],
+        comic: const <SourceDescriptor>[comicSubscribed],
+      });
+      managers[novel]!.updateResults['n-sub'] =
+          const SourceUpdateResult.failed('订阅拉取失败：连接超时');
+      await pumpPage(tester, managers);
+
+      await tester.tap(find.byTooltip('批量刷新订阅源'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '刷新'));
+      await tester.pumpAndSettle();
+
+      expect(
+        managers[comic]!.updatedIds,
+        <String>['c-sub'],
+        reason: '一条失败不该让后面的源被跳过',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, '关闭'));
+      await tester.pumpAndSettle();
+    });
+  });
 }

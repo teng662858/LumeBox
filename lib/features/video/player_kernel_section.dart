@@ -111,7 +111,7 @@ class _PlayerKernelSectionState extends State<PlayerKernelSection> {
           padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const <Widget>[
+            children: <Widget>[
               Text(
                 '播放器内核 · 故障逃生入口',
                 style: TextStyle(

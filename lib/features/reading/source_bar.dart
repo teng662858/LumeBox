@@ -37,7 +37,7 @@ class ReadingSourceBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
       child: Row(
         children: <Widget>[
-          const Icon(Icons.source_outlined, size: 18, color: LumeTheme.muted),
+          Icon(Icons.source_outlined, size: 18, color: LumeTheme.muted),
           const SizedBox(width: 8),
           Expanded(
             child: DropdownButtonHideUnderline(
@@ -46,17 +46,17 @@ class ReadingSourceBar extends StatelessWidget {
                 isExpanded: true,
                 dropdownColor: LumeTheme.surface,
                 borderRadius: BorderRadius.circular(14),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
                 ),
-                icon: const Icon(
+                icon: Icon(
                   Icons.expand_more,
                   size: 18,
                   color: LumeTheme.muted,
                 ),
-                hint: const Text(
+                hint: Text(
                   '未选择源',
                   style: TextStyle(
                     fontSize: 14,

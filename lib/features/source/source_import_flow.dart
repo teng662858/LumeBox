@@ -150,7 +150,7 @@ Future<bool> confirmOverwrite(
                   ),
                 ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 '脚本、名称与版本会换成新的；启停状态与网络配置（UA / Cookie / 代理）保留。',
                 style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
@@ -342,13 +342,13 @@ class _ImportResultDialog extends StatelessWidget {
             children: <Widget>[
               Text(
                 '共 ${outcomes.length} 条：新增 $added · 覆盖 $overwritten · 失败 $failed',
-                style: const TextStyle(fontSize: 13, color: LumeTheme.textPrimary),
+                style: TextStyle(fontSize: 13, color: LumeTheme.textPrimary),
               ),
               for (final note in notes) ...<Widget>[
                 const SizedBox(height: 6),
                 Text(
                   note,
-                  style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
               ],
               const SizedBox(height: 10),

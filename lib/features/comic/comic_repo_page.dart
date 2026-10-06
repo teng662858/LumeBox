@@ -265,7 +265,7 @@ class _RepoTile extends StatelessWidget {
                   repo.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
@@ -280,7 +280,7 @@ class _RepoTile extends StatelessWidget {
                 ),
                 child: Text(
                   repo.kind.label,
-                  style: const TextStyle(fontSize: 11, color: LumeTheme.textPrimary),
+                  style: TextStyle(fontSize: 11, color: LumeTheme.textPrimary),
                 ),
               ),
             ],
@@ -290,7 +290,7 @@ class _RepoTile extends StatelessWidget {
             repo.url.toString(),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
           ),
           const SizedBox(height: 2),
           Text(
@@ -298,7 +298,7 @@ class _RepoTile extends StatelessWidget {
                 ? '尚未刷新'
                 : '扩展 ${repo.extensionCount} 个 · 最近刷新 '
                     '${_formatTime(repo.refreshedAt!)}',
-            style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -370,7 +370,7 @@ class _AddRepoDialogState extends State<_AddRepoDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const Text(
+              Text(
                 '仓库类型决定索引格式：Mihon / Tachiyomi 用 index.pb 或 index.min.json'
                 '（APK 扩展，本平台只能浏览）；Venera 用 index.json（JS 扩展，可安装运行）。\n'
                 '填根地址会自动探测索引文件；也可以直接粘贴 index.pb / index.min.json 的完整地址。',
@@ -391,7 +391,7 @@ class _AddRepoDialogState extends State<_AddRepoDialog> {
               const SizedBox(height: 12),
               TextField(
                 controller: _url,
-                style: const TextStyle(color: LumeTheme.textPrimary),
+                style: TextStyle(color: LumeTheme.textPrimary),
                 decoration: const InputDecoration(
                   labelText: '仓库地址',
                   hintText: 'https://example.com/repo（可只给根地址）',
@@ -401,7 +401,7 @@ class _AddRepoDialogState extends State<_AddRepoDialog> {
               const SizedBox(height: 12),
               TextField(
                 controller: _name,
-                style: const TextStyle(color: LumeTheme.textPrimary),
+                style: TextStyle(color: LumeTheme.textPrimary),
                 decoration: const InputDecoration(
                   labelText: '名称（可选）',
                   hintText: '留空则用地址主机名',

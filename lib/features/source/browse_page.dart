@@ -150,8 +150,8 @@ class _BrowseViewState extends State<BrowseView> {
             child: TextField(
               controller: _search,
               textInputAction: TextInputAction.search,
-              style: const TextStyle(color: LumeTheme.textPrimary),
-              decoration: const InputDecoration(
+              style: TextStyle(color: LumeTheme.textPrimary),
+              decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: '搜索',
                 hintStyle: TextStyle(color: LumeTheme.muted),
@@ -255,7 +255,7 @@ class _BrowseViewState extends State<BrowseView> {
                       item.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: LumeTheme.textPrimary,
@@ -267,7 +267,7 @@ class _BrowseViewState extends State<BrowseView> {
                         item.subtitle!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: LumeTheme.muted,
                         ),
@@ -276,7 +276,7 @@ class _BrowseViewState extends State<BrowseView> {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: LumeTheme.muted),
+              Icon(Icons.chevron_right, color: LumeTheme.muted),
             ],
           ),
         );

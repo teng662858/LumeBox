@@ -99,7 +99,7 @@ class _LogViewerPageState extends State<LogViewerPage> {
         _buildFilterBar(entries),
         Expanded(
           child: ordered.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text(
                     '该级别暂无日志',
                     style: TextStyle(fontSize: 13, color: LumeTheme.muted),
@@ -147,8 +147,8 @@ class _LogViewerPageState extends State<LogViewerPage> {
 }
 
 /// 级别配色：错误用项目里既有的告警色，警告用琥珀色，信息用弱化色。
-const Color _errorColor = LumeTheme.danger;
-const Color _warnColor = LumeTheme.warning;
+Color get _errorColor => LumeTheme.danger;
+Color get _warnColor => LumeTheme.warning;
 
 class _LogTile extends StatelessWidget {
   const _LogTile({required this.entry});
@@ -174,7 +174,7 @@ class _LogTile extends StatelessWidget {
             children: <Widget>[
               Text(
                 LogExporter.formatTime(entry.time).substring(11),
-                style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
               const SizedBox(width: 8),
               Text(
@@ -190,7 +190,7 @@ class _LogTile extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             entry.message,
-            style: const TextStyle(fontSize: 13, color: LumeTheme.textPrimary),
+            style: TextStyle(fontSize: 13, color: LumeTheme.textPrimary),
           ),
           if (entry.detail != null) ...<Widget>[
             const SizedBox(height: 4),
@@ -198,7 +198,7 @@ class _LogTile extends StatelessWidget {
               entry.detail!,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: LumeTheme.muted),
+              style: TextStyle(fontSize: 11, color: LumeTheme.muted),
             ),
           ],
         ],

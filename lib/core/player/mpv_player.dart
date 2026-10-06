@@ -17,7 +17,11 @@ import 'player_stats.dart';
 /// 播放设置消费情况（[applySettings]）：
 /// - 倍速：真实生效（libmpv `speed`）；
 /// - 字幕开关：真实生效（libmpv 轨道选择，`auto` / `no`）；
-/// - 字幕字号：仍待自研字幕层（与 AVPlayer 内核同一待办，见 Phase3 播放器文档）。
+/// - 字幕字号 / 颜色 / 描边：**真实生效**（media_kit 的字幕层是 Flutter Widget，
+///   收完整 TextStyle；描边用多层阴影模拟）；
+/// - 字幕延迟 / 硬件解码：**当前只记录不生效**——media_kit 的公开 API 没有
+///   暴露 libmpv 的 `sub-delay` 与 `hwdec` 写通道（`setProperty` 是私有的），
+///   设置值落库，等有通道时生效（见 `MpvEngine` 里对应的说明）。
 class MpvPlayer implements AbstractPlayer {
   MpvPlayer({
     required MpvEngine engine,
@@ -111,6 +115,17 @@ class MpvPlayer implements AbstractPlayer {
     _settings = settings;
     await _engine.setSpeed(settings.speed);
     await _engine.setSubtitleEnabled(settings.subtitlesEnabled);
+    // 字幕样式（字号 / 颜色 / 描边）真实生效：media_kit 的字幕层收完整 TextStyle。
+    await _engine.setSubtitleStyle(
+      SubtitleStyle(
+        fontScale: settings.subtitleSize.scale,
+        colorArgb: settings.subtitleColor.argb,
+        outlineWidth: settings.subtitleOutline.width,
+      ),
+    );
+    // 延迟与硬解：当前内核未开放通道，引擎侧只记录（见 MpvEngine 的说明）。
+    await _engine.setSubtitleDelay(settings.subtitleDelay);
+    await _engine.setHardwareDecoding(settings.hardwareDecoding);
   }
 
   @override

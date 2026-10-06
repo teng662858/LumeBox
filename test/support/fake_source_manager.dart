@@ -122,6 +122,49 @@ class FakeSourceManager implements SourceManager {
         name: source.name,
         version: source.version,
         enabled: enabled,
+        group: source.group,
+        failureCount: source.failureCount,
+        broken: source.broken,
+      ),
+    );
+  }
+
+  /// 记录分组设置：(sourceId, group)。
+  final List<(String, String)> groups = <(String, String)>[];
+
+  @override
+  Future<void> setGroup(String sourceId, String group) async {
+    groups.add((sourceId, group));
+    _replace(
+      sourceId,
+      (source) => SourceDescriptor(
+        id: source.id,
+        name: source.name,
+        version: source.version,
+        enabled: source.enabled,
+        group: group,
+        failureCount: source.failureCount,
+        broken: source.broken,
+      ),
+    );
+  }
+
+  /// 记录恢复调用（解除失效标记）。
+  final List<String> recoveredIds = <String>[];
+
+  @override
+  Future<void> clearFailure(String sourceId) async {
+    recoveredIds.add(sourceId);
+    _replace(
+      sourceId,
+      (source) => SourceDescriptor(
+        id: source.id,
+        name: source.name,
+        version: source.version,
+        enabled: source.enabled,
+        group: source.group,
+        failureCount: 0,
+        broken: false,
       ),
     );
   }
@@ -136,6 +179,9 @@ class FakeSourceManager implements SourceManager {
         name: name,
         version: source.version,
         enabled: source.enabled,
+        group: source.group,
+        failureCount: source.failureCount,
+        broken: source.broken,
       ),
     );
   }
@@ -164,6 +210,9 @@ class FakeSourceManager implements SourceManager {
           cookie: cookie,
           proxy: proxy,
         ),
+        group: source.group,
+        failureCount: source.failureCount,
+        broken: source.broken,
       ),
     );
   }

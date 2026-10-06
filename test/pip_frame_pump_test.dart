@@ -389,6 +389,18 @@ class _TickingEngine implements MpvEngine, FrameTickCapable {
   Future<void> setSubtitleEnabled(bool enabled) async {}
 
   @override
+  Future<void> setSubtitleStyle(SubtitleStyle style) async {}
+
+  @override
+  final ValueNotifier<int> subtitleStyleRevision = ValueNotifier<int>(0);
+
+  @override
+  Future<void> setSubtitleDelay(Duration delay) async {}
+
+  @override
+  Future<void> setHardwareDecoding(bool enabled) async {}
+
+  @override
   Widget buildView() => const SizedBox.shrink();
 
   @override
@@ -436,6 +448,18 @@ class _FakeEngine implements MpvEngine {
 
   @override
   Future<void> setSubtitleEnabled(bool enabled) async {}
+
+  @override
+  Future<void> setSubtitleStyle(SubtitleStyle style) async {}
+
+  @override
+  final ValueNotifier<int> subtitleStyleRevision = ValueNotifier<int>(0);
+
+  @override
+  Future<void> setSubtitleDelay(Duration delay) async {}
+
+  @override
+  Future<void> setHardwareDecoding(bool enabled) async {}
 
   @override
   Widget buildView() => const SizedBox.shrink();
@@ -496,6 +520,18 @@ class _SlowEngine implements MpvEngine, FrameTickCapable {
 
   @override
   Future<void> setSubtitleEnabled(bool enabled) async {}
+
+  @override
+  Future<void> setSubtitleStyle(SubtitleStyle style) async {}
+
+  @override
+  final ValueNotifier<int> subtitleStyleRevision = ValueNotifier<int>(0);
+
+  @override
+  Future<void> setSubtitleDelay(Duration delay) async {}
+
+  @override
+  Future<void> setHardwareDecoding(bool enabled) async {}
 
   @override
   Widget buildView() => const SizedBox.shrink();

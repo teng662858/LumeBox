@@ -105,7 +105,7 @@ class _KernelTile extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       reason!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         color: LumeTheme.muted,
                       ),
@@ -120,9 +120,9 @@ class _KernelTile extends StatelessWidget {
                 child: const Text('重试', style: TextStyle(fontSize: 13)),
               )
             else if (selected)
-              const Icon(Icons.check_circle, size: 20, color: LumeTheme.textPrimary)
+              Icon(Icons.check_circle, size: 20, color: LumeTheme.textPrimary)
             else if (available)
-              const Icon(
+              Icon(
                 Icons.radio_button_unchecked,
                 size: 20,
                 color: LumeTheme.muted,

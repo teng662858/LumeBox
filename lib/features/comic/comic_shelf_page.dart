@@ -142,7 +142,7 @@ class _ComicShelfPageState extends State<ComicShelfPage> {
                   item.title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     height: 1.25,
                     color: LumeTheme.textPrimary,
@@ -153,7 +153,7 @@ class _ComicShelfPageState extends State<ComicShelfPage> {
                   progress?.describe() ?? '共 ${item.chapterCount} 章',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
                     color: LumeTheme.muted,
                   ),

@@ -113,6 +113,9 @@ class SourceDescriptor {
     required this.enabled,
     this.network = NetworkProfile.none,
     this.originUrl = '',
+    this.group = '',
+    this.failureCount = 0,
+    this.broken = false,
   });
 
   final String id;
@@ -131,6 +134,20 @@ class SourceDescriptor {
 
   /// 是否来自订阅（管理页据此标「订阅」并允许「更新订阅源」）。
   bool get subscribed => originUrl.trim().isNotEmpty;
+
+  /// 用户自定的分组名；空串表示未分组。
+  ///
+  /// 分组是同一板块内的**展示归类**，不改变归属板块（跨板块依然完全隔离）。
+  final String group;
+
+  /// 连续失败次数。
+  final int failureCount;
+
+  /// 是否已被标记为失效（不再参与自动重试）。
+  final bool broken;
+
+  /// 是否已分组。
+  bool get hasGroup => group.trim().isNotEmpty;
 }
 
 /// 数据源失败分类。UI 只需区分这三类即可决定提示文案。

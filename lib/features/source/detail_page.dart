@@ -87,7 +87,7 @@ class _DetailPageState extends State<DetailPage> {
               children: <Widget>[
                 Text(
                   detail?.title ?? widget.item.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                     color: LumeTheme.textPrimary,
@@ -97,7 +97,7 @@ class _DetailPageState extends State<DetailPage> {
                   const SizedBox(height: 6),
                   Text(
                     detail!.subtitle!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       color: LumeTheme.muted,
                     ),
@@ -107,7 +107,7 @@ class _DetailPageState extends State<DetailPage> {
                   const SizedBox(height: 10),
                   Text(
                     detail!.description!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       height: 1.5,
                       color: LumeTheme.textSecondary,
@@ -120,7 +120,7 @@ class _DetailPageState extends State<DetailPage> {
           const SizedBox(height: 16),
           Text(
             '章节（${_chapters.length}）',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
@@ -148,7 +148,7 @@ class _DetailPageState extends State<DetailPage> {
                         chapter.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           color: LumeTheme.textPrimary,
                         ),

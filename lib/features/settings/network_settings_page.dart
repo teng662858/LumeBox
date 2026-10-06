@@ -150,7 +150,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
                 controller: _ua,
                 minLines: 1,
                 maxLines: 3,
-                style: const TextStyle(color: LumeTheme.textPrimary, fontSize: 13),
+                style: TextStyle(color: LumeTheme.textPrimary, fontSize: 13),
                 decoration: const InputDecoration(
                   labelText: '全局 User-Agent',
                   hintText: '留空 = 内置默认 UA',
@@ -161,7 +161,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
               const SizedBox(height: 12),
               TextField(
                 controller: _proxy,
-                style: const TextStyle(color: LumeTheme.textPrimary, fontSize: 13),
+                style: TextStyle(color: LumeTheme.textPrimary, fontSize: 13),
                 decoration: const InputDecoration(
                   labelText: '全局代理',
                   hintText: 'http://127.0.0.1:7890；留空 = 直连',
@@ -170,7 +170,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
                 onChanged: (_) => setState(() => _dirty = true),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '支持 http / https 代理；SOCKS 暂不支持，会如实降级为直连并记入运行日志。',
                 style: TextStyle(fontSize: 12, color: LumeTheme.muted),
               ),
@@ -207,7 +207,7 @@ class _SectionCard extends StatelessWidget {
         children: <Widget>[
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
@@ -216,7 +216,7 @@ class _SectionCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
           ),
           const SizedBox(height: 12),
           ...children,
@@ -256,12 +256,12 @@ class _IntSlider extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
+                style: TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
               ),
             ),
             Text(
               '$value${unit ?? ''}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: LumeTheme.textPrimary,
@@ -279,7 +279,7 @@ class _IntSlider extends StatelessWidget {
         if (hint != null)
           Text(
             hint!,
-            style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
           ),
       ],
     );

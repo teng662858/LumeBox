@@ -182,7 +182,7 @@ class _HistoryTile extends StatelessWidget {
                         item.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: LumeTheme.textPrimary,
@@ -191,7 +191,7 @@ class _HistoryTile extends StatelessWidget {
                     ),
                     Text(
                       _relativeTime(now, progress.updatedAt),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         color: LumeTheme.muted,
                       ),
@@ -206,14 +206,14 @@ class _HistoryTile extends StatelessWidget {
                         progress.describe(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           color: LumeTheme.muted,
                         ),
                       ),
                     ),
                     if (finished)
-                      const Text(
+                      Text(
                         '已看完',
                         style: TextStyle(fontSize: 11, color: LumeTheme.muted),
                       ),
@@ -236,7 +236,7 @@ class _HistoryTile extends StatelessWidget {
           ),
           IconButton(
             tooltip: '删除记录',
-            icon: const Icon(Icons.close, size: 18, color: LumeTheme.muted),
+            icon: Icon(Icons.close, size: 18, color: LumeTheme.muted),
             onPressed: onRemove,
           ),
         ],

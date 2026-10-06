@@ -33,7 +33,7 @@ class NoticeCard extends StatelessWidget {
             children: <Widget>[
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
@@ -43,7 +43,7 @@ class NoticeCard extends StatelessWidget {
               Text(
                 subtitle,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, color: LumeTheme.muted),
+                style: TextStyle(fontSize: 13, color: LumeTheme.muted),
               ),
               if (action != null) ...<Widget>[
                 const SizedBox(height: 16),

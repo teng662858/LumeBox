@@ -12,7 +12,7 @@ import 'source_record.dart';
 class SectionDatabase {
   SectionDatabase._(this._db, this._sectionId);
 
-  static const int _schemaVersion = 4;
+  static const int _schemaVersion = 5;
 
   /// 库内自证键：本库属于哪个板块。
   static const String _ownerKey = 'owner_section';
@@ -29,7 +29,10 @@ CREATE TABLE IF NOT EXISTS source (
   user_agent TEXT NOT NULL DEFAULT '',
   cookie     TEXT NOT NULL DEFAULT '',
   proxy      TEXT NOT NULL DEFAULT '',
-  origin_url TEXT NOT NULL DEFAULT ''
+  origin_url TEXT NOT NULL DEFAULT '',
+  source_group TEXT NOT NULL DEFAULT '',
+  failure_count INTEGER NOT NULL DEFAULT 0,
+  broken_at  INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS section_setting (
   key   TEXT PRIMARY KEY,
@@ -100,6 +103,24 @@ CREATE TABLE IF NOT EXISTS section_setting (
         } catch (error) {
           // 列已存在（重复迁移或新库）：忽略。
           LumeLog.warn('迁移 source.$column 跳过: $error');
+        }
+      }
+    }
+    if (!createdFresh && version < 5) {
+      // 图源分组与失效标记（文档「图源导入/导出模块规范」）：
+      // - source_group：用户自定的分组名，空串表示未分组；
+      // - failure_count / broken_at：连续失败次数与「标记为失效」的时间戳。
+      //   失效的源不再参与自动重试（用户可在管理页手动恢复）。
+      for (final column in <String>[
+        "source_group TEXT NOT NULL DEFAULT ''",
+        'failure_count INTEGER NOT NULL DEFAULT 0',
+        'broken_at INTEGER NOT NULL DEFAULT 0',
+      ]) {
+        try {
+          _db.execute('ALTER TABLE source ADD COLUMN $column');
+        } catch (error) {
+          // 列已存在（重复迁移或新库）：忽略。
+          LumeLog.warn('迁移 source 列跳过: $error');
         }
       }
     }
@@ -188,6 +209,48 @@ CREATE TABLE IF NOT EXISTS section_setting (
     _db.execute('UPDATE source SET enabled = ? WHERE id = ?',
         [enabled ? 1 : 0, id]);
   }
+
+  /// 写入图源分组名（空串表示取消分组）。
+  void setSourceGroup(String id, String group) {
+    _db.execute(
+      'UPDATE source SET source_group = ? WHERE id = ?',
+      [group.trim(), id],
+    );
+  }
+
+  /// 记录一次失败：失败计数 +1，达到 [threshold] 即标记失效。
+  ///
+  /// 返回标记后的记录（未失效时 brokenAt 仍为 0）。
+  void recordSourceFailure(String id, {required int threshold}) {
+    _db.execute(
+      'UPDATE source SET failure_count = failure_count + 1 WHERE id = ?',
+      [id],
+    );
+    final rows = _db.select(
+      'SELECT failure_count, broken_at FROM source WHERE id = ?',
+      [id],
+    );
+    if (rows.isEmpty) return;
+    final count = (rows.first['failure_count'] as int?) ?? 0;
+    final alreadyBroken = ((rows.first['broken_at'] as int?) ?? 0) > 0;
+    if (count >= threshold && !alreadyBroken) {
+      _db.execute(
+        'UPDATE source SET broken_at = ? WHERE id = ?',
+        [DateTime.now().millisecondsSinceEpoch, id],
+      );
+    }
+  }
+
+  /// 清零失败计数并解除失效标记（用户手动「恢复」时调用）。
+  void clearSourceFailure(String id) {
+    _db.execute(
+      'UPDATE source SET failure_count = 0, broken_at = 0 WHERE id = ?',
+      [id],
+    );
+  }
+
+  /// 清掉一个图源的分组（删除源时不需要，记录整行都会删）。
+  void clearSourceGroup(String id) => setSourceGroup(id, '');
 
   void deleteSource(String id) =>
       _db.execute('DELETE FROM source WHERE id = ?', [id]);

@@ -122,6 +122,24 @@ class LumeSources {
     registry.rename(sourceId, name);
   }
 
+  /// 设置图源分组（空串取消分组）。只改展示归类，不改变归属板块。
+  static Future<void> setGroup(
+    Section section,
+    String sourceId,
+    String group,
+  ) async {
+    if (!runtimeAvailableFor(section)) return;
+    final registry = await SourceRegistry.open(section);
+    registry.setGroup(sourceId, group);
+  }
+
+  /// 手动恢复被标记失效的源（清零失败计数、解除失效标记）。
+  static Future<void> clearFailure(Section section, String sourceId) async {
+    if (!runtimeAvailableFor(section)) return;
+    final registry = await SourceRegistry.open(section);
+    registry.clearFailure(sourceId);
+  }
+
   /// 导出图源脚本原文（备份用）；图源不存在或跨板块时返回 null。
   static Future<String?> exportScript(
     Section section,
@@ -244,12 +262,21 @@ class LumeSources {
     if (!record.enabled) {
       return const SourceTestResult.failed('源已停用，先在列表里启用再测试');
     }
+    // 已标记失效的源不再自动重试（文档「图源损坏标记：标记失效源，不再自动重试」）。
+    // 手动单测仍允许——用户想亲眼确认它是否真的坏了，这是他的主动行为。
+    if (record.isBroken) {
+      return SourceTestResult.failed(
+        '源已被标记为失效（连续失败 ${record.failureCount} 次），'
+        '不再自动重试；确认可用后可在管理页「恢复」',
+      );
+    }
 
     final watch = Stopwatch()..start();
     try {
       // 连通性测试不看缓存：它要验证的是「当下这份脚本能不能跑」。
       final source = await open(section, sourceId, cached: false);
       if (source == null) {
+        registry.recordFailure(sourceId);
         return const SourceTestResult.failed('源打不开（脚本载入失败或引擎不可用）');
       }
 
@@ -263,6 +290,8 @@ class LumeSources {
 
       final list = await source.list(page: 1);
       watch.stop();
+      // 能出内容即视为可用：清掉历史失败计数（站点恢复后不该还挂着旧账）。
+      registry.clearFailure(sourceId);
       if (list.items.isEmpty) {
         return SourceTestResult.empty(
           elapsed: watch.elapsed,
@@ -276,6 +305,7 @@ class LumeSources {
       );
     } on SourceException catch (error) {
       watch.stop();
+      registry.recordFailure(sourceId);
       return SourceTestResult.failed(error.message);
     } catch (error, stackTrace) {
       watch.stop();
@@ -299,6 +329,9 @@ class LumeSources {
         enabled: record.enabled,
         network: record.network,
         originUrl: record.originUrl,
+        group: record.group,
+        failureCount: record.failureCount,
+        broken: record.isBroken,
       );
 }
 
@@ -350,6 +383,14 @@ class _LumeSourceManager implements SourceManager {
   @override
   Future<void> rename(String sourceId, String name) =>
       LumeSources.rename(_section, sourceId, name);
+
+  @override
+  Future<void> setGroup(String sourceId, String group) =>
+      LumeSources.setGroup(_section, sourceId, group);
+
+  @override
+  Future<void> clearFailure(String sourceId) =>
+      LumeSources.clearFailure(_section, sourceId);
 
   @override
   Future<String?> exportScript(String sourceId) =>

@@ -152,9 +152,76 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     );
   }
 
+  /// 设置分组：只改展示归类，不改变归属板块。
+  ///
+  /// 分组名由用户自定（没有预设分组）：文档里举的例子是「视频组 / 漫画组 /
+  /// 小说组」，但本 App 的板块已经是物理隔离的一层，再拿板块名当分组没意义
+  /// ——分组的用处是**同一板块内**按用户自己的习惯归类（如「主力 / 备用」）。
+  Future<void> _setGroup(SourceDescriptor source) async {
+    final group = await showDialog<String>(
+      context: context,
+      builder: (_) => _GroupDialog(
+        initialGroup: source.group,
+        knownGroups: _knownGroups(),
+      ),
+    );
+    if (group == null || !mounted) return;
+    await _manager.setGroup(source.id, group);
+    await _reload();
+    if (!mounted) return;
+    final trimmed = group.trim();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(trimmed.isEmpty ? '已取消「${source.name}」的分组' : '已归入分组：$trimmed'),
+      ),
+    );
+  }
+
+  /// 本板块已有的分组名（给对话框做快捷选项）。
+  List<String> _knownGroups() {
+    final groups = <String>{};
+    for (final source in _sources ?? const <SourceDescriptor>[]) {
+      final group = source.group.trim();
+      if (group.isNotEmpty) groups.add(group);
+    }
+    final list = groups.toList()..sort();
+    return list;
+  }
+
+  /// 恢复被标记失效的源：清零失败计数并解除标记。
+  Future<void> _recover(SourceDescriptor source) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('恢复源'),
+        content: Text(
+          '「${source.name}」已被标记为失效（连续失败 ${source.failureCount} 次），'
+          '因此不再参与自动重试。\n'
+          '恢复会清零失败计数，让它重新进入批量测试 / 批量刷新的范围。',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('恢复'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _manager.clearFailure(source.id);
+    await _reload();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已恢复「${source.name}」')),
+    );
+  }
+
   /// 打开可视化编辑器：表单生成脚本 → 导入（走与「+」相同的校验路径）。
-  Future<void> _openEditor() async {
-    final imported = await Navigator.of(context).push<bool>(
+  Future<void> _openEditor() async {    final imported = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => SourceEditorPage(
           section: widget.section,
@@ -494,6 +561,8 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
           onTest: () => _test(source),
           onUpdate: source.subscribed ? () => _updateSubscription(source) : null,
           onRename: () => _rename(source),
+          onGroup: () => _setGroup(source),
+          onRecover: source.broken ? () => _recover(source) : null,
           onNetwork: () => _editNetwork(source),
           onExport: () => _export(source),
           onDelete: () => _delete(source),
@@ -504,16 +573,26 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
 }
 
 /// 停用标记的颜色：与错误文案同色系，避免新造主题项。
-const Color _disabledColor = LumeTheme.danger;
+Color get _disabledColor => LumeTheme.danger;
 
 /// 「网络已自定义」标记色：与停用区分开的提示色。
-const Color _accentColor = LumeTheme.info;
+Color get _accentColor => LumeTheme.info;
 
 /// 测试通过的标记色。
-const Color _okColor = LumeTheme.success;
+Color get _okColor => LumeTheme.success;
 
 /// 单个图源行上的操作。
-enum _SourceAction { browse, test, update, rename, network, exportScript, delete }
+enum _SourceAction {
+  browse,
+  test,
+  update,
+  rename,
+  group,
+  recover,
+  network,
+  exportScript,
+  delete,
+}
 
 class _SourceTile extends StatelessWidget {
   const _SourceTile({
@@ -525,9 +604,11 @@ class _SourceTile extends StatelessWidget {
     required this.onTest,
     required this.onUpdate,
     required this.onRename,
+    required this.onGroup,
     required this.onNetwork,
     required this.onExport,
     required this.onDelete,
+    this.onRecover,
   });
 
   final SourceDescriptor source;
@@ -550,6 +631,12 @@ class _SourceTile extends StatelessWidget {
 
   final VoidCallback onRename;
 
+  /// 设置分组。
+  final VoidCallback onGroup;
+
+  /// 恢复被标记失效的源；未失效时为 null（菜单项不出现）。
+  final VoidCallback? onRecover;
+
   final VoidCallback onNetwork;
 
   final VoidCallback onExport;
@@ -569,7 +656,7 @@ class _SourceTile extends StatelessWidget {
               children: <Widget>[
                 Text(
                   source.name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
@@ -582,28 +669,48 @@ class _SourceTile extends StatelessWidget {
                       source.version.isEmpty
                           ? LumeTheme.appName
                           : source.version,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         color: LumeTheme.muted,
                       ),
                     ),
                     if (!source.enabled) ...<Widget>[
                       const SizedBox(width: 8),
-                      const Text(
+                      Text(
                         '已停用',
                         style: TextStyle(fontSize: 12, color: _disabledColor),
                       ),
                     ],
+                    if (source.broken) ...<Widget>[
+                      const SizedBox(width: 8),
+                      Text(
+                        '已失效（连错 ${source.failureCount} 次）',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _disabledColor,
+                        ),
+                      ),
+                    ],
+                    if (source.hasGroup) ...<Widget>[
+                      const SizedBox(width: 8),
+                      Text(
+                        source.group,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _accentColor,
+                        ),
+                      ),
+                    ],
                     if (source.subscribed) ...<Widget>[
                       const SizedBox(width: 8),
-                      const Text(
+                      Text(
                         '订阅',
                         style: TextStyle(fontSize: 12, color: _accentColor),
                       ),
                     ],
                     if (source.hasNetworkOverride) ...<Widget>[
                       const SizedBox(width: 8),
-                      const Text(
+                      Text(
                         '网络已自定义',
                         style: TextStyle(fontSize: 12, color: _accentColor),
                       ),
@@ -651,6 +758,10 @@ class _SourceTile extends StatelessWidget {
                   onUpdate?.call();
                 case _SourceAction.rename:
                   onRename();
+                case _SourceAction.group:
+                  onGroup();
+                case _SourceAction.recover:
+                  onRecover?.call();
                 case _SourceAction.network:
                   onNetwork();
                 case _SourceAction.exportScript:
@@ -678,6 +789,16 @@ class _SourceTile extends StatelessWidget {
                 value: _SourceAction.rename,
                 child: Text('重命名'),
               ),
+              const PopupMenuItem<_SourceAction>(
+                value: _SourceAction.group,
+                child: Text('设置分组'),
+              ),
+              // 只有失效的源才有「恢复」——正常的源没有可恢复的状态。
+              if (onRecover != null)
+                const PopupMenuItem<_SourceAction>(
+                  value: _SourceAction.recover,
+                  child: Text('恢复（解除失效标记）'),
+                ),
               const PopupMenuItem<_SourceAction>(
                 value: _SourceAction.network,
                 child: Text('网络配置'),
@@ -776,7 +897,7 @@ class _InfoRow extends StatelessWidget {
             width: 44,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 13, color: LumeTheme.muted),
+              style: TextStyle(fontSize: 13, color: LumeTheme.muted),
             ),
           ),
           Expanded(
@@ -843,6 +964,91 @@ class _RenameDialogState extends State<_RenameDialog> {
   }
 }
 
+/// 分组设置弹窗：输入分组名，或用本板块已有的分组名快捷选择。
+///
+/// 留空即取消分组——因此「取消分组」不需要单独的按钮，清空保存即可。
+/// 分组只是**展示归类**，不改变归属板块：跨板块依旧完全隔离。
+class _GroupDialog extends StatefulWidget {
+  const _GroupDialog({required this.initialGroup, required this.knownGroups});
+
+  final String initialGroup;
+
+  /// 本板块已有的分组名（快捷选项）。
+  final List<String> knownGroups;
+
+  @override
+  State<_GroupDialog> createState() => _GroupDialogState();
+}
+
+class _GroupDialogState extends State<_GroupDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialGroup);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('设置分组'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            '分组只影响本板块列表里的归类显示，不改变源的归属板块。'
+            '留空保存即取消分组。',
+            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: '分组名',
+              hintText: '例如：主力 / 备用',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (value) => Navigator.of(context).pop(value),
+          ),
+          if (widget.knownGroups.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            Text(
+              '已有分组',
+              style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                for (final group in widget.knownGroups)
+                  ActionChip(
+                    label: Text(group),
+                    onPressed: () => setState(() => _controller.text = group),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_controller.text),
+          child: const Text('保存'),
+        ),
+      ],
+    );
+  }
+}
+
 /// 单图源网络配置弹窗：UA / Cookie / 代理三项，留空即继承全局设置。
 ///
 /// 这三项对应文档要求：图源可自定义 UA / Cookie / 代理，且单图源配置优先于
@@ -883,7 +1089,7 @@ class _NetworkDialogState extends State<_NetworkDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const Text(
+              Text(
                 '留空即继承「设置 → 网络设置」里的全局值。这里的配置只作用于本源，'
                 'Cookie 不与其他源共享。',
                 style: TextStyle(fontSize: 12, color: LumeTheme.muted),

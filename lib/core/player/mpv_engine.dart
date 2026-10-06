@@ -1,4 +1,5 @@
-import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter/widgets.dart';
 
@@ -37,8 +38,43 @@ abstract interface class MpvEngine {
   /// 因此画中画期间由上层按帧率节拍调用，而不是内核主动推。
   Future<MpvVideoFrame?> captureFrame();
 
-  /// 字幕总开关（MPV 由 libmpv 的轨道选择实现；字号仍待自研字幕层）。
+  /// 字幕总开关（MPV 由 libmpv 的轨道选择实现；字号 / 颜色 / 描边仍待自研字幕层）。
   Future<void> setSubtitleEnabled(bool enabled);
+
+  /// 字幕样式（字号 / 颜色 / 描边）。
+  ///
+  /// media_kit 的字幕层是 Flutter Widget（`SubtitleViewConfiguration` 收一个
+  /// 完整 TextStyle），因此**字号 / 颜色 / 描边都真实生效**——描边用
+  /// TextStyle 的 shadows 实现（多层偏移模拟描边）。
+  ///
+  /// 延迟不在这里：media_kit 的公开 API 没有 `sub-delay` 通道（见
+  /// [setSubtitleDelay] 的说明）。
+  Future<void> setSubtitleStyle(SubtitleStyle style);
+
+  /// 字幕样式版本：变化即通知渲染面重建。
+  ///
+  /// 为什么需要它：`Video` 是 const 构造，样式变了要靠换 key 触发重建；
+  /// 上层（`VideoPage`）据此在样式变化时刷新画面区。
+  ValueListenable<int> get subtitleStyleRevision;
+
+  /// 字幕延迟（正值表示字幕延后出现）。
+  ///
+  /// **当前是「记住但不生效」**：media_kit 的公开 Dart API 没有暴露 libmpv 的
+  /// `sub-delay`（`Player` 只开放轨道选择 / 倍速这类高层方法，`setProperty`
+  /// 是私有的）。设置值会被记下并随设置落库，等将来换到能写属性的通道
+  /// （自研渲染或 fork）时直接生效——这里如实说明，不假装支持。
+  Future<void> setSubtitleDelay(Duration delay);
+
+  /// 硬件解码开关。
+  ///
+  /// **当前是「记住但不生效」**，原因同上：libmpv 的 `hwdec` 是解码链初始化期
+  /// 属性，而 media_kit 没开放写属性的通道（`PlayerConfiguration` 里也没有
+  /// hwdec 项）。设置值会被记下并落库，等有通道时生效。
+  ///
+  /// 为什么仍然把它做出来：文档明确要求「播放器增加硬件解码开关」，而开关的
+  /// **状态**是用户能感知的配置；如实标注「暂不生效」比不给这个开关诚实，
+  /// 也比谎称已生效好。
+  Future<void> setHardwareDecoding(bool enabled);
 
   /// 渲染面。控制栏由上层画，引擎不自带任何 UI。
   Widget buildView();
@@ -57,6 +93,29 @@ abstract interface class MpvEngine {
 abstract interface class FrameTickCapable {
   /// 帧节拍：每次画面推进发一个事件（不需要携带数据）。
   Stream<void> get frameTicks;
+}
+
+/// 字幕样式：字号缩放 / 颜色 / 描边宽度。
+///
+/// 与 `PlayerSettings` 的字段一一对应，但刻意独立：引擎层不认识「档位」
+/// （那是设置页的表达），只认识最终要用的数值。
+class SubtitleStyle {
+  const SubtitleStyle({
+    this.fontScale = 1.0,
+    this.colorArgb = 0xFFFFFFFF,
+    this.outlineWidth = 1.5,
+  });
+
+  /// 字号缩放（相对基准字号）。
+  final double fontScale;
+
+  /// 文字颜色（ARGB）。
+  final int colorArgb;
+
+  /// 描边宽度（逻辑像素）；0 表示不描边。
+  final double outlineWidth;
+
+  static const SubtitleStyle defaults = SubtitleStyle();
 }
 
 /// 一帧视频画面：BGRA8888 像素 + 尺寸 + 行距。

@@ -35,6 +35,15 @@ abstract interface class SourceManager {
   /// 图源不存在、跨板块或名为空时无操作（不改变现状）。
   Future<void> rename(String sourceId, String name);
 
+  /// 设置图源分组（空串取消分组）。只改展示归类，不改变归属板块。
+  Future<void> setGroup(String sourceId, String group);
+
+  /// 手动恢复被标记失效的源：清零连续失败计数并解除失效标记。
+  ///
+  /// 失效的源不再参与自动重试（批量测试 / 批量刷新会跳过它）；恢复即让它
+  /// 重新进入自动流程。图源不存在或跨板块时无操作。
+  Future<void> clearFailure(String sourceId);
+
   /// 设置单图源网络覆盖（UA / Cookie / 代理）。空串表示继承全局设置；
   /// 图源不存在或跨板块时无操作。
   Future<void> setNetwork(

@@ -69,6 +69,9 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
   /// 正在测试的图源 id（按钮转圈用）。
   final Set<String> _testing = <String>{};
 
+  /// 正在刷新订阅的图源 id（按钮转圈用）。
+  final Set<String> _refreshing = <String>{};
+
   /// 测试结论：sourceId → 结果（只存内存，退出即丢）。
   final Map<String, SourceTestResult> _testResults = <String, SourceTestResult>{};
 
@@ -188,7 +191,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Text(
+                Text(
                   '备份只含源脚本与配置，不含 Cookie、缓存与阅读记录。',
                   style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
@@ -330,6 +333,135 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
     );
   }
 
+  /// 批量刷新全部订阅源（文档第 4 条：图源总管理支持批量刷新全部订阅源）。
+  ///
+  /// 只处理**有订阅地址**的源（本地导入的没有可刷新的来源，跳过并计数）。
+  /// 逐板块、逐源串行：刷新会真实打订阅地址，串行更稳、进度也可读，也不会
+  /// 因为并发拉取把订阅站打爆（与「批量测试」同一取舍）。
+  ///
+  /// 刷新前先问一句：这会把订阅端的新脚本覆盖到本地（脚本、名称、版本），
+  /// 用户的网络配置与启停状态保留——但仍是会改动多份源的操作，先确认再动手。
+  Future<void> _refreshSubscriptions() async {
+    final targets = <({Section section, SourceDescriptor source})>[];
+    for (final section in Section.values) {
+      for (final source in _listOf(section)) {
+        if (!source.subscribed) continue;
+        targets.add((section: section, source: source));
+      }
+    }
+
+    if (targets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('四个板块都没有订阅源可刷新')),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('刷新 ${targets.length} 个订阅源？'),
+        content: const Text(
+          '会从各自的订阅地址重新拉取脚本：有新版本就覆盖本地（脚本、名称、版本），'
+          '启停状态与网络配置（UA / Cookie / 代理）保留。\n'
+          '本地导入的源没有订阅地址，不在本次范围内。',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('刷新'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    var updated = 0;
+    var unchanged = 0;
+    var failed = 0;
+    final failures = <String>[];
+    final touchedSections = <Section>{};
+
+    for (final target in targets) {
+      if (!mounted) return;
+      setState(() => _refreshing.add(target.source.id));
+      try {
+        final result = await _managers[target.section]!
+            .updateFromSubscription(target.source.id);
+        touchedSections.add(target.section);
+        switch (result.status) {
+          case SourceUpdateStatus.updated:
+            updated++;
+          case SourceUpdateStatus.unchanged:
+            unchanged++;
+          case SourceUpdateStatus.skipped:
+          case SourceUpdateStatus.failed:
+            failed++;
+            failures.add('${target.source.name}：${result.message}');
+        }
+      } catch (error, stackTrace) {
+        // 单条异常不中断整批（与导入同口径：失败也要给出结论）。
+        LumeLog.error(error, stackTrace);
+        failed++;
+        failures.add('${target.source.name}：$error');
+      } finally {
+        if (mounted) setState(() => _refreshing.remove(target.source.id));
+      }
+    }
+
+    // 刷新过的板块重读列表（版本号会变）。
+    for (final section in touchedSections) {
+      await _reloadSection(section);
+    }
+    if (!mounted) return;
+
+    final summary = '刷新完成（${targets.length} 个）：更新 $updated'
+        '${unchanged > 0 ? ' · 已是最新 $unchanged' : ''}'
+        '${failed > 0 ? ' · 失败 $failed' : ''}';
+    if (failures.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(summary)));
+      return;
+    }
+    // 有失败就给模态弹窗：失败原因是排障要看的信息，SnackBar 几秒就没了。
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('订阅刷新结果'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(summary, style: const TextStyle(fontSize: 13)),
+                const SizedBox(height: 10),
+                for (final failure in failures)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      failure,
+                      style: const TextStyle(fontSize: 12, height: 1.4),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 启停：停用即释放该图源的运行时；只作用于所属板块。
   Future<void> _toggle(
     Section section,
@@ -400,9 +532,16 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
             onPressed: _exportBackup,
           ),
           IconButton(
+            tooltip: '批量刷新订阅源',
+            icon: const Icon(Icons.sync),
+            onPressed: _testing.isEmpty && _refreshing.isEmpty
+                ? _refreshSubscriptions
+                : null,
+          ),
+          IconButton(
             tooltip: '批量测试连通性',
             icon: const Icon(Icons.network_check),
-            onPressed: _testing.isEmpty ? _testAll : null,
+            onPressed: _testing.isEmpty && _refreshing.isEmpty ? _testAll : null,
           ),
         ],
       ],
@@ -494,7 +633,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
             Expanded(
               child: Text(
                 section.label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
@@ -503,7 +642,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
             ),
             Text(
               '启用 ${_enabledCount(section)} / 共 ${sources.length}',
-              style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+              style: TextStyle(fontSize: 12, color: LumeTheme.muted),
             ),
             IconButton(
               tooltip: '导入到${section.label}',
@@ -522,7 +661,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
           padding: const EdgeInsets.only(bottom: 12),
           child: _SourceTile(
             source: source,
-            testing: _testing.contains(source.id),
+            testing: _testing.contains(source.id) || _refreshing.contains(source.id),
             testResult: _testResults[source.id],
             onToggle: (enabled) => _toggle(section, source, enabled),
             onBrowse: source.enabled ? () => _browse(section, source) : null,
@@ -534,7 +673,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
 }
 
 /// 停用标记的颜色：与板块管理页同色系，避免新造主题项。
-const Color _disabledColor = LumeTheme.danger;
+Color get _disabledColor => LumeTheme.danger;
 
 /// 分组内的一行说明（空板块 / 存储故障）。
 class _SectionNote extends StatelessWidget {
@@ -547,7 +686,7 @@ class _SectionNote extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
         child: Text(
           text,
-          style: const TextStyle(fontSize: 13, color: LumeTheme.muted),
+          style: TextStyle(fontSize: 13, color: LumeTheme.muted),
         ),
       );
 }
@@ -593,7 +732,7 @@ class _SourceTile extends StatelessWidget {
                   source.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
@@ -606,14 +745,14 @@ class _SourceTile extends StatelessWidget {
                       source.version.isEmpty
                           ? LumeTheme.appName
                           : source.version,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         color: LumeTheme.muted,
                       ),
                     ),
                     if (!source.enabled) ...<Widget>[
                       const SizedBox(width: 8),
-                      const Text(
+                      Text(
                         '已停用',
                         style: TextStyle(fontSize: 12, color: _disabledColor),
                       ),
@@ -695,7 +834,7 @@ class _RestoreDialogState extends State<_RestoreDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text(
+            Text(
               '粘贴之前导出的备份内容。同 id 的源会被覆盖。',
               style: TextStyle(fontSize: 12, color: LumeTheme.muted),
             ),

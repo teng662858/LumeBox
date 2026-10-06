@@ -18,6 +18,10 @@ class VideoPlayerSettingsStore {
   static const String keySpeed = 'video.player.speed';
   static const String keySubtitles = 'video.player.subtitles';
   static const String keySubtitleSize = 'video.player.subtitleSize';
+  static const String keySubtitleColor = 'video.player.subtitleColor';
+  static const String keySubtitleOutline = 'video.player.subtitleOutline';
+  static const String keySubtitleDelay = 'video.player.subtitleDelayMs';
+  static const String keyHardwareDecoding = 'video.player.hardwareDecoding';
 
   final ReadingLibrary _library;
 
@@ -27,8 +31,16 @@ class VideoPlayerSettingsStore {
         speed: PlayerSettings.normalizeSpeed(
           double.tryParse(_library.setting(keySpeed) ?? ''),
         ),
+        // 旧库没有这一项时（键缺失）按「开」处理——与历史行为一致。
         subtitlesEnabled: _library.setting(keySubtitles) != 'false',
         subtitleSize: SubtitleSize.fromId(_library.setting(keySubtitleSize)),
+        subtitleColor: SubtitleColor.fromId(_library.setting(keySubtitleColor)),
+        subtitleOutline:
+            SubtitleOutline.fromId(_library.setting(keySubtitleOutline)),
+        subtitleDelay: PlayerSettings.normalizeSubtitleDelay(
+          _intMillis(_library.setting(keySubtitleDelay)),
+        ),
+        hardwareDecoding: _library.setting(keyHardwareDecoding) != 'false',
       );
 
   /// 写回本板块的库。
@@ -40,6 +52,23 @@ class VideoPlayerSettingsStore {
       settings.subtitlesEnabled ? 'true' : 'false',
     );
     _library.setSetting(keySubtitleSize, settings.subtitleSize.id);
+    _library.setSetting(keySubtitleColor, settings.subtitleColor.id);
+    _library.setSetting(keySubtitleOutline, settings.subtitleOutline.id);
+    _library.setSetting(
+      keySubtitleDelay,
+      '${settings.subtitleDelay.inMilliseconds}',
+    );
+    _library.setSetting(
+      keyHardwareDecoding,
+      settings.hardwareDecoding ? 'true' : 'false',
+    );
+  }
+
+  /// 读毫秒值；缺失或非法返回 null（由归一函数回退到零延迟）。
+  static Duration? _intMillis(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final value = int.tryParse(raw.trim());
+    return value == null ? null : Duration(milliseconds: value);
   }
 
   /// 释放本板块的库（页面退出时调用）。

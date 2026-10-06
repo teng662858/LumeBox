@@ -236,6 +236,30 @@ class _FakeMpvEngine implements MpvEngine {
   Future<void> setSubtitleEnabled(bool enabled) async =>
       subtitleEnabled = enabled;
 
+  /// 字幕样式（引擎端口新增能力；假引擎只记录）。
+  SubtitleStyle? subtitleStyle;
+
+  @override
+  Future<void> setSubtitleStyle(SubtitleStyle style) async =>
+      subtitleStyle = style;
+
+  @override
+  final ValueNotifier<int> subtitleStyleRevision = ValueNotifier<int>(0);
+
+  /// 字幕延迟（引擎端口新增能力；假引擎只记录）。
+  Duration? subtitleDelay;
+
+  @override
+  Future<void> setSubtitleDelay(Duration delay) async =>
+      subtitleDelay = delay;
+
+  /// 硬件解码开关（引擎端口新增能力；假引擎只记录）。
+  bool? hardwareDecoding;
+
+  @override
+  Future<void> setHardwareDecoding(bool enabled) async =>
+      hardwareDecoding = enabled;
+
   @override
   Widget buildView() => const Text('mpv-view');
 

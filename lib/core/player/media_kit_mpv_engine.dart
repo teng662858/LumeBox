@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -109,10 +109,68 @@ class MediaKitMpvEngine implements MpvEngine, FrameTickCapable {
       if (startAt != null && startAt > Duration.zero) {
         await _player.seek(startAt);
       }
+      // 字幕状态也要在起播后补挂一次（媒体换了，轨道与延迟都得重设）。
+      await _applySubtitleState();
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       _fail('打开失败：$error');
     }
+  }
+
+  /// 硬件解码开关（由上层 [setHardwareDecoding] 写入，open 时应用）。
+  bool _hardwareDecoding = true;
+
+  /// 字幕延迟（由上层 [setSubtitleDelay] 写入，open 时应用）。
+  Duration _subtitleDelay = Duration.zero;
+
+  /// 字幕开关（由上层 [setSubtitleEnabled] 写入，open 时应用）。
+  bool _subtitlesEnabled = true;
+
+  /// 字幕样式（由上层 [setSubtitleStyle] 写入，渲染面消费）。
+  SubtitleStyle _subtitleStyle = SubtitleStyle.defaults;
+
+  @override
+  Future<void> setHardwareDecoding(bool enabled) async {
+    if (_disposed) return;
+    if (_hardwareDecoding == enabled) return;
+    _hardwareDecoding = enabled;
+    // 如实记录「已记住但未生效」：media_kit 没有写 libmpv 属性的公开通道。
+    // 这条日志是给排障用的——用户反馈「关了硬解还是花屏」时，一眼能看出原因。
+    LumeLog.info(
+      '[mpv] 硬件解码开关已记录（${enabled ? '开' : '关'}）；'
+      '当前内核未开放写 hwdec 的通道，本次运行仍按默认解码',
+    );
+  }
+
+  @override
+  Future<void> setSubtitleDelay(Duration delay) async {
+    if (_disposed) return;
+    if (_subtitleDelay == delay) return;
+    _subtitleDelay = delay;
+    LumeLog.info(
+      '[mpv] 字幕延迟已记录（${delay.inMilliseconds}ms）；'
+      '当前内核未开放写 sub-delay 的通道，本次运行暂不生效',
+    );
+  }
+
+  @override
+  Future<void> setSubtitleStyle(SubtitleStyle style) async {
+    if (_disposed) return;
+    _subtitleStyle = style;
+    // 样式由 buildView 的 SubtitleViewConfiguration 消费；这里换掉值并让
+    // 渲染面重建（_styleRevision 变化触发上层 rebuild）。
+    _styleRevision.value++;
+  }
+
+  /// 字幕样式版本：变化即通知渲染面重建（`Video` 是 const 构造，靠 key 换新）。
+  final ValueNotifier<int> _styleRevision = ValueNotifier<int>(0);
+
+  @override
+  ValueListenable<int> get subtitleStyleRevision => _styleRevision;
+
+  /// 起播后补挂字幕状态（开关）。
+  Future<void> _applySubtitleState() async {
+    await setSubtitleEnabled(_subtitlesEnabled);
   }
 
   @override
@@ -207,6 +265,7 @@ class MediaKitMpvEngine implements MpvEngine, FrameTickCapable {
   @override
   Future<void> setSubtitleEnabled(bool enabled) async {
     if (_disposed) return;
+    _subtitlesEnabled = enabled;
     try {
       await _player.setSubtitleTrack(
         enabled ? SubtitleTrack.auto() : SubtitleTrack.no(),
@@ -217,14 +276,64 @@ class MediaKitMpvEngine implements MpvEngine, FrameTickCapable {
   }
 
   @override
-  Widget buildView() => Video(
-        controller: _video,
-        // 控制栏由上层画：内核不自带 UI（换内核上层零改动的前提）。
-        controls: NoVideoControls,
-        fit: BoxFit.contain,
-        fill: Colors.black,
-        wakelock: true,
+  Widget buildView() => ValueListenableBuilder<int>(
+        valueListenable: _styleRevision,
+        builder: (context, revision, _) => Video(
+          key: ValueKey<int>(revision),
+          controller: _video,
+          // 控制栏由上层画：内核不自带 UI（换内核上层零改动的前提）。
+          controls: NoVideoControls,
+          fit: BoxFit.contain,
+          fill: Colors.black,
+          wakelock: true,
+          // 字幕样式：media_kit 的字幕层是 Flutter Widget，收一个完整 TextStyle，
+          // 因此字号 / 颜色 / 描边都真实生效（描边用多层阴影模拟）。
+          subtitleViewConfiguration: _subtitleConfiguration(),
+        ),
       );
+
+  /// 把 [SubtitleStyle] 翻成 media_kit 的字幕样式。
+  ///
+  /// 描边实现：Flutter 的 TextStyle 没有 stroke，用四向阴影模拟——
+  /// 这是 Flutter 生态里的通行做法，效果与描边一致（压在亮画面上也能读）。
+  SubtitleViewConfiguration _subtitleConfiguration() {
+    final style = _subtitleStyle;
+    final base = 32.0 * style.fontScale;
+    final outline = style.outlineWidth;
+    return SubtitleViewConfiguration(
+      visible: _subtitlesEnabled,
+      textScaler: TextScaler.noScaling,
+      style: TextStyle(
+        height: 1.4,
+        fontSize: base,
+        letterSpacing: 0.0,
+        wordSpacing: 0.0,
+        color: Color(style.colorArgb),
+        fontWeight: FontWeight.w600,
+        backgroundColor: const Color(0xAA000000),
+        shadows: outline <= 0
+            ? const <Shadow>[]
+            : <Shadow>[
+                Shadow(
+                  color: const Color(0xFF000000),
+                  offset: Offset(-outline, 0),
+                ),
+                Shadow(
+                  color: const Color(0xFF000000),
+                  offset: Offset(outline, 0),
+                ),
+                Shadow(
+                  color: const Color(0xFF000000),
+                  offset: Offset(0, -outline),
+                ),
+                Shadow(
+                  color: const Color(0xFF000000),
+                  offset: Offset(0, outline),
+                ),
+              ],
+      ),
+    );
+  }
 
   @override
   Future<void> dispose() async {

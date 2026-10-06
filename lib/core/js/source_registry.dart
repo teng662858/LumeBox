@@ -297,6 +297,45 @@ class SourceRegistry {
   /// 导出脚本原文：图源不存在或跨板块时返回 null。
   String? scriptOf(String sourceId) => source(sourceId)?.script;
 
+  /// 设置图源分组（空串取消分组）。只改分组名，不碰脚本与运行时。
+  ///
+  /// 分组是**展示归类**，不改变归属板块：一个源的分组名只在本板块的库里，
+  /// 跨板块看不到也改不到（`_owns` 已经拦住了跨板块 id）。
+  void setGroup(String sourceId, String group) {
+    if (!_owns(sourceId)) return;
+    _database.setSourceGroup(sourceId, group);
+  }
+
+  /// 记录一次失败：计数 +1，达到阈值即标记失效。
+  ///
+  /// 只记账，不改变启停状态——失效的源仍可手动浏览（用户可能想亲眼看看），
+  /// 只是**不再参与自动重试**（批量测试 / 批量刷新会跳过它）。
+  void recordFailure(String sourceId) {
+    if (!_owns(sourceId)) return;
+    _database.recordSourceFailure(sourceId, threshold: brokenThreshold);
+    final record = source(sourceId);
+    if (record != null && record.isBroken) {
+      LumeLog.warn(
+        '[${section.id}] 源连续失败 ${record.failureCount} 次，已标记为失效'
+        '（不再自动重试）：$sourceId',
+      );
+    }
+  }
+
+  /// 手动恢复：清零失败计数并解除失效标记。
+  void clearFailure(String sourceId) {
+    if (!_owns(sourceId)) return;
+    _database.clearSourceFailure(sourceId);
+    LumeLog.info('[${section.id}] 源已恢复（失败计数清零）：$sourceId');
+  }
+
+  /// 连续失败多少次标记为失效。
+  ///
+  /// 取 3：一次失败可能是站点临时抽风或网络抖动，连错三次才值得判定「这个源
+  /// 坏了」。阈值不宜太小（误判会把好源停掉自动流程），也不宜太大（对一个
+  /// 已死的源多打好几次目标站）。
+  static const int brokenThreshold = 3;
+
   void remove(String sourceId) {
     if (!_owns(sourceId)) return;
     release(sourceId);

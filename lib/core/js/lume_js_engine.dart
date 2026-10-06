@@ -11,6 +11,7 @@ import '../util/md5.dart';
 import '../util/lume_log.dart';
 import 'cat_polyfills.dart';
 import 'sandbox/sandbox.dart';
+import 'sandbox_settings.dart';
 import 'source_bridge.dart';
 import 'venera_bridge.dart';
 import 'source_store.dart';
@@ -48,12 +49,20 @@ class LumeJsEngine {
   /// 宿主代理：持有沙盒存储（`LumeSource.fs` 的后端），随引擎释放。
   final LumeSourceHost _host;
 
-  /// 单次图源调用的墙钟预算：与沙箱策略一致，收敛在 3–5 秒。
-  static const Duration callTimeout = SandboxPolicy.defaultTimeout;
+  /// 单次图源调用的墙钟预算：**取自全局沙箱设置**（设置页可配，文档要求 3–5 秒）。
+  ///
+  /// 此前是写死的 `SandboxPolicy.defaultTimeout`；现在每次创建引擎时从
+  /// [LumeSandboxSettings] 读，因此用户改了设置后**新建的引擎立即生效**。
+  /// 已经在跑的引擎在下次被重建时（覆盖导入 / 停用重启用 / 超时销毁后重建）
+  /// 自然跟随——不需要为了改超时去逐个销毁现有引擎。
+  static Duration get callTimeout => LumeSandboxSettings.current.timeout;
 
   /// 图源脚本允许访问的唯一外部能力：网络请求，且必须经 [LumeSourceHost] 发出。
   /// 其余宿主方法一律拒绝。
-  static const SandboxPolicy policy = SandboxPolicy.standard;
+  ///
+  /// 策略在标准预设上**只改超时**（见 [SandboxSettings.policy]）：内存 / 栈 /
+  /// 指令计数等安全上限不开放给设置页，调大它们等于关掉防死循环的保护。
+  static SandboxPolicy get policy => LumeSandboxSettings.policy;
 
   /// Phase1 的图源引擎只随 iOS 提供：插件的原生库仅通过 iOS 的
   /// `DynamicLibrary.process()` 可加载，Android / Windows 按宪法仅保留空页面骨架。

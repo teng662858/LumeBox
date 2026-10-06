@@ -8,10 +8,12 @@ import '../source/global_source_page.dart';
 import '../video/player_kernel_section.dart';
 import '../video/player_settings_host.dart';
 import 'cache_settings_page.dart';
+import 'debug_panel_page.dart';
 import 'network_settings_page.dart';
 import 'log_report.dart';
 import 'log_report_page.dart';
 import 'log_viewer_page.dart';
+import 'sandbox_settings_page.dart';
 import 'section_cache.dart';
 import 'source_generator_page.dart';
 
@@ -79,6 +81,14 @@ class SettingsPage extends StatelessWidget {
             onTap: () => _push(context, const NetworkSettingsPage()),
           ),
           const SizedBox(height: 12),
+          // 文档第 4 条点名的全局参数之一：JS 沙箱超时（四板块共用）。
+          _SettingsEntry(
+            icon: Icons.hourglass_bottom_outlined,
+            title: '沙箱设置',
+            subtitle: 'JS 脚本执行超时（3–5 秒，四板块共用）；其余安全上限不可调',
+            onTap: () => _push(context, const SandboxSettingsPage()),
+          ),
+          const SizedBox(height: 12),
           _SettingsEntry(
             icon: Icons.cleaning_services_outlined,
             title: '缓存管理',
@@ -108,6 +118,15 @@ class SettingsPage extends StatelessWidget {
             title: '图源生成器（开发中）',
             subtitle: '可视化爬虫：配置网址与规则后生成图源脚本（预留功能，尚未实现）',
             onTap: () => _push(context, const SourceGeneratorPage()),
+          ),
+          const SizedBox(height: 12),
+          // 调试面板（文档「调试日志规范」）：请求抓包 + JS 上下文统计。
+          // 抓包默认关闭、只留内存、不导出——见 DebugPanelPage 的说明。
+          _SettingsEntry(
+            icon: Icons.bug_report_outlined,
+            title: '调试面板',
+            subtitle: '请求抓包（方法 / 状态 / 耗时 / 来源）与 JS 上下文统计；抓包默认关闭',
+            onTap: () => _push(context, const DebugPanelPage()),
           ),
         ],
       ),
@@ -151,7 +170,7 @@ class _SettingsEntry extends StatelessWidget {
               children: <Widget>[
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
@@ -160,12 +179,12 @@ class _SettingsEntry extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
               ],
             ),
           ),
-          const Icon(Icons.chevron_right, color: LumeTheme.muted),
+          Icon(Icons.chevron_right, color: LumeTheme.muted),
         ],
       ),
     );

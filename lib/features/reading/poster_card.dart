@@ -159,7 +159,7 @@ class ShelfEmptyHint extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const Icon(
+            Icon(
               Icons.collections_bookmark_outlined,
               size: 34,
               color: LumeTheme.muted,
@@ -167,7 +167,7 @@ class ShelfEmptyHint extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: LumeTheme.textPrimary,
@@ -177,7 +177,7 @@ class ShelfEmptyHint extends StatelessWidget {
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, color: LumeTheme.muted),
+              style: TextStyle(fontSize: 13, color: LumeTheme.muted),
             ),
             if (action != null) ...<Widget>[
               const SizedBox(height: 16),

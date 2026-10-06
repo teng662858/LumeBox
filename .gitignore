@@ -44,6 +44,10 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# 联调自建聚合服务端（CatVod / TVBox）时，它会在工作目录写出自己的配置文件；
+# 那是运行残留，不是本项目的东西。
+/wexfnwconfig.json
+
 # 构建产物：未签名 IPA 从 Actions 下载后放在仓库根目录取用，
 # 体积 18MB 且可随时重新下载，不入版本库。
 *.ipa

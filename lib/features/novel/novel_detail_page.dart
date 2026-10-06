@@ -299,7 +299,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
                         ),
                       ),
                       if (_progress?.chapterIndex == index)
-                        const Text(
+                        Text(
                           '在读',
                           style: TextStyle(fontSize: 11, color: LumeTheme.textPrimary),
                         ),
@@ -350,7 +350,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
                           detail?.title ?? widget.target.title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
                             color: LumeTheme.textPrimary,
@@ -364,7 +364,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
                               detail?.subtitle ?? widget.target.subtitle!,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 color: LumeTheme.muted,
                               ),
@@ -450,7 +450,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
         padding: const EdgeInsets.all(14),
         child: Text(
           description,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
             height: 1.6,
             color: LumeTheme.textSecondary,
@@ -467,7 +467,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
         children: <Widget>[
           Text(
             '章节（${_chapters.length}）',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,

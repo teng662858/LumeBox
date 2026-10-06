@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import '../util/debug_request_log.dart';
 import '../util/lume_log.dart';
 import 'network_settings.dart';
 
@@ -95,9 +96,15 @@ class NetworkQueue {
   int activeForHost(String host) => _activePerHost[host] ?? 0;
 
   /// 发一次请求：排队 → 发送 → 失败按需退避重试。
+  ///
+  /// 这里是**所有 HTTP 请求的唯一出口**（文档第六条），因此请求抓包也挂在这里：
+  /// 一次请求的最终结论（状态码、耗时、字节数）只有这一层同时掌握，放到调用方
+  /// 会漏掉重试与排队时间。抓包默认关闭，关闭时 [DebugRequestLog.record] 立即
+  /// 返回，本层没有额外开销。
   Future<NetworkResponse> send(NetworkRequest request) async {
     final host = hostOf(request.url);
     var attempt = 0;
+    final watch = Stopwatch()..start();
     while (true) {
       await _acquire(host);
       NetworkResponse response;
@@ -105,7 +112,11 @@ class NetworkQueue {
         response = await sender(request);
       } catch (error) {
         _release(host);
-        if (!request.retryOn || attempt >= settings.maxRetries) rethrow;
+        if (!request.retryOn || attempt >= settings.maxRetries) {
+          watch.stop();
+          _record(request, host, watch.elapsed, status: 0, error: '$error');
+          rethrow;
+        }
         final delay = _backoff(attempt);
         _logRetry(request, host, '网络异常（$error）', delay, attempt + 1);
         await Future<void>.delayed(delay);
@@ -117,6 +128,15 @@ class NetworkQueue {
       if (!request.retryOn ||
           !isRetryable(response.statusCode) ||
           attempt >= settings.maxRetries) {
+        watch.stop();
+        _record(
+          request,
+          host,
+          watch.elapsed,
+          status: response.statusCode,
+          responseBytes: response.body.length,
+          note: attempt > 0 ? '重试 $attempt 次后成功' : '',
+        );
         return response;
       }
       final delay = retryAfterOf(response) ?? _backoff(attempt);
@@ -189,6 +209,35 @@ class NetworkQueue {
     LumeLog.warn(
       '[${request.source}] $host $reason，'
       '${delay.inMilliseconds}ms 后重试（第 ${nextAttempt + 1} 次尝试）',
+    );
+  }
+
+  /// 记一条抓包（开关关闭时是空操作）。
+  ///
+  /// 请求头在这里脱敏：面板是给人看的，不该成为泄露 Cookie 的窗口。
+  void _record(
+    NetworkRequest request,
+    String host,
+    Duration elapsed, {
+    required int status,
+    int responseBytes = 0,
+    String error = '',
+    String note = '',
+  }) {
+    DebugRequestLog.record(
+      DebugRequestRecord(
+        time: DateTime.now(),
+        method: request.method,
+        url: request.url,
+        source: request.source,
+        host: host,
+        status: status,
+        elapsed: elapsed,
+        requestHeaders: DebugRequestLog.redactHeaders(request.headers),
+        responseBytes: responseBytes,
+        error: error,
+        note: note,
+      ),
     );
   }
 
