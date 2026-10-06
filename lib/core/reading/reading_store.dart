@@ -372,7 +372,7 @@ CREATE TABLE IF NOT EXISTS reading_setting (
 
   /// 写出用户保存的图片（长按保存）。同名文件自动加序号，不覆盖既有文件。
   File writeExport(String fileName, Uint8List bytes) {
-    final safe = _safeFileName(fileName);
+    final safe = safeName(fileName);
     var target = File(p.join(exportDir, safe));
     var index = 1;
     while (target.existsSync()) {
@@ -385,11 +385,55 @@ CREATE TABLE IF NOT EXISTS reading_setting (
     return target;
   }
 
-  static String _safeFileName(String raw) {
+  /// 写出批量下载的图片：落在 `exports/<folder>/<fileName>`，**同名直接覆盖**。
+  ///
+  /// 与 [writeExport] 的两点差别都是为了「下载可以重跑」：
+  /// 1. **分目录**（作品 / 章节）——一次下载几十上百张图不会全堆在一个目录里；
+  /// 2. **覆盖而不加序号**——重跑一次不会多出一整套 `_1` 副本。
+  ///
+  /// [folder] 是 `exports/` 之下的相对目录（可含多级），逐段清洗（[safeRelativeDir]）；
+  /// 因此调用方可以**预先算出落盘路径**判断「已下载」。
+  File writeDownload(String folder, String fileName, Uint8List bytes) {
+    final dir = Directory(p.join(exportDir, safeRelativeDir(folder)));
+    dir.createSync(recursive: true);
+    final target = File(p.join(dir.path, safeName(fileName)));
+    target.writeAsBytesSync(bytes, flush: true);
+    return target;
+  }
+
+  /// 落盘名清洗：路径分隔符与保留字符换成下划线，超长截断。
+  ///
+  /// 幂等——洗过的名字再洗一次不变，因此调用方用它预算路径是安全的。
+  static String safeName(String raw) {
     final trimmed = raw.trim();
     final cleaned = trimmed.replaceAll(RegExp(r'[\\/:*?"<>|\s]+'), '_');
     if (cleaned.isEmpty) return 'lume_image.jpg';
     return cleaned.length <= 96 ? cleaned : cleaned.substring(0, 96);
+  }
+
+  /// 下载子目录名（单层）：在 [safeName] 之上再去掉首尾的点。
+  ///
+  /// 首尾的点必须去掉：`..` 会被当成上一级目录，`.` 开头的目录在桌面端是隐藏
+  /// 目录——两者都不是下载目录该有的形态。全是点的名字退回 `lume`。
+  static String safeFolderName(String raw) {
+    final cleaned = safeName(raw).replaceAll(RegExp(r'^[.\s]+|[.\s]+$'), '');
+    return cleaned.isEmpty ? 'lume' : cleaned;
+  }
+
+  /// 下载落盘目录：`exports/` 之下的相对路径，**逐段**清洗后拼起来。
+  ///
+  /// 逐段清洗而不是整体清洗：整体清洗会把分隔符一起换成下划线，多级目录会被
+  /// 压成一层。空段直接丢掉（`a//b` 与 `a/b` 等价），因此 `..` 这类段洗过之后
+  /// 要么变成普通名字、要么被丢掉，路径不会跑出导出目录。
+  ///
+  /// 幂等：洗过的路径再洗一次得到同一个结果。
+  static String safeRelativeDir(String raw) {
+    final segments = <String>[];
+    for (final piece in raw.split(RegExp(r'[\\/]+'))) {
+      if (piece.trim().isEmpty) continue;
+      segments.add(safeFolderName(piece));
+    }
+    return segments.isEmpty ? 'lume' : segments.join('/');
   }
 
   // ------------------------------------------------------------------ 生命周期

@@ -156,6 +156,14 @@ class ReadingLibrary {
   File saveImage(String fileName, Uint8List bytes) =>
       _store.writeExport(fileName, bytes);
 
+  /// 保存批量下载的图片（按作品 / 章节分目录，同名覆盖）。返回落盘文件。
+  ///
+  /// 目录与文件名由调用方先经 [ReadingStore.safeFolderName] / [ReadingStore.safeName]
+  /// 算好再传进来——下载器要按同一套名字判断「这张已经下过了」，
+  /// 两边必须用同一份清洗结果（清洗是幂等的，重复调用不会漂移）。
+  File saveDownload(String folder, String fileName, Uint8List bytes) =>
+      _store.writeDownload(folder, fileName, bytes);
+
   // ------------------------------------------------------------------ 生命周期
 
   /// 释放本板块的阅读库（板块页面退出时调用）。

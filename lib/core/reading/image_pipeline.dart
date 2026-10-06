@@ -145,6 +145,17 @@ class SectionImagePipeline {
     return request.whenComplete(() => _inFlightBytes.remove(trimmed));
   }
 
+  /// 取原始字节但**不落缓存**（批量下载用）。
+  ///
+  /// 批量下载的字节直接写进用户导出目录；如果先经 [bytes] 落一份到图片缓存，
+  /// 同一张图就会在缓存与导出目录里各存一份，整部作品下完等于双倍占用。
+  /// 除此之外走的仍是同一条下载通路（全局队列 / 并发闸门 / 超时）。
+  Future<Uint8List?> fetch(String url) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty || _disposed) return Future<Uint8List?>.value();
+    return _download(trimmed);
+  }
+
   /// 预加载一批图片（阅读器前后 N 张）。结果只进缓存，不返回给调用方。
   /// 预加载失败只记日志：它属于「提前准备」，不该打断阅读。
   void preload(Iterable<String> urls, {int? targetWidth}) {

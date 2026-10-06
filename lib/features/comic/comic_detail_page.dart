@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
@@ -10,6 +11,7 @@ import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/state_view.dart';
 import '../reading/poster_card.dart';
 import '../reading/section_image.dart';
+import 'comic_download.dart';
 import 'comic_reader_page.dart';
 
 /// 漫画详情页：大图模糊背景封面、作品元信息、章节列表（正序 / 倒序可切换）。
@@ -58,6 +60,13 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
 
   bool _onShelf = false;
 
+  /// 批量下载器：第一次点「批量下载」时创建，之后复用同一个实例
+  /// （进度卡片、取消、结果汇总都读它）。
+  ComicDownloader? _downloader;
+
+  /// 用户手动关掉进度 / 结果卡片；下一次开始下载时重新出现。
+  bool _downloadCardHidden = false;
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +75,9 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
 
   @override
   void dispose() {
+    // 先停下载再释放管线：管线关闭会让在飞请求返回空，下载器据此
+    // 判定「这一批不下了」，而不是把剩下的图逐张记成失败。
+    _downloader?.dispose();
     _pipeline.dispose();
     super.dispose();
   }
@@ -205,6 +217,63 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
     await _openReader(index, page: page);
   }
 
+  // ------------------------------------------------------------------ 批量下载
+
+  /// 惰性创建下载器：字节来源接详情页自己的图片管线，但**不落图片缓存**
+  /// （下载的字节直接写导出目录，落缓存会让同一张图存两份）。
+  ComicDownloader? _ensureDownloader() {
+    final source = _source;
+    if (source == null || _chapters.isEmpty) return null;
+    return _downloader ??= ComicDownloader(
+      dataSource: source,
+      itemId: widget.target.itemId,
+      works: _detail?.title ?? widget.target.title,
+      library: widget.library,
+      fetch: _pipeline.fetch,
+    );
+  }
+
+  /// 「批量下载」：先选范围（全部 / 未读 / 仅当前章），选完立即开始。
+  Future<void> _startBatchDownload() async {
+    final downloader = _ensureDownloader();
+    if (downloader == null) return;
+    if (downloader.progress.running) {
+      setState(() => _downloadCardHidden = false);
+      return;
+    }
+    final readChapterIndex = _progress?.chapterIndex;
+    final scope = await showModalBottomSheet<ComicDownloadScope>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _DownloadScopeSheet(
+        chapterCount: _chapters.length,
+        readChapterIndex: readChapterIndex,
+      ),
+    );
+    if (scope == null || !mounted) return;
+    setState(() => _downloadCardHidden = false);
+    await downloader.start(
+      chapters: _chapters,
+      indices: scope.indices(
+        chapterCount: _chapters.length,
+        readChapterIndex: readChapterIndex,
+        currentIndex: readChapterIndex,
+      ),
+    );
+  }
+
+  /// 复制下载目录路径（结果卡片上的动作：保存到相册之前，路径是唯一出口）。
+  Future<void> _copyDownloadPath(String path) async {
+    await Clipboard.setData(ClipboardData(text: path));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        duration: Duration(seconds: 1),
+        content: Text('已复制下载目录'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -238,6 +307,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
         SliverToBoxAdapter(child: _buildHeader()),
         SliverToBoxAdapter(child: _buildDescription()),
         SliverToBoxAdapter(child: _buildChapterHeader()),
+        SliverToBoxAdapter(child: _buildDownloadCard()),
         if (_chapters.isEmpty)
           const SliverToBoxAdapter(
             child: SizedBox(
@@ -427,8 +497,9 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
     );
   }
 
-  /// 章节区标题 + 正序 / 倒序切换。
+  /// 章节区标题 + 批量下载入口 + 正序 / 倒序切换。
   Widget _buildChapterHeader() {
+    final running = _downloader?.progress.running ?? false;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 18, 8, 6),
       child: Row(
@@ -442,6 +513,18 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
             ),
           ),
           const Spacer(),
+          IconButton(
+            tooltip: running ? '下载中' : '批量下载',
+            visualDensity: VisualDensity.compact,
+            onPressed: _chapters.isEmpty ? null : _startBatchDownload,
+            icon: running
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download_for_offline_outlined, size: 20),
+          ),
           TextButton.icon(
             onPressed: () => setState(() => _descending = !_descending),
             icon: Icon(
@@ -453,6 +536,271 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
         ],
       ),
     );
+  }
+
+  /// 下载进度 / 结果卡片：下载进行中与刚结束（未手动关闭）时出现。
+  ///
+  /// 做成列表内的一张卡而不是模态面板：下载要能边下边看——用户可以继续翻章节、
+  /// 进阅读器，回来时这张卡还在原处。
+  Widget _buildDownloadCard() {
+    final downloader = _downloader;
+    if (downloader == null || _downloadCardHidden) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: downloader,
+      builder: (context, _) {
+        final progress = downloader.progress;
+        if (progress.status == ComicDownloadStatus.idle) {
+          return const SizedBox.shrink();
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+          child: _DownloadCard(
+            progress: progress,
+            onCancel: downloader.cancel,
+            onCopy: () => _copyDownloadPath(progress.destination),
+            onDismiss: () => setState(() => _downloadCardHidden = true),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 下载范围选择面板：全部 / 未读 / 仅当前章，各自带「会下多少章」的实数。
+class _DownloadScopeSheet extends StatelessWidget {
+  const _DownloadScopeSheet({
+    required this.chapterCount,
+    required this.readChapterIndex,
+  });
+
+  final int chapterCount;
+
+  /// 阅读进度所在章节（正序下标）；没有进度时为 null。
+  final int? readChapterIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    final scopes = <(ComicDownloadScope, int)>[
+      for (final scope in ComicDownloadScope.values)
+        (
+          scope,
+          scope
+              .indices(
+                chapterCount: chapterCount,
+                readChapterIndex: readChapterIndex,
+                currentIndex: readChapterIndex,
+              )
+              .length,
+        ),
+    ];
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+        child: GlassCard(
+          radius: 20,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text(
+                '批量下载',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                '图片存到应用内的导出目录（按作品 / 章节分目录），'
+                '已下过的图会自动跳过，可随时取消。',
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.5,
+                  color: LumeTheme.muted,
+                ),
+              ),
+              const SizedBox(height: 6),
+              for (final (scope, count) in scopes)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  enabled: count > 0,
+                  onTap: count > 0
+                      ? () => Navigator.of(context).pop(scope)
+                      : null,
+                  title: Text(
+                    scope.label,
+                    style: const TextStyle(fontSize: 14, color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    switch (scope) {
+                      ComicDownloadScope.all => '整部作品，共 $count 章',
+                      ComicDownloadScope.unread =>
+                        count == 0 ? '没有未读章节' : '进度之后，共 $count 章',
+                      ComicDownloadScope.current =>
+                        count == 0 ? '暂无可下载章节' : '只下第 ${(readChapterIndex ?? 0) + 1} 章',
+                    },
+                    style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  ),
+                  trailing: count > 0
+                      ? const Icon(Icons.chevron_right, color: LumeTheme.muted)
+                      : null,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 下载进度 / 结果卡片。
+class _DownloadCard extends StatelessWidget {
+  const _DownloadCard({
+    required this.progress,
+    required this.onCancel,
+    required this.onCopy,
+    required this.onDismiss,
+  });
+
+  final ComicDownloadProgress progress;
+  final VoidCallback onCancel;
+  final VoidCallback onCopy;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final running = progress.running;
+    return GlassCard(
+      radius: 14,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                running
+                    ? Icons.downloading
+                    : (progress.status == ComicDownloadStatus.done
+                        ? Icons.check_circle_outline
+                        : Icons.cancel_outlined),
+                size: 18,
+                color: LumeTheme.muted,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _title(),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              if (running)
+                TextButton(onPressed: onCancel, child: const Text('取消'))
+              else
+                TextButton(onPressed: onDismiss, child: const Text('关闭')),
+            ],
+          ),
+          if (running) ...<Widget>[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: progress.fraction,
+                minHeight: 4,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _runningDetail(),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+            ),
+          ] else ...<Widget>[
+            const SizedBox(height: 4),
+            Text(
+              _summary(),
+              style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+            ),
+            for (final failure in progress.failures.take(3))
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  failure,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFFFF8A80),
+                  ),
+                ),
+              ),
+            if (progress.failures.length > 3)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  '…另有 ${progress.failures.length - 3} 章失败',
+                  style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
+                ),
+              ),
+            const SizedBox(height: 2),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    progress.destination,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: LumeTheme.muted),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: onCopy,
+                  icon: const Icon(Icons.copy, size: 15),
+                  label: const Text('复制路径', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _title() {
+    if (progress.running) {
+      return '批量下载中 · 已下完 ${progress.chapterDone}/${progress.chapterTotal} 章';
+    }
+    if (progress.status == ComicDownloadStatus.cancelled) return '已取消下载';
+    return progress.chapterFailed > 0 ? '下载结束（有失败）' : '下载完成';
+  }
+
+  String _runningDetail() {
+    final title = progress.currentChapterTitle;
+    if (progress.currentImageTotal == 0) {
+      return title.isEmpty ? '正在获取章节内容…' : '「$title」· 正在获取章节内容…';
+    }
+    return '「$title」· 第 ${progress.currentImageDone}'
+        '/${progress.currentImageTotal} 张 · 已写入 ${progress.imageSaved} 张'
+        '（跳过 ${progress.imageSkipped} 张）';
+  }
+
+  String _summary() {
+    final parts = <String>[
+      '成功 ${progress.chapterDone} 章',
+      if (progress.chapterFailed > 0) '失败 ${progress.chapterFailed} 章',
+      '写入 ${progress.imageSaved} 张',
+      if (progress.imageSkipped > 0) '跳过 ${progress.imageSkipped} 张',
+    ];
+    return parts.join(' · ');
   }
 }
 
