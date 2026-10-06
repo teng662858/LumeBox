@@ -98,6 +98,10 @@ void main() {
         findsOneWidget,
         reason: '失败态不能把「播放器设置」入口一起收走——用户上一次就是这么被卡住的',
       );
+      // 用户报的「右上角入口消失」也可能指板块顶栏那排入口：这里一并钉住，
+      // 免得修好了控制栏、顶栏又出同类问题。
+      expect(find.byTooltip('追剧日历'), findsOneWidget);
+      expect(find.byTooltip('源管理'), findsOneWidget);
       expect(find.text('视频地址或本地路径'), findsOneWidget, reason: '地址栏也要能重新贴地址');
       // 传输按钮禁用（没有播放器可控制），但设置入口可用。
       final play = tester.widget<IconButton>(
@@ -147,6 +151,7 @@ void main() {
       expect(find.text('fake:avplayer'), findsOneWidget, reason: '回退后要有画面');
       expect(find.text('播放器准备失败'), findsNothing);
       expect(find.byTooltip('播放器设置'), findsOneWidget);
+      expect(find.byTooltip('源管理'), findsOneWidget, reason: '顶栏入口不受内核切换影响');
       expect(PlayerFactory.mpvInitFailed, isTrue, reason: '失败内核本次运行内熔断');
     });
 

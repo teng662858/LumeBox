@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -6,10 +7,12 @@ import 'package:http/http.dart' as http;
 
 import '../net/lume_http.dart';
 import '../session/section.dart';
+import '../util/md5.dart';
 import '../util/lume_log.dart';
 import 'cat_polyfills.dart';
 import 'sandbox/sandbox.dart';
 import 'source_bridge.dart';
+import 'venera_bridge.dart';
 import 'source_store.dart';
 
 /// 图源脚本的 JS 运行时。
@@ -32,10 +35,13 @@ import 'source_store.dart';
 /// 4. 载入并执行用户图源脚本。
 /// 垫片登记表的顺序就是注入顺序（见 [LumeSourcePolyfills]）。
 class LumeJsEngine {
-  LumeJsEngine._(this.sourceId, this._sandbox, this._host);
+  LumeJsEngine._(this.sourceId, this.section, this._sandbox, this._host);
 
   /// 图源标识。
   final String sourceId;
+
+  /// 所属板块。Venera 风格脚本只在漫画板块认领（见 [loadScript]）。
+  final Section section;
 
   final LumeSandbox _sandbox;
 
@@ -86,7 +92,7 @@ class LumeJsEngine {
       host: host,
       polyfills: LumeSourcePolyfills.forSection(section),
     );
-    return LumeJsEngine._(sourceId, sandbox, host);
+    return LumeJsEngine._(sourceId, section, sandbox, host);
   }
 
   /// 当前上下文代数。污染重建后递增。
@@ -105,10 +111,52 @@ class LumeJsEngine {
   SandboxError? get lastLoadFailure => _loadFailure;
 
   /// 载入图源脚本。脚本通过全局 `LumeSource` 暴露能力。
+  ///
+  /// 漫画板块额外做一件事：**认领 Venera 风格脚本**。Venera 的源只写
+  /// `class X extends ComicSource { … }`，没有任何注册语句，类名也不挂在
+  /// globalThis 上；这里从文本里读出类名，让沙箱里的 Venera 垫片按名字实例化它
+  /// （见 `venera_bridge.dart`）。认领成功后，元信息与五个契约方法都由垫片挂到
+  /// `LumeSource` 上，**后续链路（元信息读取、板块校验、数据源适配、页面）
+  /// 一行都不用改**。
+  ///
+  /// 认领失败（例如脚本里没有子类、或 `init()` 抛错）时如实失败：导入阶段就把
+  /// 原因说清楚，好过导入成功、用的时候才炸。
   Future<bool> loadScript(String script) async {
     final result = await _sandbox.load(script);
-    _loadFailure = result.isOk ? null : result.error;
-    return result.isOk;
+    if (!result.isOk) {
+      _loadFailure = result.error;
+      return false;
+    }
+    _loadFailure = null;
+    if (section != Section.cat) {
+      final adopted = await _adoptVenera(script);
+      if (!adopted) return false;
+    }
+    return true;
+  }
+
+  /// 认领 Venera 子类；非 Venera 脚本（不含 `extends ComicSource`）直接放行。
+  Future<bool> _adoptVenera(String script) async {
+    if (!VeneraScriptSource.looksVenera(script)) return true;
+    final className = VeneraScriptSource.classNameOf(script);
+    if (className == null) {
+      _loadFailure = const SandboxError(
+        SandboxErrorKind.script,
+        'Venera 脚本里没有找到 `class X extends ComicSource` 子类',
+      );
+      return false;
+    }
+    final result = await _sandbox.eval(
+      '__lumeVeneraAdopt(${jsonEncode(className)})',
+      fileName: '$sourceId.venera.js',
+    );
+    if (result.isOk) return true;
+    _loadFailure = SandboxError(
+      SandboxErrorKind.script,
+      'Venera 源认领失败（$className）：${result.error?.message ?? '未知原因'}',
+    );
+    LumeLog.warn('[$sourceId] $_loadFailure');
+    return false;
   }
 
   /// 读取脚本声明的元信息（id / name / version / category），失败返回 null。
@@ -221,6 +269,8 @@ class LumeSourceHost implements SandboxHost {
         return <String, Object?>{'removed': _store.remove(_key(request.payload))};
       case SandboxHostMethods.storeKeys:
         return <String, Object?>{'keys': _store.keys()};
+      case SandboxHostMethods.utilDigest:
+        return _digest(request.payload);
       default:
         throw SandboxHostException('源未授权的宿主方法: ${request.method}');
     }
@@ -256,6 +306,31 @@ class LumeSourceHost implements SandboxHost {
       throw const SandboxHostException('存储调用缺少 key');
     }
     return key;
+  }
+
+  /// 摘要计算：当前只接入 md5（Venera 源的 `Convert.md5` 用它）。
+  ///
+  /// 未接入的算法直接抛可读错误：让脚本作者立刻知道「这个能力没有」，
+  /// 而不是拿到一个空串继续往下跑、最后在别处炸。
+  Object? _digest(Object? payload) {
+    if (payload is! Map) {
+      throw const SandboxHostException('util.digest 入参必须是对象');
+    }
+    final algorithm = '${payload['algorithm'] ?? ''}'.trim().toLowerCase();
+    final data = '${payload['data'] ?? ''}';
+    switch (algorithm) {
+      case 'md5':
+        final bytes = Md5.digest(utf8.encode(data));
+        final buffer = StringBuffer();
+        for (final byte in bytes) {
+          buffer.write(byte.toRadixString(16).padLeft(2, '0'));
+        }
+        return <String, Object?>{'digest': buffer.toString()};
+      default:
+        throw SandboxHostException(
+          '暂不支持的摘要算法：$algorithm（当前支持：md5）',
+        );
+    }
   }
 
   Future<Map<String, Object?>> _fetch(Object? payload) async {
@@ -310,11 +385,18 @@ class LumeSourceHost implements SandboxHost {
 class LumeSourcePolyfills {
   LumeSourcePolyfills._();
 
-  /// 通用图源沙箱使用的垫片登记表（网络代理 + 桥接对象）。
+  /// 通用图源沙箱使用的垫片登记表（网络代理 + 桥接对象 + Venera 兼容层）。
+  ///
+  /// Venera 兼容层（`ComicSource` / `Network` / `HtmlDocument` 等）放在**通用表**
+  /// 里，是为了让「Venera 源被导入错板块」给出人话：脚本载入后自报 comic，
+  /// 于是小说 / 视频板块的导入会走既有的跨板块校验被拦下；
+  /// 若只在漫画板块注入，误导入的报错会是「ComicSource is not defined」——
+  /// 用户看不出这是板块问题。猫源有自己的登记表，拿不到这一层。
   static final PolyfillRegistry registry = PolyfillRegistry(
     <SandboxPolyfill>[
       const _FetchPolyfill(),
       const LumeSourceBridgePolyfill(),
+      const VeneraComicSourcePolyfill(),
     ],
   );
 
@@ -329,8 +411,8 @@ class LumeSourcePolyfills {
     ],
   );
 
-  /// 按板块选登记表：**垫片补全只对猫源开放**，其他板块拿到的仍是通用表——
-  /// 猫源的沙箱环境不与其他板块共用（宪法第 3 条）。
+  /// 按板块选登记表：**猫源的 Node 环境不外借**（宪法第 3 条），
+  /// 其余三个板块共用通用表（含 Venera 兼容层）。
   static PolyfillRegistry forSection(Section section) =>
       section == Section.cat ? catRegistry : registry;
 }

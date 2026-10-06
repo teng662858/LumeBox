@@ -8,6 +8,24 @@
 
 ## 未发布
 
+### 图源：兼容 Venera 漫画源脚本（新增能力）
+
+- **变更**：漫画板块现在能直接导入 **Venera 生态的 JS 图源**
+  （`class X extends ComicSource { … }` 那种写法）。此前导入会报
+  「ComicSource is not defined」——那是 Venera 宿主提供的全局基类，本项目没有。
+  新增的兼容层补齐了 `ComicSource` / `Network` / `Convert` / `UI` /
+  `HtmlDocument` 这些全局，并把 Venera 的
+  `explore / categoryComics / search / loadInfo / loadEp` 映射到本项目的
+  分类 / 列表 / 详情 / 章节 / 图片契约上——**脚本一行不用改**。
+- **板块归属**：Venera 源自报为漫画。导入小说 / 视频板块会被既有的跨板块校验
+  直接拒绝（报「跨板块」，而不是一句看不懂的 `ComicSource is not defined`）。
+- **能力边界（如实声明）**：账号登录、收藏夹、评论、排序点赞、
+  `Convert` 的 sha*/hmac/AES/RSA、HTML 的伪类与兄弟选择器**尚未接入**——
+  调用时会给出点名到能力的可读错误，不会静默返回空结果。
+  图片级自定义请求头（`onImageLoad`）暂不透传（若图片 403，运行日志里会有提示）。
+- **验证**：真 QuickJS + 本机示例站的端到端用例 6 例（JSON 型源与 HTML 型源各一）。
+
+
 ### 播放器：切到 MPV 卡住的问题修掉了（行为修正）
 
 - **变更**：切换播放内核（尤其切到 MPV）时，视频页不再出现「一直转圈、

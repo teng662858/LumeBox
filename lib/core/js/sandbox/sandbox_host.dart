@@ -75,4 +75,12 @@ class SandboxHostMethods {
 
   /// 列出全部键（沙盒文件 IO 的「目录」口径）。返回 `{keys: [string]}`。
   static const String storeKeys = 'store.keys';
+
+  /// 摘要（哈希）。入参 `{algorithm, data}`，返回 `{digest: string}`。
+  ///
+  /// 为什么由宿主算：Venera 源的 `Convert.md5` 需要一个 MD5 实现，而项目里已经有
+  /// 一份经过标准向量验证的纯 Dart 实现（`core/util/md5.dart`）。让 JS 再写一份
+  /// 等于把同一算法维护两遍——这里把计算收口到宿主，JS 侧只做调用。
+  /// 未接入的算法（sha1 / sha256 / …）**明确报错**，不返回空值假装成功。
+  static const String utilDigest = 'util.digest';
 }

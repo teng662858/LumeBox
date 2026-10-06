@@ -1,7 +1,4 @@
-import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -15,6 +12,7 @@ import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/source/source_home_page.dart';
 
+import '../support/demo_site.dart';
 import 'support/js_sandbox_support.dart';
 
 /// 示例源脚本（小说 / 漫画 / 视频）的「导入 → 加载 → 展示」端到端验证。
@@ -22,7 +20,7 @@ import 'support/js_sandbox_support.dart';
 /// 为什么要在本地起一个 HTTP 站点：这三份脚本是**真源**的写法（HTTP + 解析），
 /// 而不是纯模拟数据。只有让它们真的去请求一个站点，才能证明整条链路是通的——
 /// 脚本语法 → 沙箱桥接 → 宿主网络层 → 正则 / JSON 解析 → 适配器契约 → 页面渲染。
-/// 站点由本文件的 [_DemoSite] 现场提供，端口随机，脚本里的 BASE_URL 在导入前
+/// 站点由本文件的 [DemoSite] 现场提供，端口随机，脚本里的 BASE_URL 在导入前
 /// 被替换成它（等价于用户把自己的站点地址填进示例脚本）。
 ///
 /// iOS 之外能跑的前提是 quickjs 原生桥可用（Windows 需先 `flutter build windows`），
@@ -37,7 +35,7 @@ void main() {
 
   HttpOverrides? savedOverrides;
   late Directory root;
-  late _DemoSite site;
+  late DemoSite site;
 
   /// 读一份示例脚本，并把 BASE_URL 指到本地站点（等价于用户改示例脚本的地址）。
   String scriptFor(String file) => fixture(file).replaceFirst(
@@ -54,7 +52,7 @@ void main() {
     HttpOverrides.global = null;
     root = Directory.systemTemp.createTempSync('lume_box_demo');
     await installTempSectionRoot(root);
-    site = await _DemoSite.start();
+    site = await DemoSite.start();
     // 三份示例源先在**真实时钟**里导入好：`testWidgets` 的 fake-async 里
     // 等不到 sqlite / 原生编译这类真实异步（这是本仓库既有的测试口径）。
     for (final entry in <(String, Section)>[
@@ -273,7 +271,34 @@ void main() {
     );
   });
 
-  group('板块隔离：示例源脚本自带 category', () {
+  group('板块隔离：示例源脚本各自绑定自己的板块', () {
+    test(
+      '三份示例源导入错误板块都被拒（各自导入本板块则成功）',
+      () async {
+        // 三份脚本都在头部与运行时声明了 category：跨板块导入必须被拦下，
+        // 而不是「导入成功、点开才报内容类型不对」。
+        const cases = <(String, Section)>[
+          ('demo_novel_source.js', Section.comic),
+          ('demo_novel_source.js', Section.video),
+          ('demo_comic_source.js', Section.novel),
+          ('demo_video_source.js', Section.comic),
+        ];
+        for (final (file, section) in cases) {
+          await ensureSectionScope(section);
+          final manager = LumeSources.manager(section);
+          final rejected = await manager.importScript(scriptFor(file));
+          expect(
+            rejected.isSuccess,
+            isFalse,
+            reason: '$file 不该能导入 ${section.label} 板块',
+          );
+          expect(rejected.message, contains('跨板块'));
+        }
+      },
+      skip: skipReason,
+      timeout: const Timeout(Duration(seconds: 120)),
+    );
+
     test(
       '小说示例源导入漫画板块被拒（对照：导入小说板块成功）',
       () async {
@@ -380,184 +405,4 @@ void main() {
       );
     }
   });
-}
-
-/// 现场提供的示例站点：接口形状与三份示例脚本头部注释里写的约定一致。
-class _DemoSite {
-  _DemoSite._(this._server);
-
-  final HttpServer _server;
-
-  /// 关键路径的请求计数：用来证明「脚本真的去请求了站点」，以及缓存确实生效。
-  final Map<String, int> _hits = <String, int>{};
-
-  /// 收到过的查询参数（按到达顺序）：用来证明分页 / 搜索参数真的传到了站点。
-  final List<Map<String, String>> queries = <Map<String, String>>[];
-
-  String get baseUrl => 'http://127.0.0.1:${_server.port}';
-
-  int requestsTo(String path) => _hits[path] ?? 0;
-
-  static Future<_DemoSite> start() async {
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final site = _DemoSite._(server);
-    server.listen(site._handle);
-    return site;
-  }
-
-  Future<void> stop() => _server.close(force: true);
-
-  Future<void> _handle(HttpRequest request) async {
-    final path = request.uri.path;
-    _hits[path] = (_hits[path] ?? 0) + 1;
-    queries.add(request.uri.queryParameters);
-    final page = int.tryParse(request.uri.queryParameters['page'] ?? '1') ?? 1;
-    final category = request.uri.queryParameters['category'] ?? '';
-    final keyword = request.uri.queryParameters['keyword'] ?? '';
-    final query = request.uri.queryParameters;
-
-    if (path == '/api/categories') {
-      return _json(request, <String, Object?>{
-        'categories': <Object?>[
-          <String, Object?>{'id': 'c1', 'title': '分类一'},
-          <String, Object?>{'id': 'c2', 'title': '分类二'},
-        ],
-      });
-    }
-
-    if (path == '/api/list') {
-      final scope = keyword.isNotEmpty
-          ? '搜索：$keyword'
-          : (category.isNotEmpty ? '分类：$category' : '最新');
-      return _json(request, <String, Object?>{
-        'items': <Object?>[
-          <String, Object?>{
-            'id': 'n-1',
-            'title': '$scope · 示例小说 $page',
-            'cover': '$baseUrl/img/n-1.jpg',
-            'subtitle': '示例站 · 第 $page 页',
-          },
-          <String, Object?>{
-            'id': 'n-2',
-            'title': '$scope · 示例小说 $page-2',
-            'cover': '$baseUrl/img/n-2.jpg',
-            'subtitle': '示例站 · 第 $page 页',
-          },
-        ],
-        'hasMore': page < 3,
-      });
-    }
-
-    if (path == '/api/vod' || path == '/api/vod-search') {
-      final scope = keyword.isNotEmpty
-          ? '搜索：$keyword'
-          : (category.isNotEmpty ? '分类：$category' : '最新');
-      return _json(request, <String, Object?>{
-        'items': <Object?>[
-          <String, Object?>{
-            'id': 'v-1',
-            'title': '$scope · 示例影片 $page',
-            'cover': '$baseUrl/img/v-1.jpg',
-            'subtitle': '示例站 · 第 $page 页',
-          },
-        ],
-        'hasMore': page < 3,
-      });
-    }
-
-    if (path == '/api/search') {
-      return _json(request, <String, Object?>{
-        'items': <Object?>[
-          <String, Object?>{
-            'id': 'n-9',
-            'title': '搜索：$keyword · 第 $page 页',
-            'subtitle': '搜索命中',
-          },
-        ],
-        'hasMore': false,
-      });
-    }
-
-    if (path == '/api/detail') {
-      final id = query['id'] ?? '';
-      return _json(request, <String, Object?>{
-        'item': <String, Object?>{
-          'id': id,
-          'title': id.startsWith('n-') ? '示例小说 $id' : '示例漫画 $id',
-          'cover': '$baseUrl/img/$id.jpg',
-          'subtitle': id.startsWith('n-') ? '连载中 · 示例站' : '连载中 · 示例站',
-          'description': '由本地示例站点提供的 ${id.startsWith('n-') ? '小说' : '漫画'}详情。',
-        },
-      });
-    }
-
-    if (path == '/api/chapters') {
-      final id = query['id'] ?? '';
-      // 视频板块的「章节」是线路 + 集数；其余板块是章 / 话。
-      final titles = id.startsWith('v-')
-          ? <String>['线路 1 · 第 1 集', '线路 1 · 第 2 集']
-          : (id.startsWith('n-')
-              ? <String>['第一章', '第二章', '第三章']
-              : <String>['第 1 话', '第 2 话']);
-      return _json(request, <String, Object?>{
-        'chapters': <Object?>[
-          for (var index = 0; index < titles.length; index++)
-            <String, Object?>{
-              'id': '${id.startsWith('v-') ? 'ep' : 'ch'}-${index + 1}',
-              'title': titles[index],
-            },
-        ],
-      });
-    }
-
-    if (path == '/api/content') {
-      final id = query['id'] ?? '';
-      final chapterId = query['chapterId'] ?? '';
-      if (chapterId == 'missing') {
-        // 故意给一个「不存在」的章节，用于验证错误链路。
-        request.response.statusCode = HttpStatus.notFound;
-        await request.response.close();
-        return;
-      }
-      if (id.startsWith('v-')) {
-        return _json(request, <String, Object?>{
-          'url': 'https://cdn.example.com/$id/$chapterId.m3u8',
-          'headers': <String, Object?>{'Referer': '$baseUrl/'},
-        });
-      }
-      if (id.startsWith('n-')) {
-        return _json(request, <String, Object?>{
-          'text': '（$chapterId）示例正文：这一章由本地示例站点提供。',
-        });
-      }
-      return _json(request, <String, Object?>{
-        'images': <Object?>[
-          for (var index = 1; index <= 3; index++)
-            '$baseUrl/img/$id/$chapterId-$index.jpg',
-        ],
-      });
-    }
-
-    if (path == '/page/list.html') {
-      // 漫画列表页：HTML 结构固定，等价于真实站点的列表页。
-      final html = '''
-<html><body><div class="list">
-  <a class="item" href="/comic/12" data-id="12"><img src="/img/12.jpg" alt="示例漫画 A"/></a>
-  <a class="item" href="/comic/13" data-id="13"><img src="/img/13.jpg" alt="示例漫画 B"/></a>
-</div></body></html>''';
-      request.response.headers.contentType = ContentType.html;
-      request.response.write(html);
-      await request.response.close();
-      return;
-    }
-
-    request.response.statusCode = HttpStatus.notFound;
-    await request.response.close();
-  }
-
-  void _json(HttpRequest request, Object body) {
-    request.response.headers.contentType = ContentType.json;
-    request.response.add(Uint8List.fromList(utf8.encode(jsonEncode(body))));
-    unawaited(request.response.close());
-  }
 }

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/js/cat_polyfills.dart';
 import 'package:lume_box/core/js/lume_js_engine.dart';
 import 'package:lume_box/core/js/source_bridge.dart';
+import 'package:lume_box/core/js/venera_bridge.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/js_data_source.dart';
 
@@ -13,19 +14,28 @@ import 'package:lume_box/core/source/js_data_source.dart';
 void main() {
   const bridgeId = LumeSourceBridge.polyfillId;
 
-  test('注入顺序：环境垫片在前，桥接对象最后', () {
+  test('注入顺序：环境垫片在前，桥接对象先于兼容层', () {
     final general = LumeSourcePolyfills.registry
         .ordered()
         .map((item) => item.id)
         .toList(growable: false);
-    expect(general, <String>['lume.source.fetch', bridgeId]);
-    expect(general.last, bridgeId, reason: '脚本执行前，桥接必须已经就位');
+    expect(general.first, 'lume.source.fetch', reason: '网络垫片最先（桥接依赖它）');
+    expect(
+      general.indexOf(VeneraComicSourcePolyfill.polyfillId),
+      greaterThan(general.indexOf(bridgeId)),
+      reason: 'Venera 兼容层把契约方法挂到桥接对象上，必须排在桥接之后',
+    );
 
     final cat = LumeSourcePolyfills.catRegistry
         .ordered()
         .map((item) => item.id)
         .toList(growable: false);
     expect(cat.last, bridgeId);
+    expect(
+      cat.contains(VeneraComicSourcePolyfill.polyfillId),
+      isFalse,
+      reason: '猫源有自己的登记表，不叠 Venera 兼容层',
+    );
     for (final id in <String>[
       'lume.source.fetch',
       ...CatPolyfills.all.map((item) => item.id),
