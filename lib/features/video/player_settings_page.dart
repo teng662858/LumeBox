@@ -55,6 +55,10 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
             selected: _settings.kernel,
             catalog: widget.catalog,
             onChanged: (kernel) => _update(_settings.copyWith(kernel: kernel)),
+            // 熔断中的 MPV 显示「重试」：清掉熔断标记后列表当场重新评估，
+            // 用户不必为了再给 MPV 一次机会去重启应用。
+            retryKernel: PlayerFactory.mpvInitFailed ? PlayerKernel.mpv : null,
+            onRetry: _retryBurnedKernel,
           ),
           const SizedBox(height: 24),
           const _SectionTitle('播放倍速', '切换后立即生效，播放中不中断'),
@@ -65,6 +69,14 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
         ],
       ),
     );
+  }
+
+  /// 重试被熔断的内核：清掉熔断标记并刷新列表。
+  ///
+  /// 只改「可用性」，不自动切换——重试是「允许再次选择它」，选不选由用户决定。
+  void _retryBurnedKernel() {
+    PlayerFactory.clearMpvInitFailure();
+    setState(() {});
   }
 
   Widget _buildSpeedPicker() {

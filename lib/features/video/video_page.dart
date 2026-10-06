@@ -118,6 +118,29 @@ class _VideoPageState extends State<VideoPage>
   /// 媒体是否已加载成功（画中画的就绪边界检查用它）。
   bool _loaded = false;
 
+  /// 正在准备的内核：非空表示「已开始创建、还没交到手上」。
+  ///
+  /// 它不是 UI 进度条，而是**给用户的交代**——等待期间画面上要写明在等哪个内核
+  /// （MPV 首次初始化要装载原生库，几秒是正常的），并始终留着「切回 AVPlayer」
+  /// 的出口。空转一个没有说明的转圈，是上一版最要命的体验问题。
+  PlayerKernel? _pendingKernel;
+
+  /// 重建失败的原因（非空即失败态）。失败态必须带出口（重试 / 切回 AVPlayer），
+  /// 绝不允许停在「什么都点不动」的状态里。
+  String? _rebuildFailure;
+
+  /// 失败的内核：重试时按它重来（而不是按已被回退改写的当前设置）。
+  PlayerKernel? _failedKernel;
+
+  /// 重建序号：连续切换内核时，只有最后一次重建的结果算数，过期结果直接丢弃
+  /// （否则先完成的旧构建会覆盖新构建，页面上出现与所选内核不符的画面）。
+  int _rebuildSeq = 0;
+
+  /// 空闲快照：没有播放器时控制栏仍要用一个可监听的空值渲染（控制栏常在，
+  /// 只是按钮禁用——「播放器设置」这个入口因此不会消失）。
+  final ValueNotifier<PlayerSnapshot> _idleSnapshot =
+      ValueNotifier<PlayerSnapshot>(const PlayerSnapshot());
+
   /// 播放中隐藏底部 Dock 用的令牌（从 [ShellDockScope] 取控制器；不在导航壳
   /// 里时为空，此时也无需隐藏）。播放是沉浸态，暂停 / 停止 / 出错即恢复。
   final Object _dockToken = Object();
@@ -259,6 +282,7 @@ class _VideoPageState extends State<VideoPage>
     _store?.close();
     if (widget.library == null) ReadingLibrary.close(Section.video);
     _input.dispose();
+    _idleSnapshot.dispose();
     _tabs.dispose();
     super.dispose();
   }
@@ -411,55 +435,150 @@ class _VideoPageState extends State<VideoPage>
   ///
   /// 运行时切换内核与首次启动走同一条路：拆旧内核 → 建新内核 → 补挂设置 →
   /// 重新加载媒体 → 恢复位置与播放状态。
+  ///
+  /// 三条硬约束（上一版的空转问题就是从这里漏出去的）：
+  /// 1. **一定收敛到终态**：无论成功、回退、失败还是中途抛错，函数退出时页面
+  ///    要么拿着一个播放器，要么拿着一条带出口的失败说明——不会停在「转圈」上；
+  /// 2. **实例不泄漏**：任何路径下建出来但没被采用的播放器都要 dispose；
+  ///    过期重建（用户又切了别的内核）的结果同样丢弃并释放；
+  /// 3. **落库失败不拖垮播放**：写设置库失败只记日志并提示，绝不因此丢掉刚建好的
+  ///    播放器（那是「内核明明起来了，页面却一直转圈」的一条隐蔽路径）。
   Future<void> _rebuildPlayer() async {
+    final seq = ++_rebuildSeq;
     final previous = _player;
     final resume = previous == null ? null : _ResumePoint.of(previous);
     _player = null;
     if (previous != null) {
       previous.snapshot.removeListener(_syncDockForPlayback);
-      await previous.dispose();
+      await _disposeQuietly(previous, '切换内核时释放旧播放器');
     }
 
-    // 先亮出「正在准备播放器」：初始化在异步流程里跑，UI 不阻塞。
+    // 先亮出「正在准备 <内核> 播放器」：初始化在异步流程里跑，UI 不阻塞。
+    final kernel = _effectiveKernel;
     if (mounted) {
       setState(() {
         _player = null;
         _loaded = false;
+        _pendingKernel = kernel;
+        _rebuildFailure = null;
       });
     }
 
-    final launch = await _launcher.launch(_effectiveKernel);
+    PlayerLaunch? launch;
+    try {
+      launch = await _launcher.launch(kernel);
+    } catch (error, stackTrace) {
+      // 启动器自己已经把异常吃掉了；这里再兜一层，保证重建永远有结论。
+      LumeLog.error(error, stackTrace);
+      launch = null;
+    }
+
+    // 过期重建：用户又切了内核，本次结果作废（实例必须释放）。
+    if (seq != _rebuildSeq) {
+      final stale = launch?.player;
+      if (stale != null) await _disposeQuietly(stale, '过期重建结果');
+      return;
+    }
     if (!mounted) {
-      await launch?.player.dispose();
+      final orphan = launch?.player;
+      if (orphan != null) await _disposeQuietly(orphan, '页面已退出');
       return;
     }
+
     if (launch == null) {
-      // 连兜底内核都起不来：不再落库，页面按骨架/空态处理。
-      setState(() => _player = null);
+      // 连兜底内核都起不来：给出可操作的失败态，而不是空转。
+      setState(() {
+        _player = null;
+        _pendingKernel = null;
+        _failedKernel = kernel;
+        _rebuildFailure = '${kernel.label} 无法启动'
+            '${PlayerFactory.unavailableReason(kernel) == null ? '' : '（${PlayerFactory.unavailableReason(kernel)}）'}';
+      });
       return;
     }
+
     if (launch.didFallback) {
       // 回退：设置改成实际生效的内核并提示；**失败的内核绝不写进配置**。
       _settings = _settings.copyWith(kernel: launch.kernel);
+      _failedKernel = launch.fallbackFrom;
       _showPlayerToast(launch.message);
+    } else {
+      _failedKernel = null;
     }
-    _store?.save(_settings);
+
     final player = launch.player;
+    // 落库失败与播放无关：只记日志、提示一次，不让它中断下面的接线。
+    try {
+      _store?.save(_settings);
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      LumeLog.warn('[video] 播放器设置写库失败，本次仍按已生效的内核播放');
+    }
     setState(() {
       _player = player;
       _loaded = false;
+      _pendingKernel = null;
+      _rebuildFailure = null;
     });
     // 播放状态驱动底部 Dock 的显隐（播放中沉浸）。
     player.snapshot.addListener(_onSnapshotChanged);
 
-    await player.applySettings(_settings);
-    final media = _media;
-    if (media == null) return;
-    await _loadMedia(media);
-    if (resume != null && !resume.isAtStart) {
-      await player.seek(resume.position);
-      if (resume.playing) await player.play();
+    try {
+      await player.applySettings(_settings);
+      final media = _media;
+      if (media != null) await _loadMedia(media);
+      if (resume != null && !resume.isAtStart) {
+        await player.seek(resume.position);
+        if (resume.playing) await player.play();
+      }
+    } catch (error, stackTrace) {
+      // 接续失败：播放器已在手上（画面能出），如实报一条可重试的说明。
+      LumeLog.error(error, stackTrace);
+      if (mounted && seq == _rebuildSeq) {
+        setState(() => _rebuildFailure = '播放器已就绪，但接续上次播放失败：$error');
+      }
     }
+  }
+
+  /// 释放一个不再使用的播放器：失败只记日志，绝不打断重建链路。
+  Future<void> _disposeQuietly(AbstractPlayer player, String reason) async {
+    try {
+      await player.dispose();
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      LumeLog.warn('[video] 释放播放器失败（$reason）');
+    }
+  }
+
+  /// 重试：按失败的那个内核再来一次（先解除熔断，否则重试仍会被拦下）。
+  ///
+  /// 用 [AbstractPlayer] 重建而不是走 `_applySettings`：失败的那次**不改配置**，
+  /// 设置里可能已经是这个内核了，而 `_applySettings` 只在「内核变了」时重建
+  /// ——走它就等于原地不动（重试按钮点了没反应）。
+  Future<void> _retryFailedKernel() async {
+    final kernel = _failedKernel;
+    if (kernel != null && kernel != PlayerKernel.avplayer) {
+      PlayerFactory.clearMpvInitFailure();
+      if (_settings.kernel != kernel) {
+        _settings = _settings.copyWith(kernel: kernel);
+      }
+    }
+    await _rebuildPlayer();
+  }
+
+  /// 切回 AVPlayer：失败态与等待态都留着的出口（一键回到一定能用的内核）。
+  Future<void> _switchToAvPlayer() async {
+    if (_settings.kernel == PlayerKernel.avplayer) {
+      await _rebuildPlayer();
+      return;
+    }
+    await _applySettings(_settings.copyWith(kernel: PlayerKernel.avplayer));
+  }
+
+  /// 重试打不开的设置库（页面里直接给出口，不必重启应用）。
+  Future<void> _retryBoot() async {
+    setState(() => _storeFailed = false);
+    await _boot();
   }
 
   Future<void> _loadMedia(PlayerMedia media) async {
@@ -1372,245 +1491,303 @@ class _VideoPageState extends State<VideoPage>
 
   Widget _buildPlayerTabBody() {
     if (!_anyKernelAvailable) return const _VideoSkeleton();
-    if (_storeFailed) {
-      return const Center(
-        child: Text(
-          '播放器设置库不可用',
-          style: TextStyle(color: LumeTheme.muted),
-        ),
-      );
-    }
     final player = _player;
-    if (player == null) {
-      return const Center(
-        child: SizedBox(
-          width: 28,
-          height: 28,
-          child: CircularProgressIndicator(strokeWidth: 2.5),
-        ),
-      );
-    }
+    // 控制栏**任何状态下都在**：它是「播放器设置」这个入口的家，不能因为
+    // 播放器还没准备好就整块消失（用户上一次就是这么被卡死在一个转圈上的）。
     return Column(
       children: <Widget>[
-        Expanded(
-          child: Center(
-            child: ValueListenableBuilder<PlayerSnapshot>(
-              valueListenable: player.snapshot,
-              builder: (context, snapshot, _) => Padding(
-                padding: const EdgeInsets.all(16),
-                child: snapshot.error == null
-                    ? LayoutBuilder(
-                        builder: (context, constraints) {
-                          final size = Size(
-                            constraints.maxWidth,
-                            constraints.maxHeight,
-                          );
-                          return Stack(
-                            // 铺满整个播放区域：手势与 HUD 必须覆盖黑边，
-                            // 否则竖屏视频两侧的字母框按不到（手势层只跟着画面走）。
-                            fit: StackFit.expand,
-                            alignment: Alignment.bottomLeft,
-                            children: <Widget>[
-                              // 画面本身居中；黑边留白由外层承担。
-                              Center(child: player.buildView()),
-                              // 亮度遮罩：**降级路径**用（平台不支持改系统亮度时）。
-                              // 支持系统亮度时画面亮度由系统负责，这里不再叠一层，
-                              // 否则同一手势会被应用两次（暗得比预期快）。
-                              if (!_systemBrightness && _brightness < 1.0)
-                                Positioned.fill(
-                                  child: IgnorePointer(
-                                    child: ColoredBox(
-                                      color: Colors.black.withValues(
-                                        alpha: (1.0 - _brightness) * 0.75,
-                                      ),
-                                    ),
-                                  ),
+        Expanded(child: _buildStage(player)),
+        _buildControlPanel(player),
+      ],
+    );
+  }
+
+  /// 画面区：四态——设置库不可用 / 重建失败 / 正在准备 / 就绪。
+  Widget _buildStage(AbstractPlayer? player) {
+    if (_storeFailed) {
+      return _PlayerStageNotice(
+        icon: Icons.storage_outlined,
+        title: '播放器设置库不可用',
+        detail: '视频板块的设置库打不开，播放参数无法读写；可以重试打开，'
+            '或重启应用后再说。',
+        actions: <Widget>[
+          FilledButton.icon(
+            onPressed: _retryBoot,
+            icon: const Icon(Icons.refresh, size: 18),
+            label: const Text('重试'),
+          ),
+        ],
+      );
+    }
+
+    final failure = _rebuildFailure;
+    if (player == null && failure != null) {
+      return _PlayerStageNotice(
+        icon: Icons.error_outline,
+        title: '播放器准备失败',
+        detail: failure,
+        actions: <Widget>[
+          FilledButton.icon(
+            onPressed: _retryFailedKernel,
+            icon: const Icon(Icons.refresh, size: 18),
+            label: const Text('重试'),
+          ),
+          OutlinedButton(
+            onPressed: _switchToAvPlayer,
+            child: const Text('切回 AVPlayer'),
+          ),
+        ],
+      );
+    }
+
+    if (player == null) {
+      final kernel = _pendingKernel ?? _effectiveKernel;
+      return _PlayerStageNotice(
+        icon: Icons.hourglass_top_outlined,
+        title: '正在准备 ${kernel.label} 播放器…',
+        detail: kernel == PlayerKernel.mpv
+            ? 'MPV 首次启动要装载原生库，可能需要几秒；超过预算会自动回退 AVPlayer。'
+            : '初始化完成后即可播放；一直没有响应可以切回 AVPlayer。',
+        busy: true,
+        actions: <Widget>[
+          OutlinedButton(
+            onPressed: _switchToAvPlayer,
+            child: const Text('切回 AVPlayer'),
+          ),
+        ],
+      );
+    }
+
+    return _buildVideoArea(player);
+  }
+
+  /// 就绪态的画面区：画面 + 亮度遮罩 + 弹幕层 + 手势层 + HUD。
+  Widget _buildVideoArea(AbstractPlayer player) {
+    return Center(
+      child: ValueListenableBuilder<PlayerSnapshot>(
+        valueListenable: player.snapshot,
+        builder: (context, snapshot, _) => Padding(
+          padding: const EdgeInsets.all(16),
+          child: snapshot.error == null
+              ? LayoutBuilder(
+                  builder: (context, constraints) {
+                    final size = Size(
+                      constraints.maxWidth,
+                      constraints.maxHeight,
+                    );
+                    return Stack(
+                      // 铺满整个播放区域：手势与 HUD 必须覆盖黑边，
+                      // 否则竖屏视频两侧的字母框按不到（手势层只跟着画面走）。
+                      fit: StackFit.expand,
+                      alignment: Alignment.bottomLeft,
+                      children: <Widget>[
+                        // 画面本身居中；黑边留白由外层承担。
+                        Center(child: player.buildView()),
+                        // 亮度遮罩：**降级路径**用（平台不支持改系统亮度时）。
+                        // 支持系统亮度时画面亮度由系统负责，这里不再叠一层，
+                        // 否则同一手势会被应用两次（暗得比预期快）。
+                        if (!_systemBrightness && _brightness < 1.0)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: ColoredBox(
+                                color: Colors.black.withValues(
+                                  alpha: (1.0 - _brightness) * 0.75,
                                 ),
-                              // 弹幕层：吃播放位置与设置，盖在画面上、HUD 之下。
-                              Positioned.fill(
-                                child: DanmakuOverlay(
-                                  position: snapshot.position,
-                                  playing: snapshot.playing,
-                                  track: _danmaku,
-                                  settings: _danmakuSettings,
-                                ),
                               ),
-                              // 手势层：左侧滑调亮度、右侧滑调音量、横滑调进度、
-                              // 长按临时倍速。盖在画面上（弹幕之上，避免弹幕挡住手势）。
-                              Positioned.fill(
-                                child: _buildGestureLayer(size),
+                            ),
+                          ),
+                        // 弹幕层：吃播放位置与设置，盖在画面上、HUD 之下。
+                        Positioned.fill(
+                          child: DanmakuOverlay(
+                            position: snapshot.position,
+                            playing: snapshot.playing,
+                            track: _danmaku,
+                            settings: _danmakuSettings,
+                          ),
+                        ),
+                        // 手势层：左侧滑调亮度、右侧滑调音量、横滑调进度、
+                        // 长按临时倍速。盖在画面上（弹幕之上，避免弹幕挡住手势）。
+                        Positioned.fill(
+                          child: _buildGestureLayer(size),
+                        ),
+                        // HUD 只吃 AbstractPlayer 暴露的参数：换内核零改动。
+                        // 贴左下角（StackFit.expand 下子项会被撑满，因此显式对齐）。
+                        Align(
+                          alignment: Alignment.bottomLeft,
+                          child: PlayerHud(stats: player.stats),
+                        ),
+                      ],
+                    );
+                  },
+                )
+              : Text(
+                  snapshot.error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: LumeTheme.muted,
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+
+  /// 控制栏：地址输入 + 进度 + 播放控制 + 弹幕 / 自动连播 / **播放器设置** / 画中画。
+  ///
+  /// [player] 为空时传输类按钮禁用，但**齿轮与地址栏照常可用**——「播不了」
+  /// 不该顺带剥夺「改设置、换内核、贴地址重试」这些出路。
+  Widget _buildControlPanel(AbstractPlayer? player) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: GlassCard(
+        child: Column(
+          children: <Widget>[
+            TextField(
+              controller: _input,
+              style: const TextStyle(color: LumeTheme.textPrimary),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: '视频地址或本地路径',
+                hintStyle: TextStyle(color: LumeTheme.muted),
+                icon: Icon(Icons.link, color: LumeTheme.muted),
+              ),
+              onSubmitted: (_) => _open(),
+            ),
+            if (_error != null)
+              Text(
+                _error!,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: LumeTheme.danger,
+                ),
+              ),
+            const SizedBox(height: 8),
+            ValueListenableBuilder<PlayerSnapshot>(
+              valueListenable: player?.snapshot ?? _idleSnapshot,
+              builder: (context, snapshot, _) => Column(
+                children: <Widget>[
+                  Slider(
+                    value: _fraction(snapshot),
+                    onChanged: snapshot.duration.inMilliseconds == 0
+                        ? null
+                        : (value) => player?.seek(
+                              Duration(
+                                milliseconds:
+                                    (snapshot.duration.inMilliseconds * value)
+                                        .round(),
                               ),
-                              // HUD 只吃 AbstractPlayer 暴露的参数：换内核零改动。
-                              // 贴左下角（StackFit.expand 下子项会被撑满，因此显式对齐）。
-                              Align(
-                                alignment: Alignment.bottomLeft,
-                                child: PlayerHud(stats: player.stats),
-                              ),
-                            ],
-                          );
-                        },
-                      )
-                    : Text(
-                        snapshot.error!,
-                        textAlign: TextAlign.center,
+                            ),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: <Widget>[
+                      Text(
+                        _format(snapshot.position),
                         style: const TextStyle(
-                          fontSize: 14,
+                          fontSize: 12,
                           color: LumeTheme.muted,
                         ),
                       ),
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: GlassCard(
-            child: Column(
-              children: <Widget>[
-                TextField(
-                  controller: _input,
-                  style: const TextStyle(color: LumeTheme.textPrimary),
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    hintText: '视频地址或本地路径',
-                    hintStyle: TextStyle(color: LumeTheme.muted),
-                    icon: Icon(Icons.link, color: LumeTheme.muted),
-                  ),
-                  onSubmitted: (_) => _open(),
-                ),
-                if (_error != null)
-                  Text(
-                    _error!,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: LumeTheme.danger,
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                ValueListenableBuilder<PlayerSnapshot>(
-                  valueListenable: player.snapshot,
-                  builder: (context, snapshot, _) => Column(
-                    children: <Widget>[
-                      Slider(
-                        value: _fraction(snapshot),
-                        onChanged: snapshot.duration.inMilliseconds == 0
-                            ? null
-                            : (value) => player.seek(
-                                  Duration(
-                                    milliseconds:
-                                        (snapshot.duration.inMilliseconds *
-                                                value)
-                                            .round(),
-                                  ),
-                                ),
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: <Widget>[
-                          Text(
-                            _format(snapshot.position),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: LumeTheme.muted,
-                            ),
-                          ),
-                          Text(
-                            _format(snapshot.duration),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: LumeTheme.muted,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: <Widget>[
-                          IconButton(
-                            iconSize: 34,
-                            color: LumeTheme.textPrimary,
-                            icon: Icon(
-                              snapshot.playing
-                                  ? Icons.pause_circle_filled
-                                  : Icons.play_circle_fill,
-                            ),
-                            onPressed: () => snapshot.playing
-                                ? player.pause()
-                                : player.play(),
-                          ),
-                          IconButton(
-                            iconSize: 28,
-                            color: LumeTheme.textPrimary,
-                            icon: const Icon(Icons.stop_circle),
-                            onPressed: player.stop,
-                          ),
-                          IconButton(
-                            iconSize: 28,
-                            color: _danmakuSettings.enabled
-                                ? LumeTheme.textPrimary
-                                : LumeTheme.muted,
-                            tooltip: _danmakuSettings.enabled
-                                ? '弹幕：开'
-                                : '弹幕：关',
-                            icon: const Icon(Icons.subtitles_outlined),
-                            onPressed: () {
-                              final next = _danmakuSettings.copyWith(
-                                enabled: !_danmakuSettings.enabled,
-                              );
-                              setState(() => _danmakuSettings = next);
-                              final library = _library;
-                              if (library != null) {
-                                DanmakuSettingsStore(library).save(next);
-                              }
-                            },
-                          ),
-                          IconButton(
-                            iconSize: 28,
-                            color: LumeTheme.textPrimary,
-                            tooltip: '发弹幕',
-                            icon: const Icon(Icons.chat_bubble_outline),
-                            onPressed: _composeDanmaku,
-                          ),
-                          IconButton(
-                            iconSize: 28,
-                            color: LumeTheme.textPrimary,
-                            tooltip: '弹幕设置',
-                            icon: const Icon(Icons.tune),
-                            onPressed: _openDanmakuSettings,
-                          ),
-                          IconButton(
-                            iconSize: 28,
-                            color:
-                                _autoNext ? LumeTheme.textPrimary : LumeTheme.muted,
-                            tooltip: _autoNext ? '自动连播：开' : '自动连播：关',
-                            icon: const Icon(Icons.skip_next),
-                            onPressed: () =>
-                                setState(() => _autoNext = !_autoNext),
-                          ),
-                          IconButton(
-                            iconSize: 28,
-                            color: LumeTheme.textPrimary,
-                            tooltip: '播放器设置',
-                            icon: const Icon(Icons.tune),
-                            onPressed: _openSettings,
-                          ),
-                          _buildPipButton(),
-                          IconButton(
-                            iconSize: 28,
-                            color: LumeTheme.textPrimary,
-                            icon: const Icon(Icons.download),
-                            onPressed: _open,
-                          ),
-                        ],
+                      Text(
+                        _format(snapshot.duration),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: LumeTheme.muted,
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ],
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      IconButton(
+                        iconSize: 34,
+                        color: LumeTheme.textPrimary,
+                        icon: Icon(
+                          snapshot.playing
+                              ? Icons.pause_circle_filled
+                              : Icons.play_circle_fill,
+                        ),
+                        onPressed: player == null
+                            ? null
+                            : () => snapshot.playing
+                                ? player.pause()
+                                : player.play(),
+                      ),
+                      IconButton(
+                        iconSize: 28,
+                        color: LumeTheme.textPrimary,
+                        icon: const Icon(Icons.stop_circle),
+                        onPressed: player?.stop,
+                      ),
+                      IconButton(
+                        iconSize: 28,
+                        color: _danmakuSettings.enabled
+                            ? LumeTheme.textPrimary
+                            : LumeTheme.muted,
+                        tooltip: _danmakuSettings.enabled
+                            ? '弹幕：开'
+                            : '弹幕：关',
+                        icon: const Icon(Icons.subtitles_outlined),
+                        onPressed: () {
+                          final next = _danmakuSettings.copyWith(
+                            enabled: !_danmakuSettings.enabled,
+                          );
+                          setState(() => _danmakuSettings = next);
+                          final library = _library;
+                          if (library != null) {
+                            DanmakuSettingsStore(library).save(next);
+                          }
+                        },
+                      ),
+                      IconButton(
+                        iconSize: 28,
+                        color: LumeTheme.textPrimary,
+                        tooltip: '发弹幕',
+                        icon: const Icon(Icons.chat_bubble_outline),
+                        onPressed: _composeDanmaku,
+                      ),
+                      IconButton(
+                        iconSize: 28,
+                        color: LumeTheme.textPrimary,
+                        tooltip: '弹幕设置',
+                        icon: const Icon(Icons.tune),
+                        onPressed: _openDanmakuSettings,
+                      ),
+                      IconButton(
+                        iconSize: 28,
+                        color: _autoNext
+                            ? LumeTheme.textPrimary
+                            : LumeTheme.muted,
+                        tooltip: _autoNext ? '自动连播：开' : '自动连播：关',
+                        icon: const Icon(Icons.skip_next),
+                        onPressed: () =>
+                            setState(() => _autoNext = !_autoNext),
+                      ),
+                      IconButton(
+                        iconSize: 28,
+                        color: LumeTheme.textPrimary,
+                        tooltip: '播放器设置',
+                        // 与「弹幕设置」的 tune 区分开：这颗是播放器设置（内核 / 倍速 / 字幕）。
+                        icon: const Icon(Icons.settings_outlined),
+                        onPressed: _openSettings,
+                      ),
+                      _buildPipButton(),
+                      IconButton(
+                        iconSize: 28,
+                        color: LumeTheme.textPrimary,
+                        icon: const Icon(Icons.download),
+                        onPressed: _open,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -1665,6 +1842,83 @@ class _VideoPageState extends State<VideoPage>
     final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
     final hours = duration.inHours;
     return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+  }
+}
+
+/// 内核切换前记录的位置与播放状态（新内核加载完成后接回去）。
+/// 播放区的状态说明卡：正在准备 / 准备失败 / 设置库不可用。
+///
+/// 每种状态都**必须带出口**（重试或切回 AVPlayer）：播放器起不来时，用户手上
+/// 得有点得动的东西，而不是一个没有说明、也不知道要等多久的转圈。
+class _PlayerStageNotice extends StatelessWidget {
+  const _PlayerStageNotice({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    this.actions = const <Widget>[],
+    this.busy = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+  final List<Widget> actions;
+
+  /// 是否为「进行中」状态（标题旁显示进度指示）。
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: GlassCard(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (busy)
+                const SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                )
+              else
+                Icon(icon, size: 26, color: LumeTheme.textSecondary),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: LumeTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                detail,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.5,
+                  color: LumeTheme.muted,
+                ),
+              ),
+              if (actions.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: actions,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

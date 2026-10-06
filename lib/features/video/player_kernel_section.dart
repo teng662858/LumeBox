@@ -82,6 +82,12 @@ class _PlayerKernelSectionState extends State<PlayerKernelSection> {
     );
   }
 
+  /// 重试被熔断的内核：清掉熔断标记并刷新列表（只恢复可选，不自动切换）。
+  void _retryBurnedKernel() {
+    PlayerFactory.clearMpvInitFailure();
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_failed) {
@@ -128,6 +134,9 @@ class _PlayerKernelSectionState extends State<PlayerKernelSection> {
           selected: settings.kernel,
           catalog: _catalog,
           onChanged: _select,
+          // 熔断中的 MPV 在逃生入口也能当场重试（清熔断 → 列表重新评估）。
+          retryKernel: PlayerFactory.mpvInitFailed ? PlayerKernel.mpv : null,
+          onRetry: _retryBurnedKernel,
         ),
       ],
     );
