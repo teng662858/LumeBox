@@ -263,8 +263,16 @@ class SourceRegistry {
   }
 
   /// 服务端能力特征：socket / 端口 / 进程 / 线程这类「跑服务」才需要的东西。
+  ///
+  /// 两侧必须是词边界：这些词都是常见英文子串（`net` ⊂ internet / network /
+  /// magnet，`dns` ⊂ 无但 `net` 已足够），不加边界会把普通的语法错误也判成
+  /// 「自建服务端程序」——用户按提示去改网络写法，而真正的问题是少了个括号。
+  /// 边界用「非标识符字符」而不是 `\b`：`net::ERR_` 与 `net.createServer` 里
+  /// 紧邻的是 `:` 与 `.`，两者都要能命中。
   static final RegExp _serverCapabilityPattern = RegExp(
-    r'(net|tls|http2|dgram|dns|child_process|worker_threads|cluster|createServer|listen)',
+    r'(?<![A-Za-z0-9_$])'
+    r'(net|tls|http2|dgram|dns|child_process|worker_threads|cluster|createServer|listen)'
+    r'(?![A-Za-z0-9_$])',
     caseSensitive: false,
   );
 

@@ -13,6 +13,7 @@ import 'log_report.dart';
 import 'log_report_page.dart';
 import 'log_viewer_page.dart';
 import 'section_cache.dart';
+import 'source_generator_page.dart';
 
 /// 设置：图源总管理、缓存管理、运行日志查看与错误报告导出。
 ///
@@ -97,6 +98,16 @@ class SettingsPage extends StatelessWidget {
             title: '错误报告',
             subtitle: '把错误与警告整理成报告，导出文件或复制全文',
             onTap: () => _push(context, LogReportPage(exporter: exporter)),
+          ),
+          const SizedBox(height: 12),
+          // 预留扩展项（Phase2 收尾）：只搭 UI 骨架，所有按钮弹「功能开发中」。
+          // 放设置页而不是新增底部 Tab —— 生成器是工具附属功能、不是主阅读板块，
+          // 底部 5 个主 Tab（小说 / 漫画 / 视频 / 猫源 / 设置）保持不变。
+          _SettingsEntry(
+            icon: Icons.auto_fix_high_outlined,
+            title: '图源生成器（开发中）',
+            subtitle: '可视化爬虫：配置网址与规则后生成图源脚本（预留功能，尚未实现）',
+            onTap: () => _push(context, const SourceGeneratorPage()),
           ),
         ],
       ),

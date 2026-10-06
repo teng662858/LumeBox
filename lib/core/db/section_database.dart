@@ -65,7 +65,12 @@ CREATE TABLE IF NOT EXISTS section_setting (
     _db.execute('PRAGMA foreign_keys = ON');
     final version =
         _db.select('PRAGMA user_version').first['user_version'] as int;
-    if (version < 1) {
+    // 全新库（user_version = 0）直接按当前 schema 建表，**表里已经带了后续
+    // 版本追加的全部列**。若不记住这一点，下面那些 `ALTER TABLE ADD COLUMN`
+    // 会在新库上重复执行、撞「duplicate column name」，把每次首次打开板块
+    // 都写成四条告警——用户导出错误报告时会看到一堆假故障。
+    final createdFresh = version < 1;
+    if (createdFresh) {
       _db.execute(_schema);
     } else if (version < 2) {
       _db.execute(
@@ -76,7 +81,7 @@ CREATE TABLE IF NOT EXISTS section_setting (
         [_sectionId],
       );
     }
-    if (version < 4) {
+    if (!createdFresh && version < 4) {
       // 订阅来源地址：从订阅链接导入时记下，供「更新订阅源」重新拉取。
       // 本地导入的图源留空（没有可更新的来源）。
       try {
@@ -86,7 +91,7 @@ CREATE TABLE IF NOT EXISTS section_setting (
         LumeLog.warn('迁移 source.origin_url 跳过: $error');
       }
     }
-    if (version < 3) {
+    if (!createdFresh && version < 3) {
       // 单图源网络覆盖（UA / Cookie / 代理）：空串表示继承全局设置。
       for (final column in <String>['user_agent', 'cookie', 'proxy']) {
         try {

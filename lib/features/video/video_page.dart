@@ -449,7 +449,10 @@ class _VideoPageState extends State<VideoPage>
     final resume = previous == null ? null : _ResumePoint.of(previous);
     _player = null;
     if (previous != null) {
-      previous.snapshot.removeListener(_syncDockForPlayback);
+      // 摘的必须是**当初挂上去的那个**回调（[_onSnapshotChanged]，见采用新播放器
+      // 处）。挂 A 摘 B 等于没摘：旧实例在释放过程中若还吐快照，页面会拿它去
+      // 落进度、判连播、改 Dock 显隐——那些动作都属于已经作废的播放器。
+      previous.snapshot.removeListener(_onSnapshotChanged);
       await _disposeQuietly(previous, '切换内核时释放旧播放器');
     }
 
