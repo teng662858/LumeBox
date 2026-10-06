@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
@@ -56,6 +57,22 @@ class LumeNet {
   static void resetForTesting() {
     _settings = const NetworkSettings();
     _queue = null;
+  }
+
+  /// 关闭共享客户端并丢弃缓存（测试用）。
+  ///
+  /// 为什么需要它：`testWidgets` 跑在假时钟里，而真实 HTTP 的连接池会在响应回来
+  /// 之后挂一个 keep-alive 空转定时器（默认 15 秒）——那个定时器落在假时钟上，
+  /// 测试收尾时会按「还有定时器没停」报错。关掉客户端会连同连接与定时器一起收掉。
+  /// 生产路径不需要这个动作：进程退出即回收，也没有人在假时钟里跑它。
+  @visibleForTesting
+  static void closeSharedClientForTesting() {
+    try {
+      _shared?.close();
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+    }
+    _shared = null;
   }
 
   /// 共享队列的发送实现：按请求自带的代理配置建客户端。
