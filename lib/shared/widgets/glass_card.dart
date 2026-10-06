@@ -222,15 +222,26 @@ class GlassScaffold extends StatelessWidget {
 
   final bool? resizeToAvoidBottomInset;
 
-  /// 顶部栏占的高度：状态栏 + 工具栏 + 页签条（+ [extra]）。
+  /// 顶部栏占的高度：状态栏 + 工具栏 + 页签条。
   ///
-  /// 用调用点自己的 context 读状态栏高度即可——这里刻意不去注入 / 改写
-  /// MediaQuery，页面自身的 build 与它下面的子 widget 读到的值一致，
-  /// 不必关心自己在哪一层。
-  static double barHeight(BuildContext context, {double extra = 0}) =>
-      MediaQuery.paddingOf(context).top +
-      kToolbarHeight +
-      (extra > 0 ? extra : 0);
+  /// 取值分两种情况，调用方不必关心自己在哪一层：
+  /// - 调用点在**本壳的内容区之内**（板块内容、列表……）：直接取壳算好的完整高度，
+  ///   此时 [extra] 会被忽略（高度里已经含页签条）；
+  /// - 调用点在**壳之上**（页面自身 build 里就地构造 child 时）：按真实状态栏高度
+  ///   现算，并用 [extra] 补上该页自己放进顶栏的页签条高度。
+  ///
+  /// 之所以在壳内不能一律用 `MediaQuery.paddingOf(context).top + kToolbarHeight`：
+  /// Flutter 在 `extendBodyBehindAppBar` 时会把**顶栏总高度**注入 body 的
+  /// MediaQuery 内边距（这是它保证「内容不被顶栏遮住」的机制），
+  /// 在内容区里这么算就会把顶栏高度加两遍——这正是下面这个获取点的用途。
+  static double barHeight(BuildContext context, {double extra = 0}) {
+    final provided =
+        context.dependOnInheritedWidgetOfExactType<_GlassBarHeight>();
+    if (provided != null) return provided.height;
+    return MediaQuery.paddingOf(context).top +
+        kToolbarHeight +
+        (extra > 0 ? extra : 0);
+  }
 
   /// 内容要让出的顶部内边距（见 [barHeight]）。
   static EdgeInsets barInset(BuildContext context, {double extra = 0}) =>
@@ -238,6 +249,9 @@ class GlassScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 顶栏总高度：用壳自己的 context 读（此时还没被 Scaffold 注入顶栏高度）。
+    final height =
+        MediaQuery.paddingOf(context).top + kToolbarHeight + bottomExtra;
     return Scaffold(
       extendBodyBehindAppBar: true,
       resizeToAvoidBottomInset: resizeToAvoidBottomInset ?? true,
@@ -252,10 +266,27 @@ class GlassScaffold extends StatelessWidget {
         decoration: LumeTheme.background,
         // 穿栏时顶部不设安全区（顶栏由内容自己用 barInset 让出）；
         // 左右与底部照常让开，底部安全区与悬浮 Dock 的高度都不会被内容压到。
-        child: behindBar
-            ? SafeArea(top: false, child: child)
-            : SafeArea(child: child),
+        child: _GlassBarHeight(
+          height: height,
+          child: behindBar
+              ? SafeArea(top: false, child: child)
+              : SafeArea(child: child),
+        ),
       ),
     );
   }
+
+  /// 页签条高度。
+  double get bottomExtra => bottom?.preferredSize.height ?? 0;
+}
+
+/// 把「顶栏总高度」交给内容区（见 [GlassScaffold.barHeight]）。
+class _GlassBarHeight extends InheritedWidget {
+  const _GlassBarHeight({required this.height, required super.child});
+
+  final double height;
+
+  @override
+  bool updateShouldNotify(_GlassBarHeight oldWidget) =>
+      oldWidget.height != height;
 }

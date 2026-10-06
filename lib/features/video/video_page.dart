@@ -1313,38 +1313,41 @@ class _VideoPageState extends State<VideoPage>
         children: <Widget>[
           // 首页：继续观看（有记录才显示）+ 当前图源的内容展示页
           // （右上角已有「图源管理」，图源条不再重复）。
-          Column(
-            children: <Widget>[
-              // 浏览面第一块（继续观看）不是滚动视图，自己让出顶栏高度；
-              // 它下面的列表在各自的滚动区里正常滚动。
-              if (_library != null)
-                Padding(
-                  padding: GlassScaffold.barInset(
-                    context,
-                    extra: BoardTabHeader.height,
-                  ).add(const EdgeInsets.fromLTRB(16, 12, 16, 0)),
-                  child: ContinueWatchingSection(
-                    key: ValueKey<int>(_continueWatchingRevision),
-                    library: _library,
-                    onResume: _resumeFromProgress,
-                    onRemove: _removeProgress,
-                    onShowAll: _openHistory,
+          // 浏览面不是滚动视图（继续观看 + 图源列表各占一块），整块让出顶栏
+          // 高度：继续观看为空时也要让，否则图源列表会顶到页签条下面去。
+          Padding(
+            padding: GlassScaffold.barInset(
+              context,
+              extra: BoardTabHeader.height,
+            ),
+            child: Column(
+              children: <Widget>[
+                if (_library != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: ContinueWatchingSection(
+                      key: ValueKey<int>(_continueWatchingRevision),
+                      library: _library!,
+                      onResume: _resumeFromProgress,
+                      onRemove: _removeProgress,
+                      onShowAll: _openHistory,
+                    ),
+                  ),
+                Expanded(
+                  child: SourceBrowsePane(
+                    section: Section.video,
+                    manager: widget.sourceManager,
+                    showSourceActions: false,
+                    // 封面管线的缓存属于视频板块自己，与其他板块不共享。
+                    pipeline: _pipeline,
+                    onItemTap: _playFromSource,
+                    // 图源变更后原地重解析（不换 Key：重挂会与旧实例的 dispose
+                    // 抢同一份板块注册表，反而报「图源存储不可用」）。
+                    revision: _browseRevision,
                   ),
                 ),
-              Expanded(
-                child: SourceBrowsePane(
-                  section: Section.video,
-                  manager: widget.sourceManager,
-                  showSourceActions: false,
-                  // 封面管线的缓存属于视频板块自己，与其他板块不共享。
-                  pipeline: _pipeline,
-                  onItemTap: _playFromSource,
-                  // 图源变更后原地重解析（不换 Key：重挂会与旧实例的 dispose
-                  // 抢同一份板块注册表，反而报「图源存储不可用」）。
-                  revision: _browseRevision,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
           _buildPlayerTab(),
         ],
