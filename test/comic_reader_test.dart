@@ -14,6 +14,7 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/comic/comic_reader_page.dart';
 import 'package:lume_box/features/comic/comic_settings.dart';
+import 'package:lume_box/shared/widgets/notice_card.dart';
 
 import 'support/fake_reading_source.dart';
 
@@ -61,7 +62,10 @@ void main() {
   Size viewport = const Size(420, 880);
 
   /// 建阅读器。刻意包一层 MediaQuery：旋屏要改的正是它的 data。
-  Widget readerApp({int imageCount = 6}) => MaterialApp(
+  /// [runtimeAvailable] 默认 true：本文件跑在 Windows 上，平台检测必然为假，
+  /// 而这里要测的是阅读器的**业务行为**。平台守卫本身另有用例专门覆盖
+  /// （见「平台守卫」两条）。显式传参而不是依赖平台检测，也让断言不随开发机变。
+  Widget readerApp({int imageCount = 6, bool runtimeAvailable = true}) => MaterialApp(
         home: MediaQuery(
           data: MediaQueryData(size: viewport, devicePixelRatio: 1),
           child: ComicReaderPage(
@@ -73,6 +77,7 @@ void main() {
             target: target,
             chapters: chapters(3),
             initialChapterIndex: 0,
+            runtimeAvailable: runtimeAvailable,
           ),
         ),
       );
@@ -81,11 +86,14 @@ void main() {
     WidgetTester tester, {
     int imageCount = 6,
     Size surface = const Size(420, 880),
+    bool runtimeAvailable = true,
   }) async {
     await tester.binding.setSurfaceSize(surface);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     viewport = surface;
-    await tester.pumpWidget(readerApp(imageCount: imageCount));
+    await tester.pumpWidget(
+      readerApp(imageCount: imageCount, runtimeAvailable: runtimeAvailable),
+    );
     await tester.pumpAndSettle();
   }
 
@@ -321,6 +329,27 @@ void main() {
     final progress = library.comicProgress(target.itemId)!;
     expect(progress.chapterIndex, 2);
     expect(progress.page, 0);
+  });
+
+  testWidgets('平台守卫：无图源运行时时只渲染骨架，不取章节、不落进度', (tester) async {
+    await pumpReader(tester, runtimeAvailable: false);
+
+    // 只渲染骨架，没有阅读内容。
+    expect(find.byType(SkeletonNotice), findsOneWidget);
+    expect(find.byType(ListView), findsNothing);
+    expect(find.byType(PageView), findsNothing);
+
+    // 不落任何进度与书架记录（与板块入口的平台门同口径）。
+    expect(library.comicProgress(target.itemId), isNull);
+    expect(library.onShelf(target.itemId), isFalse);
+  });
+
+  testWidgets('平台守卫：可用时正常进入阅读（对照，防止守门过严）', (tester) async {
+    await pumpReader(tester, runtimeAvailable: true);
+
+    expect(find.byType(SkeletonNotice), findsNothing);
+    expect(find.byType(ListView), findsOneWidget, reason: '默认瀑布流应正常渲染');
+    expect(library.comicProgress(target.itemId), isNotNull);
   });
 
   group('图片内存策略', () {

@@ -82,6 +82,7 @@ void main() {
         library: comicLibrary,
         manager: managerFor(Section.comic),
         target: comicTarget,
+        runtimeAvailable: true,
       ),
     );
 
@@ -113,6 +114,7 @@ void main() {
         library: comicLibrary,
         manager: managerFor(Section.comic),
         target: comicTarget,
+        runtimeAvailable: true,
       ),
     );
 

@@ -22,6 +22,7 @@ class ComicDetailPage extends StatefulWidget {
     required this.library,
     required this.manager,
     required this.target,
+    this.runtimeAvailable,
   });
 
   final ReadingLibrary library;
@@ -30,6 +31,10 @@ class ComicDetailPage extends StatefulWidget {
   final SourceManager manager;
 
   final ReadingTarget target;
+
+  /// 平台是否提供图源运行时；透传给阅读器（为空时它自己按板块判断）。
+  /// 与 `ComicPage` 的平台门同一口径，测试也靠它显式声明运行环境。
+  final bool? runtimeAvailable;
 
   @override
   State<ComicDetailPage> createState() => _ComicDetailPageState();
@@ -176,6 +181,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
           chapters: _chapters,
           initialChapterIndex: index,
           initialPage: page,
+          runtimeAvailable: widget.runtimeAvailable,
         ),
       ),
     );

@@ -11,6 +11,7 @@ import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
 import 'comic_bookmarks.dart';
 import 'comic_settings.dart';
@@ -32,6 +33,7 @@ class ComicReaderPage extends StatefulWidget {
     required this.chapters,
     required this.initialChapterIndex,
     this.initialPage = 0,
+    this.runtimeAvailable,
   });
 
   final ReadingLibrary library;
@@ -48,6 +50,18 @@ class ComicReaderPage extends StatefulWidget {
   /// 续读的页序号（瀑布流模式下作为纵向滚动位置的锚点）。
   final int initialPage;
 
+  /// 平台是否提供图源运行时；为空时取 [LumeSources.runtimeAvailableFor]。
+  ///
+  /// 这是**双保险**：正常路径下阅读器由板块入口进入，入口已经拦过一道
+  /// （非 iOS 直接渲染骨架）；这里再拦一次，是为了让「阅读器被别的路径打开」
+  /// （深链、测试、将来的路由重构）也不会在无运行时平台上白跑一遍网络与解码。
+  /// 与 `ComicPage` 的平台门同一口径（宪法第 1 条）。
+  ///
+  /// 注意默认值必须按**漫画板块**取（`runtimeAvailableFor(Section.comic)`）：
+  /// 用全局的 `LumeSources.runtimeAvailable` 会漏掉「猫源在 Android 上有引擎」
+  /// 这类板块差异，也会让测试在无运行时的开发机上被误拦。
+  final bool? runtimeAvailable;
+
   @override
   State<ComicReaderPage> createState() => _ComicReaderPageState();
 }
@@ -59,6 +73,11 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   late ComicReaderSettings _settings;
   late List<SourceChapter> _chapters;
   late int _chapterIndex;
+
+  /// 本平台是否提供图源运行时。为假时只渲染骨架，不碰网络与解码。
+  bool get _runtimeAvailable =>
+      widget.runtimeAvailable ??
+      LumeSources.runtimeAvailableFor(widget.library.section);
 
   List<String> _images = const <String>[];
   bool _loading = true;
@@ -106,6 +125,10 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     _chapterIndex = widget.chapters.isEmpty
         ? 0
         : widget.initialChapterIndex.clamp(0, widget.chapters.length - 1);
+    // 平台守卫：无运行时平台不落任何副作用（入架 / 进度都属于「真的读过」）。
+    // `didChangeDependencies` 与 `build` 各拦了一道，这里也要拦——否则骨架
+    // 渲染出来了，书架却已经多了一条记录。
+    if (!_runtimeAvailable) return;
     // 进阅读器即入架：书架要有这一条，未读角标才有章节总数口径。
     widget.library.shelve(
       sourceId: widget.target.sourceId,
@@ -126,7 +149,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     _decodeWidthPx = math.max(1, (_viewport.width * ratio).round());
     if (!_bootstrapped) {
       _bootstrapped = true;
-      _loadChapter(resume: true);
+      // 平台守卫：无运行时平台只渲染骨架，不取章节、不解码、不落进度。
+      if (_runtimeAvailable) _loadChapter(resume: true);
       return;
     }
     // 旋屏 / 分屏导致视口变化：滚动与翻页控制器是按旧尺寸建立的，偏移按像素
@@ -726,6 +750,11 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 平台骨架：无图源运行时的平台上阅读器不可达（板块入口已拦），
+    // 这里再拦一次做双保险，避免别的入口把它拉起来白跑一遍。
+    if (!_runtimeAvailable) {
+      return const Scaffold(body: SafeArea(child: SkeletonNotice()));
+    }
     return Scaffold(
       backgroundColor: _settings.background.color,
       extendBodyBehindAppBar: true,

@@ -77,6 +77,9 @@ void main() {
           target: target,
           chapters: chapters(3),
           initialChapterIndex: 0,
+          // 本文件跑在 Windows 上（平台检测必然为假），显式声明有运行时，
+          // 测的是阅读器的业务行为；平台守卫本身由 comic_reader_test 覆盖。
+          runtimeAvailable: true,
         ),
       ),
     );
