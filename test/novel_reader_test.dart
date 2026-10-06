@@ -197,6 +197,40 @@ void main() {
     expect(library.novelProgress(target.itemId), isNotNull);
   });
 
+  test('字号范围是宪法口径 12–36pt，且超范围一律钳位', () {
+    // 宪法（文档第 3 部分第 2 节）规定字号 12-36pt。
+    expect(NovelTypesetting.minFontSize, 12);
+    expect(NovelTypesetting.maxFontSize, 36);
+
+    // 上限放宽后，36 必须真的能设上（不能只是常量改了、钳位没跟上）。
+    final atMax = const NovelTypesetting().copyWith(fontSize: 36);
+    expect(atMax.fontSize, 36);
+
+    // 超上限钳到 36、超下限钳到 12（不变式：参数永远落在区间内）。
+    expect(const NovelTypesetting().copyWith(fontSize: 99).fontSize, 36);
+    expect(const NovelTypesetting().copyWith(fontSize: 2).fontSize, 12);
+  });
+
+  test('旧库中大于上限的历史字号在读取时被钳回上限（升级口径修正）', () {
+    // 模拟升级前的落库值：旧版本上限是 30，这里直接写一个 30 以上的值，
+    // 等价于「历史数据里存在超出现行上限的字号」。
+    final legacy = '{"fontSize": 48, "lineHeight": 1.8}';
+    final decoded = NovelTypesetting.decode(legacy);
+
+    expect(
+      decoded.fontSize,
+      NovelTypesetting.maxFontSize,
+      reason: '超上限的历史值必须钳回上限（见 CHANGELOG：这是有意的口径修正）',
+    );
+    // 其余字段原样保留，钳位只作用于字号。
+    expect(decoded.lineHeight, 1.8);
+  });
+
+  test('反序列化能读回上限值本身（36 不被误钳）', () {
+    final encoded = const NovelTypesetting().copyWith(fontSize: 36).encode();
+    expect(NovelTypesetting.decode(encoded).fontSize, 36);
+  });
+
   testWidgets('分页结果能画出可见正文（CustomPainter + TextPainter）', (tester) async {
     const typesetting = NovelTypesetting();
     const viewport = Size(400, 800);

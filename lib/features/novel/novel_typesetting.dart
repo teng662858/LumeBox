@@ -18,8 +18,13 @@ class NovelTypesetting {
   });
 
   // 可调范围：上下限都在这里收口，UI 只读常量，不各自写数字。
+  //
+  // 字号 12–36pt 是宪法（文档第 3 部分第 2 节「字体与间距」）规定的口径。
+  // 上限从 30 放宽到 36：**升级后旧库里已保存的 >30pt 字号会被钳回 30**
+  // （钳位发生在 copyWith 与反序列化两处），即使用户当年设过更大的值——
+  // 这是有意的口径修正，已记入 CHANGELOG。
   static const double minFontSize = 12;
-  static const double maxFontSize = 30;
+  static const double maxFontSize = 36;
   static const double minLineHeight = 1.2;
   static const double maxLineHeight = 2.6;
   static const double minParagraphSpacing = 0;
