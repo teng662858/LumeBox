@@ -27,20 +27,36 @@
 
 ## 一、iOS 包二进制级复核（本机可做且已做）
 
-被测产物：仓库根目录的 `LumeBox-unsigned.ipa`（16.9 MB，2026-10-07 01:40 产出，
-对应 commit `6124c7c`，即本轮开工时的 HEAD；Actions run `37504185072` success）。
+复核了**两个**包：
+
+| 包 | 对应 commit | 用途 |
+|---|---|---|
+| 开工时的 IPA（16.9 MB，Actions run `37504185072`） | `6124c7c` | 确认「待验收的那一份」本身是好的 |
+| 本轮交付的 IPA（17.0 MB，Actions run `37509503148` success） | `953d33b` | 确认修复与占位框架**真的编进了包** |
 
 对包内二进制做 Mach-O 符号表解析：
 
-| 二进制 | 关键符号 | 结果 |
+| 二进制 | 关键符号 | 两个包的结果 |
 |---|---|---|
-| `Frameworks/quickjs-engine-native.framework/quickjs-engine-native` | `_jsSetInterruptHandler`（本项目补丁导出） | ✅ 在符号表内 |
-| 同上 | `_JS_SetInterruptHandler`（quickjs 本体） | ✅ 在符号表内 |
+| `Frameworks/quickjs-engine-native.framework/quickjs-engine-native` | `_jsSetInterruptHandler`（本项目补丁导出） | ✅ 都在符号表内 |
+| 同上 | `_JS_SetInterruptHandler`（quickjs 本体） | ✅ 都在 |
 | 同上 | `_jsSetMemoryLimit` / `_jsSetMaxStackSize` / `_JS_NewRuntimeDartBridge` | ✅ 全部在 |
 | `Runner` / `quickjs-engine-native` | `node_start` / `uv_loop_init` / `napi_` 命中数 | ✅ **均为 0**（宪法第 9 条） |
 
 → **结论**：死循环中断通路在 iOS 上是**真的可用**（不是降级态），
 iOS 包里没有 Node / libuv 残留。
+
+**本轮新增内容是否编进包**：Dart AOT 快照（`App.framework/App`）里的字符串是
+**UTF-16LE**（不是 UTF-8——第一次按 UTF-8 找全是 MISSING，是探法不对，不是包不对）。
+按 UTF-16LE 复核，本轮全部新增文案与标识符 **FOUND**：
+
+```
+图源生成器（开发中） / 可视化爬虫：配置网址与规则后生成图源脚本（预留功能，尚未实现）
+功能开发中 / 预留扩展项 / crawler_config / 不会绕过板块隔离 / 当前请手写图源脚本后导入
+```
+
+上一轮的导入守卫文案（`这不是本 App 的图源脚本`、`补上这个模块也跑不起来`）
+与播放器出口（`播放器设置`、`切回 AVPlayer`）同样仍在——回归对照通过。
 
 ---
 
@@ -244,6 +260,9 @@ Phase2 已交付的图源、沙箱、播放器逻辑**一行未改**（本轮对
 
 ## 六、仍需真机人工确认的部分
 
+**待装包**：仓库根目录的 `LumeBox-unsigned.ipa`（commit `953d33b`，Actions run
+`37509503148`）—— 已核实包含本轮全部修复与占位框架。
+
 以下需要在 macOS + Xcode + 真机上执行（本机不可行）：
 
 1. **安装**：用 Sideloadly + 自有证书重签名 IPA → 安装 → 启动，
@@ -271,8 +290,9 @@ Phase2 已交付的图源、沙箱、播放器逻辑**一行未改**（本轮对
 |---|---|
 | `flutter analyze` | No issues found |
 | `flutter test`（全量） | **972 通过 + 0 失败**（开工基线 951，本轮新增 21：8 例 bug 回归 + 13 例生成器） |
-| `flutter test test/js_sandbox/smoke_test.dart` | 3 通过（含汇总表） |
+| `flutter test test/js_sandbox/`（整个沙箱套件） | 63 通过（含冒烟汇总表） |
 | `flutter test test/phase2_acceptance_regression_test.dart` | 8 通过（且已验证回退修复后必失败） |
 | `flutter test test/source_generator_test.dart` | 13 通过 |
+| Actions `Build unsigned IPA` | run `37509503148` **success**（commit `953d33b`） |
 
 **Phase2 状态**：验收交付完成。按规划**暂不启动 Phase3**（DexVM、Mihon APK 图源）。
