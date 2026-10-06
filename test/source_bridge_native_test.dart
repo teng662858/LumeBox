@@ -47,9 +47,14 @@ void main() {
       Section section = Section.video,
     }) async {
       http = _RecordingHttp();
-      host = LumeSourceHost(http, timeout: const Duration(seconds: 3));
+      host = LumeSourceHost(
+        http,
+        timeout: const Duration(seconds: 3),
+        section: section,
+        sourceId: 'bridge-source',
+      );
       sandbox = LumeSandbox.create(
-        id: 'bridge-source',
+        id: host.expectedSandboxId,
         policy: LumeJsEngine.policy.copyWith(allowHostAccess: true),
         host: host,
         polyfills: LumeSourcePolyfills.forSection(section),

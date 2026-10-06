@@ -8,6 +8,7 @@ import 'package:lume_box/core/js/lume_js_engine.dart';
 import 'package:lume_box/core/js/qjs_bindings.dart';
 import 'package:lume_box/core/js/sandbox/sandbox.dart';
 import 'package:lume_box/core/net/lume_http.dart';
+import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
 
 /// 「网络异常」这条状态的端到端证据：在真实引擎里让 `fetch` 真的失败，
@@ -27,13 +28,16 @@ void main() {
 
   group('真实引擎 · 网络失败归一', () {
     test('fetch 失败带网络标记，最终归一到 network', () async {
+      final host = LumeSourceHost(
+        LumeHttp(client: _FailingClient()),
+        timeout: const Duration(seconds: 2),
+        section: Section.video,
+        sourceId: 'network-probe',
+      );
       final sandbox = LumeSandbox.create(
-        id: 'network-failure',
+        id: host.expectedSandboxId,
         policy: SandboxPolicy.standard.copyWith(allowHostAccess: true),
-        host: LumeSourceHost(
-          LumeHttp(client: _FailingClient()),
-          timeout: const Duration(seconds: 2),
-        ),
+        host: host,
         polyfills: LumeSourcePolyfills.registry,
       );
       addTearDown(sandbox.dispose);

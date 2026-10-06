@@ -10,14 +10,18 @@ import 'support/js_sandbox_support.dart';
 /// 安全测试第 1 条：死循环 & 超时销毁。
 ///
 /// 三条要求，逐条验证：
-/// - 到达配置超时阈值（3–5 秒）后 JSContext 被销毁；
+/// - 失控脚本被中断并销毁 JSContext；
 /// - App 不会卡死（一个图源失控不影响其它上下文与主线程）；
 /// - 后续新请求可以重建全新上下文并正常工作。
 ///
 /// 硬性要求：旧中毒上下文必须销毁释放资源，不允许复用已经卡死的实例。
 ///
-/// 关于「纯 CPU 死循环」这一子项：它是本套件唯一**不成立**的安全属性，
-/// 详见用例 1a 的失败说明与 `deferred-todo.md` 的对应条目。
+/// 关于「纯 CPU 死循环」：原先这是本套件唯一**不成立**的安全属性——插件不导出
+/// `JS_SetInterruptHandler`，纯 CPU 空转无人能打断。本轮已修复，且修的不止一处：
+/// 1. `third_party/quickjs_engine` 的本地补丁重新导出该符号（见其 `PATCHES.md`）；
+/// 2. `SandboxContext._evaluate` 原先「先 disarm 再 drain」，而 `async` 方法体
+///    `await` 之后的部分正是在排空阶段执行的——死循环就卡在那里且中断已解除。
+///    现在装备一直保持到排空结束。
 void main() {
   final available = installBridge();
   final skipReason = available
@@ -29,14 +33,12 @@ void main() {
 
   group('1) 死循环 & 超时销毁', () {
     test(
-      '1a 纯 CPU 死循环 while(true){}：应在 3–5s 预算内被中断并回收上下文',
+      '1a 纯 CPU 死循环 while(true){}：应被中断并回收上下文',
       () async {
-        // 先观测事实，再下结论：跑一次死循环，看它在预算内是否被回收。
-        //
-        // 这条安全属性成立的前提是原生中断通路（JS_SetInterruptHandler）可用。
-        // 当前插件构建把 quickjs 本体符号设为 hidden，DLL 导出表里没有这个符号，
-        // 因此纯 CPU 空转既碰不到内存上限、也不与外界交互，Dart 侧无从夺回控制权
-        // ——它会把调用线程一直占住。这是**已确认的底座缺陷**，不是测试写法问题。
+        // 纯 CPU 空转最凶险：不分配内存、不触碰宿主、不产生 Promise，只在字节码层
+        // 无限空转，同时绕开内存上限、宿主调用 / 微任务预算与 Dart 侧墙钟超时
+        // （同步 FFI 调用期间事件循环没有机会运行）。唯一能夺回控制权的手段是
+        // 原生中断处理器，本轮已修复（符号导出 + 装备保持到排空结束）。
         final run = await runSandboxCallInWorker(
           script: fixture('deadloop_source.js'),
           method: 'list',
@@ -51,29 +53,35 @@ void main() {
         );
 
         if (!run.completed) {
-          // 未被回收：记录缺陷证据，并把中断通路的可用性一起留档，
-          // 这样将来原生侧修好后这条分支会自然消失（转为下面的正向断言）。
+          // 未被回收：把中断通路的可用性一起留档，便于定位是「通路没接上」
+          // 还是「通路可用但判定没生效」。
           expect(
             SandboxGuard.interruptAvailable,
             isFalse,
             reason: '中断通路可用却没能回收，说明问题不在中断通路，需要重新定位',
           );
           markTestSkipped(
-            '已知底座缺陷：JS_SetInterruptHandler 未导出（中断通路不可用），'
-            '纯 CPU 死循环无法在预算内被中断回收。'
+            '中断通路不可用：纯 CPU 死循环无法被中断回收。'
             '本次观测：预算 3s，等待 ${run.waited.inSeconds}s 后仍未收尾；'
             'armed=${run.armed} completed=${run.completed} events=${run.events}。'
-            '详见 deferred-todo.md「纯 CPU 死循环无法中断」。',
+            '（需要 third_party/quickjs_engine 的补丁导出，见其 PATCHES.md）',
           );
           return;
         }
 
-        // 被回收了：验证回收质量——判定超时、且能重建全新上下文。
+        // 被回收了：验证回收质量——判定为失控、且能重建全新上下文。
         final report = run.report!;
+        //
+        // 分类接受 timeout 与 instructions 两种：两者都是「失控被兜住」的正当
+        // 结论，谁先到取决于脚本与预算的相对大小。默认指令预算
+        // （2 亿条 / 每 10000 条一次 tick = 20000 tick）在这种纯空转里比 3 秒墙钟
+        // 先耗尽，因此实际判定为 instructions；若把指令预算调得很大，则会先撞
+        // 墙钟判 timeout。**关键是不能是 ok，也不能是 script**（不能把它当成
+        // 脚本自己抛的普通错误）。
         expect(
           report['errorKind'],
-          SandboxErrorKind.timeout.id,
-          reason: '死循环被回收时应判定为超时，而不是别的分类',
+          anyOf(SandboxErrorKind.timeout.id, SandboxErrorKind.instructions.id),
+          reason: '死循环被回收时应判定为失控（超时或超出指令计数），而不是别的分类',
         );
         expect(
           report['generationAfter'],
@@ -111,8 +119,22 @@ void main() {
           isFalse,
           reason: '空转超过 ${budget.inMilliseconds}ms 预算，不能被当成成功',
         );
-        expect(result.error!.kind, SandboxErrorKind.timeout);
-        expect(result.error!.message, contains('超时'));
+        // 判定接受 timeout 与 instructions 两种，并给出各自应成立的证据：
+        // - 空闲机器上先撞 4 秒墙钟 → timeout，消息带「超时」；
+        // - 机器有负载时（例如整套测试并行跑）单条指令被拖慢，20000 tick 的
+        //   指令预算可能先耗尽 → instructions，消息带「指令计数」。
+        // 两者都是「失控被兜住」的正当结论，本用例要守的是「不能当成功收下」，
+        // 而不是限定是哪一种预算先到（那取决于机器负载，不是被测行为）。
+        expect(
+          result.error!.kind,
+          anyOf(SandboxErrorKind.timeout, SandboxErrorKind.instructions),
+          reason: '空转超预算必须被判为失控',
+        );
+        expect(
+          result.error!.message,
+          anyOf(contains('超时'), contains('指令计数')),
+          reason: '失败原因要指明是哪条预算拦下的',
+        );
 
         // 硬性要求：旧上下文被销毁，绝不复用。销毁发生在操作收尾的安全点，
         // 此刻在册上下文数应当已经减少（而不是留着一个超预算的实例）。
@@ -122,9 +144,11 @@ void main() {
           reason: '超时后旧上下文必须被销毁释放',
         );
         expect(
-          logLinesContaining('判定污染').where((line) => line.contains('timeout')),
+          logLinesContaining('判定污染').where(
+            (line) => line.contains('timeout') || line.contains('instructions'),
+          ),
           isNotEmpty,
-          reason: '污染销毁必须在日志里留痕',
+          reason: '污染销毁必须在日志里留痕（点名是哪条预算）',
         );
 
         // 后续请求在全新上下文里正常工作（代数递增 = 确实是新建的实例）。
@@ -189,7 +213,12 @@ void main() {
     test(
       '1d 卡死隔离：一个源失控不阻塞主线程，新上下文照常建立',
       () async {
-        // 主 isolate 保持响应：worker 卡死期间，这里的定时器必须照常推进。
+        // 主 isolate 必须始终能调度：失控脚本在 worker isolate 里跑，无论它是被
+        // 及时回收还是把线程占满，主 isolate 的定时器都不能停。
+        //
+        // 注意这里**不**断言 tick 的具体次数：修复中断通路后死循环通常在 1 秒内
+        // 就被回收，tick 自然比「卡死 6 秒」时少。用「观察窗口内是否持续调度」
+        // 表达隔离性，而不是把「卡得久」当成前提——那本来就是缺陷的特征。
         final ticks = <int>[];
         final timer = Timer.periodic(
           const Duration(milliseconds: 100),
@@ -204,12 +233,18 @@ void main() {
         );
         addTearDown(run.kill);
 
+        expect(run.armed, isTrue, reason: 'worker 应已进到调用脚本这一步');
         expect(
           ticks.length,
-          greaterThan(10),
-          reason: '主 isolate 在 worker 卡死期间应继续调度（实际 tick ${ticks.length} 次）',
+          greaterThan(3),
+          reason: '主 isolate 在失控脚本运行期间必须持续调度'
+              '（实际 tick ${ticks.length} 次；0 次意味着主线程被卡住）',
         );
-        expect(run.armed, isTrue, reason: 'worker 应已进到调用脚本这一步');
+        expect(
+          run.completed,
+          isTrue,
+          reason: '失控脚本应在预算内被回收（修复中断通路后的正向断言）',
+        );
 
         // 另起一个全新上下文：失控的源不影响新源建立。
         final fresh = await openEngine(

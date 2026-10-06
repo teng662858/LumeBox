@@ -4,6 +4,7 @@ import 'package:lume_box/core/js/lume_js_engine.dart';
 import 'package:lume_box/core/js/sandbox/sandbox.dart';
 import 'package:lume_box/core/js/source_store.dart';
 import 'package:lume_box/core/net/lume_http.dart';
+import 'package:lume_box/core/session/section.dart';
 
 /// 沙盒文件 IO 的后端（[SandboxStore]）与宿主接线（[LumeSourceHost]）的纯 Dart 验证：
 /// 路径归一、上限、按图源隔离，以及 `LumeSource.fs.*` 落到的那几个代理方法。
@@ -119,10 +120,19 @@ void main() {
   group('LumeSourceHost：代理方法', () {
     late LumeSourceHost host;
 
-    setUp(() => host = LumeSourceHost(LumeHttp(), timeout: const Duration(seconds: 1)));
+    setUp(() => host = LumeSourceHost(
+          LumeHttp(),
+          timeout: const Duration(seconds: 1),
+          section: Section.novel,
+          sourceId: 'src',
+        ));
 
     Future<Object?> call(String method, [Object? payload]) => host.invoke(
-          SandboxHostRequest(sandboxId: 'src', method: method, payload: payload),
+          SandboxHostRequest(
+            sandboxId: host.expectedSandboxId,
+            method: method,
+            payload: payload,
+          ),
         );
 
     test('写入 / 读取 / 存在 / 列键 / 删除', () async {

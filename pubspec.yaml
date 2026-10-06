@@ -34,7 +34,12 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  quickjs_engine: ^0.1.6
+  # 本地 vendored 副本（路径依赖）：上游 0.1.6 + 一处安全补丁
+  # （导出 JS_SetInterruptHandler，见 third_party/quickjs_engine/PATCHES.md）。
+  # 用路径依赖而不是 pub 版本，是为了让「死循环指令计数超时销毁」这条安全能力
+  # 真正生效——上游构建把该符号设为 hidden，中断通路不可用。
+  quickjs_engine:
+    path: third_party/quickjs_engine
   sqlite3: ^3.7.0
   http: ^1.6.0
   path_provider: ^2.1.6

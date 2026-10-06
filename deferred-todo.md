@@ -42,26 +42,36 @@
 - [✓] 本地文件内容识别：脚本 / 地址清单（含 .js.md5）/ 裸 MD5 校验值 / 备份 / 认不出——本地 `.js.md5` 与清单文件从「选中就报错」变成可用，且给出下一步动作
 - [✓] 导入覆盖确认（同 id 先问一句，取消即整批零写入）与导入结果弹窗（逐条结论 / 失败原因 / 复制明细）
 - [✓] 订阅拉取进度提示与清单截断说明（超 20 条地址时说明只处理前 N 条）；管理页空态直达导入
+- [✓] JS 沙箱安全：导出中断通路（vendored 插件补丁）+ 修复「装备被提前解除」→ 纯 CPU 死循环可被回收
+- [✓] JS 沙箱安全：栈上限下调至 512KB（原 1MB 实测会让进程当场死亡）+ 排空判废后不再交出成功结果
+- [✓] JS 沙箱安全：宿主层沙箱身份校验（沙箱 id 带板块前缀，跨板块/跨来源调用在入口被拒）
+- [✓] JS 沙箱安全：单次操作预算口径写实（求值 / 微任务轮 / 宿主往返 / 定时器注册四处记账）
+- [✓] JS 沙箱安全：恶意脚本矩阵用例（10 例，覆盖正则回溯 / 递归 / 大分配 / 微任务 / 调用风暴 / 定时器 / 超大返回 / 伪造身份 / 跨源隔离）
 
 ## 已知底座缺陷（需原生侧修复，本轮不扩大实现范围）
-- [ ] **纯 CPU 死循环无法中断回收**（安全测试第 1 条未完全成立）
-  - **现象**：图源脚本方法体内 `while(true){}` 这类纯 CPU 空转，会把调用线程一直占住；
+- [✓] **纯 CPU 死循环无法中断回收**（已修复，安全测试第 1 条现已成立）
+  - **原现象**：图源脚本方法体内 `while(true){}` 这类纯 CPU 空转会把调用线程一直占住，
     3–5 秒墙钟预算、内存上限、宿主/微任务预算**全部失效**，JSContext 无法被销毁。
-    实测：预算 3s，等待 12s 后仍未收尾（`test/js_sandbox/deadloop_timeout_test.dart` 用例 1a 留档）。
-  - **根因**：`SandboxGuard` 依赖的 `JS_SetInterruptHandler` 在插件构建里被设为 hidden，
-    DLL / Mach-O 导出表中不存在该符号（已实测：`quickjs_c_bridge_plugin.dll` 66 个导出里
-    无任何 `*nterrupt*`；Debug / Release 一致）。没有中断处理器，quickjs 就没有
-    「周期性回调宿主」的机会，Dart 侧无从夺回控制权。
-  - **影响面**：仅限**纯 CPU 空转**这一类失控。分配型失控（内存上限）、
-    宿主调用挂起（预算 + 超时）、跑得完但超时的脚本（本轮已补判）都能正常回收。
-    真实图源脚本里出现纯 CPU 死循环的概率低，但一旦出现即为进程级卡死。
-  - **修复方向**（三选一，均需动原生侧或换引擎）：
-    1. 让插件重新导出 `JS_SetInterruptHandler`（最直接，`SandboxGuard` 已有完整接线，
-       原生侧放开符号即可自动生效——用例 1a 会在那时转为正向断言）；
-    2. 每个图源沙箱跑在独立 isolate / 进程里，靠外部 kill 兜底
-       （已实测：卡在原生调用里的 isolate **无法**被 `Isolate.kill` 回收，故此路需配进程隔离）；
-    3. 换用支持中断的引擎实现（如 Android 侧已规划的 Node-Mobile 路线）。
-  - **现状**：已记录为期望失败（`markTestSkipped` + 缺陷证据），不会让测试进程挂死。
+  - **实际根因有两个，都在本轮修掉**：
+    1. **符号没导出**（原判断）：插件用 `C_VISIBILITY_PRESET hidden` 编译 quickjs，
+       且 `JS_EXTERN` 在 Windows 上需要 `BUILDING_QJS_SHARED` 才展开（插件从未定义），
+       因此 `JS_SetInterruptHandler` 不在动态符号表里。已通过 vendored 插件副本
+       （`third_party/quickjs_engine`）补一个 `jsSetInterruptHandler` 导出包装解决；
+    2. **装备被提前解除**（原先没发现）：`SandboxContext._evaluate` 是「先 disarm 再
+       drain」，而 `async` 方法体 `await` 之后的部分正是在**排空阶段**执行的
+       （`_drainJobs` → `executePendingJob`）——死循环就卡在那里，中断已解除、
+       回调直接放行。现已改为装备保持到排空结束。
+  - **验证**：`test/js_sandbox/deadloop_timeout_test.dart` 用例 1a 由「期望失败」
+    转为通过（死循环在 1 秒内被回收、判定为失控、上下文重建可用）；
+    另新增 `test/js_sandbox/malicious_script_test.dart`（10 例）覆盖正则回溯 /
+    无限递归 / 大分配 / 微任务自循环 / 宿主调用风暴 / 定时器风暴 / 超大返回值 /
+    伪造沙箱身份 / 跨源隔离。
+  - **顺带修掉的两个真问题**：
+    - **栈上限过高会让进程当场死亡**：`defaultStackLimitBytes` 原为 1MB，实测
+      无限递归会撞穿宿主线程栈、进程无异常直接消失（768/900/960KB 均正常抛出
+      RangeError，1024KB 崩）。已下调为 512KB（2 倍余量）；
+    - **无限微任务链被当成成功**：排空阶段判废后，求值结果仍被原样交出
+      （实测 `isOk=true` 而上下文已销毁重建）。现已在排空后复核污染标记。
 
 ## Phase2待完成
 - [ ] 小说：书签分组 UI（同步功能延后）
@@ -100,6 +110,16 @@
   - **前置条件**：Mac + Xcode 构建与真机验证（当前开发机为 Windows，无法验证 iOS 侧）。
 
 ### 下轮候选（本轮已调研，未做）
+- [ ] **插件的 `stringifyFn` 泄漏 → JSRuntime 无法回收**：插件的
+      `JS_NewContextDartBridge` 里 `JS_FreeValue(ctx, globalObject)` 与
+      `JS_FreeValue(ctx, stringifyFn)` 被注释掉了（且 `stringifyFn` 是个**全局变量**，
+      多上下文会互相覆盖，直接打开注释是错的）。后果是 `JS_FreeRuntime` 的
+      `assert(list_empty(&rt->gc_obj_list))` 在断言构建里必然失败（实测 Debug
+      exit=3 / Release exit=0），因此 Dart 侧只能 `Qjs.reclaimRuntime = false`，
+      每次销毁只释放 context、**runtime 被漏掉不回收**（`Qjs.abandonedRuntimes` 累加）。
+      修好 = 长跑 App 不再漏 runtime、Debug 构建不再 abort；代价 = 要动插件上下文创建
+      的既有行为，且 `test/sandbox_native_test.dart` 里「放弃回收」的断言要改成
+      「真的回收」。本轮刻意未与中断补丁混在一起改（同一文件两处改动，出问题难定位）。
 - [ ] 导入后自动跑一次连通性检测：与既有「批量测试连通性」重叠；批量导入时每条
       3–5s，会让导入明显变慢。等有真实使用反馈再定（落点：`source_import_flow.dart`
       的导入循环后追加一次 `testConnectivity`，结果并进结果弹窗）。

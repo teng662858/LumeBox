@@ -15,6 +15,9 @@ analyzer:
     - android/**
     - ios/**
     - windows/**
+    # vendored 第三方插件（上游 0.1.6 + 一处安全补丁，见其 PATCHES.md）：
+    # 不是本仓库的代码风格责任，不参与本项目的 lint。
+    - third_party/**
 
 linter:
   # The lint rules applied to this project can be customized in the

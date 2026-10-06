@@ -239,6 +239,13 @@ class SandboxContext {
       return null;
     }
     _evalDepth++;
+    // 求值本身也是一步「与外界交互」：纯 CPU 空转在求值内部发生（Dart 看不见，
+    // 只能靠原生中断），但「脚本反复求值 / 反复排空微任务」这类慢速失控必须记账。
+    if (!_activeBudget.spendStep()) {
+      _evalDepth--;
+      _fail(SandboxErrorKind.instructions, '操作步数超出预算（求值）');
+      return null;
+    }
     final bytes = utf8.encode(code);
     final input = calloc<Uint8>(bytes.length + 1);
     final file = (fileName ?? '$id.js').toNativeUtf8();
@@ -288,24 +295,77 @@ class SandboxContext {
         return null;
       }
       _lastError = null;
-      return text;
+      // 求值文本先记下，等排空阶段结束后再决定要不要交出去（见 finally）。
+      // 不在 try 里直接 return，是因为「排空期间被判定失控」必须能收回这个结果。
+      return _settleAfterDrain(text, value);
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       _lastError = SandboxError(SandboxErrorKind.engine, '$error');
       _fail(SandboxErrorKind.engine, '$error');
-      return null;
-    } finally {
-      SandboxGuard.disarm(_runtime);
-      if (value != null && value != nullptr) {
-        try {
-          Qjs.freeValue(_context, value, 1);
-        } catch (error, stackTrace) {
-          LumeLog.error(error, stackTrace);
-        }
+      return _releaseAndDrain(value, input, file, null);
+    }
+  }
+
+  /// 求值成功后的收尾：先释放原生资源、排空微任务，再决定交不交出结果。
+  ///
+  /// 中断装备必须一直保持到微任务排空结束：`async` 方法体在 `await` 之后的部分
+  /// 是在**排空阶段**执行的（`_drainJobs` → `executePendingJob`），纯 CPU 死循环
+  /// 正是在这一步占住线程。此前这里是「先 disarm 再 drain」，中断处理器在排空
+  /// 期间读不到装备记录、直接放行，死循环因此永远收不回来（实测：预算 3s，
+  /// 等 12s 仍在栈上，栈顶就是 `_drainJobs` → `executePendingJob`）。
+  ///
+  /// 解除与装备一样按求值深度收口：嵌套求值（宿主回填会再进 `_evaluate`）
+  /// 退出时不得提前解除外层仍在使用的装备。
+  ///
+  /// 排空阶段也可能把上下文判废（例如脚本把微任务排成无限链，撞上
+  /// `maxJobRounds` / `maxSteps`）。此时求值本身是成功返回的，但那不是真实结论
+  /// ——脚本并没有正常跑完。所以要在排空之后再看一次污染标记，否则失控脚本会被
+  /// 当成正常结果收下（实测：无限微任务链返回 isOk=true，同时上下文已被销毁重建）。
+  /// 与「跑得完但跑太久」同一口径：以预算账本为准。
+  String? _settleAfterDrain(String text, Pointer<JsValueHandle>? value) {
+    _releaseNative(value);
+    if (--_evalDepth == 0) {
+      try {
+        _drainJobs();
+      } finally {
+        SandboxGuard.disarm(_runtime);
       }
-      malloc.free(input);
-      malloc.free(file);
-      if (--_evalDepth == 0) _drainJobs();
+      if (_poisoned) {
+        _lastError = _poisonReason;
+        return null;
+      }
+    }
+    return text;
+  }
+
+  /// 失败路径的收尾：释放原生资源并排空（结果本就为 null）。
+  String? _releaseAndDrain(
+    Pointer<JsValueHandle>? value,
+    Pointer<Uint8> input,
+    Pointer<Utf8> file,
+    String? result,
+  ) {
+    _releaseNative(value);
+    malloc.free(input);
+    malloc.free(file);
+    if (--_evalDepth == 0) {
+      try {
+        _drainJobs();
+      } finally {
+        SandboxGuard.disarm(_runtime);
+      }
+    }
+    return result;
+  }
+
+  /// 释放本次求值的原生资源（返回值与输入缓冲）。
+  void _releaseNative(Pointer<JsValueHandle>? value) {
+    if (value != null && value != nullptr) {
+      try {
+        Qjs.freeValue(_context, value, 1);
+      } catch (error, stackTrace) {
+        LumeLog.error(error, stackTrace);
+      }
     }
   }
 
@@ -390,7 +450,7 @@ class SandboxContext {
         }
         continue;
       }
-      if (!_activeBudget.spendJobRound()) {
+      if (!_activeBudget.spendJobRound() || !_activeBudget.spendStep()) {
         _fail(SandboxErrorKind.instructions, '微任务排空超出预算');
         return false;
       }
@@ -476,7 +536,7 @@ class SandboxContext {
       _settleHost(callId, false, '沙箱未开放外部能力: $method');
       return;
     }
-    if (!_activeBudget.spendHostCall()) {
+    if (!_activeBudget.spendHostCall() || !_activeBudget.spendStep()) {
       _fail(SandboxErrorKind.instructions, '宿主调用超出预算: $method');
       _settleHost(callId, false, '宿主调用超出预算');
       return;

@@ -1,18 +1,21 @@
 # JsDataSource 适配器冒烟安全测试 · 运行报告
 
 - **任务**：JsDataSource 适配器冒烟安全测试（只写测试用例与样板 JS 脚本）
-- **日期**：2026-10-05
+- **日期**：2026-10-05（初版） / 2026-10-06（安全加固后更新）
 - **平台**：Windows x64（真实 QuickJS-NG 原生桥，Debug 产物）
 - **原生命令**：`flutter test test/js_sandbox --reporter expanded`
-- **结论**：**三条测试清单中，第 2、3 条完全通过；第 1 条部分通过**——
-  「超预算脚本必须被销毁」成立，但「纯 CPU 死循环能被中断回收」**不成立**，
-  已确认为底座缺陷并记录到 `deferred-todo.md`（需原生侧导出中断符号）。
+- **结论**：**三条测试清单全部通过**。
+  初版唯一未通过项「纯 CPU 死循环能被中断回收」已在安全加固轮修复——
+  实际有两处断点：插件未导出 `JS_SetInterruptHandler`（已通过 vendored 副本打补丁导出），
+  以及 `SandboxContext._evaluate` 在排空微任务**之前**就解除了中断装备
+  （`async` 方法体 `await` 之后的部分正是在排空阶段执行）。详见
+  `.zcode/plans/phase3-js-sandbox-hardening.md`。
 
 ## 一、总览
 
 | 编号 | 用例 | 结果 | 备注 |
 |---|---|---|---|
-| 1a | 纯 CPU 死循环 `while(true){}`：3–5s 内中断并回收上下文 | **失败（已知缺陷）** | 中断通路不可用，无法回收；已留档为期望失败，不让测试进程挂死 |
+| 1a | 纯 CPU 死循环 `while(true){}`：被中断并回收上下文 | **通过**（安全加固后） | 1 秒内回收；判定为失控（`instructions` 或 `timeout`，取决于哪个预算先到），上下文重建可用 |
 | 1b | 超出预算但会返回的脚本：判超时、销毁上下文 | 通过 | 本轮修复项 |
 | 1c | 污染后重建：新上下文可用、旧实例不复用 | 通过 | 本轮修复项（内存失控分类） |
 | 1d | 卡死隔离：一个源失控不阻塞主线程，新上下文照常建立 | 通过 | |
@@ -24,10 +27,14 @@
 | 3a | 板块声明解析（纯 Dart，7 项） | 通过 | |
 | 3b | 跨板块导入被解析阶段拒绝（真实引擎，6 项） | 通过 | 本轮新增能力 |
 
-合计：**23 项通过、1 项期望失败（已留档）**；全量回归 **810 通过 / 1 跳过 / 0 失败**。
+合计：**24 项通过、0 项失败**（安全加固后）；另新增攻击矩阵
+`malicious_script_test.dart`（10 例，覆盖正则回溯 / 无限递归 / 大分配 / 微任务自循环 /
+宿主调用风暴 / 定时器风暴 / 超大返回值 / 伪造沙箱身份 / 跨源隔离）。
+全量回归 **882 通过 / 0 跳过 / 0 失败**。
 
-> 各套件单独运行结果：`deadloop_timeout` 5 通过 + 1 跳过、`context_isolation` 4 通过、
-> `section_category` 13 通过、`evidence_log` 1 通过（详见 `logs/*.log`）。
+> 各套件单独运行结果：`deadloop_timeout` 6 通过、`context_isolation` 4 通过、
+> `section_category` 13 通过、`malicious_script` 10 通过、`evidence_log` 1 通过
+> （详见 `logs/*.log`）。
 
 ## 二、逐条验证
 
@@ -36,31 +43,27 @@
 **要求**：到达 3–5s 阈值后 JSContext 被销毁；App 不卡死；后续新请求可重建全新上下文正常工作；
 旧中毒上下文必须销毁释放，不允许复用卡死实例。
 
-#### 1a 纯 CPU 死循环 —— 失败（已知缺陷）
+#### 1a 纯 CPU 死循环 —— 通过（安全加固后）
 
-**现象**：脚本方法体内 `while(true){}` 把调用线程一直占住。预算 3s，等待 12s 后仍未收尾。
+**现象（修复前）**：脚本方法体内 `while(true){}` 把调用线程一直占住。预算 3s，
+等待 12s 后仍未收尾。
 
-**根因**：`SandboxGuard` 依赖的 `JS_SetInterruptHandler` 在插件构建里被设为 hidden，
-导出表中不存在该符号。没有中断处理器，quickjs 就没有「周期性回调宿主」的机会，
-Dart 侧无从夺回控制权——纯 CPU 空转既不分配内存（碰不到内存上限），
-也不与外界交互（碰不到宿主/微任务预算），Dart 的 `.timeout()` 在同步 FFI 调用期间
-更是没有运行机会。
+**根因（两处，均已在安全加固轮修复）**：
 
-**证据**（`logs/evidence.log`）：
-```
-中断通路可用: false
-worker 已开始调用: true
-预算 3s，等待 10s 后是否收尾: false
-worker 事件: [{phase: armed}]
-```
+1. `SandboxGuard` 依赖的 `JS_SetInterruptHandler` 在插件构建里被设为 hidden，
+   导出表中不存在该符号（初版核验：`quickjs_c_bridge_plugin.dll` 共 66 个导出，
+   无任何 `*nterrupt*`；Debug 与 Release 一致）。没有中断处理器，quickjs 就没有
+   「周期性回调宿主」的机会，Dart 侧无从夺回控制权。
+   → 已 vendor 插件副本并在 `native/cxx/libfastdev_quickjs_runtime.cpp` 补
+   `jsSetInterruptHandler` 导出包装（导出表 66 → 67）。
+2. **装备被提前解除**（初版未发现，这才是仍收不回来的直接原因）：
+   `SandboxContext._evaluate` 原先「先 `disarm` 再 `_drainJobs`」，而 `async` 方法体
+   `await` 之后的部分正是在排空阶段执行的（`_drainJobs` → `executePendingJob`）
+   ——死循环卡在那里时中断已解除，回调读不到装备记录直接放行。
+   → 已改为装备保持到排空结束，并按求值深度收口。
 
-**符号核验**：`quickjs_c_bridge_plugin.dll` 共 66 个导出，无任何 `*nterrupt*`；
-Debug 与 Release 一致。源码 `native/cxx/libfastdev_quickjs_runtime.cpp` 中
-`jsEval` 是对 `JS_Eval` 的直接同步调用，无看门狗、无线程。
-
-**处理**：用例保留为**期望失败**（观测到未回收时 `markTestSkipped` 并附证据），
-将来原生侧放开符号后会自动转为正向断言（届时验证「判超时 + 代数递增 + 重建可用」）。
-缺陷与三个修复方向已写入 `deferred-todo.md`。
+**当前结果**：死循环在 **1 秒内**被回收，判定为失控（`instructions` 或 `timeout`，
+取决于哪个预算先到），上下文重建后可用。
 
 #### 1b 超预算但会返回的脚本 —— 通过（本轮修复）
 
@@ -90,8 +93,9 @@ Debug 与 Release 一致。源码 `native/cxx/libfastdev_quickjs_runtime.cpp` �
 #### 1d 卡死隔离 —— 通过
 
 死循环期间主 isolate 照常调度（定时器持续 tick），另起的新上下文照常建立并正常干活。
-**说明**：这与 1a 不矛盾——1d 证明的是「卡死发生在被隔离的调用线程上、不阻塞其它工作」，
-1a 证明的是「这个卡死的上下文本身回收不掉」。
+**说明**：本用例断言的是「失控脚本不阻塞主 isolate」，**不**断言 tick 的具体次数——
+修复中断通路后死循环通常在 1 秒内被回收，tick 自然比「卡死 6 秒」时少。
+初版曾用 `> 10 ticks` 表达隔离性，那实际上把「卡得久」当成了前提，已修正。
 
 ### 第 2 条：多图源上下文隔离 —— 全部通过
 
@@ -173,9 +177,11 @@ id / name / version，导入路径不校验板块归属。本轮补齐（属适�
 
 ## 五、未决项与后续
 
-1. **纯 CPU 死循环无法中断回收**（唯一未通过项）——需原生侧导出
-   `JS_SetInterruptHandler`，或改用进程隔离 / 换引擎。三个方向已记入 `deferred-todo.md`。
-2. **真机手动确认**：本轮为自动化单元测试（Windows + 真实 QuickJS 桥）。
-   iOS 真机与 Android 的手动确认环节由项目负责人执行。
-3. 说明：`flutter test` 输出中的「跳过」即 1a 的期望失败留档，
-   不是环境缺失导致的跳过。
+1. ~~纯 CPU 死循环无法中断回收~~ —— **已修复**（中断符号导出 + 装备保持到排空结束）。
+2. **插件的 `stringifyFn` 泄漏 → JSRuntime 无法回收**：插件上下文创建时两处
+   `JS_FreeValue` 被注释掉，且 `stringifyFn` 是全局变量（多上下文互相覆盖），
+   因此只能 `Qjs.reclaimRuntime = false`，runtime 被漏掉不回收。
+   已记入 `deferred-todo.md`，刻意不与中断补丁混在同一文件改。
+3. **真机手动确认**：本轮为自动化单元测试（Windows + 真实 QuickJS 桥）。
+   iOS 真机（含补丁能否编过、真机跑死循环脚本、文件多选 / 剪贴板授权条）
+   由项目负责人执行。

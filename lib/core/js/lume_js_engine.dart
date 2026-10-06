@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../net/lume_http.dart';
 import '../session/section.dart';
+import '../util/lume_log.dart';
 import 'cat_polyfills.dart';
 import 'sandbox/sandbox.dart';
 import 'source_bridge.dart';
@@ -70,9 +71,17 @@ class LumeJsEngine {
     if (!isSupported) {
       throw UnsupportedError('Phase1 源引擎仅随 iOS 提供');
     }
-    final host = LumeSourceHost(http, timeout: callTimeout);
+    // 沙箱身份自带板块前缀（`<板块>:<来源>`），宿主按同一口径校验请求身份，
+    // 因此跨板块串线会在第一跳被拒（见 [LumeSourceHost.invoke]）。
+    final sandboxId = LumeSourceHost.sandboxIdFor(section, sourceId);
+    final host = LumeSourceHost(
+      http,
+      timeout: callTimeout,
+      section: section,
+      sourceId: sourceId,
+    );
     final sandbox = LumeSandbox.create(
-      id: sourceId,
+      id: sandboxId,
       policy: policy.copyWith(allowHostAccess: true),
       host: host,
       polyfills: LumeSourcePolyfills.forSection(section),
@@ -144,13 +153,40 @@ class LumeJsEngine {
 /// `http.*` 都只是 [SandboxHostMethods.httpFetch] 的语法糖，`LumeSource.fs.*`
 /// 则落在 [SandboxStore]（按图源隔离的进程内存储，不落盘、有上限），
 /// 最终由本类的 [invoke] 经 [LumeHttp] 与存储表落地。
+///
+/// 身份校验：宿主只服务**一个板块的一个图源**，并在入口核对请求声明的沙箱身份
+/// （[expectedSandboxId]）。沙箱身份自带板块前缀，因此「A 板块的脚本打到 B 板块
+/// 的宿主」这类串线会在第一跳被拒绝，而不是靠「每个板块各自建宿主」这个约定
+/// 默默兜住——约定会被重构改掉，校验不会。
 class LumeSourceHost implements SandboxHost {
-  LumeSourceHost(this._http, {required this.timeout, SandboxStore? store})
-      : _store = store ?? SandboxStore();
+  LumeSourceHost(
+    this._http, {
+    required this.timeout,
+    required this.section,
+    required this.sourceId,
+    SandboxStore? store,
+  })  : _store = store ?? SandboxStore(),
+        expectedSandboxId = sandboxIdFor(section, sourceId);
 
   /// 网络失败的稳定标记。请求没能完成时打在异常文本前面，上层据此把
   /// 「网络异常」从「脚本报错」里分出来（见数据源层的沙箱失败归一）。
   static const String networkFailureMarker = '网络请求失败';
+
+  /// 本宿主服务的板块。与 [sourceId] 一起构成它接受的身份。
+  final Section section;
+
+  /// 本宿主服务的图源。
+  final String sourceId;
+
+  /// 本宿主接受的沙箱身份（`<板块>:<来源>`）。
+  final String expectedSandboxId;
+
+  /// 沙箱身份的唯一构造口径：`<板块 id>:<图源 id>`。
+  ///
+  /// 板块前缀让隔离**可被机器校验**，也让日志与内存内存储命名空间自带板块信息
+  /// （排查时不必反查某个来源属于哪个板块）。
+  static String sandboxIdFor(Section section, String sourceId) =>
+      '${section.id}:$sourceId';
 
   final LumeHttp _http;
 
@@ -165,6 +201,13 @@ class LumeSourceHost implements SandboxHost {
 
   @override
   Future<Object?> invoke(SandboxHostRequest request) async {
+    // 身份先于能力：声明与宿主不符即拒绝，且不触达 http 与 store。
+    if (request.sandboxId != expectedSandboxId) {
+      final message = '拒绝跨沙箱宿主调用：请求声明「${request.sandboxId}」，'
+          '本宿主服务「$expectedSandboxId」（${section.label}板块）。';
+      LumeLog.warn('[${section.id}] $message');
+      throw SandboxHostException(message);
+    }
     switch (request.method) {
       case SandboxHostMethods.httpFetch:
         return _fetch(request.payload);

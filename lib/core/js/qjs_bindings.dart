@@ -171,11 +171,13 @@ class Qjs {
       ? '原生桥可用（${interruptHookAvailable ? '含中断通路' : '无中断通路'}）'
       : '未找到可用的 QuickJS 原生库';
 
-  /// QuickJS 本体的 `JS_SetInterruptHandler` 是否可解析。
+  /// QuickJS 本体的中断通路是否可用。
   ///
-  /// 当前插件构建把 quickjs 本体符号设为 hidden 可见性，因此该符号在
-  /// PE / Mach-O 动态符号表里都不存在，`interruptHookAvailable` 恒为 false，
-  /// 超时保护退化为预算机制（详见 `SandboxGuard`）。
+  /// 上游插件的构建把 quickjs 本体符号设为 hidden 可见性，`JS_SetInterruptHandler`
+  /// 不在动态符号表里，中断通路不可用、超时保护退化为预算机制。本项目在
+  /// `third_party/quickjs_engine` 的本地副本里补了一个导出包装
+  /// （`jsSetInterruptHandler`，见该目录 `PATCHES.md`），因此这里优先找包装符号；
+  /// 找不到时回退找 quickjs 本体符号——两条路径都通不了才判定为「无中断通路」。
   static bool get interruptHookAvailable {
     if (!isAvailable) return false;
     _resolveInterrupt();
@@ -292,14 +294,21 @@ class Qjs {
     _interruptResolved = true;
     final resolved = library;
     if (resolved == null) return;
-    try {
-      _setInterruptHandler = resolved
-          .lookup<NativeFunction<_SetInterruptHandlerNative>>(
-              'JS_SetInterruptHandler')
-          .asFunction();
-    } catch (_) {
-      _setInterruptHandler = null;
+    // 先找本仓库补丁导出的包装符号（vendored 副本），再回退 quickjs 本体符号。
+    for (final name in const <String>[
+      'jsSetInterruptHandler',
+      'JS_SetInterruptHandler',
+    ]) {
+      try {
+        _setInterruptHandler = resolved
+            .lookup<NativeFunction<_SetInterruptHandlerNative>>(name)
+            .asFunction();
+        return;
+      } catch (_) {
+        // 换下一个候选名。
+      }
     }
+    _setInterruptHandler = null;
   }
 
   // -------------------------------------------------------------- 符号访问器

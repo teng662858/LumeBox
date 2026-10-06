@@ -31,10 +31,14 @@ class SandboxArming {
 /// QuickJS 在执行字节码时周期性回调中断处理器，返回非 0 即抛出**不可捕获**的
 /// 中断错误并终止本次求值——这是唯一能在纯 CPU 死循环里夺回控制权的手段。
 ///
-/// 但当前插件构建把 quickjs 本体符号设为 hidden，`JS_SetInterruptHandler` 在
-/// PE / Mach-O 动态符号表里都不存在（已实测：DLL 导出表中查无此名）。
-/// 因此 [interruptAvailable] 恒为 false，实际生效的是 [SandboxBudget] 预算机制，
-/// 原生通路保留待插件暴露该符号后自动升级。
+/// 通路状态：上游插件的构建把 quickjs 本体符号设为 hidden，`JS_SetInterruptHandler`
+/// 不在动态符号表里；本项目在 `third_party/quickjs_engine` 的本地副本里补了一个
+/// 导出包装（`jsSetInterruptHandler`，见该目录 `PATCHES.md`），因此 [interruptAvailable]
+/// 现已为 true。若将来换回上游 pub 版本，本类会自动降级为 [SandboxBudget] 预算机制
+/// 并在首次 attach 时打一条 warn，不会崩。
+///
+/// 另注：光有通路还不够——中断装备必须保持到微任务排空结束，否则 `async` 方法体
+/// 在 `await` 之后的死循环仍收不回来（详见 `SandboxContext._settleAfterDrain`）。
 class SandboxGuard {
   SandboxGuard._();
 

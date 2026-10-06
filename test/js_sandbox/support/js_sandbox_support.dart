@@ -269,10 +269,14 @@ Future<void> sandboxWorkerMain(List<Object?> args) async {
     report['ok'] = result.isOk;
     report['errorKind'] = result.error?.kind.id;
     report['error'] = result.error?.message;
-    report['generationAfter'] = sandbox.generation;
+    report['generation'] = sandbox.generation;
     // 失控之后是否还能重建并正常干活（要求 1 的后半句）。
+    //
+    // 代数必须在**这次探针之后**再读：回收只销毁旧上下文，新上下文是下一次
+    // 操作时按需创建的，因此「刚回收完」这一刻代数还没涨——重建过才涨。
     final probe = await sandbox.call('LumeSource.detail', <String, Object?>{'id': 'x'});
     report['rebuiltOk'] = probe.isOk;
+    report['generationAfter'] = sandbox.generation;
     report['liveContexts'] = SandboxContext.liveCount;
     sandbox.dispose();
     report['liveAfterDispose'] = SandboxContext.liveCount;

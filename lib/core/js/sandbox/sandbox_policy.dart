@@ -24,16 +24,31 @@ class SandboxPolicy {
   static const Duration defaultTimeout = Duration(seconds: 4);
 
   static const int defaultMemoryLimitBytes = 64 * 1024 * 1024;
-  static const int defaultStackLimitBytes = 1024 * 1024;
 
-  /// 指令计数上限。仅在原生中断通路可用时能真正生效（见 [SandboxGuard]）；
-  /// 当前插件构建未导出 `JS_SetInterruptHandler`，因此它同时充当记录与预留。
+  /// JS 栈上限。**这是一个已实测的进程级崩溃开关，不能随手调大。**
+  ///
+  /// quickjs 靠 `JS_SetMaxStackSize` 在栈上留出余量，递归超限时抛可捕获的
+  /// `RangeError: Maximum call stack size exceeded`；但这个余量必须小于宿主线程
+  /// 的真实可用栈，否则守卫还没来得及触发，进程就已经撞穿 OS 栈直接死掉
+  /// （无异常、无日志、整进程消失）。
+  ///
+  /// 实测（Windows x64，无限递归脚本 `function f(n){return f(n+1);} f(0);`）：
+  /// - 768KB / 900KB / 960KB：正常抛出 RangeError，上下文可继续使用；
+  /// - **1024KB（原默认值）：进程当场死亡**，测试进程连结果都发不回来。
+  ///
+  /// 因此取 512KB：既有 2 倍安全余量（实测边界在 960–1024KB 之间），又足够
+  /// 承载真实图源脚本的递归深度（脚本解析 HTML / JSON 的常规递归远低于此）。
+  static const int defaultStackLimitBytes = 512 * 1024;
+
+  /// 指令计数上限。原生中断通路可用时（`third_party/quickjs_engine` 的补丁
+  /// 已导出 `JS_SetInterruptHandler`）按 10000 条指令一次 tick 折算成 tick 预算，
+  /// 耗尽即中断；通路不可用时退化为记录（见 [SandboxGuard]）。
   static const int defaultMaxInstructions = 200 * 1000 * 1000;
 
   /// 单次操作内允许的宿主代理调用次数。
   static const int defaultMaxHostCalls = 64;
 
-  /// 单次操作内允许的引擎步数（求值 + 微任务排空 + 宿主回调往返）。
+  /// 单次操作内允许的引擎步数（求值 + 微任务排空 + 宿主回调往返 + 定时器注册）。
   static const int defaultMaxSteps = 4096;
 
   /// 单次求值最多排空的微任务轮数，防止 Promise 自循环卡死。
@@ -139,6 +154,13 @@ class SandboxPolicy {
 ///
 /// 这是「指令计数上限保护」在 Dart 侧的落地形式：没有原生中断通路时，
 /// JS 与外界的每一次交互都要在此记账，超支即判定沙箱失控。
+///
+/// 记账口径（**能约束什么、不能约束什么，以代码为准，不靠注释承诺**）：
+/// - [spendStep]：一次操作内与外界交互的总步数（求值 + 微任务轮 + 宿主往返 +
+///   定时器注册），每次调用前记一步；
+/// - [spendJobRound] / [spendHostCall]：微任务轮数与宿主往返数各自的细账；
+/// - **看不见的**：纯 CPU 空转（`while(true){}`）不与外界交互，Dart 侧记不到账，
+///   只能由原生中断通路打断（见 `SandboxGuard`）。
 class SandboxBudget {
   SandboxBudget(this.policy, DateTime startedAt) : _startedAt = startedAt;
 
@@ -163,7 +185,10 @@ class SandboxBudget {
 
   bool get isExpired => remaining == Duration.zero;
 
-  /// 记一步引擎动作；返回 false 表示预算已耗尽。
+  /// 记一步「与外界交互」的动作；返回 false 表示预算已耗尽。
+  ///
+  /// 调用点（四处，覆盖一次操作里所有能让 JS 继续跑下去的入口）：
+  /// 求值前、每轮微任务排空、每次宿主往返、每次定时器注册。
   bool spendStep() => ++_steps <= policy.maxSteps;
 
   /// 记一次宿主代理调用；返回 false 表示预算已耗尽。
