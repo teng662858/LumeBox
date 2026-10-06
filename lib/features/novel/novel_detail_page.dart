@@ -231,7 +231,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
+      appBar: GlassAppBar(
         title: Text(
           _detail?.title ?? widget.target.title,
           maxLines: 1,
@@ -293,7 +293,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
                           style: TextStyle(
                             fontSize: 14,
                             color: _progress?.chapterIndex == index
-                                ? Colors.white
+                                ? LumeTheme.textPrimary
                                 : LumeTheme.muted,
                           ),
                         ),
@@ -301,7 +301,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
                       if (_progress?.chapterIndex == index)
                         const Text(
                           '在读',
-                          style: TextStyle(fontSize: 11, color: Colors.white),
+                          style: TextStyle(fontSize: 11, color: LumeTheme.textPrimary),
                         ),
                     ],
                   ),
@@ -319,7 +319,13 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
       children: <Widget>[
         Positioned.fill(child: _buildGlow()),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, kToolbarHeight + 44, 16, 8),
+          // 让出玻璃顶部栏（状态栏 + 工具栏）。
+          padding: EdgeInsets.fromLTRB(
+            16,
+            MediaQuery.paddingOf(context).top + kToolbarHeight + 12,
+            16,
+            8,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -347,7 +353,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                            color: LumeTheme.textPrimary,
                           ),
                         ),
                         if ((detail?.subtitle ?? widget.target.subtitle) !=
@@ -398,20 +404,23 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
     );
   }
 
-  /// 与漫画详情页同一套视觉：封面模糊 + 向页面底色渐隐。
+  /// 与漫画详情页同一套视觉：封面模糊 + 向页面底色渐隐（浅色晕染，见漫画详情页）。
   Widget _buildGlow() {
     final cover = _detail?.cover ?? widget.target.cover;
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
         if (cover != null && cover.isNotEmpty)
-          ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-            child: SectionImage(
-              pipeline: _pipeline,
-              url: cover,
-              targetWidth: 200,
-              fit: BoxFit.cover,
+          Opacity(
+            opacity: 0.34,
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+              child: SectionImage(
+                pipeline: _pipeline,
+                url: cover,
+                targetWidth: 200,
+                fit: BoxFit.cover,
+              ),
             ),
           ),
         const DecoratedBox(
@@ -420,9 +429,9 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: <Color>[
-                Color(0xAA000000),
-                Color(0x44000000),
-                Color(0xFF0B0B12),
+                Color(0x99FFFFFF),
+                Color(0x59FFFFFF),
+                Color(0x00FFFFFF),
               ],
             ),
           ),
@@ -444,7 +453,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
           style: const TextStyle(
             fontSize: 13,
             height: 1.6,
-            color: Colors.white70,
+            color: LumeTheme.textSecondary,
           ),
         ),
       ),
@@ -461,7 +470,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: LumeTheme.textPrimary,
             ),
           ),
           const Spacer(),

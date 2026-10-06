@@ -221,14 +221,14 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
                 const SizedBox(height: 8),
                 Text(
                   _hint!,
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF81C784)),
+                  style: const TextStyle(fontSize: 12, color: LumeTheme.success),
                 ),
               ],
               if (_error != null) ...<Widget>[
                 const SizedBox(height: 8),
                 Text(
                   _error!,
-                  style: const TextStyle(fontSize: 12, color: Color(0xFFFF8A80)),
+                  style: const TextStyle(fontSize: 12, color: LumeTheme.danger),
                 ),
               ],
             ],
@@ -347,7 +347,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
               file.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: Colors.white),
+              style: const TextStyle(fontSize: 12, color: LumeTheme.textPrimary),
             ),
           ),
           const SizedBox(width: 8),
@@ -355,7 +355,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
             detail,
             style: TextStyle(
               fontSize: 12,
-              color: importable ? const Color(0xFF81C784) : const Color(0xFFFF8A80),
+              color: importable ? LumeTheme.success : LumeTheme.danger,
             ),
           ),
         ],

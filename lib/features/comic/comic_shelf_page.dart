@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
+import '../../shared/widgets/glass_card.dart';
+import '../shell/board_tabs.dart';
 import '../reading/poster_card.dart';
 import 'comic_detail_page.dart';
 
@@ -115,7 +117,9 @@ class _ComicShelfPageState extends State<ComicShelfPage> {
     return RefreshIndicator(
       onRefresh: () async => _reload(),
       child: GridView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        // 让出玻璃顶栏（标题 + 页签条）：内边距随内容滚走，列表从栏下穿过。
+        padding: GlassScaffold.barInset(context, extra: BoardTabHeader.height)
+            .add(const EdgeInsets.fromLTRB(16, 12, 16, 24)),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
           mainAxisSpacing: 14,
@@ -141,7 +145,7 @@ class _ComicShelfPageState extends State<ComicShelfPage> {
                   style: const TextStyle(
                     fontSize: 12,
                     height: 1.25,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),

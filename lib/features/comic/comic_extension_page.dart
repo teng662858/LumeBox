@@ -126,6 +126,7 @@ class _ComicExtensionPageState extends State<ComicExtensionPage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
+      behindBar: true,
       title: widget.repo.name,
       actions: <Widget>[
         IconButton(
@@ -156,7 +157,7 @@ class _ComicExtensionPageState extends State<ComicExtensionPage> {
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
+      padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
       itemCount: extensions.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
@@ -183,7 +184,7 @@ class _ComicExtensionPageState extends State<ComicExtensionPage> {
 }
 
 /// 停用标记的颜色：与其他管理页同色系。
-const Color _disabledColor = Color(0xFFFF8A80);
+const Color _disabledColor = LumeTheme.danger;
 
 class _ExtensionTile extends StatelessWidget {
   const _ExtensionTile({
@@ -229,7 +230,7 @@ class _ExtensionTile extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
               ),
@@ -309,13 +310,13 @@ class _Chip extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         color: danger
             ? _disabledColor.withValues(alpha: 0.2)
-            : Colors.white.withValues(alpha: 0.12),
+            : LumeTheme.fillStrong,
       ),
       child: Text(
         text,
         style: TextStyle(
           fontSize: 11,
-          color: danger ? _disabledColor : Colors.white,
+          color: danger ? _disabledColor : LumeTheme.textPrimary,
         ),
       ),
     );

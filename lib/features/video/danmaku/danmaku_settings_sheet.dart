@@ -58,7 +58,7 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: LumeTheme.textPrimary,
                         ),
                       ),
                     ),
@@ -77,7 +77,7 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text(
                     '显示弹幕',
-                    style: TextStyle(fontSize: 14, color: Colors.white),
+                    style: TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
                   ),
                   value: _settings.enabled,
                   onChanged: (value) => _update(_settings.copyWith(enabled: value)),
@@ -168,7 +168,7 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(fontSize: 14, color: Colors.white),
+                style: const TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
               ),
             ),
             Text(

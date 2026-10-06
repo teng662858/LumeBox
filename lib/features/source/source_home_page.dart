@@ -357,7 +357,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: LumeTheme.textPrimary,
                 ),
               ),
             ),
@@ -405,7 +405,7 @@ class _SourceSwitchSheet extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
               ),
@@ -413,7 +413,7 @@ class _SourceSwitchSheet extends StatelessWidget {
                 ListTile(
                   title: Text(
                     source.name,
-                    style: const TextStyle(color: Colors.white),
+                    style: const TextStyle(color: LumeTheme.textPrimary),
                   ),
                   subtitle: Text(
                     source.version.isEmpty ? LumeTheme.appName : source.version,
@@ -423,7 +423,7 @@ class _SourceSwitchSheet extends StatelessWidget {
                     ),
                   ),
                   trailing: source.id == currentId
-                      ? const Icon(Icons.check, color: Colors.white)
+                      ? const Icon(Icons.check, color: LumeTheme.textPrimary)
                       : null,
                   onTap: () => Navigator.of(context).pop(source.id),
                 ),

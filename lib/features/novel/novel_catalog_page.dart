@@ -114,7 +114,7 @@ class _NovelCatalogPageState extends State<NovelCatalogPage> {
     final visible = _visibleIndexes;
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
+      appBar: GlassAppBar(
         title: const Text('目录'),
         actions: <Widget>[
           IconButton(
@@ -227,7 +227,7 @@ class _CatalogTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 14,
-                  color: current ? Colors.white : LumeTheme.muted,
+                  color: current ? LumeTheme.textPrimary : LumeTheme.muted,
                   fontWeight: current ? FontWeight.w600 : FontWeight.w400,
                 ),
               ),
@@ -235,7 +235,7 @@ class _CatalogTile extends StatelessWidget {
             if (current)
               const Text(
                 '在读',
-                style: TextStyle(fontSize: 11, color: Colors.white),
+                style: TextStyle(fontSize: 11, color: LumeTheme.textPrimary),
               ),
           ],
         ),

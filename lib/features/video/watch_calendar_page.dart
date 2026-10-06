@@ -80,7 +80,7 @@ class _WatchCalendarPageState extends State<WatchCalendarPage> {
           _buildHeader(activeDays),
           _buildWeekdayRow(),
           _buildGrid(grid),
-          const Divider(height: 1, color: Colors.white12),
+          const Divider(height: 1, color: LumeTheme.divider),
           Expanded(child: _buildDayDetail(grid)),
         ],
       ),
@@ -106,7 +106,7 @@ class _WatchCalendarPageState extends State<WatchCalendarPage> {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
                 Text(
@@ -245,12 +245,12 @@ class _DayCell extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: selected
-                ? Colors.white.withValues(alpha: 0.16)
+                ? LumeTheme.hairline
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: hasUpdate
-                  ? const Color(0xFF81C784).withValues(alpha: 0.7)
+                  ? LumeTheme.success.withValues(alpha: 0.7)
                   : Colors.transparent,
             ),
           ),
@@ -264,7 +264,7 @@ class _DayCell extends StatelessWidget {
                   fontWeight: day.isEmpty ? FontWeight.w400 : FontWeight.w600,
                   color: !inMonth
                       ? LumeTheme.muted.withValues(alpha: 0.4)
-                      : (day.isEmpty ? LumeTheme.muted : Colors.white),
+                      : (day.isEmpty ? LumeTheme.muted : LumeTheme.textPrimary),
                 ),
               ),
               if (day.total > 0) ...<Widget>[
@@ -274,7 +274,7 @@ class _DayCell extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 10,
                     color: hasUpdate
-                        ? const Color(0xFF81C784)
+                        ? LumeTheme.success
                         : LumeTheme.muted,
                   ),
                 ),
@@ -342,7 +342,7 @@ class _EntryTile extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: LumeTheme.textPrimary,
                     ),
                   ),
                   if (entry.chapterTitle.isNotEmpty)

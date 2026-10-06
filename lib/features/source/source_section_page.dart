@@ -414,6 +414,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     if (!_manager.runtimeAvailable) {
       // 平台骨架：标题仍按「板块 · 源管理」口径，页面身份不含糊。
       return GlassScaffold(
+        behindBar: true,
         title: '${widget.section.label} · 源管理',
         child: const SkeletonNotice(),
       );
@@ -479,7 +480,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
+      padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
       itemCount: sources.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
@@ -503,13 +504,13 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
 }
 
 /// 停用标记的颜色：与错误文案同色系，避免新造主题项。
-const Color _disabledColor = Color(0xFFFF8A80);
+const Color _disabledColor = LumeTheme.danger;
 
 /// 「网络已自定义」标记色：与停用区分开的提示色。
-const Color _accentColor = Color(0xFF80D8FF);
+const Color _accentColor = LumeTheme.info;
 
 /// 测试通过的标记色。
-const Color _okColor = Color(0xFF81C784);
+const Color _okColor = LumeTheme.success;
 
 /// 单个图源行上的操作。
 enum _SourceAction { browse, test, update, rename, network, exportScript, delete }
@@ -571,7 +572,7 @@ class _SourceTile extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -784,7 +785,7 @@ class _InfoRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 height: 1.4,
-                color: valueColor ?? Colors.white,
+                color: valueColor ?? LumeTheme.textPrimary,
               ),
             ),
           ),

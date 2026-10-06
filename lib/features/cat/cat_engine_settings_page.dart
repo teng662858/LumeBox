@@ -78,6 +78,7 @@ class _CatEngineSettingsPageState extends State<CatEngineSettingsPage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
+      behindBar: true,
       title: '猫源引擎',
       child: _buildBody(),
     );
@@ -95,7 +96,7 @@ class _CatEngineSettingsPageState extends State<CatEngineSettingsPage> {
     }
     final choices = CatEngines.choices;
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
       children: <Widget>[
         const Text(
           '猫源脚本需要 JS 引擎。切换只影响猫源板块，下次打开源时生效；'
@@ -153,7 +154,7 @@ class _EngineTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: available ? Colors.white : LumeTheme.muted,
+                    color: available ? LumeTheme.textPrimary : LumeTheme.muted,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -165,14 +166,14 @@ class _EngineTile extends StatelessWidget {
                   const SizedBox(height: 2),
                   const Text(
                     '本机不可用',
-                    style: TextStyle(fontSize: 12, color: Color(0xFFFF8A80)),
+                    style: TextStyle(fontSize: 12, color: LumeTheme.danger),
                   ),
                 ],
               ],
             ),
           ),
           if (selected)
-            const Icon(Icons.check_circle, size: 20, color: Colors.white)
+            const Icon(Icons.check_circle, size: 20, color: LumeTheme.textPrimary)
           else if (available)
             const Icon(
               Icons.radio_button_unchecked,

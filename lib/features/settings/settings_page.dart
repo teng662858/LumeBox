@@ -41,6 +41,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!_available) {
       return GlassScaffold(
+        behindBar: true,
         title: '设置',
         child: const SkeletonNotice(),
       );
@@ -48,7 +49,7 @@ class SettingsPage extends StatelessWidget {
     return GlassScaffold(
       title: '设置',
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
         children: <Widget>[
           _SettingsEntry(
             icon: Icons.tune,
@@ -130,7 +131,7 @@ class _SettingsEntry extends StatelessWidget {
       onTap: onTap,
       child: Row(
         children: <Widget>[
-          Icon(icon, size: 22, color: Colors.white),
+          Icon(icon, size: 22, color: LumeTheme.textSecondary),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -142,7 +143,7 @@ class _SettingsEntry extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),

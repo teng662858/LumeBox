@@ -5,6 +5,7 @@ import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../reading/poster_card.dart';
+import '../shell/board_tabs.dart';
 import 'novel_detail_page.dart';
 
 /// 小说书架：网格 / 列表双视图，展示读到哪一章、本章读了百分之多少。
@@ -157,6 +158,13 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
     }
     return Column(
       children: <Widget>[
+        // 切换行不是滚动视图，自己让出玻璃顶栏（标题 + 页签条）的高度。
+        SizedBox(
+          height: GlassScaffold.barHeight(
+            context,
+            extra: BoardTabHeader.height,
+          ),
+        ),
         _buildViewToggle(),
         Expanded(
           child: RefreshIndicator(
@@ -170,7 +178,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
     );
   }
 
-  /// 视图切换：两个图标按钮，选中态用白色表达（与页签条同一套视觉口径）。
+  /// 视图切换：两个图标按钮，选中态用品牌紫表达（与页签条同一套视觉口径）。
   Widget _buildViewToggle() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -186,7 +194,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                     ? Icons.grid_view_rounded
                     : Icons.view_list_rounded,
                 size: 20,
-                color: _viewMode == mode ? Colors.white : LumeTheme.muted,
+                color: _viewMode == mode ? LumeTheme.accent : LumeTheme.textSecondary,
               ),
               onPressed: () => _setViewMode(mode),
             ),
@@ -223,7 +231,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                 style: const TextStyle(
                   fontSize: 12,
                   height: 1.25,
-                  color: Colors.white,
+                  color: LumeTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 2),
@@ -285,7 +293,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: LumeTheme.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 4),

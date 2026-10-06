@@ -150,6 +150,7 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
+      behindBar: true,
       title: '缓存管理',
       actions: <Widget>[
         IconButton(
@@ -176,7 +177,7 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
     final totalCache = stats.fold<int>(0, (sum, item) => sum + item.cacheBytes);
     final totalSaved = stats.fold<int>(0, (sum, item) => sum + item.savedBytes);
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
       children: <Widget>[
         Text(
           '合计缓存 ${_formatBytes(totalCache)}'
@@ -250,7 +251,7 @@ class _CacheTile extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -378,7 +379,7 @@ class _CachePolicyDialogState extends State<_CachePolicyDialog> {
               const SizedBox(height: 16),
               const Text(
                 '容量上限',
-                style: TextStyle(fontSize: 14, color: Colors.white),
+                style: TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -396,7 +397,7 @@ class _CachePolicyDialogState extends State<_CachePolicyDialog> {
               const SizedBox(height: 16),
               const Text(
                 '过期天数',
-                style: TextStyle(fontSize: 14, color: Colors.white),
+                style: TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
               ),
               const SizedBox(height: 8),
               Wrap(

@@ -54,7 +54,7 @@ class ContinueWatchingSection extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
               ),
@@ -142,7 +142,7 @@ class _ContinueTile extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
               ),
@@ -172,9 +172,9 @@ class _ContinueTile extends StatelessWidget {
             child: LinearProgressIndicator(
               value: progress.ratio,
               minHeight: 3,
-              backgroundColor: Colors.white24,
+              backgroundColor: LumeTheme.fillStrong,
               valueColor: AlwaysStoppedAnimation<Color>(
-                finished ? LumeTheme.muted : Colors.white,
+                finished ? LumeTheme.muted : LumeTheme.textPrimary,
               ),
             ),
           ),

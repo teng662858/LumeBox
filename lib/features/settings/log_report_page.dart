@@ -58,6 +58,7 @@ class _LogReportPageState extends State<LogReportPage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
+      behindBar: true,
       title: '错误报告',
       child: StreamBuilder<void>(
         stream: LumeLog.changes,
@@ -72,7 +73,7 @@ class _LogReportPageState extends State<LogReportPage> {
     final result = _result;
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
       children: <Widget>[
         GlassCard(
           radius: 14,
@@ -90,7 +91,7 @@ class _LogReportPageState extends State<LogReportPage> {
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: LumeTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 8),
@@ -144,7 +145,7 @@ class _LogReportPageState extends State<LogReportPage> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),

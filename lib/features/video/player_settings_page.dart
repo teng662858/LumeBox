@@ -44,9 +44,10 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
+      behindBar: true,
       title: '播放器设置',
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
         children: <Widget>[
           const _SectionTitle('播放内核', 'AVPlayer 与 MPV 运行时可切换；MDK 只预留接口（不可选）'),
           // 与全局设置的逃生入口共用同一份列表（同一个组件，不复制 UI）。
@@ -94,7 +95,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
               const Expanded(
                 child: Text(
                   '显示字幕',
-                  style: TextStyle(fontSize: 14, color: Colors.white),
+                  style: TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
                 ),
               ),
               Switch(
@@ -164,7 +165,7 @@ class _SectionTitle extends StatelessWidget {
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: LumeTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 2),

@@ -164,6 +164,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
+      behindBar: true,
       title: '${widget.section.label} · 源编辑器',
       actions: <Widget>[
         IconButton(
@@ -178,13 +179,15 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
       ],
       child: Column(
         children: <Widget>[
+          // 模式条不是滚动视图，自己让出玻璃顶栏的高度。
+          SizedBox(height: GlassScaffold.barHeight(context)),
           _buildModeBar(),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
                 _error!,
-                style: const TextStyle(fontSize: 12, color: Color(0xFFFF8A80)),
+                style: const TextStyle(fontSize: 12, color: LumeTheme.danger),
               ),
             ),
           Expanded(
@@ -310,7 +313,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
               const _Label('解析'),
               const Text(
                 '列表来源',
-                style: TextStyle(fontSize: 13, color: Colors.white),
+                style: TextStyle(fontSize: 13, color: LumeTheme.textPrimary),
               ),
               const SizedBox(height: 6),
               Wrap(
@@ -407,7 +410,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
       child: TextFormField(
         initialValue: value,
         maxLines: maxLines,
-        style: const TextStyle(color: Colors.white, fontSize: 14),
+        style: const TextStyle(color: LumeTheme.textPrimary, fontSize: 14),
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
@@ -455,7 +458,7 @@ class _Label extends StatelessWidget {
           style: const TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: Colors.white,
+            color: LumeTheme.textPrimary,
           ),
         ),
       );

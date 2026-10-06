@@ -6,8 +6,8 @@ import 'section_image.dart';
 
 /// 海报卡：封面 + 标题，书架与探索的网格单元。
 ///
-/// 刻意不用 [GlassCard]：BackdropFilter 逐格模糊在几十张卡的网格里会明显掉帧，
-/// 这里用一圈描边 + 半透明底色替代磨砂，视觉层级一致而代价低得多。
+/// 刻意不用 [GlassCard]：磨砂模糊逐格算在几十张卡的网格里会明显掉帧，
+/// 这里用纯白底 + 极浅描边 + 柔和阴影表达同一套分层，代价低得多。
 class PosterCard extends StatelessWidget {
   const PosterCard({
     super.key,
@@ -33,7 +33,7 @@ class PosterCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.06),
+      color: LumeTheme.surface,
       borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -45,7 +45,8 @@ class PosterCard extends StatelessWidget {
             DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                border: Border.all(color: LumeTheme.hairline),
+                boxShadow: LumeTheme.cardShadow,
               ),
             ),
             child,
@@ -169,7 +170,7 @@ class ShelfEmptyHint extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: Colors.white,
+                color: LumeTheme.textPrimary,
               ),
             ),
             const SizedBox(height: 6),

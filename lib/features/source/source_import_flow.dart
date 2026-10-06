@@ -342,7 +342,7 @@ class _ImportResultDialog extends StatelessWidget {
             children: <Widget>[
               Text(
                 '共 ${outcomes.length} 条：新增 $added · 覆盖 $overwritten · 失败 $failed',
-                style: const TextStyle(fontSize: 13, color: Colors.white),
+                style: const TextStyle(fontSize: 13, color: LumeTheme.textPrimary),
               ),
               for (final note in notes) ...<Widget>[
                 const SizedBox(height: 6),
@@ -366,8 +366,8 @@ class _ImportResultDialog extends StatelessWidget {
                                 : Icons.sync_problem,
                         size: 16,
                         color: outcome.isFailure
-                            ? const Color(0xFFFF8A80)
-                            : const Color(0xFF81C784),
+                            ? LumeTheme.danger
+                            : LumeTheme.success,
                       ),
                       const SizedBox(width: 8),
                       Expanded(

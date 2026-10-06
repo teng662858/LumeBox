@@ -1305,17 +1305,24 @@ class _VideoPageState extends State<VideoPage>
     return GlassScaffold(
       title: Section.video.label,
       actions: _buildActions(),
+      // 页签条做成顶栏的一部分（整条玻璃），内容从它下面滚过。
+      bottom: BoardTabHeader(labels: VideoPage.tabLabels, controller: _tabs),
+      behindBar: true,
       child: BoardTabs(
         controller: _tabs,
-        labels: VideoPage.tabLabels,
         children: <Widget>[
           // 首页：继续观看（有记录才显示）+ 当前图源的内容展示页
           // （右上角已有「图源管理」，图源条不再重复）。
           Column(
             children: <Widget>[
+              // 浏览面第一块（继续观看）不是滚动视图，自己让出顶栏高度；
+              // 它下面的列表在各自的滚动区里正常滚动。
               if (_library != null)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  padding: GlassScaffold.barInset(
+                    context,
+                    extra: BoardTabHeader.height,
+                  ).add(const EdgeInsets.fromLTRB(16, 12, 16, 0)),
                   child: ContinueWatchingSection(
                     key: ValueKey<int>(_continueWatchingRevision),
                     library: _library,
@@ -1349,6 +1356,18 @@ class _VideoPageState extends State<VideoPage>
   ///
   /// 无论哪种状态，浏览页签都照常可用——图源列表与播放器互不牵连。
   Widget _buildPlayerTab() {
+    if (!_anyKernelAvailable) return const _VideoSkeleton();
+    // 播放区不能被玻璃顶栏压住（顶栏一直浮在最上层）：整块让出顶栏 + 页签条。
+    return Padding(
+      padding: GlassScaffold.barInset(
+        context,
+        extra: BoardTabHeader.height,
+      ),
+      child: _buildPlayerTabBody(),
+    );
+  }
+
+  Widget _buildPlayerTabBody() {
     if (!_anyKernelAvailable) return const _VideoSkeleton();
     if (_storeFailed) {
       return const Center(
@@ -1447,7 +1466,7 @@ class _VideoPageState extends State<VideoPage>
               children: <Widget>[
                 TextField(
                   controller: _input,
-                  style: const TextStyle(color: Colors.white),
+                  style: const TextStyle(color: LumeTheme.textPrimary),
                   decoration: const InputDecoration(
                     border: InputBorder.none,
                     hintText: '视频地址或本地路径',
@@ -1461,7 +1480,7 @@ class _VideoPageState extends State<VideoPage>
                     _error!,
                     style: const TextStyle(
                       fontSize: 12,
-                      color: Color(0xFFFF8A80),
+                      color: LumeTheme.danger,
                     ),
                   ),
                 const SizedBox(height: 8),
@@ -1506,7 +1525,7 @@ class _VideoPageState extends State<VideoPage>
                         children: <Widget>[
                           IconButton(
                             iconSize: 34,
-                            color: Colors.white,
+                            color: LumeTheme.textPrimary,
                             icon: Icon(
                               snapshot.playing
                                   ? Icons.pause_circle_filled
@@ -1518,14 +1537,14 @@ class _VideoPageState extends State<VideoPage>
                           ),
                           IconButton(
                             iconSize: 28,
-                            color: Colors.white,
+                            color: LumeTheme.textPrimary,
                             icon: const Icon(Icons.stop_circle),
                             onPressed: player.stop,
                           ),
                           IconButton(
                             iconSize: 28,
                             color: _danmakuSettings.enabled
-                                ? Colors.white
+                                ? LumeTheme.textPrimary
                                 : LumeTheme.muted,
                             tooltip: _danmakuSettings.enabled
                                 ? '弹幕：开'
@@ -1544,14 +1563,14 @@ class _VideoPageState extends State<VideoPage>
                           ),
                           IconButton(
                             iconSize: 28,
-                            color: Colors.white,
+                            color: LumeTheme.textPrimary,
                             tooltip: '发弹幕',
                             icon: const Icon(Icons.chat_bubble_outline),
                             onPressed: _composeDanmaku,
                           ),
                           IconButton(
                             iconSize: 28,
-                            color: Colors.white,
+                            color: LumeTheme.textPrimary,
                             tooltip: '弹幕设置',
                             icon: const Icon(Icons.tune),
                             onPressed: _openDanmakuSettings,
@@ -1559,7 +1578,7 @@ class _VideoPageState extends State<VideoPage>
                           IconButton(
                             iconSize: 28,
                             color:
-                                _autoNext ? Colors.white : LumeTheme.muted,
+                                _autoNext ? LumeTheme.textPrimary : LumeTheme.muted,
                             tooltip: _autoNext ? '自动连播：开' : '自动连播：关',
                             icon: const Icon(Icons.skip_next),
                             onPressed: () =>
@@ -1567,7 +1586,7 @@ class _VideoPageState extends State<VideoPage>
                           ),
                           IconButton(
                             iconSize: 28,
-                            color: Colors.white,
+                            color: LumeTheme.textPrimary,
                             tooltip: '播放器设置',
                             icon: const Icon(Icons.tune),
                             onPressed: _openSettings,
@@ -1575,7 +1594,7 @@ class _VideoPageState extends State<VideoPage>
                           _buildPipButton(),
                           IconButton(
                             iconSize: 28,
-                            color: Colors.white,
+                            color: LumeTheme.textPrimary,
                             icon: const Icon(Icons.download),
                             onPressed: _open,
                           ),
@@ -1618,7 +1637,7 @@ class _VideoPageState extends State<VideoPage>
             snapshot.state == PipState.exiting;
         return IconButton(
           iconSize: 28,
-          color: Colors.white,
+          color: LumeTheme.textPrimary,
           icon: Icon(
             snapshot.isActive
                 ? Icons.picture_in_picture
@@ -1680,7 +1699,7 @@ class _VideoSkeleton extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: LumeTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 8),
@@ -1735,7 +1754,7 @@ class _ChapterSheet extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: LumeTheme.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 2),
@@ -1760,7 +1779,7 @@ class _ChapterSheet extends StatelessWidget {
                         chapter.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white),
+                        style: const TextStyle(color: LumeTheme.textPrimary),
                       ),
                       onTap: () => Navigator.of(context).pop(chapter),
                     );

@@ -11,6 +11,7 @@ import '../../shared/widgets/state_view.dart';
 import '../source/source_section_page.dart';
 import 'poster_card.dart';
 import 'source_bar.dart';
+import '../shell/board_tabs.dart';
 
 /// 探索内容布局：漫画是海报墙（网格），小说是条目列表（网格同样是海报形状，
 /// 但列表更适合展示章节数与简介）。
@@ -359,6 +360,13 @@ class _ExploreViewState extends State<ExploreView> {
       ),
       body: Column(
         children: <Widget>[
+          // 图源条 / 搜索行不在滚动视图里，自己让出玻璃顶栏（标题 + 页签条）。
+          SizedBox(
+            height: GlassScaffold.barHeight(
+              context,
+              extra: BoardTabHeader.height,
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: _searching ? _buildSearchField() : _buildHeader(),
@@ -411,7 +419,7 @@ class _ExploreViewState extends State<ExploreView> {
               controller: _search,
               autofocus: true,
               textInputAction: TextInputAction.search,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: LumeTheme.textPrimary),
               decoration: const InputDecoration(
                 border: InputBorder.none,
                 hintText: '搜索',
@@ -537,7 +545,7 @@ class _ExploreViewState extends State<ExploreView> {
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: LumeTheme.textPrimary,
                         ),
                       ),
                       if (item.subtitle != null) ...<Widget>[
@@ -634,7 +642,7 @@ class _PosterTile extends StatelessWidget {
         style: const TextStyle(
           fontSize: 12,
           height: 1.25,
-          color: Colors.white,
+          color: LumeTheme.textPrimary,
         ),
       ),
       child: PosterCover(pipeline: pipeline, url: item.cover, width: 300),
@@ -659,14 +667,14 @@ class _RoundAction extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: Colors.white.withValues(alpha: 0.08),
+        color: LumeTheme.fill,
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.all(11),
-            child: Icon(icon, size: 20, color: Colors.white),
+            child: Icon(icon, size: 20, color: LumeTheme.textPrimary),
           ),
         ),
       ),
@@ -692,7 +700,7 @@ class _FilterDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Drawer(
       width: 280,
-      backgroundColor: const Color(0xFF12121E),
+      backgroundColor: LumeTheme.surface,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -704,7 +712,7 @@ class _FilterDrawer extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: LumeTheme.textPrimary,
                 ),
               ),
             ),
@@ -730,9 +738,9 @@ class _FilterDrawer extends StatelessWidget {
                 ],
               ),
             ),
-            const Divider(height: 1, color: Colors.white12),
+            const Divider(height: 1, color: LumeTheme.divider),
             ListTile(
-              leading: const Icon(Icons.tune, color: Colors.white70),
+              leading: const Icon(Icons.tune, color: LumeTheme.textSecondary),
               title: const Text('源管理'),
               onTap: onManage,
             ),
@@ -750,11 +758,11 @@ class _FilterDrawer extends StatelessWidget {
         style: TextStyle(
           fontSize: 14,
           fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-          color: selected ? Colors.white : LumeTheme.muted,
+          color: selected ? LumeTheme.textPrimary : LumeTheme.muted,
         ),
       ),
       trailing: selected
-          ? const Icon(Icons.check, size: 18, color: Colors.white)
+          ? const Icon(Icons.check, size: 18, color: LumeTheme.textPrimary)
           : null,
       onTap: onTap,
     );

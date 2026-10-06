@@ -150,7 +150,7 @@ class _BrowseViewState extends State<BrowseView> {
             child: TextField(
               controller: _search,
               textInputAction: TextInputAction.search,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: LumeTheme.textPrimary),
               decoration: const InputDecoration(
                 border: InputBorder.none,
                 hintText: '搜索',
@@ -258,7 +258,7 @@ class _BrowseViewState extends State<BrowseView> {
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: LumeTheme.textPrimary,
                       ),
                     ),
                     if (item.subtitle != null) ...<Widget>[
@@ -309,7 +309,7 @@ class _CategoryChip extends StatelessWidget {
           style: TextStyle(
             fontSize: 13,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-            color: selected ? Colors.white : LumeTheme.muted,
+            color: selected ? LumeTheme.textPrimary : LumeTheme.muted,
           ),
         ),
       ),

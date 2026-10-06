@@ -90,7 +90,7 @@ class _DetailPageState extends State<DetailPage> {
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
                 if (detail?.subtitle != null) ...<Widget>[
@@ -110,7 +110,7 @@ class _DetailPageState extends State<DetailPage> {
                     style: const TextStyle(
                       fontSize: 13,
                       height: 1.5,
-                      color: Colors.white70,
+                      color: LumeTheme.textSecondary,
                     ),
                   ),
                 ],
@@ -123,7 +123,7 @@ class _DetailPageState extends State<DetailPage> {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: LumeTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 10),
@@ -150,7 +150,7 @@ class _DetailPageState extends State<DetailPage> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 14,
-                          color: Colors.white,
+                          color: LumeTheme.textPrimary,
                         ),
                       ),
                     ),

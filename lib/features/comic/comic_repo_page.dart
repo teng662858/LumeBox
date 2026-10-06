@@ -192,6 +192,7 @@ class _ComicRepoPageState extends State<ComicRepoPage> {
   Widget build(BuildContext context) {
     final repos = _repos;
     return GlassScaffold(
+      behindBar: true,
       title: '扩展仓库',
       floatingActionButton: repos == null || _failed
           ? null
@@ -221,7 +222,7 @@ class _ComicRepoPageState extends State<ComicRepoPage> {
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+      padding: GlassScaffold.barInset(context).add(const EdgeInsets.fromLTRB(16, 16, 16, 96)),
       itemCount: repos.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) => _RepoTile(
@@ -267,7 +268,7 @@ class _RepoTile extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
               ),
@@ -275,11 +276,11 @@ class _RepoTile extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
-                  color: Colors.white.withValues(alpha: 0.12),
+                  color: LumeTheme.fillStrong,
                 ),
                 child: Text(
                   repo.kind.label,
-                  style: const TextStyle(fontSize: 11, color: Colors.white),
+                  style: const TextStyle(fontSize: 11, color: LumeTheme.textPrimary),
                 ),
               ),
             ],
@@ -390,7 +391,7 @@ class _AddRepoDialogState extends State<_AddRepoDialog> {
               const SizedBox(height: 12),
               TextField(
                 controller: _url,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: LumeTheme.textPrimary),
                 decoration: const InputDecoration(
                   labelText: '仓库地址',
                   hintText: 'https://example.com/repo（可只给根地址）',
@@ -400,7 +401,7 @@ class _AddRepoDialogState extends State<_AddRepoDialog> {
               const SizedBox(height: 12),
               TextField(
                 controller: _name,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: LumeTheme.textPrimary),
                 decoration: const InputDecoration(
                   labelText: '名称（可选）',
                   hintText: '留空则用地址主机名',

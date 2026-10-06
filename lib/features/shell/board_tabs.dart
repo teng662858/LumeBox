@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/lume_theme.dart';
 
-/// 板块页签条：深色玻璃主题下保持低存在感，选中态用白色短下划线表达。
+/// 板块页签条：浅色主题下保持低存在感，选中态用品牌紫短下划线表达。
 class BoardTabBar extends StatelessWidget {
   const BoardTabBar({super.key, required this.labels, this.controller});
 
@@ -17,11 +17,11 @@ class BoardTabBar extends StatelessWidget {
     return TabBar(
       controller: controller,
       dividerColor: Colors.transparent,
-      indicatorColor: Colors.white,
+      indicatorColor: LumeTheme.accent,
       indicatorSize: TabBarIndicatorSize.label,
       indicatorWeight: 2,
-      labelColor: Colors.white,
-      unselectedLabelColor: LumeTheme.muted,
+      labelColor: LumeTheme.accent,
+      unselectedLabelColor: LumeTheme.textSecondary,
       labelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
       unselectedLabelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w400),
       tabs: <Widget>[
@@ -31,32 +31,41 @@ class BoardTabBar extends StatelessWidget {
   }
 }
 
-/// 板块页签外壳：页签条 + 内容区。
+/// 顶部栏里的页签条（板块页的「书架 / 探索」「浏览 / 播放」）。
 ///
-/// 小说 / 漫画（书架 / 探索）与视频（浏览 / 播放）共用同一套排布，四个板块的
-/// 页签手感一致。需要代码切页签时（视频板块点条目起播后跳到「播放」）传入
-/// 自己的 [controller]，其余场景留空即可。
-class BoardTabs extends StatelessWidget {
-  const BoardTabs({
-    super.key,
-    required this.labels,
-    required this.children,
-    this.controller,
-  });
+/// 页签条放进顶部栏而不是压在内容区上方，是为了让顶部栏是一整条玻璃：
+/// 标题 + 页签共用同一层磨砂，内容从它们下面滚过。
+/// 用法：`GlassScaffold(bottom: BoardTabHeader(labels: ...), child: BoardTabs(...))`，
+/// 两处传同一个 [controller]（或都不传，由 [DefaultTabController] 供给）。
+class BoardTabHeader extends StatelessWidget implements PreferredSizeWidget {
+  const BoardTabHeader({super.key, required this.labels, this.controller});
 
   final List<String> labels;
+  final TabController? controller;
+
+  /// 页签 42 + 下划线 2 + 一点余量。
+  static const double height = 46;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(height);
+
+  @override
+  Widget build(BuildContext context) =>
+      BoardTabBar(labels: labels, controller: controller);
+}
+
+/// 板块页签内容区（页签条在顶部栏里，见 [BoardTabHeader]）。
+///
+/// 内容铺满整屏、从玻璃条下穿过：页面自己的滚动视图按 `GlassScaffold` 注入的
+/// MediaQuery 内边距让出首屏顶部即可（不写 padding 的滚动视图自动生效）。
+class BoardTabs extends StatelessWidget {
+  const BoardTabs({super.key, required this.children, this.controller});
+
   final List<Widget> children;
   final TabController? controller;
 
   @override
   Widget build(BuildContext context) {
-    final tabs = Column(
-      children: <Widget>[
-        BoardTabBar(labels: labels, controller: controller),
-        Expanded(child: TabBarView(controller: controller, children: children)),
-      ],
-    );
-    if (controller != null) return tabs;
-    return DefaultTabController(length: children.length, child: tabs);
+    return TabBarView(controller: controller, children: children);
   }
 }

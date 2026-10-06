@@ -78,7 +78,7 @@ class _KernelTile extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: available ? Colors.white : LumeTheme.muted,
+                      color: available ? LumeTheme.textPrimary : LumeTheme.muted,
                     ),
                   ),
                   if (reason != null) ...<Widget>[
@@ -95,7 +95,7 @@ class _KernelTile extends StatelessWidget {
               ),
             ),
             if (selected)
-              const Icon(Icons.check_circle, size: 20, color: Colors.white)
+              const Icon(Icons.check_circle, size: 20, color: LumeTheme.textPrimary)
             else if (available)
               const Icon(
                 Icons.radio_button_unchecked,

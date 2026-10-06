@@ -77,6 +77,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
+      behindBar: true,
       title: '网络设置',
       actions: <Widget>[
         TextButton(
@@ -85,7 +86,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
         ),
       ],
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
         children: <Widget>[
           _SectionCard(
             title: '并发控制',
@@ -149,7 +150,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
                 controller: _ua,
                 minLines: 1,
                 maxLines: 3,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+                style: const TextStyle(color: LumeTheme.textPrimary, fontSize: 13),
                 decoration: const InputDecoration(
                   labelText: '全局 User-Agent',
                   hintText: '留空 = 内置默认 UA',
@@ -160,7 +161,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
               const SizedBox(height: 12),
               TextField(
                 controller: _proxy,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+                style: const TextStyle(color: LumeTheme.textPrimary, fontSize: 13),
                 decoration: const InputDecoration(
                   labelText: '全局代理',
                   hintText: 'http://127.0.0.1:7890；留空 = 直连',
@@ -209,7 +210,7 @@ class _SectionCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: LumeTheme.textPrimary,
             ),
           ),
           const SizedBox(height: 4),
@@ -255,7 +256,7 @@ class _IntSlider extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(fontSize: 14, color: Colors.white),
+                style: const TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
               ),
             ),
             Text(
@@ -263,7 +264,7 @@ class _IntSlider extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: Colors.white,
+                color: LumeTheme.textPrimary,
               ),
             ),
           ],

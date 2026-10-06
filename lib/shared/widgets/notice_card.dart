@@ -36,7 +36,7 @@ class NoticeCard extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: LumeTheme.textPrimary,
                 ),
               ),
               const SizedBox(height: 8),

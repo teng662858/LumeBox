@@ -57,6 +57,7 @@ class _LogViewerPageState extends State<LogViewerPage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
+      behindBar: true,
       title: '运行日志',
       actions: <Widget>[
         IconButton(
@@ -93,6 +94,8 @@ class _LogViewerPageState extends State<LogViewerPage> {
 
     return Column(
       children: <Widget>[
+        // 筛选条不是滚动视图，自己让出玻璃顶栏的高度。
+        SizedBox(height: GlassScaffold.barHeight(context)),
         _buildFilterBar(entries),
         Expanded(
           child: ordered.isEmpty
@@ -144,8 +147,8 @@ class _LogViewerPageState extends State<LogViewerPage> {
 }
 
 /// 级别配色：错误用项目里既有的告警色，警告用琥珀色，信息用弱化色。
-const Color _errorColor = Color(0xFFFF8A80);
-const Color _warnColor = Color(0xFFFFD180);
+const Color _errorColor = LumeTheme.danger;
+const Color _warnColor = LumeTheme.warning;
 
 class _LogTile extends StatelessWidget {
   const _LogTile({required this.entry});
@@ -187,7 +190,7 @@ class _LogTile extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             entry.message,
-            style: const TextStyle(fontSize: 13, color: Colors.white),
+            style: const TextStyle(fontSize: 13, color: LumeTheme.textPrimary),
           ),
           if (entry.detail != null) ...<Widget>[
             const SizedBox(height: 4),

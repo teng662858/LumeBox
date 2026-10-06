@@ -162,7 +162,8 @@ class _AppShellState extends State<AppShell> {
             selectedIndex: _index,
             onDestinationSelected: _select,
             labelType: NavigationRailLabelType.all,
-            backgroundColor: const Color(0xFF12121E),
+            backgroundColor: LumeTheme.surface,
+            indicatorColor: const Color(0x1A7C5CFF),
             destinations: <NavigationRailDestination>[
               for (final tab in _tabs)
                 NavigationRailDestination(
@@ -203,7 +204,10 @@ class _ShellTab {
   final Widget Function() builder;
 }
 
-/// 底部悬浮 Dock：毛玻璃胶囊，五项等宽，选中项白字 + 高亮底座。
+/// 底部悬浮 Dock：浅色毛玻璃胶囊，五项等宽，选中项品牌紫 + 高亮底座。
+///
+/// 它悬在页面内容之上（`extendBody`），因此底下的列表与封面会从胶囊里透出来——
+/// 全 App 玻璃感最明显的一处。
 class _DockBar extends StatelessWidget {
   const _DockBar({
     super.key,
@@ -233,31 +237,35 @@ class _DockBar extends StatelessWidget {
         top: false,
         child: Padding(
           padding: EdgeInsets.fromLTRB(margin, 0, margin, margin),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.14),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: LumeTheme.floatShadow,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: LumeTheme.glass,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: LumeTheme.hairline),
                   ),
-                ),
-                child: SizedBox(
-                  height: height,
-                  child: Row(
-                    children: <Widget>[
-                      for (var i = 0; i < tabs.length; i++)
-                        Expanded(
-                          child: _DockItem(
-                            tab: tabs[i],
-                            selected: i == index,
-                            onTap: () => onSelect(i),
+                  child: SizedBox(
+                    height: height,
+                    child: Row(
+                      children: <Widget>[
+                        for (var i = 0; i < tabs.length; i++)
+                          Expanded(
+                            child: _DockItem(
+                              tab: tabs[i],
+                              selected: i == index,
+                              onTap: () => onSelect(i),
+                            ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -282,14 +290,26 @@ class _DockItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? Colors.white : LumeTheme.muted;
+    final color = selected ? LumeTheme.accent : LumeTheme.textSecondary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: <Widget>[
-          Icon(selected ? tab.selectedIcon : tab.icon, size: 22, color: color),
+          if (selected)
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: LumeTheme.accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                child: Icon(tab.selectedIcon, size: 20, color: color),
+              ),
+            )
+          else
+            Icon(tab.icon, size: 20, color: color),
           const SizedBox(height: 3),
           Text(
             tab.label,

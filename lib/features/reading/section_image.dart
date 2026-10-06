@@ -134,7 +134,7 @@ class _Placeholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: Colors.white.withValues(alpha: 0.06),
+      color: LumeTheme.fill,
       child: Center(
         child: Icon(
           failed ? Icons.image_not_supported_outlined : Icons.image_outlined,

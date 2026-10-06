@@ -948,20 +948,19 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       top: 0,
       left: 0,
       right: 0,
-      child: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: <Color>[Color(0xCC000000), Colors.transparent],
-          ),
+      child: GlassPanel(
+        // 阅读器顶栏是压在画面上的浮层：用玻璃（半透明白 + 模糊）而不是实色块，
+        // 图片会从栏下隐约透出来；底色与全局顶栏同一套。
+        color: LumeTheme.glassStrong,
+        border: const Border(
+          bottom: BorderSide(color: LumeTheme.hairline),
         ),
         child: SafeArea(
           bottom: false,
           child: Row(
             children: <Widget>[
               IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                icon: const Icon(Icons.arrow_back, color: LumeTheme.textPrimary),
                 onPressed: () => Navigator.of(context).maybePop(),
               ),
               Expanded(
@@ -976,7 +975,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: LumeTheme.textPrimary,
                       ),
                     ),
                     Text(
@@ -986,7 +985,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 12,
-                        color: LumeTheme.muted,
+                        color: LumeTheme.textSecondary,
                       ),
                     ),
                   ],
@@ -998,18 +997,21 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                   _bookmarkedHere
                       ? Icons.bookmark
                       : Icons.bookmark_add_outlined,
-                  color: Colors.white,
+                  color: LumeTheme.textPrimary,
                 ),
                 onPressed: _images.isEmpty ? null : _toggleBookmark,
               ),
               IconButton(
                 tooltip: '书签列表',
-                icon: const Icon(Icons.bookmarks_outlined, color: Colors.white),
+                icon: const Icon(
+                  Icons.bookmarks_outlined,
+                  color: LumeTheme.textPrimary,
+                ),
                 onPressed: _showBookmarkSheet,
               ),
               IconButton(
                 tooltip: '目录',
-                icon: const Icon(Icons.list, color: Colors.white),
+                icon: const Icon(Icons.list, color: LumeTheme.textPrimary),
                 onPressed: _showChapterSheet,
               ),
             ],
@@ -1026,11 +1028,15 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       right: 0,
       bottom: 0,
       child: DecoratedBox(
-        decoration: const BoxDecoration(
+        // 面板本身是浅色玻璃卡，底下这层只做「轻轻压暗画面」，不再是深色罩。
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.bottomCenter,
             end: Alignment.topCenter,
-            colors: <Color>[Color(0xE6000000), Colors.transparent],
+            colors: <Color>[
+              LumeTheme.base.withValues(alpha: 0.55),
+              Colors.transparent,
+            ],
           ),
         ),
         child: SafeArea(
@@ -1076,7 +1082,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                             width: 46,
                             child: Text(
                               '侧边距',
-                              style: TextStyle(fontSize: 12, color: Colors.white70),
+                              style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                             ),
                           ),
                           Expanded(
@@ -1098,7 +1104,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                               textAlign: TextAlign.end,
                               style: const TextStyle(
                                 fontSize: 12,
-                                color: Colors.white70,
+                                color: LumeTheme.textSecondary,
                               ),
                             ),
                           ),
@@ -1108,7 +1114,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                         children: <Widget>[
                           const Text(
                             '双击放大',
-                            style: TextStyle(fontSize: 12, color: Colors.white70),
+                            style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                           ),
                           Switch(
                             value: _settings.doubleTapZoom,
@@ -1130,7 +1136,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                             width: 46,
                             child: Text(
                               '页间距',
-                              style: TextStyle(fontSize: 12, color: Colors.white70),
+                              style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                             ),
                           ),
                           Expanded(
@@ -1151,7 +1157,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                               textAlign: TextAlign.end,
                               style: const TextStyle(
                                 fontSize: 12,
-                                color: Colors.white70,
+                                color: LumeTheme.textSecondary,
                               ),
                             ),
                           ),
@@ -1161,7 +1167,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                         children: <Widget>[
                           const Text(
                             '背景',
-                            style: TextStyle(fontSize: 12, color: Colors.white70),
+                            style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -1195,7 +1201,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                         children: <Widget>[
                           const Text(
                             '点击行为',
-                            style: TextStyle(fontSize: 12, color: Colors.white70),
+                            style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -1227,7 +1233,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                         children: <Widget>[
                           const Text(
                             '翻页方向',
-                            style: TextStyle(fontSize: 12, color: Colors.white70),
+                            style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -1262,7 +1268,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                           children: <Widget>[
                             const Text(
                               '跨页配对',
-                              style: TextStyle(fontSize: 12, color: Colors.white70),
+                              style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -1290,7 +1296,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                             ),
                           ],
                         ),
-                      const Divider(height: 1, color: Colors.white12),
+                      const Divider(height: 1, color: LumeTheme.divider),
                       Row(
                         children: <Widget>[
                           IconButton(
@@ -1307,7 +1313,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                 fontSize: 12,
-                                color: Colors.white,
+                                color: LumeTheme.textPrimary,
                               ),
                             ),
                           ),
@@ -1510,7 +1516,7 @@ class _ComicImageTileState extends State<_ComicImageTile>
   }
 
   Widget _buildPlaceholder() => ColoredBox(
-        color: Colors.white.withValues(alpha: 0.04),
+        color: LumeTheme.fill,
         child: const Center(
           child: SizedBox(
             width: 22,
@@ -1542,7 +1548,7 @@ class _ChapterSheet extends StatelessWidget {
       borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       // Material 承载面板背景：ListTile 的背景与墨水效果需要它。
       child: Material(
-        color: const Color(0xFF12121E),
+        color: LumeTheme.surface,
         child: SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1554,7 +1560,7 @@ class _ChapterSheet extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
               ),
@@ -1573,7 +1579,9 @@ class _ChapterSheet extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 14,
-                          color: current ? Colors.white : LumeTheme.muted,
+                          color: current
+                              ? LumeTheme.textPrimary
+                              : LumeTheme.textSecondary,
                           fontWeight:
                               current ? FontWeight.w600 : FontWeight.w400,
                         ),
@@ -1613,8 +1621,14 @@ class _ImageActionSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               ListTile(
-                leading: const Icon(Icons.download, color: Colors.white70),
-                title: const Text('保存图片', style: TextStyle(color: Colors.white)),
+                leading: const Icon(
+                  Icons.download,
+                  color: LumeTheme.textSecondary,
+                ),
+                title: const Text(
+                  '保存图片',
+                  style: TextStyle(color: LumeTheme.textPrimary),
+                ),
                 subtitle: const Text(
                   '存到本板块的导出目录（不写入系统相册）',
                   style: TextStyle(fontSize: 12, color: LumeTheme.muted),
@@ -1622,8 +1636,14 @@ class _ImageActionSheet extends StatelessWidget {
                 onTap: () => Navigator.of(context).pop(_ImageAction.save),
               ),
               ListTile(
-                leading: const Icon(Icons.link, color: Colors.white70),
-                title: const Text('复制图片地址', style: TextStyle(color: Colors.white)),
+                leading: const Icon(
+                  Icons.link,
+                  color: LumeTheme.textSecondary,
+                ),
+                title: const Text(
+                  '复制图片地址',
+                  style: TextStyle(color: LumeTheme.textPrimary),
+                ),
                 subtitle: const Text(
                   '粘到任意 App 都能用',
                   style: TextStyle(fontSize: 12, color: LumeTheme.muted),
@@ -1664,7 +1684,7 @@ class _BookmarkSheetState extends State<_BookmarkSheet> {
       borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       // Material 承载面板背景：ListTile 的背景与墨水效果需要它。
       child: Material(
-        color: const Color(0xFF12121E),
+        color: LumeTheme.surface,
         child: SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1676,7 +1696,7 @@ class _BookmarkSheetState extends State<_BookmarkSheet> {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
               ),
@@ -1704,7 +1724,7 @@ class _BookmarkSheetState extends State<_BookmarkSheet> {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 14,
-                            color: Colors.white,
+                            color: LumeTheme.textPrimary,
                           ),
                         ),
                         trailing: IconButton(

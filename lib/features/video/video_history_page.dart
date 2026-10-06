@@ -106,6 +106,7 @@ class _VideoHistoryPageState extends State<VideoHistoryPage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
+      behindBar: true,
       title: '${Section.video.label} · 播放历史',
       actions: <Widget>[
         if (_entries.isNotEmpty)
@@ -127,7 +128,7 @@ class _VideoHistoryPageState extends State<VideoHistoryPage> {
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
+      padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
       itemCount: _entries.length,
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
@@ -184,7 +185,7 @@ class _HistoryTile extends StatelessWidget {
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: LumeTheme.textPrimary,
                         ),
                       ),
                     ),
@@ -224,9 +225,9 @@ class _HistoryTile extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: progress.ratio,
                     minHeight: 3,
-                    backgroundColor: Colors.white24,
+                    backgroundColor: LumeTheme.fillStrong,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      finished ? LumeTheme.muted : Colors.white,
+                      finished ? LumeTheme.muted : LumeTheme.textPrimary,
                     ),
                   ),
                 ),

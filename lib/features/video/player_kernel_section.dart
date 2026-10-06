@@ -111,7 +111,7 @@ class _PlayerKernelSectionState extends State<PlayerKernelSection> {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: LumeTheme.textPrimary,
                 ),
               ),
               SizedBox(height: 4),

@@ -384,6 +384,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
+      behindBar: true,
       title: '源总管理',
       actions: <Widget>[
         if (_runtimeAvailable && !_loading)
@@ -436,6 +437,8 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
         _filter == null ? Section.values : <Section>[_filter!];
     return Column(
       children: <Widget>[
+        // 筛选条不是滚动视图，自己让出玻璃顶栏的高度。
+        SizedBox(height: GlassScaffold.barHeight(context)),
         _buildFilterBar(),
         Expanded(
           child: ListView(
@@ -494,7 +497,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: LumeTheme.textPrimary,
                 ),
               ),
             ),
@@ -531,7 +534,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
 }
 
 /// 停用标记的颜色：与板块管理页同色系，避免新造主题项。
-const Color _disabledColor = Color(0xFFFF8A80);
+const Color _disabledColor = LumeTheme.danger;
 
 /// 分组内的一行说明（空板块 / 存储故障）。
 class _SectionNote extends StatelessWidget {
@@ -593,7 +596,7 @@ class _SourceTile extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -622,7 +625,7 @@ class _SourceTile extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           color: testResult!.isOk
-                              ? const Color(0xFF81C784)
+                              ? LumeTheme.success
                               : _disabledColor,
                         ),
                       ),

@@ -278,7 +278,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
+      appBar: GlassAppBar(
         title: Text(
           _detail?.title ?? widget.target.title,
           maxLines: 1,
@@ -352,7 +352,13 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
       children: <Widget>[
         Positioned.fill(child: _buildGlow()),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, kToolbarHeight + 44, 16, 8),
+          // 让出玻璃顶部栏（状态栏 + 工具栏）：顶栏是半透明的，内容不能压到它下面。
+          padding: EdgeInsets.fromLTRB(
+            16,
+            MediaQuery.paddingOf(context).top + kToolbarHeight + 12,
+            16,
+            8,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -380,7 +386,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                            color: LumeTheme.textPrimary,
                           ),
                         ),
                         if ((detail?.subtitle ?? widget.target.subtitle) != null)
@@ -411,7 +417,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                               '读至 ${progress.describe()}',
                               style: const TextStyle(
                                 fontSize: 12,
-                                color: Colors.white,
+                                color: LumeTheme.textPrimary,
                               ),
                             ),
                           ),
@@ -445,19 +451,26 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
   }
 
   /// 模糊背景：封面放大模糊 + 向页面底色渐隐，做出「大图模糊背景」层次。
+  ///
+  /// 浅色主题下这里是**浅色晕染**而不是深色压图：封面以低透明度铺一层，
+  /// 再压一层白到页面底色的渐变——顶部透出作品色调，往下融进页面底色。
+  /// 标题与元信息因此可以用深色文字，不必靠深色遮罩保可读性。
   Widget _buildGlow() {
     final cover = _detail?.cover ?? widget.target.cover;
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
         if (cover != null && cover.isNotEmpty)
-          ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-            child: SectionImage(
-              pipeline: _pipeline,
-              url: cover,
-              targetWidth: 200,
-              fit: BoxFit.cover,
+          Opacity(
+            opacity: 0.34,
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+              child: SectionImage(
+                pipeline: _pipeline,
+                url: cover,
+                targetWidth: 200,
+                fit: BoxFit.cover,
+              ),
             ),
           ),
         const DecoratedBox(
@@ -466,9 +479,9 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: <Color>[
-                Color(0xAA000000),
-                Color(0x44000000),
-                Color(0xFF0B0B12),
+                Color(0x99FFFFFF),
+                Color(0x59FFFFFF),
+                Color(0x00FFFFFF),
               ],
             ),
           ),
@@ -490,7 +503,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
           style: const TextStyle(
             fontSize: 13,
             height: 1.6,
-            color: Colors.white70,
+            color: LumeTheme.textSecondary,
           ),
         ),
       ),
@@ -509,7 +522,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: LumeTheme.textPrimary,
             ),
           ),
           const Spacer(),
@@ -593,63 +606,72 @@ class _DownloadScopeSheet extends StatelessWidget {
               .length,
         ),
     ];
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-        child: GlassCard(
-          radius: 20,
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              const Text(
-                '批量下载',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                '图片存到应用内的导出目录（按作品 / 章节分目录），'
-                '已下过的图会自动跳过，可随时取消。',
-                style: TextStyle(
-                  fontSize: 12,
-                  height: 1.5,
-                  color: LumeTheme.muted,
-                ),
-              ),
-              const SizedBox(height: 6),
-              for (final (scope, count) in scopes)
-                ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  enabled: count > 0,
-                  onTap: count > 0
-                      ? () => Navigator.of(context).pop(scope)
-                      : null,
-                  title: Text(
-                    scope.label,
-                    style: const TextStyle(fontSize: 14, color: Colors.white),
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      child: Material(
+        color: LumeTheme.surface,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text(
+                  '批量下载',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: LumeTheme.textPrimary,
                   ),
-                  subtitle: Text(
-                    switch (scope) {
-                      ComicDownloadScope.all => '整部作品，共 $count 章',
-                      ComicDownloadScope.unread =>
-                        count == 0 ? '没有未读章节' : '进度之后，共 $count 章',
-                      ComicDownloadScope.current =>
-                        count == 0 ? '暂无可下载章节' : '只下第 ${(readChapterIndex ?? 0) + 1} 章',
-                    },
-                    style: const TextStyle(fontSize: 12, color: LumeTheme.muted),
-                  ),
-                  trailing: count > 0
-                      ? const Icon(Icons.chevron_right, color: LumeTheme.muted)
-                      : null,
                 ),
-            ],
+                const SizedBox(height: 4),
+                const Text(
+                  '图片存到应用内的导出目录（按作品 / 章节分目录），'
+                  '已下过的图会自动跳过，可随时取消。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.5,
+                    color: LumeTheme.muted,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                for (final (scope, count) in scopes)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    enabled: count > 0,
+                    onTap: count > 0
+                        ? () => Navigator.of(context).pop(scope)
+                        : null,
+                    title: Text(
+                      scope.label,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: LumeTheme.textPrimary,
+                      ),
+                    ),
+                    subtitle: Text(
+                      switch (scope) {
+                        ComicDownloadScope.all => '整部作品，共 $count 章',
+                        ComicDownloadScope.unread =>
+                          count == 0 ? '没有未读章节' : '进度之后，共 $count 章',
+                        ComicDownloadScope.current => count == 0
+                            ? '暂无可下载章节'
+                            : '只下第 ${(readChapterIndex ?? 0) + 1} 章',
+                      },
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: LumeTheme.muted,
+                      ),
+                    ),
+                    trailing: count > 0
+                        ? const Icon(Icons.chevron_right, color: LumeTheme.muted)
+                        : null,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -698,7 +720,7 @@ class _DownloadCard extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: LumeTheme.textPrimary,
                   ),
                 ),
               ),
@@ -739,7 +761,7 @@ class _DownloadCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 12,
-                    color: Color(0xFFFF8A80),
+                    color: LumeTheme.danger,
                   ),
                 ),
               ),
@@ -835,7 +857,7 @@ class _ChapterTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 14,
-                  color: current ? Colors.white : LumeTheme.muted,
+                  color: current ? LumeTheme.textPrimary : LumeTheme.muted,
                   fontWeight: current ? FontWeight.w600 : FontWeight.w400,
                 ),
               ),
@@ -845,7 +867,7 @@ class _ChapterTile extends StatelessWidget {
                 padding: EdgeInsets.only(left: 6),
                 child: Text(
                   '在读',
-                  style: TextStyle(fontSize: 11, color: Colors.white),
+                  style: TextStyle(fontSize: 11, color: LumeTheme.textPrimary),
                 ),
               )
             else if (read)
