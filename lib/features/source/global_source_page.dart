@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
-import 'package:flutter/services.dart' show rootBundle;
 
+import '../../core/net/source_subscription.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
@@ -10,6 +10,8 @@ import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
 import 'browse_page.dart';
+import 'source_import_dialog.dart';
+import 'source_import_flow.dart';
 
 /// 全局图源总管理页：一个页面汇总四个板块的图源，逐个板块执行管理操作。
 ///
@@ -25,10 +27,21 @@ import 'browse_page.dart';
 /// 板块的库、不创建任何沙箱。生命周期：退出时逐个 `close()` 四个板块的管理器，
 /// 释放各自的 JSContext、HTTP 客户端与数据库连接。
 class GlobalSourcePage extends StatefulWidget {
-  const GlobalSourcePage({super.key, this.managerFactory});
+  const GlobalSourcePage({
+    super.key,
+    this.managerFactory,
+    this.readLocalScripts,
+    this.fetchSubscription,
+  });
 
   /// 板块级管理端口工厂：一个板块一个实例。为空时使用 `LumeSources.manager`。
   final SourceManager Function(Section section)? managerFactory;
+
+  /// 本地文件读取端口（测试注入）；为空时弹系统文件选择器（可多选）。
+  final Future<List<({String name, String text})>> Function()? readLocalScripts;
+
+  /// 订阅拉取端口（测试注入）；为空时经宿主网络层拉取。
+  final Future<SourceFetchResult> Function(String url)? fetchSubscription;
 
   @override
   State<GlobalSourcePage> createState() => _GlobalSourcePageState();
@@ -123,39 +136,31 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
         (sum, section) => sum + _enabledCount(section),
       );
 
-  /// 导入：先选目标板块，再粘贴脚本；只写所选板块的库。
+  /// 导入：先选目标板块，再走「本地文件 / 订阅链接 / 剪贴板」三条通道之一；
+  /// 只写所选板块的库（与板块页共用同一个弹窗与同一套覆盖确认）。
   Future<void> _import({Section? target}) async {
-    final request = await showDialog<_ImportRequest>(
+    final request = await showDialog<SourceImportRequest>(
       context: context,
-      builder: (_) => _ImportDialog(
+      builder: (_) => SourceImportDialog(
+        sections: Section.values,
         initialSection: target ?? _filter ?? Section.novel,
+        readLocalScripts: widget.readLocalScripts,
+        fetchSubscription: widget.fetchSubscription,
       ),
     );
     if (request == null || !mounted) return;
-    if (request.script.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('脚本内容为空')),
-      );
-      return;
-    }
 
     final section = request.section;
-    final existing = <String>{
-      for (final source in _listOf(section)) source.id,
-    };
-    final result = await _managers[section]!.importScript(request.script);
-    if (!mounted) return;
-
-    final descriptor = result.descriptor;
-    final message = descriptor == null
-        ? '导入失败：${result.message}'
-        : existing.contains(descriptor.id)
-            ? '已更新：${descriptor.name}（${section.label}）'
-            : '已导入：${descriptor.name}（${section.label}）';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+    final imported = await importSources(
+      context,
+      manager: _managers[section]!,
+      items: request.items,
+      skipped: request.skipped,
+      notes: request.notes,
+      sectionLabel: section.label,
     );
-    if (descriptor != null) await _reloadSection(section);
+    if (!mounted) return;
+    if (imported) await _reloadSection(section);
   }
 
   /// 导出备份：四个板块的全部图源（只含脚本与配置，不含 Cookie / 缓存）。
@@ -649,100 +654,6 @@ class _SourceTile extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// 导入请求：目标板块 + 脚本内容。
-class _ImportRequest {
-  const _ImportRequest({required this.section, required this.script});
-
-  final Section section;
-  final String script;
-}
-
-class _ImportDialog extends StatefulWidget {
-  const _ImportDialog({required this.initialSection});
-
-  final Section initialSection;
-
-  @override
-  State<_ImportDialog> createState() => _ImportDialogState();
-}
-
-class _ImportDialogState extends State<_ImportDialog> {
-  final TextEditingController _controller = TextEditingController();
-  late Section _section = widget.initialSection;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadBuiltin() async {
-    final text = await rootBundle.loadString('assets/js/example_source.js');
-    if (!mounted) return;
-    _controller.text = text;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('导入源'),
-      content: SizedBox(
-        width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              const Text(
-                '目标板块：源只写入所选板块，不会跨板块共用。',
-                style: TextStyle(fontSize: 12, color: LumeTheme.muted),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: <Widget>[
-                  for (final section in Section.values)
-                    ChoiceChip(
-                      label: Text(section.label),
-                      selected: _section == section,
-                      onSelected: (_) => setState(() => _section = section),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _controller,
-                maxLines: 8,
-                decoration: const InputDecoration(
-                  hintText: '粘贴源脚本内容',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: <Widget>[
-        TextButton(
-          onPressed: _loadBuiltin,
-          child: const Text('载入内置示例'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(
-            _ImportRequest(section: _section, script: _controller.text),
-          ),
-          child: const Text('导入'),
-        ),
-      ],
     );
   }
 }

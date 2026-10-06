@@ -85,6 +85,17 @@ class FakeSourceManager implements SourceManager {
   /// 导入时记录的订阅来源（与 imported 一一对应）。
   final List<String> importedOrigins = <String>[];
 
+  /// 导入成功时返回的描述符。
+  ///
+  /// 默认 id 带一个点（`lume.new`）——注意真实解析器的 id 白名单**不允许点**；
+  /// 需要「脚本头部 id 与已有源对上」的用例（覆盖确认）请改成不含点的 id。
+  SourceDescriptor importDescriptor = const SourceDescriptor(
+    id: 'lume.new',
+    name: '新图源',
+    version: '1.0.0',
+    enabled: true,
+  );
+
   @override
   Future<SourceImportResult> importScript(
     String script, {
@@ -94,16 +105,11 @@ class FakeSourceManager implements SourceManager {
     importedOrigins.add(originUrl);
     final failure = importFailure;
     if (failure != null) return SourceImportResult.failure(failure);
-    const descriptor = SourceDescriptor(
-      id: 'lume.new',
-      name: '新图源',
-      version: '1.0.0',
-      enabled: true,
-    );
+    final descriptor = importDescriptor;
     sources
       ..removeWhere((source) => source.id == descriptor.id)
       ..add(descriptor);
-    return const SourceImportResult.success(descriptor);
+    return SourceImportResult.success(descriptor);
   }
 
   @override

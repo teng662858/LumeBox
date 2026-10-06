@@ -7,6 +7,7 @@ import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import 'source_form.dart';
+import 'source_import_flow.dart';
 
 /// 图源可视化编辑器：**表单模式**填写 → 生成规范脚本 → **高级模式**手改 → 导入。
 ///
@@ -100,7 +101,10 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
     });
   }
 
-  /// 导入：走与「+ 添加图源」相同的校验路径。
+  /// 导入：走与「+ 添加源」相同的校验路径。
+  ///
+  /// 覆盖确认与本页其它导入入口同源（[confirmOverwrite]）：表单模式下 id 已知，
+  /// 同 id 已存在时先问一句，取消即零写入。
   Future<void> _import() async {
     final issue = _formMode ? _draft.validate() : null;
     if (issue != null) {
@@ -112,6 +116,16 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
       _error = null;
     });
     try {
+      final existing = await existingSources(_manager);
+      if (!mounted) return;
+      final item = SourceImportItem(script: _script.text, label: '编辑器');
+      final proceed = await confirmOverwrite(
+        context,
+        items: <SourceImportItem>[item],
+        existing: existing,
+      );
+      if (!proceed || !mounted) return;
+
       final result = await _manager.importScript(_script.text);
       if (!mounted) return;
       if (!result.isSuccess) {
@@ -121,7 +135,12 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
       if (!mounted) return;
       final navigator = Navigator.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已导入：${result.descriptor!.name}')),
+        SnackBar(
+          content: Text(
+            '${existing.containsKey(result.descriptor!.id) ? '已覆盖' : '已导入'}：'
+            '${result.descriptor!.name}',
+          ),
+        ),
       );
       navigator.pop(true);
     } catch (error, stackTrace) {

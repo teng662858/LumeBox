@@ -61,12 +61,23 @@ void main() {
     expect(find.text(LumeTheme.appName), findsWidgets);
   });
 
-  testWidgets('空板块：显示空态与导入入口', (tester) async {
-    await pumpPage(tester, FakeSourceManager());
+  testWidgets('空板块：显示空态与导入入口（含空态里的导入按钮）', (tester) async {
+    final manager = FakeSourceManager();
+    await pumpPage(tester, manager);
 
     expect(find.text('暂无源'), findsOneWidget);
-    expect(find.text('点击右上角「+」导入源脚本'), findsOneWidget);
+    expect(find.text('导入后即可在本板块浏览内容'), findsOneWidget);
     expect(find.byTooltip('添加源'), findsOneWidget);
+
+    // 空态直接给「导入源」按钮：新用户第一步的动作应该能点。
+    await tester.tap(find.widgetWithText(FilledButton, '导入源'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget, reason: '打开的是同一个导入弹窗');
+
+    await tester.enterText(find.byType(TextField), 'var LumeSource = {id: "lume.new"};');
+    await tester.tap(find.text('导入'));
+    await tester.pumpAndSettle();
+    expect(manager.imported.single, contains('LumeSource'));
   });
 
   testWidgets('导入：成功后刷新列表并提示已导入', (tester) async {
@@ -80,7 +91,7 @@ void main() {
     expect(find.text('新图源'), findsOneWidget);
   });
 
-  testWidgets('导入：同 id 覆盖时提示已更新', (tester) async {
+  testWidgets('导入：同 id 覆盖时提示已覆盖', (tester) async {
     final manager = FakeSourceManager(
       sources: const <SourceDescriptor>[
         SourceDescriptor(id: 'lume.new', name: '旧名字', version: '1.0.0', enabled: true),
@@ -90,7 +101,7 @@ void main() {
 
     await importScript(tester, 'var LumeSource = {id: "lume.new"};');
 
-    expect(find.text('已更新：新图源'), findsOneWidget);
+    expect(find.text('已覆盖：新图源'), findsOneWidget);
   });
 
   testWidgets('导入失败：提示具体原因，列表不变', (tester) async {
@@ -100,7 +111,13 @@ void main() {
 
     await importScript(tester, 'var LumeSource = (');
 
-    expect(find.text('导入失败：脚本载入失败：语法错误或运行异常'), findsOneWidget);
+    // 失败走结果弹窗：逐条列出、可复制，比一闪而过的 Toast 好读。
+    expect(
+      find.text('导入失败：粘贴 — 脚本载入失败：语法错误或运行异常'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
     expect(find.text('暂无源'), findsOneWidget);
   });
 

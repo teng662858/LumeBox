@@ -14,6 +14,7 @@ import '../cat/cat_engine_settings_page.dart';
 import 'add_source_button.dart';
 import 'browse_page.dart';
 import 'source_editor_page.dart';
+import 'source_import_dialog.dart';
 
 /// 板块页面：图源管理 + 浏览入口。
 ///
@@ -23,12 +24,22 @@ import 'source_editor_page.dart';
 ///
 /// 隔离：一个页面绑定一个板块、持有一个管理器，本页不提供任何跨板块操作。
 class SourceSectionPage extends StatefulWidget {
-  const SourceSectionPage({super.key, required this.section, this.manager});
+  const SourceSectionPage({
+    super.key,
+    required this.section,
+    this.manager,
+    this.readLocalScripts,
+    this.fetchSubscription,
+  });
 
   final Section section;
 
-  /// 图源管理端口。为空时使用 [LumeSources.manager] 的正式实现。
+  /// 源管理端口。为空时使用 [LumeSources.manager] 的正式实现。
   final SourceManager? manager;
+
+  /// 本地文件 / 订阅拉取端口，透传给导入弹窗（测试注入用）。
+  final Future<List<({String name, String text})>> Function()? readLocalScripts;
+  final Future<SourceFetchResult> Function(String url)? fetchSubscription;
 
   @override
   State<SourceSectionPage> createState() => _SourceSectionPageState();
@@ -152,6 +163,18 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
       ),
     );
     if (imported == true && mounted) await _reload();
+  }
+
+  /// 空态里的「导入源」：与右上角「+」同一个弹窗、同一套导入编排。
+  Future<void> _import() async {
+    final imported = await runSourceImport(
+      context,
+      section: widget.section,
+      manager: _manager,
+      readLocalScripts: widget.readLocalScripts,
+      fetchSubscription: widget.fetchSubscription,
+    );
+    if (imported && mounted) await _reload();
   }
 
   /// 更新订阅源：从来源地址重新拉取并覆盖。
@@ -422,11 +445,13 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
             icon: const Icon(Icons.memory_outlined),
             onPressed: _manageEngine,
           ),
-        // 右上角统一的「+」添加图源：本地文件 / 订阅链接，只写本板块。
+        // 右上角统一的「+」添加源：本地文件 / 订阅链接 / 剪贴板，只写本板块。
         AddSourceButton(
           section: widget.section,
           manager: _manager,
           onImported: _reload,
+          readLocalScripts: widget.readLocalScripts,
+          fetchSubscription: widget.fetchSubscription,
         ),
       ],
       child: sources == null
@@ -442,9 +467,15 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
 
   Widget _buildSources(List<SourceDescriptor> sources) {
     if (sources.isEmpty) {
-      return const NoticeCard(
+      // 空态直接给按钮：新用户第一步的动作应该能点，而不是先去解读「右上角的 +」。
+      return NoticeCard(
         title: '暂无源',
-        subtitle: '点击右上角「+」导入源脚本',
+        subtitle: '导入后即可在本板块浏览内容',
+        action: FilledButton.icon(
+          onPressed: _import,
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('导入源'),
+        ),
       );
     }
     return ListView.separated(
