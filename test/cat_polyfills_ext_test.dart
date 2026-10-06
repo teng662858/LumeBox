@@ -658,8 +658,14 @@ void main() {
         final message = await evalValue(sandbox, errorProbe("require('$name')"));
         expect(message, contains('LUME_UNSUPPORTED'), reason: '$name 应当被拒绝');
       }
+      // net / tls / http2 这类归到「自建服务端」那一类：文案要说清「为什么
+      // 补上模块也跑不起来」（需要端口与进程），而不是只报「没内置」。
       expect(
         await evalValue(sandbox, errorProbe("require('node:net')")),
+        allOf(contains('自建服务端'), contains('补上这个模块也跑不起来')),
+      );
+      expect(
+        await evalValue(sandbox, errorProbe("require('node:dns')")),
         contains('沙箱不提供进程、线程与底层网络'),
       );
       expect(

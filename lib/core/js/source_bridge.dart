@@ -180,6 +180,18 @@ class LumeSourceBridgePolyfill implements SandboxPolyfill {
     return null;
   }
 
+  // 是否提供某个契约方法（按别名表判定，不产生任何调用副作用）。
+  // 导入路径用它回答一个基本问题：这份脚本到底是不是本 App 的图源
+  // ——见 LumeJsEngine.contractMethods。
+  globalThis.__lumeContractMethods = function () {
+    var found = [];
+    var names = Object.keys(aliases);
+    for (var i = 0; i < names.length; i++) {
+      if (locate(namesOf(names[i]), names[i])) found.push(names[i]);
+    }
+    return found;
+  };
+
   // 函数式契约的位置参数：getList(page) / getDetail(id) / getContent(id, chapterId)…
   function positionalArgs(name, argument) {
     var settings = (argument && typeof argument === 'object') ? argument : {};

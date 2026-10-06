@@ -315,6 +315,10 @@ class _FakeEngine implements SourceEngine {
   @override
   String? get loadFailure => null;
 
+  /// 替身不参与「是不是源脚本」的判定（null = 无法判定）。
+  @override
+  Future<Set<String>?> contractMethods() async => null;
+
   @override
   Future<Map<String, Object?>?> metadata() async => null;
 

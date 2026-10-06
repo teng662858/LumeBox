@@ -94,10 +94,21 @@ class CatUnsupportedGuardPolyfill implements SandboxPolyfill {
     if (/\.wasm$/i.test(id) || /(^|[\/_\-])wasm($|[\/_\-])/i.test(id)) {
       return unsupported(id, '沙箱不提供 WebAssembly');
     }
-    if (/^(node:)?(net|tls|dns|child_process|worker_threads|cluster|vm|diagnostics_channel|async_hooks|perf_hooks|v8)(\/|$)/i.test(id)) {
-      return unsupported(id, '沙箱不提供进程、线程与底层网络：网络请求走 fetch（宿主桥接层）');
+    // 服务端 / 子进程类模块单独归一类：用户导入的「自建服务端程序」几乎都从
+    // 这里被拦下，文案要一眼说清「为什么不行」，而不是只报「没内置这个模块」
+    // ——后者会让人以为是沙箱少装了个东西、补上就能跑。
+    if (/^(node:)?(net|tls|dgram|http2|child_process|worker_threads|cluster)(\/|$)/i.test(id)) {
+      return unsupported(id, '这类模块用于「自建服务端 / 子进程程序」：需要在本机监听端口或起进程，'
+        + '本 App（iOS 沙箱）不提供端口、进程与线程，补上这个模块也跑不起来。'
+        + '抓接口的图源脚本不需要它们——网络请求走 fetch / LumeSource.http（宿主桥接层），'
+        + '由 App 代替脚本发出');
     }
-    if (/^(node:)?(zlib|readline|repl|inspector|http2|dgram|v8)(\/|$)/i.test(id)) {
+    if (/^(node:)?(dns|vm|v8|diagnostics_channel|async_hooks|perf_hooks|repl|inspector)(\/|$)/i.test(id)) {
+      return unsupported(id, '沙箱不提供进程、线程与底层网络（域名解析也不开放）：'
+        + '网络请求走 fetch / LumeSource.http（宿主桥接层），由 App 解析域名并发出去。'
+        + '这类模块常见于「自建服务端 / 别的客户端的扩展程序包」，抓接口的图源脚本用不到它们');
+    }
+    if (/^(node:)?(zlib|readline)(\/|$)/i.test(id)) {
       return unsupported(id, '沙箱暂未内置该模块（已内置：buffer / process / console / timers / crypto / events / path / util / assert / stream / http / https / fs（内存盘）/ os / url / timers/promises）');
     }
     return unsupported(id, '可用内建模块：buffer / process / console / timers / crypto / events / path / util / assert / stream / http / https / fs（内存盘）/ os / url / timers/promises');

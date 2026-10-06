@@ -52,6 +52,13 @@ abstract interface class SourceEngine {
   /// 脚本载入。失败返回 false。
   Future<bool> loadScript(String script);
 
+  /// 脚本实际提供的契约方法（按别名表判定）；**null 表示该引擎无法判定**。
+  ///
+  /// 导入路径用它回答「这份脚本到底是不是本 App 的图源」：返回空集合即判定为
+  /// 非源脚本（例如别的客户端的扩展程序包）。无法判定的引擎（返回 null）
+  /// 不参与该判定，避免把「探不了」当成「没有」。
+  Future<Set<String>?> contractMethods();
+
   /// 最近一次 [loadScript] 失败的原因（可读文本）；成功时为 null。
   ///
   /// 引擎侧给出的具体原因（哪个模块沙箱不支持、语法错在哪儿、加载超时）经这里
@@ -194,6 +201,9 @@ class QuickJsSourceEngine implements SourceEngine {
   String get id => CatEngineKind.quickjs.id;
 
   @override
+  Future<Set<String>?> contractMethods() => engine.contractMethods();
+
+  @override
   Future<bool> loadScript(String script) => engine.loadScript(script);
 
   @override
@@ -225,6 +235,11 @@ class NodeMobileSourceEngine implements SourceEngine {
 
   @override
   String? get loadFailure => engine.loadFailure;
+
+  /// Node-Mobile 侧还没有等价的契约探测：返回 null 表示「无法判定」，
+  /// 导入路径据此跳过「是不是源脚本」这道门禁（保持该引擎既有行为不变）。
+  @override
+  Future<Set<String>?> contractMethods() async => null;
 
   @override
   Future<Map<String, Object?>?> metadata() => engine.metadata();

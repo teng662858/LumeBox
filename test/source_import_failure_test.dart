@@ -147,9 +147,13 @@ async function getList(page) {
 
   test('连通性测试（真实引擎）：脚本缺 getList → 不可用并点名缺哪个函数', () async {
     final registry = await openRegistry(Section.video);
+    // 注意：脚本要有**至少一个**图源入口才过得去导入守卫（一个都没有的脚本
+    // 会在导入阶段被判为非源脚本，见 import_guard_test）。这里只实现 getCategories，
+    // 于是导入通过、而「缺 list」由连通性测试点名——正是本用例要覆盖的那条诊断。
     final imported = await registry.import('''
 // LumeSource: {"id":"probe-nolist","name":"缺实现的源","version":"1.0.0"}
 var LumeSource = { id: 'probe-nolist', name: '缺实现的源' };
+async function getCategories() { return [{ id: 'c1', title: '分类一' }]; }
 ''');
     expect(imported.isSuccess, isTrue, reason: imported.message ?? '');
 

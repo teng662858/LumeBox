@@ -173,6 +173,16 @@ class SourceRegistry {
         LumeLog.warn('[${section.id}] 脚本载入失败: ${reason ?? '（引擎未给出原因）'}');
         return SourceImportOutcome.failure(describeLoadFailure(reason));
       }
+      // 先确认「这是不是一份图源脚本」：五个契约方法一个都没有，说明它根本不是
+      // 给本 App 用的脚本（典型是别的客户端的扩展程序包：自带本地服务端与自有
+      // 宿主桥，只有它自己的 App 认得）。这一步必须在读元信息之前——这类脚本
+      // 一般也没有 id / name，先报「读不到 id」会把真正的原因盖掉。
+      final provided = await probe.contractMethods();
+      if (provided != null && provided.isEmpty) {
+        LumeLog.warn('[${section.id}] 脚本没有任何图源入口，判定为非源脚本');
+        return SourceImportOutcome.failure(describeNotASourceScript());
+      }
+
       // 元信息：头部声明优先，退回运行时 LumeSource；两者都不合法时给出
       // 点名到字符的失败原因（哪个 id、哪个字符不合规），而不是一句笼统的报错。
       // 两处声明做合并而不是二选一：category 常常只写在运行时对象上，
@@ -223,6 +233,22 @@ class SourceRegistry {
   /// 脚本用到了 socket / 进程 / 端口这类沙箱按设计不提供的能力时，再加一句定向
   /// 说明：Node 服务端程序（`node index.js` 那种自建服务）不是图源脚本，App 里
   /// 跑不了它——省得用户在「导入失败」上反复试。
+  /// 「这不是本 App 的图源脚本」的统一文案。
+  ///
+  /// 触发条件：脚本载入成功，但五个契约方法（getList / getDetail /
+  /// getCategories / getChapters / getContent 或其别名）一个都没有。
+  /// 这类脚本常见于「另一个客户端的扩展程序包」——它们自带本地服务端
+  /// （因此会 require http2 / net 这类模块）并靠自己的宿主桥与宿主通信，
+  /// 本 App 既没有端口也没有那套桥，无法运行。
+  static String describeNotASourceScript() {
+    return '这不是本 App 的图源脚本：脚本里没有任何图源入口'
+        '（getList / getDetail / getCategories / getChapters / getContent 一个都没有）。\n'
+        '它更像是别的客户端的扩展程序包——那种包自带本地服务端、靠它自己的宿主桥通信，'
+        '只有那个 App 能运行它。\n'
+        '本 App 的图源脚本只需要提供 getList / getDetail / getContent 这类函数，'
+        '网络请求用 fetch 或 LumeSource.http（由 App 代为发出）。';
+  }
+
   static String describeLoadFailure(String? reason) {
     final detail = reason?.trim() ?? '';
     if (detail.isEmpty) {

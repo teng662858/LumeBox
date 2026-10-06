@@ -159,6 +159,35 @@ class LumeJsEngine {
     return false;
   }
 
+  /// 脚本实际提供的契约方法（按别名表判定：`getList` 与 `list` 都算 list）。
+  ///
+  /// 导入路径用它回答一个基本问题：**这份脚本到底是不是本 App 的图源**。
+  /// 一份什么都不提供的脚本（例如别的客户端的扩展程序包：自带本地服务端、
+  /// 靠自有宿主桥通信）载入会成功，但用起来是空的——在导入阶段拦下，
+  /// 比导入后点开一片空白好。
+  Future<Set<String>> contractMethods() async {
+    final result = await _sandbox.eval(
+      'JSON.stringify(typeof __lumeContractMethods === "function" '
+      '? __lumeContractMethods() : [])',
+    );
+    final value = result.value;
+    // 沙箱的 eval 已经按 JSON 解码：数组直接就是 List；文本形态留作兜底
+    // （将来若有引擎只回原始文本）。
+    if (value is List) return value.map((item) => '$item').toSet();
+    if (value is String) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is List) return decoded.map((item) => '$item').toSet();
+      } catch (error, stackTrace) {
+        LumeLog.error(error, stackTrace);
+      }
+    }
+    if (!result.isOk) {
+      LumeLog.warn('[$sourceId] 契约方法探测失败: ${result.error?.message ?? '未知原因'}');
+    }
+    return const <String>{};
+  }
+
   /// 读取脚本声明的元信息（id / name / version / category），失败返回 null。
   ///
   /// `category` 是脚本自报的归属板块（可选）：导入路径据此拒绝跨板块图源。

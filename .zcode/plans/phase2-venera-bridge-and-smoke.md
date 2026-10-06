@@ -142,3 +142,46 @@ class Komiic extends ComicSource {
   937 例基线无回归，其中 `source_bridge_test` 的注入顺序断言按新组成更新）。
 - 真机仍有待确认的一条：切 MPV 是否还会转圈（页面状态机已保证有出口，
   若再遇到，日志里会有 `[player]` 的初始化耗时 / 失败记录可定位）。
+
+---
+
+## 六、追加：用户实测的两份猫源订阅为什么跑不起来（已定性）
+
+用户实测导入报「猫源沙箱不支持「http2」」后，把两份订阅拉到本机做了完整核查
+（`.js.md5` 与脚本实体都下载并**逐字节校验过 MD5**——订阅 + MD5 这条链路本身是通的）：
+
+| 订阅 | 文件 | 大小 | 载入失败点 | 定性 |
+|---|---|---|---|---|
+| `catpaw.douer.me/index.js.md5` | index.js | 6.0 MB | `require('http2')` | **不是图源脚本** |
+| `9280.kstore.vip/cat/index.js.md5` | index.js | 6.5 MB | `require('dns')` | 同上 |
+
+判定依据（可复核）：
+
+1. **没有任何图源入口**：两套契约名全表扫描，`home / homeVod / category / detail /
+   play / search / getList / getSearch / getDetail / getChapters / getContent /
+   getCategories` 命中数**全为 0**；
+2. **是「另一个客户端的扩展程序包」**：暴露 `globalThis.messageToDart`（×23，
+   那是猫爪 App 自己的宿主桥）、`websiteBundle` / `danmuBundle`（自带前端与弹幕
+   前端，以字符串形式内嵌）、`Pans` / `__catpawEmbyRuntime`（自带网盘与 Emby 运行时）；
+3. **自带本地服务端**：`http2.createSecureServer` / `createServer` + `.listen(...)`、
+   内置 fastify（`FSTDEP011 variadic listen…` 这类 fastify 文案），运行时服务
+   监听 `127.0.0.1:5321`（`/proxy` 播放代理）与 `127.0.0.1:9978`（弹幕 action）。
+
+结论：这类包需要**它自己的 App**（宿主桥 + 端口 + 进程）才能运行，iOS 沙箱里
+既没有端口也没有那套桥——**补上 `http2` 模块也跑不起来**，不是垫片缺口。
+
+### 本轮为此做的两件事
+
+1. **拒绝文案点名到「为什么」**：服务端/子进程类模块（net / tls / dgram / http2 /
+   child_process / worker_threads / cluster）单独归一类，文案写明「用于自建服务端
+   或子进程程序，需要端口与进程，补上这个模块也跑不起来；抓接口的图源脚本用
+   fetch / LumeSource.http 即可」。实测对两份真实文件分别给出
+   `http2` / `dns` 的上述解释（各约 1 秒返回，不再拖到解析 6MB 之后）。
+2. **导入前置守卫：脚本必须有图源入口**（`__lumeContractMethods` 探针 + 注册表门禁）：
+   五个契约方法一个都没有的脚本，在导入阶段就判为「这不是本 App 的图源脚本」，
+   并说明它像什么（别的客户端的扩展程序包）、本 App 的源脚本该怎么写。
+   门禁对「只实现一个入口」的脚本**不误伤**（有测试钉住）；
+   Node-Mobile 引擎探不了 → 返回 null，不做门禁（保持该引擎既有行为）。
+
+样例脚本 `assets/test_sources/foreign_client_bundle.js` 是上述真实包的最小复刻
+（require http2 + 自带前端/宿主桥 + 零图源入口），两条守卫都有用例覆盖。

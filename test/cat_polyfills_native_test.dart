@@ -235,9 +235,14 @@ void main() {
           '''))! as String;
 
       // 底层网络与进程能力依旧被拒绝（没有真实 socket / 子进程）。
+      // net / tls / http2 归「自建服务端」一类：文案要说明补模块也跑不起来。
       final net = await requireError('node:net');
       expect(net, contains('LUME_UNSUPPORTED'));
-      expect(net, contains('沙箱不提供进程、线程与底层网络'), reason: '要指向宿主桥接层');
+      expect(net, contains('自建服务端'), reason: '要点明这类模块的真实用途');
+      expect(net, contains('补上这个模块也跑不起来'), reason: '否掉「加垫片就行」的预期');
+
+      final dns = await requireError('node:dns');
+      expect(dns, contains('沙箱不提供进程、线程与底层网络'), reason: '要指向宿主桥接层');
 
       final tls = await requireError('tls');
       expect(tls, contains('LUME_UNSUPPORTED'));

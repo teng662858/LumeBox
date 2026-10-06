@@ -158,6 +158,18 @@
 - [ ] Mihon / Venera 扩展仓库的批量安装（另一条导入链路 `comic_repo_service.dart`，
       本轮只动「添加源」这条，未一并改）。
 
+### 猫源「自建服务端程序」类脚本：定位与出路（本轮已定性，不做运行支持）
+- 定性（2026-10 实测）：`catpaw` / `kstore` 这类订阅里的 6MB 包**不是图源脚本**，
+  是别的客户端的扩展程序包（零图源入口、自带网站与弹幕前端、本地 HTTP/2 服务端、
+  自有宿主桥 messageToDart）。iOS 无端口无进程，**补垫片也跑不起来**——
+  本轮已把这一点写进导入提示（见 CHANGELOG）。
+- 出路（按优先级）：
+  1. 用直接抓接口的源脚本（getList / getDetail / getContent + fetch）；
+  2. 若这类包对外提供 HTTP API：在电脑 / NAS 上跑它，App 侧写一个**薄壳源脚本**
+     经 `LumeSource.http` 转发（deferred-todo 里「自建聚合服务类猫源」那条）；
+  3. 仅当确有「只依赖 dns 解析」的猫源脚本时，再考虑加 dns 垫片
+     （InternetAddress.lookup）——本轮未加，因为已定性的两份都不是这种情况。
+
 ### Venera 兼容层的未接入项（有真实需求再补）
 - [ ] `Convert.sha1/sha256/sha512/hmac`（需要把摘要实现从猫源垫片里抽成共享件，
       或由宿主再实现一份；当前只接了 md5，其余调用即报「尚未接入」）
