@@ -278,28 +278,52 @@
 
 ---
 
-## 视频播放启动慢（真机反馈，待处理）
+## 视频播放启动慢（真机反馈）——**第 6 批唯一未完成项**
 
-> 现象：同一个视频源，电脑上立刻能播；iPhone 上「拿到播放地址之后」要等 1–2 分钟才出画面。
-> 已确认**不是解析慢**（地址已经拿到了），瓶颈在 iOS 本地播放器的**缓冲启动**。
+现象：同一个视频源，电脑上立刻能播；iPhone 上「**拿到播放地址之后**」要等 1–2 分钟才出画面。
+第 6 批的其余三项（沙箱 HTTP 并发、超时阈值、图片下载重试与并发）已在本轮完成，
+**只剩这一项**。
 
-待查四件事（用户点名）：
+### 已经查过的（本机可查的部分，结论：Dart 侧没有多余预检）
 
-1. **多余预加载 / 多余重定向校验**：检查拿到 URL 后到真正喂给播放器之间是否存在
-   多余的 HEAD/GET 预检（本项目的网络层与播放页都可能各做一次）。
-2. **AVPlayer 初始化参数与缓冲策略**：`AVPlayerItem` 的
-   `preferredForwardBufferDuration`、`automaticallyWaitsToMinimizeStalling`、
-   `AVURLAsset` 的选项（`AVURLAssetPreferPreciseDurationAndTimingKey` 等）
-   —— 目标是**降低最小启动缓冲**，让它尽早出画面。
-3. **重定向跟随**：部分视频 URL 有 301/302，当前处理链路效率低（可能每条分片都
-   重新走一次跳转）。应在解析后先跟到最终地址再交给播放器。
-4. **请求重试**：对首包/分片做简单重试。
+逐段看过起播链路，**没有发现**「多余预加载」或「多余重定向校验」：
 
-落点（待确认后动手）：
-- 播放器侧：`lib/core/player/av_player.dart`（video_player / AVPlayer 路径）与
-  `lib/features/video/video_page.dart` 的起播链路；
-- 网络侧：`lib/core/net/lume_http.dart` / `network_queue.dart`（重定向与重试都在这里）；
-- **验收口径**：同源同集，从点播到出画面的时间；与电脑端对照。
+- `video_page.dart` 的 `_startPlayback` → `_loadMedia`：后者只有一句 `player.load(media)`
+  —— 没有预检请求、没有 HEAD 探测；
+- 进度落盘 `_saveProgress` 是**同步**调用且自带节流（位置没动/误差 2 秒内直接返回），
+  不在 `await` 链上，不构成阻塞；
+- 网络层 `lume_http.dart` / `network_queue.dart` **没有**关掉重定向跟随
+  （`http.Client` 默认跟随，最多 5 跳），也没有额外的一次性预校验请求。
+
+### 因此把问题指向下面两条（都需要在真机上取证据或动原生侧）
+
+**A. 最可能：播放地址带防盗链，而 AVPlayer 路径递不过请求头**
+- `PlayerMedia` 有 `headers` 字段；**MPV 路径确实递下去了**
+  （`media_kit_mpv_engine` 的 `Media(url, httpHeaders: ...)`），
+  但 **AVPlayer（`video_player`）与 MDK 没有**（MDK 侧还留了一条「该媒体带了自定义
+  请求头，当前内核暂不透传」的日志）。
+- 若 CDN 要求 Referer/UA（本项目的 gztv5 源就是这种情况），AVPlayer 发出的请求会被
+  拒（403），随后网络队列按 429/503 退避重试——**累积起来正好是「等一两分钟」的量级**，
+  而且「电脑上立刻能播」完全吻合（浏览器自带 Referer/UA）。
+- **取证方法（真机，10 分钟）**：设置 → 调试面板 → 打开开发者模式 + 请求抓包，
+  点播一集，看**播放地址那条请求的状态码与耗时**；若看到 403/503 + 多次重试，
+  本条即坐实。
+
+**B. 次可能：AVPlayer 的缓冲启动参数**
+- `video_player` 的 `VideoPlayerOptions` 只暴露 `mixWithOthers` /
+  `allowBackgroundPlayback`，**没有** `preferredForwardBufferDuration`、
+  `automaticallyWaitsToMinimizeStalling` 这类参数。
+- 要调它们得走原生通道（本项目已有成套先例：`lumebox/pip`、`lumebox/speech`、
+  `lumebox/brightness`），即：Swift 侧 `AVPlayerItem` 配置 + Dart 侧一个小通道。
+- 这类参数能改善「起播要等缓冲」，但**不会**把 1–2 分钟变成 1 秒——所以先排除 A。
+
+### 落地顺序建议
+
+1. 真机抓包确认 A（若成立：给 AVPlayer / MDK 路径补请求头，或对这类地址改走
+   MPV 内核——这是最快见效的一条）；
+2. 再按 B 加原生缓冲参数（顺带给 MDK/AVPlayer 补「逐媒体请求头」通道）；
+3. 验收口径：同源同集，从「点条目」到「出画面」的秒数，与电脑端对照；
+   改动前后各记一次。
 
 ---
 
