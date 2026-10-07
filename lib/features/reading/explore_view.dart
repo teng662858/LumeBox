@@ -1163,10 +1163,17 @@ class _PosterTile extends StatelessWidget {
             item.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
+            // 压在封面底部的深色遮罩上：**一律白字 + 加粗 + 浅描边**。
+            // 原来用的是 LumeTheme.textPrimary——浅色主题下那是深色文字，
+            // 压在深色遮罩上几乎看不见（真机反馈「标题看着很淡」）。
+            style: const TextStyle(
+              fontSize: 12.5,
               height: 1.25,
-              color: LumeTheme.textPrimary,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              shadows: <Shadow>[
+                Shadow(color: Color(0xB3000000), blurRadius: 4),
+              ],
             ),
           ),
           if (meta != null) ...<Widget>[
@@ -1175,7 +1182,11 @@ class _PosterTile extends StatelessWidget {
               meta,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 10, color: LumeTheme.muted),
+              // 副信息同压深色遮罩：白字降透明度做层级（不再用主题辅助色）。
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.white.withValues(alpha: 0.72),
+              ),
             ),
           ],
         ],

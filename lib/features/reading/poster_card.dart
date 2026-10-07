@@ -57,14 +57,22 @@ class PosterCard extends StatelessWidget {
                 bottom: 0,
                 child: DecoratedBox(
                   decoration: const BoxDecoration(
+                    // 真机反馈「卡片底部标题看不清」：原来的遮罩又短又浅
+                    //（0xCC），浅色封面上压不住文字。这里把暗色区拉长、加深，
+                    // 并在中段补一档，标题那两行始终落在**深底**上。
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: <Color>[Colors.transparent, Color(0xCC000000)],
+                      stops: <double>[0.0, 0.45, 1.0],
+                      colors: <Color>[
+                        Colors.transparent,
+                        Color(0x8A000000),
+                        Color(0xE6000000),
+                      ],
                     ),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 14, 8, 6),
+                    padding: const EdgeInsets.fromLTRB(8, 22, 8, 7),
                     child: footnote,
                   ),
                 ),

@@ -165,6 +165,49 @@ void main() {
     await tester.pumpAndSettle();
     expect(changed, isNull);
   });
+
+  testWidgets('播放器设置页能滚到底：「硬件解码」拉得上来（真机反馈）', (tester) async {
+    // 真机现象：全局设置 → 播放器设置，下面几节「拉不上来」。
+    // 根因是内嵌面板用了内层 ListView，把滚动手势自己吃掉；现在内嵌时返回
+    // Column，滚动交给页面外层那唯一的滚动视图。
+    await tester.binding.setSurfaceSize(const Size(390, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        home: PlayerSettingsPage(
+          settings: const PlayerSettings(),
+          onChanged: (_) {},
+          catalog: const _FakeCatalog(<PlayerKernel>{PlayerKernel.avplayer}),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 页面里应当只有**一个**滚动视图（内嵌面板不再自带 ListView）。
+    expect(find.byType(ListView), findsOneWidget);
+    final section = find.text('硬件解码');
+    expect(
+      tester.getTopLeft(section).dy,
+      greaterThan(700),
+      reason: '首屏这一节在屏幕外（这正是用户「拉不上来」的那一段）',
+    );
+
+    // 往上拖：页面**真的能滚**（内层不再吃手势），那一节随之上移。
+    final before = tester.getTopLeft(section).dy;
+    var after = before;
+    for (var i = 0; i < 4; i++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -300));
+      await tester.pumpAndSettle();
+      after = tester.getTopLeft(section).dy;
+      if (after < 700) break;
+    }
+    expect(
+      after,
+      lessThan(before - 400),
+      reason: '往上拖要能带动页面（真机上是「拉不上来」，一点都滚不动）',
+    );
+  });
 }
 
 class _FakeCatalog implements PlayerKernelCatalog {

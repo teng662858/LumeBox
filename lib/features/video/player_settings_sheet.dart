@@ -175,10 +175,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final list = ListView(
-      shrinkWrap: true,
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      children: <Widget>[
+    final children = <Widget>[
                       _section(
                         '播放内核',
                         '三套内核运行时可切换（各有独立解码链）；'
@@ -241,11 +238,29 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                       const SizedBox(height: 20),
                       _section('解码', '硬件解码（部分设备硬解 HEVC 花屏时可切软解）'),
                       _decodingCard(context),
-      ],
-    );
+    ];
 
-    // 内嵌模式（全局设置页）：只管内容，外壳由外层给。
-    if (widget.embedded) return list;
+    // 内嵌模式（全局设置页）：**返回 Column 而不是 ListView**。
+    //
+    // 真机反馈「全局设置 → 播放器设置，下面的功能拉不上来」：内层再放一个
+    // ListView（即使 shrinkWrap）会把滚动手势自己吃掉，外层页面那个 ListView
+    // 就再也收不到拖动，于是下半截内容永远看不到。用 Column 让内容自然撑开，
+    // 滚动交给外层——这也是「整页只有一个滚动视图」的常规做法。
+    if (widget.embedded) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
+      );
+    }
+
+    final list = ListView(
+      shrinkWrap: true,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      children: children,
+    );
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
