@@ -488,6 +488,9 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     }
     final sources = _sources;
     return GlassScaffold(
+      // 内容从玻璃顶栏底下穿过，顶部空间由列表的 barInset 让——见 settings_page
+      // 的同名注释：漏了这一句，SafeArea 与 barInset 会各让一次栏高。
+      behindBar: true,
       title: '${widget.section.label} · 源管理',
       actions: <Widget>[
         IconButton(

@@ -51,6 +51,11 @@ class SettingsPage extends StatelessWidget {
       );
     }
     return GlassScaffold(
+      // behindBar：内容从玻璃顶栏**底下**穿过（滚动时透出磨砂），顶部留给内容的
+      // 空间由列表自己的 barInset 让。少了这一句，SafeArea 会先让一次栏高、
+      // barInset 再让一次，顶栏高度被算两遍——真机上表现为首卡离顶栏一大截
+      // （实测 131pt 空隙，应当是 16pt）。
+      behindBar: true,
       title: '设置',
       child: ListView(
         padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
