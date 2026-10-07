@@ -44,9 +44,9 @@
 ## 一、被测包
 
 - 文件：仓库根目录 `LumeBox-unsigned.ipa`（**未签名**）
-- 对应提交：`1cefd55`（含本轮五处修复；构建于 GitHub Actions run 37604807370）
-- SHA-256：`a744c2df6d7661c84e67302fff3d1facb81faf2393c2233161dbc8f3d725f6cc`
-- 体积：17,061,177 字节
+- 对应提交：`0044adb`（含本轮全部修复 + MDK 内核；构建于 GitHub Actions run 37610212438）
+- SHA-256：`24518534ca2f509e1f1dd5bfbfdc2748507ab3d7f5ced5fe199ac8239a2fda6b`
+- 体积：21,448,127 字节（比上一版 +4.3MB：多了 libmdk 与 fvp）
 - 安装：用 Sideloadly + 自有证书重签名后安装到 iPhone
 
 > **以仓库根目录这个文件为准。** 本清单随包一起冻结：之后若有**只改文档**的提交，
