@@ -169,7 +169,29 @@
 - [ ] **用户的图源要各自补 `filters()`**：契约与示例写在 `docs/lumesource-guide.md`
       （「可选契约：筛选标签」一节）。没补的源在筛选页会显示「本源不支持筛选」。
 
-## 本轮验收（已出包：run 37671995578 / commit 4afcd17）
+## 已完成（三板块统一：分页筛选 / WAF 差异化 / 首页横滑）
+
+- [✓] **任务 1 分页跳转筛选（三板块）**：筛选页与缓存挪到公共层
+      （`source_filter_page.dart`：`SourceFilterPage` / `SourceFilterCategoryPage` /
+      `SourceFilterCache` 单例 / `openSourceFacetFilter`），小说 / 漫画 / 视频共用；
+      **旧的分类抽屉整块删除**（三块都不再保留旧筛选弹窗）。
+- [✓] **任务 2 WAF 差异化（三板块共用）**：
+      `NEED_WEBVIEW_VERIFY` → 【重试】+【网页视图】；`WAF_RECAPTCHA_V3` → 只提示
+      「需要外部无头浏览器桥接服务」**不给网页视图**；Cookie 为空 → **弹窗**提示；
+      图源新增「桥接服务地址」（`NetworkProfile.bridge`，schema v5→v6 加列，
+      源管理 → 网络配置可填），非空时脚本用 `LumeSource.bridge` 转发全部 API 请求。
+- [✓] **任务 3 首页多板块横滑（三板块共用）**：`home()` 契约 + 两套格式自动识别 +
+      `SourceHomeView` / `SourceHomeMorePage`（空板块跳过、moreUrl 空不显示更多、
+      空首页给提示、点更多带 moreUrl 分页）；旧源无 `home()` 照旧。
+- [✓] **示例源同步**：99xs（home + 实时 filters）、daniao5（home）、瓜子影视 /
+      大哥视频（NEED_WEBVIEW_VERIFY）、金牌影院（WAF_RECAPTCHA_V3 + 桥接转发）。
+      全部 `node --check` 语法通过。
+- [✓] 校验：`flutter analyze` 无问题；`flutter test` 全量通过（新增首页 8 例 /
+      筛选 5 例 / WAF 11 例 等）。
+- [ ] 真机复验：三板块的「筛选 → 分类 → 标签 → 应用」、首页横滑（含「更多」）、
+      CF 源（网页视图）与金牌影院（桥接提示 + 填桥接地址后转发）。
+
+## 验收（run 37671995578 / commit 4afcd17，更早一批）
 
 - **产物**：Actions run `37671995578`（commit `4afcd17`，`Build unsigned IPA (iOS)`
   **success**，4m50s）；`LumeBox-unsigned.ipa` **21,734,993 B**（比上一版大 ~200KB：

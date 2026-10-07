@@ -7,12 +7,12 @@ import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../source/waf_webview_page.dart';
 
-/// 视频筛选：一次选择的结果（一级分类 + 各组选中的标签）。
+/// 分页筛选：一次选择的结果（一级分类 + 各组选中的标签）。三板块共用。
 ///
 /// 组内多选时，选中的 id 以英文逗号相连交给脚本（`{type: '1,3', area: '2'}`）——
 /// 脚本自己决定怎么拼站点查询串（各站点的参数名与分隔符都不一样）。
-class VideoFilterSelection {
-  const VideoFilterSelection({required this.categoryId, required this.categoryTitle, required this.filters});
+class SourceFilterSelection {
+  const SourceFilterSelection({required this.categoryId, required this.categoryTitle, required this.filters});
 
   final String categoryId;
   final String categoryTitle;
@@ -31,15 +31,20 @@ class VideoFilterSelection {
 
 /// 筛选标签的**短时缓存**（用户要求：每次打开实时抓，但加短时缓存减少重复请求）。
 ///
+/// 应用级单例（[instance]）：三板块共用一份，按图源 id 分开存。
+///
 /// 按「板块内的图源 id」分开存；TTL 默认 5 分钟——标签是站点结构的一部分，
 /// 几分钟内不会变，而每次进退筛选页都抓一遍纯属浪费。刷新（下拉）时按
 /// [invalidate] 作废。
-class VideoFilterCache {
-  VideoFilterCache({this.ttl = const Duration(minutes: 5), DateTime Function()? clock})
+class SourceFilterCache {
+  SourceFilterCache({this.ttl = const Duration(minutes: 5), DateTime Function()? clock})
       : _clock = clock ?? DateTime.now;
 
   final Duration ttl;
   final DateTime Function() _clock;
+
+  /// 应用级单例：`loadSourceFilters` 与筛选页都用它，避免各板块各存一份。
+  static final SourceFilterCache instance = SourceFilterCache();
 
   final Map<String, ({List<SourceFilterGroup> groups, DateTime at})> _entries = {};
 
@@ -67,7 +72,7 @@ class VideoFilterCache {
 /// 取某图源的筛选标签：先看短时缓存，没有（或过期）再向脚本要。
 Future<List<SourceFilterGroup>> loadSourceFilters({
   required DataSource source,
-  required VideoFilterCache cache,
+  required SourceFilterCache cache,
   bool force = false,
 }) async {
   if (!force) {
@@ -90,8 +95,8 @@ Future<List<SourceFilterGroup>> loadSourceFilters({
 ///
 /// 层级与返回：第一层 →（选分类）→ 第二层（标签）→ 应用后**整条链路一起返回**，
 /// 把 (分类, 各组标签) 交回浏览页去拉列表。
-class VideoFilterCategoryPage extends StatefulWidget {
-  const VideoFilterCategoryPage({
+class SourceFilterCategoryPage extends StatefulWidget {
+  const SourceFilterCategoryPage({
     super.key,
     required this.source,
     required this.cache,
@@ -99,17 +104,17 @@ class VideoFilterCategoryPage extends StatefulWidget {
   });
 
   final DataSource source;
-  final VideoFilterCache cache;
+  final SourceFilterCache cache;
 
   /// 当前已选的一级分类（列表里打勾）。
   final String? currentCategoryId;
 
   @override
-  State<VideoFilterCategoryPage> createState() =>
-      _VideoFilterCategoryPageState();
+  State<SourceFilterCategoryPage> createState() =>
+      _SourceFilterCategoryPageState();
 }
 
-class _VideoFilterCategoryPageState extends State<VideoFilterCategoryPage> {
+class _SourceFilterCategoryPageState extends State<SourceFilterCategoryPage> {
   List<SourceCategory>? _categories;
   Object? _error;
 
@@ -132,9 +137,9 @@ class _VideoFilterCategoryPageState extends State<VideoFilterCategoryPage> {
   }
 
   Future<void> _openCategory(SourceCategory category) async {
-    final selection = await Navigator.of(context).push<VideoFilterSelection>(
-      MaterialPageRoute<VideoFilterSelection>(
-        builder: (_) => VideoFilterPage(
+    final selection = await Navigator.of(context).push<SourceFilterSelection>(
+      MaterialPageRoute<SourceFilterSelection>(
+        builder: (_) => SourceFilterPage(
           source: widget.source,
           categoryId: category.id,
           categoryTitle: category.title,
@@ -213,8 +218,8 @@ class _VideoFilterCategoryPageState extends State<VideoFilterCategoryPage> {
 ///
 /// 第一版不做「左右双栏联动」（用户口径）：先只做这套分页跳转，后续版本再加
 /// 一个设置项，让用户在「分页模式 / 双栏模式」之间自己选。
-class VideoFilterPage extends StatefulWidget {
-  const VideoFilterPage({
+class SourceFilterPage extends StatefulWidget {
+  const SourceFilterPage({
     super.key,
     required this.source,
     required this.categoryId,
@@ -226,16 +231,16 @@ class VideoFilterPage extends StatefulWidget {
   final DataSource source;
   final String categoryId;
   final String categoryTitle;
-  final VideoFilterCache cache;
+  final SourceFilterCache cache;
 
   /// 进入时已有的选择（重进筛选页时保持已选项）。
   final Map<String, String> initial;
 
   @override
-  State<VideoFilterPage> createState() => _VideoFilterPageState();
+  State<SourceFilterPage> createState() => _SourceFilterPageState();
 }
 
-class _VideoFilterPageState extends State<VideoFilterPage> {
+class _SourceFilterPageState extends State<SourceFilterPage> {
   List<SourceFilterGroup>? _groups;
   Object? _error;
 
@@ -411,7 +416,7 @@ class _VideoFilterPageState extends State<VideoFilterPage> {
             Expanded(
               child: FilledButton(
                 onPressed: () => Navigator.of(context).pop(
-                  VideoFilterSelection(
+                  SourceFilterSelection(
                     categoryId: widget.categoryId,
                     categoryTitle: widget.categoryTitle,
                     filters: _filters,
@@ -427,4 +432,27 @@ class _VideoFilterPageState extends State<VideoFilterPage> {
       ),
     );
   }
+}
+
+/// 打开「分页跳转筛选」整条链路（三板块共用）：
+/// 第一层（一级分类）→ 第二层（标签组）→ 应用后把 (分类 + 各组标签) 交回宿主。
+///
+/// 宿主拿到的结果直接喂给 `DataSource.list(categoryId:, filters:)`。
+Future<({String? categoryId, Map<String, String> filters})?>
+    openSourceFacetFilter({
+  required BuildContext context,
+  required DataSource source,
+  String? currentCategoryId,
+}) async {
+  final selection = await Navigator.of(context).push<SourceFilterSelection>(
+    MaterialPageRoute<SourceFilterSelection>(
+      builder: (_) => SourceFilterCategoryPage(
+        source: source,
+        cache: SourceFilterCache.instance,
+        currentCategoryId: currentCategoryId,
+      ),
+    ),
+  );
+  if (selection == null) return null;
+  return (categoryId: selection.categoryId, filters: selection.filters);
 }

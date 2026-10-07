@@ -12,6 +12,7 @@ import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/comic/comic_explore_page.dart';
 import 'package:lume_box/features/comic/comic_page.dart';
 import 'package:lume_box/features/reading/reading_hub_page.dart';
+import 'package:lume_box/features/reading/source_filter_page.dart';
 import 'package:lume_box/features/comic/comic_shelf_page.dart';
 import 'package:lume_box/features/novel/novel_shelf_page.dart';
 
@@ -384,7 +385,7 @@ void main() {
       expect(find.text('停用源'), findsNothing);
     });
 
-    testWidgets('筛选抽屉里能选分类并重新取列表', (tester) async {
+    testWidgets('筛选：点按钮走独立筛选页（旧的分类抽屉已下线）', (tester) async {
       final library = comicLibrary;
       final pipeline = createPipeline(library);
       addTearDown(pipeline.dispose);
@@ -407,15 +408,22 @@ void main() {
         ),
       );
 
+      // 用户口径任务 1：点「筛选」**直接跳转到独立筛选第一页**，不再弹旧抽屉。
       await tester.tap(find.byIcon(Icons.filter_list));
       await tester.pumpAndSettle();
-      expect(find.text('分类一'), findsOneWidget);
+      expect(
+        find.byType(SourceFilterCategoryPage),
+        findsOneWidget,
+        reason: '第一层是独立页面（不是抽屉 / 下拉）',
+      );
+      expect(find.text('分类一'), findsOneWidget, reason: '第一层只列这个源的一级分类');
 
+      // 点分类 → 第二层（标签页）。替身源没有 filters 契约 → 显示「不支持筛选」，
+      // 但这仍然证明链路走对了（分类页 → 子页）。
       await tester.tap(find.text('分类一'));
       await tester.pumpAndSettle();
-      // 抽屉关闭，列表仍在（分类只影响取数条件）。
-      expect(find.text('筛选'), findsNothing);
-      expect(find.text('测试作品 1'), findsOneWidget);
+      expect(find.byType(SourceFilterPage), findsOneWidget);
+      expect(find.textContaining('筛选 · 分类一'), findsOneWidget);
     });
   });
 

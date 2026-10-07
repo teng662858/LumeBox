@@ -82,6 +82,7 @@ class LumeJsEngine {
     required String sourceId,
     required LumeHttp http,
     required Section section,
+    String bridge = '',
   }) async {
     if (!isSupported) {
       throw UnsupportedError('Phase1 源引擎仅随 iOS 提供');
@@ -99,7 +100,7 @@ class LumeJsEngine {
       id: sandboxId,
       policy: policy.copyWith(allowHostAccess: true),
       host: host,
-      polyfills: LumeSourcePolyfills.forSection(section),
+      polyfills: LumeSourcePolyfills.forSection(section, bridge: bridge),
     );
     return LumeJsEngine._(sourceId, section, sandbox, host);
   }
@@ -451,8 +452,18 @@ class LumeSourcePolyfills {
 
   /// 按板块选登记表：**猫源的 Node 环境不外借**（宪法第 3 条），
   /// 其余三个板块共用通用表（含 Venera 兼容层）。
-  static PolyfillRegistry forSection(Section section) =>
-      section == Section.cat ? catRegistry : registry;
+  static PolyfillRegistry forSection(Section section, {String bridge = ''}) {
+    // 有桥接地址时按图源单独组装一份（桥接是图源级配置，不能污染共享登记表）。
+    if (bridge.trim().isNotEmpty) {
+      return PolyfillRegistry(<SandboxPolyfill>[
+        const _FetchPolyfill(),
+        if (section == Section.cat) ...CatPolyfills.all,
+        LumeSourceBridgePolyfill(null, bridge.trim()),
+        if (section != Section.cat) const VeneraComicSourcePolyfill(),
+      ]);
+    }
+    return section == Section.cat ? catRegistry : registry;
+  }
 }
 
 class _FetchPolyfill implements SandboxPolyfill {

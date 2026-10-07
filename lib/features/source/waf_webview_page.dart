@@ -108,6 +108,27 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
     }
 
     if (!mounted) return;
+    if (cookies.isEmpty) {
+      // 用户口径 2.1.4：一个 Cookie 都没取到就如实说，别让用户以为已经生效。
+      setState(() => _collecting = false);
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('未能读取验证会话'),
+          content: const Text(
+            '未能读取验证会话，请重新执行网页视图验证。\n\n'
+            '（通常是页面还没加载完就关闭了：等验证通过、站点页面真正显示出来后再关。）',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     widget.onCollected(cookies);
     Navigator.of(context).pop(cookies.length);
   }

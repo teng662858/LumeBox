@@ -43,7 +43,9 @@ class WafDetector {
       return true;
     }
     final text = body.toLowerCase();
-    return text.contains('just a moment') ||
+    return text.contains('need_webview_verify') ||
+      text.contains('waf_recaptcha_v3') ||
+      text.contains('just a moment') ||
         text.contains('attention required') ||
         text.contains('__cf_chl') ||
         text.contains('cf-chl-') ||
@@ -207,3 +209,32 @@ class WafSessions {
   /// 仅测试用：丢掉缓存句柄。
   static void resetForTesting() => _stores.clear();
 }
+
+/// 脚本抛出的**固定标记**对应的处理方式（用户口径 2.1 / 2.2）。
+enum WafFailureKind {
+  /// 有可复用会话（cf_clearance 那类）：走内置网页视图取 Cookie。
+  webView,
+
+  /// 放行绑定浏览器会话 / IP 信誉，导不出可复用 Cookie（reCAPTCHA v3 等）：
+  /// 只能配「外部无头浏览器桥接服务」，**不展示网页视图按钮**。
+  bridge,
+}
+
+/// 从失败信息里判定走哪条路；null 表示不是 WAF 问题（普通失败只有「重试」）。
+///
+/// 两类识别顺序：**脚本的固定标记优先**（`NEED_WEBVIEW_VERIFY` /
+/// `WAF_RECAPTCHA_V3`，用户口径就是这么定的），认不出标记再退回指纹兜底
+/// （老的源没升级、或者 WAF 用别的方式拦），那一刻按「网页视图」处理。
+WafFailureKind? wafKindOf(String? message) {
+  final text = (message ?? '').toUpperCase();
+  if (text.isEmpty) return null;
+  if (text.contains('WAF_RECAPTCHA_V3')) return WafFailureKind.bridge;
+  if (text.contains('NEED_WEBVIEW_VERIFY')) return WafFailureKind.webView;
+  return looksLikeWafFailure(message) ? WafFailureKind.webView : null;
+}
+
+/// 需要外部桥接时的统一文案（用户口径 2.2.4）。
+const String wafBridgeHint =
+    '该站点需要配置外部无头浏览器桥接服务，APP 无法直接访问。\n'
+    '（在「源管理 → 网络配置 → 桥接服务地址」里填一个已过验证的 Playwright / '
+    'Puppeteer 桥地址；普通 HTTP 代理无效。）';

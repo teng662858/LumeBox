@@ -100,6 +100,7 @@ class LumeSources {
     required String userAgent,
     required String cookie,
     required String proxy,
+    String bridge = '',
   }) async {
     if (!runtimeAvailableFor(section)) return;
     final registry = await SourceRegistry.open(section);
@@ -108,6 +109,7 @@ class LumeSources {
       userAgent: userAgent,
       cookie: cookie,
       proxy: proxy,
+      bridge: bridge,
     );
   }
 
@@ -371,6 +373,7 @@ class _LumeSourceManager implements SourceManager {
     required String userAgent,
     required String cookie,
     required String proxy,
+    String bridge = '',
   }) =>
       LumeSources.setNetwork(
         _section,
@@ -378,6 +381,7 @@ class _LumeSourceManager implements SourceManager {
         userAgent: userAgent,
         cookie: cookie,
         proxy: proxy,
+        bridge: bridge,
       );
 
   @override

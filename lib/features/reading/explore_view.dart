@@ -13,6 +13,7 @@ import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
 import '../source/waf_webview_page.dart';
+import 'source_home_view.dart';
 import '../shell/section_preloader.dart';
 import '../source/source_section_page.dart';
 import 'poster_card.dart';
@@ -119,7 +120,6 @@ class _ExploreViewState extends State<ExploreView> {
   String? _title;
   String? _detail;
 
-  List<SourceCategory> _categories = const <SourceCategory>[];
   String? _categoryId;
 
   /// 已生效的分组筛选（视频板块的分页筛选写进来；其它板块恒为空）。
@@ -305,7 +305,8 @@ class _ExploreViewState extends State<ExploreView> {
       final categories = await source.categories();
       if (!mounted) return;
       setState(() {
-        _categories = categories;
+        // 只做一件事：当前分类在新分类表里还在不在（选分类已移到筛选页）。
+        // 不在了就清掉，免得列表拿着一个失效的 categoryId 一直拉空。
         if (_categoryId != null &&
             !categories.any((item) => item.id == _categoryId)) {
           _categoryId = null;
@@ -517,7 +518,7 @@ class _ExploreViewState extends State<ExploreView> {
     final hook = widget.onOpenFacetFilter;
     final source = _source;
     if (hook == null || source == null) {
-      _scaffold.currentState?.openEndDrawer();
+      // 宿主没提供筛选入口（例如没有图源）：什么也不做，别弹一个空抽屉。
       return;
     }
     final picked = await hook(context, source, _categoryId);
@@ -530,11 +531,6 @@ class _ExploreViewState extends State<ExploreView> {
     _loadPage();
   }
 
-  void _selectCategory(String? categoryId) {
-    if (_categoryId == categoryId) return;
-    setState(() => _categoryId = categoryId);
-    _loadPage();
-  }
 
   /// 点工具栏「搜索」：先选范围（聚合 / 当前源），再开搜索框。
   Future<void> _openSearch() async {
@@ -667,18 +663,6 @@ class _ExploreViewState extends State<ExploreView> {
       backgroundColor: Colors.transparent,
       key: _scaffold,
       drawerScrimColor: Colors.black54,
-      endDrawer: _FilterDrawer(
-        categories: _categories,
-        selectedId: _categoryId,
-        onSelect: (id) {
-          Navigator.of(context).pop();
-          _selectCategory(id);
-        },
-        onManage: () {
-          Navigator.of(context).pop();
-          _manageSources();
-        },
-      ),
       // 返回键：**联想弹窗开着时先关它**（用户点名「返回关闭联想弹窗」），
       // 而不是直接退出搜索 / 退出页面。
       body: PopScope(
@@ -1014,7 +998,37 @@ class _ExploreViewState extends State<ExploreView> {
     return '${local.year}-${two(local.month)}-${two(local.day)}';
   }
 
+  /// 是否处于「首页模式」（用户口径任务 3）：图源提供 home()，且当前没有
+  /// 分类 / 分组筛选 / 关键词 / 搜索结果在生效。旧源没有 home() → 照旧分类列表。
+  bool get _isHomeMode {
+    final source = _source;
+    if (source is! HomeCapable) return false;
+    if (_categoryId != null || _facetFilters.isNotEmpty) return false;
+    if (_keyword.isNotEmpty || _hits != null) return false;
+    return true;
+  }
+
   Widget _buildBody() {
+    // 首页模式：横滑板块（或旧兼容的普通网格），由 SourceHomeView 自理加载与空态。
+    if (_isHomeMode) {
+      return SourceHomeView(
+        source: _source!,
+        pipeline: widget.pipeline,
+        onOpenItem: _open,
+        onOpenMore: (title, moreUrl) => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => SourceHomeMorePage(
+              source: _source!,
+              title: title,
+              moreUrl: moreUrl,
+              pipeline: widget.pipeline,
+              onOpenItem: _open,
+            ),
+          ),
+        ),
+      );
+    }
+
     if (_state != SourceStateKind.ready) {
       return SourceStateView(
         state: _state,
@@ -1031,20 +1045,22 @@ class _ExploreViewState extends State<ExploreView> {
       final detail = failure is SourceException ? failure.message : '$failure';
       // 被 Cloudflare / WAF 拦下时多给一个出口：在 App 内置网页视图里过真人校验
       // （用户要求；参考 AP 漫画那套）。普通失败照旧只有「重试」。
-      final waf = looksLikeWafFailure(detail) && _source != null;
+      final kind = wafKindOf(detail);
+      final hasSession = _source != null &&
+          WafSessions.countFor(widget.section, _source!.id) > 0;
       return SourceStateView(
         state: stateForError(failure),
-        detail: detail,
+        // 需要外部桥接的那类（reCAPTCHA v3 等）直接把出路写在正文里：
+        // 它**没有**可导出复用的会话，网页视图对它无效（用户口径 2.2）。
+        detail: kind == WafFailureKind.bridge
+            ? '$detail\n\n$wafBridgeHint'
+            : detail,
         onRetry: _bootstrap,
-        action: waf
+        action: kind == WafFailureKind.webView && _source != null
             ? OutlinedButton.icon(
                 onPressed: _openWebViewForWaf,
                 icon: const Icon(Icons.public, size: 18),
-                label: Text(
-                  WafSessions.countFor(widget.section, _source!.id) > 0
-                      ? '网页视图（已存会话）'
-                      : '网页视图',
-                ),
+                label: Text(hasSession ? '网页视图（已存会话）' : '网页视图'),
               )
             : null,
       );
@@ -1334,91 +1350,6 @@ class _RoundAction extends StatelessWidget {
 }
 
 /// 右侧筛选抽屉：分类选择 + 图源管理入口。
-class _FilterDrawer extends StatelessWidget {
-  const _FilterDrawer({
-    required this.categories,
-    required this.selectedId,
-    required this.onSelect,
-    required this.onManage,
-  });
-
-  final List<SourceCategory> categories;
-  final String? selectedId;
-  final ValueChanged<String?> onSelect;
-  final VoidCallback onManage;
-
-  @override
-  Widget build(BuildContext context) {
-    return Drawer(
-      width: 280,
-      backgroundColor: LumeTheme.surface,
-      child: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: EdgeInsets.fromLTRB(20, 18, 20, 8),
-              child: Text(
-                '筛选',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: LumeTheme.textPrimary,
-                ),
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                children: <Widget>[
-                  _option('全部', selectedId == null, () => onSelect(null)),
-                  for (final category in categories)
-                    _option(
-                      category.title,
-                      selectedId == category.id,
-                      () => onSelect(category.id),
-                    ),
-                  if (categories.isEmpty)
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
-                      child: Text(
-                        '当前源没有提供分类',
-                        style: TextStyle(fontSize: 12, color: LumeTheme.muted),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Divider(height: 1, color: LumeTheme.divider),
-            ListTile(
-              leading: Icon(Icons.tune, color: LumeTheme.textSecondary),
-              title: const Text('源管理'),
-              onTap: onManage,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _option(String label, bool selected, VoidCallback onTap) {
-    return ListTile(
-      dense: true,
-      title: Text(
-        label,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-          color: selected ? LumeTheme.textPrimary : LumeTheme.muted,
-        ),
-      ),
-      trailing: selected
-          ? Icon(Icons.check, size: 18, color: LumeTheme.textPrimary)
-          : null,
-      onTap: onTap,
-    );
-  }
-}
 
 /// 封面位：管线就绪时走 [PosterCover]，否则出主题占位（图位不变，避免列表跳动）。
 class _Cover extends StatelessWidget {

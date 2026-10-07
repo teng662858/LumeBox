@@ -68,6 +68,7 @@ class SourceRecord {
           userAgent: '${row['user_agent'] ?? ''}',
           cookie: '${row['cookie'] ?? ''}',
           proxy: '${row['proxy'] ?? ''}',
+          bridge: '${row['bridge'] ?? ''}',
         ),
         originUrl: '${row['origin_url'] ?? ''}',
         group: '${row['source_group'] ?? ''}',

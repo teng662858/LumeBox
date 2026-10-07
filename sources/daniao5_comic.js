@@ -12,6 +12,24 @@ var LumeSource = {
     return [{ id: 'new', title: '最新更新' }, { id: 'rank', title: '排行榜' }];
   },
 
+  /// 首页（可选契约，用户口径任务 3）：多板块模式——每块一行横向滑动。
+  ///
+  /// 标题由本脚本给出（App 不硬编码）；`moreUrl` 是「更多」的标识，用户在首页点
+  /// 「更多」时 App 会带着它回头调 `list({categoryId: 'moreUrl'})`——这里直接复用
+  /// 本站自己的分类 id（`new` / `rank`），所以「更多」进来就是同一个列表的分页。
+  async home() {
+    var boards = [];
+    var fresh = await this.list({ categoryId: 'new', page: 1 });
+    if (fresh && fresh.items && fresh.items.length) {
+      boards.push({ title: '最新更新', moreUrl: 'new', items: fresh.items.slice(0, 12) });
+    }
+    var rank = await this.list({ categoryId: 'rank', page: 1 });
+    if (rank && rank.items && rank.items.length) {
+      boards.push({ title: '排行榜', moreUrl: 'rank', items: rank.items.slice(0, 12) });
+    }
+    return boards;
+  },
+
   async list(argument) {
     var page = argument && argument.page ? argument.page : 1;
     var category = argument && argument.categoryId ? String(argument.categoryId) : 'new';

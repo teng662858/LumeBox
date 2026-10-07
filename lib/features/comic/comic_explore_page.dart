@@ -4,6 +4,7 @@ import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../reading/explore_view.dart';
+import '../reading/source_filter_page.dart';
 import 'comic_detail_page.dart';
 
 /// 漫画探索页：图源下拉 + 右侧筛选抽屉 + 海报网格。
@@ -36,6 +37,13 @@ class ComicExplorePage extends StatelessWidget {
       pipeline: pipeline,
       manager: manager,
       layout: ExploreLayout.grid,
+      // 分页跳转筛选（用户口径任务 1，三板块共用）：点「筛选」直接进独立筛选页。
+      onOpenFacetFilter: (context, source, currentCategoryId) =>
+          openSourceFacetFilter(
+        context: context,
+        source: source,
+        currentCategoryId: currentCategoryId,
+      ),
       onOpenItem: (selection) => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => ComicDetailPage(

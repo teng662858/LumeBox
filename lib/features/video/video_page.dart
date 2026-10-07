@@ -17,7 +17,7 @@ import '../shell/board_tabs.dart';
 import '../source/add_source_button.dart';
 import '../source/source_section_page.dart';
 import 'source_playback.dart';
-import 'video_filter_page.dart';
+import '../reading/source_filter_page.dart';
 import 'video_play_target.dart';
 import 'video_player_page.dart';
 
@@ -82,8 +82,7 @@ class _VideoPageState extends State<VideoPage> {
   /// 浏览列表的封面图管线：**本板块自己**的（缓存落在 sections/video 之下）。
   SectionImagePipeline? _pipeline;
 
-  /// 筛选标签的短时缓存（用户要求：实时抓 + 短时缓存，减少重复请求）。
-  final VideoFilterCache _filterCache = VideoFilterCache();
+
 
   /// 浏览面换代：从图源管理页返回后 +1，重挂浏览面（列表与当前图源重算）。
   int _browseRevision = 0;
@@ -292,17 +291,11 @@ class _VideoPageState extends State<VideoPage> {
     DataSource source,
     String? currentCategoryId,
   ) async {
-    final selection = await Navigator.of(context).push<VideoFilterSelection>(
-      MaterialPageRoute<VideoFilterSelection>(
-        builder: (_) => VideoFilterCategoryPage(
-          source: source,
-          cache: _filterCache,
-          currentCategoryId: currentCategoryId,
-        ),
-      ),
+    return openSourceFacetFilter(
+      context: context,
+      source: source,
+      currentCategoryId: currentCategoryId,
     );
-    if (selection == null) return null;
-    return (categoryId: selection.categoryId, filters: selection.filters);
   }
 
   /// 剧集选择面板：一集一个条目，取消返回 null。

@@ -86,6 +86,42 @@ void main() {
     });
   });
 
+  group('两类防护的差异化判定（用户口径 2.1 / 2.2）', () {
+    test('脚本标记 NEED_WEBVIEW_VERIFY → 走网页视图', () {
+      expect(
+        wafKindOf('NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP 403）'),
+        WafFailureKind.webView,
+      );
+    });
+
+    test('脚本标记 WAF_RECAPTCHA_V3 → 走外部桥接（不给网页视图按钮）', () {
+      expect(
+        wafKindOf('WAF_RECAPTCHA_V3：金牌影院启用了 reCAPTCHA v3 WAF（HTTP 521）'),
+        WafFailureKind.bridge,
+        reason: '这类源没有可复用 Cookie，网页视图对它无效',
+      );
+      expect(
+        wafKindOf('WAF_RECAPTCHA_V3：请求被站点的 reCAPTCHA v3 WAF 拦截（waf_captcha_marker）'),
+        WafFailureKind.bridge,
+      );
+    });
+
+    test('没有标记时按指纹兜底；普通失败既不是 webView 也不是 bridge', () {
+      expect(
+        wafKindOf('拉取失败：HTTP 503 Just a moment...'),
+        WafFailureKind.webView,
+        reason: '老源没升级标记，WAF 指纹要能兜住',
+      );
+      expect(wafKindOf('拉取失败：HTTP 404'), isNull);
+      expect(wafKindOf(null), isNull);
+    });
+
+    test('桥接提示文案点名出路（含「桥接服务地址」）', () {
+      expect(wafBridgeHint, contains('外部无头浏览器桥接服务'));
+      expect(wafBridgeHint, contains('桥接服务地址'));
+    });
+  });
+
   group('会话：按图源存、同名覆盖、可合并进请求头', () {
     test('保存后能读回；同名覆盖、新的追加', () {
       final store = WafSessions.storeOf(Section.comic)!;

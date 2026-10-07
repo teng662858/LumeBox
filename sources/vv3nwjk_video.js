@@ -274,7 +274,17 @@ var LumeSource = {
     var sign = this.__sign(params, t);
 
     var query = this.__query(params);
-    var url = API_URL + path + (query ? '?' + query : '');
+    // 桥接服务地址（用户口径 2.2.3）：图源配置里填了就**全部请求转发到桥**
+    // （那个桥跑着已过 WAF 的 Playwright/Puppeteer 浏览器，把 path + query 原样
+    //  打给本站）。留空则照旧直连——普通没防护的用法完全不受影响。
+    var base = API_URL;
+    try {
+      var b = (typeof LumeSource !== 'undefined' && LumeSource.bridge)
+        ? String(LumeSource.bridge).replace(/\/+$/, '')
+        : '';
+      if (b) base = b + '/api/mw-movie';
+    } catch (ignored) { /* 读不到就用直连 */ }
+    var url = base + path + (query ? '?' + query : '');
 
     var response = await LumeSource.http.get(url, {
       headers: {
@@ -292,10 +302,12 @@ var LumeSource = {
       // 站点在生产环境启用了 reCAPTCHA v3 的 WAF：未过验证时整站（含 API）
       // 返回 521。沙箱里没有浏览器，跑不出这段验证，如实告诉用户原因与出路。
       if (status === 521) {
+        // 固定标记 WAF_RECAPTCHA_V3（用户口径 2.2.4）：App 认出它就提示
+        // 「需要配置外部无头浏览器桥接服务」，**不会**给网页视图按钮——
+        // 这类站点的放行绑浏览器会话与 IP 信誉，导不出可复用 Cookie。
         throw new Error(
-          '金牌影院：站点启用了人机验证（reCAPTCHA v3 WAF，HTTP 521）。' +
-          '本 App 无法在脚本沙箱里完成验证；请改用网页/浏览器访问该站，' +
-          '或为它配置一个已经通过验证的代理地址后再试。'
+          'WAF_RECAPTCHA_V3：金牌影院启用了 reCAPTCHA v3 WAF（HTTP 521）。' +
+          '放行状态绑在浏览器会话与服务端 IP 信誉上，没有可复用的 Cookie。'
         );
       }
       throw new Error('拉取失败：HTTP ' + status + ' ' + path);
@@ -303,8 +315,8 @@ var LumeSource = {
     // 极少数情况下 WAF 会以 200 返回验证页（HTML 而非 JSON），一并点明。
     if (/waf_captcha_marker|okokcdn_recaptcha_verify/.test(response.body || '')) {
       throw new Error(
-        '金牌影院：请求被站点的人机验证（reCAPTCHA v3 WAF）拦截，' +
-        '无法在脚本沙箱内完成验证。请改用网页访问，或配置已过验证的代理。'
+        'WAF_RECAPTCHA_V3：请求被站点的 reCAPTCHA v3 WAF 拦截'
+        + '（响应里带 waf_captcha_marker），没有可复用的 Cookie。'
       );
     }
     var parsed;

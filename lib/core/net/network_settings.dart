@@ -174,6 +174,7 @@ class NetworkProfile {
     this.userAgent = '',
     this.cookie = '',
     this.proxy = '',
+    this.bridge = '',
   });
 
   /// 图源级 UA；为空时用全局 UA。
@@ -185,8 +186,18 @@ class NetworkProfile {
   /// 图源级代理；为空时用全局代理。
   final String proxy;
 
+  /// **桥接服务地址**（用户口径 2.2）：个别站点（如 OKooK-CDN + reCAPTCHA v3）
+  /// 的放行绑定浏览器会话与 IP 信誉，既导不出 Cookie、普通 HTTP 代理也没用——
+  /// 只能把请求转发给一个「已经过验证的无头浏览器桥」（Playwright/Puppeteer）。
+  /// 留空 = 不用桥接；不为空时由**脚本**把所有 API 请求指到它（宿主只负责把它
+  /// 交给脚本，见 `LumeSource.bridge`）。
+  final String bridge;
+
   bool get isEmpty =>
-      userAgent.trim().isEmpty && cookie.trim().isEmpty && proxy.trim().isEmpty;
+      userAgent.trim().isEmpty &&
+      cookie.trim().isEmpty &&
+      proxy.trim().isEmpty &&
+      bridge.trim().isEmpty;
 
   static const NetworkProfile none = NetworkProfile();
 
@@ -202,17 +213,20 @@ class NetworkProfile {
     String? userAgent,
     String? cookie,
     String? proxy,
+    String? bridge,
   }) =>
       NetworkProfile(
         userAgent: userAgent ?? this.userAgent,
         cookie: cookie ?? this.cookie,
         proxy: proxy ?? this.proxy,
+        bridge: bridge ?? this.bridge,
       );
 
   Map<String, Object?> toJson() => <String, Object?>{
         'userAgent': userAgent,
         'cookie': cookie,
         'proxy': proxy,
+        'bridge': bridge,
       };
 
   static NetworkProfile fromJson(Object? json) {
@@ -221,6 +235,7 @@ class NetworkProfile {
       userAgent: '${json['userAgent'] ?? ''}',
       cookie: '${json['cookie'] ?? ''}',
       proxy: '${json['proxy'] ?? ''}',
+      bridge: '${json['bridge'] ?? ''}',
     );
   }
 

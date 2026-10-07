@@ -3,15 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
-import 'package:lume_box/features/video/video_filter_page.dart';
+import 'package:lume_box/features/reading/source_filter_page.dart';
 
-/// 视频筛选（用户要求：分页跳转模式 + 标签实时抓取 + 短时缓存）。
+/// 分页跳转筛选（用户要求：三板块共用；标签实时抓取 + 短时缓存）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('短时缓存：TTL 内命中不再问脚本，过期后重取', () {
     var now = DateTime(2026, 10, 8, 12);
-    final cache = VideoFilterCache(
+    final cache = SourceFilterCache(
       ttl: const Duration(minutes: 5),
       clock: () => now,
     );
@@ -58,7 +58,7 @@ void main() {
   });
 
   testWidgets('筛选子页：一行一组横向标签，多选叠加，应用回传组合条件', (tester) async {
-    VideoFilterSelection? applied;
+    SourceFilterSelection? applied;
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -70,13 +70,13 @@ void main() {
               child: TextButton(
                 onPressed: () async {
                   applied =
-                      await Navigator.of(context).push<VideoFilterSelection>(
-                    MaterialPageRoute<VideoFilterSelection>(
-                      builder: (_) => VideoFilterPage(
+                      await Navigator.of(context).push<SourceFilterSelection>(
+                    MaterialPageRoute<SourceFilterSelection>(
+                      builder: (_) => SourceFilterPage(
                         source: _FacetSource(),
                         categoryId: 'movie',
                         categoryTitle: '电影',
-                        cache: VideoFilterCache(),
+                        cache: SourceFilterCache(),
                       ),
                     ),
                   );
@@ -113,7 +113,7 @@ void main() {
   });
 
   testWidgets('筛选第一层：只列一级大分类，点分类进子页，应用后整条链路返回', (tester) async {
-    VideoFilterSelection? applied;
+    SourceFilterSelection? applied;
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -125,11 +125,11 @@ void main() {
               child: TextButton(
                 onPressed: () async {
                   applied =
-                      await Navigator.of(context).push<VideoFilterSelection>(
-                    MaterialPageRoute<VideoFilterSelection>(
-                      builder: (_) => VideoFilterCategoryPage(
+                      await Navigator.of(context).push<SourceFilterSelection>(
+                    MaterialPageRoute<SourceFilterSelection>(
+                      builder: (_) => SourceFilterCategoryPage(
                         source: _FacetSource(),
-                        cache: VideoFilterCache(),
+                        cache: SourceFilterCache(),
                       ),
                     ),
                   );
@@ -169,11 +169,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: LumeTheme.build(),
-        home: VideoFilterPage(
+        home: SourceFilterPage(
           source: _NoFacetSource(),
           categoryId: 'movie',
           categoryTitle: '电影',
-          cache: VideoFilterCache(),
+          cache: SourceFilterCache(),
         ),
       ),
     );

@@ -44,9 +44,36 @@ var LumeSource = {
     return result;
   },
 
+  /// 首页（可选契约，用户口径任务 3）：一个板块，条目实时抓。
+  async home() {
+    var first = await this.list({ categoryId: 'all', page: 1 });
+    if (first && first.items && first.items.length) {
+      return [{ title: '最新连载', moreUrl: 'all', items: first.items.slice(0, 12) }];
+    }
+    return [];
+  },
+
+  /// 筛选标签（可选契约，用户口径任务 1）：**实时从站点导航里读**分类，
+  /// 不写死任何分类名（繁 / 简字形会漂，见 categories() 的说明）。
+  async filters() {
+    var categories = await this.categories();
+    var options = [];
+    for (var i = 0; i < categories.length; i++) {
+      var item = categories[i] || {};
+      if (item.id && item.id !== 'all') {
+        options.push({ id: String(item.id), title: String(item.title || item.id) });
+      }
+    }
+    if (!options.length) return [];
+    return { groups: [{ id: 'category', title: '分类', options: options }] };
+  },
+
   async list(argument) {
     var page = argument && argument.page ? argument.page : 1;
     var category = argument && argument.categoryId ? String(argument.categoryId) : '';
+    // 筛选页（filters 契约）选中的分类经 argument.filters 传进来：优先用它。
+    var picked = argument && argument.filters ? argument.filters.category : '';
+    if (picked) category = String(picked);
     var keyword = argument && argument.keyword ? String(argument.keyword) : '';
     var url = BASE_URL + '/enter';
     if (keyword) url = BASE_URL + '/?s=' + encodeURIComponent(keyword) + '&paged=' + page;

@@ -51,6 +51,7 @@ abstract interface class SourceManager {
     required String userAgent,
     required String cookie,
     required String proxy,
+    String bridge = '',
   });
 
   /// 导出图源脚本原文（备份 / 迁移用）；不存在或跨板块时返回 null。

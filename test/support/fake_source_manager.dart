@@ -196,6 +196,7 @@ class FakeSourceManager implements SourceManager {
     required String userAgent,
     required String cookie,
     required String proxy,
+    String bridge = '',
   }) async {
     networks.add((sourceId, userAgent, cookie, proxy));
     _replace(

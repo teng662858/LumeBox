@@ -59,12 +59,14 @@ class LumeHttp {
     this._source = '宿主',
     this._queue,
     String? Function()? sessionCookies,
+    String bridge = '',
   })  : _client = client ?? http.Client(),
         _clientInjected = client != null,
         _settings = (settings ?? const NetworkSettings()).clamped(),
         _profile = profile ?? NetworkProfile.none,
         // ignore: prefer_initializing_formals —— 具名参数是公开契约，字段是私有的
-        _sessionCookies = sessionCookies;
+        _sessionCookies = sessionCookies,
+        _bridge = bridge.trim();
 
   static const Duration defaultTimeout = NetworkSettings.defaultTimeout;
 
@@ -85,6 +87,15 @@ class LumeHttp {
   /// **每次请求现取**而不是构造时定死：用户在网页视图里刚过完校验、Cookie 才刚
   /// 写进库，下一次请求就该带上——定死会让「验证完还得重进页面」成为常态。
   final String? Function()? _sessionCookies;
+
+  /// 桥接服务地址（用户口径 2.2）：非空时脚本会把 API 请求指到它。
+  ///
+  /// 宿主只负责**存与给**：转发逻辑在脚本里（不同站点的桥不一样），
+  /// 引擎把它注入成全局 `LumeSource.bridge`。
+  final String _bridge;
+
+  /// 当前生效的桥接服务地址（给引擎注入用）。
+  String get bridge => _bridge;
 
   /// 请求来源标记：日志里区分「哪个图源 / 哪个模块」在发请求。
   final String _source;

@@ -40,7 +40,14 @@ import 'sandbox/sandbox_polyfill.dart';
 /// （`LumeBridge.invoke`）的语法糖，与 `fetch`、猫源 `http` 模块走同一条路。
 class LumeSourceBridgePolyfill implements SandboxPolyfill {
   /// 以别名表构造（一般用默认的 [LumeSourceBridge.aliases]，测试可传自己的）。
-  const LumeSourceBridgePolyfill([this.aliasTable]);
+  const LumeSourceBridgePolyfill([this.aliasTable, this.bridge = '']);
+
+  /// 桥接服务地址（用户口径 2.2）：非空时脚本读 `LumeSource.bridge` 拿到它，
+  /// 把 API 请求转发给那个「已过验证的无头浏览器桥」。宿主只负责传值。
+  final String bridge;
+
+  /// 桥接地址占位（注入时替换成 JSON 字符串）。
+  static const String _bridgePlaceholder = '__LUME_BRIDGE__';
 
   /// 方法别名表：契约方法 → 脚本可能使用的名字（顺序即派发优先级，末位是契约名）。
   final Map<String, List<String>>? aliasTable;
@@ -54,10 +61,12 @@ class LumeSourceBridgePolyfill implements SandboxPolyfill {
   List<String> get requires => const <String>['lume.source.fetch'];
 
   @override
-  String get source => _template.replaceFirst(
+  String get source => _template
+      .replaceFirst(
         _aliasPlaceholder,
         jsonEncode(aliasTable ?? LumeSourceBridge.aliases),
-      );
+      )
+      .replaceFirst(_bridgePlaceholder, jsonEncode(bridge));
 
   /// `var aliases = <JSON>;` —— 表由 Dart 侧唯一声明，JS 不做二次维护。
   static const String _aliasPlaceholder = '__LUME_ALIAS_TABLE__';
@@ -142,7 +151,9 @@ class LumeSourceBridgePolyfill implements SandboxPolyfill {
   };
 
   // ---------------------------------------------------------------- 桥接对象
-  var bridge = { http: http, fs: fs };
+  // `bridge` 字段就是「桥接服务地址」（空串 = 不用桥接），脚本读
+  // `LumeSource.bridge` 即可；其余图源不受影响（读到空串）。
+  var bridge = { http: http, fs: fs, bridge: __LUME_BRIDGE__ };
 
   // 宿主能力不被脚本对象覆盖（脚本自己的实现可以占用其余任何名字）。
   var reserved = { http: true, fs: true };
@@ -296,6 +307,10 @@ class LumeSourceBridge {
     'detail': <String>['getDetail', 'getBookInfo', 'detail'],
     'chapters': <String>['getChapters', 'getChapterList', 'chapters'],
     'content': <String>['getContent', 'getChapterContent', 'content'],
+    // 首页（可选契约，用户口径任务 3）：多板块模式 / 旧兼容的纯列表模式。
+    'home': <String>['getHome', 'getHomeContent', 'home'],
+    // 筛选标签（可选契约，用户口径任务 1）：分页跳转筛选的标签组。
+    'filters': <String>['getFilters', 'getFilterGroups', 'filters'],
   };
 
   /// 契约方法名列表（与 `JsSourceContract.methods` 同名同序）。

@@ -11,9 +11,44 @@
 
 ---
 
+## 可选契约：首页 `home()`（三板块通用）
+
+图源实现 `home()` 后，板块首页会用它的内容渲染（**两套格式自动识别**，不用加开关）：
+
+```js
+// ① 多板块模式（网页有横滑模块）：返回板块数组
+async home() {
+  var fresh = await this.list({ categoryId: 'new', page: 1 });
+  return [
+    { title: '最新更新', moreUrl: 'new',  items: fresh.items.slice(0, 12) },
+    { title: '排行榜',   moreUrl: 'rank', items: (await this.list({ categoryId: 'rank', page: 1 })).items.slice(0, 12) }
+  ];
+}
+// ② 旧兼容模式（网页无横滑、纯列表）：直接返回标准 Item 数组
+async home() { return (await this.list({ page: 1 })).items; }
+```
+
+- `title` 由脚本给，**App 不硬编码任何文字**；`items` 为空数组的板块会被整块跳过；
+  `moreUrl` 为空 / null 时不显示「更多」；
+- 用户点「更多」时，App 会带着 `moreUrl` 回来调 `list({ categoryId: moreUrl, page: N })`
+  ——所以 `moreUrl` 最好直接用本站自己的分类 id（上面示例就是这样），「更多」进去
+  就是同一个列表的分页；
+- `home()` 返回空数组 → 首页提示「暂无首页推荐内容」并引导用户去分类页；
+- **没实现 `home()` 的旧源照旧**：走原来的分类列表，不会崩。
+
 ## 源站挂 Cloudflare 时（脚本作者不用做什么）
 
-如果源站被人机校验（CF）挡住，App 侧会走这套流程：失败页出现**「网页视图」**按钮 →
+如果源站被人机校验（CF）挡住，**脚本先抛固定标记**（三板块通用）：
+
+```js
+if (status === 403 || status === 503) {
+  throw new Error('NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP ' + status + '）');
+}
+// reCAPTCHA v3 那类（放行绑浏览器会话与 IP 信誉、没有可复用 Cookie）：抛另一个标记
+throw new Error('WAF_RECAPTCHA_V3：站点启用了 reCAPTCHA v3 WAF（HTTP 521）');
+```
+
+App 侧收到标记后的流程：失败页出现**「网页视图」**按钮 →
 用户在 App 内置网页视图里手动过校验 → 关闭时 App 把整套 Cookie（含 HttpOnly 的
 `cf_clearance`）取回来、存进**该图源的会话存储** → 之后该图源的**所有请求自动带上**。
 

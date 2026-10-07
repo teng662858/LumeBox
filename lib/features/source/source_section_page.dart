@@ -413,6 +413,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
       userAgent: profile.userAgent,
       cookie: profile.cookie,
       proxy: profile.proxy,
+      bridge: profile.bridge,
     );
     // 运行时重建：旧客户端带着旧 UA / Cookie，必须释放。
     await _manager.setEnabled(source.id, source.enabled);
@@ -1053,7 +1054,7 @@ class _GroupDialogState extends State<_GroupDialog> {
   }
 }
 
-/// 单图源网络配置弹窗：UA / Cookie / 代理三项，留空即继承全局设置。
+/// 单图源网络配置弹窗：UA / Cookie / 代理 / 桥接服务地址，留空即继承全局设置。
 ///
 /// 这三项对应文档要求：图源可自定义 UA / Cookie / 代理，且单图源配置优先于
 /// 全局设置；Cookie 按图源隔离，不与其他图源共享。
@@ -1073,12 +1074,15 @@ class _NetworkDialogState extends State<_NetworkDialog> {
       TextEditingController(text: widget.source.network.cookie);
   late final TextEditingController _proxy =
       TextEditingController(text: widget.source.network.proxy);
+  late final TextEditingController _bridge =
+      TextEditingController(text: widget.source.network.bridge);
 
   @override
   void dispose() {
     _ua.dispose();
     _cookie.dispose();
     _proxy.dispose();
+    _bridge.dispose();
     super.dispose();
   }
 
@@ -1129,6 +1133,19 @@ class _NetworkDialogState extends State<_NetworkDialog> {
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 12),
+              // 「桥接服务地址」（用户口径 2.2）：个别站点（OKooK-CDN +
+              // reCAPTCHA v3 那类）的放行绑浏览器会话与 IP 信誉，导不出可复用
+              // Cookie、普通代理也没用——只能把请求转给一个「已过验证的无头
+              // 浏览器桥」（Playwright / Puppeteer）。脚本读 LumeSource.bridge。
+              TextField(
+                controller: _bridge,
+                decoration: const InputDecoration(
+                  labelText: '桥接服务地址',
+                  hintText: 'http://192.168.1.5:8787；留空 = 不用桥接',
+                  border: OutlineInputBorder(),
+                ),
+              ),
             ],
           ),
         ),
@@ -1148,6 +1165,7 @@ class _NetworkDialogState extends State<_NetworkDialog> {
               userAgent: _ua.text,
               cookie: _cookie.text,
               proxy: _proxy.text,
+              bridge: _bridge.text,
             ),
           ),
           child: const Text('保存'),

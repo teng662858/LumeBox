@@ -20,6 +20,92 @@ abstract interface class SuggestCapable {
   Future<List<String>> suggest(String keyword);
 }
 
+/// 图源能给出「首页」的可选能力（用户口径任务 3）。
+///
+/// 两套返回格式**由 App 自动识别**（脚本不用加开关）：
+/// - **多板块模式**：网页有横滑模块 → 返回板块数组（`title` / `moreUrl` / `items`）；
+/// - **旧兼容模式**：没有横滑、纯列表 → 直接返回标准 Item 数组，App 渲染普通网格。
+abstract interface class HomeCapable {
+  Future<SourceHome> home();
+}
+
+/// 首页数据：要么是若干板块（横滑），要么是一份平铺列表（旧兼容）。
+class SourceHome {
+  const SourceHome({this.boards = const <SourceHomeBoard>[], this.items = const <SourceItem>[]});
+
+  /// 多板块模式的内容（为空表示不是这一种）。
+  final List<SourceHomeBoard> boards;
+
+  /// 旧兼容模式的平铺条目（为空表示不是这一种）。
+  final List<SourceItem> items;
+
+  /// 是否多板块模式。
+  bool get isBoards => boards.isNotEmpty;
+
+  /// 整体是否为空（首页什么都没给：页面提示「暂无首页推荐内容」）。
+  bool get isEmpty => boards.isEmpty && items.isEmpty;
+
+  /// 自动识别解析（用户口径任务 3.1）：
+  /// - 数组里**有任何一个元素带 `items` 数组** → 当作板块数组；
+  /// - 否则当成标准 Item 数组（旧图源原样兼容）；
+  /// - Map 形式认 `boards` / `home` / `list` / `items` 键。
+  static SourceHome parse(Object? json) {
+    Object? raw = json;
+    if (raw is Map) {
+      raw = raw['boards'] ?? raw['home'] ?? raw['sections'] ?? raw['list'] ?? raw['items'];
+    }
+    if (raw is! List) return const SourceHome();
+
+    // 识别：只要有一个元素「像板块」，整份就按板块解析（避免半吊子混排）。
+    final looksBoards = raw.any(
+      (entry) => entry is Map && (entry['items'] is List || entry['videos'] is List),
+    );
+    if (looksBoards) {
+      final boards = <SourceHomeBoard>[];
+      for (final entry in raw) {
+        final board = SourceHomeBoard.parse(entry);
+        if (board != null) boards.add(board);
+      }
+      return SourceHome(boards: List<SourceHomeBoard>.unmodifiable(boards));
+    }
+    return SourceHome(items: parseItems(raw));
+  }
+}
+
+/// 首页里的一个板块（横滑一行）。
+class SourceHomeBoard {
+  const SourceHomeBoard({
+    required this.title,
+    required this.items,
+    this.moreUrl,
+  });
+
+  /// 板块标题（**由图源返回**，App 不硬编码任何文字）。
+  final String title;
+
+  /// 「更多」跳转标识；空 / null 时隐藏更多按钮。
+  final String? moreUrl;
+
+  /// 板块内条目。
+  final List<SourceItem> items;
+
+  /// 解析一块；`title` 或 `items` 缺一不可（缺的整块跳过，不留空占位）。
+  static SourceHomeBoard? parse(Object? json) {
+    if (json is! Map) return null;
+    final title = '${json['title'] ?? json['name'] ?? ''}'.trim();
+    if (title.isEmpty) return null;
+    final rawItems = json['items'] ?? json['videos'] ?? json['list'];
+    final items = parseItems(rawItems is List ? rawItems : const <Object?>[]);
+    if (items.isEmpty) return null;
+    final more = '${json['moreUrl'] ?? json['more'] ?? json['more_url'] ?? ''}'.trim();
+    return SourceHomeBoard(
+      title: title,
+      moreUrl: more.isEmpty ? null : more,
+      items: items,
+    );
+  }
+}
+
 /// 图源能给出「筛选标签」的可选能力（视频板块的筛选页用它）。
 ///
 /// **为什么是契约而不是 App 内置一份**：各站点的筛选项各不相同（题材 / 地区 /

@@ -41,6 +41,9 @@ class JsSourceContract {
 
   /// 筛选标签（可选契约；脚本没实现时按「不支持」处理）。
   static const String filters = 'filters';
+
+  /// 首页（可选契约）：多板块数组 / 旧兼容的纯 Item 数组，App 自动识别。
+  static const String home = 'home';
   static const String detail = 'detail';
   static const String chapters = 'chapters';
   static const String content = 'content';
@@ -52,6 +55,9 @@ class JsSourceContract {
     detail,
     chapters,
     content,
+    // 可选契约（有别名表、可被脚本实现；没实现也不影响导入）。
+    home,
+    filters,
   ];
 }
 
@@ -69,7 +75,8 @@ class JsDataSource
         DataSource,
         DanmakuCapable,
         DanmakuPostCapable,
-        FilterCapable {
+        FilterCapable,
+        HomeCapable {
   JsDataSource({
     required this.id,
     required this.name,
@@ -101,6 +108,12 @@ class JsDataSource
     final value = parseCategories(await _invoke(JsSourceContract.categories));
     cache?.write(section, id, key, value);
     return value;
+  }
+
+  @override
+  Future<SourceHome> home() async {
+    // 首页不缓存：它代表「现在有什么推荐」，刷新就该看到最新的。
+    return SourceHome.parse(await _invoke(JsSourceContract.home));
   }
 
   @override

@@ -171,7 +171,13 @@ class SourceEngineRegistry {
   }) async {
     if (!LumeJsEngine.isSupported) return null;
     return QuickJsSourceEngine(
-      await LumeJsEngine.create(sourceId: sourceId, http: http, section: section),
+      await LumeJsEngine.create(
+        sourceId: sourceId,
+        http: http,
+        section: section,
+        // 桥接服务地址随图源交给脚本（`LumeSource.bridge`，用户口径 2.2）。
+        bridge: http.bridge,
+      ),
     );
   }
 

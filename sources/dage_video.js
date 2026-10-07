@@ -210,7 +210,15 @@ var LumeSource = {
       }
     });
     if (!response || response.status !== 200) {
-      throw new Error('拉取失败：HTTP ' + (response ? response.status : 0) + ' ' + path);
+      var status = response ? response.status : 0;
+      var body = response && response.body ? String(response.body) : '';
+      // Cloudflare 人机校验（用户口径 2.1.1）：抛固定标记，App 据此显示
+      // 【重试】+【网页视图】两个出口（普通 HTTP 错误不抛这个标记）。
+      if ((status === 403 || status === 503 || status === 429) &&
+          /just a moment|__cf_chl|cf-chl|challenge-platform|cf-mitigated|checking your browser/i.test(body)) {
+        throw new Error('NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP ' + status + '）');
+      }
+      throw new Error('拉取失败：HTTP ' + status + ' ' + path);
     }
     var envelope;
     try {

@@ -12,7 +12,7 @@ import 'source_record.dart';
 class SectionDatabase {
   SectionDatabase._(this._db, this._sectionId);
 
-  static const int _schemaVersion = 5;
+  static const int _schemaVersion = 6;
 
   /// 库内自证键：本库属于哪个板块。
   static const String _ownerKey = 'owner_section';
@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS source (
   enabled    INTEGER NOT NULL DEFAULT 1,
   updated_at INTEGER NOT NULL,
   user_agent TEXT NOT NULL DEFAULT '',
+  bridge     TEXT NOT NULL DEFAULT '',
   cookie     TEXT NOT NULL DEFAULT '',
   proxy      TEXT NOT NULL DEFAULT '',
   origin_url TEXT NOT NULL DEFAULT '',
@@ -124,6 +125,11 @@ CREATE TABLE IF NOT EXISTS section_setting (
         }
       }
     }
+    if (!createdFresh && version < 6) {
+      // 桥接服务地址（用户口径 2.2）：reCAPTCHA v3 这类源需要一个无头浏览器桥，
+      // 地址按图源存，交给脚本去转发请求（见 NetworkProfile.bridge）。
+      _db.execute("ALTER TABLE source ADD COLUMN bridge TEXT NOT NULL DEFAULT ''");
+    }
     if (version < _schemaVersion) {
       _db.execute('PRAGMA user_version = $_schemaVersion');
     }
@@ -198,10 +204,11 @@ CREATE TABLE IF NOT EXISTS section_setting (
     required String userAgent,
     required String cookie,
     required String proxy,
+    String bridge = '',
   }) {
     _db.execute(
-      'UPDATE source SET user_agent = ?, cookie = ?, proxy = ? WHERE id = ?',
-      [userAgent, cookie, proxy, id],
+      'UPDATE source SET user_agent = ?, cookie = ?, proxy = ?, bridge = ? WHERE id = ?',
+      [userAgent, cookie, proxy, bridge, id],
     );
   }
 
