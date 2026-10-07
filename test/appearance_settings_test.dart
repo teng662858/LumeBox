@@ -194,11 +194,12 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('分组标题「显示」+ 两行（外观 / 主题色），且排在通用分组之前', (tester) async {
+    testWidgets('「界面」分组里是两行（外观 / 主题色），且排在其余分组之前', (tester) async {
       await pumpSettings(tester);
 
       expect(find.byType(DisplaySettingsGroup), findsOneWidget);
-      expect(find.text('显示'), findsOneWidget);
+      // 设置页重排后，这一组归到「界面」（外观 / 主题色 / 底部导航栏管理）。
+      expect(find.text('界面'), findsOneWidget);
       expect(find.text('外观'), findsOneWidget);
       expect(find.text('主题色'), findsOneWidget);
 

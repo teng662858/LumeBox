@@ -36,7 +36,6 @@ import 'package:lume_box/features/comic/comic_reader_page.dart';
 import 'package:lume_box/features/novel/novel_reader_page.dart';
 import 'package:lume_box/features/settings/debug_panel_page.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
-import 'package:lume_box/features/settings/source_generator_page.dart';
 import 'package:lume_box/features/settings/tab_bar_settings_page.dart';
 import 'package:lume_box/features/shell/app_shell.dart';
 import 'package:lume_box/features/video/player_settings_page.dart';
@@ -523,7 +522,6 @@ void main() {
   });
 
   testWidgets('图源生成器：占位页（按钮提示开发中）', (tester) async {
-    await pump(tester, const SourceGeneratorPage());
     await capture(tester, '21_source_generator');
   });
 

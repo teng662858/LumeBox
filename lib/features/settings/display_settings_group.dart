@@ -12,16 +12,20 @@ import '../../shared/widgets/glass_card.dart';
 /// 交互与视觉沿用页面既有的一套：卡片用同一份 [GlassCard]，选择弹窗是底部 Sheet
 /// 一行一项（与图源切换 / 轨道选择同款），不新造交互。
 class DisplaySettingsGroup extends StatelessWidget {
-  const DisplaySettingsGroup({super.key});
+  const DisplaySettingsGroup({super.key, this.showTitle = true});
+
+  /// 是否自带分组标题（嵌进设置页的更大分组时传 false）。
+  final bool showTitle;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
-          child: Text(
+        if (showTitle)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+            child: Text(
             '显示',
             style: TextStyle(
               fontSize: 13,

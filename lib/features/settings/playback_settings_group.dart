@@ -13,7 +13,10 @@ import '../../shared/widgets/glass_card.dart';
 /// 为什么开关只有两态：竖屏短剧的默认行为（竖屏全屏）就是「关」的样子，
 /// 开关的语义是「我要一律横屏」；要强制竖屏是更少见的一档，放在播放器里。
 class PlaybackSettingsGroup extends StatelessWidget {
-  const PlaybackSettingsGroup({super.key});
+  const PlaybackSettingsGroup({super.key, this.showTitle = true});
+
+  /// 是否自带分组标题（嵌进设置页的更大分组时传 false）。
+  final bool showTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -21,9 +24,10 @@ class PlaybackSettingsGroup extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
-          child: Text(
+        if (showTitle)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+            child: Text(
             '播放',
             style: TextStyle(
               fontSize: 13,

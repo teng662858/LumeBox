@@ -26,7 +26,6 @@ import 'package:lume_box/features/video/video_page.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
 import 'package:lume_box/features/settings/sandbox_settings_page.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
-import 'package:lume_box/features/settings/source_generator_page.dart';
 import 'package:lume_box/features/settings/tab_bar_settings_page.dart';
 import 'package:lume_box/features/source/global_source_page.dart';
 import 'package:lume_box/features/source/source_section_page.dart';
@@ -193,7 +192,6 @@ void main() {
   sweep('新增页面', <String, Widget Function()>{
     '沙箱设置': () => const SandboxSettingsPage(),
     '调试面板': () => const DebugPanelPage(),
-    '图源生成器': () => const SourceGeneratorPage(),
     '设置页': () => const SettingsPage(runtimeAvailable: true),
     '播放器设置': () => PlayerSettingsPage(
           settings: const PlayerSettings(),

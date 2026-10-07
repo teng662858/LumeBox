@@ -18,7 +18,6 @@ import 'log_viewer_page.dart';
 import 'sandbox_settings_page.dart';
 import 'tab_bar_settings_page.dart';
 import 'section_cache.dart';
-import 'source_generator_page.dart';
 
 /// 设置：图源总管理、缓存管理、运行日志查看与错误报告导出。
 ///
@@ -62,49 +61,58 @@ class SettingsPage extends StatelessWidget {
       child: ListView(
         padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
         children: <Widget>[
-          // 「显示」分组（外观 + 主题色，用户要求合并）放在最前：它是最纯的
-          // 界面偏好，改完立刻看得到效果。
-          const DisplaySettingsGroup(),
-          const SizedBox(height: 12),
-          // 「播放」分组（横屏播放）：与播放器里的「方向锁定」写同一份偏好。
-          const PlaybackSettingsGroup(),
-          const SizedBox(height: 12),
-          // 底部导航栏管理（逐项开关 + 拖拽排序）：放在最前，它是纯界面偏好，
-          // 属于用户最先想调的东西。
+          // 分组标题只是视觉归类：每块一张卡，条目按「用户要改什么」摆放
+          //（真机反馈「设置太乱」后按此口径重排）。
+          const _GroupTitle('界面'),
+          const DisplaySettingsGroup(showTitle: false), // 外观 + 主题色
+          const SizedBox(height: 10),
           _SettingsEntry(
             icon: Icons.dashboard_customize_outlined,
             title: '底部导航栏管理',
             subtitle: '每个页签独立开关 + 拖拽排序（至少保留 1 个；改动立即生效）',
             onTap: () => _push(context, const TabBarSettingsPage()),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
+          const _GroupTitle('播放'),
+          // 方向偏好（横屏播放）+ 播放器设置 + 内核逃生入口都归到这一组：
+          // 它们都是「播放怎么进行」的设置，散在三处最难找。
+          const PlaybackSettingsGroup(showTitle: false),
+          const SizedBox(height: 10),
+          _SettingsEntry(
+            icon: Icons.play_circle_outline_rounded,
+            title: '播放器设置',
+            subtitle: '播放内核、倍速、字幕、方向锁定（写视频板块自己的设置库）',
+            onTap: () => _push(context, const PlayerSettingsHost()),
+          ),
+          const SizedBox(height: 10),
+          // 故障逃生入口：内核选择列表**内嵌**在设置页里（点得最少、最稳），
+          // 与视频板块的快捷入口共用同一份列表组件。播放器设置库打不开时，
+          // 这里是唯一还能换内核的地方，因此独立成卡而不是并进上面那一行。
+          const PlayerKernelSection(),
+          const SizedBox(height: 20),
+          const _GroupTitle('源与网络'),
           _SettingsEntry(
             icon: Icons.tune,
             title: '源总管理',
             subtitle: '四个板块的源总览与批量管理（小说 / 漫画 / 视频 / 猫源互相独立）',
             onTap: () => _push(context, const GlobalSourcePage()),
           ),
-          const SizedBox(height: 12),
-          // 播放器设置（内核 / 倍速 / 字幕）：从视频板块右上角迁到这里——
-          // 板块页右上角只留「图源管理」，两件事不再抢同一个按钮。
-          _SettingsEntry(
-            icon: Icons.play_circle_outline_rounded,
-            title: '播放器设置',
-            subtitle: '播放内核、倍速、字幕基础配置（写视频板块自己的设置库）',
-            onTap: () => _push(context, const PlayerSettingsHost()),
-          ),
-          const SizedBox(height: 12),
-          // 故障逃生入口：内核选择列表**内嵌**在设置页里（点得最少、最稳），
-          // 与视频板块的快捷入口共用同一份列表组件。
-          const PlayerKernelSection(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           _SettingsEntry(
             icon: Icons.wifi_tethering,
             title: '网络设置',
             subtitle: '全局并发、单域名并发、UA、代理、超时与重试（四板块共用）',
             onTap: () => _push(context, const NetworkSettingsPage()),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
+          const _GroupTitle('存储与安全'),
+          _SettingsEntry(
+            icon: Icons.cleaning_services_outlined,
+            title: '缓存管理',
+            subtitle: '按板块清理磁盘缓存与内存缓存（漫画板块的图片缓存已关闭）',
+            onTap: () => _push(context, CacheSettingsPage(service: cacheService)),
+          ),
+          const SizedBox(height: 10),
           // 文档第 4 条点名的全局参数之一：JS 沙箱超时（四板块共用）。
           _SettingsEntry(
             icon: Icons.hourglass_bottom_outlined,
@@ -112,38 +120,22 @@ class SettingsPage extends StatelessWidget {
             subtitle: 'JS 脚本执行超时（3–5 秒，四板块共用）；其余安全上限不可调',
             onTap: () => _push(context, const SandboxSettingsPage()),
           ),
-          const SizedBox(height: 12),
-          _SettingsEntry(
-            icon: Icons.cleaning_services_outlined,
-            title: '缓存管理',
-            subtitle: '按板块清理磁盘缓存与内存缓存（漫画 / 小说 / 视频 / 猫源互相独立）',
-            onTap: () => _push(context, CacheSettingsPage(service: cacheService)),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
+          const _GroupTitle('诊断'),
           _SettingsEntry(
             icon: Icons.receipt_long_outlined,
             title: '运行日志',
             subtitle: '查看本次运行的日志：信息 / 警告 / 错误',
             onTap: () => _push(context, LogViewerPage(exporter: exporter)),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           _SettingsEntry(
             icon: Icons.file_upload_outlined,
             title: '错误报告',
             subtitle: '把错误与警告整理成报告，导出文件或复制全文',
             onTap: () => _push(context, LogReportPage(exporter: exporter)),
           ),
-          const SizedBox(height: 12),
-          // 预留扩展项（Phase2 收尾）：只搭 UI 骨架，所有按钮弹「功能开发中」。
-          // 放设置页而不是新增底部 Tab —— 生成器是工具附属功能、不是主阅读板块，
-          // 底部 5 个主 Tab（小说 / 漫画 / 视频 / 猫源 / 设置）保持不变。
-          _SettingsEntry(
-            icon: Icons.auto_fix_high_outlined,
-            title: '图源生成器（开发中）',
-            subtitle: '可视化爬虫：配置网址与规则后生成图源脚本（预留功能，尚未实现）',
-            onTap: () => _push(context, const SourceGeneratorPage()),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           // 调试面板（文档「调试日志规范」）：请求抓包 + JS 上下文统计。
           // 抓包默认关闭、只留内存、不导出——见 DebugPanelPage 的说明。
           _SettingsEntry(
@@ -210,6 +202,28 @@ class _SettingsEntry extends StatelessWidget {
           ),
           Icon(Icons.chevron_right, color: LumeTheme.muted),
         ],
+      ),
+    );
+  }
+}
+
+/// 分组标题：设置页的五个分区（界面 / 播放 / 源与网络 / 存储与安全 / 诊断）。
+class _GroupTitle extends StatelessWidget {
+  const _GroupTitle(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: LumeTheme.textSecondary,
+        ),
       ),
     );
   }
