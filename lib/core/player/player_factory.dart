@@ -2,15 +2,17 @@ import 'dart:io';
 
 import 'abstract_player.dart';
 import 'av_player.dart';
+import 'mdk_engine.dart';
 import 'media_kit_mpv_engine.dart';
 import 'mpv_player.dart';
 import 'player_settings.dart';
 
 /// 播放器工厂：三套内核（AVPlayer / MPV / MDK）的唯一选择点。
 ///
-/// 现状（Phase1）：iOS 上 AVPlayer（video_player 驱动）与 **MPV**（libmpv，
-/// 由 media_kit 提供原生库与渲染）都可用；MDK 只预留接口——没有原生库，
-/// 工厂如实报告不可用并给出原因，不假装可切换。
+/// 现状：iOS 上三套**都可用**——AVPlayer（video_player 驱动）、MPV（libmpv，
+/// media_kit 提供）与 **MDK**（libmdk，由 `fvp` 提供原生库与纹理渲染）。
+/// 三者各有自己的解码链（系统 / libmpv / libmdk），因此「某台设备上某个内核
+/// 放不动（例如硬解 HEVC 花屏）」时还有别的选择——这正是留三套的意义。
 ///
 /// 平台边界：Android / Windows 仍只保留骨架（Phase1 优先 iOS），因此除 iOS
 /// 之外的平台统一报告「仅骨架」。
@@ -39,21 +41,29 @@ class PlayerFactory {
   /// 清除熔断标记（测试用；也给「用户手动重试」留一个入口）。
   static void clearMpvInitFailure() => _mpvInitFailed = false;
 
+  /// MDK 本次运行是否已被判定初始化失败（与 MPV 同一套熔断口径）。
+  static bool get mdkInitFailed => _mdkInitFailed;
+  static bool _mdkInitFailed = false;
+
+  static void markMdkInitFailed() => _mdkInitFailed = true;
+
+  static void clearMdkInitFailure() => _mdkInitFailed = false;
+
   /// 内核是否可用。
   static bool isAvailable(PlayerKernel kernel) => switch (kernel) {
         // iOS 是主力平台：AVPlayer 与 MPV 都已接入（MPV 的原生库随 iOS 打包）。
         PlayerKernel.avplayer => Platform.isIOS,
         // MPV 初始化失败过：本次运行不再提供（逃生入口仍可切回 AVPlayer）。
         PlayerKernel.mpv => Platform.isIOS && !_mpvInitFailed,
-        // MDK 只预留接口：没有原生库，如实报告不可用（Phase1 不实现）。
-        PlayerKernel.mdk => false,
+        // MDK：原生库（libmdk）随 fvp 打包进 iOS；初始化失败过则本次不再提供。
+        PlayerKernel.mdk => Platform.isIOS && !_mdkInitFailed,
       };
 
   /// 内核不可用的原因；可用时为 null（设置页直接展示这段文案）。
   static String? unavailableReason(PlayerKernel kernel) {
     if (isAvailable(kernel)) return null;
-    if (kernel == PlayerKernel.mdk) {
-      return 'MDK 内核只预留接口（Phase1 未实现）';
+    if (kernel == PlayerKernel.mdk && _mdkInitFailed) {
+      return 'MDK 初始化失败（本次运行已自动回退 AVPlayer）';
     }
     if (kernel == PlayerKernel.mpv && _mpvInitFailed) {
       return 'MPV 初始化失败（本次运行已自动回退 AVPlayer）';
@@ -77,8 +87,8 @@ class PlayerFactory {
           engine: MediaKitMpvEngine.create(title: 'Lume Box'),
           engineLabel: kernel.label,
         ),
-      // MDK：只预留接口（上面的可用性判断已拦住，这里保持显式）。
-      PlayerKernel.mdk => null,
+      // MDK：libmdk 绑定（fvp）挡在 MdkEngine 后面，上层只认 AbstractPlayer。
+      PlayerKernel.mdk => MdkEngine.create(),
     };
   }
 }

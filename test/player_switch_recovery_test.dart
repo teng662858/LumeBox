@@ -40,6 +40,7 @@ void main() {
 
   setUp(() async {
     PlayerFactory.clearMpvInitFailure();
+    PlayerFactory.clearMdkInitFailure();
     root = Directory.systemTemp.createTempSync('lume_box_switch');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -54,6 +55,7 @@ void main() {
 
   tearDown(() async {
     PlayerFactory.clearMpvInitFailure();
+    PlayerFactory.clearMdkInitFailure();
     ReadingLibrary.disposeAll();
     ReadingStore.disposeAll();
     await SectionScope.closeAll();
@@ -264,7 +266,31 @@ void main() {
       );
     });
   });
+  group('MDK 内核：已接入（不再是「预留接口」）', () {
+    test('可用性与不可用原因跟随平台边界，而不是「未实现」', () {
+      final available = PlayerFactory.isAvailable(PlayerKernel.mdk);
+      final reason = PlayerFactory.unavailableReason(PlayerKernel.mdk);
+      if (available) {
+        expect(reason, isNull);
+      } else {
+        // MDK 已经真的接进来了（libmdk / fvp），非 iOS 上不可用的原因是
+        // **平台边界**（与 MPV 同口径），不再是「只预留接口 / 未实现」。
+        expect(reason, contains('仅在 iOS 提供'));
+        expect(reason, isNot(contains('预留')));
+        expect(reason, isNot(contains('未实现')));
+      }
+    });
+
+    test('熔断：标记后本次运行不再提供，清除后可再试', () {
+      expect(PlayerFactory.mdkInitFailed, isFalse);
+      PlayerFactory.markMdkInitFailed();
+      expect(PlayerFactory.mdkInitFailed, isTrue);
+      PlayerFactory.clearMdkInitFailure();
+      expect(PlayerFactory.mdkInitFailed, isFalse);
+    });
+  });
 }
+
 
 class _Catalog implements PlayerKernelCatalog {
   const _Catalog(this.available);

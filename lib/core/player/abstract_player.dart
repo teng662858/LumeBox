@@ -38,8 +38,8 @@ class PlayerSnapshot {
 
 /// 播放器抽象层。
 ///
-/// Phase1 提供两套实现：AVPlayer（video_player 驱动）与 MPV（libmpv / media_kit
-/// 驱动）；MDK 只预留接口。
+/// 三套实现：AVPlayer（video_player 驱动）、MPV（libmpv / media_kit 驱动）与
+/// MDK（libmdk / fvp 驱动）。
 abstract class AbstractPlayer {
   /// 当前状态。UI 通过 [snapshot] 订阅，无需自行轮询。
   ValueListenable<PlayerSnapshot> get snapshot;

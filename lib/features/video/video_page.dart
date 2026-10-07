@@ -46,7 +46,7 @@ import 'video_player_settings.dart';
 /// 播放器仍可手动输入地址使用。
 ///
 /// 播放内核由设置页选择：iOS 上 AVPlayer（video_player）与 MPV（libmpv / media_kit）
-/// 都可用，MDK 只预留接口。页面只认 [AbstractPlayer] 与 [PlayerStats]：内核切换、
+/// 三套都可用。页面只认 [AbstractPlayer] 与 [PlayerStats]：内核切换、
 /// 控制栏与 HUD 都不需要跟着改。Android / Windows 按宪法只保留 UI 骨架占位，
 /// 画中画业务逻辑只在 iOS 侧接线（原生实现落地前，设置页与画中画按钮显示为占位）。
 ///

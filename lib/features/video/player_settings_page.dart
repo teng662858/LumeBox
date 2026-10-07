@@ -49,7 +49,7 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
       child: ListView(
         padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
         children: <Widget>[
-          const _SectionTitle('播放内核', 'AVPlayer 与 MPV 运行时可切换；MDK 只预留接口（不可选）'),
+          const _SectionTitle('播放内核', '三套内核运行时可切换：AVPlayer / MPV / MDK（各有独立解码链）'),
           // 与全局设置的逃生入口共用同一份列表（同一个组件，不复制 UI）。
           PlayerKernelPicker(
             selected: _settings.kernel,

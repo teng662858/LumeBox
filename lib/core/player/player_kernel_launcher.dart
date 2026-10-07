@@ -131,6 +131,9 @@ class PlayerKernelLauncher {
 
   void _markFailed(PlayerKernel kernel) {
     if (kernel == PlayerKernel.mpv) PlayerFactory.markMpvInitFailed();
+    // MDK 与 MPV 同一套熔断口径：失败的内核本次运行内不再提供，
+    // 重启 App 会再给一次机会（不写进持久化配置）。
+    if (kernel == PlayerKernel.mdk) PlayerFactory.markMdkInitFailed();
     LumeLog.warn('[player] ${kernel.label} 初始化失败：本次运行内不再提供');
   }
 }
