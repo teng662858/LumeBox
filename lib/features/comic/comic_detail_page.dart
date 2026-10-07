@@ -843,10 +843,14 @@ class _ChapterTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      // 条目之间的间隔 6 → 10：相邻两行挨得太近时手指容易点错行，
+      // 拉开间距比放大文字更有用（字号保持原样）。
+      padding: const EdgeInsets.only(bottom: 10),
       child: GlassCard(
         radius: 12,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        // 垂直内边距 2 → 12：整行约 44pt 高，达到 iOS 的最小触摸目标
+        // （原先约 24pt）。字号仍是 14，只扩触摸区与行距，不动别的布局。
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         onTap: onTap,
         child: Row(
           children: <Widget>[

@@ -12,6 +12,7 @@ import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/comic/comic_detail_page.dart';
 import 'package:lume_box/features/comic/comic_reader_page.dart';
 import 'package:lume_box/features/novel/novel_catalog_page.dart';
+import 'package:lume_box/shared/widgets/glass_card.dart';
 import 'package:lume_box/features/novel/novel_detail_page.dart';
 import 'package:lume_box/features/novel/novel_reader_page.dart';
 
@@ -105,6 +106,53 @@ void main() {
       lessThan(tester.getTopLeft(find.text('第 1 章')).dy),
       reason: '倒序后最后一章排在最前',
     );
+  });
+
+  testWidgets('漫画详情：章节条目的触摸区与行距（移动端点得准）', (tester) async {
+    await pump(
+      tester,
+      ComicDetailPage(
+        library: comicLibrary,
+        manager: managerFor(Section.comic),
+        target: comicTarget,
+        runtimeAvailable: true,
+      ),
+    );
+
+    // 章节行 = 含「第 N 章」文字的 GlassCard；量它们的矩形。
+    final rects = <Rect>[];
+    for (final element in find.byType(GlassCard).evaluate()) {
+      final hasTitle = find
+          .descendant(
+            of: find.byWidget(element.widget),
+            matching: find.textContaining(RegExp(r'^第 \d+ 章$')),
+          )
+          .evaluate()
+          .isNotEmpty;
+      if (hasTitle) rects.add(tester.getRect(find.byWidget(element.widget)));
+    }
+    expect(rects.length, greaterThanOrEqualTo(3), reason: '三个章节行都该被量到');
+
+    // 触摸区：整行高度要达到 iOS 的最小触摸目标 44pt（原先约 24pt）。
+    for (final rect in rects) {
+      expect(
+        rect.height,
+        greaterThanOrEqualTo(44.0),
+        reason: '章节条目高度 ${rect.height}pt 小于 44pt，手指要瞄着点',
+      );
+    }
+    // 行距：相邻两行之间要留间隔，避免点串行。
+    for (var i = 1; i < rects.length; i++) {
+      final gap = rects[i].top - rects[i - 1].bottom;
+      expect(
+        gap,
+        greaterThanOrEqualTo(8.0),
+        reason: '相邻章节之间只有 ${gap}pt 间隔，容易误点相邻行',
+      );
+    }
+    // 字号不动（这次只改触摸区与行距，没有放大文字）。
+    final title = tester.widget<Text>(find.text('第 1 章'));
+    expect(title.style?.fontSize, 14);
   });
 
   testWidgets('漫画详情：点章节进阅读器，并把作品留在书架上', (tester) async {
