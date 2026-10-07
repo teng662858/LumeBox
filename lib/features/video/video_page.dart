@@ -11,6 +11,7 @@ import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../reading/explore_view.dart';
 import '../reading/history_sheet.dart';
 import '../shell/board_tabs.dart';
 import '../source/add_source_button.dart';
@@ -233,6 +234,18 @@ class _VideoPageState extends State<VideoPage> {
     }
   }
 
+  /// 探索列表里点一个条目：先按 id 打开它所属的图源，再走既有的起播链路。
+  Future<void> _playFromSelection(ExploreSelection selection) async {
+    final manager = widget.sourceManager ?? LumeSources.manager(Section.video);
+    final source = await manager.open(selection.sourceId);
+    if (!mounted) return;
+    if (source == null) {
+      _toast('「${selection.item.title}」的源不可用（未启用或脚本载入失败）');
+      return;
+    }
+    await _playFromSource(source, selection.item);
+  }
+
   /// 唤起独立播放器页；返回后刷新「继续观看」（进度是在那边落的盘）。
   Future<void> _openPlayer(
     PlayerMedia media, {
@@ -451,16 +464,21 @@ class _VideoPageState extends State<VideoPage> {
         // **内容在前，历史在后**（真机反馈：历史条目一多就把搜索栏、分类与首页
         // 内容全部挤到屏幕下方）。顺序固定为：搜索 → 分类 → 内容列表 → 继续观看。
         Expanded(
-          child: SourceBrowsePane(
+          // 与小说 / 漫画**同一个浏览组件**：同款工具栏（源下拉 → 排序 → 布局 →
+          // 搜索 → 筛选）、同款搜索（聚合 / 当前源）与分页 / 预热。视频板块因此
+          // 不再有一套自己的浏览实现——三块的肌肉记忆真正一致。
+          child: ExploreView(
             section: Section.video,
-            manager: widget.sourceManager,
-            showSourceActions: false,
-            // 封面管线的缓存属于视频板块自己，与其他板块不共享。
+            // 管线可能还在准备：为空时封面先出占位（不挂转圈等它，见 ExploreView）。
             pipeline: _pipeline,
-            onItemTap: _playFromSource,
-            // 图源变更后原地重解析（不换 Key：重挂会与旧实例的 dispose
-            // 抢同一份板块注册表，反而报「图源存储不可用」）。
+            manager: widget.sourceManager,
+            layout: ExploreLayout.list,
+            // 顶栏已经有「源管理」，图源条里不再重复放一个。
+            showSourceManage: false,
+            // 导入 / 删除图源后原地重解析（不重挂：重挂会与旧实例的 dispose
+            // 抢同一份板块注册表，真机上会报「图源存储不可用」）。
             revision: _browseRevision,
+            onOpenItem: _playFromSelection,
           ),
         ),
         if (_library != null)

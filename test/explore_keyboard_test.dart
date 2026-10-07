@@ -71,7 +71,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('搜索'));
+      // 点搜索先选范围（聚合 / 当前源），再进搜索框。
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('当前源搜索'));
+    await tester.pumpAndSettle();
       await tester.pumpAndSettle();
 
       final field = find.byType(TextField);

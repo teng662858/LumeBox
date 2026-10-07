@@ -128,8 +128,22 @@ void main() {
     final covers = tester
         .widgetList<SectionImage>(find.byType(SectionImage))
         .toList(growable: false);
-    expect(covers, hasLength(1), reason: '只有带封面的条目占图位，没封面不留空位');
-    expect(covers.single.url, 'https://example.com/poster.jpg');
+    expect(
+      covers,
+      hasLength(2),
+      reason: '浏览列表与小说 / 漫画同一套卡片：每条都占封面位'
+          '（没封面的显示主题占位，与小说明 / 漫画列表一致）',
+    );
+    expect(
+      covers.first.url,
+      'https://example.com/poster.jpg',
+      reason: '有封面的条目按图源给的地址取图',
+    );
+    expect(
+      (covers.last.url ?? '').isEmpty,
+      isTrue,
+      reason: '没封面的条目走主题占位（图位仍在，不留空位之外的空缺）',
+    );
   });
 
   testWidgets('导入源后首页自动刷新出列表（不必手动重试或切页签）', (tester) async {

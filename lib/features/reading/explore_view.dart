@@ -14,7 +14,7 @@ import '../../shared/widgets/state_view.dart';
 import '../shell/section_preloader.dart';
 import '../source/source_section_page.dart';
 import 'poster_card.dart';
-import 'source_bar.dart';
+import 'section_toolbar.dart';
 import '../shell/board_tabs.dart';
 
 /// 探索内容布局：漫画是海报墙（网格），小说是条目列表（网格同样是海报形状，
@@ -45,16 +45,22 @@ class ExploreView extends StatefulWidget {
   const ExploreView({
     super.key,
     required this.section,
-    required this.pipeline,
+    this.pipeline,
     required this.onOpenItem,
     this.manager,
     this.layout = ExploreLayout.grid,
+    this.showSourceManage = true,
+    this.revision = 0,
   });
 
   final Section section;
 
   /// 本页面的图片管线（由外壳页持有并负责释放）。
-  final SectionImagePipeline pipeline;
+  ///
+  /// 可以为空：管线就绪前封面先出主题占位——**不要**为等它挂一个转圈的加载态，
+  /// 那会让「切过去先白一下」变成「一直白着」（视频板块的管线要等阅读库打开，
+  /// 而库打开是真实 IO，慢的时候肉眼可见）。
+  final SectionImagePipeline? pipeline;
 
   /// 点条目：由板块页决定进哪个详情页。回调里带着条目所属图源。
   final ValueChanged<ExploreSelection> onOpenItem;
@@ -63,6 +69,16 @@ class ExploreView extends StatefulWidget {
   final SourceManager? manager;
 
   final ExploreLayout layout;
+
+  /// 图源变更代数：宿主导入 / 删除 / 停用图源后 +1，本页**原地**重新解析
+  /// （重挂会与旧实例的 dispose 抢同一份板块注册表，真机上会报「图源存储不可用」）。
+  final int revision;
+
+  /// 图源条里是否显示「源管理」入口。
+  ///
+  /// 宿主自己顶栏已经有「源管理」时传 false：同一个入口在一屏里出现两次，
+  /// 用户会以为是两个不同的东西（视频板块就是这种情况）。
+  final bool showSourceManage;
 
   @override
   State<ExploreView> createState() => _ExploreViewState();
@@ -111,6 +127,30 @@ class _ExploreViewState extends State<ExploreView> {
   /// 否则旧请求回来会把新列表覆盖回去。
   int _requestSeq = 0;
 
+  /// 排序（客户端，只作用于已加载的条目；图源契约里没有排序参数）。
+  BrowseSort _sort = BrowseSort.none;
+
+  /// 搜索模式（用户点名的两种）：聚合 / 当前源。
+  SearchMode _searchMode = SearchMode.single;
+
+  /// 联想候选（非空即展示下拉列表）。
+  List<String> _suggestions = const <String>[];
+
+  /// 联想取词节流：输入停顿后再问，避免每敲一个字都发请求。
+  Timer? _suggestDebounce;
+
+  /// 联想请求代号：过期结果直接丢弃（用户可能已经改了关键词）。
+  int _suggestSeq = 0;
+
+  /// 聚合搜索结果（非空即处于「结果页」形态）。单源搜索沿用 [_items]。
+  List<SearchHit>? _hits;
+
+  /// 聚合搜索里没取到数据的源数量（结果页顶部如实说明）。
+  int _aggregateFailed = 0;
+
+  /// 搜索结果的关键词（结果页顶部保留）。
+  String _resultKeyword = '';
+
   /// 首页列表失败的原因（分类失败不算）。
   Object? _failure;
 
@@ -126,11 +166,22 @@ class _ExploreViewState extends State<ExploreView> {
   }
 
   @override
+  void didUpdateWidget(ExploreView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 宿主说「图源变了」：原地重新解析（不换 Key，见 [revision] 的说明）。
+    if (widget.revision != oldWidget.revision) {
+      unawaited(_bootstrap());
+    }
+  }
+
+  @override
   void dispose() {
     _layoutSettings.removeListener(_onLayoutChanged);
     // 离开页面即作废在飞请求的结果（回来的数据直接丢，不再 setState），
     // 也不让它们继续占着网络队列拖慢下一个页面。
     _requestSeq++;
+    _suggestSeq++;
+    _suggestDebounce?.cancel();
     _search.dispose();
     _manager.close();
     super.dispose();
@@ -351,7 +402,9 @@ class _ExploreViewState extends State<ExploreView> {
 
   /// 预取这一页的封面：列表还在滑的时候图就已经在路上了。
   void _preloadCovers(List<SourceItem> items) {
-    widget.pipeline.preload(
+    final pipeline = widget.pipeline;
+    if (pipeline == null) return;
+    pipeline.preload(
       <String>[
         for (final item in items)
           if ((item.cover ?? '').trim().isNotEmpty) item.cover!.trim(),
@@ -403,9 +456,97 @@ class _ExploreViewState extends State<ExploreView> {
     _loadPage();
   }
 
+  /// 点工具栏「搜索」：先选范围（聚合 / 当前源），再开搜索框。
+  Future<void> _openSearch() async {
+    final mode = await showSearchModeMenu(context);
+    if (mode == null || !mounted) return;
+    setState(() {
+      _searchMode = mode;
+      _searching = true;
+      _suggestions = const <String>[];
+    });
+  }
+
+  /// 输入变化：拉联想词（优先图源的 suggest，没有就用本地搜索历史）。
+  ///
+  /// 联想只是输入辅助：它不改搜索请求本身（见 [_submitSearch]）。
+  void _onSearchChanged(String value) {
+    _suggestDebounce?.cancel();
+    final keyword = value.trim();
+    if (keyword.isEmpty) {
+      // 空输入不弹（用户点名）。
+      setState(() => _suggestions = const <String>[]);
+      return;
+    }
+    _suggestDebounce = Timer(
+      const Duration(milliseconds: 200),
+      () => unawaited(_loadSuggestions(keyword)),
+    );
+  }
+
+  Future<void> _loadSuggestions(String keyword) async {
+    final seq = ++_suggestSeq;
+    final suggestions = await SearchSuggestions(
+      source: _source,
+      history: _historyStore?.load() ?? const <String>[],
+    ).forKeyword(keyword);
+    if (!mounted || seq != _suggestSeq) return;
+    // 关键词可能已经被清掉 / 改掉：只在还匹配时上屏。
+    if (_search.text.trim() != keyword) return;
+    setState(() => _suggestions = suggestions);
+  }
+
+  /// 搜索历史（本板块自己的库；库没打开时为 null，联想退化为纯服务端）。
+  SearchHistoryStore? get _historyStore {
+    final library = ReadingLibrary.find(widget.section);
+    return library == null ? null : SearchHistoryStore(widget.section, library);
+  }
+
+  /// 执行搜索。**两种模式共用同一份「请求」逻辑**，只是范围不同：
+  /// - 当前源：与浏览页同一套 [DataSource.list]（关键词 + 分页）；
+  /// - 聚合：并发问本板块全部已启用源，结果合并成一张结果页。
   void _submitSearch(String value) {
-    _keyword = value.trim();
+    final keyword = value.trim();
+    _suggestions = const <String>[];
+    _suggestDebounce?.cancel();
+    if (keyword.isEmpty) return;
+    _historyStore?.remember(keyword);
+    _keyword = keyword;
+    _resultKeyword = keyword;
+    if (_searchMode == SearchMode.aggregate) {
+      unawaited(_runAggregate(keyword));
+      return;
+    }
+    setState(() => _hits = null);
     _loadPage();
+  }
+
+  /// 聚合搜索：并发问全部已启用源（单个源失败只丢它自己）。
+  Future<void> _runAggregate(String keyword) async {
+    final seq = ++_requestSeq;
+    setState(() {
+      _hits = null;
+      _failure = null;
+      _aggregateFailed = 0;
+      _loadingMore = false;
+    });
+    final result = await AggregateSearch.run(
+      sources: _sources,
+      keyword: keyword,
+      open: (sourceId) => _manager.open(sourceId),
+    );
+    if (!mounted || seq != _requestSeq) return;
+    setState(() {
+      _hits = result.hits;
+      _aggregateFailed = result.failed;
+    });
+  }
+
+  /// 点联想条目：直接填入并搜索（用户点名）。
+  void _applySuggestion(String value) {
+    _search.text = value;
+    _search.selection = TextSelection.collapsed(offset: value.length);
+    _submitSearch(value);
   }
 
   Future<void> _manageSources() async {
@@ -468,84 +609,135 @@ class _ExploreViewState extends State<ExploreView> {
     );
   }
 
+  /// 顶部工具栏：**一行完整控件，顺序固定**（用户点名）：
+  /// 源选择下拉框 → 排序 → 布局 → 搜索 → 筛选。
+  ///
+  /// 三个板块共用同一个 [SectionToolbar]：换板块也找得到那个按钮。
   Widget _buildHeader() {
-    final current = _current;
-    return Row(
+    final showSourceManageFlag = widget.showSourceManage;
+    return SectionToolbar(
+      sources: _sources.where((source) => source.enabled).toList(growable: false),
+      currentId: _current?.id,
+      busy: _switching,
+      onSelect: _selectSource,
+      onManage: showSourceManageFlag ? _manageSources : null,
+      sort: _sort,
+      onSortChanged: (sort) => setState(() => _sort = sort),
+      layoutMode: _mode,
+      onLayoutChanged: (mode) => unawaited(
+        BrowseLayoutSettings.instance.setMode(widget.section, mode),
+      ),
+      onSearch: _openSearch,
+      onFilter: () => _scaffold.currentState?.openEndDrawer(),
+      filterActive: _categoryId != null,
+    );
+  }
+
+  /// 搜索行：输入框（带当前模式标签）+ 联想下拉列表。
+  ///
+  /// 联想是**输入辅助**：只填关键词，搜索请求本身仍走 [_submitSearch] 那两条路径
+  /// （聚合 / 当前源），逻辑不变。
+  Widget _buildSearchField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Expanded(
-          child: ReadingSourceBar(
-            sources: _sources
-                .where((source) => source.enabled)
-                .toList(growable: false),
-            currentId: current?.id,
-            busy: _switching,
-            onSelect: _selectSource,
-            onManage: _manageSources,
-          ),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: GlassCard(
+                radius: 14,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: TextField(
+                  controller: _search,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  style: TextStyle(color: LumeTheme.textPrimary),
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    hintText: _searchMode == SearchMode.aggregate
+                        ? '搜索全部已启用源'
+                        : '在当前源内搜索',
+                    hintStyle: TextStyle(color: LumeTheme.muted),
+                    icon: Icon(Icons.search, color: LumeTheme.muted),
+                    suffixIcon: TextButton(
+                      onPressed: _openSearch,
+                      child: Text(
+                        _searchMode.label,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
+                  onChanged: _onSearchChanged,
+                  onSubmitted: _submitSearch,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            _RoundAction(
+              icon: Icons.close,
+              tooltip: '退出搜索',
+              onTap: () {
+                _search.clear();
+                _suggestDebounce?.cancel();
+                _suggestSeq++;
+                setState(() {
+                  _searching = false;
+                  _suggestions = const <String>[];
+                });
+                if (_keyword.isNotEmpty || _hits != null) {
+                  _keyword = '';
+                  _resultKeyword = '';
+                  setState(() => _hits = null);
+                  _loadPage();
+                }
+              },
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        // 布局切换：三档（单列 / 双列 / 三列），选择按板块记住。
-        _RoundAction(
-          icon: switch (_mode) {
-            BrowseLayoutMode.list => Icons.view_list_outlined,
-            BrowseLayoutMode.grid2 => Icons.grid_view_outlined,
-            BrowseLayoutMode.grid3 => Icons.apps_outlined,
-          },
-          tooltip: '布局',
-          onTap: _chooseLayout,
-        ),
-        const SizedBox(width: 8),
-        _RoundAction(
-          icon: Icons.search,
-          tooltip: '搜索',
-          onTap: () => setState(() => _searching = true),
-        ),
-        const SizedBox(width: 8),
-        _RoundAction(
-          icon: Icons.filter_list,
-          tooltip: '筛选',
-          onTap: () => _scaffold.currentState?.openEndDrawer(),
-        ),
+        // 联想下拉：有候选才出现（空输入 / 无候选都不占位）。
+        if (_suggestions.isNotEmpty) _buildSuggestions(),
       ],
     );
   }
 
-  Widget _buildSearchField() {
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: GlassCard(
-            radius: 14,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: TextField(
-              controller: _search,
-              autofocus: true,
-              textInputAction: TextInputAction.search,
-              style: TextStyle(color: LumeTheme.textPrimary),
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                hintText: '搜索',
-                hintStyle: TextStyle(color: LumeTheme.muted),
-                icon: Icon(Icons.search, color: LumeTheme.muted),
+  /// 联想候选列表（项目现有卡片样式，最多 10 条）。
+  Widget _buildSuggestions() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: GlassCard(
+        radius: 14,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (final suggestion in _suggestions)
+              InkWell(
+                onTap: () => _applySuggestion(suggestion),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.search, size: 16, color: LumeTheme.muted),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          suggestion,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: LumeTheme.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              onSubmitted: _submitSearch,
-            ),
-          ),
+          ],
         ),
-        const SizedBox(width: 8),
-        _RoundAction(
-          icon: Icons.close,
-          tooltip: '退出搜索',
-          onTap: () {
-            _search.clear();
-            setState(() => _searching = false);
-            if (_keyword.isNotEmpty) {
-              _keyword = '';
-              _loadPage();
-            }
-          },
-        ),
-      ],
+      ),
     );
   }
 
@@ -566,51 +758,116 @@ class _ExploreViewState extends State<ExploreView> {
           ? BrowseLayoutMode.grid3
           : BrowseLayoutMode.list);
 
-  /// 切换布局：当场重排 + 落盘（下次进来自动沿用）。
-  Future<void> _chooseLayout() async {
-    final current = _mode;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-              child: Row(
-                children: <Widget>[
-                  Text(
-                    '布局',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: LumeTheme.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            for (final mode in BrowseLayoutMode.values)
-              ListTile(
-                leading: Icon(
-                  mode == current ? Icons.check_circle : Icons.circle_outlined,
-                  color: mode == current ? LumeTheme.accent : LumeTheme.textHint,
+  /// 是否处于「搜索结果」形态（单源搜索按关键词，聚合搜索看 [_hits]）。
+  bool get _isSearchResult => _hits != null || _keyword.isNotEmpty;
+
+  /// 排序后的条目（排序是客户端行为，只作用于已加载的这批）。
+  List<SourceItem> get _sortedItems => _sort.apply(_items);
+
+  /// 聚合搜索结果页：顶部保留关键词，列表逐条给出
+  /// 「标题 + 时长 + 图源来源 + 更新时间」，排序 / 筛选 / 布局照常可用。
+  Widget _buildAggregateResults() {
+    final hits = _sort.apply(<SourceItem>[
+      for (final hit in _hits!) hit.item,
+    ]);
+    final byId = <String, SearchHit>{
+      for (final hit in _hits!) hit.item.id: hit,
+    };
+    return RefreshIndicator(
+      onRefresh: () async => _runAggregate(_resultKeyword),
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + _keyboardInset(context)),
+        itemCount: hits.length + 1,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          if (index == hits.length) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Center(
+                child: Text(
+                  _aggregateFailed == 0
+                      ? '共 ${hits.length} 条'
+                      : '共 ${hits.length} 条（$_aggregateFailed 个源没取到）',
+                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
-                title: Text(mode.label),
-                subtitle: Text(mode.hint),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  unawaited(
-                    BrowseLayoutSettings.instance.setMode(widget.section, mode),
-                  );
-                },
               ),
-            const SizedBox(height: 8),
-          ],
-        ),
+            );
+          }
+          final item = hits[index];
+          final hit = byId[item.id];
+          return GlassCard(
+            padding: const EdgeInsets.all(10),
+            onTap: () => _open(item),
+            child: Row(
+              children: <Widget>[
+                SizedBox(
+                  width: 56,
+                  height: 76,
+                  child: _Cover(
+                    pipeline: widget.pipeline,
+                    url: item.cover,
+                    width: 160,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: _searchResultInfo(item, hit)),
+                Icon(Icons.chevron_right, color: LumeTheme.muted),
+              ],
+            ),
+          );
+        },
       ),
     );
+  }
+
+  /// 搜索结果条目信息：标题 + 时长 / 来源 / 更新时间（缺项自动省略，不编造）。
+  Widget _searchResultInfo(SourceItem item, SearchHit? hit) {
+    final pieces = <String>[
+      if (item.duration != null) '时长 ${_formatDuration(item.duration!)}',
+      if (hit != null) '来源 ${hit.sourceName}',
+      if (item.updatedAt != null) '更新 ${_formatDate(item.updatedAt!)}',
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          item.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: LumeTheme.textPrimary,
+          ),
+        ),
+        if (pieces.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(
+            pieces.join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// `12:34` / `1:02:03`。
+  static String _formatDuration(Duration value) {
+    final hours = value.inHours;
+    final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return hours > 0 ? '$hours:$minutes:$seconds' : '${value.inMinutes}:$seconds';
+  }
+
+  /// `2026-10-07`。
+  static String _formatDate(DateTime value) {
+    final local = value.toLocal();
+    String two(int number) => number.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)}';
   }
 
   Widget _buildBody() {
@@ -633,10 +890,11 @@ class _ExploreViewState extends State<ExploreView> {
         onRetry: _bootstrap,
       );
     }
+    if (_hits != null) return _buildAggregateResults();
     if (_items.isEmpty && !_loadingMore) {
       return SourceStateView(
         state: SourceStateKind.empty,
-        detail: '换个分类或关键词试试',
+        detail: _isSearchResult ? '没有搜到相关条目，换个关键词试试' : '换个分类或关键词试试',
         onRetry: _bootstrap,
       );
     }
@@ -668,10 +926,11 @@ class _ExploreViewState extends State<ExploreView> {
           // 列越少封面越大，卡片比例也相应放宽（双列时标题有一行更宽的余地）。
           childAspectRatio: crossAxisCount <= 2 ? 0.72 : 0.62,
         ),
-        itemCount: _items.length + 1,
+        itemCount: _sortedItems.length + 1,
         itemBuilder: (context, index) {
-          if (index == _items.length) return _buildFooter();
-          final item = _items[index];
+          final items = _sortedItems;
+          if (index == items.length) return _buildFooter();
+          final item = items[index];
             return _PosterTile(
               item: item,
               pipeline: widget.pipeline,
@@ -696,11 +955,12 @@ class _ExploreViewState extends State<ExploreView> {
         child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + _keyboardInset(context)),
-        itemCount: _items.length + 1,
+        itemCount: _sortedItems.length + 1,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (context, index) {
-          if (index == _items.length) return _buildFooter();
-          final item = _items[index];
+          final items = _sortedItems;
+          if (index == items.length) return _buildFooter();
+          final item = items[index];
           return GlassCard(
             padding: const EdgeInsets.all(10),
             onTap: () => _open(item),
@@ -709,7 +969,7 @@ class _ExploreViewState extends State<ExploreView> {
                 SizedBox(
                   width: 56,
                   height: 76,
-                  child: PosterCover(
+                  child: _Cover(
                     pipeline: widget.pipeline,
                     url: item.cover,
                     width: 160,
@@ -717,34 +977,36 @@ class _ExploreViewState extends State<ExploreView> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        item.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: LumeTheme.textPrimary,
+                  child: _isSearchResult
+                      ? _searchResultInfo(item, null)
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Text(
+                              item.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: LumeTheme.textPrimary,
+                              ),
+                            ),
+                            if (item.subtitle != null) ...<Widget>[
+                              const SizedBox(height: 4),
+                              Text(
+                                item.subtitle!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: LumeTheme.muted,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                      ),
-                      if (item.subtitle != null) ...<Widget>[
-                        const SizedBox(height: 4),
-                        Text(
-                          item.subtitle!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: LumeTheme.muted,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
                 ),
                 Icon(Icons.chevron_right, color: LumeTheme.muted),
               ],
@@ -807,12 +1069,12 @@ class _ExploreViewState extends State<ExploreView> {
 class _PosterTile extends StatelessWidget {
   const _PosterTile({
     required this.item,
-    required this.pipeline,
+    this.pipeline,
     required this.onTap,
   });
 
   final SourceItem item;
-  final SectionImagePipeline pipeline;
+  final SectionImagePipeline? pipeline;
   final VoidCallback onTap;
 
   @override
@@ -829,7 +1091,7 @@ class _PosterTile extends StatelessWidget {
           color: LumeTheme.textPrimary,
         ),
       ),
-      child: PosterCover(pipeline: pipeline, url: item.cover, width: 300),
+      child: _Cover(pipeline: pipeline, url: item.cover, width: 300),
     );
   }
 }
@@ -950,5 +1212,29 @@ class _FilterDrawer extends StatelessWidget {
           : null,
       onTap: onTap,
     );
+  }
+}
+
+/// 封面位：管线就绪时走 [PosterCover]，否则出主题占位（图位不变，避免列表跳动）。
+class _Cover extends StatelessWidget {
+  const _Cover({required this.pipeline, required this.url, required this.width});
+
+  final SectionImagePipeline? pipeline;
+  final String? url;
+  final int width;
+
+  @override
+  Widget build(BuildContext context) {
+    final pipeline = this.pipeline;
+    if (pipeline == null) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: LumeTheme.fillStrong,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(Icons.image_outlined, size: 18, color: LumeTheme.muted),
+      );
+    }
+    return PosterCover(pipeline: pipeline, url: url, width: width);
   }
 }

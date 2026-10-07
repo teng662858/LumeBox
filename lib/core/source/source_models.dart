@@ -11,6 +11,15 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+/// 可选能力：**搜索联想词**（图源提供 `suggest` 时用服务端的，没有就用本地历史）。
+///
+/// 与弹幕能力同一套做法：能力做成接口，图源实现了就用，没实现就降级——
+/// 页面据此决定联想候选从哪来，而不是猜。
+abstract interface class SuggestCapable {
+  /// 取与 [keyword] 相关的联想词（可以为空）。
+  Future<List<String>> suggest(String keyword);
+}
+
 /// 图源分类。
 class SourceCategory {
   const SourceCategory({required this.id, required this.title});
@@ -37,6 +46,8 @@ class SourceItem {
     required this.title,
     this.cover,
     this.subtitle,
+    this.duration,
+    this.updatedAt,
   });
 
   final String id;
@@ -44,9 +55,17 @@ class SourceItem {
   final String? cover;
   final String? subtitle;
 
+  /// 时长（可选能力）：视频类图源常给（搜索结果里要显示「时长」）。
+  final Duration? duration;
+
+  /// 更新时间（可选能力）：搜索结果里要显示「更新时间」。
+  final DateTime? updatedAt;
+
   /// 解析条目。宽容口径：视频类脚本常用 `{title, url}` 表达条目
   /// （见图源契约的函数式写法），此时 `url` 兼作 id（详情 / 播放都按它取），
   /// 标题也接受 `name` 写法；两者都缺才判定为不可识别。
+  ///
+  /// 时长与更新时间都是可选能力：给了就显示，没给就不显示（**不编造**）。
   static SourceItem? parse(Object? json) {
     if (json is! Map) return null;
     final id = _text(json['id']) ?? _text(json['url']);
@@ -57,7 +76,73 @@ class SourceItem {
       title: title,
       cover: _text(json['cover']),
       subtitle: _text(json['subtitle']),
+      duration: parseDuration(
+        json['duration'] ?? json['时长'] ?? json['length'] ?? json['runtime'],
+      ),
+      updatedAt: parseTime(
+        json['updatedAt'] ??
+            json['updateTime'] ??
+            json['updated'] ??
+            json['time'] ??
+            json['date'],
+      ),
     );
+  }
+
+  /// 时长解析（宽容）：秒数（int/double）、毫秒（>100000 视为毫秒）、
+  /// `12:34` / `01:02:03` 这类时钟文本都认；认不出返回 null。
+  static Duration? parseDuration(Object? value) {
+    if (value == null) return null;
+    if (value is num) {
+      if (value <= 0) return null;
+      // 大于 10 万的数按毫秒（视频动辄上万秒，按秒解读会得到几天）。
+      return value > 100000
+          ? Duration(milliseconds: value.round())
+          : Duration(seconds: value.round());
+    }
+    final text = '$value'.trim();
+    if (text.isEmpty) return null;
+    final clock = RegExp(r'^(\d{1,2}:)?\d{1,2}:\d{2}$');
+    if (clock.hasMatch(text)) {
+      final parts = text.split(':').map(int.parse).toList();
+      final seconds = parts.length == 3
+          ? parts[0] * 3600 + parts[1] * 60 + parts[2]
+          : parts[0] * 60 + parts[1];
+      return seconds <= 0 ? null : Duration(seconds: seconds);
+    }
+    final number = double.tryParse(text);
+    if (number != null && number > 0) {
+      return number > 100000
+          ? Duration(milliseconds: number.round())
+          : Duration(seconds: number.round());
+    }
+    // 「1小时20分」这类中文写法：只认「小时/分/秒」三种单位。
+    final chinese = RegExp(r'(?:(\d+)\s*小时)?\s*(?:(\d+)\s*分)?\s*(?:(\d+)\s*秒)?')
+        .firstMatch(text);
+    if (chinese != null && (chinese.group(1) ?? chinese.group(2) ?? chinese.group(3)) != null) {
+      final hours = int.tryParse(chinese.group(1) ?? '') ?? 0;
+      final minutes = int.tryParse(chinese.group(2) ?? '') ?? 0;
+      final seconds = int.tryParse(chinese.group(3) ?? '') ?? 0;
+      final total = hours * 3600 + minutes * 60 + seconds;
+      return total <= 0 ? null : Duration(seconds: total);
+    }
+    return null;
+  }
+
+  /// 时间解析（宽容）：ISO 文本 / 毫秒 / 秒时间戳都认；认不出返回 null。
+  static DateTime? parseTime(Object? value) {
+    if (value == null) return null;
+    if (value is num) {
+      if (value <= 0) return null;
+      final milliseconds = value > 100000000000 ? value.round() : value.round() * 1000;
+      return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+    }
+    final text = '$value'.trim();
+    if (text.isEmpty) return null;
+    final parsed = DateTime.tryParse(text);
+    if (parsed != null) return parsed;
+    final number = int.tryParse(text);
+    return number == null ? null : parseTime(number);
   }
 }
 

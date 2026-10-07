@@ -15,6 +15,7 @@ class ReadingSourceBar extends StatelessWidget {
     required this.currentId,
     required this.onSelect,
     required this.onManage,
+    this.showManage = true,
     this.busy = false,
   });
 
@@ -26,6 +27,9 @@ class ReadingSourceBar extends StatelessWidget {
 
   final ValueChanged<String> onSelect;
   final VoidCallback onManage;
+
+  /// 是否显示右侧的「源管理」入口（宿主顶栏已有同一入口时关掉，避免一屏两个）。
+  final bool showManage;
 
   /// 切换中：期间禁止再次下拉，避免连点触发多次切换。
   final bool busy;
@@ -83,11 +87,12 @@ class ReadingSourceBar extends StatelessWidget {
               ),
             ),
           ),
-          IconButton(
-            tooltip: '源管理',
-            icon: const Icon(Icons.tune, size: 20),
-            onPressed: onManage,
-          ),
+          if (showManage)
+            IconButton(
+              tooltip: '源管理',
+              icon: const Icon(Icons.tune, size: 20),
+              onPressed: onManage,
+            ),
         ],
       ),
     );
