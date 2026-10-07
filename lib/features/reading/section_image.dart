@@ -1,5 +1,7 @@
 import 'dart:ui' as ui;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/reading/reading.dart';
@@ -43,6 +45,20 @@ class _SectionImageState extends State<SectionImage> {
   ui.Image? _image;
   bool _failed = false;
 
+  /// 自动重试计数（弱网下封面一两次失败就永久占位，用户看到的就是
+  /// 「很多封面加载不出来」——失败后自己再试几次，别让人去滑来滑去）。
+  int _retries = 0;
+  Timer? _retryTimer;
+
+  /// 最多自动重试 2 次。
+  static const int _maxRetries = 2;
+
+  /// 退避间隔：1.2s、3s（够短，看得见；够长，不给图床添乱）。
+  static const List<Duration> _retryDelays = <Duration>[
+    Duration(milliseconds: 1200),
+    Duration(seconds: 3),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +78,8 @@ class _SectionImageState extends State<SectionImage> {
 
   @override
   void dispose() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _release();
     super.dispose();
   }
@@ -97,10 +115,22 @@ class _SectionImageState extends State<SectionImage> {
     }
     if (image == null) {
       setState(() => _failed = true);
+      // 自动重试：只在页面还在、且没超过次数时排队。
+      if (_retries < _maxRetries) {
+        final delay = _retryDelays[_retries];
+        _retries++;
+        _retryTimer?.cancel();
+        _retryTimer = Timer(delay, () {
+          if (!mounted) return;
+          unawaited(_resolve());
+        });
+      }
       return;
     }
     _heldUrl = url;
     _heldWidth = width;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     setState(() {
       _image = image;
       _failed = false;

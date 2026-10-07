@@ -39,7 +39,10 @@ class NetworkSettings {
   /// 单域名并发下限 / 上限 / 默认（文档给的区间是 2~3）。
   static const int minPerHostConcurrency = 2;
   static const int maxPerHostConcurrency = 3;
-  static const int defaultPerHostConcurrency = 2;
+  /// 单域名并发默认值。原为 2，用户反馈「封面加载还是慢」——封面基本集中在
+  /// 同一个图床上，2 条并发是瓶颈；提到上限 3（仍在 2–3 的可调区间内，
+  /// 用户可以在网络设置里改回去）。
+  static const int defaultPerHostConcurrency = 3;
 
   /// 默认单次请求超时。
   static const Duration defaultTimeout = Duration(seconds: 20);

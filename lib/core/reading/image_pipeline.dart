@@ -38,7 +38,7 @@ class SectionImagePipeline {
     this.maxConcurrent = 6,
     this.timeout = const Duration(seconds: 20),
     this.diskCache = true,
-    int maxRetries = 2,
+    int maxRetries = 3,
   })  : _client = client ?? http.Client(),
         _maxRetries = maxRetries < 0 ? 0 : maxRetries,
         _memory = ImageMemoryCache(memoryBudgetBytes);
@@ -311,9 +311,9 @@ class SectionImagePipeline {
         final outcome = await _fetchOnce(url);
         if (outcome.bytes != null) return outcome.bytes;
         if (!outcome.retryable || attempt == _maxRetries) break;
-        // 退避：200ms、400ms。图片是**可见内容**，等太久不如让用户先看到缺口
-        // 再自己重试——因此重试次数刻意少（默认 2）。
-        await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+        // 退避：300ms、600ms、1200ms。图片是**可见内容**，等太久不如让用户先
+        // 看到缺口再自己重试——因此次数仍克制（默认 3 次，弱网多给一次机会）。
+        await Future<void>.delayed(Duration(milliseconds: 300 * (1 << attempt)));
       }
       return null;
     } finally {
