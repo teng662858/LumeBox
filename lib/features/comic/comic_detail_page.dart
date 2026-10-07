@@ -8,6 +8,7 @@ import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
+import '../../shared/widgets/chapter_tile.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/state_view.dart';
 import '../reading/poster_card.dart';
@@ -317,7 +318,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
               height: 160,
               child: SourceStateView(
                 state: SourceStateKind.empty,
-                detail: '该源没有提供章节',
+                detail: kNoChaptersHint,
               ),
             ),
           )
@@ -328,8 +329,8 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
               itemCount: _chapters.length,
               itemBuilder: (context, position) {
                 final index = _descending ? _chapters.length - 1 - position : position;
-                return _ChapterTile(
-                  chapter: _chapters[index],
+                return ChapterTile(
+                  title: _chapters[index].title,
                   read: _isRead(index),
                   current: _progress?.chapterIndex == index,
                   onTap: () => _openReader(index),
@@ -829,62 +830,3 @@ class _DownloadCard extends StatelessWidget {
   }
 }
 
-/// 章节行：已读打勾，当前章加亮。
-class _ChapterTile extends StatelessWidget {
-  const _ChapterTile({
-    required this.chapter,
-    required this.read,
-    required this.current,
-    required this.onTap,
-  });
-
-  final SourceChapter chapter;
-  final bool read;
-  final bool current;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      // 条目之间的间隔 6 → 10：相邻两行挨得太近时手指容易点错行，
-      // 拉开间距比放大文字更有用（字号保持原样）。
-      padding: const EdgeInsets.only(bottom: 10),
-      child: GlassCard(
-        radius: 12,
-        // 垂直内边距 2 → 12：整行约 44pt 高，达到 iOS 的最小触摸目标
-        // （原先约 24pt）。字号仍是 14，只扩触摸区与行距，不动别的布局。
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        onTap: onTap,
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                chapter.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: current ? LumeTheme.textPrimary : LumeTheme.muted,
-                  fontWeight: current ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-            ),
-            if (current)
-              Padding(
-                padding: EdgeInsets.only(left: 6),
-                child: Text(
-                  '在读',
-                  style: TextStyle(fontSize: 11, color: LumeTheme.textPrimary),
-                ),
-              )
-            else if (read)
-              Padding(
-                padding: EdgeInsets.only(left: 6),
-                child: Icon(Icons.done, size: 14, color: LumeTheme.muted),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}

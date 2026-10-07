@@ -211,9 +211,13 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
 ///
 /// 顶栏工具栏高度。
 ///
-/// 比 Material 默认的 [kToolbarHeight]（56）矮 4：用户要求「页面顶部导航栏整体
-/// 往上移一点」——栏更矮，标题与图标随之上移，内容区也多出这 4 点。
-const double kLumeToolbarHeight = 52;
+/// 用户要求「顶部导航整条往上移、贴近状态栏，只留一小段标准安全边距，不要往下
+/// 陷」：栏矮一档，标题与图标就跟着上移，内容区同时多出这段高度。
+///
+/// 44 是**不缩小控件**前提下的下限——右上角那排图标的最小触达尺寸是 42
+/// （见 [GlassAppBar] 的 actions 样式），再矮就会挤压到控件本身，而用户明确要求
+/// 「只改容器位置，不要缩放控件尺寸」。
+const double kLumeToolbarHeight = 44;
 
 /// 两种行为：
 /// - **[behindBar] = false（默认）**：内容和以前一样从顶栏下方开始，顶栏是一层

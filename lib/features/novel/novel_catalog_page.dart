@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
+import '../../shared/widgets/chapter_tile.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/state_view.dart';
 import 'novel_reader_page.dart';
@@ -142,7 +143,7 @@ class _NovelCatalogPageState extends State<NovelCatalogPage> {
               child: widget.chapters.isEmpty
                   ? const SourceStateView(
                       state: SourceStateKind.empty,
-                      detail: '该源没有提供章节',
+                      detail: kNoChaptersHint,
                     )
                   : visible.isEmpty
                       ? const SourceStateView(
@@ -154,9 +155,11 @@ class _NovelCatalogPageState extends State<NovelCatalogPage> {
                           itemCount: visible.length,
                           itemBuilder: (context, position) {
                             final index = visible[position];
-                            return _CatalogTile(
+                            return ChapterTile(
                               title: widget.chapters[index].title,
                               current: index == _current,
+                              // 当前章之前的都算已读（与阅读器的进度口径一致）。
+                              read: index < _current,
                               onTap: () => _open(index),
                             );
                           },
@@ -193,52 +196,6 @@ class _NovelCatalogPageState extends State<NovelCatalogPage> {
           border: const OutlineInputBorder(),
         ),
         onChanged: (value) => setState(() => _keyword = value),
-      ),
-    );
-  }
-}
-
-/// 目录行：当前章加亮并标「在读」。
-class _CatalogTile extends StatelessWidget {
-  const _CatalogTile({
-    required this.title,
-    required this.current,
-    required this.onTap,
-  });
-
-  final String title;
-  final bool current;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: GlassCard(
-        radius: 12,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-        onTap: onTap,
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: current ? LumeTheme.textPrimary : LumeTheme.muted,
-                  fontWeight: current ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-            ),
-            if (current)
-              Text(
-                '在读',
-                style: TextStyle(fontSize: 11, color: LumeTheme.textPrimary),
-              ),
-          ],
-        ),
       ),
     );
   }

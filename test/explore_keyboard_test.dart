@@ -76,7 +76,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('当前源搜索'));
     await tester.pumpAndSettle();
-      await tester.pumpAndSettle();
+    // 单选组：点行只移动圆点，点「应用」才生效并展开搜索行。
+    await tester.tap(find.text('应用'));
+    await tester.pumpAndSettle();
 
       final field = find.byType(TextField);
       expect(field, findsOneWidget, reason: '搜索行应当已经展开');
@@ -161,7 +163,9 @@ void main() {
     // 开搜索（选模式 → 输入框带 autofocus）。
     await tester.tap(find.byTooltip('搜索'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('聚合搜索'));
+    await tester.tap(find.widgetWithText(ListTile, '聚合搜索'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('应用'));
     await tester.pumpAndSettle();
 
     // 键盘弹起后再切换模式。

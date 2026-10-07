@@ -1,4 +1,7 @@
 import '../cache/section_memory_cache.dart';
+import '../net/waf.dart';
+import '../net/waf_auto_verify.dart';
+import '../util/lume_log.dart';
 import '../session/section.dart';
 import 'data_source.dart';
 import 'source_models.dart';
@@ -134,6 +137,19 @@ class JsDataSource
   Future<SourceHome> home() async {
     // 首页不缓存：它代表「现在有什么推荐」，刷新就该看到最新的。
     return SourceHome.parse(await _invoke(JsSourceContract.home));
+  }
+
+  /// 脚本是否真的实现了 `filters()`（探测一次、缓存住）。
+  bool? _hasFilters;
+
+  @override
+  Future<bool> supportsFilters() async {
+    final cached = _hasFilters;
+    if (cached != null) return cached;
+    final methods = await runtime.contractMethods();
+    final has = methods.contains(JsSourceContract.filters);
+    _hasFilters = has;
+    return has;
   }
 
   @override
@@ -275,9 +291,35 @@ class JsDataSource
   }
 
   Future<Object?> _invoke(String method, [Object? argument]) async {
+    return _invokeOnce(method, argument, retriedWaf: false);
+  }
+
+  /// 调一次脚本方法；被 WAF 拦下时**自动过校验并重试一次**（用户口径 2 / 3）。
+  ///
+  /// 这里只做一件额外的事：认出脚本抛的 `NEED_WEBVIEW_VERIFY` 标记 → 让界面层去
+  /// 弹那个小悬浮窗（[WafAutoVerify.run]，引擎层不认识 Navigator）→ 拿到会话后
+  /// **原样重试同一次调用**。重试只做一次，避免和站点来回拉锯；重试仍失败就按
+  /// 普通失败往上抛（界面照旧给【重试】+【网页视图】两个出口）。
+  Future<Object?> _invokeOnce(
+    String method,
+    Object? argument, {
+    required bool retriedWaf,
+  }) async {
     try {
       return await runtime.call(method, argument);
-    } on SourceException {
+    } on SourceException catch (error) {
+      if (!retriedWaf && _needsWebView(error.message)) {
+        final handled = await WafAutoVerify.run(
+          section: section,
+          sourceId: id,
+          sourceName: name,
+          url: urlFromFailure(error.message) ?? '',
+        );
+        if (handled) {
+          LumeLog.info('[$id] WAF 校验完成，重试 $method');
+          return _invokeOnce(method, argument, retriedWaf: true);
+        }
+      }
       rethrow;
     } catch (error) {
       throw SourceException(
@@ -286,6 +328,13 @@ class JsDataSource
       );
     }
   }
+
+  /// 这条失败信息是不是「需要网页视图过一下人机校验」。
+  ///
+  /// 只认脚本抛的固定标记（用户口径 2：保留 `NEED_WEBVIEW_VERIFY`）；认证不出标记
+  /// 的普通失败不在这里自动弹窗——那种该由用户自己决定要不要去网页视图。
+  static bool _needsWebView(String? message) =>
+      (message ?? '').toUpperCase().contains('NEED_WEBVIEW_VERIFY');
 }
 
 /// 解析列表信封：接受 `{items: [...], hasMore: bool}`、`{list: [...], hasMore}`

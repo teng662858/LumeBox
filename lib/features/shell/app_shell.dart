@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../../core/net/waf_auto_verify.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
@@ -14,6 +15,7 @@ import '../cat/cat_page.dart';
 import '../comic/comic_page.dart';
 import '../novel/novel_page.dart';
 import '../settings/settings_page.dart';
+import '../source/waf_webview_page.dart';
 import '../video/video_page.dart';
 import 'section_preloader.dart';
 import 'shell_dock.dart';
@@ -74,9 +76,12 @@ class _AppShellState extends State<AppShell> {
   String _activeId = _pageCatalog.first.id;
 
   static const double _dockHeight = 64;
-  /// Dock 与屏幕左右 / 底边的留白。用户要求「底部导航栏整体往下移一点」，
-  /// 因此底边留白收紧（12 → 6）——左右仍是 12，Dock 只是更贴近屏幕下沿。
-  static const double _dockBottomMargin = 6;
+  /// Dock 与屏幕左右的留白；底边留白为 **0**。
+  ///
+  /// 用户要求「底部栏整体向下移，贴近系统安全区，距离屏幕底边保留 iOS 标准底部
+  /// 安全距离」：底边留白清零后，Dock 的下沿正好落在安全区边界上——那段距离由
+  /// `SafeArea` 给（刘海机 34），也就是 iOS 标准；左右仍是 12 的悬浮感。
+  static const double _dockBottomMargin = 0;
   static const double _dockMargin = 12;
   static const double _dockSpacing = 8;
 
@@ -173,6 +178,27 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _shellSettings.addListener(_onShellSettingsChanged);
+    // 装上「自动过 WAF 校验」的钩子（用户口径 2 / 3 / 4）：脚本抛
+    // NEED_WEBVIEW_VERIFY 时，引擎层（没有 BuildContext）回调到这里，由壳层弹那个
+    // 小悬浮窗；拿到 Cookie 后引擎自动重试刚才那次调用，用户基本无感。
+    WafAutoVerify.install(
+      ({
+        required Section section,
+        required String sourceId,
+        required String sourceName,
+        required String url,
+      }) {
+        final target = url.trim().isEmpty ? null : url.trim();
+        if (target == null) return Future<bool>.value(false);
+        return showWafAutoVerify(
+          context: context,
+          section: section,
+          sourceId: sourceId,
+          sourceName: sourceName,
+          url: target,
+        );
+      },
+    );
   }
 
   @override
@@ -335,6 +361,7 @@ class _AppShellState extends State<AppShell> {
           visible: _controller.visible,
           height: _dockHeight,
           margin: _dockMargin,
+          bottomMargin: _dockBottomMargin,
         ),
       ),
     );
@@ -428,6 +455,7 @@ class _DockBar extends StatelessWidget {
     required this.visible,
     required this.height,
     required this.margin,
+    required this.bottomMargin,
   });
 
   final List<_ShellTab> tabs;
@@ -436,6 +464,9 @@ class _DockBar extends StatelessWidget {
   final bool visible;
   final double height;
   final double margin;
+
+  /// 底边留白（与左右的分开）：0 = 下沿正好落在安全区边界上（用户口径）。
+  final double bottomMargin;
 
   @override
   Widget build(BuildContext context) {
@@ -447,7 +478,7 @@ class _DockBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: EdgeInsets.fromLTRB(margin, 0, margin, margin),
+          padding: EdgeInsets.fromLTRB(margin, 0, margin, bottomMargin),
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),

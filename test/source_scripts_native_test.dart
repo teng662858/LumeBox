@@ -192,6 +192,161 @@ void main() {
         throwsA(isA<SourceException>()),
       );
     });
+
+    test('luttt 视频：列表 / 详情 / 选集 / 播放 m3u8', () async {
+      final source = await _boot(
+        'sources/luttt_video.js',
+        section: Section.video,
+        http: _SnapshotHttp(
+          get: <String, String>{
+            'https://v.luttt.com/vodshow/2--------1---.html': _read(
+              'luttt_list.html',
+            ),
+            'https://v.luttt.com/vodshow/2--------2---.html': _read(
+              'luttt_list_p2.html',
+            ),
+            'https://v.luttt.com/voddetail/1137.html': _read('luttt_detail.html'),
+            'https://v.luttt.com/vodplay/1137-1-1.html': _read('luttt_play.html'),
+          },
+        ),
+      );
+      addTearDown(source.dispose);
+
+      final list = await source.data.list(categoryId: '2', page: 1);
+      expect(list.items, isNotEmpty);
+      expect(list.items.any((item) => item.id == '1137'), isTrue);
+
+      final detail = await source.data.detail('1137');
+      expect(detail?.title, '寄生之心');
+      expect(detail?.cover, startsWith('http'));
+
+      final chapters = await source.data.chapters('1137');
+      expect(chapters.length, greaterThan(1));
+      expect(chapters.first.id, contains('/vodplay/1137-'));
+
+      final content = await source.data.content(
+        itemId: '1137',
+        chapterId: chapters.first.id,
+      );
+      expect(content, isA<VideoContent>());
+      expect((content! as VideoContent).url.toString(), contains('.m3u8'));
+    });
+
+    test('p5mh 漫画：列表 / 详情 / 章节 / 多页图片拼接', () async {
+      final source = await _boot(
+        'sources/p5mh_comic.js',
+        section: Section.comic,
+        http: _SnapshotHttp(
+          get: <String, String>{
+            'https://www3.6p5mh3.click/booklist?page=1': _read('p5mh_list.html'),
+            'https://www3.6p5mh3.click/book/10612': _read('p5mh_detail.html'),
+            'https://www3.6p5mh3.click/chapter/100471684': _read(
+              'p5mh_chapter.html',
+            ),
+            'https://www3.6p5mh3.click/chapter/100471684?page=2': _read(
+              'p5mh_chapter_p2.html',
+            ),
+            'https://www3.6p5mh3.click/chapter/100471684?page=3': _read(
+              'p5mh_chapter_p3.html',
+            ),
+            'https://www3.6p5mh3.click/chapter/100471684?page=4': _read(
+              'p5mh_chapter_p4.html',
+            ),
+          },
+        ),
+      );
+      addTearDown(source.dispose);
+
+      final list = await source.data.list(page: 1);
+      expect(list.items, isNotEmpty);
+      expect(list.items.first.id, '10612');
+
+      final detail = await source.data.detail('10612');
+      expect(detail?.title, '朋友妈妈我天菜');
+
+      final chapters = await source.data.chapters('10612');
+      expect(chapters, isNotEmpty);
+      expect(chapters.first.id, contains('/chapter/'));
+
+      // 这一话在快照里跨了 4 页，content 应该把四页图片拼起来。
+      final content = await source.data.content(
+        itemId: '10612',
+        chapterId: chapters.first.id,
+      );
+      expect(content, isA<ImageContent>());
+      expect((content! as ImageContent).images.length, greaterThanOrEqualTo(55));
+    });
+
+    test('xxs 小说：列表 / 详情 / 章节 / 正文', () async {
+      final source = await _boot(
+        'sources/xxiaoshuo_novel.js',
+        section: Section.novel,
+        http: _SnapshotHttp(
+          get: <String, String>{
+            'https://book.xn--x-ny6am91b6ug0se.com/books': _read('xxs_list.html'),
+            'https://book.xn--x-ny6am91b6ug0se.com/book/ffbc92cddbf85a848309e580dd593265':
+                _read('xxs_book.html'),
+            'https://book.xn--x-ny6am91b6ug0se.com/read/ffbc92cddbf85a848309e580dd593265/32567':
+                _read('xxs_read.html'),
+          },
+        ),
+      );
+      addTearDown(source.dispose);
+
+      final list = await source.data.list(page: 1);
+      expect(list.items, isNotEmpty);
+
+      final detail = await source.data.detail('book:ffbc92cddbf85a848309e580dd593265');
+      expect(detail?.title, isNotEmpty);
+
+      final chapters = await source.data.chapters(
+        'book:ffbc92cddbf85a848309e580dd593265',
+      );
+      expect(chapters.length, greaterThan(1));
+
+      final content = await source.data.content(
+        itemId: 'book:ffbc92cddbf85a848309e580dd593265',
+        chapterId: chapters.first.id,
+      );
+      expect(content, isA<TextContent>());
+      expect((content! as TextContent).text, isNotEmpty);
+    });
+
+    test('xchina 小说：列表 / 详情 / 章节 / 正文', () async {
+      final source = await _boot(
+        'sources/xchina_novel.js',
+        section: Section.novel,
+        http: _SnapshotHttp(
+          get: <String, String>{
+            'https://xchina.co/fictions/1.html': _read('xchina_list.html'),
+            'https://xchina.co/fiction/id-6ac68dd9db5c9.html': _read(
+              'xchina_series.html',
+            ),
+            'https://xchina.co/fiction/id-dGhpc19pc19hX2ZpeGVkMHJhTmJoelVjMjJWNm1iZG5WTXF1L2c9PQ==.html':
+                _read('xchina_chapter.html'),
+          },
+        ),
+      );
+      addTearDown(source.dispose);
+
+      final list = await source.data.list(page: 1);
+      expect(list.items, isNotEmpty);
+      expect(list.items.first.id, 'series:6ac68dd9db5c9');
+
+      final detail = await source.data.detail('series:6ac68dd9db5c9');
+      expect(detail?.title, '豪乳老师刘艳——第七部06');
+      expect(detail?.cover, startsWith('http'));
+
+      final chapters = await source.data.chapters('series:6ac68dd9db5c9');
+      expect(chapters.length, 25);
+
+      final content = await source.data.content(
+        itemId: 'series:6ac68dd9db5c9',
+        chapterId: chapters.first.id,
+      );
+      expect(content, isA<TextContent>());
+      expect((content! as TextContent).text, isNotEmpty);
+    });
   }, skip: skipReason);
 }
 

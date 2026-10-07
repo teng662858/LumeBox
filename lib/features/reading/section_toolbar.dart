@@ -546,17 +546,129 @@ class _ToolbarSheet<T> extends StatelessWidget {
   }
 }
 
+
 /// 打开「搜索模式」选择菜单（用户点名的两种模式）。
-Future<SearchMode?> showSearchModeMenu(BuildContext context) {
+///
+/// **标准单选组**：点一行，圆点立刻移过去；点「应用」才生效。
+///
+/// 两个真机问题都在这里修掉：
+/// 1. 以前是「点一下就关」的列表，用户看到的只是弹窗消失——单选按钮**看起来
+///    点不动**；现在点行只改选中态，圆点当场跟着走。
+/// 2. 以前进面板时把选中项写死成 `single`（还用不到当前模式），于是「输入框右侧
+///    写着聚合搜索、面板里勾着当前源搜索」，两边永远对不上；现在 [current] 由
+///    调用方传入，面板与标签双向同步。
+Future<SearchMode?> showSearchModeMenu(
+  BuildContext context, {
+  required SearchMode current,
+}) {
   return showModalBottomSheet<SearchMode>(
     context: context,
     backgroundColor: Colors.transparent,
-    builder: (_) => _ToolbarSheet<SearchMode>(
-      title: '搜索范围',
-      current: SearchMode.single,
-      options: SearchMode.values,
-      labelOf: (mode) => mode.label,
-      detailOf: (mode) => mode.detail,
-    ),
+    // **不受默认高度限制**：默认弹窗最高只有屏幕的 9/16，键盘弹起时（这个面板
+    // 几乎总是带键盘打开）标题 + 两个选项 + 「应用」会超出可视区——真机表现就是
+    // 「单选点不动」，其实是那一行已经落在面板可视范围之外。放开高度 + 面板内部
+    // 自己让开键盘（见 [_SearchModeSheet]），点得到才算修好。
+    isScrollControlled: true,
+    builder: (_) => _SearchModeSheet(current: current),
   );
+}
+
+class _SearchModeSheet extends StatefulWidget {
+  const _SearchModeSheet({required this.current});
+
+  final SearchMode current;
+
+  @override
+  State<_SearchModeSheet> createState() => _SearchModeSheetState();
+}
+
+class _SearchModeSheetState extends State<_SearchModeSheet> {
+  late SearchMode _picked = widget.current;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      child: DecoratedBox(
+        decoration: LumeTheme.background,
+        child: SafeArea(
+          top: false,
+          // 让开键盘：这个面板常在搜索框（autofocus）已经弹起键盘时打开。
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '搜索范围',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: LumeTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: <Widget>[
+                        for (final mode in SearchMode.values)
+                          ListTile(
+                            dense: true,
+                            selected: mode == _picked,
+                            leading: Icon(
+                              mode == _picked
+                                  ? Icons.check_circle
+                                  : Icons.circle_outlined,
+                              size: 20,
+                              color: mode == _picked
+                                  ? LumeTheme.accent
+                                  : LumeTheme.muted,
+                            ),
+                            title: Text(
+                              mode.label,
+                              style: TextStyle(color: LumeTheme.textPrimary),
+                            ),
+                            subtitle: Text(
+                              mode.detail,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: LumeTheme.muted,
+                              ),
+                            ),
+                            // 点行只改选中态（圆点当场移动），不关面板。
+                            onTap: () => setState(() => _picked = mode),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => Navigator.of(context).pop(_picked),
+                        child: const Text('应用'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

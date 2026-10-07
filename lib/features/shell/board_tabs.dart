@@ -43,8 +43,11 @@ class BoardTabHeader extends StatelessWidget implements PreferredSizeWidget {
   final List<String> labels;
   final TabController? controller;
 
-  /// 页签 42 + 下划线 2 + 一点余量。
-  static const double height = 46;
+  /// 页签本体 42 + 下划线 2。
+  ///
+  /// 46 → 44：配合顶栏工具栏一起上移（用户要求整条顶部导航贴近状态栏），
+  /// 去掉的只是多余余量，页签文字与下划线尺寸不变。
+  static const double height = 44;
 
   @override
   Size get preferredSize => const Size.fromHeight(height);

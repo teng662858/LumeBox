@@ -117,6 +117,22 @@ function getList(page) { return { list: [] }; }
     expect(registry.sources, isEmpty, reason: '失败不落库');
   }, skip: skipReason);
 
+  test('按脚本内容认出 Venera 那套源：报错点名 DOM 解析，并给两条出路', () async {
+    // 真机那份 venera-configs/merge.json 就是这一类：装完跑起来报
+    // 「cannot read property 'querySelectorAll' of null」——脚本靠网页 DOM 解析，
+    // 本 App 的沙箱只给 fetch / JSON。
+    // 这类脚本**导入能过**（DOM 用法要到运行期才炸），因此定性走运行期那条路：
+    // 错误卡在引擎原文后追加一句说明（用户看不懂那句英文 TypeError）。
+    final message = SourceRegistry.describeRuntimeFailure(
+      "脚本错误: cannot read property 'querySelectorAll' of null",
+    );
+    expect(message, contains('querySelectorAll'),
+        reason: '引擎原文必须保留（排障要看原文）');
+    expect(message, contains('DOM 解析'), reason: '要点名它靠网页 DOM 解析');
+    expect(message, contains('Venera'), reason: '并点名这是哪一套客户端的写法');
+    expect(message, contains('fetch'), reason: '要给出「换接口型脚本」这条出路');
+  }, skip: skipReason);
+
   test('猫源脚本只是顺手 require 了服务端模块、没用到：照常导入（真机订阅源回归）', () async {
     // 真机实测：一份订阅源导入失败，报「猫源沙箱不支持 http2」。脚本只是沿用了
     // 别处的写法、顺手 require 了一堆模块，真正发请求用的是 fetch / LumeSource.http。

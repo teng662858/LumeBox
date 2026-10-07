@@ -9,6 +9,7 @@ import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/player_stats.dart';
+import 'package:lume_box/core/player/skip_marks.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
@@ -341,6 +342,61 @@ void main() {
     expect(find.text('还没有记录'), findsOneWidget, reason: '删完抽屉给空态');
     expect(library.videoProgress('movie-1'), isNull);
     expect(library.onShelf('movie-1'), isFalse);
+  });
+
+  testWidgets('片头片尾：从源条目播时记一下，片尾到点自动跳（用户口径）', (tester) async {
+    source.items = const <SourceItem>[
+      SourceItem(id: 'movie-1', title: '示例影片'),
+    ];
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+    ];
+    source.contentUrl = 'https://example.com/e1.mp4';
+    // 关掉控制栏自动隐藏：这条用例要连着开两次「更多」面板，别跟 4 秒计时器抢时机
+    //（自动隐藏本身由 player_full_feature_test 那几条覆盖）。
+    final videoLibrary = await ReadingLibrary.open(Section.video);
+    videoLibrary.setSetting('video.player.autoHideControls', 'false');
+    // 片尾标记预先写好（走与「记片尾」按钮同一个存储）：播放器起播时读一次标记，
+    // 中途写库到不了正在播的那个实例。面板按钮本身由「记片头」那一步覆盖。
+    SkipMarksStore(videoLibrary).save(
+      'movie-1',
+      const SkipMarks(outro: Duration(minutes: 44)),
+    );
+    final created = await pumpBoard(tester);
+
+    // 进播放器（有作品身份：记的标记会落到这部件品上）。
+    await tester.tap(find.text('示例影片'));
+    await tester.pumpAndSettle();
+
+    // 播到 1:35（片头结束的位置）→ 「更多」里记片头。
+    created.last.emit(
+      position: const Duration(minutes: 1, seconds: 35),
+      duration: const Duration(minutes: 45),
+      playing: true,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('更多（清晰度 / 音轨 / 跳过片头片尾 / 连播）'));
+    await tester.pumpAndSettle();
+    expect(find.text('跳过片头片尾'), findsOneWidget);
+    await tester.tap(find.text('记片头'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('已记片头'), findsOneWidget);
+
+    // 播到片尾标记之后：这一部只有 1 集 → 跳到结尾（不走连播）。
+    // （不先停在 44:00 那一刻：那已经是「到点」位置，会立刻触发一次跳过。）
+    created.last.seeks.clear();
+    created.last.emit(
+      position: const Duration(minutes: 44, seconds: 30),
+      duration: const Duration(minutes: 45),
+      playing: true,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      created.last.seeks,
+      contains(const Duration(minutes: 45)),
+      reason: '片尾到点：没有下一集就跳到结尾',
+    );
+    expect(find.textContaining('已跳过片尾'), findsOneWidget);
   });
 
   testWidgets('退出播放后再点别的视频：图源管理器不能被播放页关掉（真机报库已关闭的回归）', (tester) async {

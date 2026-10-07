@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/reading/browse_layout.dart';
 import '../../core/reading/reading.dart';
+import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import 'section_image.dart';
 
@@ -230,5 +232,114 @@ class ShelfEmptyHint extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 海报网格单元：封面 + 标题（底部渐变压字），与书架卡片同一套视觉。
+///
+/// 三个板块的探索网格与**搜索结果页**共用它：标题风格（内置遮罩 / 外置独立）
+/// 是全局偏好，两处必须按同一个口径渲染，否则切了风格会出现两种样子。
+class PosterTile extends StatelessWidget {
+  const PosterTile({
+    super.key,
+    required this.item,
+    this.pipeline,
+    required this.onTap,
+    this.meta,
+  });
+
+  final SourceItem item;
+  final SectionImagePipeline? pipeline;
+  final VoidCallback onTap;
+
+  /// 额外的元信息行（搜索结果页用它显示时长 / 来源 / 更新时间）。
+  final String? meta;
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = this.meta;
+    // 标题风格是全局偏好（设置页可切），这里按当前值渲染。
+    final style = BrowseLayoutSettings.instance.gridTitleStyle;
+    return PosterCard(
+      onTap: onTap,
+      // 标题风格：遮罩内置（白字压在封面上）/ 外置独立（黑字在封面下方）。
+      // 外置时封面不画任何遮罩，文字落在卡片浅色底上，因此用主题主文字色。
+      footnoteBelow: style == GridTitleStyle.below,
+      footnote: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            item.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            // 内置：压在封面底部的深色遮罩上 → **一律白字 + 加粗 + 浅描边**
+            //（原来用 LumeTheme.textPrimary，浅色主题下深色字压深色遮罩，
+            //  真机反馈「标题看着很淡」）；外置：封面外的浅色底 → 主题主文字色。
+            style: style == GridTitleStyle.below
+                ? TextStyle(
+                    fontSize: 12.5,
+                    height: 1.25,
+                    fontWeight: FontWeight.w600,
+                    color: LumeTheme.textPrimary,
+                  )
+                : const TextStyle(
+                    fontSize: 12.5,
+                    height: 1.25,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    shadows: <Shadow>[
+                      Shadow(color: Color(0xB3000000), blurRadius: 4),
+                    ],
+                  ),
+          ),
+          if (meta != null) ...<Widget>[
+            const SizedBox(height: 2),
+            Text(
+              meta,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              // 内置：白字降透明度做层级；外置：主题辅助色。
+              style: style == GridTitleStyle.below
+                  ? TextStyle(fontSize: 10, color: LumeTheme.muted)
+                  : TextStyle(
+                      fontSize: 10,
+                      color: Colors.white.withValues(alpha: 0.72),
+                    ),
+            ),
+          ],
+        ],
+      ),
+      child: CoverThumb(pipeline: pipeline, url: item.cover, width: 300),
+    );
+  }
+}
+
+/// 小尺寸封面（列表行里用）：没有图片管线时退回占位图标，不让整行看起来空着。
+class CoverThumb extends StatelessWidget {
+  const CoverThumb({
+    super.key,
+    required this.pipeline,
+    required this.url,
+    required this.width,
+  });
+
+  final SectionImagePipeline? pipeline;
+  final String? url;
+  final int width;
+
+  @override
+  Widget build(BuildContext context) {
+    final pipeline = this.pipeline;
+    if (pipeline == null) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: LumeTheme.fillStrong,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(Icons.image_outlined, size: 18, color: LumeTheme.muted),
+      );
+    }
+    return PosterCover(pipeline: pipeline, url: url, width: width);
   }
 }

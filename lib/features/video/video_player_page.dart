@@ -20,6 +20,7 @@ import '../../core/player/player_factory.dart';
 import '../../core/player/player_kernel_launcher.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/player/player_stats.dart';
+import '../../core/player/skip_marks.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
@@ -288,6 +289,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// 平台是否支持改系统亮度（探测一次；不支持就走遮罩降级）。
   bool _systemBrightness = false;
 
+  /// 片头 / 片尾标记（用户口径：播放中「记一下」，下次自动跳过）。
+  SkipMarks _skipMarks = SkipMarks.none;
+
+  /// 本次播放是否已经处理过片头（只在起播时判一次：用户拖回片头看时不再弹回去）。
+  bool _introHandled = false;
+
   /// 弹幕：设置 + 本集弹幕 + 内存缓存（换集时按 itemId/chapterId 取）。
   DanmakuSettings _danmakuSettings = DanmakuSettings.defaults;
   DanmakuTrack _danmaku = DanmakuTrack.empty;
@@ -377,6 +384,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     _wasPlaying = playing;
     if (snapshot != null) {
+      // 片头片尾：每次快照变化判一次（判定本身是纯函数，跳过一次后不再重复）。
+      _maybeSkip(_skipMarks, snapshot.position, snapshot.duration);
       // 锁屏播放条跟随播放状态（进度在会话内部节流，不必在这里省）。
       unawaited(
         _playback.update(
@@ -806,6 +815,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     // 换作品 / 换集前先把上一部的进度落盘（首次起播没有「上一部」，跳过——
     // 否则会写一条位置 0 的空记录，让「继续观看」里凭空多出一部没看过的片子）。
     if (_target != null) _saveProgress(force: true);
+    // 换作品 / 换集：重新读这套片头片尾标记，并允许这片头再判一次。
+    _introHandled = false;
+    _loadSkipMarks(target);
     _target = target;
     _input.text = media.uri.toString();
     await _loadMedia(media);
@@ -844,13 +856,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   ///
   /// 自动连播、锁屏「下一集 / 上一集」都走这里：一处判越界与取地址，避免三份
   /// 各写一遍（写三遍就会有三套越界口径）。
-  Future<void> _playEpisodeAt(int index, {bool auto = false}) async {
-    if (_advancing) return;
+  Future<bool> _playEpisodeAt(int index, {bool auto = false}) async {
+    if (_advancing) return false;
     final target = _target;
     final source = await _openSource();
     if (target == null || source == null) {
       if (!auto) _showToast('手动贴地址播放时没有剧集列表');
-      return;
+      return false;
     }
 
     _advancing = true;
@@ -859,14 +871,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       try {
         chapters = await source.chapters(target.itemId);
       } on SourceException {
-        return;
+        return false;
       }
       if (index < 0 || index >= chapters.length) {
         // 越界：自动连播时安静停下（没下一集了），手动切集时如实说一句。
         if (!auto) {
           _showToast(index < 0 ? '已经是第一集' : '已经是最后一集');
         }
-        return;
+        return false;
       }
       final next = chapters[index];
 
@@ -875,7 +887,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         chapterId: next.id,
       );
       final address = SourcePlayback.contentAddress(content);
-      if (address == null || !mounted) return;
+      if (address == null || !mounted) return false;
 
       // 换集时线路也可能完全不同：把这一集的候选线路一起换掉。
       setState(() {
@@ -899,10 +911,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           chapterTitle: next.title,
         ),
       );
-      if (!mounted) return;
+      if (!mounted) return false;
       if (auto) _showToast('已自动播放：${next.title}');
+      return true;
     } on SourceException {
       // 连播失败不打扰：用户没主动要求跳集，安静停在当前状态即可。
+      return false;
     } finally {
       _advancing = false;
     }
@@ -1066,6 +1080,111 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       if (snapshot == null || !snapshot.playing) return;
       _saveProgress();
     });
+  }
+
+  /// 读这套作品的片头片尾标记（按 itemId 存，同一部剧共用一个）。
+  void _loadSkipMarks(VideoPlayTarget? target) {
+    final library = _library;
+    if (library == null || target == null) {
+      _skipMarks = SkipMarks.none;
+      return;
+    }
+    _skipMarks = SkipMarksStore(library).load(target.itemId);
+  }
+
+  /// 记片头 / 记片尾（用户口径：播到那个位置点一下，下次自动跳过）。
+  void _markSkip({required bool intro}) {
+    final target = _target;
+    final library = _library;
+    final snapshot = _player?.snapshot.value;
+    if (target == null || library == null || snapshot == null) {
+      _showToast('从源条目起播才能记片头片尾（手动地址没有作品身份）');
+      return;
+    }
+    final position = snapshot.position;
+    if (position <= Duration.zero) {
+      _showToast('先播到片头结束 / 片尾开始的位置再记');
+      return;
+    }
+    final next = intro
+        ? _skipMarks.copyWith(intro: position)
+        : _skipMarks.copyWith(outro: position);
+    SkipMarksStore(library).save(target.itemId, next);
+    setState(() => _skipMarks = next);
+    _introHandled = !intro && _introducedAlready;
+    _showToast(
+      intro
+          ? '已记片头：${_format(position)}（下次从这里开始播）'
+          : '已记片尾：${_format(position)}（到时自动跳下一集）',
+    );
+  }
+
+  /// 清掉这套作品的片头片尾标记。
+  void _clearSkipMarks() {
+    final target = _target;
+    final library = _library;
+    if (target == null || library == null) return;
+    SkipMarksStore(library).clear(target.itemId);
+    setState(() => _skipMarks = SkipMarks.none);
+    _showToast('已清除片头片尾标记');
+  }
+
+  /// 起播时是否已经走过片头（用来判断「记片尾」后要不要重新判片头）。
+  bool get _introducedAlready {
+    final snapshot = _player?.snapshot.value;
+    final intro = _skipMarks.intro;
+    if (snapshot == null || intro == null) return false;
+    return snapshot.position >= intro;
+  }
+
+  /// 每次快照变化时判一次：该跳片头就跳、到片尾就进下一集。
+  ///
+  /// 只在「从源条目起播」且这一集有标记时生效；手动贴地址没有作品身份，不跳。
+  void _maybeSkip(SkipMarks marks, Duration position, Duration duration) {
+    final target = _target;
+    final player = _player;
+    if (target == null || player == null) return;
+    final outcome = SkipDecision.resolve(
+      marks: marks,
+      position: position,
+      duration: duration,
+      introEnabled: true,
+      outroEnabled: true,
+      introHandled: _introHandled,
+      hasNext: _autoNext && target.chapterIndex >= 0,
+    );
+    switch (outcome.action) {
+      case SkipAction.none:
+        return;
+      case SkipAction.seek:
+        final to = outcome.position!;
+        _introHandled = true;
+        unawaited(player.seek(to));
+        _showToast(to >= duration && duration > Duration.zero
+            ? '已跳过片尾'
+            : '已跳过片头');
+      case SkipAction.advance:
+        _introHandled = true;
+        // 有没有下一集要**问过才知道**（单集作品 / 最后一集都没有），
+        // 因此先试着换集：换成了才说「进入下一集」，换不成跳到结尾。
+        unawaited(_skipOutroTo(target, duration));
+    }
+  }
+
+  /// 片尾到点：有下一集就连播，没有就跳到结尾（用户口径：片尾「到点自动跳」）。
+  ///
+  /// 以前这里直接判「有下一集」（只按 `_autoNext` 猜），单集作品的片尾于是**什么
+  /// 都没发生**——越界换集被静默吃掉，用户等不到「跳到结尾」。
+  Future<void> _skipOutroTo(VideoPlayTarget target, Duration duration) async {
+    final switched = await _playEpisodeAt(target.chapterIndex + 1, auto: true);
+    if (switched) {
+      _showToast('已跳过片尾，进入下一集');
+      return;
+    }
+    final player = _player;
+    if (player == null || !mounted) return;
+    if (duration > Duration.zero) await player.seek(duration);
+    _showToast('已跳过片尾');
   }
 
   /// 保存当前播放进度（集数 + 时间点）。
@@ -2330,6 +2449,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// [includeSource] 为 false 时不含「播放源」那颗 ⓘ——常规面板把它单独钉在
   /// 整排最右侧（原来就是那个位置），避免同一颗图标出现两次。
   List<Widget> _windowSecondaryActions({bool includeSource = true}) => <Widget>[
+        // 右上角那颗「更多」：清晰度 / 音轨 / 跳过片头片尾 / 连播（用户口径）。
+        _compactIcon(
+          icon: Icons.more_vert,
+          tooltip: '更多（清晰度 / 音轨 / 跳过片头片尾 / 连播）',
+          highlighted: _skipMarks.hasIntro || _skipMarks.hasOutro,
+          onPressed: () => unawaited(_openMorePanel()),
+        ),
         _buildPipButton(),
         if (includeSource)
           _compactIcon(
@@ -2350,6 +2476,47 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           onPressed: _openSettings,
         ),
       ];
+
+  /// 打开右上角的「更多」悬浮弹窗（用户口径）：
+  /// 清晰度、音频轨道、跳过片头片尾、自动连播——四个都在这里，不再散落。
+  ///
+  /// 倍速不藏进来（用户点名）：它的小按钮留在控制栏上。
+  Future<void> _openMorePanel() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _MorePanelSheet(
+        qualities: _qualities,
+        currentQuality: _qualityIndex,
+        onPickQuality: (index) {
+          Navigator.of(sheetContext).pop();
+          unawaited(_selectQuality(index));
+        },
+        onPickAudioTrack: () {
+          Navigator.of(sheetContext).pop();
+          unawaited(_pickAudioTrack());
+        },
+        marks: _skipMarks,
+        onMarkIntro: () {
+          Navigator.of(sheetContext).pop();
+          _markSkip(intro: true);
+        },
+        onMarkOutro: () {
+          Navigator.of(sheetContext).pop();
+          _markSkip(intro: false);
+        },
+        onClearMarks: () {
+          Navigator.of(sheetContext).pop();
+          _clearSkipMarks();
+        },
+        autoNext: _autoNext,
+        onToggleAutoNext: (value) {
+          Navigator.of(sheetContext).pop();
+          setState(() => _autoNext = value);
+        },
+      ),
+    );
+  }
 
   /// 次级控制：清晰度 / 弹幕 / 连播 / 画中画 / 全屏 / 设置，最右侧是播放源。
   ///
@@ -2859,6 +3026,185 @@ class _QualitySheet extends StatelessWidget {
               ),
               const SizedBox(height: 8),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 右上角「更多」悬浮弹窗（用户口径）：清晰度 / 音频轨道 / 跳过片头片尾 / 自动连播。
+///
+/// 倍速**不在这里**（用户点名：它的小按钮留在控制栏上）。
+class _MorePanelSheet extends StatelessWidget {
+  const _MorePanelSheet({
+    required this.qualities,
+    required this.currentQuality,
+    required this.onPickQuality,
+    required this.onPickAudioTrack,
+    required this.marks,
+    required this.onMarkIntro,
+    required this.onMarkOutro,
+    required this.onClearMarks,
+    required this.autoNext,
+    required this.onToggleAutoNext,
+  });
+
+  final List<VideoQuality> qualities;
+  final int currentQuality;
+  final ValueChanged<int> onPickQuality;
+  final VoidCallback onPickAudioTrack;
+  final SkipMarks marks;
+  final VoidCallback onMarkIntro;
+  final VoidCallback onMarkOutro;
+  final VoidCallback onClearMarks;
+  final bool autoNext;
+  final ValueChanged<bool> onToggleAutoNext;
+
+  static String _time(Duration duration) {
+    final minutes =
+        duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds =
+        duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final hours = duration.inHours;
+    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      child: DecoratedBox(
+        decoration: LumeTheme.background,
+        child: SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+            ),
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              children: <Widget>[
+                Text(
+                  '更多',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: LumeTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (qualities.length > 1)
+                  GlassCard(
+                    radius: 14,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          '清晰度',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: LumeTheme.textSecondary,
+                          ),
+                        ),
+                        for (var i = 0; i < qualities.length; i++)
+                          ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              i == currentQuality
+                                  ? Icons.check_circle
+                                  : Icons.circle_outlined,
+                              size: 20,
+                              color: i == currentQuality
+                                  ? LumeTheme.accent
+                                  : LumeTheme.muted,
+                            ),
+                            title: Text(
+                              qualities[i].label,
+                              style: TextStyle(color: LumeTheme.textPrimary),
+                            ),
+                            onTap: () => onPickQuality(i),
+                          ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                GlassCard(
+                  radius: 14,
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: <Widget>[
+                      ListTile(
+                        leading: const Icon(Icons.graphic_eq, size: 20),
+                        title: const Text('音频轨道'),
+                        trailing: const Icon(Icons.chevron_right, size: 20),
+                        onTap: onPickAudioTrack,
+                      ),
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        value: autoNext,
+                        onChanged: onToggleAutoNext,
+                        title: const Text('自动连播'),
+                        subtitle: const Text('播完一集接着下一集'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                GlassCard(
+                  radius: 14,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '跳过片头片尾',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: LumeTheme.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        marks.isEmpty
+                            ? '播到片头结束的位置点「记片头」，播到片尾开始的位置点'
+                                '「记片尾」——之后每次播放自动跳过。'
+                            : '片头 ${marks.intro == null ? '未记' : _time(marks.intro!)}'
+                                ' · 片尾 ${marks.outro == null ? '未记' : _time(marks.outro!)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.5,
+                          color: LumeTheme.muted,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: <Widget>[
+                          OutlinedButton(
+                            onPressed: onMarkIntro,
+                            child: const Text('记片头'),
+                          ),
+                          OutlinedButton(
+                            onPressed: onMarkOutro,
+                            child: const Text('记片尾'),
+                          ),
+                          if (!marks.isEmpty)
+                            TextButton(
+                              onPressed: onClearMarks,
+                              child: const Text('清除标记'),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

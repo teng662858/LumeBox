@@ -10,6 +10,7 @@ import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
+import '../../shared/widgets/chapter_tile.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../reading/explore_view.dart';
 import '../reading/history_sheet.dart';
@@ -299,14 +300,22 @@ class _VideoPageState extends State<VideoPage> {
   }
 
   /// 剧集选择面板：一集一个条目，取消返回 null。
+  ///
+  /// 有历史记录时把「上次看到的那一集」高亮出来（列表里一眼能找到接着看）。
   Future<SourceChapter?> _pickChapter(
     SourceItem item,
     List<SourceChapter> chapters,
-  ) {
+  ) async {
+    final progress = widget.library?.videoProgress(item.id);
+    if (!mounted) return null;
     return showModalBottomSheet<SourceChapter>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ChapterSheet(title: item.title, chapters: chapters),
+      builder: (_) => _ChapterSheet(
+        title: item.title,
+        chapters: chapters,
+        currentChapterId: progress?.chapterId,
+      ),
     );
   }
 
@@ -501,12 +510,19 @@ class _VideoPageState extends State<VideoPage> {
 ///
 /// 与图源切换面板同一套玻璃外观（顶部圆角 + 深色背景），一行一集。
 class _ChapterSheet extends StatelessWidget {
-  const _ChapterSheet({required this.title, required this.chapters});
+  const _ChapterSheet({
+    required this.title,
+    required this.chapters,
+    this.currentChapterId,
+  });
 
   /// 作品标题（面板抬头用）。
   final String title;
 
   final List<SourceChapter> chapters;
+
+  /// 正在播的那一集（高亮它）；为空表示没有历史记录。
+  final String? currentChapterId;
 
   @override
   Widget build(BuildContext context) {
@@ -545,17 +561,13 @@ class _ChapterSheet extends StatelessWidget {
               Flexible(
                 child: ListView.builder(
                   shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                   itemCount: chapters.length,
                   itemBuilder: (context, index) {
                     final chapter = chapters[index];
-                    return ListTile(
-                      dense: true,
-                      title: Text(
-                        chapter.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: LumeTheme.textPrimary),
-                      ),
+                    return ChapterTile(
+                      title: chapter.title,
+                      current: chapter.id == currentChapterId,
                       onTap: () => Navigator.of(context).pop(chapter),
                     );
                   },

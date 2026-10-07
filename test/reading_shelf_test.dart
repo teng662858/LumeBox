@@ -408,22 +408,17 @@ void main() {
         ),
       );
 
-      // 用户口径任务 1：点「筛选」**直接跳转到独立筛选第一页**，不再弹旧抽屉。
+      // 用户口径：点「筛选」**直接进多行横向标签页**（不再有分类列表那一层，
+      // 也不弹旧抽屉）。分类本身是页面里的第一行标签。
       await tester.tap(find.byIcon(Icons.filter_list));
       await tester.pumpAndSettle();
-      expect(
-        find.byType(SourceFilterCategoryPage),
-        findsOneWidget,
-        reason: '第一层是独立页面（不是抽屉 / 下拉）',
-      );
-      expect(find.text('分类一'), findsOneWidget, reason: '第一层只列这个源的一级分类');
-
-      // 点分类 → 第二层（标签页）。替身源没有 filters 契约 → 显示「不支持筛选」，
-      // 但这仍然证明链路走对了（分类页 → 子页）。
-      await tester.tap(find.text('分类一'));
-      await tester.pumpAndSettle();
       expect(find.byType(SourceFilterPage), findsOneWidget);
-      expect(find.textContaining('筛选 · 分类一'), findsOneWidget);
+      expect(find.text('分类'), findsOneWidget, reason: '分类是其中一行标签');
+      expect(find.text('分类一'), findsOneWidget);
+      // 用户口径：源没给筛选标签时如实说一句（即使分类那一行有内容）——
+      // 这句话以前只在「分类和标签都空」时出现，真机上老脚本（只写 categories）
+      // 的表现是干脆报一条脚本错误，现在是这句提示 + 分类照旧可用。
+      expect(find.text('本源未提供筛选标签'), findsOneWidget);
     });
   });
 

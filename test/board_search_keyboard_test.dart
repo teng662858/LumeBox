@@ -72,6 +72,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('当前源搜索'));
     await tester.pumpAndSettle();
+    // 单选组：点行只移动圆点，点「应用」才生效并开搜索框。
+    await tester.tap(find.text('应用'));
+    await tester.pumpAndSettle();
 
     final field = find.byType(TextField);
     expect(field, findsOneWidget, reason: '搜索框要出现');
@@ -99,14 +102,20 @@ void main() {
     // 搜索范围要能切换（用户反馈切不了）：点输入框右侧的模式标签。
     await tester.tap(find.widgetWithText(TextButton, '当前源搜索'));
     await tester.pumpAndSettle();
-    expect(find.text('聚合搜索'), findsOneWidget, reason: '切换菜单要出现');
-    final option = tester.getRect(find.text('聚合搜索'));
+    // 面板是**单选组**：两个选项 + 一个「应用」按钮都在键盘之上。
+    final optionTile = find.widgetWithText(ListTile, '聚合搜索');
+    expect(optionTile, findsOneWidget, reason: '切换面板要出现');
+    final option = tester.getRect(optionTile);
     expect(
       option.bottom,
       lessThanOrEqualTo(keyboardTop),
-      reason: '菜单浮在键盘之上（bottom=${option.bottom}, 键盘顶沿=$keyboardTop）',
+      reason: '面板浮在键盘之上（bottom=${option.bottom}, 键盘顶沿=$keyboardTop）',
     );
-    await tester.tap(find.text('聚合搜索'));
+    // 点选项：圆点当场移过去（面板不关），再点「应用」生效。
+    await tester.tap(optionTile);
+    await tester.pumpAndSettle();
+    expect(find.text('搜索范围'), findsOneWidget, reason: '点选项只切换选中态，不关面板');
+    await tester.tap(find.text('应用'));
     await tester.pumpAndSettle();
     expect(
       find.textContaining('搜索全部已启用源'),

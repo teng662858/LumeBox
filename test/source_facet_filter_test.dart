@@ -94,7 +94,11 @@ void main() {
 
     expect(find.text('筛选 · 电影'), findsOneWidget);
     expect(find.text('剧集类型'), findsOneWidget);
-    expect(find.byType(ChoiceChip), findsNWidgets(6), reason: '2 + 2 + 2 个标签');
+    expect(
+      find.byType(ChoiceChip),
+      findsNWidgets(7),
+      reason: '分类 1 个 + 三组标签 2 + 2 + 2',
+    );
 
     await tester.tap(find.widgetWithText(ChoiceChip, '喜剧'));
     await tester.pumpAndSettle();
@@ -127,7 +131,7 @@ void main() {
                   applied =
                       await Navigator.of(context).push<SourceFilterSelection>(
                     MaterialPageRoute<SourceFilterSelection>(
-                      builder: (_) => SourceFilterCategoryPage(
+                      builder: (_) => SourceFilterPage(
                         source: _FacetSource(),
                         cache: SourceFilterCache(),
                       ),
@@ -147,11 +151,11 @@ void main() {
 
     expect(find.text('筛选'), findsOneWidget);
     expect(find.text('电影'), findsOneWidget);
-    expect(find.byType(ChoiceChip), findsNothing, reason: '第一层不放标签');
+    expect(find.byType(ChoiceChip), findsWidgets, reason: '标签直接铺在这一页');
 
-    await tester.tap(find.text('电影'));
+    await tester.tap(find.widgetWithText(ChoiceChip, '电影'));
     await tester.pumpAndSettle();
-    expect(find.text('筛选 · 电影'), findsOneWidget);
+    expect(find.text('筛选'), findsOneWidget, reason: '单页流程：标题不变，选择就地生效');
 
     await tester.tap(find.widgetWithText(ChoiceChip, '喜剧'));
     await tester.pumpAndSettle();
@@ -178,8 +182,84 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('本源不支持筛选'), findsOneWidget);
+    expect(find.text('本源未提供筛选标签'), findsOneWidget);
   });
+
+  testWidgets('脚本没写 filters（大哥视频）：显示未提供标签，不显示脚本错误', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        home: SourceFilterPage(
+          source: _NoFiltersSource(),
+          categoryId: 'movie',
+          categoryTitle: '欧美高清',
+          cache: SourceFilterCache(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('本源未提供筛选标签'), findsOneWidget,
+        reason: '没写 filters 的源要显示这句，而不是报错卡片');
+    expect(find.text('筛选标签没取到'), findsNothing, reason: '不能把脚本错误甩给用户');
+    expect(find.textContaining('没有实现 filters'), findsNothing);
+    // 分类行照旧可用（分类来自 categories()，与 filters 无关）。
+    expect(find.text('电影'), findsOneWidget, reason: '分类那一行要照旧显示');
+    expect(find.text('重置'), findsOneWidget);
+    expect(find.text('应用（不筛选）'), findsOneWidget);
+  });
+}
+
+/// 脚本没实现 filters（真机：大哥视频）——筛选页必须显示「本源未提供筛选标签」，
+/// 不能把「源脚本没有实现 filters 方法」这条脚本错误甩给用户。
+class _NoFiltersSource implements DataSource, FilterCapable {
+  @override
+  String get id => 'no-filters-source';
+
+  @override
+  String get name => '没写 filters 的源';
+
+  @override
+  Section get section => Section.video;
+
+  /// 关键：接口实现了，但脚本没有这个入口。
+  @override
+  Future<bool> supportsFilters() async => false;
+
+  @override
+  Future<List<SourceFilterGroup>> filters() async => throw const SourceException(
+        SourceErrorKind.callFailed,
+        '源脚本没有实现 filters 方法：请定义顶层函数 getFilters，或在脚本里给 LumeSource.filters 赋值',
+      );
+
+  @override
+  Future<List<SourceCategory>> categories() async =>
+      const <SourceCategory>[SourceCategory(id: 'movie', title: '电影')];
+
+  @override
+  Future<SourceList> list({
+    String? categoryId,
+    String? keyword,
+    int page = 1,
+    Map<String, String>? filters,
+  }) async =>
+      const SourceList(items: <SourceItem>[], hasMore: false);
+
+  @override
+  Future<SourceDetail?> detail(String itemId) async => null;
+
+  @override
+  Future<List<SourceChapter>> chapters(String itemId) async =>
+      const <SourceChapter>[];
+
+  @override
+  Future<ChapterContent?> content({
+    required String itemId,
+    required String chapterId,
+  }) async =>
+      null;
 }
 
 /// 提供筛选标签的替身图源（三组）。
@@ -192,6 +272,9 @@ class _FacetSource implements DataSource, FilterCapable {
 
   @override
   Section get section => Section.video;
+
+  @override
+  Future<bool> supportsFilters() async => true;
 
   @override
   Future<List<SourceFilterGroup>> filters() async => <SourceFilterGroup>[
@@ -260,9 +343,9 @@ class _NoFacetSource implements DataSource {
   @override
   Section get section => Section.video;
 
+  /// 既没有标签组、也没有分类 → 才是「本源未提供筛选标签」。
   @override
-  Future<List<SourceCategory>> categories() async =>
-      const <SourceCategory>[SourceCategory(id: 'movie', title: '电影')];
+  Future<List<SourceCategory>> categories() async => const <SourceCategory>[];
 
   @override
   Future<SourceList> list({

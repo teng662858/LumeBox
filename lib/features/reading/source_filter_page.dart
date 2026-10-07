@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/net/waf.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
+import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../source/waf_webview_page.dart';
@@ -80,157 +81,65 @@ Future<List<SourceFilterGroup>> loadSourceFilters({
     if (cached != null) return cached;
   }
   if (source is! FilterCapable) {
-    // 图源没实现这个可选契约：如实返回空表（页面据此提示「本源不支持筛选」）。
+    // 图源没实现这个可选契约：如实返回空表（页面据此提示「本源未提供筛选标签」）。
     return const <SourceFilterGroup>[];
   }
-  final groups = await (source as FilterCapable).filters();
-  cache.write(source.id, groups);
-  return groups;
-}
-
-/// 视频筛选的**第一层页面**（用户要求：点右上角「筛选」直接跳到这里）。
-///
-/// 只列一级大分类（电影 / 电视剧 / 综艺 / 动漫 / 短剧——由**图源实时给出**，
-/// 脚本里不许硬编码、App 也不内置一份）；点任意一个进入筛选子页。
-///
-/// 层级与返回：第一层 →（选分类）→ 第二层（标签）→ 应用后**整条链路一起返回**，
-/// 把 (分类, 各组标签) 交回浏览页去拉列表。
-class SourceFilterCategoryPage extends StatefulWidget {
-  const SourceFilterCategoryPage({
-    super.key,
-    required this.source,
-    required this.cache,
-    this.currentCategoryId,
-  });
-
-  final DataSource source;
-  final SourceFilterCache cache;
-
-  /// 当前已选的一级分类（列表里打勾）。
-  final String? currentCategoryId;
-
-  @override
-  State<SourceFilterCategoryPage> createState() =>
-      _SourceFilterCategoryPageState();
-}
-
-class _SourceFilterCategoryPageState extends State<SourceFilterCategoryPage> {
-  List<SourceCategory>? _categories;
-  Object? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() => _error = null);
-    try {
-      final categories = await widget.source.categories();
-      if (!mounted) return;
-      setState(() => _categories = categories);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _error = error);
+  final capable = source as FilterCapable;
+  try {
+    // 先问「脚本到底有没有 filters」：老脚本（比如大哥视频）没有这个入口，
+    // 直接调会抛脚本错误，筛选页就变成一条红字报错（真机反馈的「筛选 2 页」问题）。
+    if (!await capable.supportsFilters()) {
+      cache.write(source.id, const <SourceFilterGroup>[]);
+      return const <SourceFilterGroup>[];
     }
+  } catch (error) {
+    // 探测本身失败（引擎没起来等）按「没有标签」处理：宁可少一行标签，
+    // 也不要让整页变成错误页。
+    LumeLog.info('[filter] filters 支持探测失败，按「没有标签」处理：$error');
+    return const <SourceFilterGroup>[];
   }
-
-  Future<void> _openCategory(SourceCategory category) async {
-    final selection = await Navigator.of(context).push<SourceFilterSelection>(
-      MaterialPageRoute<SourceFilterSelection>(
-        builder: (_) => SourceFilterPage(
-          source: widget.source,
-          categoryId: category.id,
-          categoryTitle: category.title,
-          cache: widget.cache,
-        ),
-      ),
-    );
-    if (selection == null || !mounted) return;
-    // 整条链路一起返回：浏览页只处理一个结果。
-    Navigator.of(context).pop(selection);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final categories = _categories;
-    return GlassScaffold(
-      behindBar: true,
-      title: '筛选',
-      child: ListView(
-        padding: GlassScaffold.barInset(context).add(
-          const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        ),
-        children: <Widget>[
-          if (_error != null)
-            NoticeCard(
-              title: '分类没取到',
-              subtitle: '${_error!}\n（分类来自源站，网络恢复后点「重新加载」）',
-            )
-          else if (categories == null)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 48),
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
-            )
-          else if (categories.isEmpty)
-            const NoticeCard(
-              title: '本源没有分类',
-              subtitle: '图源脚本没有返回分类（categories 契约），无法筛选。',
-            )
-          else
-            GlassCard(
-              radius: 14,
-              padding: EdgeInsets.zero,
-              child: Column(
-                children: <Widget>[
-                  for (final category in categories)
-                    ListTile(
-                      title: Text(
-                        category.title,
-                        style: TextStyle(color: LumeTheme.textPrimary),
-                      ),
-                      trailing: Icon(
-                        category.id == widget.currentCategoryId
-                            ? Icons.check_circle
-                            : Icons.chevron_right,
-                        size: 20,
-                        color: category.id == widget.currentCategoryId
-                            ? LumeTheme.accent
-                            : LumeTheme.muted,
-                      ),
-                      onTap: () => _openCategory(category),
-                    ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
+  try {
+    final groups = await capable.filters();
+    cache.write(source.id, groups);
+    return groups;
+  } on SourceException catch (error) {
+    // 兜底：脚本运行期才暴露「没有实现 filters」时，同样按「没有标签」处理。
+    if (error.message.contains('没有实现')) {
+      cache.write(source.id, const <SourceFilterGroup>[]);
+      return const <SourceFilterGroup>[];
+    }
+    rethrow;
   }
 }
 
-/// 视频筛选子页面（用户要求的「分页跳转模式」）：
+/// 筛选页（用户口径：**多行横向标签**，三板块共用）：
 ///
-/// - 一行一组标签（剧集类型 / 题材 / 地区 / 年份 / 语言…，由**脚本实时提供**）；
-/// - 每组横向可滚动，标签可多选，组与组之间叠加生效；
-/// - 底部「应用筛选 / 重置」；应用后把选择回传给浏览页去请求列表。
+/// - **一行一个筛选维度**，每行横向可滚动（分类 / 剧集类型 / 题材 / 地区 / 年份…）；
+///   分类那一行来自图源的 `categories()`，其余组来自 `filters()` 契约（**实时抓**）；
+/// - 组内多选、组间叠加：所有选中的条件组合同时生效；
+/// - 页面整体**垂直可滚动**（分组很多也不挤）；
+/// - 底部固定「重置 / 应用筛选」两个按钮；
+/// - 图源没有给任何标签 → 提示「本源未提供筛选标签」。
 ///
-/// 第一版不做「左右双栏联动」（用户口径）：先只做这套分页跳转，后续版本再加
-/// 一个设置项，让用户在「分页模式 / 双栏模式」之间自己选。
+/// 不再有「先点一层分类列表再进标签页」那种树形点选（用户明确要求去掉）。
 class SourceFilterPage extends StatefulWidget {
   const SourceFilterPage({
     super.key,
     required this.source,
-    required this.categoryId,
-    required this.categoryTitle,
     required this.cache,
+    this.categoryId,
+    this.categoryTitle,
     this.initial = const <String, String>{},
   });
 
   final DataSource source;
-  final String categoryId;
-  final String categoryTitle;
+
+  /// 当前已选的一级分类（进入时高亮）；为空表示没选过。
+  final String? categoryId;
+
+  /// 当前分类标题（标题行展示用）。
+  final String? categoryTitle;
+
   final SourceFilterCache cache;
 
   /// 进入时已有的选择（重进筛选页时保持已选项）。
@@ -242,7 +151,11 @@ class SourceFilterPage extends StatefulWidget {
 
 class _SourceFilterPageState extends State<SourceFilterPage> {
   List<SourceFilterGroup>? _groups;
+  List<SourceCategory> _categories = const <SourceCategory>[];
   Object? _error;
+
+  /// 已选分类（点「应用」时一起回传）。
+  String? _categoryId;
 
   /// 组 id → 已选中的选项 id 集合（多选）。
   final Map<String, Set<String>> _selected = <String, Set<String>>{};
@@ -250,6 +163,7 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
   @override
   void initState() {
     super.initState();
+    _categoryId = widget.categoryId;
     widget.initial.forEach((groupId, value) {
       final ids = value
           .split(',')
@@ -263,13 +177,23 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
   Future<void> _load({bool force = false}) async {
     setState(() => _error = null);
     try {
+      // 分类失败不阻塞标签（分类是「分类」那一行，标签是各维度行）。
+      var categories = const <SourceCategory>[];
+      try {
+        categories = await widget.source.categories();
+      } catch (error) {
+        LumeLog.info('[filter] 分类取不到，只显示标签组：$error');
+      }
       final groups = await loadSourceFilters(
         source: widget.source,
         cache: widget.cache,
         force: force,
       );
       if (!mounted) return;
-      setState(() => _groups = groups);
+      setState(() {
+        _categories = categories;
+        _groups = groups;
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = error);
@@ -284,7 +208,19 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
     });
   }
 
-  void _reset() => setState(_selected.clear);
+  void _reset() => setState(() {
+        _selected.clear();
+        _categoryId = null;
+      });
+
+  /// 分类标题（回传给宿主做提示 / 结果页标题）。
+  String _titleOf(String? id) {
+    if (id == null) return '全部';
+    for (final category in _categories) {
+      if (category.id == id) return category.title;
+    }
+    return id;
+  }
 
   /// 被 WAF 拦下时：内置网页视图过校验 → 存会话 → 重新加载标签（用户要求）。
   Future<void> _openWebViewForWaf() async {
@@ -313,7 +249,9 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
     final groups = _groups;
     return GlassScaffold(
       behindBar: true,
-      title: '筛选 · ${widget.categoryTitle}',
+      title: widget.categoryTitle == null
+          ? '筛选'
+          : '筛选 · ${widget.categoryTitle}',
       child: Column(
         children: <Widget>[
           Expanded(
@@ -343,18 +281,74 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
                     padding: EdgeInsets.symmetric(vertical: 48),
                     child: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
                   )
-                else if (groups.isEmpty)
+                else if (groups.isEmpty && _categories.isEmpty)
+                  // 用户口径 3：这里就是那句点名的提示。
                   const NoticeCard(
-                    title: '本源不支持筛选',
-                    subtitle: '图源脚本没有提供筛选标签（filters 契约）。\n'
-                        '这不影响浏览与搜索，直接返回即可。',
+                    title: '本源未提供筛选标签',
+                    subtitle: '图源脚本没有给出可筛选的维度。\n'
+                        '不影响浏览与搜索，直接返回即可。',
                   )
-                else
-                  for (final group in groups) _buildGroup(group),
+                else ...<Widget>[
+                  // 分类独立一行（与其它维度同样的横向标签样式）。
+                  if (_categories.isNotEmpty) _buildCategoryRow(),
+                  // 有分类、但没有标签维度（老脚本只写了 categories）：
+                  // 分类行照旧可用，同时如实说明「没有更细的标签」——真机上这里
+                  // 以前会因为 filters 抛错而整页变成脚本错误（用户截图）。
+                  if (groups.isEmpty)
+                    const NoticeCard(
+                      title: '本源未提供筛选标签',
+                      subtitle: '这个图源只给了分类，没有更细的筛选维度。\n'
+                          '点上面的分类即可浏览。',
+                    )
+                  else
+                    for (final group in groups) _buildGroup(group),
+                ],
               ],
             ),
           ),
           _buildBottomBar(),
+        ],
+      ),
+    );
+  }
+
+  /// 分类行：横向标签，单选（再点一次取消 → 回到「全部」）。
+  Widget _buildCategoryRow() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
+            child: Text(
+              '分类',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: LumeTheme.textSecondary,
+              ),
+            ),
+          ),
+          SizedBox(
+            height: 36,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _categories.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final category = _categories[index];
+                final on = _categoryId == category.id;
+                return ChoiceChip(
+                  label: Text(category.title),
+                  selected: on,
+                  onSelected: (_) => setState(
+                    () => _categoryId = on ? null : category.id,
+                  ),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -417,8 +411,8 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
               child: FilledButton(
                 onPressed: () => Navigator.of(context).pop(
                   SourceFilterSelection(
-                    categoryId: widget.categoryId,
-                    categoryTitle: widget.categoryTitle,
+                    categoryId: _categoryId ?? '',
+                    categoryTitle: _titleOf(_categoryId),
                     filters: _filters,
                   ),
                 ),
@@ -434,8 +428,8 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
   }
 }
 
-/// 打开「分页跳转筛选」整条链路（三板块共用）：
-/// 第一层（一级分类）→ 第二层（标签组）→ 应用后把 (分类 + 各组标签) 交回宿主。
+/// 打开筛选页（三板块共用）：**一个页面搞定**（分类一行 + 各标签组多行），
+/// 应用后把 (分类 + 各组标签) 交回宿主。
 ///
 /// 宿主拿到的结果直接喂给 `DataSource.list(categoryId:, filters:)`。
 Future<({String? categoryId, Map<String, String> filters})?>
@@ -446,10 +440,10 @@ Future<({String? categoryId, Map<String, String> filters})?>
 }) async {
   final selection = await Navigator.of(context).push<SourceFilterSelection>(
     MaterialPageRoute<SourceFilterSelection>(
-      builder: (_) => SourceFilterCategoryPage(
+      builder: (_) => SourceFilterPage(
         source: source,
         cache: SourceFilterCache.instance,
-        currentCategoryId: currentCategoryId,
+        categoryId: currentCategoryId,
       ),
     ),
   );

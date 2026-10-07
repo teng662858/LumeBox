@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/reading/reading.dart';
 import '../../core/reading/browse_layout.dart';
+import '../../core/js/source_registry.dart';
 import '../../core/session/section.dart';
 import '../../core/net/waf.dart';
 import '../../core/source/source.dart';
@@ -17,6 +18,7 @@ import 'source_home_view.dart';
 import '../shell/section_preloader.dart';
 import '../source/source_section_page.dart';
 import 'poster_card.dart';
+import 'search_results_page.dart';
 import 'section_toolbar.dart';
 import '../shell/board_tabs.dart';
 
@@ -128,12 +130,18 @@ class _ExploreViewState extends State<ExploreView> {
 
   /// 已生效的分组筛选（视频板块的分页筛选写进来；其它板块恒为空）。
   Map<String, String> _facetFilters = const <String, String>{};
-  String _keyword = '';
 
   final List<SourceItem> _items = <SourceItem>[];
   int _page = 1;
   bool _hasMore = false;
   bool _loadingMore = false;
+
+  /// 首屏（第 1 页）请求是否在飞。
+  ///
+  /// 这个标记专门用来区分「真的没内容」和「还没取回来」：以前两者都表现为
+  /// `_items.isEmpty`，于是进板块的瞬间会先闪一屏「暂无内容 / 换个分类或关键词
+  /// 试试」，等网络回来才换成真实列表（用户报的就是这个 2 秒假空态）。
+  bool _loadingFirst = false;
   bool _loadMoreFailed = false;
   bool _switching = false;
   bool _searching = false;
@@ -165,15 +173,6 @@ class _ExploreViewState extends State<ExploreView> {
 
   /// 联想请求代号：过期结果直接丢弃（用户可能已经改了关键词）。
   int _suggestSeq = 0;
-
-  /// 聚合搜索结果（非空即处于「结果页」形态）。单源搜索沿用 [_items]。
-  List<SearchHit>? _hits;
-
-  /// 聚合搜索里没取到数据的源数量（结果页顶部如实说明）。
-  int _aggregateFailed = 0;
-
-  /// 搜索结果的关键词（结果页顶部保留）。
-  String _resultKeyword = '';
 
   /// 首页列表失败的原因（分类失败不算）。
   Object? _failure;
@@ -285,7 +284,9 @@ class _ExploreViewState extends State<ExploreView> {
         _state = SourceStateKind.ready;
         _failure = null;
       });
-      await _probeHomeSupport();
+      // 首页探针**并行**跑：它是一次 JS 求值，串行会把列表加载整整推后一拍
+      //（真机表现：进板块先闪两秒「暂无内容」才出数据）。
+      unawaited(_probeHomeSupport());
       await _loadCategories();
       await _loadPage();
     } on SourceException catch (error) {
@@ -349,6 +350,7 @@ class _ExploreViewState extends State<ExploreView> {
     _page = 1;
     _hasMore = false;
     _loadingMore = false;
+    _loadingFirst = false;
     _loadMoreFailed = false;
     _pendingPage = 0;
     _items.clear();
@@ -373,6 +375,8 @@ class _ExploreViewState extends State<ExploreView> {
       _resetPagination();
       setState(() {
         _failure = null;
+        // 请求在飞期间只显示加载态，绝不落到空态（见 [_loadingFirst] 注释）。
+        _loadingFirst = true;
         _items.clear();
       });
       // 预热命中：直接吃切页签时提前取好的第一页（省掉一次网络往返）。
@@ -380,13 +384,13 @@ class _ExploreViewState extends State<ExploreView> {
         widget.section,
         sourceId: source.id,
         categoryId: _categoryId,
-        keyword: _keyword,
       );
       if (warm != null) {
         setState(() {
           _page = 1;
           _hasMore = warm.hasMore;
           _loadingMore = false;
+          _loadingFirst = false;
           _items.addAll(warm.items);
         });
         _preloadCovers(warm.items);
@@ -398,7 +402,6 @@ class _ExploreViewState extends State<ExploreView> {
     try {
       final result = await source.list(
         categoryId: _categoryId,
-        keyword: _keyword.isEmpty ? null : _keyword,
         page: page,
         filters: _facetFilters.isEmpty ? null : _facetFilters,
       );
@@ -407,6 +410,7 @@ class _ExploreViewState extends State<ExploreView> {
         _page = page;
         _hasMore = result.hasMore;
         _loadingMore = false;
+        _loadingFirst = false;
         if (more) {
           _items.addAll(result.items);
         } else {
@@ -429,6 +433,7 @@ class _ExploreViewState extends State<ExploreView> {
           // 失败**不**清 hasMore：清掉就再也拉不动了（「提前标记没有更多」的那种）。
           _loadMoreFailed = true;
         } else {
+          _loadingFirst = false;
           _failure = error;
         }
       });
@@ -557,7 +562,7 @@ class _ExploreViewState extends State<ExploreView> {
 
   /// 点工具栏「搜索」：先选范围（聚合 / 当前源），再开搜索框。
   Future<void> _openSearch() async {
-    final mode = await showSearchModeMenu(context);
+    final mode = await showSearchModeMenu(context, current: _searchMode);
     if (mode == null || !mounted) return;
     setState(() {
       _searchMode = mode;
@@ -609,46 +614,38 @@ class _ExploreViewState extends State<ExploreView> {
     return library == null ? null : SearchHistoryStore(widget.section, library);
   }
 
-  /// 执行搜索。**两种模式共用同一份「请求」逻辑**，只是范围不同：
-  /// - 当前源：与浏览页同一套 [DataSource.list]（关键词 + 分页）；
-  /// - 聚合：并发问本板块全部已启用源，结果合并成一张结果页。
+  /// 执行搜索：**离开首页推荐网格，跳独立结果页**（用户口径）。
+  ///
+  /// 以前是「就地替换首页网格」，用户看到的像是首页没动；现在搜索自成一段流程
+  /// （[SearchResultsPage] 负责加载 / 空态 / 失败态），首页推荐原样留在身后。
   void _submitSearch(String value) {
     final keyword = value.trim();
-    _suggestions = const <String>[];
     _suggestDebounce?.cancel();
+    _suggestSeq++;
     if (keyword.isEmpty) return;
     _historyStore?.remember(keyword);
-    _keyword = keyword;
-    _resultKeyword = keyword;
-    if (_searchMode == SearchMode.aggregate) {
-      unawaited(_runAggregate(keyword));
-      return;
-    }
-    setState(() => _hits = null);
-    _loadPage();
+    setState(() {
+      _suggestions = const <String>[];
+      _searching = false; // 收起搜索行，回首页网格的样子
+    });
+    _search.clear();
+    unawaited(
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => SearchResultsPage(
+            section: widget.section,
+            keyword: keyword,
+            mode: _searchMode,
+            sourceId: _current?.id,
+            manager: widget.manager,
+            pipeline: widget.pipeline,
+            onOpenItem: (selection) => _openFromSource(selection),
+          ),
+        ),
+      ),
+    );
   }
 
-  /// 聚合搜索：并发问全部已启用源（单个源失败只丢它自己）。
-  Future<void> _runAggregate(String keyword) async {
-    final seq = ++_requestSeq;
-    setState(() {
-      _hits = null;
-      _failure = null;
-      _aggregateFailed = 0;
-      _loadingMore = false;
-    });
-    final result = await AggregateSearch.run(
-      sources: _sources,
-      keyword: keyword,
-      categoryId: _categoryId,
-      open: (sourceId) => _manager.open(sourceId),
-    );
-    if (!mounted || seq != _requestSeq) return;
-    setState(() {
-      _hits = result.hits;
-      _aggregateFailed = result.failed;
-    });
-  }
 
   /// 点联想条目：直接填入并搜索（用户点名）。
   void _applySuggestion(String value) {
@@ -797,12 +794,6 @@ class _ExploreViewState extends State<ExploreView> {
                   _searching = false;
                   _suggestions = const <String>[];
                 });
-                if (_keyword.isNotEmpty || _hits != null) {
-                  _keyword = '';
-                  _resultKeyword = '';
-                  setState(() => _hits = null);
-                  _loadPage();
-                }
               },
             ),
           ],
@@ -871,155 +862,11 @@ class _ExploreViewState extends State<ExploreView> {
           ? BrowseLayoutMode.grid3
           : BrowseLayoutMode.list);
 
-  /// 是否处于「搜索结果」形态（单源搜索按关键词，聚合搜索看 [_hits]）。
-  bool get _isSearchResult => _hits != null || _keyword.isNotEmpty;
-
   /// 排序后的条目（排序是客户端行为，只作用于已加载的这批）。
   List<SourceItem> get _sortedItems => _sort.apply(_items);
 
-  /// 聚合搜索结果页：顶部保留关键词，列表逐条给出
-  /// 「标题 + 时长 + 图源来源 + 更新时间」，排序 / 筛选 / 布局照常可用。
-  Widget _buildAggregateResults() {
-    final hits = _sort.apply(<SourceItem>[
-      for (final hit in _hits!) hit.item,
-    ]);
-    final byId = <String, SearchHit>{
-      for (final hit in _hits!) hit.item.id: hit,
-    };
-    // 结果页同样支持布局切换（用户点名）：网格档用海报卡，元信息进脚注。
-    if (_mode != BrowseLayoutMode.list) {
-      return RefreshIndicator(
-        onRefresh: () async => _runAggregate(_resultKeyword),
-        child: GridView.builder(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-            16,
-            8,
-            16,
-            16 + _keyboardInset(context),
-          ),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: _mode.columns,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: _mode.tileAspectRatio,
-          ),
-          itemCount: hits.length,
-          itemBuilder: (context, index) {
-            final item = hits[index];
-            final hit = byId[item.id];
-            return _PosterTile(
-              item: item,
-              pipeline: widget.pipeline,
-              meta: _resultMeta(item, hit),
-              onTap: () => _open(item),
-            );
-          },
-        ),
-      );
-    }
-    return RefreshIndicator(
-      onRefresh: () async => _runAggregate(_resultKeyword),
-      child: ListView.separated(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + _keyboardInset(context)),
-        itemCount: hits.length + 1,
-        separatorBuilder: (_, _) => const SizedBox(height: 10),
-        itemBuilder: (context, index) {
-          if (index == hits.length) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Center(
-                child: Text(
-                  _aggregateFailed == 0
-                      ? '共 ${hits.length} 条'
-                      : '共 ${hits.length} 条（$_aggregateFailed 个源没取到）',
-                  style: TextStyle(fontSize: 12, color: LumeTheme.muted),
-                ),
-              ),
-            );
-          }
-          final item = hits[index];
-          final hit = byId[item.id];
-          return GlassCard(
-            padding: const EdgeInsets.all(10),
-            onTap: () => _open(item),
-            child: Row(
-              children: <Widget>[
-                SizedBox(
-                  width: 56,
-                  height: 76,
-                  child: _Cover(
-                    pipeline: widget.pipeline,
-                    url: item.cover,
-                    width: 160,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: _searchResultInfo(item, hit)),
-                Icon(Icons.chevron_right, color: LumeTheme.muted),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
 
-  /// 搜索结果条目的元信息串（时长 / 来源 / 更新时间，缺项自动省略，不编造）。
-  static String? _resultMeta(SourceItem item, SearchHit? hit) {
-    final pieces = <String>[
-      if (item.duration != null) '时长 ${_formatDuration(item.duration!)}',
-      if (hit != null) '来源 ${hit.sourceName}',
-      if (item.updatedAt != null) '更新 ${_formatDate(item.updatedAt!)}',
-    ];
-    return pieces.isEmpty ? null : pieces.join(' · ');
-  }
 
-  /// 搜索结果条目信息：标题 + 元信息串。
-  Widget _searchResultInfo(SourceItem item, SearchHit? hit) {
-    final meta = _resultMeta(item, hit);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Text(
-          item.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: LumeTheme.textPrimary,
-          ),
-        ),
-        if (meta != null) ...<Widget>[
-          const SizedBox(height: 4),
-          Text(
-            meta,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
-          ),
-        ],
-      ],
-    );
-  }
-
-  /// `12:34` / `1:02:03`。
-  static String _formatDuration(Duration value) {
-    final hours = value.inHours;
-    final minutes = value.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = value.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return hours > 0 ? '$hours:$minutes:$seconds' : '${value.inMinutes}:$seconds';
-  }
-
-  /// `2026-10-07`。
-  static String _formatDate(DateTime value) {
-    final local = value.toLocal();
-    String two(int number) => number.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)}';
-  }
 
   /// 是否处于「首页模式」（用户口径任务 3）：图源提供 home()，且当前没有
   /// 分类 / 分组筛选 / 关键词 / 搜索结果在生效。旧源没有 home() → 照旧分类列表。
@@ -1028,7 +875,6 @@ class _ExploreViewState extends State<ExploreView> {
     final source = _source;
     if (source is! HomeCapable) return false;
     if (_categoryId != null || _facetFilters.isNotEmpty) return false;
-    if (_keyword.isNotEmpty || _hits != null) return false;
     return true;
   }
 
@@ -1066,7 +912,11 @@ class _ExploreViewState extends State<ExploreView> {
     }
     final failure = _failure;
     if (failure != null) {
-      final detail = failure is SourceException ? failure.message : '$failure';
+      // 能定性的失败（Venera 那套 DOM 源等）在引擎原文后追加一句说明，
+      // 原文照旧保留——用户看不懂「querySelectorAll of null」是什么意思。
+      final detail = SourceRegistry.describeRuntimeFailure(
+        failure is SourceException ? failure.message : '$failure',
+      );
       // 被 Cloudflare / WAF 拦下时多给一个出口：在 App 内置网页视图里过真人校验
       // （用户要求；参考 AP 漫画那套）。普通失败照旧只有「重试」。
       final kind = wafKindOf(detail);
@@ -1089,11 +939,13 @@ class _ExploreViewState extends State<ExploreView> {
             : null,
       );
     }
-    if (_hits != null) return _buildAggregateResults();
+    if (_items.isEmpty && _loadingFirst) {
+      return const SourceStateView(state: SourceStateKind.loading);
+    }
     if (_items.isEmpty && !_loadingMore) {
       return SourceStateView(
         state: SourceStateKind.empty,
-        detail: _isSearchResult ? '没有搜到相关条目，换个关键词试试' : '换个分类或关键词试试',
+        detail: '换个分类或关键词试试',
         onRetry: _bootstrap,
       );
     }
@@ -1131,7 +983,7 @@ class _ExploreViewState extends State<ExploreView> {
           final items = _sortedItems;
           if (index == items.length) return _buildFooter();
           final item = items[index];
-            return _PosterTile(
+            return PosterTile(
               item: item,
               pipeline: widget.pipeline,
               onTap: () => _open(item),
@@ -1169,7 +1021,7 @@ class _ExploreViewState extends State<ExploreView> {
                 SizedBox(
                   width: 56,
                   height: 76,
-                  child: _Cover(
+                  child: CoverThumb(
                     pipeline: widget.pipeline,
                     url: item.cover,
                     width: 160,
@@ -1177,36 +1029,34 @@ class _ExploreViewState extends State<ExploreView> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _isSearchResult
-                      ? _searchResultInfo(item, null)
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Text(
-                              item.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: LumeTheme.textPrimary,
-                              ),
-                            ),
-                            if (item.subtitle != null) ...<Widget>[
-                              const SizedBox(height: 4),
-                              Text(
-                                item.subtitle!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: LumeTheme.muted,
-                                ),
-                              ),
-                            ],
-                          ],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        item.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: LumeTheme.textPrimary,
                         ),
+                      ),
+                      if (item.subtitle != null) ...<Widget>[
+                        const SizedBox(height: 4),
+                        Text(
+                          item.subtitle!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: LumeTheme.muted,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
                 Icon(Icons.chevron_right, color: LumeTheme.muted),
               ],
@@ -1216,6 +1066,13 @@ class _ExploreViewState extends State<ExploreView> {
         ),
       ),
     );
+  }
+
+  /// 打开搜索结果里的一条：条目属于哪個源由结果页给出（聚合搜索跨源）。
+  ///
+  /// 与 [_open] 的区别只在图源来源：这里不重开「当前源」，直接用结果页给的 id。
+  void _openFromSource(ExploreSelection selection) {
+    widget.onOpenItem(selection);
   }
 
   /// 打开一个条目：把「图源 + 条目」一起交给板块页。
@@ -1265,81 +1122,6 @@ class _ExploreViewState extends State<ExploreView> {
   }
 }
 
-/// 海报网格单元：封面 + 标题（底部渐变压字），与书架卡片同一套视觉。
-class _PosterTile extends StatelessWidget {
-  const _PosterTile({
-    required this.item,
-    this.pipeline,
-    required this.onTap,
-    this.meta,
-  });
-
-  final SourceItem item;
-  final SectionImagePipeline? pipeline;
-  final VoidCallback onTap;
-
-  /// 额外的元信息行（搜索结果页用它显示时长 / 来源 / 更新时间）。
-  final String? meta;
-
-  @override
-  Widget build(BuildContext context) {
-    final meta = this.meta;
-    // 标题风格是全局偏好（设置页可切），这里按当前值渲染。
-    final style = BrowseLayoutSettings.instance.gridTitleStyle;
-    return PosterCard(
-      onTap: onTap,
-      // 标题风格：遮罩内置（白字压在封面上）/ 外置独立（黑字在封面下方）。
-      // 外置时封面不画任何遮罩，文字落在卡片浅色底上，因此用主题主文字色。
-      footnoteBelow: style == GridTitleStyle.below,
-      footnote: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            item.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            // 内置：压在封面底部的深色遮罩上 → **一律白字 + 加粗 + 浅描边**
-            //（原来用 LumeTheme.textPrimary，浅色主题下深色字压深色遮罩，
-            //  真机反馈「标题看着很淡」）；外置：封面外的浅色底 → 主题主文字色。
-            style: style == GridTitleStyle.below
-                ? TextStyle(
-                    fontSize: 12.5,
-                    height: 1.25,
-                    fontWeight: FontWeight.w600,
-                    color: LumeTheme.textPrimary,
-                  )
-                : const TextStyle(
-                    fontSize: 12.5,
-                    height: 1.25,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    shadows: <Shadow>[
-                      Shadow(color: Color(0xB3000000), blurRadius: 4),
-                    ],
-                  ),
-          ),
-          if (meta != null) ...<Widget>[
-            const SizedBox(height: 2),
-            Text(
-              meta,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              // 内置：白字降透明度做层级；外置：主题辅助色。
-              style: style == GridTitleStyle.below
-                  ? TextStyle(fontSize: 10, color: LumeTheme.muted)
-                  : TextStyle(
-                      fontSize: 10,
-                      color: Colors.white.withValues(alpha: 0.72),
-                    ),
-            ),
-          ],
-        ],
-      ),
-      child: _Cover(pipeline: pipeline, url: item.cover, width: 300),
-    );
-  }
-}
 
 /// 圆形动作按钮：搜索 / 筛选这类轻量入口，不用图标按钮的默认内边距。
 class _RoundAction extends StatelessWidget {
@@ -1376,25 +1158,3 @@ class _RoundAction extends StatelessWidget {
 /// 右侧筛选抽屉：分类选择 + 图源管理入口。
 
 /// 封面位：管线就绪时走 [PosterCover]，否则出主题占位（图位不变，避免列表跳动）。
-class _Cover extends StatelessWidget {
-  const _Cover({required this.pipeline, required this.url, required this.width});
-
-  final SectionImagePipeline? pipeline;
-  final String? url;
-  final int width;
-
-  @override
-  Widget build(BuildContext context) {
-    final pipeline = this.pipeline;
-    if (pipeline == null) {
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          color: LumeTheme.fillStrong,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(Icons.image_outlined, size: 18, color: LumeTheme.muted),
-      );
-    }
-    return PosterCover(pipeline: pipeline, url: url, width: width);
-  }
-}

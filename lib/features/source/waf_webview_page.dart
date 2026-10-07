@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/net/waf.dart';
+
+// 兼容既有引用：这两个纯字符串工具的**定义**已搬到 core/net/waf.dart
+//（引擎层判 WAF 时也要用，core 不能反向依赖界面层），这里原样导出。
+export '../../core/net/waf.dart' show originOf, urlFromFailure;
+import '../../core/session/section.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 
@@ -22,7 +28,24 @@ class WafWebViewPage extends StatefulWidget {
     required this.url,
     required this.sourceName,
     required this.onCollected,
+    this.onUserAgent,
+    this.userAgentOverride,
+    this.auto = false,
+    this.compact = false,
   });
+
+  /// 自动模式（用户口径 2 / 4）：脚本抛 `NEED_WEBVIEW_VERIFY` 时由应用自己调起。
+  /// 这个模式下**不要求用户点关闭**——一拿到会话就自己收尾关窗。
+  final bool auto;
+
+  /// 小悬浮窗布局：只占屏幕一小块（不做全屏页），提示文案也压缩成一行。
+  final bool compact;
+
+  /// 用指定 UA 打开页面（App 的请求 UA）。
+  ///
+  /// Cloudflare 把 `cf_clearance` 绑在「IP + UA」上：验证时与后续 API 用同一个 UA
+  /// 才认，因此两边必须对齐（不传就用 WKWebView 默认 UA）。
+  final String? userAgentOverride;
 
   /// 要打开的源站地址（通常是失败请求的 origin）。
   final String url;
@@ -32,6 +55,9 @@ class WafWebViewPage extends StatefulWidget {
 
   /// 取回 Cookie 后的落盘回调（宿主负责写进该图源的会话存储）。
   final void Function(Map<String, String> cookies) onCollected;
+
+  /// 读到网页视图 UA 后的回调（与 Cookie 一起存：cf_clearance 与 UA 绑定）。
+  final ValueChanged<String>? onUserAgent;
 
   @override
   State<WafWebViewPage> createState() => _WafWebViewPageState();
@@ -46,6 +72,9 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
   int _progress = 0;
   bool _collecting = false;
 
+  /// 自动模式的轮询计时器：定时看 Cloudflare 的放行 Cookie 到了没有。
+  Timer? _autoPoll;
+
   @override
   void initState() {
     super.initState();
@@ -59,17 +88,66 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
           onPageStarted: (_) => setState(() => _progress = 0),
           onPageFinished: (url) async {
             final title = await _controller?.getTitle();
+            // UA 与 cf_clearance 绑定：验证用哪个 UA，后续 API 就得用哪个，
+            // 因此把网页视图里的真实 UA 记下来（用户口径 2：拿到验证后的请求头）。
+            final ua = await _controller?.runJavaScriptReturningResult(
+              'navigator.userAgent',
+            );
+            widget.onUserAgent?.call('$ua'.replaceAll('"', '').trim());
             if (!mounted) return;
             setState(() => _title = (title == null || title.trim().isEmpty)
                 ? widget.sourceName
                 : title.trim());
+            if (widget.auto) _startAutoPoll();
           },
           onWebResourceError: (error) => LumeLog.info(
             '[waf] 网页视图加载出错：${error.description}',
           ),
         ),
-      )
-      ..loadRequest(Uri.parse(widget.url));
+      );
+    final ua = widget.userAgentOverride?.trim();
+    if (ua != null && ua.isNotEmpty) {
+      // 与 App 的请求 UA 对齐：不然验完拿到的 Cookie 在 API 请求里照样不认。
+      // **必须在 loadRequest 之前**设好，否则第一次加载用的还是默认 UA。
+      unawaited(_controller!.setUserAgent(ua));
+    }
+    unawaited(_controller!.loadRequest(Uri.parse(widget.url)));
+  }
+
+  /// 自动模式轮询：Cloudflare 放行后会写 `cf_clearance`，看到它就自动收尾。
+  ///
+  /// 之所以轮询而不是只等「用户点关闭」：用户口径 4 要求**大部分场景后台静默完成**
+  /// ——校验本来就可能是无感的（IP 信誉 / 无需点选），那就自己关掉，别打扰人。
+  void _startAutoPoll() {
+    _autoPoll ??= Timer.periodic(const Duration(milliseconds: 1200), (timer) async {
+      if (!mounted || _collecting) {
+        timer.cancel();
+        _autoPoll = null;
+        return;
+      }
+      String cookie = '';
+      try {
+        cookie = '${await _controller?.runJavaScriptReturningResult('document.cookie')}';
+      } catch (_) {
+        return;
+      }
+      final passed = cookie.contains('cf_clearance') ||
+          cookie.contains('__cf_bm');
+      if (!passed) return;
+      timer.cancel();
+      _autoPoll = null;
+      // 再等一拍：放行后站点往往还会写几枚别的 Cookie。
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      await _closeAndCollect();
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoPoll?.cancel();
+    _autoPoll = null;
+    super.dispose();
   }
 
   /// 关窗：先把 Cookie 取回来再退出（用户口径第 3 条）。
@@ -109,6 +187,13 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
 
     if (!mounted) return;
     if (cookies.isEmpty) {
+      if (widget.auto) {
+        // 自动模式下静默退出：由调用方（引擎层）按原来的失败处理并给出口，
+        // 不要在这里插一个「未能读取验证会话」的对话框打断正在进行的解析。
+        setState(() => _collecting = false);
+        Navigator.of(context).pop(0);
+        return;
+      }
       // 用户口径 2.1.4：一个 Cookie 都没取到就如实说，别让用户以为已经生效。
       setState(() => _collecting = false);
       await showDialog<void>(
@@ -255,22 +340,74 @@ Future<Map<String, String>?> showWafWebView({
       .then((count) => count == null ? null : (collected ?? <String, String>{}));
 }
 
-/// 从一个失败地址里取 origin（网页视图默认打开它）。
-String? originOf(String? url) {
-  final uri = Uri.tryParse(url ?? '');
-  if (uri == null || !uri.hasScheme || uri.host.isEmpty) return null;
-  return '${uri.scheme}://${uri.host}';
-}
-
-/// 失败的请求地址（图源契约没有暴露，这里从错误文本里捞；捞不到就用图源站点的
-/// 常见入口：让用户自己在网页里点一下也能过校验）。
-String? urlFromFailure(String? message) {
-  final text = message ?? '';
-  // 只取「http(s)://…」这一截：到空白 / 引号 / 括号为止（含全角括号）。
-  final match = RegExp('https?://[^\\s"\')\\uFF09]+').firstMatch(text);
-  return match?.group(0);
-}
 
 /// WAF 判定与失败文本的桥（页面用它决定要不要显示【网页视图】）。
 bool shouldOfferWebView(String? failureMessage) =>
     looksLikeWafFailure(failureMessage);
+
+/// 自动静默校验（用户口径 2 / 3 / 4）：脚本抛 `NEED_WEBVIEW_VERIFY` 时由应用自己调起。
+///
+/// - **小悬浮窗**：不做全屏页——一个 320×420 的圆角小窗浮在界面上，用户能继续看
+///   当前页面；不需要交互的校验（IP 信誉 / 无感校验）会自己关掉，用户基本无感；
+/// - **拿到会话就收尾**：轮询到 `cf_clearance` / `__cf_bm` 就自动收集 Cookie 关窗
+///   （见 [_WafWebViewPageState._startAutoPoll]），不需要用户点任何按钮；
+/// - **Cookie 与 UA 一起存**：验证用哪个 UA，后续 API 请求就得用哪个（CF 会绑定），
+///   因此这里把网页视图的 UA 一并回传，由调用方写进该图源的会话存储。
+///
+/// 返回 true 表示拿到了可复用的会话（调用方据此重试刚才失败的那次脚本调用）。
+Future<bool> showWafAutoVerify({
+  required BuildContext context,
+  required Section section,
+  required String sourceId,
+  required String sourceName,
+  required String url,
+  String? userAgentOverride,
+}) async {
+  Map<String, String>? collected;
+  String? userAgent;
+  try {
+    await Navigator.of(context, rootNavigator: true).push<void>(
+      PageRouteBuilder<void>(
+        opaque: false,
+        barrierDismissible: false,
+        barrierColor: const Color(0x33000000),
+        transitionDuration: const Duration(milliseconds: 160),
+        pageBuilder: (context, _, _) => Align(
+          // 小窗落在右下角：不遮内容主体，也不是全屏页。
+          alignment: Alignment.bottomRight,
+          child: Padding(
+            padding: const EdgeInsets.only(right: 12, bottom: 96),
+            child: SizedBox(
+              width: 320,
+              height: 420,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Material(
+                  color: LumeTheme.surface,
+                  child: WafWebViewPage(
+                    url: url,
+                    sourceName: sourceName,
+                    auto: true,
+                    compact: true,
+                    userAgentOverride: userAgentOverride,
+                    onUserAgent: (value) => userAgent = value,
+                    onCollected: (cookies) => collected = cookies,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  } catch (error) {
+    LumeLog.warn('[waf] 自动校验窗口异常：$error');
+    return false;
+  }
+  final cookies = collected;
+  if (cookies == null || cookies.isEmpty) return false;
+  WafSessions.save(section, sourceId, cookies);
+  WafSessions.saveUserAgent(section, sourceId, userAgent);
+  LumeLog.info('[waf] $sourceId 自动校验完成：${cookies.length} 项 Cookie');
+  return true;
+}

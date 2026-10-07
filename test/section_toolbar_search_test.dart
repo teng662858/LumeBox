@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/reading/explore_view.dart';
+import 'package:lume_box/features/reading/search_results_page.dart';
 import 'package:lume_box/features/reading/section_toolbar.dart';
 
 import 'support/fake_source_manager.dart';
@@ -87,6 +89,18 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+  }
+
+  /// 挂一个探索页（搜索用例的公共入口）。
+  Future<void> pumpBrowse(WidgetTester tester, DataSource source) =>
+      pumpExplore(tester, section: Section.video, source: source);
+
+  /// 打开搜索行（默认范围 = 当前源搜索，不切模式）。
+  Future<void> openSearchField(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('应用'));
     await tester.pumpAndSettle();
   }
 
@@ -216,6 +230,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('当前源搜索'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('应用'));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '影片');
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pumpAndSettle();
@@ -271,6 +287,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('聚合搜索'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('应用'));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '影片');
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pumpAndSettle();
@@ -285,6 +303,134 @@ void main() {
   });
 
   group('搜索联想词', () {
+    testWidgets('搜索后离开首页网格：结果在独立结果页，返回才回首页', (tester) async {
+      final source = _SearchSource(
+        section: Section.video,
+        items: const <SourceItem>[SourceItem(id: 'v1', title: '命中影片')],
+      );
+      await pumpBrowse(tester, source);
+      // 首页网格里先有一条推荐内容，用来证明搜索后确实离开了它。
+      expect(find.text('首页推荐'), findsNothing);
+
+      await openSearchField(tester);
+      await tester.enterText(find.byType(TextField), '影片');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SearchResultsPage), findsOneWidget, reason: '搜索必须跳到独立结果页');
+      expect(find.text('命中影片'), findsOneWidget, reason: '结果页展示命中条目');
+      expect(find.text('搜索 · 影片'), findsOneWidget, reason: '结果页抬头保留关键词');
+
+      // 返回后回到探索页（首页网格还在）。
+      await tester.tap(find.byTooltip('返回'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SearchResultsPage), findsNothing);
+    });
+
+    testWidgets('搜不到：结果页清空并显示「未搜索到相关内容」', (tester) async {
+      final source = _SearchSource(
+        section: Section.video,
+        items: const <SourceItem>[SourceItem(id: 'v1', title: '命中影片')],
+        matchingKeyword: '别的词',
+      );
+      await pumpBrowse(tester, source);
+      await openSearchField(tester);
+      await tester.enterText(find.byType(TextField), '不存在的影片');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+
+      expect(find.text('未搜索到相关内容'), findsOneWidget);
+      expect(find.text('命中影片'), findsNothing, reason: '空结果页不许再显示旧内容');
+    });
+
+    testWidgets('加载中：请求在飞时结果页转圈，不闪空态', (tester) async {
+      final gate = Completer<void>();
+      final source = _SearchSource(
+        section: Section.video,
+        items: const <SourceItem>[SourceItem(id: 'v1', title: '命中影片')],
+        gate: gate.future,
+      );
+      await pumpBrowse(tester, source);
+      await openSearchField(tester);
+      await tester.enterText(find.byType(TextField), '影片');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      // 不 settle：停在请求在飞的那一刻。
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(find.text('正在加载…'), findsOneWidget, reason: '请求期间要有转圈');
+      expect(find.text('未搜索到相关内容'), findsNothing, reason: '加载中不能先报空');
+
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('命中影片'), findsOneWidget);
+    });
+
+    testWidgets('网络出错：结果页给错误提示 + 重试', (tester) async {
+      final source = _SearchSource(
+        section: Section.video,
+        fail: const SourceException(SourceErrorKind.network, '连接超时'),
+      );
+      await pumpBrowse(tester, source);
+      await openSearchField(tester);
+      await tester.enterText(find.byType(TextField), '影片');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('连接超时'), findsOneWidget, reason: '要把错误原因说清楚');
+      expect(find.text('重试'), findsWidgets, reason: '失败要有重试出口');
+      expect(find.text('未搜索到相关内容'), findsNothing, reason: '失败不等于没结果');
+    });
+
+    testWidgets('搜索范围：点选项圆点当场移动，应用后标签与提示同步', (tester) async {
+      await pumpBrowse(tester, _SearchSource(section: Section.video));
+      await tester.tap(find.byTooltip('搜索'));
+      await tester.pumpAndSettle();
+
+      // 面板打开时按**当前模式**选中（默认当前源搜索）。
+      expect(find.text('搜索范围'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, '当前源搜索'),
+          matching: find.byIcon(Icons.check_circle),
+        ),
+        findsOneWidget,
+        reason: '面板要跟着当前模式高亮，不能写死',
+      );
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, '聚合搜索'),
+          matching: find.byIcon(Icons.circle_outlined),
+        ),
+        findsOneWidget,
+      );
+
+      // 点聚合：圆点当场移过去，面板不关。
+      await tester.tap(find.widgetWithText(ListTile, '聚合搜索'));
+      await tester.pumpAndSettle();
+      expect(find.text('搜索范围'), findsOneWidget, reason: '点选项不关面板');
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, '聚合搜索'),
+          matching: find.byIcon(Icons.check_circle),
+        ),
+        findsOneWidget,
+        reason: '单选按钮要真的能切换',
+      );
+
+      await tester.tap(find.text('应用'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('搜索全部已启用源'),
+        findsOneWidget,
+        reason: '输入框提示要跟着面板选择变',
+      );
+      expect(
+        find.widgetWithText(TextButton, '聚合搜索'),
+        findsOneWidget,
+        reason: '输入框右侧标签要跟着面板选择变',
+      );
+    });
+
     testWidgets('图源给 suggest：用服务端联想词', (tester) async {
       final source = _SuggestSource(
         section: Section.video,
@@ -295,6 +441,8 @@ void main() {
       await tester.tap(find.byTooltip('搜索'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('当前源搜索'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('应用'));
       await tester.pumpAndSettle();
 
       // 空输入不弹（用户点名）。
@@ -320,6 +468,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('当前源搜索'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('应用'));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '历史');
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pumpAndSettle();
@@ -339,6 +489,8 @@ void main() {
       await tester.tap(find.byTooltip('搜索'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('当前源搜索'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('应用'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '影片');
       await tester.pump(const Duration(milliseconds: 300));
@@ -360,6 +512,8 @@ void main() {
       await tester.tap(find.byTooltip('搜索'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('当前源搜索'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('应用'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '影片');
       await tester.pump(const Duration(milliseconds: 300));
@@ -434,6 +588,9 @@ class _SearchSource implements DataSource {
     this.id = 'source-a',
     this.name = '测试源',
     this.items = const <SourceItem>[],
+    this.matchingKeyword,
+    this.fail,
+    this.gate,
   });
 
   @override
@@ -446,6 +603,15 @@ class _SearchSource implements DataSource {
   final String name;
 
   final List<SourceItem> items;
+
+  /// 非空时：只有带这个关键词的搜索才返回 [items]（用来造「搜不到」）。
+  final String? matchingKeyword;
+
+  /// 非空时：列表请求抛这个异常（用来造网络错误）。
+  final Object? fail;
+
+  /// 非空时：列表请求等它放行（用来停在「加载中」）。
+  final Future<void>? gate;
 
   final List<String> keywords = <String>[];
 
@@ -460,6 +626,19 @@ class _SearchSource implements DataSource {
     Map<String, String>? filters,
   }) async {
     if (keyword != null && keyword.isNotEmpty) keywords.add(keyword);
+    // 放行 / 失败 / 关键词过滤都只作用在**搜索请求**上：首页列表照常返回，
+    // 否则探索页自己就卡在加载态，用例根本走不到搜索那一步。
+    final isSearch = keyword != null && keyword.isNotEmpty;
+    if (isSearch) {
+      final gate = this.gate;
+      if (gate != null) await gate;
+      final failure = fail;
+      if (failure != null) throw failure;
+      final match = matchingKeyword;
+      if (match != null && keyword != match) {
+        return const SourceList(items: <SourceItem>[], hasMore: false);
+      }
+    }
     return SourceList(items: items, hasMore: false);
   }
 

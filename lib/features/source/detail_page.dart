@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
+import '../../shared/widgets/chapter_tile.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/state_view.dart';
 
@@ -132,31 +133,13 @@ class _DetailPageState extends State<DetailPage> {
               height: 180,
               child: SourceStateView(
                 state: SourceStateKind.empty,
-                detail: '该源没有提供章节',
+                detail: kNoChaptersHint,
               ),
             )
           else
-            GlassCard(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Column(
-                children: <Widget>[
-                  for (final chapter in _chapters)
-                    ListTile(
-                      dense: true,
-                      onTap: _notifyReaderPending,
-                      title: Text(
-                        chapter.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: LumeTheme.textPrimary,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+            // 章节行与小说 / 漫画 / 视频三个板块共用同一套（用户口径 6）。
+            for (final chapter in _chapters)
+              ChapterTile(title: chapter.title, onTap: _notifyReaderPending),
         ],
       ),
     );

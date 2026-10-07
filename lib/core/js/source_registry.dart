@@ -277,10 +277,32 @@ class SourceRegistry {
     caseSensitive: false,
   );
 
+  /// Venera 那套源的特征：脚本用 `document.querySelectorAll` 这类**网页 DOM**
+  /// 解析能力（Venera 给自己的 JS 环境提供了 DOM / cheerio 垫片），本 App 的沙箱
+  /// 只有 fetch / JSON，真机表现就是「cannot read property 'querySelectorAll' of null」。
+  static final RegExp _veneraPattern = RegExp(
+    r'querySelectorAll|querySelector\(|cheerio|\.innerHTML|document\.createElement',
+    caseSensitive: false,
+  );
+
   static String describeLoadFailure(String? reason, {String? script}) {
     final detail = reason?.trim() ?? '';
     // 内容指纹优先：这类脚本「跑不起来」的原因不在报错文案里，而在它是不是
     // 本 App 的图源脚本。先按内容定性，再按文案兜底。
+    if (script != null && _veneraPattern.hasMatch(script)) {
+      return '这不是本 App 的图源脚本：脚本里用到了**网页 DOM 解析**'
+          '（querySelectorAll / cheerio / innerHTML）——那是 Venera 那套自带 DOM 垫片的'
+          '客户端专用写法，本 App 的沙箱只提供 fetch / JSON，跑不起来。\n'
+          '两条出路：① 换一份直接抓接口的图源脚本（getList / getDetail / getContent + fetch）；'
+          '② 这类站点大多有 JSON 接口，照接口重写一份即可（可参考 sources/ 里的示例）。\n'
+          '引擎原文：$detail';
+    }
+    if (detail.isNotEmpty && _veneraPattern.hasMatch(detail)) {
+      return '这个源是 **Venera 那套脚本**（依赖网页 DOM 解析：querySelectorAll 等），'
+          '本 App 的沙箱没有 DOM 垫片，跑不起来。\n'
+          '出路：换一份抓 JSON 接口的图源，或按站点接口重写。\n'
+          '引擎原文：$detail';
+    }
     if (script != null && _nodeBundlePattern.hasMatch(script)) {
       return '这不是本 App 的图源脚本：脚本正文里用到了只有真 Node 才有的能力'
           '（process.hrtime / require / module.exports / 网络服务等）——'
@@ -302,6 +324,24 @@ class SourceRegistry {
         '出路：① 换一份直接抓接口的图源脚本（getList / getDetail / getContent + fetch）；'
         '② 这个服务跑在电脑 / NAS 上，App 侧用薄壳脚本经 LumeSource.http 转发'
         '（写法见 assets/test_sources/catvod_bridge_source.js））';
+  }
+
+  /// 运行期失败的定向说明（探索页 / 详情页的错误卡用）。
+  ///
+  /// 与 [describeLoadFailure] 的区别：导入期失败可以整段替换文案；运行期失败
+  /// （源已经在库里、某次调用报错）**必须保留引擎原文**，只在其后追加一句能定性的
+  /// 说明——真机那条「cannot read property 'querySelectorAll' of null」就是典型：
+  /// 原文只有一句英文 TypeError，用户完全不知道发生了什么。
+  static String describeRuntimeFailure(String detail) {
+    final text = detail.trim();
+    if (text.isEmpty) return text;
+    if (_veneraPattern.hasMatch(text)) {
+      return '$text\n'
+          '（这个源用到了**网页 DOM 解析**：querySelectorAll / cheerio / innerHTML——'
+          '那是 Venera 那套自带 DOM 垫片的客户端专用写法，本 App 的沙箱只有 fetch / JSON，'
+          '跑不起来；换一份抓 JSON 接口的图源即可。）';
+    }
+    return text;
   }
 
   /// 服务端能力特征：socket / 端口 / 进程 / 线程这类「跑服务」才需要的东西。

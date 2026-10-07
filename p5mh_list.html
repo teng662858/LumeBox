@@ -1,0 +1,796 @@
+        <!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <link rel="shortcut icon" href="https://stpic.se8manhua.club/static/images/favicon.ico">
+    <link rel="canonical" href="https://www.p5mh.com/booklist?page=1" />
+   <!-- Matomo -->
+<script>
+  var _paq = window._paq = window._paq || [];
+  /* tracker methods like "setCustomDimension" should be called before "trackPageView" */
+  _paq.push(['trackPageView']);
+  _paq.push(['enableLinkTracking']);
+  (function() {
+    var u="//fx.mhana.top/";
+    _paq.push(['setTrackerUrl', u+'matomo.php']);
+    _paq.push(['setSiteId', '1']);
+    var d=document, g=d.createElement('script'), s=d.getElementsByTagName('script')[0];
+    g.async=true; g.src=u+'matomo.js'; s.parentNode.insertBefore(g,s);
+  })();
+</script>
+<!-- End Matomo Code -->
+
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-70FC4X4NWM"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-70FC4X4NWM');
+</script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LHNSXRZY2M"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-LHNSXRZY2M');
+</script>
+
+
+<style>
+.bookmark-banner {
+  position: fixed;
+  top: 4;
+  width: 100%;
+  background-color: #ff4444; /* 明亮且引人注意的背景颜色 */
+  color: #ffffff; /* 白色文字，以便于与背景颜色对比 */
+  text-align: center;
+  padding: 10px 0;
+  z-index: 1000;
+  font-size: 28px; /* 更大的字体尺寸 */
+  font-weight: bold; /* 加粗字体 */
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  line-height: 1.2; /* 调整行高以改善阅读体验 */
+}
+
+.bookmark-banner a {
+  color: #ffffff;
+  text-decoration: underline; /* 链接下划线，强调可点击 */
+  padding: 0 5px; /* 增加链接的内边距 */
+}
+
+.bookmark-banner a:hover {
+  color: #ddd; /* 鼠标悬停时的颜色变化 */
+}
+</style>
+
+
+<div id="bookmark-banner" class="bookmark-banner">
+图片尺度过大，不支持PC端访问，已安全处理
+</div>
+     
+<title>漫画分类-P5韩漫免费更新第一漫画站</title>
+
+    <link href="https://stpic.se8manhua.club/static/css/style.css" rel="stylesheet" type="text/css">
+    <link href="https://stpic.se8manhua.club/static/css/userinfo-vendor.css" rel="stylesheet" type="text/css">
+    <link href="https://stpic.se8manhua.club/static/css/dm5_style.css" rel="stylesheet" type="text/css">
+    
+    <meta name="octoclick-verification" content="6f2d7f6b9f7edf3166bad31102032bd8">
+    
+<script src="https://stpic.se8manhua.club/static/js/jquery.min.js"></script>
+<script src="https://stpic.se8manhua.club/static/js/vue.min.js"></script>
+<script src="https://stpic.se8manhua.club/static/js/axios.min.js"></script>
+<script src="https://stpic.se8manhua.club/static/js/jquery.lazyload.min.js"></script>
+<script src="https://stpic.se8manhua.club/static/js/index.js"></script>
+    <meta name="referrer" content="origin" />
+    <meta name="Trafficstars" content="60915">    
+</head>
+
+<body class="white">
+<!-- 页面头部 -->
+<header class="header container-fluid " style="left: 0px;">
+    <div class="container">
+        <!-- 左侧logo -->
+        <a href="/">
+            <img class="header-logo" src="https://stpic.se8manhua.club/static/images/header-logo.png">
+        </a>
+        <!-- 左侧菜单标题 -->
+        <ul class="header-title">
+            <li><a href="/">首页</a></li>
+            <li><a href="/booklist">分类</a></li>
+            <li><a href="/update">更新</a></li>
+            <li><a href="/rank">排行</a></li>
+            <li><a href="/booklist"><i class="icon icon-cat" style="font-size:19px;vertical-align: sub;"></i></a></li>
+        </ul>
+       
+        <!-- 搜索栏 -->
+        <div class="header-search">
+            <input id="txtKeywords" type="text" value="">
+            <a id="btnSearch">搜索</a>
+            <script>
+                $('#btnSearch').click(function () {
+                    var keyword = $('#txtKeywords').val();
+                    window.location.href = '/search?keyword=' + keyword;
+                })
+            </script>
+        </div>
+        <ul class="header-bar">
+            <li class="vip">
+                <a href="/vip">
+                    <div class="header-vip"></div>
+                    <p>VIP</p>
+                </a>
+            </li>
+            <li class="hover">
+                <a href="/history" target="_blank">
+                    <i class="icon icon-clock"></i>
+                    <p>历史</p>
+                </a>
+            </li>
+            <li class="hover">
+                <a href="/bookshelf" data-isload="0" target="_blank">
+                    <i class="icon icon-fav"></i>
+                    <p>收藏</p>
+                    <span class="red-sign"></span>
+                </a>
+            </li>
+        </ul>
+        <div class="header_login hover">
+            <a href="/ucenter" class="js_header_login_btn">
+                <img data-isload="0" class="header-avatar" src="https://stpic.se8manhua.club/static/images/mrtx.gif">
+            </a>
+        </div>
+    </div>
+</header>
+
+<section class="container-fluid bg-gray">
+    <div class="container">
+        <figure class="cat-filter">
+            <dl class="cat-list" id="cates">
+                <dt>题 材:</dt>
+                <dd class="active" onclick="active(this)" data-val="全部"><a>全部</a></dd>
+                            </dl>
+            <div class="field-wrap">
+                <dl class="field-list" id="areas">
+                    <dt>地 区:</dt>
+                    <dd class="active" onclick="active(this)" data-val="-1"><a>全部</a></dd>
+                                        <dd class="" onclick="active(this)" data-val="3"><a> </a></dd>
+                                        <dd class="" onclick="active(this)" data-val="2"><a>其他</a></dd>
+                                        <dd class="" onclick="active(this)" data-val="1"><a>韩国</a></dd>
+                                    </dl>
+                <dl class="field-list" id="end">
+                    <dt>进 度:</dt>
+                    <dd class="active" onclick="active(this)" data-val="-1"><a>全部</a></dd>
+                    <dd class="" onclick="active(this)" data-val="2"><a>连载</a></dd>
+                    <dd class="" onclick="active(this)" data-val="1"><a>完结</a></dd>
+                </dl>
+            </div>
+        </figure>
+    </div>
+</section>
+<div class="index-manga" >
+     <div class="container overflow-Show" style="margin: 0 auto;display: flex; justify-content: center;">
+
+ </div>
+</div>
+<script>
+    function active(item) {
+        $(item).siblings().removeClass('active');
+        $(item).addClass('active');
+        var cate = $('#cates dd.active').attr('data-val');
+        var area = $('#areas dd.active').attr('data-val');
+        var end = $('#end dd.active').attr('data-val');
+
+        location.href = '/booklist?cate='+cate+'&area='+area+'&end='+end;
+    }
+</script>
+<section class="box container pb40 overflow-Show" style="min-height:400px;">
+    <div class="box-body">
+        <ul class="mh-list col7">
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10612" title="朋友妈妈我天菜">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292296439/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10612" title="朋友妈妈我天菜" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                朋友妈妈我天菜                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            本以为她是朋友的姐姐才向她表白，结果竟然是朋友的亲生母亲&hellip;当我得知这残酷的真相时，我已经爱上她了。「纵使她是朋友的妈妈，我还是想再见她一面&hellip;」                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10611" title="[永井豪]デビルマンレディー女恶魔人卷01">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292295133/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10611" title="[永井豪]デビルマンレディー女恶魔人卷01" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                [永井豪]デビルマンレディー女恶魔人卷01                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            [永井豪] デビルマンレディー 女恶魔人 卷01                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10610" title="[永井豪]デビルマンレディー女恶魔人卷02">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292295135/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10610" title="[永井豪]デビルマンレディー女恶魔人卷02" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                [永井豪]デビルマンレディー女恶魔人卷02                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            [永井豪] デビルマンレディー 女恶魔人 卷02                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10609" title="[永井豪]デビルマンレディー女恶魔人卷03">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292295137/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10609" title="[永井豪]デビルマンレディー女恶魔人卷03" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                [永井豪]デビルマンレディー女恶魔人卷03                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            [永井豪] デビルマンレディー 女恶魔人 卷03                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10608" title="[永井豪]デビルマンレディー女恶魔人卷04">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292295139/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10608" title="[永井豪]デビルマンレディー女恶魔人卷04" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                [永井豪]デビルマンレディー女恶魔人卷04                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            [永井豪] デビルマンレディー 女恶魔人 卷04                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10580" title="爱情实验">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292296244/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10580" title="爱情实验" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                爱情实验                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            为了还债而参加新药临床实验,这种药吃下去之后感觉好奇怪,居然想和讨厌的室友激情做爱                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10499" title="立志当VJ的娇妻">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292295613/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10499" title="立志当VJ的娇妻" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                立志当VJ的娇妻                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            日本娇妻的愿望是成为Vtuber，可是当她关在房间里直播时，总是传来色色的呻吟                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10397" title="客制化诱惑">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292294549/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10397" title="客制化诱惑" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                客制化诱惑                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            富家子一夕之间背负50亿债务,为了还债，接受神祕女子的委託,成为专门诱使人妻出轨的男人                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/9733" title="魔法少女退役后">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/292289103/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/9733" title="魔法少女退役后" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                魔法少女退役后                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            因为诅咒而一分为二的魔法少女，为了复原不惜野外露出...                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/9626" title="启动复仇系统超真实征服游戏">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/292288086/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/9626" title="启动复仇系统超真实征服游戏" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                启动复仇系统超真实征服游戏                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            那场电击让他觉醒支配的天赋，她的呼吸逐渐随他节奏紊乱...                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/8720" title="我家的掌上明珠">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/292282002/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/8720" title="我家的掌上明珠" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                我家的掌上明珠                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            住在同一个屋檐下的                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/8513" title="老婆卷款潜逃后">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/292220979/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/8513" title="老婆卷款潜逃后" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                老婆卷款潜逃后                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            老婆卷款潜逃让我一蹶不振 为了鼓励我东山再起 好心的前岳母不惜用肉体安慰我                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/7801" title="难缠姐妹偏要和我同居家教住我家">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/291572001/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/7801" title="难缠姐妹偏要和我同居家教住我家" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                难缠姐妹偏要和我同居家教住我家                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            为了让我能够专心学习姐妹两人决定帮我纾解性欲...                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10520" title="一发致富">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292295895/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10520" title="一发致富" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                一发致富                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            投资虚拟货币屡屡失利的哲修，他充满绝望的人生因为一个女人彻底改变，两人站在无法回头的选择前，欲将手伸向更鉅额的财富&hellip;                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10363" title="理想型演算法">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292294258/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10363" title="理想型演算法" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                理想型演算法                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            这是连恋爱都能交给AI的时代。我安装了时下最火红的配对软体「S.Matching」，这款App号称能用大数据算出使用者的理想型。当我满怀期待点开通知，以为终于能跟暗恋对象搭上线时&hellip;「等等，AI是在整我吗?」                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10279" title="成人漫画取材课">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292293407/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10279" title="成人漫画取材课" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                成人漫画取材课                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            随着对象与情境的不同，既能当S也能当M，冠佑在历经各种交错的关係中，时而受到束缚、时而获得释放&hellip;在这个过程中逐渐看清自己隐藏在深处的真实性癖&hellip;                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10233" title="魔法少女露美娜">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292292959/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10233" title="魔法少女露美娜" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                魔法少女露美娜                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            白天是普通人妻，夜晚却是魔法少女?!泰宇对完美的妻子舒雅始终漠不关心。 明明是人人称羡的理想女性，但他却因为迷恋魔法少女「粉红露美娜」，而冷落了自己的妻子。 直到某天，他发现了露美娜的真实身分&hellip;「我老婆&hellip;居然是魔法少女?!」                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/9563" title="幼惑">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/292287409/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/9563" title="幼惑" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                幼惑                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            柏安患有「高地人症候群」，这是一种就算年龄增长，外表也永远停留在幼年期的疾病。柏安渴望变成熟男，没想到他朋友却神秘兮兮地对他说：「我们唯一的优势，就是装成一个无辜的小孩。」                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/9004" title="男人配额制">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/292283486/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/9004" title="男人配额制" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                男人配额制                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            某天因事故而失去意识的冠虎，醒来后发现医院的护士对他说:「先生~我要开始取精啰&hearts;︎」所以我现在是穿越到性别比失衡的世界?到处都是主动贴上来的女人，那&hellip;我就不客气了!                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/8368" title="顶加套房的春天">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/292034232/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/8368" title="顶加套房的春天" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                顶加套房的春天                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            对自己ㄐㄐ大小有阴影的高家亨，某天遇到了能闯关变巨鵰的机会&hellip;眼看着难度越来越高的任务和尺度，究竟他能否达成心愿?!「请偷看房东阿姨的裸体」                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/8547" title="足球型男脱单指南">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/292272895/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/8547" title="足球型男脱单指南" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                足球型男脱单指南                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            孙明豪热爱足球且比谁都努力追梦，却因低人一等的体格和外貌，而无法梦想成真。某一天，足球女神出现了，祂愿意替明豪实现一个愿望，爱足球成痴的明豪当然说他要成为足球王!并不是，明豪的心愿只有一个，那就是「做爱」!从那天起，明豪的人生彻底改变了&hellip;                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/8301" title="太妹攻略指南">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/291959613/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/8301" title="太妹攻略指南" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                太妹攻略指南                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            昊平在学生时期因霸凌而身心受创，于是他绑走曾将自己逼上绝路的女校霸庄若瑜，并对她展开复仇计画&hellip;「想活命的话就得对我言听计从」                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/9523" title="妹子由我来守护">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/292286970/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/9523" title="妹子由我来守护" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                妹子由我来守护                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            无论遇到什麽样的危险......我都要在这里守护鲁斯兰家族的女人......                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/9567" title="开花岛~极欲绽放之村">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/292287424/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/9567" title="开花岛~极欲绽放之村" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                开花岛~极欲绽放之村                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            为了寻找弟弟而造访某座岛屿时，岛上信奉可疑宗教的女人们竟开始诱惑起主角&hellip;&hellip;!?                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/8934" title="主角吃了女猎人后变得更强越操越强~双修猎魔记">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.com/manga-cover/292283224/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/8934" title="主角吃了女猎人后变得更强越操越强~双修猎魔记" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                主角吃了女猎人后变得更强越操越强~双修猎魔记                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            在这个只有女性才能觉醒猎人能力并成为强者，而男性无法觉醒且无法超越C级的世界里，男女的地位和角色发生了逆转。故事讲述的是主人公在父母被怪物杀害后，一直致力于减少像自己一样沦为怪物受害者的人数，却突然成为管理猎人性欲的&ldquo;管理者&rdquo;。                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10607" title="[砂漠]俺は屑だからこそ救われる権利がある！+4Pリーフレット">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292295171/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10607" title="[砂漠]俺は屑だからこそ救われる権利がある！+4Pリーフレット" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                [砂漠]俺は屑だからこそ救われる権利がある！+4Pリーフレット                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            [砂漠] 俺は屑だからこそ救われる権利がある! + 4Pリーフレット [篆仪通文书坊汉化]                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10606" title="[神代竜]シルシ｜淫印记[裏之梦境]">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292295173/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10606" title="[神代竜]シルシ｜淫印记[裏之梦境]" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                [神代竜]シルシ｜淫印记[裏之梦境]                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            [神代 竜] シルシ｜淫印记 [裏之梦境]                        </p>
+                    </div>
+                </div>
+            </li>
+                        <li>
+                <div class="mh-item">
+                    <a href="/book/10605" title="[神毛物由宇]トロけるご褒美">
+                        <p class="mh-cover lazy" data-original="https://cover.aabamh.com/covBridge.php?url=https://imgs.34img.cc/manga-cover/292295175/cover.jpg"></p>
+                    </a>
+                    <div class="mh-item-detali">
+                        <h2 class="title">
+                            <a href="/book/10605" title="[神毛物由宇]トロけるご褒美" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                [神毛物由宇]トロけるご褒美                            </a>
+                        </h2>
+                        <p class="zl">
+                            <span>评分:</span>
+                            <span class="mh-star-line star-5"></span>
+                        </p>
+                        <p class="chapter" style="width: 181px;">
+                            [神毛物由宇] トロけるご褒美[无邪気汉化组]                        </p>
+                    </div>
+                </div>
+            </li>
+                    </ul>
+    </div>
+
+    <footer>
+        <div class="page-pagination mt20">
+            <ul>
+                <div class="pagination">
+                                        <li><a>&lt;</a></li>
+                                        <li><a href="/booklist?page=1" class="active">1</a></li>
+                                        <li><a href="/booklist?page=2" title="第2页">2</a></li>
+                                        <li><a href="/booklist?page=3" title="第3页">3</a></li>
+                                        <li><a href="/booklist?page=4" title="第4页">4</a></li>
+                                        <li><a href="/booklist?page=5" title="第5页">5</a></li>
+                                        <li><a id="nextPage" href="/booklist?page=2" title="下一页">&gt;</a></li>
+                                                        </div>
+            </ul>
+        </div>
+    </footer>
+</section>
+<ul class="index-right-float bottom">
+    <li><a href="javascript:slide();" class="index-right-float-top"></a></li>
+</ul>
+<div class="index-manga">
+     <div class="container overflow-Show">
+
+ </div>
+</div>
+
+
+<div class="footer mt16 cf">
+    <div class="footer-wrap">
+        <div class="footer-cont container">
+            <p>P5韩漫免费更新第一漫画站为本公司技术测试收集。并不具备版权，受日本国法律监管。
+            </p>
+            <p>Copyright © 2016-2018 <em>/</em> https://www.ip5mh.com <em>/</em> All Rights Reserved <em>/</em>
+                <a href="https://jinshuju.net/f/cBs5xb" target="_blank" rel="nofollow">版权投诉</a> 联系我们
+            </p>
+        </div>
+    </div>
+</div>
+<div class="alertTop_1" style="display: none;">
+    <p id="alertTop_1"></p>
+</div>
+<script src="https://stpic.se8manhua.club/static/js/user-booklist.js"></script>
+
+<script>
+    const R2_DOMAIN = 'https://stcov.aabamh.com';
+    $("img.lazy, p.lazy, a.lazy").each(function() {
+        let wUrl = this.dataset.original;
+        if (wUrl && wUrl.includes("covBridge.php")) {
+            try {
+                let bridgeUrl = new URL(wUrl);
+                let rawUrl = bridgeUrl.searchParams.get("url") || bridgeUrl.searchParams.get("tu");
+                if (rawUrl) {
+                    let targetUrlObj = new URL(rawUrl);
+                    let path = targetUrlObj.pathname.replace(/\/{2,}/g, '/');
+                    this.dataset.fallback = wUrl;
+                    this.dataset.original = R2_DOMAIN + '/cover' + path;
+                    this.onerror = function() {
+                        if (this.dataset.fallback && this.src !== this.dataset.fallback) {
+                            this.src = this.dataset.fallback;
+                            delete this.dataset.fallback;
+                        }
+                    };
+                }
+            } catch(e) {}
+        }
+    }).lazyload({event:"lazyload", effect:"fadeIn", effectspeed:2000}).trigger("lazyload");
+</script>
+</body>
+
+</html>

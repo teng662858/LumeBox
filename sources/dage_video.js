@@ -83,7 +83,7 @@ var LumeSource = {
     return {
       id: id,
       title: String(data.title || id),
-      cover: data.img || '',
+      cover: this.__cover(data.img || ''),
       description: [data.cname, data.time].filter(function (v) { return !!v; }).join(' · '),
       subtitle: player.length ? player[0].name : '',
       tags: Array.isArray(data.tags) ? data.tags : [],
@@ -172,6 +172,32 @@ var LumeSource = {
     return match ? match[1] : String(id).replace(/\D/g, '');
   },
 
+  // 封面地址兜底（真机反馈「大哥视频没封面」）。
+  //
+  // 接口里的 img 是**包过一层**的缓存地址：
+  //   https://cache.sgvafw.com/base/<base64>.cache
+  // 这个外层地址直接请求会 403（缓存节点只认站点自己的会话），base64 里才是
+  // 真正能取图的地址（实测 https://imgcdn01.dycp444.com/... → 200 image/jpeg）。
+  // 因此一律解出内层地址；顺带把相对路径补全为绝对地址。
+  __cover(value) {
+    var raw = String(value == null ? '' : value).trim();
+    if (!raw) return '';
+    var match = raw.match(/\/base\/([A-Za-z0-9+\/=_-]+?)\.cache(\?.*)?$/);
+    if (match) {
+      var decoded = '';
+      try {
+        decoded = this.__atob(match[1].replace(/-/g, '+').replace(/_/g, '/'));
+      } catch (error) {
+        decoded = '';
+      }
+      if (decoded && decoded.indexOf('http') === 0) return decoded;
+    }
+    if (raw.indexOf('//') === 0) return 'https:' + raw;
+    if (raw.indexOf('http') === 0) return raw;
+    if (raw.charAt(0) === '/') return BASE_URL + raw;
+    return BASE_URL + '/' + raw;
+  },
+
   __toItem(item) {
     item = item || {};
     var id = item.vod_id != null ? item.vod_id : (item.news_id != null ? item.news_id : item.id);
@@ -180,7 +206,7 @@ var LumeSource = {
     return {
       id: String(id != null ? id : ''),
       title: String(item.title || item.news_name || id || ''),
-      cover: item.img || '',
+      cover: this.__cover(item.img || item.vod_pic || item.pic || ''),
       subtitle: item.duration ? String(item.duration) : (item.time ? String(item.time) : (isNews ? '图片' : '视频'))
     };
   },
@@ -191,7 +217,7 @@ var LumeSource = {
     var match;
     while ((match = pattern.exec(html)) !== null) {
       var src = match[1].trim();
-      if (src) result.push(src);
+      if (src) result.push(this.__cover(src));
     }
     return result;
   },

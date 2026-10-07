@@ -119,6 +119,14 @@ class SourceHomeBoard {
 /// 年份 / 语言 / 剧集类型…），写死在 App 里等于替站点做假设；用户也明确要求
 /// 「脚本不许硬编码分类数据，每次打开实时从源站抓」。
 abstract interface class FilterCapable {
+  /// 本源是否**真的**实现了 `filters()`。
+  ///
+  /// 与 [HomeCapable.supportsHome] 同一个理由：接口实现了不等于脚本写了——
+  /// 老脚本没有 `getFilters` 时直接调会抛「源脚本没有实现 filters 方法」，真机
+  /// 表现就是筛选页把一条脚本错误甩给用户（用户截图反馈过）。宿主先问清楚有没有，
+  /// 没有就显示「本源未提供筛选标签」。
+  Future<bool> supportsFilters();
+
   /// 取本源的筛选标签组；不提供能力时不该被调用。
   Future<List<SourceFilterGroup>> filters();
 }

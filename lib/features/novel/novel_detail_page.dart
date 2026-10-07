@@ -6,6 +6,7 @@ import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
+import '../../shared/widgets/chapter_tile.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/state_view.dart';
 import '../reading/poster_card.dart';
@@ -44,9 +45,9 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
     memoryBudgetBytes: SectionImagePipeline.thumbnailBudgetBytes,
   );
 
-  /// 详情页预览的章节数量上限。
-  static const int _previewCount = 30;
-
+  /// 详情页的章节列表**不再截断预览**（用户口径：章节列表要完整展示，不得压缩
+  /// 成预览条）。列表在 `SliverList.builder` 里按需构建，几千章也只是滚动条长，
+  /// 不会一次性建出全部行。
   DataSource? _source;
   SourceDetail? _detail;
   List<SourceChapter> _chapters = const <SourceChapter>[];
@@ -255,7 +256,6 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
         onRetry: _load,
       );
     }
-    final preview = _chapters.take(_previewCount).toList(growable: false);
     return CustomScrollView(
       slivers: <Widget>[
         SliverToBoxAdapter(child: _buildHeader()),
@@ -267,7 +267,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
               height: 150,
               child: SourceStateView(
                 state: SourceStateKind.empty,
-                detail: '该源没有提供章节',
+                detail: kNoChaptersHint,
               ),
             ),
           )
@@ -275,37 +275,11 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             sliver: SliverList.builder(
-              itemCount: preview.length,
-              itemBuilder: (context, index) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: GlassCard(
-                  radius: 12,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-                  onTap: () => _openReader(index),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          preview[index].title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: _progress?.chapterIndex == index
-                                ? LumeTheme.textPrimary
-                                : LumeTheme.muted,
-                          ),
-                        ),
-                      ),
-                      if (_progress?.chapterIndex == index)
-                        Text(
-                          '在读',
-                          style: TextStyle(fontSize: 11, color: LumeTheme.textPrimary),
-                        ),
-                    ],
-                  ),
-                ),
+              itemCount: _chapters.length,
+              itemBuilder: (context, index) => ChapterTile(
+                title: _chapters[index].title,
+                current: _progress?.chapterIndex == index,
+                onTap: () => _openReader(index),
               ),
             ),
           ),

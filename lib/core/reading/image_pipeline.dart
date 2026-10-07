@@ -185,7 +185,7 @@ class SectionImagePipeline {
   Future<Uint8List?> fetch(String url) {
     final trimmed = url.trim();
     if (trimmed.isEmpty || _disposed) return Future<Uint8List?>.value();
-    return _download(trimmed);
+    return _download(upgradeToHttps(trimmed));
   }
 
   /// 预加载一批图片（阅读器前后 N 张）。结果只进缓存，不返回给调用方。
@@ -280,7 +280,24 @@ class SectionImagePipeline {
   /// 系统调用（微秒级），而一屏封面也就几十次。**不用异步版**是踩过坑的：
   /// `flutter_test` 的测试体跑在假时钟里，真实文件 IO 的完成回调等不到，
   /// 读缓存这条路径会把整个用例挂死（comic_reader 全套由绿变红）。
-  Future<Uint8List?> _loadBytes(String url) async {
+  /// 明文 http 的图片地址升级为 https（iOS ATS 默认禁止明文请求，明文图会整批裂掉，
+  /// 真机表现就是「只有一部分封面能显示」——凡站点同时提供 https 的都能救回来）。
+  ///
+  /// 只升级 `http://` 且主机名不是 IP / localhost 的：本地回环与纯 IP 站点通常没有
+  /// 证书，升级只会把能用的链接弄坏。
+  static String upgradeToHttps(String url) {
+    if (!url.startsWith('http://')) return url;
+    final host = Uri.tryParse(url)?.host ?? '';
+    if (host.isEmpty) return url;
+    final isIp = RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(host);
+    if (isIp || host == 'localhost') return url;
+    return 'https://${url.substring('http://'.length)}';
+  }
+
+  Future<Uint8List?> _loadBytes(String rawUrl) async {
+    // 明文地址在这里一次性升级：内存缓存键、磁盘文件名、实际请求三者保持一致，
+    // 不会同一张图存两份。
+    final url = upgradeToHttps(rawUrl);
     if (!diskCache) return _download(url);
     final file = File(_diskPath(url));
     try {
@@ -306,15 +323,29 @@ class SectionImagePipeline {
     final allowed = await _acquireSlot();
     if (allowed != true || _disposed) return null;
     try {
+      // 防盗链 403 的第二次尝试：同一个地址换一种 Referer 再试一遍。
+      //
+      // 图床的防盗链有两套相反的规矩：一套只认「Referer 是自己域名」，另一套
+      // 只放行「完全没有 Referer」（比如某些 CDN 把任何跨站 Referer 一律拒掉）。
+      // 两种都试过才认输——只多花一次请求，却能救回整整一批封面（真机反馈
+      // 「只能加载一部分封面」，这是除明文地址外最常见的一条）。
+      var bareReferer = false;
+      var handled403 = false;
       for (var attempt = 0; attempt <= _maxRetries; attempt++) {
         if (_disposed) return null;
-        final outcome = await _fetchOnce(url);
+        final outcome = await _fetchOnce(url, withReferer: !bareReferer);
         if (outcome.bytes != null) return outcome.bytes;
+        if (outcome.forbidden && !bareReferer) {
+          bareReferer = true;
+          handled403 = true;
+          continue;
+        }
         if (!outcome.retryable || attempt == _maxRetries) break;
         // 退避：300ms、600ms、1200ms。图片是**可见内容**，等太久不如让用户先
         // 看到缺口再自己重试——因此次数仍克制（默认 3 次，弱网多给一次机会）。
         await Future<void>.delayed(Duration(milliseconds: 300 * (1 << attempt)));
       }
+      if (handled403) LumeLog.info('图片防盗链：两种 Referer 都没放行 $url');
       return null;
     } finally {
       _releaseSlot();
@@ -322,7 +353,10 @@ class SectionImagePipeline {
   }
 
   /// 取一次图片字节，并回报「重试有没有意义」。
-  Future<({Uint8List? bytes, bool retryable})> _fetchOnce(String url) async {
+  Future<({Uint8List? bytes, bool retryable, bool forbidden})> _fetchOnce(
+    String url, {
+    bool withReferer = true,
+  }) async {
     try {
       // 图片同样走全局网络队列：单域名并发（2~3）保护图床，429/503 自动退避。
       // 队列管「什么时候发」，这里只管「拿到字节后怎么用」。
@@ -347,25 +381,31 @@ class SectionImagePipeline {
           proxy: LumeNet.settings.proxy,
         ),
       );
-      if (_disposed) return (bytes: null, retryable: false);
+      if (_disposed) {
+        return (bytes: null, retryable: false, forbidden: false);
+      }
       final code = response.statusCode;
       if (code >= 200 && code < 300) {
         final bytes = response.body;
         if (bytes.isEmpty) {
           LumeLog.warn('图片响应为空: $url');
-          return (bytes: null, retryable: true);
+          return (bytes: null, retryable: true, forbidden: false);
         }
-        return (bytes: Uint8List.fromList(bytes), retryable: false);
+        return (bytes: Uint8List.fromList(bytes), retryable: false, forbidden: false);
       }
-      // 4xx 是「这张图本身有问题」（链接失效 / 防盗链），重试不会变好。
+      // 4xx 是「这张图本身有问题」（链接失效 / 防盗链），重试不会变好——
+      // 403 例外：换一种 Referer 再试一次（见 [_download]）。
+      final forbidden = code == 403;
       final retryable = code < 400 || code >= 500;
       LumeLog.warn('图片请求失败($code${retryable ? '，将重试' : '，不重试'}): $url');
-      return (bytes: null, retryable: retryable);
+      return (bytes: null, retryable: retryable, forbidden: forbidden);
     } on Object catch (error) {
       // 管线已释放导致的请求中断不算错误，也不值得重试。
-      if (_disposed) return (bytes: null, retryable: false);
+      if (_disposed) {
+        return (bytes: null, retryable: false, forbidden: false);
+      }
       LumeLog.warn('图片请求异常(将重试): $url ($error)');
-      return (bytes: null, retryable: true);
+      return (bytes: null, retryable: true, forbidden: false);
     }
   }
 
@@ -406,8 +446,11 @@ class SectionImagePipeline {
       p.join(cacheDir, '${ReadingStore.cacheKey(url)}.img');
 
   /// 某张图的磁盘缓存文件路径（与 [_diskPath] 同一套规则，供测试与排障定位）。
+  ///
+  /// 与 [_loadBytes] 一样先做明文升级：文件名按升级后的地址算，`http://…` 与
+  /// `https://…` 两种写法落到同一个文件，同一张图不会存两份。
   @visibleForTesting
-  String cachePathFor(String url) => _diskPath(url.trim());
+  String cachePathFor(String url) => _diskPath(upgradeToHttps(url.trim()));
 }
 
 /// 解码图的内存缓存：按字节预算做 LRU，带引用计数与钉住集合。

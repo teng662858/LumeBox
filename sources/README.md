@@ -60,6 +60,61 @@
   - 出路：在同一网络放一个「已过 WAF」的代理/桥接，把 `SITE_URL` 指过去
     （参见 `docs/lumesource-guide.md` 附录 B 的远端代理模式）。
 
+### 6. luttt_video.js - 北觅影视源
+- **类型**: 视频 (category: `video`)
+- **网站**: https://v.luttt.com
+- **说明**: MacCMS-10 + conch(hl) 模板，服务端渲染 HTML，直连可用
+- **已实现**:
+  - 分类（`/vodtype/{id}.html`）、分页列表（`/vodshow/{type}--------{page}---.html`）
+  - 关键词搜索（`/vodsearch/{kw}----------{page}---.html`）
+  - 详情（`h2.hl-dc-title` / `hl-dc-pic` / 影片信息逐条解析）
+  - 选集（`ul#hl-plays-list`，支持多线路多集）
+  - 播放地址：解析 `/vodplay/{id}-{line}-{n}.html` 里的内联 `player_aaaa` JSON 取 m3u8
+  - 内置 `home()` 多板块首页、Cloudflare 兜底 `NEED_WEBVIEW_VERIFY`
+- **状态**: 已用真实站点实测通过（列表/搜索/详情/选集/播放，含 18 集剧集）
+
+### 7. p5mh_comic.js - P5漫画源
+- **类型**: 漫画 (category: `comic`)
+- **网站**: https://www3.6p5mh3.click （规范域 p5mh.com）
+- **说明**: 成人韩漫站，服务端渲染 HTML，直连可用
+- **已实现**:
+  - 列表（`/booklist?page=N`，可叠加 `area` / `end` 筛选；`area=1` 韩漫、`end=1` 完结优选）
+  - 搜索（`/search?keyword=`）与分页
+  - 详情（`h1` / `p.content` 简介 / `p.subtitle` 作者别名 / `p.tip` 状态地区 / 标签）
+  - 章节图片：`img.lazy[data-original]`（cfpic imgBridge 代理图）
+  - **一章可能多页**：`?page=N`，以 `#nextPage` 是否存在判断翻页，自动拼接全部图片
+  - 内置 `home()` 多板块首页
+- **状态**: 已用真实站点实测通过（详情 7 话、单话 60 图 = 4 页拼接）
+
+### 8. xxiaoshuo_novel.js - X小说源
+- **类型**: 小说 (category: `novel`)
+- **网站**: https://book.xn--x-ny6am91b6ug0se.com （规范域 X小说.com）
+- **说明**: 成人小说站，服务端渲染 HTML，前置 Cloudflare
+- **已实现**:
+  - 列表（`/books`、`/books/page/N`）、分类（`/category/{n}`）
+  - 搜索（`/search?q=&page=`）
+  - 兼容两种作品形态：单篇（`/read/{bookId}/{nid}`）与连载（`/book/{id}` + `ul.chapter-grid`）
+  - 正文（`div.reader-body#bookcontent`），剥离站点注入的 `span.brand-mark` 广告句、去文末「下集…」引导
+  - 内置 `home()` 多板块首页、Cloudflare 兜底 `NEED_WEBVIEW_VERIFY`
+- **状态**: 已用真实站点实测通过（单篇 + 32 章连载均正常）
+
+### 9. xchina_novel.js - xChina 小说源（需网页视图过 Cloudflare）
+- **类型**: 小说 (category: `novel`)
+- **网站**: https://xchina.co （小黄书 xChina 成人小说区，需代理）
+- **说明**: Cloudflare 后面的成人小说站
+- **已实现**:
+  - 列表（`/fictions/{page}.html`）、分类：标签 `/fictions/tag-{n}/{p}.html`、
+    按热度 `/fictions/sort-read/{p}.html`、按评论 `/fictions/sort-comment/{p}.html`、
+    按篇幅 `/fictions/length-{1,2,3}/{p}.html`
+  - 详情/目录（`/fiction/id-{hash}.html`）：标题、封面、作者、系列、字数、标签、章节表
+  - 章节正文（`div.fiction-body` 的 `<p>`），兼容「合集/长篇」与「短篇单页」两种形态
+  - 内置 `home()` 多板块首页
+- **当前状态（重要）**: 列表页多数可直连，但**详情/正文页经常返回
+  `403 + cf-mitigated: challenge`**（Cloudflare 浏览器校验页）。这是**可复用 Cookie 型**
+  挑战，脚本对这种情况抛 `NEED_WEBVIEW_VERIFY`，由 App 弹出内置网页视图过一次校验、
+  把 `cf_clearance` 等 Cookie 存下来复用。已用 `chrome131` 指纹抓取真实页面快照，
+  对列表/详情/目录/正文的解析逻辑做了离线端到端验证。
+
 ## 🚀 使用方法
 
 ### 安装

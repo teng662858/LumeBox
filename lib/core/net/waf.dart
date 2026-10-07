@@ -119,6 +119,23 @@ class WafSessionStore {
   /// 清掉某图源的会话（网页视图里被拒 / 用户手动重置时用）。
   void clear(String sourceId) => library.setSetting(keyFor(sourceId), '');
 
+  /// 网页视图那套请求头里的 UA（键前缀后的 id）。
+  ///
+  /// Cloudflare 的 `cf_clearance` 与「IP + UA」绑定：验证用哪个 UA，后续请求就得
+  /// 用哪个 UA，否则 Cookie 带上了也照样 403。网页视图里读到什么就存什么。
+  static const String uaKeyPrefix = 'waf.ua.';
+
+  String? userAgent(String sourceId) {
+    final raw = library.setting('$uaKeyPrefix$sourceId');
+    return raw == null || raw.trim().isEmpty ? null : raw.trim();
+  }
+
+  void saveUserAgent(String sourceId, String? userAgent) {
+    final text = (userAgent ?? '').trim();
+    if (text.isEmpty || text == 'null') return;
+    library.setSetting('$uaKeyPrefix$sourceId', text);
+  }
+
   /// 当前保存了多少项（设置页与提示文案用）。
   int countOf(String sourceId) {
     final header = cookieHeader(sourceId);
@@ -206,6 +223,14 @@ class WafSessions {
   static int countFor(Section section, String sourceId) =>
       storeOf(section)?.countOf(sourceId) ?? 0;
 
+  /// 取某图源验证时用的 UA（没有则 null，网络层按原口径用全局 UA）。
+  static String? userAgentFor(Section section, String sourceId) =>
+      storeOf(section)?.userAgent(sourceId);
+
+  /// 保存验证时用的 UA。
+  static void saveUserAgent(Section section, String sourceId, String? userAgent) =>
+      storeOf(section)?.saveUserAgent(sourceId, userAgent);
+
   /// 仅测试用：丢掉缓存句柄。
   static void resetForTesting() => _stores.clear();
 }
@@ -238,3 +263,19 @@ const String wafBridgeHint =
     '该站点需要配置外部无头浏览器桥接服务，APP 无法直接访问。\n'
     '（在「源管理 → 网络配置 → 桥接服务地址」里填一个已过验证的 Playwright / '
     'Puppeteer 桥地址；普通 HTTP 代理无效。）';
+
+/// 从一个失败地址里取 origin（网页视图默认打开它）。
+String? originOf(String? url) {
+  final uri = Uri.tryParse(url ?? '');
+  if (uri == null || !uri.hasScheme || uri.host.isEmpty) return null;
+  return '${uri.scheme}://${uri.host}';
+}
+
+/// 失败的请求地址（图源契约没有暴露，这里从错误文本里捞；捞不到就用图源站点的
+/// 常见入口：让用户自己在网页里点一下也能过校验）。
+String? urlFromFailure(String? message) {
+  final text = message ?? '';
+  // 只取「http(s)://…」这一截：到空白 / 引号 / 括号为止（含全角括号）。
+  final match = RegExp('https?://[^\\s"\')\\uFF09]+').firstMatch(text);
+  return match?.group(0);
+}
