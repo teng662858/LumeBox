@@ -13,6 +13,7 @@ import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
 import 'package:lume_box/features/settings/tab_bar_settings_page.dart';
 import 'package:lume_box/features/shell/app_shell.dart';
+import 'package:lume_box/features/shell/shell_dock.dart';
 
 /// 底部导航栏管理：**每个页签独立开关 + 拖拽排序**。
 ///
@@ -413,6 +414,40 @@ void main() {
         findsOneWidget,
         reason: '设置页是导航栏管理的唯一入口，隐藏它必须留恢复入口——'
             '否则用户再也改不回导航栏',
+      );
+    });
+
+    testWidgets('Dock 收起时（播放中）：左下角恢复入口一并收起', (tester) async {
+      await pumpShell(tester);
+      await ShellSettingsController.instance.setVisible('settings', false);
+      await tester.pumpAndSettle();
+
+      final entry = find.byKey(AppShell.settingsEntryKey);
+      final shownBottom = tester.getRect(entry).bottom;
+
+      // 模拟视频播放中隐藏 Dock（视频页就是这么做的：拿令牌调 hide）。
+      final token = Object();
+      final dock = ShellDockScope.maybeOf(
+        tester.element(find.byKey(AppShell.dockKey)),
+      )!;
+      dock.hide(token);
+      await tester.pumpAndSettle();
+
+      // 收起后：整块移出屏幕下沿。这条守的是「播放中左下角是亮度手势区」——
+      // 一个浮在那里的齿轮既挡画面又抢手势。
+      expect(
+        tester.getRect(entry).top,
+        greaterThanOrEqualTo(844),
+        reason: 'Dock 收起时恢复入口必须一起移出屏幕'
+            '（实际 top=${tester.getRect(entry).top}，收起前 bottom=$shownBottom）',
+      );
+
+      dock.show(token);
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(entry).bottom,
+        shownBottom,
+        reason: 'Dock 恢复后入口也要回到原位（不能一去不返）',
       );
     });
 

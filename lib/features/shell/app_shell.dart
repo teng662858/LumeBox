@@ -205,6 +205,14 @@ class _AppShellState extends State<AppShell> {
 
   // ------------------------------------------------------------------ 移动端
 
+  /// 恢复入口收起时下滑的距离（逻辑像素）。
+  ///
+  /// 必须把它**悬浮在 Dock 之上的那段**（底栏高 + 上下留白，约 96）与**自身高度**
+  /// 一起算进去：只滑「自身高度」会让按钮停在屏幕里，等于没藏。
+  /// 用绝对像素而不是 `AnimatedSlide` 的「自身尺寸倍数」：那个倍数会随图标内边距
+  /// 变化而漂移，是条看不见的耦合。这里多给一点余量，滑出屏幕即可。
+  static const double _entryHideTravel = _dockHeight + _dockMargin * 2 + _dockSpacing + 64;
+
   /// 「设置页被隐藏」时的恢复入口。
   ///
   /// 这是硬约束不是装饰：设置页是「底部导航栏管理」自己的入口。把它藏起来之后，
@@ -213,27 +221,41 @@ class _AppShellState extends State<AppShell> {
   ///
   /// 放在**左下角**：右下角是页面 FAB 的地盘（源总管理 / 漫画仓库页的「+」），
   /// 放右下会重叠（实测两个矩形相交）。
-  Widget _buildSettingsEntry() {
+  ///
+  /// **跟随 Dock 显隐**（[visible]）：这个入口是导航壳的一部分，底栏藏起来时
+  /// 它也得藏。最典型的是视频播放中——壳层为「沉浸观看」把 Dock 收起，此时
+  /// 左下角恰好是**亮度手势区**，一个浮在那里的齿轮按钮既挡画面又抢手势。
+  Widget _buildSettingsEntry({required bool visible}) {
     return Positioned(
       left: _dockMargin,
       bottom: _dockMargin,
       child: SafeArea(
-        child: Tooltip(
-          message: '设置（底部导航栏里已隐藏）',
-          child: Material(
-            key: AppShell.settingsEntryKey,
-            color: LumeTheme.surface,
-            shape: const CircleBorder(),
-            elevation: 3,
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: () => _select(ShellTab.settingsId),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Icon(
-                  Icons.settings_outlined,
-                  size: 22,
-                  color: LumeTheme.textSecondary,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0, end: visible ? 0 : _entryHideTravel),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          builder: (context, dy, child) =>
+              Transform.translate(offset: Offset(0, dy), child: child),
+          child: IgnorePointer(
+            ignoring: !visible,
+            child: Tooltip(
+              message: '设置（底部导航栏里已隐藏）',
+              child: Material(
+                key: AppShell.settingsEntryKey,
+                color: LumeTheme.surface,
+                shape: const CircleBorder(),
+                elevation: 3,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => _select(ShellTab.settingsId),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Icon(
+                      Icons.settings_outlined,
+                      size: 22,
+                      color: LumeTheme.textSecondary,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -261,7 +283,14 @@ class _AppShellState extends State<AppShell> {
         child: Stack(
           children: <Widget>[
             _buildPage(),
-            if (settingsHidden) _buildSettingsEntry(),
+            if (settingsHidden)
+              // 与底栏同一个显隐来源：Dock 收起（播放中 / 全屏页压栈）时，
+              // 恢复入口一并收起。
+              AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) =>
+                    _buildSettingsEntry(visible: _controller.visible),
+              ),
           ],
         ),
       ),
