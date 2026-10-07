@@ -37,6 +37,7 @@ class VideoPlayerSettingsStore {
   static const String keySubtitleOutline = 'video.player.subtitleOutline';
   static const String keySubtitleDelay = 'video.player.subtitleDelayMs';
   static const String keyHardwareDecoding = 'video.player.hardwareDecoding';
+  static const String keyAutoHideControls = 'video.player.autoHideControls';
 
   /// 每内核一格偏好的键前缀（后缀是内核 id）。
   static const String keyPrefsPrefix = 'video.player.prefs.';
@@ -73,6 +74,8 @@ class VideoPlayerSettingsStore {
       // 旧库没有这一项时（键缺失）按「开」处理——与历史行为一致。
       subtitlesEnabled: _library.setting(keySubtitles) != 'false',
       hardwareDecoding: _library.setting(keyHardwareDecoding) != 'false',
+      // 缺键按「开」处理（默认开启自动隐藏）。
+      autoHideControls: _library.setting(keyAutoHideControls) != 'false',
       prefs: prefs,
     );
   }
@@ -116,6 +119,10 @@ class VideoPlayerSettingsStore {
     _library.setSetting(
       keyHardwareDecoding,
       settings.hardwareDecoding ? 'true' : 'false',
+    );
+    _library.setSetting(
+      keyAutoHideControls,
+      settings.autoHideControls ? 'true' : 'false',
     );
   }
 

@@ -216,6 +216,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// 全屏模式下的浮层控制栏是否可见。
   bool _overlayVisible = true;
 
+  /// 控制栏自动隐藏的计时器（用户要求：播放中无操作 N 秒收起，点屏幕唤回）。
+  Timer? _autoHideTimer;
+
+  /// 无操作多久收起控制栏。
+  static const Duration _autoHideDelay = Duration(seconds: 4);
+
   /// 方向锁定（用户要求）：自动 / 强制横屏 / 强制竖屏。
   ///
   /// 与全局设置里的「横屏播放」是**同一个值**（[PlaybackOrientationController]）：
@@ -319,6 +325,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     // 就读不到播放位置了（记录会静默丢掉）。此刻也不能再 setState。
     _progressTimer?.cancel();
     _progressTimer = null;
+    _autoHideTimer?.cancel();
+    _autoHideTimer = null;
     _saveProgress(force: true);
 
     PlaybackOrientationController.instance
@@ -357,7 +365,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void _onSnapshotChanged() {
     final snapshot = _player?.snapshot.value;
     final playing = snapshot?.playing ?? false;
-    if (_wasPlaying && !playing) _saveProgress(force: true);
+    if (_wasPlaying && !playing && !_suppressProgressSave) {
+      _saveProgress(force: true);
+    }
+    if (playing != _wasPlaying) {
+      if (playing) {
+        _scheduleAutoHide();
+      } else {
+        _cancelAutoHide();
+      }
+    }
     _wasPlaying = playing;
     if (snapshot != null) {
       // 锁屏播放条跟随播放状态（进度在会话内部节流，不必在这里省）。
@@ -402,6 +419,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   bool _wasPlaying = false;
+
+  /// 正在重建播放器 / 重载媒体：期间**不要**按快照自动落盘。
+  ///
+  /// 为什么必须抑制：换内核（或换清晰度线路）时会释放旧播放器、装载新的，
+  /// 中间必然出现「播放中 → 停下」「位置 → 0」的瞬时快照。若不挡住，
+  /// [_onSnapshotChanged] 会把**位置 0** 当成最新进度写进库——真机反馈的
+  /// 「切内核后从头播」正是这么来的（记录被自己清掉了）。
+  bool _suppressProgressSave = false;
 
   /// 是否已播到结尾（留 1 秒余量：播放器到结尾前会先停下）。
   ///
@@ -480,8 +505,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// 3. **落库失败不拖垮播放**：写设置库失败只记日志并提示。
   Future<void> _rebuildPlayer() async {
     final seq = ++_rebuildSeq;
+    // 先落盘：此刻旧播放器还活着，位置是准的。随后整个重建期间抑制自动落盘
+    //（见 [_suppressProgressSave]）。
+    _saveProgress(force: true);
     final previous = _player;
     final resume = previous == null ? null : _ResumePoint.of(previous);
+    _suppressProgressSave = true;
     _player = null;
     if (previous != null) {
       // 摘的必须是**当初挂上去的那个**回调（[onSnapshotChanged]）。
@@ -510,17 +539,20 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
     // 过期重建：用户又切了内核，本次结果作废（实例必须释放）。
     if (seq != _rebuildSeq) {
+      _suppressProgressSave = false;
       final stale = launch?.player;
       if (stale != null) await _disposeQuietly(stale, '过期重建结果');
       return;
     }
     if (!mounted) {
+      _suppressProgressSave = false;
       final orphan = launch?.player;
       if (orphan != null) await _disposeQuietly(orphan, '页面已退出');
       return;
     }
 
     if (launch == null) {
+      _suppressProgressSave = false;
       setState(() {
         _player = null;
         _pendingKernel = null;
@@ -570,6 +602,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       if (mounted && seq == _rebuildSeq) {
         setState(() => _rebuildFailure = '播放器已就绪，但接续上次播放失败：$error');
       }
+    } finally {
+      _suppressProgressSave = false;
     }
   }
 
@@ -629,6 +663,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     final kernelChanged = next.kernel != _settings.kernel;
     if (!mounted) return;
     setState(() => _settings = next);
+    // 关掉自动隐藏：立刻取消计时并让控制栏显形。
+    if (next.autoHideControls) {
+      _scheduleAutoHide();
+    } else {
+      _cancelAutoHide();
+    }
     if (kernelChanged) {
       await _rebuildPlayer();
     } else {
@@ -680,6 +720,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     final resume = snapshot.position;
     final playing = snapshot.playing;
     final quality = _qualities[index];
+    // 换线路同样是「旧地址停、新地址起」：先落盘、期间抑制自动落盘，
+    // 否则会把位置 0 写进记录（与换内核同一条坑）。
+    _saveProgress(force: true);
+    _suppressProgressSave = true;
     setState(() => _qualityIndex = index);
 
     await _loadMedia(
@@ -690,6 +734,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         headers: quality.headers.isEmpty ? _media?.headers : quality.headers,
       ),
     );
+    _suppressProgressSave = false;
     if (!mounted) return;
     if (resume > Duration.zero) await player.seek(resume);
     if (playing) await player.play();
@@ -1463,6 +1508,33 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
+  // --------------------------------------------------------- 控制栏自动隐藏
+
+  /// 重排自动隐藏：每次有操作（点按钮 / 唤出控制栏 / 状态变化）都重新计时。
+  ///
+  /// 只在「全屏 + 正在播放 + 开关打开」时生效；暂停、播完、锁屏、退出全屏
+  /// 都取消计时并保持可见（暂停时还把控制栏收起来，用户会以为卡住了）。
+  void _scheduleAutoHide() {
+    _autoHideTimer?.cancel();
+    if (!_fullscreen || _locked) return;
+    if (!_settings.autoHideControls) return;
+    if (!(_player?.snapshot.value.playing ?? false)) return;
+    _autoHideTimer = Timer(_autoHideDelay, () {
+      if (!mounted || !_fullscreen || _locked) return;
+      if (!(_player?.snapshot.value.playing ?? false)) return;
+      setState(() => _overlayVisible = false);
+    });
+  }
+
+  /// 取消自动隐藏并让控制栏保持可见。
+  void _cancelAutoHide({bool show = true}) {
+    _autoHideTimer?.cancel();
+    _autoHideTimer = null;
+    if (show && mounted && !_overlayVisible) {
+      setState(() => _overlayVisible = true);
+    }
+  }
+
   /// 切换全屏：**按视频宽高比自动选方向**，方向锁定可以覆盖（用户要求）。
   ///
   /// 方向交给 `SystemChrome.setPreferredOrientations`：竖屏短剧进全屏即竖屏全屏
@@ -1474,6 +1546,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       _fullscreen = value;
       _overlayVisible = true;
     });
+    // 进全屏后开始计时；退出全屏立刻停表（普通页面那套控制栏是固定元素）。
+    if (value) {
+      _scheduleAutoHide();
+    } else {
+      _cancelAutoHide();
+    }
     unawaited(_applyOrientation());
   }
 
@@ -1635,20 +1713,55 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           ],
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-        child: ValueListenableBuilder<PlayerSnapshot>(
-          valueListenable: _player?.snapshot ?? _idleSnapshot,
-          builder: (context, snapshot, _) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              _buildProgress(snapshot),
-              _buildPrimaryControls(snapshot),
-              _buildSecondaryControls(),
-            ],
+      // 进度条与按钮整体贴底（底部留白 8 → 4，用户要求「进度条挪到更靠近屏幕底部」）；
+      // 任何操作都重新计时，免得手还在点、控制栏先自己收起来。
+      child: Listener(
+        onPointerDown: (_) => _scheduleAutoHide(),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+          child: ValueListenableBuilder<PlayerSnapshot>(
+            valueListenable: _player?.snapshot ?? _idleSnapshot,
+            builder: (context, snapshot, _) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _buildProgress(snapshot),
+                const SizedBox(height: 2),
+                _buildFloatingSplitControls(snapshot),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  /// 全屏浮层的底部按钮：**左下角一组 / 右下角一组**（用户要求）。
+  ///
+  /// 左下：传输控制（后退 / 播放暂停 / 停止 / 前进）+ 媒体类（清晰度 / 弹幕 /
+  /// 连播）；右下：窗口与信息类（画中画 / 播放源 / 全屏 / 设置）。
+  /// 按钮大小、互相间距与颜色都沿用原来那一套，只是不再全部挤在中间。
+  Widget _buildFloatingSplitControls(PlayerSnapshot snapshot) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: <Widget>[
+        Expanded(
+          child: Wrap(
+            alignment: WrapAlignment.start,
+            spacing: 0,
+            runSpacing: 2,
+            children: <Widget>[
+              ..._primaryActions(snapshot),
+              ..._mediaSecondaryActions(),
+            ],
+          ),
+        ),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 0,
+          runSpacing: 2,
+          children: _windowSecondaryActions(),
+        ),
+      ],
     );
   }
 
@@ -1813,7 +1926,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => setState(() => _overlayVisible = true),
+                    onTap: () {
+                    setState(() => _overlayVisible = true);
+                    _scheduleAutoHide();
+                  },
                   ),
                 ),
             ],
@@ -2109,50 +2225,115 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   /// 主控制：后退 10 秒 / 播放暂停 / 停止 / 前进 10 秒。
   Widget _buildPrimaryControls(PlayerSnapshot snapshot) {
-    final player = _player;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[
-        IconButton(
-          iconSize: 28,
-          color: LumeTheme.textPrimary,
-          tooltip: '后退 10 秒',
-          icon: const Icon(Icons.replay_10),
-          onPressed: player == null
-              ? null
-              : () => _seekBy(const Duration(seconds: -10)),
-        ),
-        IconButton(
-          iconSize: 38,
-          color: LumeTheme.textPrimary,
-          tooltip: snapshot.playing ? '暂停' : '播放',
-          icon: Icon(
-            snapshot.playing
-                ? Icons.pause_circle_filled
-                : Icons.play_circle_fill,
-          ),
-          onPressed: player == null
-              ? null
-              : () => snapshot.playing ? player.pause() : player.play(),
-        ),
-        IconButton(
-          iconSize: 28,
-          color: LumeTheme.textPrimary,
-          tooltip: '停止',
-          icon: const Icon(Icons.stop_circle),
-          onPressed: player?.stop,
-        ),
-        IconButton(
-          iconSize: 28,
-          color: LumeTheme.textPrimary,
-          tooltip: '前进 10 秒',
-          icon: const Icon(Icons.forward_10),
-          onPressed:
-              player == null ? null : () => _seekBy(const Duration(seconds: 10)),
-        ),
-      ],
+      children: _primaryActions(snapshot),
     );
   }
+
+  /// 传输类按钮（后退 / 播放暂停 / 停止 / 前进）：常规面板居中放，
+  /// 全屏浮层把它们放到**左下角那一组**（用户要求按钮分组摆放）。
+  List<Widget> _primaryActions(PlayerSnapshot snapshot) {
+    final player = _player;
+    return <Widget>[
+      IconButton(
+        iconSize: 28,
+        color: LumeTheme.textPrimary,
+        tooltip: '后退 10 秒',
+        icon: const Icon(Icons.replay_10),
+        onPressed: player == null
+            ? null
+            : () => _seekBy(const Duration(seconds: -10)),
+      ),
+      IconButton(
+        iconSize: 38,
+        color: LumeTheme.textPrimary,
+        tooltip: snapshot.playing ? '暂停' : '播放',
+        icon: Icon(
+          snapshot.playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
+        ),
+        onPressed: player == null
+            ? null
+            : () => snapshot.playing ? player.pause() : player.play(),
+      ),
+      IconButton(
+        iconSize: 28,
+        color: LumeTheme.textPrimary,
+        tooltip: '停止',
+        icon: const Icon(Icons.stop_circle),
+        onPressed: player?.stop,
+      ),
+      IconButton(
+        iconSize: 28,
+        color: LumeTheme.textPrimary,
+        tooltip: '前进 10 秒',
+        icon: const Icon(Icons.forward_10),
+        onPressed:
+            player == null ? null : () => _seekBy(const Duration(seconds: 10)),
+      ),
+    ];
+  }
+
+  /// 媒体类次级按钮（清晰度 / 弹幕三项 / 连播）：全屏时归左下角那一组。
+  List<Widget> _mediaSecondaryActions() => <Widget>[
+        _compactIcon(
+          icon: Icons.high_quality_outlined,
+          tooltip: '清晰度',
+          onPressed: _openQualityMenu,
+          // 有线路时高亮：一眼能看出这部片有多清晰度可切。
+          highlighted: _qualities.length > 1,
+        ),
+        _compactIcon(
+          icon: Icons.subtitles_outlined,
+          tooltip: _danmakuSettings.enabled ? '弹幕：开' : '弹幕：关',
+          highlighted: _danmakuSettings.enabled,
+          onPressed: () => _applyDanmakuSettings(
+            _danmakuSettings.copyWith(enabled: !_danmakuSettings.enabled),
+          ),
+        ),
+        _compactIcon(
+          icon: Icons.chat_bubble_outline,
+          tooltip: '发弹幕',
+          onPressed: _composeDanmaku,
+        ),
+        _compactIcon(
+          icon: Icons.tune,
+          tooltip: '弹幕设置',
+          onPressed: _openDanmakuSettings,
+        ),
+        _compactIcon(
+          icon: Icons.skip_next,
+          tooltip: _autoNext ? '自动连播：开' : '自动连播：关',
+          highlighted: _autoNext,
+          onPressed: () => setState(() => _autoNext = !_autoNext),
+        ),
+      ];
+
+  /// 窗口 / 信息类次级按钮（画中画 / 播放源 / 全屏 / 设置）：全屏时归右下角。
+  ///
+  /// [includeSource] 为 false 时不含「播放源」那颗 ⓘ——常规面板把它单独钉在
+  /// 整排最右侧（原来就是那个位置），避免同一颗图标出现两次。
+  List<Widget> _windowSecondaryActions({bool includeSource = true}) => <Widget>[
+        _buildPipButton(),
+        if (includeSource)
+          _compactIcon(
+            icon: Icons.info_outline,
+            tooltip: '播放源',
+            // 有候选线路时高亮：这颗图标里也是「换源」的入口。
+            highlighted: _qualities.length > 1,
+            onPressed: _openSourceSheet,
+          ),
+        _compactIcon(
+          icon: _fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+          tooltip: _fullscreen ? '退出全屏' : '全屏',
+          onPressed: () => _setFullscreen(!_fullscreen),
+        ),
+        _compactIcon(
+          icon: Icons.settings_outlined,
+          tooltip: '播放器设置',
+          onPressed: _openSettings,
+        ),
+      ];
 
   /// 次级控制：清晰度 / 弹幕 / 连播 / 画中画 / 全屏 / 设置，最右侧是播放源。
   ///
@@ -2172,48 +2353,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               spacing: 2,
               runSpacing: 2,
               children: <Widget>[
-                _compactIcon(
-                  icon: Icons.high_quality_outlined,
-                  tooltip: '清晰度',
-                  onPressed: _openQualityMenu,
-                  // 有线路时高亮：一眼能看出这部片有多清晰度可切。
-                  highlighted: _qualities.length > 1,
-                ),
-                _compactIcon(
-                  icon: Icons.subtitles_outlined,
-                  tooltip: _danmakuSettings.enabled ? '弹幕：开' : '弹幕：关',
-                  highlighted: _danmakuSettings.enabled,
-                  onPressed: () => _applyDanmakuSettings(
-                    _danmakuSettings.copyWith(enabled: !_danmakuSettings.enabled),
-                  ),
-                ),
-                _compactIcon(
-                  icon: Icons.chat_bubble_outline,
-                  tooltip: '发弹幕',
-                  onPressed: _composeDanmaku,
-                ),
-                _compactIcon(
-                  icon: Icons.tune,
-                  tooltip: '弹幕设置',
-                  onPressed: _openDanmakuSettings,
-                ),
-                _compactIcon(
-                  icon: Icons.skip_next,
-                  tooltip: _autoNext ? '自动连播：开' : '自动连播：关',
-                  highlighted: _autoNext,
-                  onPressed: () => setState(() => _autoNext = !_autoNext),
-                ),
-                _buildPipButton(),
-                _compactIcon(
-                  icon: _fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
-                  tooltip: _fullscreen ? '退出全屏' : '全屏',
-                  onPressed: () => _setFullscreen(!_fullscreen),
-                ),
-                _compactIcon(
-                  icon: Icons.settings_outlined,
-                  tooltip: '播放器设置',
-                  onPressed: _openSettings,
-                ),
+                ..._mediaSecondaryActions(),
+                ..._windowSecondaryActions(includeSource: false),
               ],
             ),
           ),

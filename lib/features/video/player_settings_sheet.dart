@@ -444,6 +444,31 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 ),
             ],
           ),
+          const SizedBox(height: 12),
+          // 自动隐藏开关与方向锁定同组（用户要求）：都在「画面怎么显示」这一类。
+          Divider(height: 1, thickness: 1, color: LumeTheme.divider),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  '自动隐藏控制栏',
+                  style: TextStyle(fontSize: 14, color: LumeTheme.textPrimary),
+                ),
+              ),
+              Switch(
+                value: settings.autoHideControls,
+                onChanged: (value) =>
+                    _update(settings.copyWith(autoHideControls: value)),
+              ),
+            ],
+          ),
+          Text(
+            settings.autoHideControls
+                ? '全屏播放中 4 秒无操作自动收起，点屏幕唤回（默认开）'
+                : '控制栏常显（关闭自动隐藏）',
+            style: TextStyle(fontSize: 12, height: 1.4, color: LumeTheme.muted),
+          ),
           const SizedBox(height: 8),
           Text(
             _orientation == PlaybackOrientation.portrait

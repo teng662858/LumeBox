@@ -357,6 +357,7 @@ class PlayerSettings {
     this.kernel = PlayerKernel.avplayer,
     this.subtitlesEnabled = true,
     this.hardwareDecoding = true,
+    this.autoHideControls = true,
     this.prefs = const <PlayerKernel, KernelPrefs>{},
   });
 
@@ -411,6 +412,12 @@ class PlayerSettings {
   /// HEVC 花屏 / 黑屏时，用户有一个不用换播放器的出口。
   final bool hardwareDecoding;
 
+  /// 全屏控制栏自动隐藏（用户要求；默认开）。
+  ///
+  /// 播放中 N 秒无操作就把进度条与按钮收起来，点屏幕再唤回；关掉则一直显示。
+  /// 与内核无关（三套内核共用一份），因此放在全局项里而不是 KernelPrefs。
+  final bool autoHideControls;
+
   /// 按内核分别记住的偏好（键是内核，没记录过的内核用默认值）。
   final Map<PlayerKernel, KernelPrefs> prefs;
 
@@ -457,6 +464,7 @@ class PlayerSettings {
     PlayerKernel? kernel,
     double? speed,
     bool? subtitlesEnabled,
+    bool? autoHideControls,
     SubtitleSize? subtitleSize,
     SubtitleColor? subtitleColor,
     SubtitleOutline? subtitleOutline,
@@ -504,6 +512,7 @@ class PlayerSettings {
       kernel: target,
       subtitlesEnabled: subtitlesEnabled ?? this.subtitlesEnabled,
       hardwareDecoding: hardwareDecoding ?? this.hardwareDecoding,
+      autoHideControls: autoHideControls ?? this.autoHideControls,
       prefs: nextPrefs,
     );
   }
@@ -542,7 +551,8 @@ class PlayerSettings {
     if (other is! PlayerSettings) return false;
     if (other.kernel != kernel ||
         other.subtitlesEnabled != subtitlesEnabled ||
-        other.hardwareDecoding != hardwareDecoding) {
+        other.hardwareDecoding != hardwareDecoding ||
+        other.autoHideControls != autoHideControls) {
       return false;
     }
     // 逐格比较：Map 的 == 是引用比较，必须按内容比。
@@ -560,6 +570,7 @@ class PlayerSettings {
         kernel,
         subtitlesEnabled,
         hardwareDecoding,
+        autoHideControls,
         Object.hashAllUnordered(
           prefs.entries.map((entry) => Object.hash(entry.key, entry.value)),
         ),

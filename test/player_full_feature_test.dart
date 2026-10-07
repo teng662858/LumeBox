@@ -754,6 +754,93 @@ void main() {
       await tester.pumpAndSettle();
       expect(players.single.seeks.last, Duration.zero);
     });
+  testWidgets('全屏浮层：进度条贴底、按钮分左下 / 右下两组（用户要求）', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byTooltip('全屏'));
+    await tester.pumpAndSettle();
+
+    final slider = tester.getRect(find.byType(Slider).first);
+    final stop = tester.getCenter(find.byTooltip('停止'));
+    expect(slider.bottom, lessThan(stop.dy), reason: '进度条在按钮组上方');
+
+    // 左下角一组：传输控制 + 媒体类；右下角一组：窗口与信息类。
+    final leftMost = tester.getCenter(find.byTooltip('后退 10 秒')).dx;
+    final leftDanmaku = tester.getCenter(find.byTooltip('弹幕设置')).dx;
+    final rightSource = tester.getCenter(find.byTooltip('播放源')).dx;
+    final rightSettings = tester.getCenter(find.byTooltip('播放器设置')).dx;
+    expect(leftMost, lessThan(leftDanmaku), reason: '左组按顺序排开');
+    expect(
+      leftDanmaku,
+      lessThan(rightSource),
+      reason: '媒体类在左、信息类在右（不再全挤中间）',
+    );
+    expect(rightSource, lessThan(rightSettings));
+    expect(rightSettings, greaterThan(450), reason: '右组落在屏幕右半边');
+    expect(leftMost, lessThan(450), reason: '左组落在屏幕左半边');
+  });
+
+  testWidgets('全屏控制栏自动隐藏：播放中无操作 4 秒收起，点屏幕唤回', (tester) async {
+    final players = await pump(tester);
+    await tester.tap(find.byTooltip('全屏'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Slider), findsOneWidget, reason: '刚进全屏控制栏可见');
+
+    players.single.emit(
+      position: const Duration(minutes: 1),
+      duration: const Duration(minutes: 10),
+      playing: true,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(
+      find.byType(Slider),
+      findsNothing,
+      reason: '无操作 4 秒后控制栏自动隐藏',
+    );
+
+    await tester.tap(find.byType(Scaffold).first);
+    await tester.pumpAndSettle();
+    expect(find.byType(Slider), findsOneWidget, reason: '点屏幕再显示');
+  });
+
+  testWidgets('关掉「自动隐藏控制栏」后：怎么放着都不收起', (tester) async {
+    final players = await pump(tester);
+    await tester.tap(find.byTooltip('全屏'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('播放器设置'));
+    await tester.pumpAndSettle();
+    await tester.dragUntilVisible(
+      find.text('自动隐藏控制栏'),
+      find.byType(PlayerSettingsSheet),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.widgetWithText(Row, '自动隐藏控制栏'),
+        matching: find.byType(Switch),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+
+    players.single.emit(
+      position: const Duration(minutes: 1),
+      duration: const Duration(minutes: 10),
+      playing: true,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 8));
+    await tester.pumpAndSettle();
+    expect(
+      find.byType(Slider),
+      findsOneWidget,
+      reason: '关掉自动隐藏后控制栏一直显示',
+    );
+  });
   });
 }
 

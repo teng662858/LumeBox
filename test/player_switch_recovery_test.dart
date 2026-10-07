@@ -297,6 +297,40 @@ void main() {
       expect(PlayerFactory.mdkInitFailed, isFalse);
     });
   });
+  testWidgets('切内核保留播放进度：新内核从当前时间点接着播', (tester) async {
+    final created = <_FakePlayer>[];
+    await pumpVideo(
+      tester,
+      factory: (kernel) {
+        final player = _FakePlayer(kernel);
+        created.add(player);
+        return player;
+      },
+    );
+
+    created.last.emit(
+      position: const Duration(minutes: 5),
+      duration: const Duration(minutes: 45),
+      playing: true,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('播放器设置'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('MPV'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('关闭'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(created.length, greaterThanOrEqualTo(2), reason: '换内核会建新播放器');
+    expect(
+      created.last.seeks,
+      contains(const Duration(minutes: 5)),
+      reason: '新内核要 seek 回切换前的位置，不能从头播',
+    );
+    expect(created.last.plays, greaterThan(0), reason: '切换前在播，切完继续播');
+  });
+
 }
 
 
@@ -323,6 +357,19 @@ class _FakePlayer extends AbstractPlayer {
 
   int disposals = 0;
 
+  /// 记录 seek / 播放：验证「换内核保留进度」时不丢位置。
+  final List<Duration> seeks = <Duration>[];
+  int plays = 0;
+
+  /// 推进快照（模拟真实播放器报位置 / 播放状态）。
+  void emit({Duration? position, Duration? duration, bool? playing}) {
+    _snapshot.value = PlayerSnapshot(
+      position: position ?? _snapshot.value.position,
+      duration: duration ?? _snapshot.value.duration,
+      playing: playing ?? _snapshot.value.playing,
+    );
+  }
+
   final ValueNotifier<PlayerSnapshot> _snapshot =
       ValueNotifier<PlayerSnapshot>(const PlayerSnapshot());
   late final ValueNotifier<PlayerStats> _stats = ValueNotifier<PlayerStats>(
@@ -341,11 +388,16 @@ class _FakePlayer extends AbstractPlayer {
   }
 
   @override
-  Future<void> play() async {}
+  Future<void> play() async {
+    plays++;
+  }
+
   @override
   Future<void> pause() async {}
   @override
-  Future<void> seek(Duration position) async {}
+  Future<void> seek(Duration position) async {
+    seeks.add(position);
+  }
   @override
   Future<void> stop() async {}
   @override
