@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/source/source.dart';
+import '../../core/reading/browse_layout.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
@@ -65,6 +66,8 @@ class SettingsPage extends StatelessWidget {
           //（真机反馈「设置太乱」后按此口径重排）。
           const _GroupTitle('界面'),
           const DisplaySettingsGroup(showTitle: false), // 外观 + 主题色
+          const SizedBox(height: 10),
+          const GridTitleStyleRow(), // 网格标题：遮罩内置 / 外置独立
           const SizedBox(height: 10),
           _SettingsEntry(
             icon: Icons.dashboard_customize_outlined,
@@ -162,7 +165,11 @@ class _SettingsEntry extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.trailingValue,
   });
+
+  /// 行尾的当前值（可空；为空时只显示箭头）。
+  final String? trailingValue;
 
   final IconData icon;
   final String title;
@@ -200,6 +207,13 @@ class _SettingsEntry extends StatelessWidget {
               ],
             ),
           ),
+          if (trailingValue != null) ...<Widget>[
+            Text(
+              trailingValue!,
+              style: TextStyle(fontSize: 13, color: LumeTheme.textSecondary),
+            ),
+            const SizedBox(width: 2),
+          ],
           Icon(Icons.chevron_right, color: LumeTheme.muted),
         ],
       ),
@@ -224,6 +238,43 @@ class _GroupTitle extends StatelessWidget {
           fontWeight: FontWeight.w600,
           color: LumeTheme.textSecondary,
         ),
+      ),
+    );
+  }
+}
+
+/// 「网格标题」设置行：遮罩内置标题 / 外置独立标题（用户要求）。
+///
+/// 与布局档位同一份偏好（`browse_layout.json`），三个板块同时生效。
+class GridTitleStyleRow extends StatelessWidget {
+  const GridTitleStyleRow({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = BrowseLayoutSettings.instance;
+    return ListenableBuilder(
+      listenable: settings,
+      builder: (context, _) => _SettingsEntry(
+        icon: Icons.title_outlined,
+        title: '网格标题',
+        subtitle: settings.gridTitleStyle == GridTitleStyle.below
+            ? '外置独立标题：封面不画遮罩，标题在图片下方（黑字）'
+            : '遮罩内置标题：标题压在封面底部的深色渐变上',
+        trailingValue: settings.gridTitleStyle.label,
+        onTap: () async {
+          final picked = await showModalBottomSheet<GridTitleStyle>(
+            context: context,
+            backgroundColor: Colors.transparent,
+            builder: (_) => OptionSheet<GridTitleStyle>(
+              title: '网格标题',
+              current: settings.gridTitleStyle,
+              options: GridTitleStyle.values,
+              labelOf: (style) => style.label,
+            ),
+          );
+          if (picked == null) return;
+          await settings.setGridTitleStyle(picked);
+        },
       ),
     );
   }

@@ -1153,8 +1153,13 @@ class _PosterTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final meta = this.meta;
+    // 标题风格是全局偏好（设置页可切），这里按当前值渲染。
+    final style = BrowseLayoutSettings.instance.gridTitleStyle;
     return PosterCard(
       onTap: onTap,
+      // 标题风格：遮罩内置（白字压在封面上）/ 外置独立（黑字在封面下方）。
+      // 外置时封面不画任何遮罩，文字落在卡片浅色底上，因此用主题主文字色。
+      footnoteBelow: style == GridTitleStyle.below,
       footnote: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -1163,18 +1168,25 @@ class _PosterTile extends StatelessWidget {
             item.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            // 压在封面底部的深色遮罩上：**一律白字 + 加粗 + 浅描边**。
-            // 原来用的是 LumeTheme.textPrimary——浅色主题下那是深色文字，
-            // 压在深色遮罩上几乎看不见（真机反馈「标题看着很淡」）。
-            style: const TextStyle(
-              fontSize: 12.5,
-              height: 1.25,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              shadows: <Shadow>[
-                Shadow(color: Color(0xB3000000), blurRadius: 4),
-              ],
-            ),
+            // 内置：压在封面底部的深色遮罩上 → **一律白字 + 加粗 + 浅描边**
+            //（原来用 LumeTheme.textPrimary，浅色主题下深色字压深色遮罩，
+            //  真机反馈「标题看着很淡」）；外置：封面外的浅色底 → 主题主文字色。
+            style: style == GridTitleStyle.below
+                ? TextStyle(
+                    fontSize: 12.5,
+                    height: 1.25,
+                    fontWeight: FontWeight.w600,
+                    color: LumeTheme.textPrimary,
+                  )
+                : const TextStyle(
+                    fontSize: 12.5,
+                    height: 1.25,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    shadows: <Shadow>[
+                      Shadow(color: Color(0xB3000000), blurRadius: 4),
+                    ],
+                  ),
           ),
           if (meta != null) ...<Widget>[
             const SizedBox(height: 2),
@@ -1182,11 +1194,13 @@ class _PosterTile extends StatelessWidget {
               meta,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              // 副信息同压深色遮罩：白字降透明度做层级（不再用主题辅助色）。
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.white.withValues(alpha: 0.72),
-              ),
+              // 内置：白字降透明度做层级；外置：主题辅助色。
+              style: style == GridTitleStyle.below
+                  ? TextStyle(fontSize: 10, color: LumeTheme.muted)
+                  : TextStyle(
+                      fontSize: 10,
+                      color: Colors.white.withValues(alpha: 0.72),
+                    ),
             ),
           ],
         ],

@@ -16,6 +16,7 @@ class PosterCard extends StatelessWidget {
     this.onLongPress,
     this.badge,
     this.footnote,
+    this.footnoteBelow = false,
   });
 
   /// 卡片主体（通常是封面图）。
@@ -30,6 +31,11 @@ class PosterCard extends StatelessWidget {
   /// 底部补充说明（进度文案等），为空时不占位。
   final Widget? footnote;
 
+  /// 说明文字放在**封面之外的正下方**（用户要求的「标题外置」网格风格）：
+  /// 封面不再画任何渐变遮罩，标题落在浅色底的卡片上（黑字）。默认 false =
+  /// 原有的「遮罩内置」样式。
+  final bool footnoteBelow;
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -39,7 +45,36 @@ class PosterCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
-        child: Stack(
+        child: footnoteBelow && footnote != null
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Expanded(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: LumeTheme.hairline),
+                            boxShadow: LumeTheme.cardShadow,
+                          ),
+                        ),
+                        child,
+                        if (badge != null)
+                          Positioned(top: 6, right: 6, child: badge!),
+                      ],
+                    ),
+                  ),
+                  // 图片与文字之间留一小段空白（用户要求）。
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(2, 0, 2, 2),
+                    child: footnote,
+                  ),
+                ],
+              )
+            : Stack(
           fit: StackFit.expand,
           children: <Widget>[
             DecoratedBox(

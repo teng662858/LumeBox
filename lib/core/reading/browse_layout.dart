@@ -68,6 +68,31 @@ enum BrowseLayoutMode {
   }
 }
 
+/// 网格的标题呈现风格（用户要求新增「标题外置模式」）。
+///
+/// - [overlay]：**遮罩内置**——标题压在封面底部的深色渐变上（原样式）；
+/// - [below]：**外置独立**——封面不画任何遮罩，标题放在封面**外面**的正下方，
+///   与图片留一小段空白（黑色文字，浅色底上读起来最清楚）。
+///
+/// 三个板块共用同一个值（用户口径是「设置里切换，三块都支持」）。
+enum GridTitleStyle {
+  overlay('overlay', '遮罩内置标题', '标题压在封面底部的深色渐变上'),
+  below('below', '外置独立标题', '封面不画遮罩，标题在图片下方（黑字）');
+
+  const GridTitleStyle(this.id, this.label, this.hint);
+
+  final String id;
+  final String label;
+  final String hint;
+
+  static GridTitleStyle fromId(String? id) {
+    for (final style in values) {
+      if (style.id == id) return style;
+    }
+    return GridTitleStyle.overlay;
+  }
+}
+
 /// 浏览页布局偏好：**按板块分别记住**（小说习惯列表、漫画习惯网格，不该互相覆盖）。
 ///
 /// 存成 `<应用支持目录>/browse_layout.json`，形如 `{"novel":"list","comic":"grid3"}`。
@@ -82,7 +107,24 @@ class BrowseLayoutSettings extends ChangeNotifier {
 
   final Map<String, BrowseLayoutMode> _modes = <String, BrowseLayoutMode>{};
 
+  /// 网格标题风格（全局一个值；与布局档位存在同一个文件里）。
+  GridTitleStyle _titleStyle = GridTitleStyle.overlay;
+
+  /// 落盘时用的保留键（不是板块 id，读的时候会被跳过）。
+  static const String titleStyleKey = 'gridTitleStyle';
+
   File? _file;
+
+  /// 当前网格标题风格。
+  GridTitleStyle get gridTitleStyle => _titleStyle;
+
+  /// 切换网格标题风格并落盘（三板块同时生效）。
+  Future<void> setGridTitleStyle(GridTitleStyle style) async {
+    if (_titleStyle == style) return;
+    _titleStyle = style;
+    notifyListeners();
+    await _persist();
+  }
 
   /// 用户为某板块选过的布局；没选过返回 null（由调用方决定默认档）。
   BrowseLayoutMode? modeFor(Section section) => _modes[section.id];
@@ -107,6 +149,10 @@ class BrowseLayoutSettings extends ChangeNotifier {
       if (decoded is! Map) return;
       _modes.clear();
       decoded.forEach((key, value) {
+        if ('$key' == titleStyleKey) {
+          _titleStyle = GridTitleStyle.fromId('$value');
+          return;
+        }
         final mode = BrowseLayoutMode.fromId('$value');
         if (mode != null) _modes['$key'] = mode;
       });
@@ -126,7 +172,10 @@ class BrowseLayoutSettings extends ChangeNotifier {
       // 落盘写的是**稳定 id** 而不是枚举值：jsonEncode 不认枚举对象，
       // 直接编码 _modes 会抛「Converting object to an encodable object failed」，
       // 而这句异常会被下面的 catch 吞掉——表现成「设置看着生效了，重启就丢」。
-      final payload = _modes.map((key, mode) => MapEntry(key, mode.id));
+      final payload = <String, String>{
+        ..._modes.map((key, mode) => MapEntry(key, mode.id)),
+        titleStyleKey: _titleStyle.id,
+      };
       temp.writeAsStringSync(jsonEncode(payload), flush: true);
       temp.renameSync(file.path);
     } catch (error, stackTrace) {

@@ -10,6 +10,7 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/reading/explore_view.dart';
+import 'package:lume_box/features/reading/poster_card.dart';
 
 import 'support/fake_source_manager.dart';
 
@@ -165,4 +166,36 @@ void main() {
       reason: '布局选择必须本地持久化',
     );
   });
+  testWidgets('网格标题风格：默认遮罩内置；切成「外置独立」后封面不画遮罩、标题在图片下方', (tester) async {
+    await pumpExplore(tester, Section.comic, layout: ExploreLayout.grid);
+    // 默认：遮罩内置 → 标题是白色（压在封面上）。
+    expect(BrowseLayoutSettings.instance.gridTitleStyle, GridTitleStyle.overlay);
+    Text tileTitle() => tester.widget<Text>(
+          find
+              .descendant(
+                of: find.byType(PosterCard).first,
+                matching: find.byType(Text),
+              )
+              .first,
+        );
+    expect(tileTitle().style?.color, Colors.white);
+
+    // 切成外置独立（设置页那一行走的是同一个方法）。
+    await BrowseLayoutSettings.instance.setGridTitleStyle(GridTitleStyle.below);
+    await tester.pumpAndSettle();
+
+    expect(
+      tileTitle().style?.color,
+      LumeTheme.textPrimary,
+      reason: '外置标题落在卡片浅色底上，用主题主文字色（浅色主题=黑）',
+    );
+    // 卡片改成「封面 + 图片下方文字」的纵向结构。
+    expect(find.byType(PosterCard), findsWidgets);
+
+    // 再切回去，值可逆且落盘。
+    await BrowseLayoutSettings.instance.setGridTitleStyle(GridTitleStyle.overlay);
+    await tester.pumpAndSettle();
+    expect(tileTitle().style?.color, Colors.white);
+  });
+
 }
