@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'app.dart';
 import 'core/js/sandbox_settings.dart';
+import 'core/shell/shell_settings.dart';
 import 'core/net/lume_net.dart';
 import 'core/util/developer_mode.dart';
 import 'core/util/lume_log.dart';
@@ -21,6 +22,8 @@ void main() {
       // 开发者模式（请求抓包开关）：读一次落盘值。抓包默认关闭，
       // 因此这里不会因为「忘了关」而在用户不知情时收集请求数据。
       unawaited(DeveloperMode.boot());
+      // 壳层设置（底部导航栏开关）：读一次落盘值，避免启动时导航栏闪一下。
+      unawaited(ShellSettingsController.instance.boot());
       runApp(const LumeBoxApp());
     },
     (error, stackTrace) => LumeLog.error(error, stackTrace),

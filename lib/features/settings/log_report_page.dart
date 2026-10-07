@@ -116,14 +116,17 @@ class _LogReportPageState extends State<LogReportPage> {
           ),
         ),
         const SizedBox(height: 16),
-        Row(
+        // 用 Wrap 而不是 Row：两颗按钮带图标与文字，窄屏（320pt）并排会溢出
+        // （实测 13px）。Wrap 让第二颗折到下一行，功能不受影响。
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
           children: <Widget>[
             FilledButton.icon(
               onPressed: _busy ? null : _export,
               icon: const Icon(Icons.file_download_outlined, size: 18),
               label: Text(_busy ? '导出中…' : '导出报告文件'),
             ),
-            const SizedBox(width: 12),
             TextButton.icon(
               onPressed: _copy,
               icon: const Icon(Icons.copy_all_outlined, size: 18),

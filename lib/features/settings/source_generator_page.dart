@@ -280,15 +280,53 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-/// 一行并排字段（窄屏自动换行）。
+/// 一行并排字段：**窄屏自动竖排**。
+///
+/// 为什么需要判断而不是直接 `Row`：并排的两个字段各自带标签 / 提示文案，在
+/// iPhone SE（320pt）这类窄屏上，光提示文案就撑破了半屏宽度——`Expanded` 只能
+/// 约束外框，拦不住文字按最小固有宽度撑开，结果就是右侧溢出（实测 320pt 下
+/// 溢出 17px，画面上是黄黑条纹）。窄屏竖排比压字号 / 截断提示更好：这两项
+/// 本来就是并列的独立配置，竖排不损失任何信息。
 class _FieldRow extends StatelessWidget {
   const _FieldRow({required this.children});
 
   final List<Widget> children;
 
+  /// 低于这个宽度就竖排。取 360：iPhone SE / 老机型（320）会竖排，
+  /// 主流机型（390+）保持并排。
+  static const double stackBelow = 360;
+
   @override
-  Widget build(BuildContext context) =>
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: children);
+  Widget build(BuildContext context) {
+    // 用 MediaQuery 的**屏幕**宽度判断，而不是 LayoutBuilder：
+    // 本组件铺在 ListView 里，拿到的高度约束是无限的，LayoutBuilder 在
+    // 「无限高度 + 需要测量子项」时会引发一连串布局断言（实测 547 条错误）。
+    // 判断「窄屏」本来就该看设备屏幕宽度，MediaQuery 正是这个口径。
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    if (screenWidth < stackBelow) {
+      // 竖排：把横排时的「横向间隔」换成等高间隔，并**拆掉 Expanded**。
+      //
+      // 拆 Expanded 是必须的：横排时子项靠 `Expanded` 平分宽度，而竖排后
+      // Column 处在 ListView 的无限高度约束里，`Expanded` 会去撑满**无限高度**，
+      // 直接触发「RenderFlex children have non-zero flex but incoming height
+      // constraints are unbounded」。竖排时子项本来就靠父级宽度约束撑满整行，
+      // 不需要 Expanded。
+      final stacked = <Widget>[];
+      for (final child in children) {
+        if (child is SizedBox && child.width != null) {
+          stacked.add(SizedBox(height: child.height ?? 12));
+          continue;
+        }
+        stacked.add(child is Expanded ? child.child : child);
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: stacked,
+      );
+    }
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: children);
+  }
 }
 
 /// 禁用态输入框骨架。

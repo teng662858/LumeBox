@@ -675,6 +675,9 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
 /// 停用标记的颜色：与板块管理页同色系，避免新造主题项。
 Color get _disabledColor => LumeTheme.danger;
 
+/// 分组 / 「网络已自定义」标记色：与板块管理页同色系（提示色而非告警色）。
+Color get _accentColor => LumeTheme.info;
+
 /// 分组内的一行说明（空板块 / 存储故障）。
 class _SectionNote extends StatelessWidget {
   const _SectionNote(this.text);
@@ -739,7 +742,12 @@ class _SourceTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Row(
+                // 与板块管理页同一处理：版本号 + 状态标记用 Wrap，窄屏自动折行
+                // （并排实测溢出 6px）。Wrap.spacing 已给间距，无需再插 SizedBox。
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: <Widget>[
                     Text(
                       source.version.isEmpty
@@ -750,15 +758,22 @@ class _SourceTile extends StatelessWidget {
                         color: LumeTheme.muted,
                       ),
                     ),
-                    if (!source.enabled) ...<Widget>[
-                      const SizedBox(width: 8),
+                    if (!source.enabled)
                       Text(
                         '已停用',
                         style: TextStyle(fontSize: 12, color: _disabledColor),
                       ),
-                    ],
-                    if (testResult != null) ...<Widget>[
-                      const SizedBox(width: 8),
+                    if (source.broken)
+                      Text(
+                        '已失效（连错 ${source.failureCount} 次）',
+                        style: TextStyle(fontSize: 12, color: _disabledColor),
+                      ),
+                    if (source.hasGroup)
+                      Text(
+                        source.group,
+                        style: TextStyle(fontSize: 12, color: _accentColor),
+                      ),
+                    if (testResult != null)
                       Text(
                         testResult!.status.label,
                         style: TextStyle(
@@ -768,7 +783,6 @@ class _SourceTile extends StatelessWidget {
                               : _disabledColor,
                         ),
                       ),
-                    ],
                   ],
                 ),
               ],

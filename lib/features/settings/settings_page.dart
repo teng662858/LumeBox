@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/shell/shell_settings.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
@@ -54,6 +55,8 @@ class SettingsPage extends StatelessWidget {
       child: ListView(
         padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
         children: <Widget>[
+          const _DockToggleCard(),
+          const SizedBox(height: 12),
           _SettingsEntry(
             icon: Icons.tune,
             title: '源总管理',
@@ -186,6 +189,45 @@ class _SettingsEntry extends StatelessWidget {
           ),
           Icon(Icons.chevron_right, color: LumeTheme.muted),
         ],
+      ),
+    );
+  }
+}
+
+
+/// 底部导航栏开关（全局）。
+///
+/// 关掉后右下角会出现一个小的恢复按钮——5 个 Tab 是顶层导航，不能只关不给回来的路
+/// （否则用户会被困在当前板块里）。这条在界面上也要说清，免得用户以为关了就没法换板块。
+class _DockToggleCard extends StatelessWidget {
+  const _DockToggleCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = ShellSettingsController.instance;
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => GlassCard(
+        radius: 14,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            '显示底部导航栏',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: LumeTheme.textPrimary,
+            ),
+          ),
+          subtitle: Text(
+            '关掉后右下角会出现一个恢复按钮，点它可以把导航栏召唤回来；'
+            '桌面端的左侧栏不受影响',
+            style: TextStyle(fontSize: 12, height: 1.4, color: LumeTheme.muted),
+          ),
+          value: controller.dockEnabled,
+          onChanged: (value) => controller.setDockEnabled(value),
+        ),
       ),
     );
   }

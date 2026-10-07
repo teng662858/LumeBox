@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../core/session/section.dart';
+import '../../core/shell/shell_settings.dart';
 import '../../core/theme/lume_theme.dart';
 import '../cat/cat_page.dart';
 import '../comic/comic_page.dart';
@@ -33,6 +34,9 @@ class AppShell extends StatefulWidget {
   /// 左侧栏的定位键。
   static const Key railKey = Key('shell.rail');
 
+  /// 底部导航栏被关掉时，恢复入口的定位键。
+  static const Key dockRestoreKey = Key('shell.dockRestore');
+
   /// Dock 显隐控制器；为空时自建（独立测试用；正式入口由 [MaterialApp] 传入
   /// 同一个实例，与导航观察者共享）。
   final ShellDockController? controller;
@@ -47,6 +51,10 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late final ShellDockController _controller =
       widget.controller ?? ShellDockController();
+
+  /// 底部导航栏开关（全局设置页可改）。壳层监听它：改完立刻生效，
+  /// 不必等用户切页签或重启。
+  final ShellSettingsController _shellSettings = ShellSettingsController.instance;
 
   /// 自建的控制器要自己释放；外部传进来的由外部负责。
   late final bool _ownsController = widget.controller == null;
@@ -99,9 +107,20 @@ class _AppShellState extends State<AppShell> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _shellSettings.addListener(_onShellSettingsChanged);
+  }
+
+  @override
   void dispose() {
+    _shellSettings.removeListener(_onShellSettingsChanged);
     if (_ownsController) _controller.dispose();
     super.dispose();
+  }
+
+  void _onShellSettingsChanged() {
+    if (mounted) setState(() {});
   }
 
   void _select(int index) {
@@ -120,34 +139,83 @@ class _AppShellState extends State<AppShell> {
 
   // ------------------------------------------------------------------ 移动端
 
+  /// 底部导航栏被关掉时，右下角留的**恢复入口**。
+  ///
+  /// 这是硬约束不是装饰：5 个 Tab 是顶层导航，整块藏掉而不给回来的路，
+  /// 用户会被困在当前板块里（在小说页就再也点不到设置）。因此关掉导航栏时
+  /// 一定有一个小的悬浮按钮，点它把导航栏召唤回来。
+  ///
+  /// 放在**左下角**：右下角是页面 FAB 的地盘（源总管理 / 漫画仓库页的
+  /// 「+」都在那儿），放右下会重叠（实测 FAB rect 与恢复按钮 rect 相交）。
+  /// 左下角没有别的悬浮控件，也不挡列表的右侧操作区。
+  Widget _buildDockRestoreButton() {
+    return Positioned(
+      left: _dockMargin,
+      bottom: _dockMargin,
+      child: SafeArea(
+        child: Tooltip(
+          message: '显示底部导航栏',
+          child: Material(
+            key: AppShell.dockRestoreKey,
+            color: LumeTheme.surface,
+            shape: const CircleBorder(),
+            elevation: 3,
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: () => _shellSettings.setDockEnabled(true),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Icon(
+                  Icons.expand_more_rounded,
+                  size: 22,
+                  color: LumeTheme.textSecondary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDock() {
+    // 导航栏关掉时：内容不再需要为 Dock 让位，右下角换成恢复入口。
+    final dockEnabled = _shellSettings.dockEnabled;
+    final bottomInset = dockEnabled
+        ? MediaQuery.of(context).padding.bottom +
+            _dockHeight +
+            _dockMargin * 2 +
+            _dockSpacing
+        : MediaQuery.of(context).padding.bottom;
     return Scaffold(
       extendBody: true,
       body: MediaQuery(
         // 悬浮 Dock 盖在内容之上：把它的高度加进底部安全区，页面里的 SafeArea
         // 会自动让列表等内容滚出 Dock 的遮挡范围。
         data: MediaQuery.of(context).copyWith(
-          padding: MediaQuery.of(context).padding.copyWith(
-            bottom: MediaQuery.of(context).padding.bottom +
-                _dockHeight +
-                _dockMargin * 2 +
-                _dockSpacing,
-          ),
+          padding: MediaQuery.of(context).padding.copyWith(bottom: bottomInset),
         ),
-        child: _buildPage(),
-      ),
-      bottomNavigationBar: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) => _DockBar(
-          key: AppShell.dockKey,
-          tabs: _tabs,
-          index: _index,
-          onSelect: _select,
-          visible: _controller.visible,
-          height: _dockHeight,
-          margin: _dockMargin,
+        child: Stack(
+          children: <Widget>[
+            _buildPage(),
+            if (!dockEnabled) _buildDockRestoreButton(),
+          ],
         ),
       ),
+      bottomNavigationBar: dockEnabled
+          ? AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) => _DockBar(
+                key: AppShell.dockKey,
+                tabs: _tabs,
+                index: _index,
+                onSelect: _select,
+                visible: _controller.visible,
+                height: _dockHeight,
+                margin: _dockMargin,
+              ),
+            )
+          : null,
     );
   }
 

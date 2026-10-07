@@ -663,7 +663,14 @@ class _SourceTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Row(
+                // 元信息行用 Wrap 而不是 Row：这里有版本号 + 「已停用 / 已失效 /
+                // 分组 / 订阅 / 网络已自定义 / 测试结论」最多六个标记，窄屏
+                // （320pt）下并排必然溢出（实测 121px，画面上是黄黑条纹）。
+                // Wrap 让标记自动折到下一行——信息一个不少，只是多占一行。
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: <Widget>[
                     Text(
                       source.version.isEmpty
@@ -675,14 +682,12 @@ class _SourceTile extends StatelessWidget {
                       ),
                     ),
                     if (!source.enabled) ...<Widget>[
-                      const SizedBox(width: 8),
                       Text(
                         '已停用',
                         style: TextStyle(fontSize: 12, color: _disabledColor),
                       ),
                     ],
                     if (source.broken) ...<Widget>[
-                      const SizedBox(width: 8),
                       Text(
                         '已失效（连错 ${source.failureCount} 次）',
                         style: TextStyle(
@@ -692,7 +697,6 @@ class _SourceTile extends StatelessWidget {
                       ),
                     ],
                     if (source.hasGroup) ...<Widget>[
-                      const SizedBox(width: 8),
                       Text(
                         source.group,
                         style: TextStyle(
@@ -702,21 +706,18 @@ class _SourceTile extends StatelessWidget {
                       ),
                     ],
                     if (source.subscribed) ...<Widget>[
-                      const SizedBox(width: 8),
                       Text(
                         '订阅',
                         style: TextStyle(fontSize: 12, color: _accentColor),
                       ),
                     ],
                     if (source.hasNetworkOverride) ...<Widget>[
-                      const SizedBox(width: 8),
                       Text(
                         '网络已自定义',
                         style: TextStyle(fontSize: 12, color: _accentColor),
                       ),
                     ],
                     if (testResult != null) ...<Widget>[
-                      const SizedBox(width: 8),
                       Text(
                         testResult!.status.label,
                         style: TextStyle(
