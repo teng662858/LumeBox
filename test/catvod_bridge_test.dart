@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/js/cat_engines.dart';
 import 'package:lume_box/core/js/source_registry.dart';
+import 'package:lume_box/core/js/lume_js_engine.dart';
+import 'package:lume_box/core/net/lume_http.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
@@ -64,10 +66,11 @@ void main() {
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
 
-  /// 把薄壳脚本的 BASE_URL 指到替身服务端（等价于用户填自己的电脑地址）。
+  /// 把薄壳脚本的兜底地址指到替身服务端（等价于用户填自己的电脑地址；
+  /// 生产路径优先读图源配置里的「桥接服务地址」，见 __base()）。
   String scriptFor() => fixture('catvod_bridge_source.js').replaceFirst(
-        "var BASE_URL = 'http://192.168.1.5:9988';",
-        "var BASE_URL = '${server.baseUrl}';",
+        "var FALLBACK_BASE = 'http://192.168.1.5:9988';",
+        "var FALLBACK_BASE = '${server.baseUrl}';",
       );
 
   /// 走真实导入链路并打开数据源。
@@ -104,6 +107,35 @@ void main() {
       timeout: const Timeout(Duration(seconds: 90)),
     );
   });
+
+  test(
+    '桥接地址来自图源配置（LumeSource.bridge）：脚本不用改也能连上',
+    () async {
+      // 生产路径：用户在「源管理 → 网络配置 → 桥接服务地址」里填地址，宿主把它
+      // 注入成 `LumeSource.bridge`；脚本的 __base() 优先读它。这里**不改脚本**，
+      // 直接把 bridge 交给引擎，验证整条链路真的走配置值。
+      await ensureSectionScope(Section.cat);
+      final http = LumeHttp();
+      final engine = await LumeJsEngine.create(
+        sourceId: 'catvod-bridge',
+        http: http,
+        section: Section.cat,
+        bridge: server.baseUrl,
+      );
+      addTearDown(engine.dispose);
+      expect(await engine.loadScript(fixture('catvod_bridge_source.js')), isTrue);
+
+      final categories = await engine.call('categories');
+      expect(categories, isA<List<Object?>>());
+      expect(
+        (categories! as List).isNotEmpty,
+        isTrue,
+        reason: '分类来自替身服务端——说明请求确实打到了配置里的桥接地址',
+      );
+    },
+    skip: skipReason,
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
 
   group('契约：分类 / 列表 / 搜索 / 详情 / 选集', () {
     test(

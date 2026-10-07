@@ -390,14 +390,25 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
       ];
 
   /// 内置示例脚本：新用户先跑通「导入 → 浏览」这套动作的最低门槛。
+  ///
+  /// **猫源给的是「薄壳桥接」那一份**（用户口径 2.2 的备选路）：自己跑不起来
+  /// 的聚合服务端包（Node 程序）可以跑在电脑 / NAS 上，App 侧用这份壳转发过去。
+  /// 导入后在「源管理 → 网络配置 → 桥接服务地址」填服务地址即可，**脚本不用改**。
   Future<void> _loadBuiltin() async {
-    final text = await rootBundle.loadString('assets/js/example_source.js');
+    final isCat = widget.section == Section.cat;
+    final text = await rootBundle.loadString(
+      isCat ? 'assets/js/cat_bridge_source.js' : 'assets/js/example_source.js',
+    );
     if (!mounted) return;
     setState(() {
       _mode = _ImportMode.local;
       _script.text = text;
       _error = null;
-      _hint = null;
+      _hint = isCat
+          ? '这是「薄壳桥接」示例：在你的电脑 / NAS 上启动那个聚合服务端（node index.js），'
+              '导入后再到「源管理 → 网络配置 → 桥接服务地址」填它的地址（如 '
+              'http://192.168.1.5:9988，手机与服务在同一局域网）。'
+          : null;
     });
   }
 
