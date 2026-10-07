@@ -130,15 +130,25 @@ void main() {
     testWidgets('画中画：未加载媒体时进入被拒，加载后全链路可用', (tester) async {
       final pip = _FakePipBackend();
       addTearDown(pip.close);
+      // 两个内核都可用：画中画要能取到帧，只有 MPV 行——点按钮会先切内核。
       await pumpVideo(
         tester,
-        available: <PlayerKernel>{PlayerKernel.avplayer},
+        available: <PlayerKernel>{PlayerKernel.avplayer, PlayerKernel.mpv},
         pip: pip,
         // 还没有媒体：画中画的就绪边界检查（进入被拒）要靠它验证。
         withInitialMedia: false,
       );
 
-      // 边界检查：没有媒体时进入被拒。
+      // 先切内核（画中画需要 MPV），再做就绪边界检查。
+      await tester.tap(find.byTooltip('进入画中画'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('画中画需要 MPV 内核'), findsOneWidget);
+      expect(pip.started, 0, reason: '内核切换本身不进画中画');
+      ScaffoldMessenger.of(
+        tester.element(find.byType(VideoPlayerPage)),
+      ).clearSnackBars();
+      await tester.pumpAndSettle();
+
       await tester.tap(find.byTooltip('进入画中画'));
       await tester.pumpAndSettle();
       expect(find.text('媒体尚未就绪'), findsOneWidget);

@@ -320,6 +320,7 @@ class _NamedSource implements DataSource {
     String? categoryId,
     String? keyword,
     int page = 1,
+    Map<String, String>? filters,
   }) async =>
       SourceList(items: <SourceItem>[SourceItem(id: 'i1', title: itemTitle)]);
 
@@ -381,6 +382,7 @@ class _FailingSource implements DataSource {
     String? categoryId,
     String? keyword,
     int page = 1,
+    Map<String, String>? filters,
   }) async {
     await _tick();
     return const SourceList(items: <SourceItem>[_recovered]);

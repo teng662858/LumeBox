@@ -841,6 +841,31 @@ void main() {
       reason: '关掉自动隐藏后控制栏一直显示',
     );
   });
+  testWidgets('画中画：非 MPV 内核点时先切到 MPV（否则按钮点了没反应）', (tester) async {
+    final created = await pump(tester); // 默认 AVPlayer
+    expect(created.single.kernel, PlayerKernel.avplayer);
+
+    await tester.tap(find.byTooltip('播放器设置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+
+    // 直接点画中画按钮：应当给一句说明并切到 MPV（本机三内核都可用）。
+    await tester.tap(find.byIcon(Icons.picture_in_picture_alt));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('画中画需要 MPV 内核'),
+      findsOneWidget,
+      reason: '要说明为什么要换内核，而不是静默切换',
+    );
+    expect(
+      created.length,
+      greaterThan(1),
+      reason: '换内核会重建播放器（新实例是 MPV）',
+    );
+    expect(created.last.kernel, PlayerKernel.mpv);
+  });
+
   });
 }
 

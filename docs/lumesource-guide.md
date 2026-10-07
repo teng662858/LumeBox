@@ -11,6 +11,43 @@
 
 ---
 
+## 可选契约：筛选标签 `filters()`（视频板块用）
+
+视频板块的「筛选」页由**脚本自报标签**，App 不内置任何分类数据。脚本实现
+`filters()` 后，用户在筛选子页看到的就是这里的组与选项：
+
+```js
+async filters() {
+  // 每次调用都**实时抓**（App 侧有 5 分钟短时缓存，不必自己做缓存）。
+  var html = await this.__get(BASE_URL + '/vodshow/1--------1---.html');
+  return {
+    groups: [
+      { id: 'type', title: '剧集类型', options: [{ id: '1', title: '国产剧' }, { id: '2', title: '港剧' }] },
+      { id: 'area', title: '地区',     options: [{ id: 'cn', title: '大陆' }, { id: 'hk', title: '香港' }] },
+      { id: 'year', title: '年份',     options: [{ id: '2024', title: '2024' }] }
+    ]
+  };
+}
+```
+
+- 组与选项都可以带任意 `id`（页面只负责回传，怎么拼站点查询串由脚本决定）；
+- **组内多选**时 App 把选中的 id 用**英文逗号相连**回传：`{ type: '1,3', area: '2' }`，
+  在 `list(argument)` 里读 `argument.filters` 使用：
+
+```js
+async list(argument) {
+  var filters = argument.filters || {};
+  var type = filters.type || '';      // 可能是 '1,3'
+  var area = filters.area || '';
+  var year = filters.year || '';
+  // 拼站点地址（各站点参数名不同，按站点来）
+  ...
+}
+```
+
+- 解析不出标签时**返回空数组即可**（页面会显示「本源不支持筛选」，不影响浏览）；
+- 不要硬编码：站点结构变了，标签应当跟着源站自己变。
+
 ## 一、最小可用脚本
 
 一份能导入的脚本只需要两样东西：**身份**与**至少一个入口**。

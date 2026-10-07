@@ -149,7 +149,10 @@ void main() {
         MaterialApp(
           theme: LumeTheme.build(),
           home: Scaffold(
-            body: PlayerSettingsSheet(
+            // 内嵌面板本身不再自带滚动视图（滚动由宿主页面提供），
+            // 测试里补一个——与全局设置页同构。
+            body: SingleChildScrollView(
+              child: PlayerSettingsSheet(
               settings: const PlayerSettings(),
               capabilities: PlayerCapabilities.of(PlayerKernel.avplayer),
               onChanged: (_) {},
@@ -157,6 +160,7 @@ void main() {
               orientation: PlaybackOrientationController.instance.orientation,
               onOrientationChanged:
                   PlaybackOrientationController.instance.apply,
+              ),
             ),
           ),
         ),

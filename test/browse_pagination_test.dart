@@ -322,6 +322,7 @@ class _PagedSource implements DataSource {
     String? categoryId,
     String? keyword,
     int page = 1,
+    Map<String, String>? filters,
   }) async {
     requests.add(page);
     if (delay != null) await Future<void>.delayed(delay!);

@@ -256,7 +256,12 @@ class _WarmSource implements DataSource {
   Future<List<SourceCategory>> categories() async => const <SourceCategory>[];
 
   @override
-  Future<SourceList> list({String? categoryId, String? keyword, int page = 1}) async {
+  Future<SourceList> list({
+    String? categoryId,
+    String? keyword,
+    int page = 1,
+    Map<String, String>? filters,
+  }) async {
     listCalls.add(page);
     return SourceList(
       items: const <SourceItem>[

@@ -258,7 +258,7 @@ class SourceRegistry {
     final message = '脚本载入失败：$detail';
     if (!_serverCapabilityPattern.hasMatch(detail)) return message;
     return '$message\n'
-        '（这像是**打包过的 Node 程序**（用到 process.hrtime / require / socket 这类'
+        '（这像是**打包过的 Node 程序 / 自建服务端程序**（用到 process.hrtime / require / socket 这类'
         '只有真 Node 才有的能力），不是本 App 的图源脚本，App 里跑不起来；'
         '出路：① 换一份直接抓接口的图源脚本（getList / getDetail / getContent + fetch）；'
         '② 这个服务跑在电脑 / NAS 上，App 侧用薄壳脚本经 LumeSource.http 转发'

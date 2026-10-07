@@ -27,6 +27,9 @@ class NovelExplorePage extends StatelessWidget {
     return ExploreView(
       // 用户要求：小说 / 漫画两块去掉工具栏里的「排序」（视频板块保留）。
       showSort: false,
+      // 顶栏已经有「源管理」：工具条的源下拉里不再重复放一个
+      //（换到「探索」为默认页签后，两个同名入口会同屏出现）。
+      showSourceManage: false,
       section: Section.novel,
       pipeline: pipeline,
       manager: manager,

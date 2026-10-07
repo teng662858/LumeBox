@@ -51,6 +51,7 @@ class ExploreView extends StatefulWidget {
     this.layout = ExploreLayout.grid,
     this.showSourceManage = true,
     this.showSort = true,
+    this.onOpenFacetFilter,
     this.revision = 0,
   });
 
@@ -84,6 +85,16 @@ class ExploreView extends StatefulWidget {
   /// 是否显示「排序」按钮（用户要求小说 / 漫画去掉，视频保留）。
   final bool showSort;
 
+  /// 外挂的「筛选」入口（**视频板块专用**：分页跳转式筛选）。
+  ///
+  /// 宿主返回选中的一级分类与各组标签；返回 null 表示用户取消。
+  /// 为空时「筛选」按钮沿用原有行为（右侧分类抽屉）。
+  final Future<({String? categoryId, Map<String, String> filters})?> Function(
+    BuildContext context,
+    DataSource source,
+    String? currentCategoryId,
+  )? onOpenFacetFilter;
+
   @override
   State<ExploreView> createState() => _ExploreViewState();
 }
@@ -108,6 +119,9 @@ class _ExploreViewState extends State<ExploreView> {
 
   List<SourceCategory> _categories = const <SourceCategory>[];
   String? _categoryId;
+
+  /// 已生效的分组筛选（视频板块的分页筛选写进来；其它板块恒为空）。
+  Map<String, String> _facetFilters = const <String, String>{};
   String _keyword = '';
 
   final List<SourceItem> _items = <SourceItem>[];
@@ -360,6 +374,7 @@ class _ExploreViewState extends State<ExploreView> {
         categoryId: _categoryId,
         keyword: _keyword.isEmpty ? null : _keyword,
         page: page,
+        filters: _facetFilters.isEmpty ? null : _facetFilters,
       );
       if (!mounted || seq != _requestSeq) return;
       setState(() {
@@ -452,6 +467,25 @@ class _ExploreViewState extends State<ExploreView> {
       return;
     }
     await _bootstrap();
+  }
+
+  /// 点「筛选」：视频板块走外挂的分页筛选（一级分类 → 筛选子页），
+  /// 其余板块沿用原来的分类抽屉。
+  Future<void> _openFilter() async {
+    final hook = widget.onOpenFacetFilter;
+    final source = _source;
+    if (hook == null || source == null) {
+      _scaffold.currentState?.openEndDrawer();
+      return;
+    }
+    final picked = await hook(context, source, _categoryId);
+    if (picked == null || !mounted) return;
+    setState(() {
+      _categoryId = picked.categoryId;
+      _facetFilters = picked.filters;
+    });
+    // 应用后从第一页重来（与换分类同口径）。
+    _loadPage();
   }
 
   void _selectCategory(String? categoryId) {
@@ -658,8 +692,8 @@ class _ExploreViewState extends State<ExploreView> {
       ),
       showSort: widget.showSort,
       onSearch: _openSearch,
-      onFilter: () => _scaffold.currentState?.openEndDrawer(),
-      filterActive: _categoryId != null,
+      onFilter: _openFilter,
+      filterActive: _categoryId != null || _facetFilters.isNotEmpty,
     );
   }
 

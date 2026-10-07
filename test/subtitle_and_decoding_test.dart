@@ -314,7 +314,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 硬件解码是页面上的最后一个开关。
+      // 硬件解码是页面上的最后一个开关：先滚到它（页面变长后它不在首屏）。
+      await tester.dragUntilVisible(
+        find.text('硬件解码'),
+        find.byType(ListView).first,
+        const Offset(0, -240),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byType(Switch).last);
       await tester.pumpAndSettle();
       expect(changed?.hardwareDecoding, isFalse);

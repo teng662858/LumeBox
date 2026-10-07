@@ -20,6 +20,88 @@ abstract interface class SuggestCapable {
   Future<List<String>> suggest(String keyword);
 }
 
+/// 图源能给出「筛选标签」的可选能力（视频板块的筛选页用它）。
+///
+/// **为什么是契约而不是 App 内置一份**：各站点的筛选项各不相同（题材 / 地区 /
+/// 年份 / 语言 / 剧集类型…），写死在 App 里等于替站点做假设；用户也明确要求
+/// 「脚本不许硬编码分类数据，每次打开实时从源站抓」。
+abstract interface class FilterCapable {
+  /// 取本源的筛选标签组；不提供能力时不该被调用。
+  Future<List<SourceFilterGroup>> filters();
+}
+
+/// 一组筛选标签（一行横向标签）。
+class SourceFilterGroup {
+  const SourceFilterGroup({
+    required this.id,
+    required this.title,
+    required this.options,
+  });
+
+  /// 组标识（图源内唯一，如 `type` / `area` / `year`）。
+  final String id;
+
+  /// 组标题（如「剧集类型」「地区」）。
+  final String title;
+
+  /// 组内选项（可为空：空组不展示）。
+  final List<SourceFilterOption> options;
+
+  /// 宽容解析：认不出 id / title 或缺选项的组返回 null（整组跳过，不影响其它组）。
+  static SourceFilterGroup? parse(Object? json) {
+    if (json is! Map) return null;
+    final id = '${json['id'] ?? ''}'.trim();
+    final title = '${json['title'] ?? json['name'] ?? ''}'.trim();
+    if (id.isEmpty || title.isEmpty) return null;
+    final raw = json['options'] ?? json['items'] ?? json['list'];
+    final options = <SourceFilterOption>[];
+    if (raw is List) {
+      for (final entry in raw) {
+        final option = SourceFilterOption.parse(entry);
+        if (option != null) options.add(option);
+      }
+    }
+    if (options.isEmpty) return null;
+    return SourceFilterGroup(id: id, title: title, options: options);
+  }
+
+  /// 解析 `{ groups: [...] }` 或直接是一个数组的返回。
+  static List<SourceFilterGroup> parseAll(Object? json) {
+    final raw = json is Map ? (json['groups'] ?? json['list']) : json;
+    if (raw is! List) return const <SourceFilterGroup>[];
+    final groups = <SourceFilterGroup>[];
+    for (final entry in raw) {
+      final group = parse(entry);
+      if (group != null) groups.add(group);
+    }
+    return List<SourceFilterGroup>.unmodifiable(groups);
+  }
+}
+
+/// 筛选标签组里的一个选项。
+class SourceFilterOption {
+  const SourceFilterOption({required this.id, required this.title});
+
+  /// 选项标识（图源内唯一；送回去时原样回传）。
+  final String id;
+
+  /// 展示名（如「国产剧」「2024」）。
+  final String title;
+
+  static SourceFilterOption? parse(Object? json) {
+    if (json is Map) {
+      final id = '${json['id'] ?? json['value'] ?? ''}'.trim();
+      final title = '${json['title'] ?? json['name'] ?? json['label'] ?? ''}'.trim();
+      if (title.isEmpty) return null;
+      return SourceFilterOption(id: id.isEmpty ? title : id, title: title);
+    }
+    // 纯字符串 / 数字写法：值即标识也即标题。
+    final text = '${json ?? ''}'.trim();
+    if (text.isEmpty) return null;
+    return SourceFilterOption(id: text, title: text);
+  }
+}
+
 /// 图源分类。
 class SourceCategory {
   const SourceCategory({required this.id, required this.title});

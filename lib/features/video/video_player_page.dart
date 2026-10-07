@@ -1113,6 +1113,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   Future<void> _togglePip() async {
     final session = _session;
     if (session == null) return;
+
+    // 画中画要能持续拿到**画面帧**：只有 MPV 内核有导出通道（AVPlayer 由
+    // video_player 插件驱动、插件不暴露 AVPlayerLayer；MDK 没有取帧接口）。
+    // 因此用其它内核点画中画时，先切到 MPV 再进——而不是给一个点了没反应的按钮。
+    if (session.state != PipState.active &&
+        _settings.kernel != PlayerKernel.mpv) {
+      final capable = _catalog.isAvailable(PlayerKernel.mpv);
+      if (!capable) {
+        _showToast('画中画需要 MPV 内核，本机没有可用的 MPV');
+        return;
+      }
+      _showToast('画中画需要 MPV 内核，已为你切换（${_settings.kernel.label} → MPV）');
+      await _applySettings(_settings.copyWith(kernel: PlayerKernel.mpv));
+      if (!mounted) return;
+    }
+
     final outcome = session.state == PipState.active
         ? await session.exit()
         : await session.enter();

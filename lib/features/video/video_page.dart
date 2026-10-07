@@ -17,6 +17,7 @@ import '../shell/board_tabs.dart';
 import '../source/add_source_button.dart';
 import '../source/source_section_page.dart';
 import 'source_playback.dart';
+import 'video_filter_page.dart';
 import 'video_play_target.dart';
 import 'video_player_page.dart';
 
@@ -80,6 +81,9 @@ class _VideoPageState extends State<VideoPage> {
 
   /// 浏览列表的封面图管线：**本板块自己**的（缓存落在 sections/video 之下）。
   SectionImagePipeline? _pipeline;
+
+  /// 筛选标签的短时缓存（用户要求：实时抓 + 短时缓存，减少重复请求）。
+  final VideoFilterCache _filterCache = VideoFilterCache();
 
   /// 浏览面换代：从图源管理页返回后 +1，重挂浏览面（列表与当前图源重算）。
   int _browseRevision = 0;
@@ -277,6 +281,30 @@ class _VideoPageState extends State<VideoPage> {
     }
   }
 
+  /// 视频筛选入口（用户要求：点「筛选」**直接跳转到独立的第一层页面**）。
+  ///
+  /// 层级：第一层只列一级大分类（电影 / 电视剧 / 综艺 / 动漫 / 短剧，来自脚本）
+  /// → 选中后进第二层填标签（剧集类型 / 题材 / 地区 / 年份 / 语言…）
+  /// → 应用后整条链路一起返回，宿主据此拉列表。
+  /// **不再有旧的「筛选下拉 / 分类抽屉」那条链路**（用户要求删掉）。
+  Future<({String? categoryId, Map<String, String> filters})?> _openFacetFilter(
+    BuildContext context,
+    DataSource source,
+    String? currentCategoryId,
+  ) async {
+    final selection = await Navigator.of(context).push<VideoFilterSelection>(
+      MaterialPageRoute<VideoFilterSelection>(
+        builder: (_) => VideoFilterCategoryPage(
+          source: source,
+          cache: _filterCache,
+          currentCategoryId: currentCategoryId,
+        ),
+      ),
+    );
+    if (selection == null) return null;
+    return (categoryId: selection.categoryId, filters: selection.filters);
+  }
+
   /// 剧集选择面板：一集一个条目，取消返回 null。
   Future<SourceChapter?> _pickChapter(
     SourceItem item,
@@ -466,6 +494,8 @@ class _VideoPageState extends State<VideoPage> {
       // 抢同一份板块注册表，真机上会报「图源存储不可用」）。
       revision: _browseRevision,
       onOpenItem: _playFromSelection,
+      // 视频筛选：一级分类（底部弹窗）→ 独立筛选子页（分页跳转模式，用户口径）。
+      onOpenFacetFilter: _openFacetFilter,
     );
   }
 }

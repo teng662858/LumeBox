@@ -318,6 +318,7 @@ class _VideoSource implements DataSource {
     String? categoryId,
     String? keyword,
     int page = 1,
+    Map<String, String>? filters,
   }) async =>
       SourceList(items: items, hasMore: false);
 

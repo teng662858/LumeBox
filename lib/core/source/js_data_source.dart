@@ -38,6 +38,9 @@ class JsSourceContract {
 
   static const String categories = 'categories';
   static const String list = 'list';
+
+  /// 筛选标签（可选契约；脚本没实现时按「不支持」处理）。
+  static const String filters = 'filters';
   static const String detail = 'detail';
   static const String chapters = 'chapters';
   static const String content = 'content';
@@ -61,7 +64,12 @@ class JsSourceContract {
 /// 缓存起来，同一份内容第二次读不再走脚本；列表与章节内容不缓存（变化快、
 /// 体积大）。缓存由组合根注入（正式实现是 [SectionMemoryCache]），测试不传
 /// 就没有缓存行为；脚本被覆盖导入 / 图源被删除时由注册表负责作废。
-class JsDataSource implements DataSource, DanmakuCapable, DanmakuPostCapable {
+class JsDataSource
+    implements
+        DataSource,
+        DanmakuCapable,
+        DanmakuPostCapable,
+        FilterCapable {
   JsDataSource({
     required this.id,
     required this.name,
@@ -96,16 +104,33 @@ class JsDataSource implements DataSource, DanmakuCapable, DanmakuPostCapable {
   }
 
   @override
+  Future<List<SourceFilterGroup>> filters() async {
+    // 标签组不缓存（用户要求「每次打开实时抓，加短时缓存」——短时缓存放在
+    // 视频板块的 VideoFilterCache 里，App 侧统一 TTL，脚本只管取最新值）。
+    return SourceFilterGroup.parseAll(
+      await _invoke(JsSourceContract.filters),
+    );
+  }
+
+  @override
   Future<SourceList> list({
     String? categoryId,
     String? keyword,
     int page = 1,
+    Map<String, String>? filters,
   }) async {
     final argument = <String, Object?>{'page': page < 1 ? 1 : page};
     final category = categoryId?.trim() ?? '';
     if (category.isNotEmpty) argument['categoryId'] = category;
     final search = keyword?.trim() ?? '';
     if (search.isNotEmpty) argument['keyword'] = search;
+    // 筛选条件原样交给脚本（组 id → 选中项 id，多选以英文逗号相连）。
+    if (filters != null && filters.isNotEmpty) {
+      argument['filters'] = <String, String>{
+        for (final entry in filters.entries)
+          if (entry.value.trim().isNotEmpty) entry.key: entry.value.trim(),
+      };
+    }
     // 列表不缓存：分类切换 / 搜索 / 刷新都要求看到当下内容。
     return parseSourceList(await _invoke(JsSourceContract.list, argument));
   }

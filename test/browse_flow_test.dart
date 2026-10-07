@@ -101,6 +101,7 @@ class _CoverSource implements DataSource {
     String? categoryId,
     String? keyword,
     int page = 1,
+    Map<String, String>? filters,
   }) async =>
       const SourceList(
         items: <SourceItem>[
@@ -151,6 +152,7 @@ class _NoCategorySource implements DataSource {
     String? categoryId,
     String? keyword,
     int page = 1,
+    Map<String, String>? filters,
   }) async =>
       const SourceList(
         items: <SourceItem>[SourceItem(id: 'a', title: '条目')],

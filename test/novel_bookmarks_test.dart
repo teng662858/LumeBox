@@ -323,6 +323,7 @@ class _NovelSource implements DataSource {
     String? categoryId,
     String? keyword,
     int page = 1,
+    Map<String, String>? filters,
   }) async =>
       const SourceList();
 

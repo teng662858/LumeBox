@@ -56,6 +56,7 @@ class MockDataSource implements DataSource {
     String? categoryId,
     String? keyword,
     int page = 1,
+    Map<String, String>? filters,
   }) async {
     await _tick();
     final trimmedKeyword = keyword?.trim() ?? '';

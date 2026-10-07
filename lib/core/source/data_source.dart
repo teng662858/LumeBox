@@ -32,7 +32,14 @@ abstract interface class DataSource {
   Future<List<SourceCategory>> categories();
 
   /// 列表：分类浏览、搜索与默认列表共用同一入口。
-  Future<SourceList> list({String? categoryId, String? keyword, int page = 1});
+  /// 列表 / 搜索。视图层不再传 [filters]（视频筛选由 [VideoFilterPage] 组好后
+  /// 经 [VideoBrowseRequest] 送回），这里保留参数是为了让筛选条件能一路带到脚本。
+  Future<SourceList> list({
+    String? categoryId,
+    String? keyword,
+    int page = 1,
+    Map<String, String>? filters,
+  });
 
   /// 详情。条目不存在时返回 null。
   Future<SourceDetail?> detail(String itemId);

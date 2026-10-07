@@ -453,7 +453,12 @@ class _SearchSource implements DataSource {
   Future<List<SourceCategory>> categories() async => const <SourceCategory>[];
 
   @override
-  Future<SourceList> list({String? categoryId, String? keyword, int page = 1}) async {
+  Future<SourceList> list({
+    String? categoryId,
+    String? keyword,
+    int page = 1,
+    Map<String, String>? filters,
+  }) async {
     if (keyword != null && keyword.isNotEmpty) keywords.add(keyword);
     return SourceList(items: items, hasMore: false);
   }
