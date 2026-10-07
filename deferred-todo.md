@@ -268,6 +268,15 @@
 
 ---
 
+## 可测性缺口：VideoPage 缺少设置注入点
+
+防盗链降级（MDK → MPV）的实现没有直接单测：`VideoProfileSettingsStore` 按板块共享，
+在用例里预置「内核 = MDK」会泄漏给同文件后续用例（实测带崩 7 条）。
+**要补覆盖**：给 `VideoPage` 加一个 `settings` / `store` 注入参数（照现有
+`catalog` / `playerFactory` 那套做法），再写「预置 MDK + 带请求头的媒体 → 实际建 MPV」。
+
+---
+
 ## 图片管线：重试已做，但**缺直接覆盖**
 
 图片下载已加「失败重试 + 并发 4→6」（见 `lib/core/reading/image_pipeline.dart`：
