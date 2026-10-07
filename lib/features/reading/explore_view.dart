@@ -11,6 +11,7 @@ import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
+import '../shell/section_preloader.dart';
 import '../source/source_section_page.dart';
 import 'poster_card.dart';
 import 'source_bar.dart';
@@ -97,6 +98,19 @@ class _ExploreViewState extends State<ExploreView> {
   bool _switching = false;
   bool _searching = false;
 
+  /// 正在为哪一页发请求（0 = 空闲）：挡住「同一页被并发请求两次」。
+  ///
+  /// 光靠 `_loadingMore` 不够：触底通知一帧能来好几次，而 `setState` 之后还有
+  /// await 边界，重复请求会真的发出去（真机表现为同一页拉两遍、列表里出现重复条目）。
+  int _pendingPage = 0;
+
+  /// 触底预加载距离：距底部还有这么多像素就开始取下一页（不必真的滑到底）。
+  static const double _preloadExtent = 600;
+
+  /// 请求代号：下拉刷新 / 换源 / 换筛选都会 +1；过期结果直接丢弃，
+  /// 否则旧请求回来会把新列表覆盖回去。
+  int _requestSeq = 0;
+
   /// 首页列表失败的原因（分类失败不算）。
   Object? _failure;
 
@@ -114,6 +128,9 @@ class _ExploreViewState extends State<ExploreView> {
   @override
   void dispose() {
     _layoutSettings.removeListener(_onLayoutChanged);
+    // 离开页面即作废在飞请求的结果（回来的数据直接丢，不再 setState），
+    // 也不让它们继续占着网络队列拖慢下一个页面。
+    _requestSeq++;
     _search.dispose();
     _manager.close();
     super.dispose();
@@ -185,13 +202,12 @@ class _ExploreViewState extends State<ExploreView> {
         );
         return;
       }
+      _resetPagination();
       setState(() {
         _sources = sources;
         _current = current;
         _source = source;
         _state = SourceStateKind.ready;
-        _items.clear();
-        _page = 1;
         _failure = null;
       });
       await _loadCategories();
@@ -229,29 +245,68 @@ class _ExploreViewState extends State<ExploreView> {
     }
   }
 
+  /// 重置分页：页码回 1、清空列表与「没有更多」标记。
+  ///
+  /// 换图源、换分类 / 关键词、下拉刷新都走这里——**每一个图源单独维护自己的
+  /// 分页状态**（用户点名）：换源时必须清干净，否则会带着旧源的页码与
+  /// hasMore 继续翻页。
+  void _resetPagination() {
+    _page = 1;
+    _hasMore = false;
+    _loadingMore = false;
+    _loadMoreFailed = false;
+    _pendingPage = 0;
+    _items.clear();
+    _requestSeq++;
+  }
+
   /// 取一页列表。[more] 为真时追加，否则替换。
   Future<void> _loadPage({bool more = false}) async {
     final source = _source;
     if (source == null) return;
+    final page = more ? _page + 1 : 1;
     if (more) {
-      if (_loadingMore || !_hasMore) return;
+      // 触底通知来得密集，三重条件都要满足才发请求：还有下一页、没有在飞的、
+      // 且这一页不是正在飞的那一页。
+      if (_loadingMore || !_hasMore || _pendingPage == page) return;
       setState(() {
         _loadingMore = true;
         _loadMoreFailed = false;
       });
     } else {
+      if (_pendingPage == 1) return; // 首页已经在飞
+      _resetPagination();
       setState(() {
         _failure = null;
+        _items.clear();
       });
+      // 预热命中：直接吃切页签时提前取好的第一页（省掉一次网络往返）。
+      final warm = SectionPreloader.takeWarmPage(
+        widget.section,
+        sourceId: source.id,
+        categoryId: _categoryId,
+        keyword: _keyword,
+      );
+      if (warm != null) {
+        setState(() {
+          _page = 1;
+          _hasMore = warm.hasMore;
+          _loadingMore = false;
+          _items.addAll(warm.items);
+        });
+        _preloadCovers(warm.items);
+        return;
+      }
     }
-    final page = more ? _page + 1 : 1;
+    _pendingPage = page;
+    final seq = _requestSeq;
     try {
       final result = await source.list(
         categoryId: _categoryId,
         keyword: _keyword.isEmpty ? null : _keyword,
         page: page,
       );
-      if (!mounted) return;
+      if (!mounted || seq != _requestSeq) return;
       setState(() {
         _page = page;
         _hasMore = result.hasMore;
@@ -264,28 +319,45 @@ class _ExploreViewState extends State<ExploreView> {
             ..addAll(result.items);
         }
       });
+      _preloadCovers(result.items);
     } catch (error) {
       if (error is! SourceException) {
         LumeLog.error(error, StackTrace.current);
-        if (!mounted) return;
-        setState(() {
-          _loadingMore = false;
-          _loadMoreFailed = true;
-          _hasMore = false;
-        });
-        return;
+      } else {
+        LumeLog.warn('[${source.id}] 列表获取失败: $error');
       }
-      LumeLog.warn('[${source.id}] 列表获取失败: $error');
-      if (!mounted) return;
+      if (!mounted || seq != _requestSeq) return;
       setState(() {
         _loadingMore = false;
         if (more) {
+          // 失败**不**清 hasMore：清掉就再也拉不动了（「提前标记没有更多」的那种）。
           _loadMoreFailed = true;
         } else {
           _failure = error;
         }
       });
+    } finally {
+      if (_pendingPage == page) _pendingPage = 0;
     }
+  }
+
+  /// 下拉刷新：重置分页 + 重取分类 + 重取第 1 页（用户点名三件事都要做）。
+  Future<void> _refresh() async {
+    // 预热缓存作废：用户明确要求要新的。
+    SectionPreloader.discard(widget.section);
+    await _loadCategories();
+    await _loadPage();
+  }
+
+  /// 预取这一页的封面：列表还在滑的时候图就已经在路上了。
+  void _preloadCovers(List<SourceItem> items) {
+    widget.pipeline.preload(
+      <String>[
+        for (final item in items)
+          if ((item.cover ?? '').trim().isNotEmpty) item.cover!.trim(),
+      ],
+      targetWidth: 160,
+    );
   }
 
   void _settle({
@@ -311,6 +383,7 @@ class _ExploreViewState extends State<ExploreView> {
 
   Future<void> _selectSource(String sourceId) async {
     if (sourceId == _current?.id || _switching) return;
+    SectionPreloader.discard(widget.section);
     setState(() => _switching = true);
     final selected = await _manager.select(sourceId);
     if (!mounted) return;
@@ -575,12 +648,18 @@ class _ExploreViewState extends State<ExploreView> {
   }
 
   Widget _buildGrid({int crossAxisCount = 3}) {
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification.metrics.extentAfter < 400) _loadPage(more: true);
-        return false;
-      },
-      child: GridView.builder(
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification.metrics.extentAfter < _preloadExtent) {
+            _loadPage(more: true);
+          }
+          return false;
+        },
+        child: GridView.builder(
+        // 内容不足一屏时也要能下拉刷新。
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + _keyboardInset(context)),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
@@ -593,23 +672,29 @@ class _ExploreViewState extends State<ExploreView> {
         itemBuilder: (context, index) {
           if (index == _items.length) return _buildFooter();
           final item = _items[index];
-          return _PosterTile(
-            item: item,
-            pipeline: widget.pipeline,
-            onTap: () => _open(item),
-          );
-        },
+            return _PosterTile(
+              item: item,
+              pipeline: widget.pipeline,
+              onTap: () => _open(item),
+            );
+          },
+        ),
       ),
     );
   }
 
   Widget _buildList() {
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification.metrics.extentAfter < 400) _loadPage(more: true);
-        return false;
-      },
-      child: ListView.separated(
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification.metrics.extentAfter < _preloadExtent) {
+            _loadPage(more: true);
+          }
+          return false;
+        },
+        child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + _keyboardInset(context)),
         itemCount: _items.length + 1,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
@@ -664,8 +749,9 @@ class _ExploreViewState extends State<ExploreView> {
                 Icon(Icons.chevron_right, color: LumeTheme.muted),
               ],
             ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

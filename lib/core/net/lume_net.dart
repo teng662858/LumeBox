@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
 import '../util/lume_log.dart';
+import 'dns_cache.dart';
 import 'network_queue.dart';
 import 'network_settings.dart';
 
@@ -81,26 +82,39 @@ class LumeNet {
   /// 客户端，因此每请求按代理配置决定：直连用默认客户端，配了代理就套一层。
   static Future<NetworkResponse> sendDirect(NetworkRequest request) async {
     final proxy = request.proxy.trim();
+    // 客户端**复用**（见 [_proxyClient]）：这里不再「用完就关」——每次新建再关闭
+    // 等于每个请求都重新做一次 TCP + TLS 握手，开了代理之后尤其明显
+    // （真机反馈「即使开启代理速度依然不理想」，根因之一就是它）。
     final client = proxy.isEmpty ? _sharedClient() : _proxyClient(proxy);
-    try {
-      final outgoing = http.Request(request.method, Uri.parse(request.url));
-      outgoing.headers.addAll(request.headers);
-      if (request.body != null) outgoing.body = request.body!;
-      final streamed = await client.send(outgoing).timeout(_settings.timeout);
-      final bytes = await streamed.stream.toBytes().timeout(_settings.timeout);
-      return NetworkResponse(
-        statusCode: streamed.statusCode,
-        body: bytes,
-        headers: streamed.headers,
-      );
-    } finally {
-      if (!identical(client, _shared)) client.close();
-    }
+    final outgoing = http.Request(request.method, Uri.parse(request.url));
+    outgoing.headers.addAll(request.headers);
+    if (request.body != null) outgoing.body = request.body!;
+    final streamed = await client.send(outgoing).timeout(_settings.timeout);
+    final bytes = await streamed.stream.toBytes().timeout(_settings.timeout);
+    return NetworkResponse(
+      statusCode: streamed.statusCode,
+      body: bytes,
+      headers: streamed.headers,
+    );
   }
 
   static http.Client? _shared;
 
-  static http.Client _sharedClient() => _shared ??= http.Client();
+  /// 按代理地址缓存的客户端：同一个代理最多一个（连接池与 DNS 缓存才有效）。
+  static final Map<String, http.Client> _proxyClients = <String, http.Client>{};
+
+  /// 域名解析缓存：直连与代理客户端共用一份（同一个域名不该被解析两遍）。
+  static final DnsCache dnsCache = DnsCache();
+
+  static http.Client _sharedClient() => _shared ??= _newClient();
+
+  /// 建一个带域名缓存的客户端（见 [DnsCache.attach]）：
+  /// 直连与代理都走这里，连接池与解析缓存才都成立。
+  static http.Client _newClient() {
+    final inner = HttpClient();
+    DnsCache.attach(inner, cache: dnsCache);
+    return IOClient(inner);
+  }
 
   /// http / https 代理；SOCKS 如实降级为直连并记一条告警。
   static http.Client _proxyClient(String proxy) {
@@ -119,8 +133,13 @@ class LumeNet {
       return _sharedClient();
     }
     final port = uri.hasPort ? uri.port : (scheme == 'https' ? 443 : 80);
-    return IOClient(
-      HttpClient()..findProxy = (target) => 'PROXY ${uri.host}:$port',
-    );
+    final key = '${uri.host}:$port';
+    return _proxyClients.putIfAbsent(key, () {
+      final inner = HttpClient()
+        ..findProxy = (target) => 'PROXY ${uri.host}:$port';
+      // 代理客户端同样享受域名缓存（HTTPS 走 CONNECT，解析的是目标站点）。
+      DnsCache.attach(inner, cache: dnsCache);
+      return IOClient(inner);
+    });
   }
 }

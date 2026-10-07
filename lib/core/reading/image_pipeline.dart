@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -253,6 +254,11 @@ class SectionImagePipeline {
   }
 
   /// 字节来源顺序：磁盘缓存 → 网络。网络结果落盘，跨会话复用。
+  ///
+  /// 缓存判定用**同步** `stat`（`existsSync` / `lengthSync`）：这两个只是元数据
+  /// 系统调用（微秒级），而一屏封面也就几十次。**不用异步版**是踩过坑的：
+  /// `flutter_test` 的测试体跑在假时钟里，真实文件 IO 的完成回调等不到，
+  /// 读缓存这条路径会把整个用例挂死（comic_reader 全套由绿变红）。
   Future<Uint8List?> _loadBytes(String url) async {
     final file = File(_diskPath(url));
     try {
@@ -367,6 +373,10 @@ class SectionImagePipeline {
   /// 落盘路径：板块目录 + 由 URL 推出的十六进制文件名。
   String _diskPath(String url) =>
       p.join(cacheDir, '${ReadingStore.cacheKey(url)}.img');
+
+  /// 某张图的磁盘缓存文件路径（与 [_diskPath] 同一套规则，供测试与排障定位）。
+  @visibleForTesting
+  String cachePathFor(String url) => _diskPath(url.trim());
 }
 
 /// 解码图的内存缓存：按字节预算做 LRU，带引用计数与钉住集合。

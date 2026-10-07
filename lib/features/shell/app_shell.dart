@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
+import '../../core/source/source.dart';
 import '../../core/shell/shell_settings.dart';
 import '../../core/theme/lume_theme.dart';
 import '../cat/cat_page.dart';
@@ -12,6 +15,7 @@ import '../comic/comic_page.dart';
 import '../novel/novel_page.dart';
 import '../settings/settings_page.dart';
 import '../video/video_page.dart';
+import 'section_preloader.dart';
 import 'shell_dock.dart';
 
 /// 主导航：五个页签（小说 / 漫画 / 视频 / 猫源 / 设置）。
@@ -191,7 +195,27 @@ class _AppShellState extends State<AppShell> {
 
   void _select(String id) {
     if (id == _activeId) return;
+    // **先预热再切**（真机反馈：切板块要等、进页面才开始发请求）。这里趁手指刚
+    // 点下去、页面还没构建的那一小段，把板块运行时（阅读库 + 源引擎）与首页
+    // 第一页提前拉起来；页面构建后能直接吃这口热饭。
+    // 预热失败不影响任何事（页面照旧自己取），见 [SectionPreloader]。
+    _warmUp(id);
     setState(() => _activeId = id);
+  }
+
+  /// 预热目标板块（只预热有源运行时的板块；失败静默）。
+  void _warmUp(String id) {
+    final section = sectionFromId(id);
+    if (section == null) return;
+    if (!LumeSources.runtimeAvailableFor(section)) return;
+    // 不 await：预热是「提前做」，绝不能拖慢页签切换本身。
+    unawaited(
+      SectionPreloader.warm(
+        section,
+        manager: LumeSources.manager(section),
+        openLibrary: () => ReadingLibrary.open(section).then((_) {}),
+      ),
+    );
   }
 
   @override

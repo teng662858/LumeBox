@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/reading/reading.dart';
@@ -7,6 +9,7 @@ import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/state_view.dart';
 import '../reading/poster_card.dart';
+import '../shell/section_preloader.dart';
 import 'detail_page.dart';
 
 /// 图源浏览页：板块业务页里「进详情」的独立入口。
@@ -60,13 +63,42 @@ class _BrowseViewState extends State<BrowseView> {
   final TextEditingController _search = TextEditingController();
 
   List<SourceCategory> _categories = const <SourceCategory>[];
-  List<SourceItem> _items = const <SourceItem>[];
+  final List<SourceItem> _items = <SourceItem>[];
   String? _categoryId;
   String _keyword = '';
   bool _loading = true;
 
   /// 列表失败的原因（分类失败不算：拿不到分类就当图源没有分类）。
   Object? _failure;
+
+  // ------------------------------------------------------------------ 分页
+  //
+  // 真机反馈：列表只能看到第 1 页，滑到底不再拉下一页。这一版把分页做齐：
+  // 页码 / hasMore / 每页一次的请求保护 / 触底预加载 / 下拉刷新重置。
+
+  /// 当前已加载到第几页（1 起）。
+  int _page = 1;
+
+  /// 还有没有下一页（由图源返回的 [SourceList.hasMore] 决定）。
+  bool _hasMore = false;
+
+  /// 正在取下一页（**同时充当重复请求保护**：请求在飞时不再发第二次）。
+  bool _loadingMore = false;
+
+  /// 下一页加载失败（列表尾部给「点击重试」）。
+  bool _loadMoreFailed = false;
+
+  /// 正在为哪一页发请求（0 = 空闲）。用它挡住「同一页被并发请求两次」——
+  /// 触底通知一帧能来好几次，只靠 `_loadingMore` 不够，因为 setState 之后
+  /// 还有 await 边界。
+  int _pendingPage = 0;
+
+  /// 触底预加载距离：距底部还有这么多像素时就开始取下一页（不必真的滑到底）。
+  static const double _preloadExtent = 600;
+
+  /// 列表请求的代号：下拉刷新 / 换源 / 换筛选都会 +1，
+  /// 过期请求回来时直接丢弃（否则旧结果会把新列表覆盖回去）。
+  int _requestSeq = 0;
 
   @override
   void initState() {
@@ -76,6 +108,8 @@ class _BrowseViewState extends State<BrowseView> {
 
   @override
   void dispose() {
+    // 离开页面即作废在飞的请求结果（回来的数据直接丢，不再 setState）。
+    _requestSeq++;
     _search.dispose();
     super.dispose();
   }
@@ -92,31 +126,142 @@ class _BrowseViewState extends State<BrowseView> {
     await _load();
   }
 
-  /// 取第一页。分页语义已由接口的 [SourceList.hasMore] 预留，Phase1 不翻页。
+  /// 重置分页：页码回 1、清空列表与「没有更多」标记。
+  ///
+  /// 三个入口共用它：下拉刷新、换分类 / 换关键词、换图源（组件按图源 key 重挂，
+  /// 但同一次挂载内换了筛选也要重来）。
+  void _resetPagination() {
+    _page = 1;
+    _hasMore = false;
+    _loadingMore = false;
+    _loadMoreFailed = false;
+    _pendingPage = 0;
+    _requestSeq++;
+  }
+
+  /// 取第一页（替换列表）。分页状态一并重置。
   Future<void> _load() async {
+    _resetPagination();
+    final seq = ++_requestSeq;
     setState(() {
       _loading = true;
       _failure = null;
+      _items.clear();
     });
+    // 预热命中：切页签时已经取好的第一页直接用（省掉一次网络往返）。
+    final warm = SectionPreloader.takeWarmPage(
+      widget.dataSource.section,
+      sourceId: widget.dataSource.id,
+      categoryId: _categoryId,
+      keyword: _keyword,
+    );
+    if (warm != null) {
+      if (!mounted || seq != _requestSeq) return;
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(warm.items);
+        _page = 1;
+        _hasMore = warm.hasMore;
+        _loading = false;
+      });
+      _preloadCovers(warm.items);
+      return;
+    }
     try {
       final result = await widget.dataSource.list(
         categoryId: _categoryId,
         keyword: _keyword.isEmpty ? null : _keyword,
         page: 1,
       );
-      if (!mounted) return;
+      if (!mounted || seq != _requestSeq) return;
       setState(() {
-        _items = result.items;
+        _items
+          ..clear()
+          ..addAll(result.items);
+        _page = 1;
+        _hasMore = result.hasMore;
         _loading = false;
       });
+      _preloadCovers(result.items);
     } catch (error) {
       if (error is! SourceException) rethrow;
-      if (!mounted) return;
+      if (!mounted || seq != _requestSeq) return;
       setState(() {
         _loading = false;
         _failure = error;
       });
     }
+  }
+
+  /// 下拉刷新：重置分页 + 重取分类 + 重取第 1 页。
+  ///
+  /// 三件事都做齐（用户点名）：**页码回 1、清掉 hasMore、清空列表缓存**——
+  /// 否则刷新之后要么看到旧内容混着新内容，要么明明还有下一页却停在「没有更多了」。
+  Future<void> _refresh() async {
+    SectionPreloader.discard(widget.dataSource.section);
+    try {
+      final categories = await widget.dataSource.categories();
+      if (mounted) setState(() => _categories = categories);
+    } on SourceException catch (error) {
+      LumeLog.warn('[${widget.dataSource.id}] 刷新分类失败: $error');
+    }
+    await _load();
+  }
+
+  /// 取下一页并追加。触底时调用；重复调用由 [_pendingPage] 挡掉。
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || !_hasMore) return;
+    final next = _page + 1;
+    if (_pendingPage == next) return; // 同一页已经在飞
+    _pendingPage = next;
+    final seq = _requestSeq;
+    setState(() {
+      _loadingMore = true;
+      _loadMoreFailed = false;
+    });
+    try {
+      final result = await widget.dataSource.list(
+        categoryId: _categoryId,
+        keyword: _keyword.isEmpty ? null : _keyword,
+        page: next,
+      );
+      if (!mounted || seq != _requestSeq) return;
+      setState(() {
+        _page = next;
+        _hasMore = result.hasMore;
+        _items.addAll(result.items);
+        _loadingMore = false;
+      });
+      _preloadCovers(result.items);
+    } catch (error) {
+      if (error is! SourceException) {
+        LumeLog.error(error, StackTrace.current);
+      } else {
+        LumeLog.warn('[${widget.dataSource.id}] 下一页取失败: $error');
+      }
+      if (!mounted || seq != _requestSeq) return;
+      // 失败**不**清 hasMore：清掉就再也拉不动了（真机反馈的那类「提前标记没有更多」）。
+      setState(() {
+        _loadingMore = false;
+        _loadMoreFailed = true;
+      });
+    } finally {
+      if (_pendingPage == next) _pendingPage = 0;
+    }
+  }
+
+  /// 预取这一页的封面：列表还在滑的时候图就已经在路上了。
+  void _preloadCovers(List<SourceItem> items) {
+    final pipeline = widget.pipeline;
+    if (pipeline == null) return;
+    pipeline.preload(
+      <String>[
+        for (final item in items)
+          if ((item.cover ?? '').trim().isNotEmpty) item.cover!.trim(),
+      ],
+      targetWidth: 160,
+    );
   }
 
   void _selectCategory(String? categoryId) {
@@ -234,54 +379,105 @@ class _BrowseViewState extends State<BrowseView> {
         onRetry: _load,
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      itemCount: _items.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final item = _items[index];
-        return GlassCard(
-          padding: const EdgeInsets.all(14),
-          onTap: () => _openItem(item),
-          child: Row(
-            children: <Widget>[
-              ..._buildCover(item),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: LumeTheme.textPrimary,
-                      ),
-                    ),
-                    if (item.subtitle != null) ...<Widget>[
-                      const SizedBox(height: 4),
-                      Text(
-                        item.subtitle!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: LumeTheme.muted,
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification.metrics.extentAfter < _preloadExtent) _loadMore();
+          return false;
+        },
+        child: ListView.separated(
+          // 列表短于一屏时也要能下拉刷新。
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          itemCount: _items.length + 1,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (context, index) {
+            if (index == _items.length) return _buildFooter();
+            final item = _items[index];
+            return GlassCard(
+              padding: const EdgeInsets.all(14),
+              onTap: () => _openItem(item),
+              child: Row(
+                children: <Widget>[
+                  ..._buildCover(item),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: LumeTheme.textPrimary,
+                          ),
                         ),
-                      ),
-                    ],
-                  ],
-                ),
+                        if (item.subtitle != null) ...<Widget>[
+                          const SizedBox(height: 4),
+                          Text(
+                            item.subtitle!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: LumeTheme.muted,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: LumeTheme.muted),
+                ],
               ),
-              Icon(Icons.chevron_right, color: LumeTheme.muted),
-            ],
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
+  }
+
+  /// 列表尾部：加载中 / 加载失败可重试 / 到底了 / 还有下一页（占位待拉）。
+  Widget _buildFooter() {
+    if (_loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 18),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2.2),
+          ),
+        ),
+      );
+    }
+    if (_loadMoreFailed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Center(
+          child: TextButton(
+            onPressed: _loadMore,
+            child: const Text('加载失败，点击重试'),
+          ),
+        ),
+      );
+    }
+    if (!_hasMore && _items.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        child: Center(
+          child: Text(
+            '没有更多了',
+            style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+          ),
+        ),
+      );
+    }
+    return const SizedBox(height: 8);
   }
 }
 
