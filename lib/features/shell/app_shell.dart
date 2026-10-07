@@ -74,6 +74,9 @@ class _AppShellState extends State<AppShell> {
   String _activeId = _pageCatalog.first.id;
 
   static const double _dockHeight = 64;
+  /// Dock 与屏幕左右 / 底边的留白。用户要求「底部导航栏整体往下移一点」，
+  /// 因此底边留白收紧（12 → 6）——左右仍是 12，Dock 只是更贴近屏幕下沿。
+  static const double _dockBottomMargin = 6;
   static const double _dockMargin = 12;
   static const double _dockSpacing = 8;
 
@@ -238,7 +241,8 @@ class _AppShellState extends State<AppShell> {
   /// 一起算进去：只滑「自身高度」会让按钮停在屏幕里，等于没藏。
   /// 用绝对像素而不是 `AnimatedSlide` 的「自身尺寸倍数」：那个倍数会随图标内边距
   /// 变化而漂移，是条看不见的耦合。这里多给一点余量，滑出屏幕即可。
-  static const double _entryHideTravel = _dockHeight + _dockMargin * 2 + _dockSpacing + 64;
+  static const double _entryHideTravel =
+      _dockHeight + _dockMargin + _dockBottomMargin + _dockSpacing + 64;
 
   /// 「设置页被隐藏」时的恢复入口。
   ///
@@ -255,7 +259,7 @@ class _AppShellState extends State<AppShell> {
   Widget _buildSettingsEntry({required bool visible}) {
     return Positioned(
       left: _dockMargin,
-      bottom: _dockMargin,
+      bottom: _dockBottomMargin,
       child: SafeArea(
         child: TweenAnimationBuilder<double>(
           tween: Tween<double>(begin: 0, end: visible ? 0 : _entryHideTravel),

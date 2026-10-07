@@ -326,6 +326,13 @@ class SectionImagePipeline {
     try {
       // 图片同样走全局网络队列：单域名并发（2~3）保护图床，429/503 自动退避。
       // 队列管「什么时候发」，这里只管「拿到字节后怎么用」。
+      // 图床的防盗链门道：不少站点只认「Referer 是自己的域名」。
+      // 这里按图片自己的 origin 补一个 Referer（与浏览器直接打开图片时一致），
+      // 并带上正常的 Accept——真机反馈「封面很多加载不出来」，这是最常见的一条。
+      final origin = Uri.tryParse(url);
+      final referer = origin == null || !origin.hasScheme
+          ? null
+          : '${origin.scheme}://${origin.host}/';
       final response = await LumeNet.queue.send(
         NetworkRequest(
           url: url,
@@ -333,6 +340,8 @@ class SectionImagePipeline {
             'User-Agent': LumeNet.settings.userAgent.trim().isEmpty
                 ? LumeHttp.defaultUserAgent
                 : LumeNet.settings.userAgent.trim(),
+            'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            'Referer': ?referer,
           },
           source: '图片缓存',
           proxy: LumeNet.settings.proxy,

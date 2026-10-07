@@ -154,24 +154,25 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Size get preferredSize => Size.fromHeight(
-        (toolbarHeight ?? kToolbarHeight) + (bottom?.preferredSize.height ?? 0),
+        (toolbarHeight ?? kLumeToolbarHeight) +
+        (bottom?.preferredSize.height ?? 0),
       );
 
   @override
   Widget build(BuildContext context) {
     return AppBar(
       title: title,
-      // 右上角那排图标**收紧**（用户要求「收紧点」）：默认 IconButton 是
-      // 48×48 + 内边距，四个图标连排会占掉大半个标题栏。这里统一压到 38 的
-      // 触达尺寸、去掉内边距并把间距收到最小——图标本身大小不变，只是挨得近。
-      actionsPadding: const EdgeInsets.only(right: 6),
+      // 右上角那排图标：默认 IconButton 是 48×48 + 内边距，四个连排会占掉大半
+      // 个标题栏。这里压到 42 的触达尺寸、去掉内边距——比默认紧凑，但不至于
+      // 挤在一起（用户反馈「收得太紧了，放开一点点」，因此从 38 放到 42）。
+      actionsPadding: const EdgeInsets.only(right: 10),
       actions: actions == null
           ? null
           : <Widget>[
               IconButtonTheme(
                 data: IconButtonThemeData(
                   style: IconButton.styleFrom(
-                    minimumSize: const Size(38, 38),
+                    minimumSize: const Size(42, 42),
                     padding: EdgeInsets.zero,
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -186,7 +187,7 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
       bottom: bottom,
       leading: leading,
       automaticallyImplyLeading: automaticallyImplyLeading ?? true,
-      toolbarHeight: toolbarHeight,
+      toolbarHeight: toolbarHeight ?? kLumeToolbarHeight,
       centerTitle: centerTitle,
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
@@ -208,6 +209,12 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
 ///
 /// 标题默认使用项目名称；板块页面传入对应板块名（小说 / 漫画等）。
 ///
+/// 顶栏工具栏高度。
+///
+/// 比 Material 默认的 [kToolbarHeight]（56）矮 4：用户要求「页面顶部导航栏整体
+/// 往上移一点」——栏更矮，标题与图标随之上移，内容区也多出这 4 点。
+const double kLumeToolbarHeight = 52;
+
 /// 两种行为：
 /// - **[behindBar] = false（默认）**：内容和以前一样从顶栏下方开始，顶栏是一层
 ///   半透明磨砂条（能透出页面底色与渐变，但内容不会从栏下滚过）；
@@ -263,7 +270,7 @@ class GlassScaffold extends StatelessWidget {
         context.dependOnInheritedWidgetOfExactType<_GlassBarHeight>();
     if (provided != null) return provided.height;
     return MediaQuery.paddingOf(context).top +
-        kToolbarHeight +
+        kLumeToolbarHeight +
         (extra > 0 ? extra : 0);
   }
 
@@ -275,7 +282,7 @@ class GlassScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     // 顶栏总高度：用壳自己的 context 读（此时还没被 Scaffold 注入顶栏高度）。
     final height =
-        MediaQuery.paddingOf(context).top + kToolbarHeight + bottomExtra;
+        MediaQuery.paddingOf(context).top + kLumeToolbarHeight + bottomExtra;
     return Scaffold(
       extendBodyBehindAppBar: true,
       resizeToAvoidBottomInset: resizeToAvoidBottomInset ?? true,
