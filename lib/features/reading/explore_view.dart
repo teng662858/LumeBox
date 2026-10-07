@@ -533,6 +533,7 @@ class _ExploreViewState extends State<ExploreView> {
     final result = await AggregateSearch.run(
       sources: _sources,
       keyword: keyword,
+      categoryId: _categoryId,
       open: (sourceId) => _manager.open(sourceId),
     );
     if (!mounted || seq != _requestSeq) return;
@@ -773,6 +774,38 @@ class _ExploreViewState extends State<ExploreView> {
     final byId = <String, SearchHit>{
       for (final hit in _hits!) hit.item.id: hit,
     };
+    // 结果页同样支持布局切换（用户点名）：网格档用海报卡，元信息进脚注。
+    if (_mode != BrowseLayoutMode.list) {
+      return RefreshIndicator(
+        onRefresh: () async => _runAggregate(_resultKeyword),
+        child: GridView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            8,
+            16,
+            16 + _keyboardInset(context),
+          ),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: _mode == BrowseLayoutMode.grid2 ? 2 : 3,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: _mode == BrowseLayoutMode.grid2 ? 0.72 : 0.62,
+          ),
+          itemCount: hits.length,
+          itemBuilder: (context, index) {
+            final item = hits[index];
+            final hit = byId[item.id];
+            return _PosterTile(
+              item: item,
+              pipeline: widget.pipeline,
+              meta: _resultMeta(item, hit),
+              onTap: () => _open(item),
+            );
+          },
+        ),
+      );
+    }
     return RefreshIndicator(
       onRefresh: () async => _runAggregate(_resultKeyword),
       child: ListView.separated(
@@ -821,13 +854,19 @@ class _ExploreViewState extends State<ExploreView> {
     );
   }
 
-  /// 搜索结果条目信息：标题 + 时长 / 来源 / 更新时间（缺项自动省略，不编造）。
-  Widget _searchResultInfo(SourceItem item, SearchHit? hit) {
+  /// 搜索结果条目的元信息串（时长 / 来源 / 更新时间，缺项自动省略，不编造）。
+  static String? _resultMeta(SourceItem item, SearchHit? hit) {
     final pieces = <String>[
       if (item.duration != null) '时长 ${_formatDuration(item.duration!)}',
       if (hit != null) '来源 ${hit.sourceName}',
       if (item.updatedAt != null) '更新 ${_formatDate(item.updatedAt!)}',
     ];
+    return pieces.isEmpty ? null : pieces.join(' · ');
+  }
+
+  /// 搜索结果条目信息：标题 + 元信息串。
+  Widget _searchResultInfo(SourceItem item, SearchHit? hit) {
+    final meta = _resultMeta(item, hit);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -842,10 +881,10 @@ class _ExploreViewState extends State<ExploreView> {
             color: LumeTheme.textPrimary,
           ),
         ),
-        if (pieces.isNotEmpty) ...<Widget>[
+        if (meta != null) ...<Widget>[
           const SizedBox(height: 4),
           Text(
-            pieces.join(' · '),
+            meta,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 12, color: LumeTheme.muted),
@@ -1071,25 +1110,45 @@ class _PosterTile extends StatelessWidget {
     required this.item,
     this.pipeline,
     required this.onTap,
+    this.meta,
   });
 
   final SourceItem item;
   final SectionImagePipeline? pipeline;
   final VoidCallback onTap;
 
+  /// 额外的元信息行（搜索结果页用它显示时长 / 来源 / 更新时间）。
+  final String? meta;
+
   @override
   Widget build(BuildContext context) {
+    final meta = this.meta;
     return PosterCard(
       onTap: onTap,
-      footnote: Text(
-        item.title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 12,
-          height: 1.25,
-          color: LumeTheme.textPrimary,
-        ),
+      footnote: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            item.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.25,
+              color: LumeTheme.textPrimary,
+            ),
+          ),
+          if (meta != null) ...<Widget>[
+            const SizedBox(height: 2),
+            Text(
+              meta,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10, color: LumeTheme.muted),
+            ),
+          ],
+        ],
       ),
       child: _Cover(pipeline: pipeline, url: item.cover, width: 300),
     );

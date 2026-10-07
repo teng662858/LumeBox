@@ -107,6 +107,7 @@ class AggregateSearch {
     required List<SourceDescriptor> sources,
     required Future<DataSource?> Function(String sourceId) open,
     required String keyword,
+    String? categoryId,
     int limitPerSource = 30,
   }) async {
     final enabled = sources.where((source) => source.enabled).toList();
@@ -115,7 +116,12 @@ class AggregateSearch {
         try {
           final source = await open(descriptor.id);
           if (source == null) return (descriptor: descriptor, list: null);
-          final list = await source.list(keyword: keyword, page: 1);
+          // 分类筛选同样下发到每个源（图源的分类是它自己的维度）。
+          final list = await source.list(
+            categoryId: categoryId,
+            keyword: keyword,
+            page: 1,
+          );
           return (descriptor: descriptor, list: list);
         } catch (error) {
           LumeLog.info('[search] 聚合搜索跳过 ${descriptor.name}：$error');
