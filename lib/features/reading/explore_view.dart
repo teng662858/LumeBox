@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/reading/reading.dart';
+import '../../core/reading/browse_layout.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
@@ -65,6 +68,9 @@ class ExploreView extends StatefulWidget {
 }
 
 class _ExploreViewState extends State<ExploreView> {
+  /// 布局偏好是应用级单例：本页监听它，别处改了这里也当场重排。
+  final BrowseLayoutSettings _layoutSettings = BrowseLayoutSettings.instance;
+
   late final SourceManager _manager =
       widget.manager ?? LumeSources.manager(widget.section);
 
@@ -97,11 +103,17 @@ class _ExploreViewState extends State<ExploreView> {
   @override
   void initState() {
     super.initState();
+    _layoutSettings.addListener(_onLayoutChanged);
     if (_manager.runtimeAvailable) _bootstrap();
+  }
+
+  void _onLayoutChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _layoutSettings.removeListener(_onLayoutChanged);
     _search.dispose();
     _manager.close();
     super.dispose();
@@ -399,6 +411,17 @@ class _ExploreViewState extends State<ExploreView> {
           ),
         ),
         const SizedBox(width: 8),
+        // 布局切换：三档（单列 / 双列 / 三列），选择按板块记住。
+        _RoundAction(
+          icon: switch (_mode) {
+            BrowseLayoutMode.list => Icons.view_list_outlined,
+            BrowseLayoutMode.grid2 => Icons.grid_view_outlined,
+            BrowseLayoutMode.grid3 => Icons.apps_outlined,
+          },
+          tooltip: '布局',
+          onTap: _chooseLayout,
+        ),
+        const SizedBox(width: 8),
         _RoundAction(
           icon: Icons.search,
           tooltip: '搜索',
@@ -460,6 +483,63 @@ class _ExploreViewState extends State<ExploreView> {
   double _keyboardInset(BuildContext context) =>
       MediaQuery.viewInsetsOf(context).bottom;
 
+  /// 当前生效的布局档位。
+  ///
+  /// 用户选过的优先（按板块分别记住）；没选过时回落到本页的默认档
+  /// （小说默认单列、漫画默认三列网格——由板块页传进来的 [ExploreLayout] 决定）。
+  BrowseLayoutMode get _mode =>
+      BrowseLayoutSettings.instance.modeFor(widget.section) ??
+      (widget.layout == ExploreLayout.grid
+          ? BrowseLayoutMode.grid3
+          : BrowseLayoutMode.list);
+
+  /// 切换布局：当场重排 + 落盘（下次进来自动沿用）。
+  Future<void> _chooseLayout() async {
+    final current = _mode;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Row(
+                children: <Widget>[
+                  Text(
+                    '布局',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: LumeTheme.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            for (final mode in BrowseLayoutMode.values)
+              ListTile(
+                leading: Icon(
+                  mode == current ? Icons.check_circle : Icons.circle_outlined,
+                  color: mode == current ? LumeTheme.accent : LumeTheme.textHint,
+                ),
+                title: Text(mode.label),
+                subtitle: Text(mode.hint),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  unawaited(
+                    BrowseLayoutSettings.instance.setMode(widget.section, mode),
+                  );
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildBody() {
     if (_state != SourceStateKind.ready) {
       return SourceStateView(
@@ -487,10 +567,14 @@ class _ExploreViewState extends State<ExploreView> {
         onRetry: _bootstrap,
       );
     }
-    return widget.layout == ExploreLayout.grid ? _buildGrid() : _buildList();
+    return switch (_mode) {
+      BrowseLayoutMode.list => _buildList(),
+      BrowseLayoutMode.grid2 => _buildGrid(crossAxisCount: 2),
+      BrowseLayoutMode.grid3 => _buildGrid(crossAxisCount: 3),
+    };
   }
 
-  Widget _buildGrid() {
+  Widget _buildGrid({int crossAxisCount = 3}) {
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification.metrics.extentAfter < 400) _loadPage(more: true);
@@ -498,11 +582,12 @@ class _ExploreViewState extends State<ExploreView> {
       },
       child: GridView.builder(
         padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + _keyboardInset(context)),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 0.62,
+          // 列越少封面越大，卡片比例也相应放宽（双列时标题有一行更宽的余地）。
+          childAspectRatio: crossAxisCount <= 2 ? 0.72 : 0.62,
         ),
         itemCount: _items.length + 1,
         itemBuilder: (context, index) {
