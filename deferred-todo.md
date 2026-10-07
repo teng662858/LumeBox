@@ -169,6 +169,22 @@
 - [ ] **用户的图源要各自补 `filters()`**：契约与示例写在 `docs/lumesource-guide.md`
       （「可选契约：筛选标签」一节）。没补的源在筛选页会显示「本源不支持筛选」。
 
+## 本轮验收（已出包：run 37671995578 / commit 4afcd17）
+
+- **产物**：Actions run `37671995578`（commit `4afcd17`，`Build unsigned IPA (iOS)`
+  **success**，4m50s）；`LumeBox-unsigned.ipa` **21,734,993 B**（比上一版大 ~200KB：
+  多了 WebView 插件），sha256 前缀 `d36180f49b6f202d`（仓库根目录已换成这份）。
+- **本机可做且已做**：`flutter analyze` 无问题；`flutter test` **1330 例通过**；
+  产物二进制级复核——原生通道齐全、无 Node 残留、**WebView 插件已编入**
+  （Runner 里 `WebViewFlutter` 13 处、`WKWebView` 105 处、`WKHTTPCookieStore` 与
+  `getAllCookies` 命中、我的 `WafCookie` 类 3 处、注册键 `LumeBoxWafCookies` 命中）；
+  本轮文案都在（`网页视图` / `请稍候…` / `已取回会话`）；Dart 侧通道名
+  `lumebox/webview` 在 App 快照里命中（Swift 侧那句是 15 字节短字符串，走 Swift 的
+  内联优化，二进制里查不到字面量——**不是漏编**）。
+- [ ] **真机复验（人工）**：找一个真挂 CF 的源，走一遍
+      「失败 → 网页视图 → 勾选 → ✕ 关闭 → 列表自动出数据」；若内置 WebView 被 CF
+      识别，再启用外部桥接代理作为备选。
+
 ## 已完成（内置网页视图：Cloudflare 人机校验 + 会话自动复用）
 
 - [✓] **失败态给出口**：WAF 指纹命中时列表页 / 筛选页显示【网页视图】；普通失败只有
