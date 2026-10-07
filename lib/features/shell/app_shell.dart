@@ -19,6 +19,10 @@ import 'shell_dock.dart';
 /// 移动端是底部悬浮 Dock（毛玻璃胶囊）；桌面端（Windows / macOS / Linux）
 /// 自动换成左侧 NavigationRail —— 同一套页签，两种排布，页签内容不变。
 ///
+/// **页签的身份是标识（[ShellTab.id]）而不是下标**：用户可以在设置里隐藏页签、
+/// 拖拽排序（见 [ShellSettings]），下标会随着这两件事漂移。当前选中、可见性、
+/// 顺序全部按标识走，因此「把当前页签拖到别处」不会导致跳到别的板块。
+///
 /// 资源纪律：**只把当前页签的页面挂在树上**，切走即销毁、切回重建。因此
 /// 板块的阅读库、图源运行时、sqlite 句柄都沿用「进板块打开、退出板块释放」
 /// 的既有口径，四个板块的资源不会同时驻留（这不是 IndexedStack 那种全挂载）。
@@ -34,8 +38,11 @@ class AppShell extends StatefulWidget {
   /// 左侧栏的定位键。
   static const Key railKey = Key('shell.rail');
 
-  /// 底部导航栏被关掉时，恢复入口的定位键。
-  static const Key dockRestoreKey = Key('shell.dockRestore');
+  /// 「设置页被隐藏」时的恢复入口定位键。
+  ///
+  /// 见 [ShellSettings] 的硬约束 2：设置页是导航栏管理的入口，把它藏起来之后
+  /// 用户再也进不去管理页——因此隐藏时壳层一定留一个小的设置入口。
+  static const Key settingsEntryKey = Key('shell.settingsEntry');
 
   /// Dock 显隐控制器；为空时自建（独立测试用；正式入口由 [MaterialApp] 传入
   /// 同一个实例，与导航观察者共享）。
@@ -52,53 +59,74 @@ class _AppShellState extends State<AppShell> {
   late final ShellDockController _controller =
       widget.controller ?? ShellDockController();
 
-  /// 底部导航栏开关（全局设置页可改）。壳层监听它：改完立刻生效，
+  /// 底部导航栏配置（逐项开关 + 顺序）。壳层监听它：改完立刻生效，
   /// 不必等用户切页签或重启。
   final ShellSettingsController _shellSettings = ShellSettingsController.instance;
 
   /// 自建的控制器要自己释放；外部传进来的由外部负责。
   late final bool _ownsController = widget.controller == null;
 
-  int _index = 0;
+  /// 当前页签的**标识**（不是下标：顺序会变、页签会隐藏）。
+  String _activeId = _pageCatalog.first.id;
 
   static const double _dockHeight = 64;
   static const double _dockMargin = 12;
   static const double _dockSpacing = 8;
 
-  /// 五个页签。文字用 [Section.label]（展示口径：视频 = Section.video），
-  /// 板块的库、缓存、图源归属仍走 Section.id，与展示文案无关。
-  static final List<_ShellTab> _tabs = <_ShellTab>[
+  /// 页签目录：标识 + 展示文案 + 两个图标 + 页面构造。
+  ///
+  /// 文案用 [Section.label]（展示口径：视频 = Section.video），板块的库、缓存、
+  /// 图源归属仍走 Section.id，与展示文案无关。
+  static final List<_ShellTab> _pageCatalog = <_ShellTab>[
     _ShellTab(
+      id: ShellTab.all[0].id,
       label: Section.novel.label,
       icon: Icons.menu_book_outlined,
       selectedIcon: Icons.menu_book_rounded,
       builder: () => const NovelPage(),
     ),
     _ShellTab(
+      id: ShellTab.all[1].id,
       label: Section.comic.label,
       icon: Icons.auto_stories_outlined,
       selectedIcon: Icons.auto_stories_rounded,
       builder: () => const ComicPage(),
     ),
     _ShellTab(
+      id: ShellTab.all[2].id,
       label: Section.video.label,
       icon: Icons.play_circle_outline_rounded,
       selectedIcon: Icons.play_circle_fill_rounded,
       builder: () => const VideoPage(),
     ),
     _ShellTab(
+      id: ShellTab.all[3].id,
       label: Section.cat.label,
       icon: Icons.pets_outlined,
       selectedIcon: Icons.pets_rounded,
       builder: () => const CatPage(),
     ),
     _ShellTab(
+      id: ShellTab.all[4].id,
       label: '设置',
       icon: Icons.settings_outlined,
       selectedIcon: Icons.settings_rounded,
       builder: () => const SettingsPage(),
     ),
   ];
+
+  static _ShellTab _pageOf(String id) => _pageCatalog.firstWhere(
+        (tab) => tab.id == id,
+        // 配置里出现目录之外的标识理论上不会发生（fromJson 会过滤），
+        // 兜底回第一个页签，绝不让壳层因为一份坏配置打不开。
+        orElse: () => _pageCatalog.first,
+      );
+
+  /// 可见页签（按用户配置的顺序）。
+  List<_ShellTab> get _visibleTabs => <_ShellTab>[
+        for (final config in _shellSettings.settings.visibleTabs)
+          _pageOf(config.id),
+      ];
 
   /// 桌面端：Windows / macOS / Linux 自动用侧边栏（移动端保持底部 Dock）。
   static bool get _isDesktopPlatform {
@@ -120,12 +148,21 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _onShellSettingsChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {
+      // 当前页签被隐藏了（用户刚把它关掉）：落到第一个可见页签上。
+      // 不这么做的话页面会停在一个已经不在导航栏里的页签上——用户看得见内容，
+      // 却在底部找不到自己在哪里。
+      final visible = _visibleTabs;
+      if (visible.isNotEmpty && !visible.any((tab) => tab.id == _activeId)) {
+        _activeId = visible.first.id;
+      }
+    });
   }
 
-  void _select(int index) {
-    if (index == _index) return;
-    setState(() => _index = index);
+  void _select(String id) {
+    if (id == _activeId) return;
+    setState(() => _activeId = id);
   }
 
   @override
@@ -139,34 +176,33 @@ class _AppShellState extends State<AppShell> {
 
   // ------------------------------------------------------------------ 移动端
 
-  /// 底部导航栏被关掉时，右下角留的**恢复入口**。
+  /// 「设置页被隐藏」时的恢复入口。
   ///
-  /// 这是硬约束不是装饰：5 个 Tab 是顶层导航，整块藏掉而不给回来的路，
-  /// 用户会被困在当前板块里（在小说页就再也点不到设置）。因此关掉导航栏时
-  /// 一定有一个小的悬浮按钮，点它把导航栏召唤回来。
+  /// 这是硬约束不是装饰：设置页是「底部导航栏管理」自己的入口。把它藏起来之后，
+  /// 用户再也进不去管理页把别的页签打开——「至少保留 1 个页签」拦不住这种锁死
+  /// （另外 4 个板块都还在，但没有任何一个能进设置）。
   ///
-  /// 放在**左下角**：右下角是页面 FAB 的地盘（源总管理 / 漫画仓库页的
-  /// 「+」都在那儿），放右下会重叠（实测 FAB rect 与恢复按钮 rect 相交）。
-  /// 左下角没有别的悬浮控件，也不挡列表的右侧操作区。
-  Widget _buildDockRestoreButton() {
+  /// 放在**左下角**：右下角是页面 FAB 的地盘（源总管理 / 漫画仓库页的「+」），
+  /// 放右下会重叠（实测两个矩形相交）。
+  Widget _buildSettingsEntry() {
     return Positioned(
       left: _dockMargin,
       bottom: _dockMargin,
       child: SafeArea(
         child: Tooltip(
-          message: '显示底部导航栏',
+          message: '设置（底部导航栏里已隐藏）',
           child: Material(
-            key: AppShell.dockRestoreKey,
+            key: AppShell.settingsEntryKey,
             color: LumeTheme.surface,
             shape: const CircleBorder(),
             elevation: 3,
             child: InkWell(
               customBorder: const CircleBorder(),
-              onTap: () => _shellSettings.setDockEnabled(true),
+              onTap: () => _select(ShellTab.settingsId),
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: Icon(
-                  Icons.expand_more_rounded,
+                  Icons.settings_outlined,
                   size: 22,
                   color: LumeTheme.textSecondary,
                 ),
@@ -179,14 +215,12 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _buildDock() {
-    // 导航栏关掉时：内容不再需要为 Dock 让位，右下角换成恢复入口。
-    final dockEnabled = _shellSettings.dockEnabled;
-    final bottomInset = dockEnabled
-        ? MediaQuery.of(context).padding.bottom +
-            _dockHeight +
-            _dockMargin * 2 +
-            _dockSpacing
-        : MediaQuery.of(context).padding.bottom;
+    final tabs = _visibleTabs;
+    final settingsHidden = !_shellSettings.settingsVisible;
+    final bottomInset = MediaQuery.of(context).padding.bottom +
+        _dockHeight +
+        _dockMargin * 2 +
+        _dockSpacing;
     return Scaffold(
       extendBody: true,
       body: MediaQuery(
@@ -198,42 +232,44 @@ class _AppShellState extends State<AppShell> {
         child: Stack(
           children: <Widget>[
             _buildPage(),
-            if (!dockEnabled) _buildDockRestoreButton(),
+            if (settingsHidden) _buildSettingsEntry(),
           ],
         ),
       ),
-      bottomNavigationBar: dockEnabled
-          ? AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) => _DockBar(
-                key: AppShell.dockKey,
-                tabs: _tabs,
-                index: _index,
-                onSelect: _select,
-                visible: _controller.visible,
-                height: _dockHeight,
-                margin: _dockMargin,
-              ),
-            )
-          : null,
+      bottomNavigationBar: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) => _DockBar(
+          key: AppShell.dockKey,
+          tabs: tabs,
+          activeId: _activeId,
+          onSelect: _select,
+          visible: _controller.visible,
+          height: _dockHeight,
+          margin: _dockMargin,
+        ),
+      ),
     );
   }
 
   // ------------------------------------------------------------------ 桌面端
 
   Widget _buildRail() {
+    // 桌面端：左侧栏始终显示全部页签（文档口径），但顺序跟随用户配置——
+    // 顺序是用户的肌肉记忆，两个端保持一致更不容易点错。
+    final tabs = _visibleTabs;
+    final activeIndex = tabs.indexWhere((tab) => tab.id == _activeId);
     return Scaffold(
       body: Row(
         children: <Widget>[
           NavigationRail(
             key: AppShell.railKey,
-            selectedIndex: _index,
-            onDestinationSelected: _select,
+            selectedIndex: activeIndex < 0 ? 0 : activeIndex,
+            onDestinationSelected: (index) => _select(tabs[index].id),
             labelType: NavigationRailLabelType.all,
             backgroundColor: LumeTheme.surface,
             indicatorColor: const Color(0x1A7C5CFF),
             destinations: <NavigationRailDestination>[
-              for (final tab in _tabs)
+              for (final tab in tabs)
                 NavigationRailDestination(
                   icon: Icon(tab.icon),
                   selectedIcon: Icon(tab.selectedIcon),
@@ -251,20 +287,27 @@ class _AppShellState extends State<AppShell> {
   // -------------------------------------------------------------------- 页面
 
   /// 当前页签的页面：只建当前这一个，切页签即热替换（旧页签资源随之释放）。
+  ///
+  /// Key 用页签**标识**：同一页签在顺序变化时不该被重建（换了 key 会让板块的
+  /// 阅读库、滚动位置一起丢），而切到另一个页签必须重建（资源释放的既有口径）。
   Widget _buildPage() => KeyedSubtree(
-        key: ValueKey<int>(_index),
-        child: _tabs[_index].builder(),
+        key: ValueKey<String>(_activeId),
+        child: _pageOf(_activeId).builder(),
       );
 }
 
-/// 一个页签：展示文案 + 两个图标（未选中 / 选中）+ 页面构造。
+/// 一个页签：标识 + 展示文案 + 两个图标（未选中 / 选中）+ 页面构造。
 class _ShellTab {
   const _ShellTab({
+    required this.id,
     required this.label,
     required this.icon,
     required this.selectedIcon,
     required this.builder,
   });
+
+  /// 稳定标识（与 [ShellTab.id] 同源）：配置、选中、key 都按它走。
+  final String id;
 
   final String label;
   final IconData icon;
@@ -272,15 +315,17 @@ class _ShellTab {
   final Widget Function() builder;
 }
 
-/// 底部悬浮 Dock：浅色毛玻璃胶囊，五项等宽，选中项品牌紫 + 高亮底座。
+/// 底部悬浮 Dock：浅色毛玻璃胶囊，各项等宽，选中项品牌紫 + 高亮底座。
 ///
 /// 它悬在页面内容之上（`extendBody`），因此底下的列表与封面会从胶囊里透出来——
 /// 全 App 玻璃感最明显的一处。
+///
+/// 项数可变（用户可隐藏页签，最少 1 项最多 5 项），各项等宽由 `Expanded` 平分。
 class _DockBar extends StatelessWidget {
   const _DockBar({
     super.key,
     required this.tabs,
-    required this.index,
+    required this.activeId,
     required this.onSelect,
     required this.visible,
     required this.height,
@@ -288,8 +333,8 @@ class _DockBar extends StatelessWidget {
   });
 
   final List<_ShellTab> tabs;
-  final int index;
-  final ValueChanged<int> onSelect;
+  final String activeId;
+  final ValueChanged<String> onSelect;
   final bool visible;
   final double height;
   final double margin;
@@ -324,12 +369,12 @@ class _DockBar extends StatelessWidget {
                     height: height,
                     child: Row(
                       children: <Widget>[
-                        for (var i = 0; i < tabs.length; i++)
+                        for (final tab in tabs)
                           Expanded(
                             child: _DockItem(
-                              tab: tabs[i],
-                              selected: i == index,
-                              onTap: () => onSelect(i),
+                              tab: tab,
+                              selected: tab.id == activeId,
+                              onTap: () => onSelect(tab.id),
                             ),
                           ),
                       ],

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,27 +11,26 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/shell/shell_settings.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
+import 'package:lume_box/features/settings/tab_bar_settings_page.dart';
 import 'package:lume_box/features/shell/app_shell.dart';
 
-/// 底部导航栏开关（用户要求：设置页可切换底部 5 个 Tab 的显示/隐藏）。
+/// 底部导航栏管理：**每个页签独立开关 + 拖拽排序**。
 ///
-/// ## 最要紧的一条不变式：**关得掉，也回得来**
+/// ## 三条最要紧的性质
 ///
-/// 5 个 Tab 是 App 的顶层导航。把它整块藏掉而不给回来的路，用户会被困在当前
-/// 板块里——在小说页就再也点不到设置、换不了板块。因此本组用例的核心不是
-/// 「能关掉」，而是**「关掉之后一定存在恢复入口，且它真的能把导航栏召唤回来」**。
-///
-/// ## 作用范围
-///
-/// 只作用于移动端底部 Dock。桌面端用左侧 NavigationRail（桌面端标准布局），
-/// 不受本开关影响——有用例钉住。
+/// 1. **至少保留 1 个页签**——全部关掉导航栏就空了，用户再也点不到任何入口。
+///    模型层拒绝（返回 null 且配置一字未改），界面层把最后一颗开关置灰并说明原因。
+/// 2. **隐藏「设置」不会把自己锁死**——设置页是进入本管理页的唯一入口。
+///    把它藏起来之后壳层必须留一个设置入口，否则用户再也改不回导航栏
+///    （「至少保留 1 个」拦不住这种锁死：另外 4 个板块还在，但没有一个能进设置）。
+/// 3. **改动实时生效**——壳层监听配置，开关/拖拽后底部立刻变，不需要重启。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory root;
 
   setUp(() async {
-    root = Directory.systemTemp.createTempSync('lume_box_shell');
+    root = Directory.systemTemp.createTempSync('lume_box_tabbar');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
@@ -39,9 +39,6 @@ void main() {
           : null,
     );
     ShellSettingsController.instance.resetForTesting();
-    // 设置页里的「播放器内核」逃生入口会打开视频板块的库：板块作用域必须在
-    // **真实时钟**里先建好（testWidgets 的测试体跑在 fake-async 时钟里，
-    // 首次打开要创建目录，在测试体里 await 会等不到）。
     for (final section in Section.values) {
       await SectionScope.open(section);
     }
@@ -60,69 +57,209 @@ void main() {
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
 
-  Future<void> pumpShell(
-    WidgetTester tester, {
-    bool desktopRail = false,
-  }) async {
-    await tester.binding.setSurfaceSize(const Size(390, 844));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: LumeTheme.build(),
-        home: AppShell(desktopRail: desktopRail),
-      ),
-    );
-    await tester.pumpAndSettle();
-  }
+  // ==========================================================================
+  // 模型：开关、排序、最少保留
+  // ==========================================================================
 
-  group('设置模型与落盘', () {
-    test('默认显示（与历史行为一致）', () {
-      expect(const ShellSettings().dockEnabled, isTrue);
-      expect(ShellSettingsController.instance.dockEnabled, isTrue);
+  group('模型 · 逐项开关', () {
+    test('默认全部显示、顺序为规范顺序', () {
+      const settings = ShellSettings();
+      expect(settings.visibleCount, 5);
+      expect(
+        settings.tabs.map((tab) => tab.id).toList(),
+        <String>['novel', 'comic', 'video', 'cat', 'settings'],
+      );
     });
 
-    test('落盘往返', () async {
+    test('隐藏一个页签：只影响它自己', () {
+      const settings = ShellSettings();
+      final next = settings.withVisible('comic', false)!;
+      expect(next.isVisible('comic'), isFalse);
+      expect(next.isVisible('novel'), isTrue);
+      expect(next.isVisible('settings'), isTrue);
+      expect(next.visibleCount, 4);
+      // 顺序不变（隐藏不等于移除）。
+      expect(
+        next.tabs.map((tab) => tab.id).toList(),
+        <String>['novel', 'comic', 'video', 'cat', 'settings'],
+      );
+    });
+
+    test('重新显示：回到原来的位置（顺序没被破坏）', () {
+      const settings = ShellSettings();
+      final hidden = settings.withVisible('video', false)!;
+      final shown = hidden.withVisible('video', true)!;
+      expect(shown, settings, reason: '关掉再打开应当回到完全一致的配置');
+    });
+  });
+
+  group('模型 · 至少保留 1 个页签（硬约束）', () {
+    test('关到只剩 1 个：允许', () {
+      var settings = const ShellSettings();
+      for (final id in <String>['comic', 'video', 'cat']) {
+        settings = settings.withVisible(id, false)!;
+      }
+      expect(settings.visibleCount, 2); // novel + settings
+      settings = settings.withVisible('settings', false)!;
+      expect(settings.visibleCount, 1);
+      expect(settings.isVisible('novel'), isTrue);
+    });
+
+    test('关最后一个：被拒绝，且配置一字未改', () {
+      var settings = const ShellSettings();
+      for (final id in <String>['comic', 'video', 'cat', 'settings']) {
+        settings = settings.withVisible(id, false)!;
+      }
+      expect(settings.visibleCount, 1);
+
+      final rejected = settings.withVisible('novel', false);
+      expect(rejected, isNull, reason: '最后一个可见页签不能被关掉');
+      expect(settings.visibleCount, 1);
+      expect(settings.isVisible('novel'), isTrue);
+    });
+
+    test('canHide 只在「最后一个可见项」时为 false', () {
+      var settings = const ShellSettings();
+      expect(settings.canHide('novel'), isTrue, reason: '还有 5 个，随便关');
+
+      for (final id in <String>['comic', 'video', 'cat']) {
+        settings = settings.withVisible(id, false)!;
+      }
+      expect(settings.canHide('settings'), isTrue, reason: '还有 2 个');
+
+      settings = settings.withVisible('settings', false)!;
+      expect(settings.canHide('novel'), isFalse, reason: '只剩它自己了');
+      expect(settings.canHide('comic'), isTrue, reason: '已隐藏的项，再关是幂等的');
+    });
+
+    test('拒绝时的提示文案可读', () {
+      expect(ShellSettings.lastTabMessage, contains('至少'));
+      expect(ShellSettings.lastTabMessage, contains('1 个'));
+    });
+  });
+
+  group('模型 · 拖拽排序', () {
+    test('把小说往后挪一位（最终下标语义）', () {
+      const settings = ShellSettings();
+      final moved = settings.withMove(0, 1);
+      expect(
+        moved.tabs.map((tab) => tab.id).toList(),
+        <String>['comic', 'novel', 'video', 'cat', 'settings'],
+      );
+    });
+
+    test('把小说挪到最后', () {
+      const settings = ShellSettings();
+      final moved = settings.withMove(0, 4);
+      expect(
+        moved.tabs.map((tab) => tab.id).toList(),
+        <String>['comic', 'video', 'cat', 'settings', 'novel'],
+      );
+    });
+
+    test('向上拖：把猫源挪到第 1 位', () {
+      const settings = ShellSettings();
+      final moved = settings.withMove(3, 1);
+      expect(
+        moved.tabs.map((tab) => tab.id).toList(),
+        <String>['novel', 'cat', 'comic', 'video', 'settings'],
+      );
+    });
+
+    test('拖到原位 / 越界：不改动或夹到边界', () {
+      const settings = ShellSettings();
+      expect(settings.withMove(2, 2), settings, reason: '拖到原位应无变化');
+
+      final clamped = settings.withMove(0, 99);
+      expect(clamped.visibleCount, 5);
+      expect(clamped.tabs.last.id, 'novel', reason: '越界夹到最后一位');
+
+      final negative = settings.withMove(4, -5);
+      expect(negative.tabs.first.id, 'settings', reason: '越界夹到第一位');
+
+      expect(settings.withMove(99, 0), settings, reason: '来源越界应无变化');
+    });
+
+    test('排序不影响可见性', () {
+      final settings = const ShellSettings().withVisible('comic', false)!;
+      final moved = settings.withMove(0, 3);
+      expect(moved.isVisible('comic'), isFalse, reason: '排序不该把隐藏的项显出来');
+      expect(moved.visibleCount, 4);
+    });
+
+    test('隐藏的页签也能拖（顺序对以后重新显示有意义）', () {
+      final settings = const ShellSettings().withVisible('cat', false)!;
+      final moved = settings.withMove(3, 0);
+      expect(moved.tabs.first.id, 'cat');
+      expect(moved.isVisible('cat'), isFalse);
+      final shown = moved.withVisible('cat', true)!;
+      expect(shown.tabs.first.id, 'cat');
+    });
+  });
+
+  group('模型 · 落盘与容错', () {
+    test('落盘往返：顺序与可见性都保住', () async {
+      final settings = const ShellSettings()
+          .withVisible('comic', false)!
+          .withMove(3, 0);
       final store = await ShellSettingsStore.open();
-      store.save(const ShellSettings(dockEnabled: false));
+      store.save(settings);
 
       ShellSettingsStore.resetForTesting();
       final reopened = await ShellSettingsStore.open();
-      expect(reopened.load().dockEnabled, isFalse);
+      expect(reopened.load(), settings);
     });
 
-    test('缺项 / 损坏 / 脏值一律回退「显示」', () async {
-      final store = await ShellSettingsStore.open();
-      // 坏 JSON。
-      File(store.path).writeAsStringSync('{ 不是 JSON');
-      expect(store.load().dockEnabled, isTrue);
-      // 缺字段。
-      File(store.path).writeAsStringSync('{}');
-      expect(store.load().dockEnabled, isTrue);
-      // 脏值（非布尔）按「不是 false 就是显示」处理。
-      File(store.path).writeAsStringSync('{"dockEnabled": "yes"}');
-      expect(store.load().dockEnabled, isTrue);
-      // 明确 false 才关。
-      File(store.path).writeAsStringSync('{"dockEnabled": false}');
-      expect(store.load().dockEnabled, isFalse);
+    test('旧格式（上一版的 dockEnabled）：回退默认而不是报错', () {
+      // 上一版只有一个总开关；与现在的「逐项 + 顺序」不同构，无法迁移。
+      final parsed = ShellSettings.fromJson(<String, Object?>{
+        'dockEnabled': false,
+      });
+      expect(parsed.visibleCount, 5, reason: '读不懂就回默认（全部显示）');
     });
 
-    test('切换会通知监听者（壳层据此重建）', () async {
-      var notified = 0;
-      void listener() => notified++;
-      ShellSettingsController.instance.addListener(listener);
-      addTearDown(() => ShellSettingsController.instance.removeListener(listener));
-
-      await ShellSettingsController.instance.setDockEnabled(false);
-      expect(notified, 1);
-      expect(ShellSettingsController.instance.dockEnabled, isFalse);
-
-      // 重复设同值不再通知（避免无谓重建）。
-      await ShellSettingsController.instance.setDockEnabled(false);
-      expect(notified, 1);
+    test('损坏 JSON / 缺字段 / 空列表：一律回退默认', () {
+      expect(ShellSettings.fromJson('不是 JSON'), ShellSettings.defaults);
+      expect(ShellSettings.fromJson(<String, Object?>{}), ShellSettings.defaults);
+      expect(
+        ShellSettings.fromJson(<String, Object?>{'tabs': <Object?>[]}),
+        ShellSettings.defaults,
+      );
     });
 
-    test('写盘失败时本次运行仍按新值生效（开关不会看起来「点了没反应」）', () async {
-      // 把应用目录指到不可写的位置，逼 save 抛错。
+    test('全部隐藏的坏配置：回退默认（不出现空导航栏）', () {
+      final parsed = ShellSettings.fromJson(<String, Object?>{
+        'tabs': <Object?>[
+          for (final tab in ShellTab.all)
+            <String, Object?>{'id': tab.id, 'visible': false},
+        ],
+      });
+      expect(
+        parsed.visibleCount,
+        5,
+        reason: '「至少保留 1 个」是硬约束，坏配置也不能绕过它',
+      );
+    });
+
+    test('未知 id 被过滤，缺失的页签被补全，重复项去重', () {
+      final parsed = ShellSettings.fromJson(<String, Object?>{
+        'tabs': <Object?>[
+          <String, Object?>{'id': 'novel', 'visible': true},
+          <String, Object?>{'id': 'unknown-tab', 'visible': true},
+          <String, Object?>{'id': 'novel', 'visible': false},
+        ],
+      });
+      final ids = parsed.tabs.map((tab) => tab.id).toList();
+      expect(ids, isNot(contains('unknown-tab')), reason: '陌生 id 要忽略');
+      expect(ids.toSet().length, ids.length, reason: '重复 id 要去重');
+      expect(
+        ids,
+        containsAll(<String>['novel', 'comic', 'video', 'cat', 'settings']),
+      );
+      expect(parsed.isVisible('novel'), isTrue, reason: '重复项认第一次出现');
+    });
+
+    test('写盘失败不影响本次运行（内存里已生效）', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
@@ -130,82 +267,22 @@ void main() {
       );
       ShellSettingsStore.resetForTesting();
 
-      await ShellSettingsController.instance.setDockEnabled(false);
+      final accepted =
+          await ShellSettingsController.instance.setVisible('comic', false);
+      expect(accepted, isTrue);
       expect(
-        ShellSettingsController.instance.dockEnabled,
+        ShellSettingsController.instance.settings.isVisible('comic'),
         isFalse,
-        reason: '写盘失败不该让开关失效',
       );
     });
   });
 
-  group('壳层：关得掉，也回得来', () {
-    testWidgets('默认显示底部导航栏，且没有恢复按钮', (tester) async {
-      await pumpShell(tester);
+  // ==========================================================================
+  // 壳层：实时生效 + 不锁死
+  // ==========================================================================
 
-      expect(find.byKey(AppShell.dockKey), findsOneWidget);
-      expect(
-        find.byKey(AppShell.dockRestoreKey),
-        findsNothing,
-        reason: '导航栏在的时候不需要恢复入口',
-      );
-      // 五个页签都在。
-      for (final label in <String>['小说', '漫画', '视频', '猫源', '设置']) {
-        expect(find.text(label), findsWidgets);
-      }
-    });
-
-    testWidgets('关掉导航栏：Dock 消失，但恢复入口出现（不会被困住）', (tester) async {
-      await pumpShell(tester);
-
-      ShellSettingsController.instance.applyForTesting(
-        const ShellSettings(dockEnabled: false),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(AppShell.dockKey), findsNothing, reason: '导航栏应当消失');
-      expect(
-        find.byKey(AppShell.dockRestoreKey),
-        findsOneWidget,
-        reason: '关掉导航栏必须留恢复入口——否则用户被困在当前板块，'
-            '再也点不到设置、换不了板块',
-      );
-    });
-
-    testWidgets('点恢复入口：导航栏回来，恢复入口自己消失', (tester) async {
-      await pumpShell(tester);
-      ShellSettingsController.instance.applyForTesting(
-        const ShellSettings(dockEnabled: false),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byKey(AppShell.dockRestoreKey));
-      await tester.pumpAndSettle();
-
-      expect(ShellSettingsController.instance.dockEnabled, isTrue);
-      expect(find.byKey(AppShell.dockKey), findsOneWidget);
-      expect(find.byKey(AppShell.dockRestoreKey), findsNothing);
-    });
-
-    testWidgets('关掉后仍可切板块：恢复 → 点设置 → 进入设置页', (tester) async {
-      await pumpShell(tester);
-      ShellSettingsController.instance.applyForTesting(
-        const ShellSettings(dockEnabled: false),
-      );
-      await tester.pumpAndSettle();
-
-      // 走完整路径：恢复导航栏 → 点「设置」→ 设置页打开。
-      await tester.tap(find.byKey(AppShell.dockRestoreKey));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('设置'));
-      await tester.pumpAndSettle();
-      expect(find.widgetWithText(AppBar, '设置'), findsOneWidget);
-    });
-
-    testWidgets('恢复入口不与页面右下角的 FAB 重叠', (tester) async {
-      // 实测教训：恢复按钮最初放右下角，与源总管理 / 漫画仓库页的「+」FAB
-      // 位置相交（FAB rect 318..374 × 772..828，恢复按钮 344..366 × 798..820）。
-      // 因此改放左下角；这条用例把「不许回到右下」钉住。
+  group('壳层', () {
+    Future<void> pumpShell(WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(390, 844));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
@@ -215,45 +292,254 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      ShellSettingsController.instance.applyForTesting(
-        const ShellSettings(dockEnabled: false),
-      );
-      await tester.pumpAndSettle();
+    }
 
-      final restore = tester.getRect(find.byKey(AppShell.dockRestoreKey));
-      // 右下角 FAB 的典型占位（56×56 + 16 边距）。
-      final fabZone = Rect.fromLTWH(
-        tester.view.physicalSize.width / tester.view.devicePixelRatio - 72,
-        tester.view.physicalSize.height / tester.view.devicePixelRatio - 72,
-        72,
-        72,
-      );
+    /// Dock 里的页签文案（按显示顺序）。
+    List<String> dockLabels(WidgetTester tester) => tester
+        .widgetList<Text>(find.descendant(
+          of: find.byKey(AppShell.dockKey),
+          matching: find.byType(Text),
+        ))
+        .map((text) => text.data)
+        .whereType<String>()
+        .toList();
+
+    testWidgets('默认五个页签都在', (tester) async {
+      await pumpShell(tester);
       expect(
-        restore.overlaps(fabZone),
-        isFalse,
-        reason: '恢复入口不能落在右下角的 FAB 区域（那里是「+ 添加源」的地盘）',
+        dockLabels(tester),
+        <String>['小说', '漫画', '视频', '猫源', '设置'],
       );
     });
 
-    testWidgets('桌面端：左侧栏不受开关影响', (tester) async {
-      await pumpShell(tester, desktopRail: true);
-      expect(find.byKey(AppShell.railKey), findsOneWidget);
+    testWidgets('隐藏一个页签：底部立刻少一个（实时生效，无需重启）', (tester) async {
+      await pumpShell(tester);
 
-      ShellSettingsController.instance.applyForTesting(
-        const ShellSettings(dockEnabled: false),
-      );
+      await ShellSettingsController.instance.setVisible('comic', false);
       await tester.pumpAndSettle();
 
       expect(
-        find.byKey(AppShell.railKey),
+        dockLabels(tester),
+        <String>['小说', '视频', '猫源', '设置'],
+        reason: '隐藏后底部不该还有「漫画」',
+      );
+    });
+
+    testWidgets('排序实时生效：底部页签顺序跟着变', (tester) async {
+      await pumpShell(tester);
+
+      // 把「设置」拖到最前。
+      await ShellSettingsController.instance.move(4, 0);
+      await tester.pumpAndSettle();
+
+      expect(dockLabels(tester).first, '设置', reason: '设置应排到第一位');
+    });
+
+    testWidgets('当前页签被隐藏：自动落到仍可见的页签上', (tester) async {
+      await pumpShell(tester);
+      await tester.tap(find.text('漫画'));
+      await tester.pumpAndSettle();
+
+      await ShellSettingsController.instance.setVisible('comic', false);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(dockLabels(tester), isNot(contains('漫画')));
+    });
+
+    testWidgets('隐藏「设置」：左下角出现设置入口（不会被锁死）', (tester) async {
+      await pumpShell(tester);
+
+      await ShellSettingsController.instance.setVisible('settings', false);
+      await tester.pumpAndSettle();
+
+      expect(dockLabels(tester), isNot(contains('设置')));
+      expect(
+        find.byKey(AppShell.settingsEntryKey),
         findsOneWidget,
-        reason: '桌面端用左侧 NavigationRail，是桌面端的标准布局，不该被这个开关影响',
+        reason: '设置页是导航栏管理的唯一入口，隐藏它必须留恢复入口——'
+            '否则用户再也改不回导航栏',
+      );
+    });
+
+    testWidgets('点左下角设置入口：进入设置页', (tester) async {
+      await pumpShell(tester);
+      await ShellSettingsController.instance.setVisible('settings', false);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(AppShell.settingsEntryKey));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(AppBar, '设置'), findsOneWidget);
+    });
+
+    testWidgets('设置入口不与右下角 FAB 重叠', (tester) async {
+      await pumpShell(tester);
+      await ShellSettingsController.instance.setVisible('settings', false);
+      await tester.pumpAndSettle();
+
+      final entry = tester.getRect(find.byKey(AppShell.settingsEntryKey));
+      final size = tester.view.physicalSize / tester.view.devicePixelRatio;
+      final fabZone = Rect.fromLTWH(size.width - 72, size.height - 72, 72, 72);
+      expect(
+        entry.overlaps(fabZone),
+        isFalse,
+        reason: '右下角是「+ 添加源」这类 FAB 的地盘',
+      );
+    });
+
+    testWidgets('只剩 1 个页签：导航栏仍显示那一项，不空也不消失', (tester) async {
+      await pumpShell(tester);
+      for (final id in <String>['comic', 'video', 'cat', 'settings']) {
+        await ShellSettingsController.instance.setVisible(id, false);
+      }
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(AppShell.dockKey), findsOneWidget);
+      expect(dockLabels(tester), <String>['小说']);
+    });
+
+    testWidgets('恢复默认：隐藏的全部回来、顺序复原', (tester) async {
+      await pumpShell(tester);
+      await ShellSettingsController.instance.setVisible('comic', false);
+      await ShellSettingsController.instance.move(4, 0);
+      await tester.pumpAndSettle();
+
+      await ShellSettingsController.instance.restoreDefaults();
+      await tester.pumpAndSettle();
+
+      expect(
+        dockLabels(tester),
+        <String>['小说', '漫画', '视频', '猫源', '设置'],
       );
     });
   });
 
-  group('设置页开关', () {
-    Future<void> pumpSettings(WidgetTester tester) async {
+  // ==========================================================================
+  // 管理页
+  // ==========================================================================
+
+  group('管理页', () {
+    Future<void> pumpPage(WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: LumeTheme.build(),
+          home: const TabBarSettingsPage(),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('列出全部 5 个页签，各有独立开关', (tester) async {
+      await pumpPage(tester);
+
+      for (final label in <String>['小说', '漫画', '视频', '猫源', '设置']) {
+        expect(find.text(label), findsOneWidget);
+      }
+      expect(find.byType(Switch), findsNWidgets(5));
+      expect(find.textContaining('当前显示 5 个页签'), findsOneWidget);
+    });
+
+    testWidgets('关掉一个：开关变化、计数更新、立刻写进配置', (tester) async {
+      await pumpPage(tester);
+
+      final comicSwitch = find.descendant(
+        of: find.ancestor(
+          of: find.text('漫画'),
+          matching: find.byType(Row),
+        ),
+        matching: find.byType(Switch),
+      );
+      await tester.tap(comicSwitch);
+      await tester.pumpAndSettle();
+
+      expect(
+        ShellSettingsController.instance.settings.isVisible('comic'),
+        isFalse,
+      );
+      expect(find.textContaining('当前显示 4 个页签'), findsOneWidget);
+    });
+
+    testWidgets('只剩 1 个时：最后一颗开关置灰，并说明原因', (tester) async {
+      for (final id in <String>['comic', 'video', 'cat', 'settings']) {
+        await ShellSettingsController.instance.setVisible(id, false);
+      }
+      await pumpPage(tester);
+
+      expect(find.textContaining('当前显示 1 个页签'), findsOneWidget);
+      expect(
+        find.textContaining('最后一个显示的页签，不能关掉'),
+        findsOneWidget,
+        reason: '要让用户知道为什么这开关点不动，而不是以为界面坏了',
+      );
+      final disabled = tester
+          .widgetList<Switch>(find.byType(Switch))
+          .where((widget) => widget.onChanged == null)
+          .toList();
+      expect(disabled, hasLength(1), reason: '只有最后一个可见项应当被禁用');
+    });
+
+    testWidgets('隐藏设置后：页面提示说明怎么回去', (tester) async {
+      await ShellSettingsController.instance.setVisible('settings', false);
+      await pumpPage(tester);
+
+      expect(
+        find.textContaining('左下角'),
+        findsWidgets,
+        reason: '要告诉用户「隐藏设置不会把自己锁死」（提示卡与说明卡各一处）',
+      );
+    });
+
+    testWidgets('恢复默认按钮可用', (tester) async {
+      await ShellSettingsController.instance.setVisible('comic', false);
+      await pumpPage(tester);
+
+      await tester.tap(find.text('恢复默认（全部显示）'));
+      await tester.pumpAndSettle();
+
+      expect(ShellSettingsController.instance.settings.visibleCount, 5);
+      expect(find.textContaining('当前显示 5 个页签'), findsOneWidget);
+    });
+
+    testWidgets('拖拽手柄存在（每一行一个）', (tester) async {
+      await pumpPage(tester);
+      expect(find.byIcon(Icons.drag_handle), findsNWidgets(5));
+    });
+
+    testWidgets('真的能拖：把小说往下拖一格，顺序随之变化并落库', (tester) async {
+      await pumpPage(tester);
+      expect(
+        ShellSettingsController.instance.tabs.map((tab) => tab.id).toList(),
+        <String>['novel', 'comic', 'video', 'cat', 'settings'],
+      );
+
+      // 拖第一行的手柄到第三行的位置（真手势，不是调模型方法——
+      // 手柄接线断掉时这条会失败，而只调模型的用例不会）。
+      final handles = find.byIcon(Icons.drag_handle);
+      final start = tester.getCenter(handles.at(0));
+      final target = tester.getCenter(handles.at(2));
+
+      final gesture = await tester.startGesture(start);
+      await tester.pump(kLongPressTimeout);
+      await gesture.moveTo(Offset(start.dx, target.dy));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        ShellSettingsController.instance.tabs.map((tab) => tab.id).toList(),
+        <String>['comic', 'novel', 'video', 'cat', 'settings'],
+        reason: '拖拽要真的改到顺序（手柄接线是否接通就看这条）',
+      );
+      // 落库：重开 store 读到的是新顺序。
+      ShellSettingsStore.resetForTesting();
+      final store = await ShellSettingsStore.open();
+      expect(store.load().tabs.first.id, 'comic');
+    });
+
+    testWidgets('设置页有入口能进本页', (tester) async {
       await tester.binding.setSurfaceSize(const Size(390, 844));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
@@ -263,39 +549,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-    }
 
-    testWidgets('设置页有「显示底部导航栏」开关，默认开', (tester) async {
-      await pumpSettings(tester);
-
-      expect(find.text('显示底部导航栏'), findsOneWidget);
-      final tile = tester.widget<SwitchListTile>(find.byType(SwitchListTile).first);
-      expect(tile.value, isTrue);
-    });
-
-    testWidgets('拨动开关：设置真的被改掉并落盘', (tester) async {
-      await pumpSettings(tester);
-
-      await tester.tap(find.byType(SwitchListTile).first);
+      expect(find.text('底部导航栏管理'), findsOneWidget);
+      await tester.tap(find.text('底部导航栏管理'));
       await tester.pumpAndSettle();
-
-      expect(ShellSettingsController.instance.dockEnabled, isFalse);
-      final tile = tester.widget<SwitchListTile>(find.byType(SwitchListTile).first);
-      expect(tile.value, isFalse);
-
-      // 落盘：重开 store 读到的是关。
-      ShellSettingsStore.resetForTesting();
-      final store = await ShellSettingsStore.open();
-      expect(store.load().dockEnabled, isFalse);
-    });
-
-    testWidgets('说明文案写清了「关掉后怎么回来」', (tester) async {
-      await pumpSettings(tester);
-      expect(
-        find.textContaining('恢复按钮'),
-        findsOneWidget,
-        reason: '要让用户知道关掉不会把自己锁死',
-      );
+      expect(find.widgetWithText(AppBar, '底部导航栏管理'), findsOneWidget);
     });
   });
 }

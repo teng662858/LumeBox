@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/shell/shell_settings.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
@@ -15,6 +14,7 @@ import 'log_report.dart';
 import 'log_report_page.dart';
 import 'log_viewer_page.dart';
 import 'sandbox_settings_page.dart';
+import 'tab_bar_settings_page.dart';
 import 'section_cache.dart';
 import 'source_generator_page.dart';
 
@@ -55,7 +55,14 @@ class SettingsPage extends StatelessWidget {
       child: ListView(
         padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
         children: <Widget>[
-          const _DockToggleCard(),
+          // 底部导航栏管理（逐项开关 + 拖拽排序）：放在最前，它是纯界面偏好，
+          // 属于用户最先想调的东西。
+          _SettingsEntry(
+            icon: Icons.dashboard_customize_outlined,
+            title: '底部导航栏管理',
+            subtitle: '每个页签独立开关 + 拖拽排序（至少保留 1 个；改动立即生效）',
+            onTap: () => _push(context, const TabBarSettingsPage()),
+          ),
           const SizedBox(height: 12),
           _SettingsEntry(
             icon: Icons.tune,
@@ -189,45 +196,6 @@ class _SettingsEntry extends StatelessWidget {
           ),
           Icon(Icons.chevron_right, color: LumeTheme.muted),
         ],
-      ),
-    );
-  }
-}
-
-
-/// 底部导航栏开关（全局）。
-///
-/// 关掉后右下角会出现一个小的恢复按钮——5 个 Tab 是顶层导航，不能只关不给回来的路
-/// （否则用户会被困在当前板块里）。这条在界面上也要说清，免得用户以为关了就没法换板块。
-class _DockToggleCard extends StatelessWidget {
-  const _DockToggleCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = ShellSettingsController.instance;
-    return ListenableBuilder(
-      listenable: controller,
-      builder: (context, _) => GlassCard(
-        radius: 14,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            '显示底部导航栏',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: LumeTheme.textPrimary,
-            ),
-          ),
-          subtitle: Text(
-            '关掉后右下角会出现一个恢复按钮，点它可以把导航栏召唤回来；'
-            '桌面端的左侧栏不受影响',
-            style: TextStyle(fontSize: 12, height: 1.4, color: LumeTheme.muted),
-          ),
-          value: controller.dockEnabled,
-          onChanged: (value) => controller.setDockEnabled(value),
-        ),
       ),
     );
   }

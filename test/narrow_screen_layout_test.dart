@@ -9,6 +9,7 @@ import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
+import 'package:lume_box/core/shell/shell_settings.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/settings/cache_settings_page.dart';
@@ -20,6 +21,7 @@ import 'package:lume_box/features/settings/network_settings_page.dart';
 import 'package:lume_box/features/settings/sandbox_settings_page.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
 import 'package:lume_box/features/settings/source_generator_page.dart';
+import 'package:lume_box/features/settings/tab_bar_settings_page.dart';
 import 'package:lume_box/features/source/global_source_page.dart';
 import 'package:lume_box/features/source/source_section_page.dart';
 import 'package:lume_box/features/video/player_settings_page.dart';
@@ -166,6 +168,15 @@ void main() {
           catalog: const PlatformPlayerKernelCatalog(),
           onChanged: (_) {},
         ),
+    '底部导航栏管理': () => const TabBarSettingsPage(),
+    // 「只剩 1 个页签」时管理页会多出「不能关掉」提示行，一并扫到。
+    '底部导航栏管理（剩 1 个）': () {
+      final controller = ShellSettingsController.instance;
+      for (final id in <String>['comic', 'video', 'cat', 'settings']) {
+        controller.apply(controller.settings.withVisible(id, false)!);
+      }
+      return const TabBarSettingsPage();
+    },
   });
 
   // 设置类与图源管理页（含带满标记的图源列表）。
