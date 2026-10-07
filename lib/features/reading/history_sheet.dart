@@ -157,7 +157,7 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
       builder: (context) => AlertDialog(
         title: const Text('清空播放历史'),
         content: Text(
-          '将删除 ${_entries.length} 条播放记录（含「继续观看」列表）。\n'
+          '将删除 ${_entries.length} 条播放记录（视频板块的书架条目一并撤下）。\n'
           '其他板块的阅读记录、已保存的图片都不受影响。',
         ),
         actions: <Widget>[

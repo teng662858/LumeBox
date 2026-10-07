@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:path/path.dart' as p;
 
 import '../../core/reading/reading.dart';
+import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
@@ -120,7 +121,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       cacheDir: widget.library.imageCacheDir,
       // 漫画板块的图片缓存已按用户要求关闭（不读盘也不落盘）：翻页 / 预取照旧，
       // 只是这一话跨会话再看会重新下载（内存缓存与管线复用仍在）。
-      diskCache: false,
+      diskCache: SectionImagePipeline.diskCacheFor(Section.comic),
     );
     _settings = ComicReaderSettings.load(widget.library);
     _bookmarks = ComicBookmarks.decode(

@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import '../net/lume_http.dart';
 import '../net/lume_net.dart';
 import '../net/network_queue.dart';
+import '../session/section.dart';
 import '../util/lume_log.dart';
 import 'reading_store.dart';
 
@@ -61,6 +62,12 @@ class SectionImagePipeline {
   /// 新增文件，设置 →「缓存管理」里漫画一栏也就不再涨。代价是重开同一话要重新
   /// 下载页面，这是有意的取舍。
   final bool diskCache;
+
+  /// 某板块的图片**是否落盘缓存**（当前策略：只有漫画不落盘）。
+  ///
+  /// **单一事实来源**：三个漫画管线与设置 →「缓存管理」的说明都读这里，
+  /// 不会出现「页面写着已关闭、代码还在落盘」这种两份口径。
+  static bool diskCacheFor(Section section) => section != Section.comic;
 
   /// 解码图内存预算（字节）。
   final int memoryBudgetBytes;

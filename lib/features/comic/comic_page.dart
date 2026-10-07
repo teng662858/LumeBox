@@ -83,7 +83,7 @@ class _ComicPageState extends State<ComicPage> {
           memoryBudgetBytes: SectionImagePipeline.thumbnailBudgetBytes,
           // 漫画板块的图片缓存已按用户要求关闭：不读盘也不落盘
           // （见 SectionImagePipeline.diskCache 的说明）。
-          diskCache: false,
+          diskCache: SectionImagePipeline.diskCacheFor(Section.comic),
         );
       });
     } catch (error, stackTrace) {

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/reading/reading.dart';
+import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
@@ -47,7 +48,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
     cacheDir: widget.library.imageCacheDir,
     memoryBudgetBytes: SectionImagePipeline.thumbnailBudgetBytes,
     // 漫画板块的图片缓存已按用户要求关闭（不读盘也不落盘）。
-    diskCache: false,
+    diskCache: SectionImagePipeline.diskCacheFor(Section.comic),
   );
 
   DataSource? _source;

@@ -98,4 +98,20 @@ void main() {
       expect(button.onPressed, isNull);
     }
   });
+
+  testWidgets('漫画一栏写明「图片缓存已关闭」（免得看到 0 B 以为坏了）', (tester) async {
+    await pumpPage(tester);
+
+    // 单一事实来源：漫画不落盘、其余三块照常落盘。
+    expect(SectionImagePipeline.diskCacheFor(Section.comic), isFalse);
+    for (final section in <Section>[
+      Section.novel,
+      Section.video,
+      Section.cat,
+    ]) {
+      expect(SectionImagePipeline.diskCacheFor(section), isTrue);
+    }
+
+    expect(find.text('图片缓存已关闭：封面与阅读页不再落盘'), findsOneWidget);
+  });
 }

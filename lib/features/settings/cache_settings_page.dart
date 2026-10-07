@@ -260,6 +260,13 @@ class _CacheTile extends StatelessWidget {
                   '（${stats.cacheFiles} 个文件）',
                   style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                 ),
+                if (!SectionImagePipeline.diskCacheFor(stats.section))
+                  Text(
+                    // 免得看到「0 B」以为坏了：这是用户点名要的
+                    //（漫画板块的图片缓存已关闭，见 image_pipeline 的说明）。
+                    '图片缓存已关闭：封面与阅读页不再落盘',
+                    style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  ),
                 if (stats.savedBytes > 0)
                   Text(
                     '已保存图片 '
