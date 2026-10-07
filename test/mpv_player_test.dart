@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/player/buffering.dart';
 import 'package:lume_box/core/player/media_kit_mpv_engine.dart';
 import 'package:lume_box/core/player/mpv_engine.dart';
 import 'package:lume_box/core/player/mpv_player.dart';
@@ -180,6 +181,70 @@ void main() {
     expect(MediaKitMpvEngine.toKbps(0), isNull);
     expect(MediaKitMpvEngine.toKbps(-1), isNull);
   });
+
+  group('引擎属性写通道（缓冲 / 硬解 / 字幕延迟）', () {
+    test('属性映射：写进 libmpv 的名字与单位在这里定死', () {
+      // 缓冲参数
+      expect(
+        MpvProperties.buffering(BufferingConfig.defaults),
+        <String, String>{
+          'cache': 'yes',
+          'cache-pause-initial': 'no',
+          'demuxer-readahead-secs': '15',
+          'demuxer-max-bytes': '${64 * 1024 * 1024}',
+          'demuxer-max-back-bytes': '${16 * 1024 * 1024}',
+        },
+      );
+      // 硬解
+      expect(MpvProperties.hardwareDecoding(true), <String, String>{'hwdec': 'auto'});
+      expect(MpvProperties.hardwareDecoding(false), <String, String>{'hwdec': 'no'});
+      // 延迟：libmpv 的单位是**秒**，可负
+      expect(
+        MpvProperties.subtitleDelay(const Duration(milliseconds: -1500)),
+        <String, String>{'sub-delay': '-1.5'},
+      );
+      expect(
+        MpvProperties.subtitleDelay(const Duration(milliseconds: 2000)),
+        <String, String>{'sub-delay': '2.0'},
+      );
+      expect(
+        MpvProperties.audioDelay(const Duration(milliseconds: 250)),
+        <String, String>{'audio-delay': '0.25'},
+      );
+    });
+
+    test('批量写入：计数只算被内核接受的（拒绝写入 = 0）', () async {
+      final sink = _PropertyFakeEngine();
+      expect(
+        await writeEngineProperties(sink, <String, String>{'a': '1', 'b': '2'}),
+        2,
+      );
+      expect(sink.properties, <String, String>{'a': '1', 'b': '2'});
+
+      sink.reject = true;
+      expect(
+        await writeEngineProperties(sink, <String, String>{'c': '3'}),
+        0,
+        reason: '内核回负值时不假装生效',
+      );
+      expect(sink.properties.containsKey('c'), isFalse);
+    });
+
+    test('没有属性通道的引擎：整条链路照常跑（如实降级，不抛异常）', () async {
+      // engine 是 _FakeMpvEngine：没有实现 EnginePropertyCapable。
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
+      );
+      await player.applySettings(
+        const PlayerSettings(kernel: PlayerKernel.mpv, hardwareDecoding: false),
+      );
+
+      expect(engine.buffering, BufferingConfig.defaults,
+          reason: '缓冲配置照样下发到引擎端口（写不写得进去由引擎自己决定）');
+      expect(engine.hardwareDecoding, isFalse);
+      expect(engine.opened, isNotNull);
+    });
+  });
 }
 
 /// 替身 MPV 引擎：记录命令、按需推快照。
@@ -260,9 +325,35 @@ class _FakeMpvEngine implements MpvEngine {
   Future<void> setHardwareDecoding(bool enabled) async =>
       hardwareDecoding = enabled;
 
+  /// 起播缓冲参数（引擎端口新增能力；假引擎只记录）。
+  BufferingConfig? buffering;
+
+  @override
+  Future<void> setBuffering(BufferingConfig config) async => buffering = config;
+
   @override
   Widget buildView() => const Text('mpv-view');
 
   @override
   Future<void> dispose() async => disposed = true;
+}
+
+/// 带属性写通道的替身引擎（`EnginePropertyCapable`）。
+///
+/// 比 [_FakeMpvEngine] 只多一件事：记录写过的属性——用来钉住「哪些参数真的写进
+/// 了 libmpv、单位换算对不对」，以及「引擎没有写通道时不假装支持」。
+class _PropertyFakeEngine extends _FakeMpvEngine
+    implements EnginePropertyCapable {
+  /// 属性名 → 值（后写的覆盖先写的）。
+  final Map<String, String> properties = <String, String>{};
+
+  /// 是否拒绝写入（模拟 libmpv 回负值 / 属性名不被内核接受）。
+  bool reject = false;
+
+  @override
+  Future<bool> setEngineProperty(String name, String value) async {
+    if (reject) return false;
+    properties[name] = value;
+    return true;
+  }
 }

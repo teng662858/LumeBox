@@ -63,13 +63,15 @@ class PlayerFactory {
   ///
   /// - AVPlayer：能（`video_player` 的 `httpHeaders`）；
   /// - MPV：能（media_kit 的 `httpHeaders`）；
-  /// - **MDK：不能**——fvp 0.39 的 `Player` 没有任何 header / option 通道
-  ///   （`media` 只收一个 URL 字符串，源码里 grep 不到 headers / httpHeaders）。
-  ///
-  /// 调用方据此做降级：图源给了请求头而当前内核带不了时，改用能带的内核，
-  /// 否则 CDN 会回 403，网络层的退避重试会把起播拖到一两分钟。
-  static bool supportsMediaHeaders(PlayerKernel kernel) =>
-      kernel != PlayerKernel.mdk;
+  /// - MDK：能（libmdk 的 `avio.headers` 属性，格式按 fvp 自身用法，
+  ///   见 `MdkEngine.headersText`）——早期版本这里返回 false（当时以为 fvp
+  ///   没有写通道），现在三条通路都有，因此不再有「因为带不了请求头而换内核」
+  ///   的降级；保留这个查询是为了让降级逻辑在**将来某个内核又带不了**时仍然成立。
+  static bool supportsMediaHeaders(PlayerKernel kernel) => switch (kernel) {
+        PlayerKernel.avplayer => true,
+        PlayerKernel.mpv => true,
+        PlayerKernel.mdk => true,
+      };
 
   /// 内核不可用的原因；可用时为 null（设置页直接展示这段文案）。
   static String? unavailableReason(PlayerKernel kernel) {

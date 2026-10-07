@@ -126,6 +126,26 @@ class ReadingLibrary {
     return List<LibraryItem>.unmodifiable(items);
   }
 
+  /// 本板块最近的阅读记录（**任何进度形状**：小说 / 漫画 / 视频），按更新时间倒序。
+  ///
+  /// 与 [continueWatching] 的区别只有「要不要筛视频进度」：历史抽屉与追更日历都
+  /// 要跨形状地看「最近在看什么」，因此这里不带形状过滤；文档形状的取舍由调用方
+  /// 按 [ReadingProgress] 的具体类型判断（例如只有视频与小说算得出百分比）。
+  List<({LibraryItem item, ReadingProgress progress})> continueReading({
+    int limit = 50,
+  }) {
+    final entries = <({LibraryItem item, ReadingProgress progress})>[];
+    for (final item in _store.shelf()) {
+      final progress = _store.progress(item.itemId);
+      if (progress == null) continue;
+      entries.add((item: item, progress: progress));
+      if (entries.length >= limit) break;
+    }
+    return List<({LibraryItem item, ReadingProgress progress})>.unmodifiable(
+      entries,
+    );
+  }
+
   /// 保存阅读进度，并同步书架上的「已读到第几章」。
   ///
   /// 两件事必须一起做：未读角标的口径来自书架，位置来自进度表；

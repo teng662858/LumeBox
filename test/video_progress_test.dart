@@ -578,9 +578,7 @@ void main() {
       await tester.tap(find.text('第 1 集'));
       await tester.pumpAndSettle();
 
-      // 控制栏在「播放」页签里：先切过去（起播后会自动切，这里显式确保）。
-      await tester.tap(find.widgetWithText(Tab, '播放'));
-      await tester.pumpAndSettle();
+      // 控制栏在独立播放器页里（点条目时已经压栈）。
       // 关掉连播开关（按图标点，避免 tooltip 在窄屏上不可见）。
       await tester.tap(find.byIcon(Icons.skip_next));
       await tester.pumpAndSettle();

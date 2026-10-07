@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'abstract_player.dart';
+import 'buffering.dart';
 import 'mpv_engine.dart';
 import 'player_settings.dart';
 import 'player_stats.dart';
@@ -19,18 +20,24 @@ import 'player_stats.dart';
 /// - 字幕开关：真实生效（libmpv 轨道选择，`auto` / `no`）；
 /// - 字幕字号 / 颜色 / 描边：**真实生效**（media_kit 的字幕层是 Flutter Widget，
 ///   收完整 TextStyle；描边用多层阴影模拟）；
-/// - 字幕延迟 / 硬件解码：**当前只记录不生效**——media_kit 的公开 API 没有
-///   暴露 libmpv 的 `sub-delay` 与 `hwdec` 写通道（`setProperty` 是私有的），
-///   设置值落库，等有通道时生效（见 `MpvEngine` 里对应的说明）。
+/// - 字幕延迟 / 硬件解码：**真实生效**（写 libmpv 的 `sub-delay` / `hwdec`，
+///   见 `MediaKitMpvEngine.setEngineProperty`；hwdec 对随后打开的媒体生效）。
+///
+/// 缓冲参数（[BufferingConfig]）：在**每次装载前**写进 libmpv（`cache` /
+/// `cache-pause-initial` / `demuxer-*`），也就是「起播前把缓冲策略定下来」。
 class MpvPlayer implements AbstractPlayer {
   MpvPlayer({
     required MpvEngine engine,
     this.engineLabel = 'MPV',
+    this.buffering = BufferingConfig.defaults,
   }) : _engine = engine {
     engine.listen(_onEngineSnapshot);
   }
 
   final MpvEngine _engine;
+
+  /// 起播缓冲参数（见 [BufferingConfig]）。
+  final BufferingConfig buffering;
 
   /// 引擎访问点：画中画帧转发需要直接向引擎取帧（拉取式接口）。
   /// 上层据此判断「当前内核有没有帧导出能力」，而不是猜类型。
@@ -59,6 +66,9 @@ class MpvPlayer implements AbstractPlayer {
     if (_disposed) return;
     // 与 AVPlayer 内核同口径：load 只装载，不自动播放。
     _emit(const PlayerSnapshot(), stats: _emptyStats());
+    // 缓冲策略必须在打开媒体**之前**定下来：libmpv 的 cache / 预读时长是
+    // 打开文件时读一次的属性。
+    await _engine.setBuffering(buffering);
     await _engine.open(
       MpvMediaRequest(
         url: media.uri.toString(),

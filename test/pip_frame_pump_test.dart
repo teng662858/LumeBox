@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lume_box/core/player/buffering.dart';
 import 'package:lume_box/core/player/mpv_engine.dart';
 import 'package:lume_box/core/player/pip_frame_pump.dart';
 import 'package:lume_box/core/player/pip_frame_source.dart';
@@ -401,6 +402,9 @@ class _TickingEngine implements MpvEngine, FrameTickCapable {
   Future<void> setHardwareDecoding(bool enabled) async {}
 
   @override
+  Future<void> setBuffering(BufferingConfig config) async {}
+
+  @override
   Widget buildView() => const SizedBox.shrink();
 
   @override
@@ -460,6 +464,9 @@ class _FakeEngine implements MpvEngine {
 
   @override
   Future<void> setHardwareDecoding(bool enabled) async {}
+
+  @override
+  Future<void> setBuffering(BufferingConfig config) async {}
 
   @override
   Widget buildView() => const SizedBox.shrink();
@@ -532,6 +539,9 @@ class _SlowEngine implements MpvEngine, FrameTickCapable {
 
   @override
   Future<void> setHardwareDecoding(bool enabled) async {}
+
+  @override
+  Future<void> setBuffering(BufferingConfig config) async {}
 
   @override
   Widget buildView() => const SizedBox.shrink();

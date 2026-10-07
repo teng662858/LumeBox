@@ -27,8 +27,15 @@ import 'player_stats.dart';
 /// - **字幕**：MDK 的字幕是**内嵌渲染**的（由 libmdk 画进画面），字号 / 颜色 /
 ///   描边无法像 MPV 那样由 Flutter 侧的字幕组件接管；延迟通过 libmdk 的
 ///   `sub-delay` 属性可写，因此**只有延迟这一项真的生效**。
-/// - **自定义请求头**：本项目当前不给内核逐媒体请求头（MDK 侧没有稳定的公开
-///   写通道），带 Referer 的地址会记一条日志——与 Venera 图片那条同一口径。
+/// - **逐媒体请求头**：走 libmdk 的 `avio.headers` 属性（fvp 自己的
+///   video_player 后端就是这么传的：`'Key: Value\r\n'` 形式）。必须在
+///   `prepare()` **之前**写进去——fvp 的 `media` 只收一个 URL 字符串，没有
+///   headers 参数，属性通道是唯一入口。
+/// - **缓冲大小类参数**：libmdk 没有可查证的缓冲大小属性名（`Player.setProperty`
+///   的属性表没有权威文档），因此这里**不写猜测的属性名**，只写 fvp 源码里
+///   实际在用、语义明确的网络重连两项（`avio.reconnect` /
+///   `avio.reconnect_delay_max`）——它们解决的是「起播/播放中连接被掐断后
+///   要重新握手」这一类卡顿，与缓冲策略是两回事，如实分开说。
 class MdkEngine implements AbstractPlayer {
   MdkEngine._(this._player);
 
@@ -136,18 +143,8 @@ class MdkEngine implements AbstractPlayer {
   Future<void> load(PlayerMedia media) async {
     if (!_live) return;
     _emit(error: null, clearError: true);
-    if (media.headers != null && media.headers!.isNotEmpty) {
-      // 如实记录，并把「怎么办」一起说了：fvp 0.39 的 Player **没有任何**
-      // header / option 通道（`media` 只收一个 URL 字符串），因此 MDK 内核
-      // 递不过逐媒体请求头——这不是本层漏传，是依赖的能力缺口。
-      // 需要 Referer/UA 的地址（防盗链）在 MDK 上会 403：这条日志是排查时的
-      // 第一线索，用户看到它就知道该换 AVPlayer / MPV（两者都支持）。
-      LumeLog.warn(
-        '[mdk] 该媒体带了自定义请求头（${media.headers!.keys.join(', ')}），'
-        '但 MDK（fvp）没有透传通道：防盗链地址可能 403。'
-        '请在播放器设置里改用 AVPlayer 或 MPV。',
-      );
-    }
+    _applyNetworkProperties();
+    _applyHeaders(media.headers);
     _player.media = media.uri.toString();
     // fvp 要求显式 prepare 才会真正起播（内部会等首个媒体信息到达）。
     await _player.prepare();
@@ -158,6 +155,59 @@ class MdkEngine implements AbstractPlayer {
     _applyVolume();
     _startTicker();
   }
+
+  /// 逐媒体请求头（防盗链用的 Referer / UA）→ libmdk 的 `avio.headers`。
+  ///
+  /// 格式按 fvp 自己的做法：每行 `'Key: Value\r\n'`。没有请求头时**清空**该属性
+  /// （否则上一集带的头会跟到下一集，那是另一种「串味」的 403）。
+  void _applyHeaders(Map<String, String>? headers) {
+    final header = headers == null || headers.isEmpty ? '' : headersText(headers);
+    try {
+      _player.setProperty('avio.headers', header);
+      if (header.isNotEmpty) {
+        LumeLog.info('[mdk] 已透传请求头（${headers!.keys.join(', ')}）');
+      }
+    } catch (error) {
+      // 写不进去时如实记一条：地址要 Referer 的话会 403，用户据此换内核。
+      LumeLog.warn('[mdk] 写请求头失败（防盗链地址可能 403）：$error');
+    }
+  }
+
+  /// 逐媒体请求头 → `avio.headers` 的字符串形式。
+  ///
+  /// 提出来单独做（而不是内联在 [_applyHeaders] 里）是为了**可测**：
+  /// 这一段是纯字符串拼装，单测在本机就能钉住格式（真机只需验证 libmdk 收不收）。
+  @visibleForTesting
+  static String headersText(Map<String, String> headers) {
+    final buffer = StringBuffer();
+    headers.forEach((key, value) {
+      buffer.write('$key: $value\r\n');
+    });
+    return buffer.toString();
+  }
+
+  /// 网络重连属性：连接被掐断时自动重连，避免「起播卡住 / 播一半停住」。
+  ///
+  /// 属性名取自 fvp 自身的 video_player 后端（`avio.reconnect` /
+  /// `avio.reconnect_delay_max`），不是猜的；写失败只记日志。
+  void _applyNetworkProperties() {
+    if (_networkPropertiesApplied) return;
+    _networkPropertiesApplied = true;
+    for (final entry in _networkProperties.entries) {
+      try {
+        _player.setProperty(entry.key, entry.value);
+      } catch (error) {
+        LumeLog.warn('[mdk] 写 ${entry.key} 失败：$error');
+      }
+    }
+  }
+
+  bool _networkPropertiesApplied = false;
+
+  static const Map<String, String> _networkProperties = <String, String>{
+    'avio.reconnect': '1',
+    'avio.reconnect_delay_max': '7',
+  };
 
   void _startTicker() {
     _ticker?.cancel();

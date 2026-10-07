@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 
 import '../util/lume_log.dart';
 import 'abstract_player.dart';
+import 'buffering.dart';
 import 'player_error.dart';
 import 'player_settings.dart';
 import 'player_stats.dart';
@@ -19,7 +20,22 @@ import 'player_stats.dart';
 /// - 倍速：真实生效（`setPlaybackSpeed`），加载完成后自动补挂；
 /// - 字幕开关与字号：本内核基于 video_player 插件，插件按系统样式渲染自带字幕、
 ///   不暴露样式接口，因此暂不消费（缺口与落点记录在 Phase3 播放器文档里）。
+///
+/// 缓冲参数（[BufferingConfig]）：AVPlayer 的 `preferredForwardBufferDuration` /
+/// `automaticallyWaitsToMinimizeStalling` **只存在于原生对象上**，Dart 侧写不到，
+/// 因此这里走原生通道（`lumebox/buffering`）先写一次，再由 vendored 的
+/// video_player_avfoundation 在建播放器时应用——详见 `third_party/
+/// video_player_avfoundation/PATCHES.md`。写入只做一次：原生侧的参数一旦落定就
+/// 对之后创建的每个播放器生效。
 class AvPlayer implements AbstractPlayer {
+  AvPlayer({BufferingBackend? buffering})
+      : _buffering = buffering ?? createPlatformBufferingBackend();
+
+  /// 缓冲参数的原生写通道（测试可注入替身）。
+  final BufferingBackend _buffering;
+
+  /// 是否已经把缓冲参数写进原生侧（只写一次，后续起播省掉通道往返）。
+  bool _bufferingWritten = false;
   final ValueNotifier<PlayerSnapshot> _snapshot =
       ValueNotifier<PlayerSnapshot>(const PlayerSnapshot());
 
@@ -48,6 +64,10 @@ class AvPlayer implements AbstractPlayer {
   @override
   Future<void> load(PlayerMedia media) async {
     if (_disposed) return;
+    // 缓冲参数要先落到原生侧：插件正是在下面的 initialize() 里建 AVPlayer，
+    // 晚一步写就只对下一次起播生效（那正是「第一次起播慢」的那一次）。
+    await _applyBufferingOnce();
+    if (_disposed) return;
     await _releaseController();
     final controller = media.isNetwork
         ? VideoPlayerController.networkUrl(
@@ -69,6 +89,18 @@ class AvPlayer implements AbstractPlayer {
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       _emit(_snapshot.value, error: PlayerErrorText.describe(error));
+    }
+  }
+
+  /// 把缓冲参数写进原生侧（只写一次；失败只记日志，不打断起播）。
+  Future<void> _applyBufferingOnce() async {
+    if (_bufferingWritten) return;
+    _bufferingWritten = true;
+    try {
+      await _buffering.apply(BufferingConfig.defaults);
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      LumeLog.warn('[avplayer] 写缓冲参数失败，本次按系统默认缓冲策略播放');
     }
   }
 

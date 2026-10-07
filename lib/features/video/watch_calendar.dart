@@ -1,12 +1,14 @@
 import 'package:flutter/foundation.dart';
 
 import '../../core/reading/reading.dart';
+import '../../core/source/source.dart';
+import '../../core/util/lume_log.dart';
 
-/// 追剧日历的一天：某日期上的条目（更新 / 播放记录）。
+/// 追更 / 追剧日历的一天：某日期上的条目（更新 / 观看记录）。
 ///
 /// 「更新」来自图源的章节时间信息（[SourceChapter.publishedAt]，可选能力）；
-/// 「播放记录」来自本板块的视频进度。两者都不需要新的存储——日历是**视图**，
-/// 不是新数据源。
+/// 「观看记录」来自本板块的阅读进度（视频 / 小说 / 漫画三种形状共用一张表）。
+/// 两者都不需要新的存储——日历是**视图**，不是新数据源。三个板块共用这份逻辑。
 @immutable
 class CalendarDay {
   const CalendarDay({
@@ -21,7 +23,7 @@ class CalendarDay {
   /// 当天更新的条目（来自图源章节时间）。
   final List<CalendarEntry> updates;
 
-  /// 当天有播放记录的条目。
+  /// 当天看过 / 读过的条目。
   final List<CalendarEntry> watched;
 
   bool get isEmpty => updates.isEmpty && watched.isEmpty;
@@ -89,7 +91,7 @@ class WatchCalendar {
   static List<CalendarDay> monthGrid({
     required DateTime month,
     required List<CalendarUpdate> updates,
-    required List<({LibraryItem item, VideoProgress progress})> history,
+    required List<({LibraryItem item, ReadingProgress progress})> history,
   }) {
     final first = DateTime(month.year, month.month, 1);
     final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
@@ -165,4 +167,44 @@ class CalendarUpdate {
 
   final DateTime date;
   final CalendarEntry entry;
+}
+
+/// 收集「更新」：对最近在看的作品逐个问图源的章节时间（可选能力）。
+///
+/// 为什么串行：网络层已有并发限制，而日历不是实时视图——慢一点没关系，
+/// 别把图源打爆。失败只跳过那一个作品（日历照常显示，缺的是它的更新）。
+///
+/// 三个板块共用：`manager` 传哪个板块的，就只问那个板块的图源与记录。
+Future<List<CalendarUpdate>> collectCalendarUpdates({
+  required ReadingLibrary library,
+  required SourceManager manager,
+  int limit = 30,
+  bool Function()? isCancelled,
+}) async {
+  final updates = <CalendarUpdate>[];
+  for (final entry in library.continueReading(limit: limit)) {
+    if (isCancelled?.call() ?? false) return updates;
+    try {
+      final source = await manager.open(entry.item.sourceId);
+      if (source == null) continue;
+      final chapters = await source.chapters(entry.item.itemId);
+      for (final chapter in chapters) {
+        final published = chapter.publishedAt;
+        if (published == null) continue;
+        updates.add(
+          CalendarUpdate(
+            date: published,
+            entry: CalendarEntry(
+              itemId: entry.item.itemId,
+              title: entry.item.title,
+              chapterTitle: chapter.title,
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      LumeLog.info('[calendar] 更新取不到（${entry.item.title}）：$error');
+    }
+  }
+  return updates;
 }

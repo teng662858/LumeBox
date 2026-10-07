@@ -12,6 +12,10 @@ import UIKit
   /// 屏幕亮度控制器（UIScreen.brightness）：生命周期跟随 App。
   private let brightness = BrightnessController()
 
+  /// 播放缓冲参数控制器：把 Dart 侧给的参数传给 AVPlayer 内核
+  /// （经 UserDefaults 与 vendored 插件交接，见该文件文档）。
+  private let buffering = BufferingController()
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -39,6 +43,12 @@ import UIKit
     if let messenger = engineBridge.pluginRegistry
       .registrar(forPlugin: "LumeBoxBrightness")?.messenger() {
       brightness.register(with: messenger)
+    }
+
+    // 播放缓冲参数通道：与 Dart 侧 `MethodChannelBufferingBackend` 的契约一一对应。
+    if let messenger = engineBridge.pluginRegistry
+      .registrar(forPlugin: "LumeBoxBuffering")?.messenger() {
+      buffering.register(with: messenger)
     }
   }
 }

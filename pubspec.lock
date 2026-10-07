@@ -733,12 +733,11 @@ packages:
     source: hosted
     version: "2.12.2"
   video_player_avfoundation:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: video_player_avfoundation
-      sha256: "2fc56e537324a19eb649fca991aa308ac961b5406292876fa657b062de461fd8"
-      url: "https://pub.flutter-io.cn"
-    source: hosted
+      path: "third_party/video_player_avfoundation"
+      relative: true
+    source: path
     version: "2.12.0"
   video_player_platform_interface:
     dependency: transitive

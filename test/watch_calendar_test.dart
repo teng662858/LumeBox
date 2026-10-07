@@ -1,14 +1,25 @@
+import 'dart:io';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
+import 'package:lume_box/core/session/section_scope.dart';
+import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/video/watch_calendar.dart';
 
-/// 追剧日历的聚合逻辑（纯函数）。
+import 'support/fake_source_manager.dart';
+
+/// 追更 / 追剧日历的聚合逻辑（纯函数）与数据收集（[collectCalendarUpdates]）。
 ///
-/// 关键约束：日历是**既有数据的视图**（播放记录 + 图源章节时间），不引入新存储。
-/// 因此这里验证的是「分组是否正确」与「空数据是否安全」。
+/// 关键约束：日历是**既有数据的视图**（阅读记录 + 图源章节时间），不引入新存储。
+/// 因此这里验证的是「分组是否正确」「空数据是否安全」与「取不到更新时是否静默
+/// 降级」——三个板块共用同一份逻辑与同一个收集器。
 void main() {
+  // 收集器（[collectCalendarUpdates]）要走真实板块目录与库，因此需要测试绑定。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   final now = DateTime(2026, 10, 5, 14, 30);
 
   LibraryItem item(String id, String title) => LibraryItem(
@@ -213,4 +224,208 @@ void main() {
       expect(<int>[day.hour, day.minute, day.second], <int>[0, 0, 0]);
     });
   });
+
+  group('collectCalendarUpdates：图源章节时间 → 更新排期', () {
+    late Directory root;
+
+    setUp(() async {
+      root = Directory.systemTemp.createTempSync('lume_box_calendar_loader');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (call) async => call.method == 'getApplicationSupportDirectory'
+            ? root.path
+            : null,
+      );
+      await SectionScope.open(Section.novel);
+      await ReadingLibrary.open(Section.novel);
+    });
+
+    tearDown(() async {
+      ReadingLibrary.disposeAll();
+      ReadingStore.disposeAll();
+      await SectionScope.closeAll();
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    });
+
+    /// 图源替身：章节带 / 不带发布时间，或整条 chapters 抛错。
+    _LoaderSource source({DateTime? published, bool failing = false}) =>
+        _LoaderSource(published: published, failing: failing);
+
+    test('有发布时间章 → 逐章一条更新（板块与图源都以本板块为准）', () async {
+      final library = await ReadingLibrary.open(Section.novel);
+      library.shelve(
+        sourceId: 'novel-src',
+        itemId: 'novel-1',
+        title: '示例小说',
+        chapterCount: 2,
+      );
+      library.saveProgress(
+        NovelProgress(
+          section: Section.novel,
+          itemId: 'novel-1',
+          chapterIndex: 0,
+          chapterId: 'c1',
+          chapterTitle: '第 1 章',
+          updatedAt: DateTime(2026, 10, 1),
+          charOffset: 10,
+        ),
+      );
+      final manager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(
+            id: 'novel-src',
+            name: '示例源',
+            version: '1',
+            enabled: true,
+          ),
+        ],
+        opened: <String, DataSource>{
+          'novel-src': source(published: DateTime(2026, 10, 4, 8)),
+        },
+      );
+
+      final updates = await collectCalendarUpdates(
+        library: library,
+        manager: manager,
+      );
+
+      expect(updates, hasLength(2), reason: '两章各自带发布时间');
+      expect(updates.first.entry.itemId, 'novel-1');
+      expect(updates.first.entry.title, '示例小说');
+      expect(updates.first.entry.chapterTitle, '第 1 章');
+      expect(updates.first.date, DateTime(2026, 10, 4, 8));
+      expect(updates.last.entry.chapterTitle, '第 2 章');
+    });
+
+    test('章节没有发布时间 → 不编造更新（空表）', () async {
+      final library = await ReadingLibrary.open(Section.novel);
+      library.shelve(
+        sourceId: 'novel-src',
+        itemId: 'novel-1',
+        title: '示例小说',
+        chapterCount: 1,
+      );
+      library.saveProgress(
+        NovelProgress(
+          section: Section.novel,
+          itemId: 'novel-1',
+          chapterIndex: 0,
+          chapterId: 'c1',
+          chapterTitle: '第 1 章',
+          updatedAt: DateTime(2026, 10, 1),
+          charOffset: 0,
+        ),
+      );
+      final manager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(
+            id: 'novel-src',
+            name: '示例源',
+            version: '1',
+            enabled: true,
+          ),
+        ],
+        opened: <String, DataSource>{'novel-src': source()},
+      );
+
+      expect(
+        await collectCalendarUpdates(library: library, manager: manager),
+        isEmpty,
+        reason: '拿不到更新时间就不显示更新——日历只画既有事实',
+      );
+    });
+
+    test('图源取章节失败 → 跳过它，不把异常抛给日历', () async {
+      final library = await ReadingLibrary.open(Section.novel);
+      library.shelve(
+        sourceId: 'novel-src',
+        itemId: 'novel-1',
+        title: '示例小说',
+        chapterCount: 1,
+      );
+      library.saveProgress(
+        NovelProgress(
+          section: Section.novel,
+          itemId: 'novel-1',
+          chapterIndex: 0,
+          chapterId: 'c1',
+          chapterTitle: '第 1 章',
+          updatedAt: DateTime(2026, 10, 1),
+          charOffset: 0,
+        ),
+      );
+      final manager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(
+            id: 'novel-src',
+            name: '示例源',
+            version: '1',
+            enabled: true,
+          ),
+        ],
+        opened: <String, DataSource>{'novel-src': source(failing: true)},
+      );
+
+      expect(
+        await collectCalendarUpdates(library: library, manager: manager),
+        isEmpty,
+      );
+    });
+
+    test('没有记录 → 不访问图源，直接空表', () async {
+      final library = await ReadingLibrary.open(Section.novel);
+      final manager = FakeSourceManager();
+      expect(
+        await collectCalendarUpdates(library: library, manager: manager),
+        isEmpty,
+      );
+      expect(manager.openedIds, isEmpty, reason: '没有记录就不该去问图源');
+    });
+  });
+}
+
+/// 图源替身：只实现日历用到的 chapters（其余按契约返回空）。
+class _LoaderSource implements DataSource {
+  _LoaderSource({this.published, this.failing = false});
+
+  final DateTime? published;
+  final bool failing;
+
+  @override
+  String get id => 'novel-src';
+
+  @override
+  String get name => '示例源';
+
+  @override
+  Section get section => Section.novel;
+
+  @override
+  Future<List<SourceCategory>> categories() async => const <SourceCategory>[];
+
+  @override
+  Future<SourceList> list({String? categoryId, String? keyword, int page = 1}) async =>
+      const SourceList();
+
+  @override
+  Future<SourceDetail?> detail(String itemId) async => null;
+
+  @override
+  Future<List<SourceChapter>> chapters(String itemId) async {
+    if (failing) {
+      throw const SourceException(SourceErrorKind.network, '章节取不到');
+    }
+    return <SourceChapter>[
+      SourceChapter(id: 'c1', title: '第 1 章', publishedAt: published),
+      SourceChapter(id: 'c2', title: '第 2 章', publishedAt: published),
+    ];
+  }
+
+  @override
+  Future<ChapterContent?> content({
+    required String itemId,
+    required String chapterId,
+  }) async =>
+      null;
 }

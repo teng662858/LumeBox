@@ -7,9 +7,13 @@ import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
+import '../reading/history_sheet.dart';
 import '../reading/reading_hub_page.dart';
 import '../source/add_source_button.dart';
 import '../source/source_section_page.dart';
+import '../video/watch_calendar.dart';
+import '../video/watch_calendar_page.dart';
+import 'novel_detail_page.dart';
 import 'novel_explore_page.dart';
 import 'novel_shelf_page.dart';
 
@@ -112,6 +116,18 @@ class _NovelPageState extends State<NovelPage> {
     return ReadingHubPage(
       section: Section.novel,
       actions: <Widget>[
+        // 右上角统一的两枚独立图标（与视频 / 漫画同一套设计）：
+        // 📅 追更日历（哪章有更新 / 哪天读过）、⏱️ 历史（底部抽屉）。
+        IconButton(
+          tooltip: '追更日历',
+          icon: const Icon(Icons.calendar_month_outlined),
+          onPressed: () => _openCalendar(library, manager),
+        ),
+        IconButton(
+          tooltip: '阅读历史',
+          icon: const Icon(Icons.history),
+          onPressed: () => _openHistory(library),
+        ),
         // 右上角「图源管理」：本板块已导入图源的统一入口（启用 / 禁用 /
         // 重命名 / 导出 / 删除）。与全局设置的图源总管理不是一回事。
         IconButton(
@@ -143,6 +159,89 @@ class _NovelPageState extends State<NovelPage> {
 
   /// 图源导入后重挂书架与探索：两块内容各自重新解析本板块的图源与列表。
   void _onSourcesChanged() => setState(() => _revision++);
+
+  /// 追更日历：哪章有更新、哪天读过（与视频 / 漫画同一套页面）。
+  Future<void> _openCalendar(ReadingLibrary library, SourceManager manager) async {
+    final updates = await collectCalendarUpdates(
+      library: library,
+      manager: manager,
+      isCancelled: () => !mounted,
+    );
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => WatchCalendarPage(
+          library: library,
+          updates: updates,
+          title: '${Section.novel.label} · 追更日历',
+          // 点日历上的条目 → 打开详情页（那里有「继续阅读」，能直接续上进度）。
+          onOpen: (entry) => _openFromCalendar(library, manager, entry),
+        ),
+      ),
+    );
+  }
+
+  /// 从日历点条目：打开作品详情页（详情页自己带「继续阅读」入口）。
+  void _openFromCalendar(
+    ReadingLibrary library,
+    SourceManager manager,
+    CalendarEntry entry,
+  ) {
+    final item = library.item(entry.itemId);
+    if (item == null) {
+      // 记录被删了（书架移除）时如实提示，不静默失败。
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('「${entry.title}」已不在书架里')),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => NovelDetailPage(
+          library: library,
+          manager: manager,
+          target: ReadingTarget(
+            sourceId: item.sourceId,
+            itemId: item.itemId,
+            title: item.title,
+            cover: item.cover,
+            subtitle: item.subtitle,
+          ),
+          // 日历点进来的意图就是「接着读」。
+          continueOnOpen: true,
+        ),
+      ),
+    );
+  }
+
+  /// 阅读历史抽屉：底部 Sheet 里浏览最近的阅读记录（不新开全屏页面）。
+  Future<void> _openHistory(ReadingLibrary library) async {
+    final manager = widget.manager ?? LumeSources.manager(Section.novel);
+    await showReadingHistorySheet(
+      context: context,
+      section: Section.novel,
+      library: library,
+      onResume: (item, _) {
+        Navigator.of(context).pop();
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => NovelDetailPage(
+              library: library,
+              manager: manager,
+              target: ReadingTarget(
+                sourceId: item.sourceId,
+                itemId: item.itemId,
+                title: item.title,
+                cover: item.cover,
+                subtitle: item.subtitle,
+              ),
+              continueOnOpen: true,
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   /// 打开本板块的图源管理页；返回后重挂内容（重新解析当前图源）。
   Future<void> _manageSources() async {

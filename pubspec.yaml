@@ -66,6 +66,17 @@ dev_dependencies:
   # 图标生成工具（只在本地生成 iOS 图标资源，不参与运行时）。
   flutter_launcher_icons: ^0.14.1
 
+# 本地 vendored 副本（路径覆盖）：上游 2.12.0 + 一处补丁
+# （把宿主写入的播放缓冲参数应用到 AVPlayer，见
+# third_party/video_player_avfoundation/PATCHES.md）。
+# 为什么必须覆盖：真机反馈的「拿到地址后要等 1–2 分钟才出画面」里，
+# AVPlayer 的 preferredForwardBufferDuration / automaticallyWaitsToMinimizeStalling
+# 只存在于原生对象上，而插件不把 AVPlayer 暴露给宿主——只有在插件内部创建播放器
+# 的那一刻才能装上；宿主没配置过时补丁什么都不做（与上游行为一致）。
+dependency_overrides:
+  video_player_avfoundation:
+    path: third_party/video_player_avfoundation
+
 flutter:
   uses-material-design: true
   assets:

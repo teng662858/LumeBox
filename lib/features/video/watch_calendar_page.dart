@@ -7,13 +7,17 @@ import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import 'watch_calendar.dart';
 
-/// 追剧日历：按月查看「哪天有更新 / 哪天看过」。
+/// 追更 / 追剧日历：按月查看「哪天有更新 / 哪天看过」。
+///
+/// 三个板块共用同一页（小说 / 漫画 / 视频）：记录来自各板块自己的阅读库，
+/// 更新来自各板块图源的章节时间——**没有任何跨板块的数据**，只是同一套视图。
 ///
 /// 数据来源（都是既有数据，不新增存储）：
-/// - **看过**：本板块视频进度（`updatedAt`）；
-/// - **更新**：图源章节时间（可选能力，由调用方取好传进来）。
+/// - **看过**：本板块的阅读进度（视频 / 小说 / 漫画任意形状，按 `updatedAt` 落格）；
+/// - **更新**：图源章节时间（可选能力，由调用方取好传进来，见
+///   [collectCalendarUpdates]）。
 ///
-/// 点某天的条目直接续看（回调交回宿主页处理）。
+/// 点某天的条目直接续看 / 续读（回调交回宿主页处理）。
 class WatchCalendarPage extends StatefulWidget {
   const WatchCalendarPage({
     super.key,
@@ -21,19 +25,23 @@ class WatchCalendarPage extends StatefulWidget {
     required this.updates,
     this.onOpen,
     this.initialMonth,
+    this.title,
   });
 
   /// 本板块阅读库（调用方负责释放）。
   final ReadingLibrary library;
 
-  /// 章节更新时间（调用方从图源取；取不到就传空表——日历只显示播放记录）。
+  /// 章节更新时间（调用方从图源取；取不到就传空表——日历只显示观看记录）。
   final List<CalendarUpdate> updates;
 
-  /// 点条目：交给宿主页续看。
+  /// 点条目：交给宿主页续看 / 续读。
   final void Function(CalendarEntry entry)? onOpen;
 
   /// 初始月份；为空时取当前月。
   final DateTime? initialMonth;
+
+  /// 页面标题；为空时用视频板块的「追剧日历」措辞。
+  final String? title;
 
   @override
   State<WatchCalendarPage> createState() => _WatchCalendarPageState();
@@ -43,19 +51,12 @@ class _WatchCalendarPageState extends State<WatchCalendarPage> {
   late DateTime _month = widget.initialMonth ?? DateTime.now();
   DateTime? _selected;
 
-  /// 播放记录（进页面读一次；日历不是实时数据，不需要监听）。
-  late final List<({LibraryItem item, VideoProgress progress})> _history =
+  /// 观看记录（进页面读一次；日历不是实时数据，不需要监听）。
+  late final List<({LibraryItem item, ReadingProgress progress})> _history =
       _loadHistory();
 
-  List<({LibraryItem item, VideoProgress progress})> _loadHistory() {
-    final result = <({LibraryItem item, VideoProgress progress})>[];
-    for (final item in widget.library.continueWatching(limit: 500)) {
-      final progress = widget.library.videoProgress(item.itemId);
-      if (progress == null) continue;
-      result.add((item: item, progress: progress));
-    }
-    return result;
-  }
+  List<({LibraryItem item, ReadingProgress progress})> _loadHistory() =>
+      widget.library.continueReading(limit: 500);
 
   void _shiftMonth(int delta) {
     setState(() {
@@ -74,7 +75,7 @@ class _WatchCalendarPageState extends State<WatchCalendarPage> {
     final activeDays = WatchCalendar.activeDays(grid, month: _month);
 
     return GlassScaffold(
-      title: '${Section.video.label} · 追剧日历',
+      title: widget.title ?? '${Section.video.label} · 追剧日历',
       child: Column(
         children: <Widget>[
           _buildHeader(activeDays),

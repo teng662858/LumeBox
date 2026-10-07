@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:ffi';
 
+import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../util/lume_log.dart';
+import 'buffering.dart';
 import 'mpv_engine.dart';
 
 /// [MpvEngine] 的真实实现：media_kit（其内核即 **libmpv**）。
@@ -21,7 +24,14 @@ import 'mpv_engine.dart';
 ///
 /// 上层不接触任何 mpv 私有属性：需要新参数时在**这一层**取，扩展
 /// [MpvEngineSnapshot] 与 [PlayerStats] 即可。
-class MediaKitMpvEngine implements MpvEngine, FrameTickCapable {
+///
+/// ## 属性写通道（[EnginePropertyCapable]）
+///
+/// libmpv 的 `cache` / `hwdec` / `sub-delay` 这类能力只有属性通道。media_kit
+/// 的高层 API 不开放它，但它的 `NativePlayer` 把 **FFI 绑定实例（`mpv`）与 mpv
+/// 句柄（`ctx`）做成了公开字段**，libmpv 的客户端 API 又是线程安全的，
+/// 因此这一层可以直接调用 `mpv_set_property_string`——不 fork、不反射、不猜。
+class MediaKitMpvEngine implements MpvEngine, FrameTickCapable, EnginePropertyCapable {
   /// 私有构造：只接受**已经**建好的 Player。
   ///
   /// 外部只能走 [create]——它保证 media_kit 先初始化、再碰任何 media_kit API。
@@ -100,6 +110,8 @@ class MediaKitMpvEngine implements MpvEngine, FrameTickCapable {
     if (_disposed) return;
     _resetMediaState();
     try {
+      // 缓冲属性要在起播**之前**写进去（cache / 预读时长在打开媒体时读一次）。
+      await _applyBufferingProperties();
       await _player.open(
         Media(request.url, httpHeaders: request.headers),
         play: request.autoplay,
@@ -117,10 +129,101 @@ class MediaKitMpvEngine implements MpvEngine, FrameTickCapable {
     }
   }
 
-  /// 硬件解码开关（由上层 [setHardwareDecoding] 写入，open 时应用）。
-  bool _hardwareDecoding = true;
+  /// 写一批 libmpv 属性，返回**被内核接受**的属性个数（映射与计数口径见
+  /// [writeEngineProperties]）。
+  Future<int> _setProperties(Map<String, String> properties) =>
+      writeEngineProperties(this, properties);
 
-  /// 字幕延迟（由上层 [setSubtitleDelay] 写入，open 时应用）。
+  /// 起播缓冲参数（见 [BufferingConfig]）。
+  ///
+  /// 写入的几项都是 libmpv 的**公开属性**（`MpvProperties.buffering` 定死名字与
+  /// 单位）：`cache`（网络流缓存开关）、`cache-pause-initial`（不等缓存填满就起播）、
+  /// `demuxer-readahead-secs` 与两个缓存上限（先攒多少数据）。
+  /// 写不进去只记日志，不影响播放。
+  Future<void> _applyBufferingProperties() async {
+    final properties = MpvProperties.buffering(_bufferingConfig);
+    final accepted = await _setProperties(properties);
+    LumeLog.info('[mpv] 缓冲参数已写入 $accepted/${properties.length} 项');
+  }
+
+  /// 起播缓冲参数（由上层 [setBuffering] 写入；`open()` 时统一应用）。
+  ///
+  /// 命名带 Config 后缀：本类已有一个 `_buffering` 是**播放状态**（是否正在缓冲），
+  /// 两者含义完全不同，不能同名。
+  BufferingConfig _bufferingConfig = BufferingConfig.defaults;
+
+  @override
+  Future<void> setBuffering(BufferingConfig config) async {
+    if (_disposed) return;
+    final changed = config != _bufferingConfig;
+    _bufferingConfig = config;
+    // 没变就不重复写：`open()` 之前还会统一应用一次，值相同的那次是多余的。
+    if (!changed) return;
+    // 已经打开媒体时也写一遍：这几项属性在播放中改对**下一个**文件生效，
+    // 因此不会打断正在播的画面（下一集 / 下次起播就会用上新值）。
+    await _applyBufferingProperties();
+  }
+
+  /// 引擎属性写通道（libmpv 的 `mpv_set_property_string`）。
+  ///
+  /// 通道来源：media_kit 的 `NativePlayer` **公开**暴露了 FFI 绑定实例
+  /// （`mpv`）与 mpv 句柄（`ctx`）两个字段，libmpv 的客户端 API 又是线程安全的，
+  /// 因此这里可以直接写属性——不需要 fork，也不需要反射猜测。
+  ///
+  /// 返回值语义：true = libmpv 接受了这次写入（`MPV_ERROR_SUCCESS`）；
+  /// false = 通道不可用（非原生内核 / 未初始化 / 已释放）或属性不被接受。
+  @override
+  Future<bool> setEngineProperty(String name, String value) async {
+    if (_disposed) return false;
+    final platform = _player.platform;
+    if (platform is! NativePlayer) {
+      LumeLog.warn('[mpv] 当前平台后端不是原生播放器，属性 $name 写不进去');
+      return false;
+    }
+    try {
+      // 句柄在初始化完成后才有值；同一次等待里把「未初始化」也挡掉。
+      await platform.waitForPlayerInitialization;
+    } catch (error) {
+      LumeLog.warn('[mpv] 播放器未就绪，属性 $name 写不进去：$error');
+      return false;
+    }
+    if (_disposed) return false;
+    final ctx = platform.ctx;
+    if (ctx == nullptr) {
+      LumeLog.warn('[mpv] mpv 句柄不可用，属性 $name 写不进去');
+      return false;
+    }
+
+    final namePtr = name.toNativeUtf8();
+    final valuePtr = value.toNativeUtf8();
+    try {
+      final code = platform.mpv.mpv_set_property_string(
+        ctx,
+        namePtr.cast<Int8>(),
+        valuePtr.cast<Int8>(),
+      );
+      if (code < 0) {
+        LumeLog.warn('[mpv] 属性 $name=$value 未被内核接受（错误码 $code）');
+        return false;
+      }
+      return true;
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      LumeLog.warn('[mpv] 写属性 $name 失败：$error');
+      return false;
+    } finally {
+      malloc.free(namePtr);
+      malloc.free(valuePtr);
+    }
+  }
+
+  /// 硬件解码开关的最近一次写入值；null = 还没写过。
+  ///
+  /// 保留它是为了「值没变就不重复写属性」——hwdec 是解码链初始化期属性，
+  /// 每次设置变更都重写一遍可能让 libmpv 重载当前文件的解码链。
+  bool? _hardwareDecoding;
+
+  /// 字幕延迟（由上层 [setSubtitleDelay] 写入；每次打开媒体补挂一次）。
   Duration _subtitleDelay = Duration.zero;
 
   /// 字幕开关（由上层 [setSubtitleEnabled] 写入，open 时应用）。
@@ -134,23 +237,19 @@ class MediaKitMpvEngine implements MpvEngine, FrameTickCapable {
     if (_disposed) return;
     if (_hardwareDecoding == enabled) return;
     _hardwareDecoding = enabled;
-    // 如实记录「已记住但未生效」：media_kit 没有写 libmpv 属性的公开通道。
-    // 这条日志是给排障用的——用户反馈「关了硬解还是花屏」时，一眼能看出原因。
-    LumeLog.info(
-      '[mpv] 硬件解码开关已记录（${enabled ? '开' : '关'}）；'
-      '当前内核未开放写 hwdec 的通道，本次运行仍按默认解码',
-    );
+    // hwdec 是 libmpv 的**解码链初始化期**属性：这里写进去，对随后打开的媒体生效
+    // （正在播的这一集要等切集后才换解码链——libmpv 的既有口径，不是本层的取舍）。
+    final accepted = await _setProperties(MpvProperties.hardwareDecoding(enabled));
+    if (accepted == 0) {
+      LumeLog.warn('[mpv] 硬解开关（${enabled ? '开' : '关'}）未能写入内核');
+    }
   }
 
   @override
   Future<void> setSubtitleDelay(Duration delay) async {
     if (_disposed) return;
-    if (_subtitleDelay == delay) return;
     _subtitleDelay = delay;
-    LumeLog.info(
-      '[mpv] 字幕延迟已记录（${delay.inMilliseconds}ms）；'
-      '当前内核未开放写 sub-delay 的通道，本次运行暂不生效',
-    );
+    await _writeSubtitleDelay(delay);
   }
 
   @override
@@ -168,9 +267,21 @@ class MediaKitMpvEngine implements MpvEngine, FrameTickCapable {
   @override
   ValueListenable<int> get subtitleStyleRevision => _styleRevision;
 
-  /// 起播后补挂字幕状态（开关）。
+  /// 起播后补挂字幕状态（开关 + 延迟）。
+  ///
+  /// 延迟每换一次媒体都要补挂：`sub-delay` 是**每个文件**的播放属性，换集之后
+  /// 不重写就回到 0（用户会以为「延迟设置丢了」）。
   Future<void> _applySubtitleState() async {
     await setSubtitleEnabled(_subtitlesEnabled);
+    await _writeSubtitleDelay(_subtitleDelay);
+  }
+
+  /// 写 libmpv 的 `sub-delay`（单位**秒**，可负；见 [MpvProperties.subtitleDelay]）。
+  Future<void> _writeSubtitleDelay(Duration delay) async {
+    final accepted = await _setProperties(MpvProperties.subtitleDelay(delay));
+    if (accepted == 0) {
+      LumeLog.warn('[mpv] 字幕延迟（${delay.inMilliseconds}ms）未能写入内核');
+    }
   }
 
   @override

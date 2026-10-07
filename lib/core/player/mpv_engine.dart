@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter/widgets.dart';
 
+import 'buffering.dart';
+
 /// MPV 引擎端口（libmpv 的能力面）。
 ///
 /// [MpvPlayer] 只依赖这个端口：命令映射、状态与 HUD 组装、生命周期全在 Dart 侧，
@@ -59,21 +61,22 @@ abstract interface class MpvEngine {
 
   /// 字幕延迟（正值表示字幕延后出现）。
   ///
-  /// **当前是「记住但不生效」**：media_kit 的公开 Dart API 没有暴露 libmpv 的
-  /// `sub-delay`（`Player` 只开放轨道选择 / 倍速这类高层方法，`setProperty`
-  /// 是私有的）。设置值会被记下并随设置落库，等将来换到能写属性的通道
-  /// （自研渲染或 fork）时直接生效——这里如实说明，不假装支持。
+  /// 走 libmpv 的 `sub-delay` 属性（秒）：media_kit 的公开 Dart API 没有暴露它，
+  /// 但 `NativePlayer` 把 FFI 绑定与 mpv 句柄做成了公开字段，因此
+  /// [MediaKitMpvEngine] 能直接写属性（见 [EnginePropertyCapable]）。
   Future<void> setSubtitleDelay(Duration delay);
+
+  /// 起播缓冲参数（文档 B 项）。
+  ///
+  /// 引擎侧写自己能写的那几项（libmpv 的 `cache` / `cache-pause-initial` /
+  /// `demuxer-*`）；没有属性通道的实现如实忽略——上层不必知道哪个引擎支持哪几项。
+  Future<void> setBuffering(BufferingConfig config);
 
   /// 硬件解码开关。
   ///
-  /// **当前是「记住但不生效」**，原因同上：libmpv 的 `hwdec` 是解码链初始化期
-  /// 属性，而 media_kit 没开放写属性的通道（`PlayerConfiguration` 里也没有
-  /// hwdec 项）。设置值会被记下并落库，等有通道时生效。
-  ///
-  /// 为什么仍然把它做出来：文档明确要求「播放器增加硬件解码开关」，而开关的
-  /// **状态**是用户能感知的配置；如实标注「暂不生效」比不给这个开关诚实，
-  /// 也比谎称已生效好。
+  /// 走 libmpv 的 `hwdec` 属性（`auto` / `no`）。它是**解码链初始化期**属性：
+  /// 本次写入对随后打开的媒体生效，正在播的这一集要等切集后才换解码链。
+  /// 写不进去（引擎没有属性通道）时如实记日志，不假装生效。
   Future<void> setHardwareDecoding(bool enabled);
 
   /// 渲染面。控制栏由上层画，引擎不自带任何 UI。
@@ -93,6 +96,66 @@ abstract interface class MpvEngine {
 abstract interface class FrameTickCapable {
   /// 帧节拍：每次画面推进发一个事件（不需要携带数据）。
   Stream<void> get frameTicks;
+}
+
+/// 可选能力：**引擎属性写通道**（libmpv 的 `mpv_set_property_string`）。
+///
+/// 为什么需要它：libmpv 里一大批能力（缓冲策略 `cache` / `demuxer-*`、硬解
+/// `hwdec`、字幕延迟 `sub-delay`、音频延迟 `audio-delay`）**只有属性通道**，
+/// media_kit 的高层 API 不开放（`Player` 只给轨道选择 / 倍速这类高层方法）。
+///
+/// 做成可选端口而不是 [MpvEngine] 的必选方法：上层只做一次能力探测
+/// （`engine is EnginePropertyCapable`），没有这条通道的引擎按「不支持」如实处理，
+/// 不必在每个调用点写分支。
+abstract interface class EnginePropertyCapable {
+  /// 写一个引擎属性。成功返回 true；通道不可用 / 属性名不被内核接受返回 false
+  /// （调用方据此如实提示「本内核不支持」，而不是假装生效）。
+  Future<bool> setEngineProperty(String name, String value);
+}
+
+/// 批量写属性，返回**被内核接受**的属性个数。
+///
+/// 单独提成函数是为了让「写不进去不算成功」这条口径可单测：调用方拿到 0 就知道
+/// 这次一条都没落地（属性名写错 / 当前状态不可写时 libmpv 会回负值）。
+Future<int> writeEngineProperties(
+  EnginePropertyCapable engine,
+  Map<String, String> properties,
+) async {
+  var accepted = 0;
+  for (final entry in properties.entries) {
+    if (await engine.setEngineProperty(entry.key, entry.value)) accepted++;
+  }
+  return accepted;
+}
+
+/// MPV 属性映射：本项目写进 libmpv 的属性名与单位**在这里定死**。
+///
+/// 为什么要把这张表单独拿出来：真机才知道 libmpv 收不收某个属性，但「我们打算写
+/// 什么名字、用什么单位」是本项目自己的一面之词——它必须能被单测钉住，否则一次
+/// 手误（比如把 `sub-delay` 的秒写成毫秒）只会在真机上表现为「设置没反应」。
+class MpvProperties {
+  MpvProperties._();
+
+  /// 起播缓冲参数（见 [BufferingConfig]，映射表在 `BufferingConfig.mpvProperties`）。
+  static Map<String, String> buffering(BufferingConfig config) =>
+      config.mpvProperties;
+
+  /// 硬件解码开关：`auto` = 自动选硬解，`no` = 强制软解。
+  static Map<String, String> hardwareDecoding(bool enabled) =>
+      <String, String>{'hwdec': enabled ? 'auto' : 'no'};
+
+  /// 字幕延迟：libmpv 的 `sub-delay` **单位是秒**（可负 = 字幕提前）。
+  static Map<String, String> subtitleDelay(Duration delay) => <String, String>{
+        'sub-delay': _seconds(delay),
+      };
+
+  /// 音频延迟：libmpv 的 `audio-delay` 单位同样是秒。
+  static Map<String, String> audioDelay(Duration delay) => <String, String>{
+        'audio-delay': _seconds(delay),
+      };
+
+  static String _seconds(Duration value) =>
+      '${value.inMicroseconds / Duration.microsecondsPerSecond}';
 }
 
 /// 字幕样式：字号缩放 / 颜色 / 描边宽度。

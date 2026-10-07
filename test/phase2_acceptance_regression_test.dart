@@ -17,9 +17,8 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/core/util/lume_log.dart';
-import 'package:lume_box/features/video/video_page.dart';
+import 'package:lume_box/features/video/video_player_page.dart';
 
-import 'support/fake_source_manager.dart';
 
 /// Phase2 真机验收轮发现的三处小 bug 的回归用例。
 ///
@@ -210,19 +209,17 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: LumeTheme.build(),
-          home: VideoPage(
+          home: VideoPlayerPage(
+            media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
             catalog: const _Catalog(),
             playerFactory: (kernel) {
               final player = _ProbePlayer(kernel);
               created.add(player);
               return player;
             },
-            sourceManager: FakeSourceManager(),
           ),
         ),
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(Tab, '播放'));
       await tester.pumpAndSettle();
 
       expect(created, isNotEmpty);
@@ -264,19 +261,17 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: LumeTheme.build(),
-          home: VideoPage(
+          home: VideoPlayerPage(
+            media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
             catalog: const _Catalog(),
             playerFactory: (kernel) {
               final player = _ProbePlayer(kernel);
               created.add(player);
               return player;
             },
-            sourceManager: FakeSourceManager(),
           ),
         ),
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(Tab, '播放'));
       await tester.pumpAndSettle();
 
       // 来回切四轮：AVPlayer → MPV → AVPlayer → MPV → AVPlayer。

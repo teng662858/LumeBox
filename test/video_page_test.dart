@@ -16,13 +16,16 @@ import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
-import 'package:lume_box/features/video/video_page.dart';
+import 'package:lume_box/features/video/video_player_page.dart';
 import 'package:lume_box/features/video/video_player_settings.dart';
 
-import 'support/fake_source_manager.dart';
 
-/// 视频板块接线的验证：设置加载与生效、打开媒体、画中画按钮与事件、
+/// 播放器页（独立页面）接线的验证：设置加载与生效、打开媒体、画中画按钮与事件、
 /// 运行时切换内核（拆旧建新 + 位置接回 + 落库）、退出时的资源顺序。
+///
+/// 真机反馈把播放从板块的「播放」子页签搬到了独立播放器页
+/// （[VideoPlayerPage]），因此这里直接挂载播放器页；「点条目唤起播放器页」这条
+/// 跳转由 `video_source_home_test.dart` 覆盖。
 ///
 /// 平台能力与原生后端都用替身注入，因此在 Windows 上就能跑完整链路；
 /// 真实平台目录下非 iOS 只渲染骨架占位，另有用例覆盖。
@@ -58,18 +61,14 @@ void main() {
       log = <String>[];
     });
 
-    /// 切到「播放」页签：首页是图源展示页（浏览），播放器在同板块的第二个页签。
-    Future<void> openPlayerTab(WidgetTester tester) async {
-      await tester.tap(find.widgetWithText(Tab, '播放'));
-      await tester.pumpAndSettle();
-    }
-
+    /// 挂载独立播放器页（带一个初始媒体：页面的唯一入口就是「从条目进来」）。
     Future<List<_FakePlayer>> pumpVideo(
       WidgetTester tester, {
       required Set<PlayerKernel> available,
       _FakePipBackend? pip,
       _FakeBrightnessBackend? brightness,
       bool withSourceManager = false,
+      bool withInitialMedia = true,
     }) async {
       final created = <_FakePlayer>[];
       await tester.binding.setSurfaceSize(const Size(900, 1400));
@@ -77,7 +76,15 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: LumeTheme.build(),
-          home: VideoPage(
+          home: VideoPlayerPage(
+            // 默认给一个初始媒体（播放器页的真实入口是「从条目进来」）；
+            // 用例传 withInitialMedia: false 即可验证「还没有媒体」的边界。
+            media: withInitialMedia
+                ? PlayerMedia(
+                    uri: Uri.parse('https://example.com/initial.mp4'),
+                    title: '初始样片',
+                  )
+                : null,
             catalog: _FakeCatalog(available),
             playerFactory: (kernel) {
               final player = _FakePlayer(kernel, log);
@@ -86,14 +93,10 @@ void main() {
             },
             pipBackend: pip,
             brightnessBackend: brightness ?? _FakeBrightnessBackend(),
-            // 首页是图源展示页：默认注入空图源管理器（不碰真实板块库），
-            // 交给正版实现时才走真库。
-            sourceManager: withSourceManager ? null : FakeSourceManager(),
           ),
         ),
       );
       await tester.pumpAndSettle();
-      await openPlayerTab(tester);
       return created;
     }
 
@@ -128,6 +131,8 @@ void main() {
         tester,
         available: <PlayerKernel>{PlayerKernel.avplayer},
         pip: pip,
+        // 还没有媒体：画中画的就绪边界检查（进入被拒）要靠它验证。
+        withInitialMedia: false,
       );
 
       // 边界检查：没有媒体时进入被拒。
@@ -137,7 +142,7 @@ void main() {
       expect(pip.started, 0);
       // 清掉这条提示：SnackBar 串行展示，后面的断言才不会被它排在前面。
       ScaffoldMessenger.of(
-        tester.element(find.byType(VideoPage)),
+        tester.element(find.byType(VideoPlayerPage)),
       ).clearSnackBars();
       await tester.pumpAndSettle();
 
@@ -204,7 +209,8 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: LumeTheme.build(),
-          home: VideoPage(
+          home: VideoPlayerPage(
+            media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
             catalog: _FakeCatalog(const <PlayerKernel>{
               PlayerKernel.avplayer,
               PlayerKernel.mpv,
@@ -216,12 +222,9 @@ void main() {
               created.add(player);
               return player;
             },
-            sourceManager: FakeSourceManager(),
           ),
         ),
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(Tab, '播放'));
       await tester.pumpAndSettle();
 
       // 切到 MPV：初始化抛错 → 回退 AVPlayer + 提示。
@@ -588,19 +591,17 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: LumeTheme.build(),
-          home: VideoPage(
+          home: VideoPlayerPage(
+            media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
             catalog: _FakeCatalog(const <PlayerKernel>{PlayerKernel.avplayer}),
             playerFactory: (kernel) {
               created++;
               return _FakePlayer(kernel, <String>[]);
             },
             pipBackend: _FakePipBackend(),
-            sourceManager: FakeSourceManager(),
           ),
         ),
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(Tab, '播放'));
       await tester.pumpAndSettle();
 
       expect(find.text('播放器设置库不可用'), findsOneWidget);
@@ -615,11 +616,12 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: LumeTheme.build(),
-          home: VideoPage(sourceManager: FakeSourceManager()),
+          // 平台目录（真实现）：非 iOS 上三套内核都不可用 → 骨架占位。
+          home: VideoPlayerPage(
+            media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
+          ),
         ),
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(Tab, '播放'));
       await tester.pumpAndSettle();
 
       expect(find.text('当前平台在 Phase1 仅保留页面骨架'), findsOneWidget);

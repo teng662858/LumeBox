@@ -18,6 +18,12 @@ import 'package:lume_box/features/settings/log_report.dart';
 import 'package:lume_box/features/settings/log_report_page.dart';
 import 'package:lume_box/features/settings/log_viewer_page.dart';
 import 'package:lume_box/features/settings/network_settings_page.dart';
+import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/features/comic/comic_page.dart';
+import 'package:lume_box/features/novel/novel_page.dart';
+import 'package:lume_box/features/reading/history_sheet.dart';
+import 'package:lume_box/features/video/video_page.dart';
+import 'package:lume_box/features/video/video_player_page.dart';
 import 'package:lume_box/features/settings/sandbox_settings_page.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
 import 'package:lume_box/features/settings/source_generator_page.dart';
@@ -68,6 +74,11 @@ void main() {
     );
     for (final section in Section.values) {
       await SectionScope.open(section);
+    }
+    // 板块页与历史抽屉都要读本板块的阅读库；在真实时钟里先打开
+    // （testWidgets 的 fake-async 里等不到真实异步）。
+    for (final section in Section.values) {
+      await ReadingLibrary.open(section);
     }
   });
 
@@ -157,6 +168,27 @@ void main() {
     }
   }
 
+  // 三个板块的浏览页 + 独立播放器页 + 历史抽屉（本轮改造的四块新 UI）。
+  //
+  // 为什么要单独扫：板块页右上角这轮变成了四枚图标（📅 / ⏱️ / 源管理 / ＋），
+  // 320pt 下最容易挤爆的就是这一排；播放器页的控制栏也是一排图标。
+  sweep('板块与播放器', <String, Widget Function()>{
+    '视频浏览页（四枚图标）': () => const VideoPage(catalog: _NoKernelCatalog()),
+    '小说板块': () => NovelPage(runtimeAvailable: true, manager: FakeSourceManager()),
+    '漫画板块': () => ComicPage(runtimeAvailable: true, manager: FakeSourceManager()),
+    '播放器页': () => VideoPlayerPage(
+          media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
+          catalog: const _NoKernelCatalog(),
+        ),
+    '历史抽屉（视频）': () => _SheetHost(
+          builder: (context) => ReadingHistorySheet(
+            section: Section.video,
+            library: ReadingLibrary.find(Section.video)!,
+            onResume: (_, _) {},
+          ),
+        ),
+  });
+
   // 本轮新增页面。
   sweep('新增页面', <String, Widget Function()>{
     '沙箱设置': () => const SandboxSettingsPage(),
@@ -193,4 +225,30 @@ void main() {
           manager: FakeSourceManager(sources: crowdedSources()),
         ),
   });
+}
+
+/// 把一个 Sheet 直接挂在树上（窄屏扫描只关心布局，不关心它是怎么弹出来的）。
+class _SheetHost extends StatelessWidget {
+  const _SheetHost({required this.builder});
+
+  final WidgetBuilder builder;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: builder(context),
+        ),
+      );
+}
+
+/// 三套内核都不可用的目录：播放器页走骨架分支，窄屏扫描照样覆盖。
+class _NoKernelCatalog implements PlayerKernelCatalog {
+  const _NoKernelCatalog();
+
+  @override
+  bool isAvailable(PlayerKernel kernel) => false;
+
+  @override
+  String? unavailableReason(PlayerKernel kernel) => '${kernel.label} 内核尚未接入';
 }

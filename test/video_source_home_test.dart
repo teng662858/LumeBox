@@ -16,6 +16,7 @@ import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/reading/section_image.dart';
 import 'package:lume_box/features/video/video_page.dart';
+import 'package:lume_box/features/video/video_player_page.dart';
 
 import 'support/fake_source_manager.dart';
 
@@ -23,7 +24,10 @@ import 'support/fake_source_manager.dart';
 ///
 /// 验证：首页列出本板块当前图源的列表；点条目**直接起播**——条目自带地址
 /// （视频类脚本常见的 `{title, url}`）直接放，否则走「剧集 → 内容」链路；
-/// 没有可用图源时给出导入引导，且播放器页签始终可用。
+/// 没有可用图源时给出导入引导。
+///
+/// 起播的落点是**独立播放器页**（[VideoPlayerPage]）：视频板块只有【浏览】
+/// 一个页签，条目点击不再切页签（真机反馈的改造）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -166,16 +170,18 @@ void main() {
       SourceItem(id: 'https://example.com/demo.mp4', title: '测试视频'),
     ];
     final created = await pumpBoard(tester);
-    expect(created, hasLength(1));
+    expect(created, isEmpty, reason: '浏览页自己不建播放器（起播才建）');
 
     await tester.tap(find.text('测试视频'));
     await tester.pumpAndSettle();
 
-    // 起播：媒体交给播放器，页签切到「播放」。
+    // 起播：唤起独立播放器页，媒体交给播放器。
+    expect(find.byType(VideoPlayerPage), findsOneWidget, reason: '点条目唤起播放器页');
+    expect(created, hasLength(1));
     expect(created.single.media?.uri.toString(), 'https://example.com/demo.mp4');
     expect(created.single.media?.title, '测试视频');
     expect(source.chapterCalls, isEmpty, reason: '自带地址不必再去问剧集');
-    expect(find.byTooltip('播放器设置'), findsOneWidget, reason: '已切到播放页签');
+    expect(find.byTooltip('播放器设置'), findsWidgets, reason: '播放器页带设置入口');
     expect(find.text('https://example.com/demo.mp4'), findsOneWidget);
   });
 
@@ -238,7 +244,8 @@ void main() {
     await tester.tap(find.text('示例影片'));
     await tester.pumpAndSettle();
 
-    expect(created.single.media, isNull, reason: '没有可播放地址就不该起播');
+    expect(created, isEmpty, reason: '没有可播放地址就不该起播');
+    expect(find.byType(VideoPlayerPage), findsNothing, reason: '不往下走，也不唤起播放器页');
     expect(
       find.textContaining('没有实现 chapters 方法'),
       findsOneWidget,
@@ -252,11 +259,10 @@ void main() {
 
     expect(find.text('暂无源'), findsOneWidget);
     expect(find.text('源管理'), findsOneWidget, reason: '给一个去导入的按钮');
-
-    // 播放器页签照常可用（手动输入地址的兜底路径不受图源影响）。
-    await tester.tap(find.widgetWithText(Tab, '播放'));
-    await tester.pumpAndSettle();
-    expect(find.text('视频地址或本地路径'), findsOneWidget, reason: '播放器页签照常可用');
+    // 页签只剩【浏览】：播放已搬到独立播放器页（真机反馈的改造）。
+    expect(find.widgetWithText(Tab, '浏览'), findsOneWidget);
+    expect(find.widgetWithText(Tab, '播放'), findsNothing);
+    expect(find.text('视频地址或本地路径'), findsNothing, reason: '地址栏在播放器页里');
   });
 }
 
