@@ -11,6 +11,7 @@ import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/comic/comic_explore_page.dart';
 import 'package:lume_box/features/comic/comic_page.dart';
+import 'package:lume_box/features/reading/reading_hub_page.dart';
 import 'package:lume_box/features/comic/comic_shelf_page.dart';
 import 'package:lume_box/features/novel/novel_shelf_page.dart';
 
@@ -68,7 +69,15 @@ void main() {
   }
 
   group('漫画书架', () {
-    testWidgets('卡片右上角显示未读章节角标', (tester) async {
+    testWidgets('小说 / 漫画的页签顺序：探索在前、书架在后（用户要求）', (tester) async {
+    expect(
+      ReadingHubPage.tabLabels,
+      <String>['探索', '书架'],
+      reason: '只调换显示顺序；视频板块的单页签顺序不受影响',
+    );
+  });
+
+  testWidgets('卡片右上角显示未读章节角标', (tester) async {
       final library = comicLibrary;
       library.shelve(
         sourceId: 'src',
