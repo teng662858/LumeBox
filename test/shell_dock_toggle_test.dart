@@ -278,6 +278,60 @@ void main() {
   });
 
   // ==========================================================================
+  // 重启：boot() 复现落盘配置
+  //
+  // 这一组补的是「顺序记忆，重启 App 顺序不变」这条验收口径的**端到端**链路：
+  // 上面那组只验了 store 的读写往返，而真机上的「重启」走的是
+  // `main()` → `ShellSettingsController.boot()` → 读盘 → 通知壳层 这条路径。
+  // 只测 store 的用例证明不了 boot 接线是否接上（boot 里漏一次 apply 就全白改）。
+  // ==========================================================================
+
+  group('重启', () {
+    test('boot() 之后：内存里就是落盘那份配置', () async {
+      final controller = ShellSettingsController.instance;
+      // 改三样：隐藏漫画、隐藏猫源、把设置拖到最前。
+      await controller.setVisible('comic', false);
+      await controller.setVisible('cat', false);
+      await controller.move(4, 0);
+      final saved = controller.settings;
+
+      // 模拟进程重启：丢掉内存态与 store 实例缓存（磁盘文件保留）。
+      controller.resetForTesting();
+      expect(
+        controller.settings,
+        ShellSettings.defaults,
+        reason: '复位后应当回到默认（否则下面测不出 boot 的效果）',
+      );
+
+      await controller.boot();
+
+      expect(
+        controller.settings,
+        saved,
+        reason: 'boot 必须把落盘的开关与顺序读回来',
+      );
+      expect(controller.visibleTabIds, <String>['settings', 'novel', 'video']);
+    });
+
+    test('boot() 读不到文件：回默认，不抛异常', () async {
+      final controller = ShellSettingsController.instance;
+      // 指向一个不存在的目录：读盘必然失败/落空。
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (call) async => call.method == 'getApplicationSupportDirectory'
+            ? '${root.path}/definitely-missing'
+            : null,
+      );
+      ShellSettingsStore.resetForTesting();
+
+      await controller.boot();
+
+      expect(controller.settings, ShellSettings.defaults);
+    });
+  });
+
+  // ==========================================================================
   // 壳层：实时生效 + 不锁死
   // ==========================================================================
 
@@ -397,6 +451,48 @@ void main() {
 
       expect(find.byKey(AppShell.dockKey), findsOneWidget);
       expect(dockLabels(tester), <String>['小说']);
+    });
+
+    testWidgets('隐藏设置 → 走恢复入口 → 在设置页里改配置：不被弹出去', (tester) async {
+      await pumpShell(tester);
+
+      // 这是本轮修掉的真 bug 的回归：设置被隐藏时，它不在 Dock 上，
+      // 「当前页签不可达就落到第一个可见页签」那条逻辑会把停在设置页的用户
+      // 弹回小说板块——于是用户在管理页里每改一次配置就被踢出去一次，
+      // **永远改不完**。设置页恒为可达（左下角有恢复入口），才拦得住。
+      await ShellSettingsController.instance.setVisible('settings', false);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(AppShell.settingsEntryKey));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(AppBar, '设置'), findsOneWidget);
+
+      // 在设置页里再改一个页签：页面必须原地不动。
+      await ShellSettingsController.instance.setVisible('comic', true);
+      await tester.pumpAndSettle();
+      expect(
+        find.widgetWithText(AppBar, '设置'),
+        findsOneWidget,
+        reason: '用户正在设置页改配置，不该被弹到别的板块',
+      );
+
+      // 连改两次也不该被弹走（幂等：状态不会「第二次才炸」）。
+      await ShellSettingsController.instance.setVisible('video', false);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(AppBar, '设置'), findsOneWidget);
+    });
+
+    testWidgets('设置可见时改别的页签：也不会被弹走', (tester) async {
+      await pumpShell(tester);
+      await tester.tap(find.descendant(
+        of: find.byKey(AppShell.dockKey),
+        matching: find.text('设置'),
+      ));
+      await tester.pumpAndSettle();
+
+      await ShellSettingsController.instance.setVisible('cat', false);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(AppBar, '设置'), findsOneWidget);
     });
 
     testWidgets('恢复默认：隐藏的全部回来、顺序复原', (tester) async {
@@ -554,6 +650,98 @@ void main() {
       await tester.tap(find.text('底部导航栏管理'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(AppBar, '底部导航栏管理'), findsOneWidget);
+    });
+  });
+
+  // ==========================================================================
+  // 桌面端：隐藏页签不能把用户锁死
+  // ==========================================================================
+
+  group('桌面端左侧栏', () {
+    Future<void> pumpRail(WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: LumeTheme.build(),
+          home: const AppShell(desktopRail: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    /// 左侧栏里的页签文案（按显示顺序）。
+    List<String> railLabels(WidgetTester tester) => tester
+        .widgetList<Text>(find.descendant(
+          of: find.byKey(AppShell.railKey),
+          matching: find.byType(Text),
+        ))
+        .map((text) => text.data)
+        .whereType<String>()
+        .toList();
+
+    testWidgets('隐藏页签后：左侧栏仍显示全部 5 个（不跟随隐藏）', (tester) async {
+      await pumpRail(tester);
+      expect(
+        railLabels(tester),
+        <String>['小说', '漫画', '视频', '猫源', '设置'],
+      );
+
+      await ShellSettingsController.instance.setVisible('comic', false);
+      await tester.pumpAndSettle();
+
+      expect(
+        railLabels(tester),
+        <String>['小说', '漫画', '视频', '猫源', '设置'],
+        reason: '桌面端是左侧栏的标准布局，隐藏是移动端 Dock 的概念；'
+            'Rail 上少了页签会让人以为界面坏了',
+      );
+    });
+
+    testWidgets('隐藏「设置」后仍能进设置（桌面端不会被锁死）', (tester) async {
+      await pumpRail(tester);
+      await ShellSettingsController.instance.setVisible('settings', false);
+      await tester.pumpAndSettle();
+
+      // 这是本轮修掉的真 bug：Rail 原先按可见性过滤，而恢复入口只做在移动端
+      // Dock 上，于是「隐藏设置」会把桌面用户永久锁死——再也进不去设置页，
+      // 也就再也改不回导航栏。Rail 始终显示全部页签，这条路就断不了。
+      expect(
+        railLabels(tester),
+        contains('设置'),
+        reason: '设置页是导航栏管理自己的入口，Rail 上必须留着它',
+      );
+
+      await tester.tap(find.descendant(
+        of: find.byKey(AppShell.railKey),
+        matching: find.text('设置'),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(AppBar, '设置'), findsOneWidget);
+    });
+
+    testWidgets('顺序跟随配置：拖拽后左侧栏顺序跟着变', (tester) async {
+      await pumpRail(tester);
+      await ShellSettingsController.instance.move(4, 0);
+      await tester.pumpAndSettle();
+
+      expect(railLabels(tester).first, '设置');
+    });
+
+    testWidgets('隐藏当前页签：桌面端不把用户赶走（它还在 Rail 上）', (tester) async {
+      await pumpRail(tester);
+      await tester.tap(find.descendant(
+        of: find.byKey(AppShell.railKey),
+        matching: find.text('漫画'),
+      ));
+      await tester.pumpAndSettle();
+
+      await ShellSettingsController.instance.setVisible('comic', false);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      // 桌面端「漫画」仍在 Rail 上、仍点得到，因此不该被强制跳到别的板块。
+      expect(find.widgetWithText(AppBar, '漫画'), findsOneWidget);
     });
   });
 }

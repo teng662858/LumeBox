@@ -216,14 +216,20 @@ void main() {
         // 主 isolate 必须始终能调度：失控脚本在 worker isolate 里跑，无论它是被
         // 及时回收还是把线程占满，主 isolate 的定时器都不能停。
         //
-        // 注意这里**不**断言 tick 的具体次数：修复中断通路后死循环通常在 1 秒内
-        // 就被回收，tick 自然比「卡死 6 秒」时少。用「观察窗口内是否持续调度」
-        // 表达隔离性，而不是把「卡得久」当成前提——那本来就是缺陷的特征。
+        // 判据刻意用**相邻两次 tick 的最大空档**，而不是 tick 总次数：
+        // 回收得越快，观测窗口越短，总次数自然越少——把总次数写成阈值，
+        // 等于「谁回收得快谁失败」（本轮实测：修复中断通路后死循环约 0.4 秒
+        // 就被回收，窗口内只有 3–4 次 tick，原断言 `> 3` 在负载下必然翻车）。
+        // 空档则与窗口长短无关：主 isolate 只要没被占住，间隔就应当贴着定时器
+        // 周期；真被失控脚本占住时，`Timer.periodic` 的 tick 会一次性跳过
+        // 整个卡顿时长的周期数（tick 的定义就是「此前经过了多少个周期」）。
+        final period = const Duration(milliseconds: 50);
         final ticks = <int>[];
-        final timer = Timer.periodic(
-          const Duration(milliseconds: 100),
-          (t) => ticks.add(t.tick),
-        );
+        final stamps = <DateTime>[];
+        final timer = Timer.periodic(period, (t) {
+          ticks.add(t.tick);
+          stamps.add(DateTime.now());
+        });
         addTearDown(timer.cancel);
 
         final run = await runSandboxCallInWorker(
@@ -235,15 +241,39 @@ void main() {
 
         expect(run.armed, isTrue, reason: 'worker 应已进到调用脚本这一步');
         expect(
-          ticks.length,
-          greaterThan(3),
-          reason: '主 isolate 在失控脚本运行期间必须持续调度'
-              '（实际 tick ${ticks.length} 次；0 次意味着主线程被卡住）',
-        );
-        expect(
           run.completed,
           isTrue,
           reason: '失控脚本应在预算内被回收（修复中断通路后的正向断言）',
+        );
+
+        // 观测窗口很短（约 0.4 秒）时也至少要两次 tick，否则量不出空档。
+        expect(
+          ticks.length,
+          greaterThanOrEqualTo(2),
+          reason: '观测窗口内至少要有两次 tick 才能测出空档'
+              '（实际 ${ticks.length} 次；0 次意味着主线程被卡住）',
+        );
+        // 取相邻 tick 的最大空档（tick 数 × 周期 = 真实卡顿时长的下界）。
+        var maxGapPeriods = 0;
+        for (var i = 1; i < ticks.length; i++) {
+          final gap = ticks[i] - ticks[i - 1];
+          if (gap > maxGapPeriods) maxGapPeriods = gap;
+        }
+        var maxGapWall = Duration.zero;
+        for (var i = 1; i < stamps.length; i++) {
+          final gap = stamps[i].difference(stamps[i - 1]);
+          if (gap > maxGapWall) maxGapWall = gap;
+        }
+        const stallLimit = Duration(seconds: 1);
+        expect(
+          maxGapWall,
+          lessThan(stallLimit),
+          reason: '主 isolate 在失控脚本运行期间必须持续调度：'
+              '相邻 tick 的空档不应超过 1 秒'
+              '（实测最大空档 ${maxGapWall.inMilliseconds}ms ≈ '
+              '$maxGapPeriods 个周期，共 ${ticks.length} 次 tick，'
+              '周期 ${period.inMilliseconds}ms）。'
+              '空档接近整个预算（6 秒）才说明主线程真被占住了',
         );
 
         // 另起一个全新上下文：失控的源不影响新源建立。

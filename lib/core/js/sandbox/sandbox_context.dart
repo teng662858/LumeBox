@@ -268,11 +268,10 @@ class SandboxContext {
       if (Qjs.valueTag(value) == jsTagException) {
         // 关键：立刻消费掉上下文里的待处理异常。quickjs 会把未消费的异常
         // 留给下一次求值，形成「上下文被污染」的假象（已实测）。
-        final message = _takeException();
-        final kind = _classify(message);
-        _lastError = SandboxError(kind, message);
-        if (kind != SandboxErrorKind.script || policy.poisonOnScriptError) {
-          _fail(kind, message);
+        final error = _errorFrom(_takeException());
+        _lastError = error;
+        if (error.kind != SandboxErrorKind.script || policy.poisonOnScriptError) {
+          _fail(error.kind, error.message);
         }
         return null;
       }
@@ -400,19 +399,31 @@ class SandboxContext {
     }
   }
 
-  /// 把异常文本归类。引擎级错误会销毁上下文，脚本错误默认不销毁。
-  SandboxErrorKind _classify(String message) {
+  /// 把异常文本归类，并给出**可读的原因**。引擎级错误会销毁上下文，
+  /// 脚本错误默认不销毁。
+  ///
+  /// 为什么不能只回分类、把引擎原文当消息：原生中断抛出的原文固定是
+  /// `InternalError: interrupted`——它只说明「被打断了」，说不出**被哪条预算
+  /// 打断**。这台机器上先撞哪条预算取决于负载（空闲时先撞 4 秒墙钟，有负载时
+  /// 先撞指令计数），所以同一段脚本的报错文案会飘——用户看到的是引擎内部串，
+  /// 拿不到任何能行动的信息。这里统一换成中断原因的中文名，与墙钟补判路径
+  /// （「执行超时（…ms > …ms）」）的口径对齐。
+  SandboxError _errorFrom(String message) {
     final lower = message.toLowerCase();
     if (lower.contains('interrupted')) {
       final reason = SandboxGuard.takenReason(_runtime);
-      return reason == SandboxInterrupt.instructions
+      final kind = reason == SandboxInterrupt.instructions
           ? SandboxErrorKind.instructions
           : SandboxErrorKind.timeout;
+      // reason 为空说明中断发生在装备窗口之外（理论上不出现）；此时按 [kind]
+      // 已有的默认走超时，文案随之取「执行超时」，不谎报一个没观测到的原因。
+      final label = (reason ?? SandboxInterrupt.timeout).label;
+      return SandboxError(kind, '$label（脚本被原生中断回收）');
     }
     if (lower.contains('out of memory') || lower.contains('stack overflow')) {
-      return SandboxErrorKind.memory;
+      return SandboxError(SandboxErrorKind.memory, message);
     }
-    return SandboxErrorKind.script;
+    return SandboxError(SandboxErrorKind.script, message);
   }
 
   /// 有界排空微任务队列，推进 Promise 链。返回 false 表示超预算。
@@ -441,11 +452,10 @@ class SandboxContext {
       if (outcome == 0) return true;
       if (outcome < 0) {
         // 任务体内抛出的异常同样会留在上下文里，必须消费。
-        final message = _takeException();
-        final kind = _classify(message);
-        _lastError = SandboxError(kind, message);
-        if (kind != SandboxErrorKind.script || policy.poisonOnScriptError) {
-          _fail(kind, message);
+        final error = _errorFrom(_takeException());
+        _lastError = error;
+        if (error.kind != SandboxErrorKind.script || policy.poisonOnScriptError) {
+          _fail(error.kind, error.message);
           return false;
         }
         continue;
@@ -601,12 +611,12 @@ class SandboxContext {
       // 文本还原——否则「脚本方法体内堆爆了」会被当成可捕获的普通脚本错误，
       // 于是一个内存已失控的上下文被原样留着继续用。引擎级错误（内存/栈/
       // 中断）无论策略如何都必须销毁上下文，这条口径与直接求值路径一致。
-      final kind = _classify(text);
-      _lastError = SandboxError(kind, text);
-      if (kind != SandboxErrorKind.script || policy.poisonOnScriptError) {
-        _fail(kind, text);
+      final error = _errorFrom(text);
+      _lastError = error;
+      if (error.kind != SandboxErrorKind.script || policy.poisonOnScriptError) {
+        _fail(error.kind, error.message);
       }
-      _settle(completer, SandboxFailure(kind, text));
+      _settle(completer, SandboxFailure(error.kind, error.message));
       return;
     }
     if (text.length > policy.maxResultChars) {

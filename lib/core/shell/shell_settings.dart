@@ -307,15 +307,23 @@ class ShellSettingsController extends ChangeNotifier {
   bool canHide(String id) => _settings.canHide(id);
 
   /// 启动时读一次落盘值。失败不阻断启动（回退默认）。
+  ///
+  /// **有超时**：本方法在 `main()` 里被 await（首帧的导航栏要按用户配置渲染，
+  /// 不能先画一份默认的再跳），因此这里绝不允许无限期挂住——平台通道一旦
+  /// 不响应，超时即按默认继续启动。宁可导航栏这次回到默认，也不能白屏。
   Future<void> boot() async {
     try {
-      final store = await ShellSettingsStore.open();
+      final store = await ShellSettingsStore.open().timeout(bootTimeout);
       apply(store.load());
     } catch (error, stackTrace) {
       LumeLog.warn('壳层设置加载失败，按默认处理: $error');
       LumeLog.error(error, stackTrace);
     }
   }
+
+  /// 启动读盘的等待上限。正常是本地文件读，毫秒级；给足余量只为了兜住
+  /// 「平台通道不响应」这种异常路径。
+  static const Duration bootTimeout = Duration(seconds: 3);
 
   /// 直接应用（启动路径与测试用；会通知监听者）。
   void apply(ShellSettings settings) {

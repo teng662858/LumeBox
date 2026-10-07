@@ -23,8 +23,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/reading/reading.dart';
+import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
+import 'package:lume_box/core/shell/shell_settings.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/cat/cat_page.dart';
@@ -32,8 +34,12 @@ import 'package:lume_box/features/comic/comic_detail_page.dart';
 import 'package:lume_box/features/comic/comic_page.dart';
 import 'package:lume_box/features/comic/comic_reader_page.dart';
 import 'package:lume_box/features/novel/novel_reader_page.dart';
+import 'package:lume_box/features/settings/debug_panel_page.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
+import 'package:lume_box/features/settings/source_generator_page.dart';
+import 'package:lume_box/features/settings/tab_bar_settings_page.dart';
 import 'package:lume_box/features/shell/app_shell.dart';
+import 'package:lume_box/features/video/player_settings_page.dart';
 import 'package:lume_box/features/video/video_page.dart';
 import 'package:lume_box/shared/widgets/glass_card.dart';
 
@@ -431,5 +437,109 @@ void main() {
       await tester.pump(const Duration(milliseconds: 120));
     }
     await capture(tester, '10_settings_scrolled');
+  });
+
+  // ==========================================================================
+  // 底部导航栏管理（逐项开关 + 拖拽排序）
+  // ==========================================================================
+
+  /// 渲染管理页并截屏。
+  ///
+  /// 管理页读的是应用级单例 [ShellSettingsController]（页面的正式接线方式），
+  /// 因此这里直接改单例、再重建页面——与用户在真机上点开关是同一条路径。
+  Future<void> pumpTabBarSettings(WidgetTester tester, String name) async {
+    await pump(tester, const TabBarSettingsPage());
+    await capture(tester, name);
+  }
+
+  /// 把壳层配置设成指定状态。
+  ///
+  /// 刻意走**纯模型 + 公开的 apply**，而不是测试专用的 resetForTesting：本文件
+  /// 在 `tool/` 下、不属于测试目标，用测试接口会吃 lint；而且截图只关心「这一份
+  /// 配置渲染出来长什么样」，不需要落盘。
+  ///
+  /// [hide] 里的页签逐个关掉，[moveFrom]/[moveTo] 若非空则再做一次拖拽排序。
+  void installShellSettings({
+    List<String> hide = const <String>[],
+    int? moveFrom,
+    int? moveTo,
+  }) {
+    var settings = ShellSettings.defaults;
+    for (final id in hide) {
+      settings = settings.withVisible(id, false) ?? settings;
+    }
+    if (moveFrom != null && moveTo != null) {
+      settings = settings.withMove(moveFrom, moveTo);
+    }
+    ShellSettingsController.instance.apply(settings);
+  }
+
+  testWidgets('底部导航栏管理：默认状态（5 个页签全开）', (tester) async {
+    installShellSettings();
+    await pumpTabBarSettings(tester, '14_tabbar_settings_default');
+  });
+
+  testWidgets('底部导航栏管理：隐藏多个 + 只剩 1 个（开关置灰态）', (tester) async {
+    // 关到只剩「小说」：最后那一颗开关应当是置灰的。
+    installShellSettings(hide: <String>['comic', 'video', 'cat', 'settings']);
+    await pumpTabBarSettings(tester, '15_tabbar_settings_last_tab');
+  });
+
+  testWidgets('底部导航栏管理：隐藏「设置」后的提示卡', (tester) async {
+    installShellSettings(hide: <String>['settings']);
+    await pumpTabBarSettings(tester, '16_tabbar_settings_hidden_notice');
+  });
+
+  testWidgets('导航壳：隐藏「设置」后左下角出现恢复入口', (tester) async {
+    installShellSettings(hide: <String>['settings']);
+    await pump(tester, const AppShell(desktopRail: false));
+    await capture(tester, '17_shell_settings_entry');
+  });
+
+  testWidgets('导航壳：隐藏多个页签 + 拖拽排序后的 Dock', (tester) async {
+    // 隐藏猫源与漫画，并把「设置」拖到最前，验证 Dock 顺序真的跟着配置走。
+    installShellSettings(
+      hide: <String>['cat', 'comic'],
+      moveFrom: 4,
+      moveTo: 0,
+    );
+    await pump(tester, const AppShell(desktopRail: false));
+    await capture(tester, '18_shell_reordered_dock');
+  });
+
+  testWidgets('导航壳：只剩 1 个页签时 Dock 不空', (tester) async {
+    installShellSettings(hide: <String>['comic', 'video', 'cat', 'settings']);
+    await pump(tester, const AppShell(desktopRail: false));
+    await capture(tester, '19_shell_single_tab');
+  });
+
+  // ==========================================================================
+  // Phase2 其余新增页面
+  // ==========================================================================
+
+  testWidgets('调试面板：默认（开关全关）', (tester) async {
+    await pump(tester, const DebugPanelPage());
+    await capture(tester, '20_debug_panel_default');
+  });
+
+  testWidgets('图源生成器：占位页（按钮提示开发中）', (tester) async {
+    await pump(tester, const SourceGeneratorPage());
+    await capture(tester, '21_source_generator');
+  });
+
+  testWidgets('播放器设置：字幕与解码区', (tester) async {
+    await pump(
+      tester,
+      PlayerSettingsPage(
+        settings: const PlayerSettings(),
+        onChanged: (_) {},
+      ),
+    );
+    await capture(tester, '22_player_settings');
+    await tester.drag(find.byType(ListView), const Offset(0, -260));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 120));
+    }
+    await capture(tester, '23_player_settings_subtitles');
   });
 }

@@ -122,11 +122,39 @@ class _AppShellState extends State<AppShell> {
         orElse: () => _pageCatalog.first,
       );
 
-  /// 可见页签（按用户配置的顺序）。
+  /// 可见页签（按用户配置的顺序）——移动端 Dock 用。
   List<_ShellTab> get _visibleTabs => <_ShellTab>[
         for (final config in _shellSettings.settings.visibleTabs)
           _pageOf(config.id),
       ];
+
+  /// 全部页签（按用户配置的顺序）——桌面端左侧栏用。
+  ///
+  /// 桌面端**不跟随「隐藏」**，只跟随顺序：左侧栏是桌面端的标准布局，页签少一个
+  /// 会让工具栏看起来像坏了。更要紧的是，Rail 上没有移动端那个左下角恢复入口，
+  /// 若这里也按可见性过滤，「隐藏设置」就会把桌面用户彻底锁死——设置页是导航栏
+  /// 管理自己的入口，藏起来之后再也进不去（见 [ShellSettings] 硬约束 2）。
+  List<_ShellTab> get _orderedTabs => <_ShellTab>[
+        for (final config in _shellSettings.tabs) _pageOf(config.id),
+      ];
+
+  /// 当前布局**实际渲染 / 实际可达**的页签集合。
+  ///
+  /// 「当前页签被隐藏后落到哪里」要以它为基准：桌面端隐藏的页签仍在 Rail 上、
+  /// 仍点得到，就不该把用户从当前页面赶走；移动端则会从 Dock 上消失，必须落回
+  /// 一个还看得见的页签，否则用户会停在「底部找不到自己位置」的页面上。
+  ///
+  /// 移动端的**设置页恒为可达**：它在 Dock 上时点得到，被隐藏时左下角还有恢复
+  /// 入口（见 [_buildSettingsEntry]）。这一点必须体现在这里，否则会踩一个很难
+  /// 发现的坑——用户隐藏设置 → 点左下角入口进设置 → 在管理页里改任意一个页签，
+  /// 就会被当成「停在一个不可达的页签上」而被弹回小说板块，于是**永远改不完配置**。
+  List<_ShellTab> get _reachableTabs {
+    final rail = widget.desktopRail ?? _isDesktopPlatform;
+    if (rail) return _orderedTabs;
+    final tabs = _visibleTabs;
+    if (tabs.any((tab) => tab.id == ShellTab.settingsId)) return tabs;
+    return <_ShellTab>[...tabs, _pageOf(ShellTab.settingsId)];
+  }
 
   /// 桌面端：Windows / macOS / Linux 自动用侧边栏（移动端保持底部 Dock）。
   static bool get _isDesktopPlatform {
@@ -150,12 +178,13 @@ class _AppShellState extends State<AppShell> {
   void _onShellSettingsChanged() {
     if (!mounted) return;
     setState(() {
-      // 当前页签被隐藏了（用户刚把它关掉）：落到第一个可见页签上。
+      // 当前页签被隐藏了（用户刚把它关掉）：落到第一个仍可达的页签上。
       // 不这么做的话页面会停在一个已经不在导航栏里的页签上——用户看得见内容，
-      // 却在底部找不到自己在哪里。
-      final visible = _visibleTabs;
-      if (visible.isNotEmpty && !visible.any((tab) => tab.id == _activeId)) {
-        _activeId = visible.first.id;
+      // 却在底部找不到自己在哪里。桌面端 Rail 不过滤可见性（见 [_reachableTabs]），
+      // 因此桌面端不会因为「隐藏」把用户从当前页面赶走。
+      final reachable = _reachableTabs;
+      if (reachable.isNotEmpty && !reachable.any((tab) => tab.id == _activeId)) {
+        _activeId = reachable.first.id;
       }
     });
   }
@@ -254,9 +283,12 @@ class _AppShellState extends State<AppShell> {
   // ------------------------------------------------------------------ 桌面端
 
   Widget _buildRail() {
-    // 桌面端：左侧栏始终显示全部页签（文档口径），但顺序跟随用户配置——
+    // 桌面端：左侧栏**始终显示全部页签**（桌面端标准布局），顺序跟随用户配置——
     // 顺序是用户的肌肉记忆，两个端保持一致更不容易点错。
-    final tabs = _visibleTabs;
+    //
+    // 刻意不按可见性过滤：Rail 上没有移动端那个左下角恢复入口，过滤之后
+    // 「隐藏设置」会把桌面用户彻底锁死（见 [_orderedTabs]）。
+    final tabs = _orderedTabs;
     final activeIndex = tabs.indexWhere((tab) => tab.id == _activeId);
     return Scaffold(
       body: Row(
