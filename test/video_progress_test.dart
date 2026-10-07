@@ -14,6 +14,7 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
+import 'package:lume_box/features/reading/history_sheet.dart';
 import 'package:lume_box/features/video/video_page.dart';
 
 import 'support/fake_source_manager.dart';
@@ -21,7 +22,8 @@ import 'support/fake_source_manager.dart';
 /// 视频播放进度记忆（文档要求「视频记忆到集数 + 播放时间点」）。
 ///
 /// 验证：播到一半退出后再点同一作品，从上次位置继续；换集从头播；播完不自动
-/// 跳结尾；首页「继续观看」列出最近播放、显示进度、可续看与移除。
+/// 跳结尾；播放记录与续看统一在右上角 ⏱️ 的抽屉里（首页的「继续观看」区块
+/// 已按用户要求删除，本文件同时钉住「它不会再回来」）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -132,9 +134,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
 
-    // 重新进入板块，再点同一作品（此时「继续观看」也在，取浏览列表那条）。
+    // 重新进入板块，再点同一作品（列表里只剩浏览区那一条）。
     final second = await pumpBoard(tester);
-    await tester.tap(find.text('示例影片').last);
+    await tester.tap(find.text('示例影片'));
     await tester.pumpAndSettle();
 
     expect(
@@ -166,11 +168,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
 
-    // 重新进入并选第 2 集。
-    // 注意：继续观看模块已挪到浏览页**底部**，树序上排在浏览区条目之后，
-    // 因此「浏览区那一条」是 .first，「历史卡」是 .last（与从前相反）。
+    // 重新进入并选第 2 集（「继续观看」区块已删除，列表里只剩那一条）。
     final second = await pumpBoard(tester);
-    await tester.tap(find.text('示例影片').first);
+    await tester.tap(find.text('示例影片'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('第 2 集'));
     await tester.pumpAndSettle();
@@ -218,7 +218,7 @@ void main() {
     expect(find.textContaining('已从上次位置继续'), findsNothing);
   });
 
-  testWidgets('首页「继续观看」：显示进度、可续看、可移除', (tester) async {
+  testWidgets('首页不再有「继续观看」区块；记录与续看都在 ⏱️ 抽屉里（用户要求删除）', (tester) async {
     source.items = const <SourceItem>[
       SourceItem(id: 'movie-1', title: '示例影片'),
     ];
@@ -248,17 +248,25 @@ void main() {
 
     final created = await pumpBoard(tester);
 
-    expect(find.text('继续观看'), findsOneWidget);
-    expect(find.text('第 1 集 · 12:00 / 45:00'), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsWidgets);
+    // 首页只当浏览用：区块与它的「全部」入口都不再出现，进度条也不在首页。
+    expect(find.text('继续观看'), findsNothing, reason: '首页区块已按用户要求删除');
+    expect(find.text('全部'), findsNothing);
 
-    // 点「继续观看」区块里的那一条（它在浏览列表上方，取 first）。
-    await tester.tap(find.text('示例影片').first);
+    // 记录仍在：右上角 ⏱️ 抽屉里看得到，点一条即从上次位置续播。
+    await tester.tap(find.byTooltip('播放历史'));
+    await tester.pumpAndSettle();
+    final inSheet = find.descendant(
+      of: find.byType(ReadingHistorySheet),
+      matching: find.text('示例影片'),
+    );
+    expect(find.text('第 1 集 · 12:00 / 45:00', skipOffstage: false), findsWidgets);
+
+    await tester.tap(inSheet);
     await tester.pumpAndSettle();
     expect(
       created.single.seeks,
       contains(const Duration(minutes: 12)),
-      reason: '点继续观看即从上次位置续播',
+      reason: '从抽屉里点一条即从上次位置续播',
     );
   });
 
@@ -299,7 +307,7 @@ void main() {
     );
   });
 
-  testWidgets('继续观看：移除后记录与条目一起消失', (tester) async {
+  testWidgets('历史抽屉里删单条：记录与书架条目一起消失', (tester) async {
     source.items = const <SourceItem>[
       SourceItem(id: 'movie-1', title: '示例影片'),
     ];
@@ -323,13 +331,14 @@ void main() {
     );
 
     await pumpBoard(tester);
-    expect(find.text('继续观看'), findsOneWidget);
-
-    // 长按移除（区块提供的手势）。历史卡在树序末尾，用 .last 取它。
-    await tester.longPress(find.text('示例影片').last);
+    await tester.tap(find.byTooltip('播放历史'));
     await tester.pumpAndSettle();
 
-    expect(find.text('继续观看'), findsNothing, reason: '移除后整块隐藏');
+    // 抽屉里删单条（视频的记录就是它的书架，删掉不丢别的东西）。
+    await tester.tap(find.byTooltip('删除记录').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('还没有记录'), findsOneWidget, reason: '删完抽屉给空态');
     expect(library.videoProgress('movie-1'), isNull);
     expect(library.onShelf('movie-1'), isFalse);
   });
@@ -367,12 +376,16 @@ void main() {
     expect(created.length, greaterThanOrEqualTo(1));
   });
 
-  testWidgets('没有播放记录时：首页不显示「继续观看」', (tester) async {
+  testWidgets('没有播放记录：首页照常，抽屉给空态说明', (tester) async {
     source.items = const <SourceItem>[
       SourceItem(id: 'movie-1', title: '示例影片'),
     ];
     await pumpBoard(tester);
-    expect(find.text('继续观看'), findsNothing);
+    expect(find.text('继续观看'), findsNothing, reason: '这个区块已经不在了');
+
+    await tester.tap(find.byTooltip('播放历史'));
+    await tester.pumpAndSettle();
+    expect(find.text('还没有记录'), findsOneWidget);
   });
 
   group('进度存储口径', () {

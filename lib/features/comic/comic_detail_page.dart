@@ -46,6 +46,8 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
   late final SectionImagePipeline _pipeline = SectionImagePipeline(
     cacheDir: widget.library.imageCacheDir,
     memoryBudgetBytes: SectionImagePipeline.thumbnailBudgetBytes,
+    // 漫画板块的图片缓存已按用户要求关闭（不读盘也不落盘）。
+    diskCache: false,
   );
 
   DataSource? _source;

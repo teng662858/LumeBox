@@ -15,19 +15,19 @@ import '../reading/explore_view.dart';
 import '../reading/history_sheet.dart';
 import '../shell/board_tabs.dart';
 import '../source/add_source_button.dart';
-import '../source/source_home_page.dart';
 import '../source/source_section_page.dart';
-import 'continue_watching.dart';
 import 'source_playback.dart';
 import 'video_play_target.dart';
 import 'video_player_page.dart';
 
 /// 视频板块：**只保留【浏览】**（真机反馈：播放子页签移除）。
 ///
-/// 页面职责只剩浏览与快速入口：
-/// - 图源条（切换当前图源）+ 分类 / 搜索 / 列表（[SourceBrowsePane]）；
-/// - 列表最底部少量「继续观看」记录（[ContinueWatchingSection]）；
-/// - 右上角：⏱️ 历史（底部抽屉）+ 既有的图源管理与「+」添加图源。
+/// 页面职责**只有浏览**：
+/// - 图源条（切换当前图源）+ 分类 / 搜索 / 列表（[ExploreView]）；
+/// - 右上角：⏱️ 历史（底部抽屉）+ 图源管理与「+」添加图源。
+///
+/// 首页底部原先那块「继续观看」**已按用户要求删除**：首页只当浏览用，播放记录
+/// （含续看 / 删单条 / 清空）统一从 ⏱️ 抽屉进，不再有两处入口。
 ///
 /// **点条目不再切页签，而是唤起独立播放器页**（[VideoPlayerPage]）：播放是沉浸
 /// 场景，独立页面能返回、能带自己的标题，也不再占板块的页签位。没有可用图源时
@@ -64,7 +64,7 @@ class VideoPage extends StatefulWidget {
   /// 图源管理端口（首页的浏览面用它取本板块图源）。为空时用正式实现。
   final SourceManager? sourceManager;
 
-  /// 本板块阅读库（进度与继续观看）；为空时按板块打开正式实现。
+  /// 本板块阅读库（播放进度）；为空时按板块打开正式实现。
   final ReadingLibrary? library;
 
   /// 页签文案：**只保留【浏览】**（播放已移到独立播放器页）。
@@ -75,7 +75,7 @@ class VideoPage extends StatefulWidget {
 }
 
 class _VideoPageState extends State<VideoPage> {
-  /// 本板块的阅读库：视频进度（集数 + 时间点）与「继续观看」落在它里面。
+  /// 本板块的阅读库：视频进度（集数 + 时间点）落在它里面，记录从 ⏱️ 抽屉看。
   ReadingLibrary? _library;
 
   /// 浏览列表的封面图管线：**本板块自己**的（缓存落在 sections/video 之下）。
@@ -84,10 +84,7 @@ class _VideoPageState extends State<VideoPage> {
   /// 浏览面换代：从图源管理页返回后 +1，重挂浏览面（列表与当前图源重算）。
   int _browseRevision = 0;
 
-  /// 「继续观看」列表换代：从播放器页 / 历史抽屉返回后 +1，重算那一块。
-  int _continueWatchingRevision = 0;
-
-  /// 阅读库打不开：浏览照常，但进度与继续观看不可用。
+  /// 阅读库打不开：浏览照常，但进度与播放记录不可用。
   bool _libraryFailed = false;
 
   /// 是否有播放器页正压在栈上（由 [_openPlayer] 维护）。
@@ -246,7 +243,10 @@ class _VideoPageState extends State<VideoPage> {
     await _playFromSource(source, selection.item);
   }
 
-  /// 唤起独立播放器页；返回后刷新「继续观看」（进度是在那边落的盘）。
+  /// 唤起独立播放器页。
+  ///
+  /// 返回后**不必刷新任何列表**：首页不再有「继续观看」区块（用户要求删除），
+  /// 播放记录只在右上角 ⏱️ 的抽屉里看，抽屉每次打开都会重读库。
   Future<void> _openPlayer(
     PlayerMedia media, {
     VideoPlayTarget? target,
@@ -275,8 +275,6 @@ class _VideoPageState extends State<VideoPage> {
     } finally {
       _playerRouteOpen = false;
     }
-    if (!mounted) return;
-    setState(() => _continueWatchingRevision++);
   }
 
   /// 剧集选择面板：一集一个条目，取消返回 null。
@@ -291,7 +289,7 @@ class _VideoPageState extends State<VideoPage> {
     );
   }
 
-  /// 继续观看：按记录里的剧集与时间点续播。
+  /// 续看：按记录里的剧集与时间点续播（历史抽屉里点一条走这里）。
   ///
   /// 记的是剧集 id 而不是序号，因此图源章节改名或重排也能找回同一集；只有剧集
   /// 取不到（图源改了）才回退到按序号定位。
@@ -360,20 +358,13 @@ class _VideoPageState extends State<VideoPage> {
     }
   }
 
-  /// 移除一条播放记录（书架条目一并撤下）。
-  void _removeProgress(LibraryItem item) {
-    final library = _library;
-    if (library == null) return;
-    library.unshelve(item.itemId);
-    setState(() => _continueWatchingRevision++);
-  }
-
-  // ------------------------------------------------------------ 日历 / 历史
+  // ------------------------------------------------------------------ 历史
 
   /// 打开历史抽屉（底部 Sheet）：在抽屉里直接浏览播放记录。
   ///
   /// 真机反馈：时钟图标点进来是「随手看一眼就回去」，因此**不新开全屏页面**。
-  /// 完整列表（含清空）仍在抽屉里：视频的记录就是它的「书架」，清掉不丢别的。
+  /// 首页不再有「继续观看」区块（用户要求删除），因此抽屉是播放记录的**唯一**
+  /// 入口：删单条 / 清空也都在里面（视频的记录就是它的「书架」，清掉不丢别的）。
   Future<void> _openHistory() async {
     final library = _library;
     if (library == null) return;
@@ -388,7 +379,6 @@ class _VideoPageState extends State<VideoPage> {
       },
     );
     if (!mounted) return;
-    setState(() => _continueWatchingRevision++);
   }
 
   /// 可读提示（不冒泡异常）。
@@ -442,7 +432,10 @@ class _VideoPageState extends State<VideoPage> {
     );
   }
 
-  /// 浏览页签内容：图源列表 + 底部「继续观看」。
+  /// 浏览页签内容：只有图源列表。
+  ///
+  /// 底部原先挂着一块「继续观看」（最近 3 条 + 「全部」），**已按用户要求删除**：
+  /// 首页只当浏览用，播放记录统一从右上角 ⏱️ 的抽屉进（不再有两处入口）。
   Widget _buildBrowseTab() {
     if (_libraryFailed) {
       return const Center(
@@ -451,51 +444,28 @@ class _VideoPageState extends State<VideoPage> {
           child: GlassCard(
             padding: EdgeInsets.all(20),
             child: Text(
-              '视频板块的阅读库打不开，播放记录与「继续观看」暂不可用；'
-              '浏览与播放不受影响。',
+              '视频板块的阅读库打不开，播放进度与记录暂不可用；浏览与播放不受影响。',
               style: TextStyle(fontSize: 13, height: 1.5),
             ),
           ),
         ),
       );
     }
-    return Column(
-      children: <Widget>[
-        // **内容在前，历史在后**（真机反馈：历史条目一多就把搜索栏、分类与首页
-        // 内容全部挤到屏幕下方）。顺序固定为：搜索 → 分类 → 内容列表 → 继续观看。
-        Expanded(
-          // 与小说 / 漫画**同一个浏览组件**：同款工具栏（源下拉 → 排序 → 布局 →
-          // 搜索 → 筛选）、同款搜索（聚合 / 当前源）与分页 / 预热。视频板块因此
-          // 不再有一套自己的浏览实现——三块的肌肉记忆真正一致。
-          child: ExploreView(
-            section: Section.video,
-            // 管线可能还在准备：为空时封面先出占位（不挂转圈等它，见 ExploreView）。
-            pipeline: _pipeline,
-            manager: widget.sourceManager,
-            layout: ExploreLayout.list,
-            // 顶栏已经有「源管理」，图源条里不再重复放一个。
-            showSourceManage: false,
-            // 导入 / 删除图源后原地重解析（不重挂：重挂会与旧实例的 dispose
-            // 抢同一份板块注册表，真机上会报「图源存储不可用」）。
-            revision: _browseRevision,
-            onOpenItem: _playFromSelection,
-          ),
-        ),
-        if (_library != null)
-          // 放在整页最底端；只展示最近 3 条：条目数与高度都可预期，不会把上面的
-          // 内容列表压没。完整历史走右上角那个时钟图标（抽屉）。
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: ContinueWatchingSection(
-              key: ValueKey<int>(_continueWatchingRevision),
-              library: _library!,
-              onResume: _resumeFromProgress,
-              onRemove: _removeProgress,
-              onShowAll: _openHistory,
-              maxItems: 3,
-            ),
-          ),
-      ],
+    // 与小说 / 漫画**同一个浏览组件**：同款工具栏（源下拉 → 排序 → 布局 →
+    // 搜索 → 筛选）、同款搜索（聚合 / 当前源）与分页 / 预热。视频板块因此
+    // 不再有一套自己的浏览实现——三块的肌肉记忆真正一致。
+    return ExploreView(
+      section: Section.video,
+      // 管线可能还在准备：为空时封面先出占位（不挂转圈等它，见 ExploreView）。
+      pipeline: _pipeline,
+      manager: widget.sourceManager,
+      layout: ExploreLayout.list,
+      // 顶栏已经有「源管理」，图源条里不再重复放一个。
+      showSourceManage: false,
+      // 导入 / 删除图源后原地重解析（不重挂：重挂会与旧实例的 dispose
+      // 抢同一份板块注册表，真机上会报「图源存储不可用」）。
+      revision: _browseRevision,
+      onOpenItem: _playFromSelection,
     );
   }
 }

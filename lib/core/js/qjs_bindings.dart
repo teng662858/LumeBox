@@ -77,6 +77,24 @@ typedef _GetExceptionNative = Pointer<JsValueHandle> Function(
 
 typedef _ExecutePendingJobNative = Int32 Function(Pointer<JsRuntimeHandle>);
 
+typedef _NewStringNative = Pointer<JsValueHandle> Function(
+  Pointer<JsContextHandle>,
+  Pointer<Utf8>,
+);
+
+typedef _ValueToAtomNative = Int32 Function(
+  Pointer<JsContextHandle>,
+  Pointer<JsValueHandle>,
+);
+
+typedef _GetPropertyNative = Pointer<JsValueHandle> Function(
+  Pointer<JsContextHandle>,
+  Pointer<JsValueHandle>,
+  Int32,
+);
+
+typedef _FreeAtomNative = Void Function(Pointer<JsContextHandle>, Int32);
+
 typedef _ValueGetTagNative = Int32 Function(Pointer<JsValueHandle>);
 
 typedef _SetSizeNative = Void Function(Pointer<JsRuntimeHandle>, IntPtr);
@@ -238,6 +256,16 @@ class Qjs {
   static void Function(Pointer<JsRuntimeHandle>)? _freeRuntime;
   static Pointer<JsValueHandle> Function(Pointer<JsContextHandle>)?
       _getException;
+  static Pointer<JsValueHandle> Function(Pointer<JsContextHandle>, Pointer<Utf8>)?
+      _newString;
+  static int Function(Pointer<JsContextHandle>, Pointer<JsValueHandle>)?
+      _valueToAtom;
+  static Pointer<JsValueHandle> Function(
+    Pointer<JsContextHandle>,
+    Pointer<JsValueHandle>,
+    int,
+  )? _getProperty;
+  static void Function(Pointer<JsContextHandle>, int)? _freeAtom;
   static int Function(Pointer<JsRuntimeHandle>)? _executePendingJob;
   static int Function(Pointer<JsValueHandle>)? _valueTag;
   static void Function(Pointer<JsRuntimeHandle>, int)? _setMemoryLimit;
@@ -259,6 +287,10 @@ class Qjs {
     _freeContext = null;
     _freeRuntime = null;
     _getException = null;
+    _newString = null;
+    _valueToAtom = null;
+    _getProperty = null;
+    _freeAtom = null;
     _executePendingJob = null;
     _valueTag = null;
     _setMemoryLimit = null;
@@ -408,6 +440,51 @@ class Qjs {
                 Pointer<JsValueHandle> Function(
                     Pointer<JsContextHandle>)>('jsGetException'),
           );
+
+  /// 新建一个 JS 字符串值（读属性用的键）。
+  static Pointer<JsValueHandle> Function(Pointer<JsContextHandle>, Pointer<Utf8>)
+      get newString => _newString ??= _lookup(
+            _newString,
+            'jsNewString',
+            (lib) => lib.lookupFunction<_NewStringNative,
+                    Pointer<JsValueHandle> Function(
+                        Pointer<JsContextHandle>, Pointer<Utf8>)>(
+                'jsNewString'),
+          );
+
+  /// JS 值 → 属性原子上（属性名做键用）。
+  static int Function(Pointer<JsContextHandle>, Pointer<JsValueHandle>)
+      get valueToAtom => _valueToAtom ??= _lookup(
+            _valueToAtom,
+            'jsValueToAtom',
+            (lib) => lib.lookupFunction<_ValueToAtomNative,
+                    int Function(Pointer<JsContextHandle>,
+                        Pointer<JsValueHandle>)>(
+                'jsValueToAtom'),
+          );
+
+  /// 读对象属性（返回新引用，用完要 [freeValue]）。
+  static Pointer<JsValueHandle> Function(
+    Pointer<JsContextHandle>,
+    Pointer<JsValueHandle>,
+    int,
+  ) get getProperty => _getProperty ??= _lookup(
+        _getProperty,
+        'jsGetProperty',
+        (lib) => lib.lookupFunction<_GetPropertyNative,
+                Pointer<JsValueHandle> Function(Pointer<JsContextHandle>,
+                    Pointer<JsValueHandle>, int)>(
+            'jsGetProperty'),
+      );
+
+  /// 释放属性原子。
+  static void Function(Pointer<JsContextHandle>, int) get freeAtom =>
+      _freeAtom ??= _lookup(
+        _freeAtom,
+        'jsFreeAtom',
+        (lib) => lib.lookupFunction<_FreeAtomNative,
+            void Function(Pointer<JsContextHandle>, int)>('jsFreeAtom'),
+      );
 
   static int Function(Pointer<JsRuntimeHandle>) get executePendingJob =>
       _executePendingJob ??= _lookup(

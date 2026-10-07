@@ -369,13 +369,18 @@ class SandboxContext {
   }
 
   /// 取出并清除待处理异常，返回可读文本。
+  ///
+  /// 消息后面会附上 Error 的 `stack` 里的**前两帧**（形如
+  /// `at <脚本 id>.js:123:45`）：脚本载入失败时引擎只给一句
+  /// `TypeError: not a function`，说不出是**哪一行**调用了不存在的东西——
+  /// 带上行号，用户自己就能定位（也才可能拿得出可复现的信息）。
   String _takeException() {
     Pointer<JsValueHandle>? exception;
     try {
       exception = Qjs.getException(_context);
       if (exception == nullptr) return '未知脚本错误';
       final text = _readString(exception);
-      return text ?? '未知脚本错误';
+      return _withStack(text ?? '未知脚本错误', exception);
     } catch (error) {
       return '$error';
     } finally {
@@ -384,6 +389,68 @@ class SandboxContext {
           Qjs.freeValue(_context, exception, 1);
         } catch (error, stackTrace) {
           LumeLog.error(error, stackTrace);
+        }
+      }
+    }
+  }
+
+  /// 把 Error 的 `stack` 摘要附在消息后面（**尽力而为**：取不到就原样返回）。
+  ///
+  /// 只留带位置信息的帧、最多两帧、总长有上限——报错是给用户看的，不是日志。
+  String _withStack(String message, Pointer<JsValueHandle> exception) {
+    try {
+      final stack = _readStringProperty(exception, 'stack');
+      if (stack == null) return message;
+      final frames = stack
+          .split(String.fromCharCode(10))
+          .map((line) => line.trim())
+          .where((line) => line.startsWith('at ') && line.length > 3)
+          .take(2)
+          .toList(growable: false);
+      if (frames.isEmpty) return message;
+      final summary = frames.join(' / ');
+      final clipped =
+          summary.length > 200 ? '${summary.substring(0, 200)}…' : summary;
+      return '$message${String.fromCharCode(10)}$clipped';
+    } catch (error) {
+      // 诊断信息拿不到，不该让报错本身也失败。
+      return message;
+    }
+  }
+
+  /// 读一个字符串属性（当前只用于 Error 的 `stack`）；任何一步失败都返回 null。
+  String? _readStringProperty(Pointer<JsValueHandle> object, String name) {
+    final key = name.toNativeUtf8();
+    Pointer<JsValueHandle>? value;
+    var atom = 0;
+    try {
+      final keyValue = Qjs.newString(_context, key.cast<Utf8>());
+      if (keyValue == nullptr) return null;
+      try {
+        atom = Qjs.valueToAtom(_context, keyValue);
+      } finally {
+        Qjs.freeValue(_context, keyValue, 1);
+      }
+      if (atom == 0) return null;
+      value = Qjs.getProperty(_context, object, atom);
+      if (value == nullptr) return null;
+      return _readString(value);
+    } catch (error) {
+      return null;
+    } finally {
+      if (atom != 0) {
+        try {
+          Qjs.freeAtom(_context, atom);
+        } catch (error) {
+          // 释放失败只影响这一次诊断，忽略。
+        }
+      }
+      malloc.free(key);
+      if (value != null && value != nullptr) {
+        try {
+          Qjs.freeValue(_context, value, 1);
+        } catch (error) {
+          LumeLog.error(error, StackTrace.current);
         }
       }
     }

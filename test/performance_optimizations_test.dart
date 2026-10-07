@@ -85,6 +85,37 @@ void main() {
         isNot(pipeline.cachePathFor('https://example.com/b.jpg')),
       );
     });
+
+    test('关掉磁盘缓存的板块（漫画）：不读盘、也不落盘', () async {
+      final library = await ReadingLibrary.open(Section.comic);
+      final pipeline = SectionImagePipeline(
+        cacheDir: library.imageCacheDir,
+        memoryBudgetBytes: SectionImagePipeline.thumbnailBudgetBytes,
+        // 漫画板块按用户要求关掉了图片缓存。
+        diskCache: false,
+      );
+      addTearDown(pipeline.dispose);
+
+      const url = 'https://example.com/cover.jpg';
+      // 先手工落一份「旧缓存」：关掉磁盘缓存后它不该被读到。
+      final target = pipeline.cachePathFor(url);
+      File(target).parent.createSync(recursive: true);
+      File(target).writeAsBytesSync(
+        Uint8List.fromList(List<int>.generate(1024, (i) => i % 251)),
+      );
+
+      // 测试环境里一切真实网络请求都会失败（flutter_test 返回 400）：
+      // 拿到 null 恰好证明**没有读盘**。
+      final loaded = await pipeline.bytes(url);
+      expect(loaded, isNull, reason: '关了磁盘缓存就不再读盘');
+
+      // 再看一眼目录：看漫画不会往里新增文件。
+      final dir = Directory(library.imageCacheDir);
+      final before = dir.listSync(recursive: true).whereType<File>().length;
+      await pipeline.bytes('https://example.com/another.jpg');
+      final after = dir.listSync(recursive: true).whereType<File>().length;
+      expect(after, before, reason: '关了磁盘缓存就不再落盘');
+    });
   });
 
   group('切板块预加载', () {

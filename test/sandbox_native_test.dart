@@ -70,6 +70,31 @@ void main() {
       expect(sandbox.generation, 1);
     });
 
+    test('脚本错误带上出错位置（脚本载入失败要能指出哪一行）', () async {
+      // 为什么值得钉：图源导入失败时引擎只给一句 `TypeError: not a function`，
+      // 说不出是**哪一行**调用了不存在的东西——用户拿着这句话没法自查。
+      final sandbox = LumeSandbox.create(id: 'locate');
+      addTearDown(sandbox.dispose);
+
+      final result = await sandbox.eval(
+        // 与真机那份猫源脚本同一类失败：调用了一个不是函数的东西。
+        'var ok = 1;\nok();\n',
+      );
+
+      expect(result.isOk, isFalse);
+      expect(result.error!.message, contains('TypeError'));
+      expect(
+        RegExp(r':\d+').hasMatch(result.error!.message),
+        isTrue,
+        reason: '消息里要带行号（引擎给的 stack 形如 at locate.js:3:1）',
+      );
+      expect(
+        result.error!.message,
+        contains('locate'),
+        reason: '行号要能对上脚本文件名（导入时就是那份脚本）',
+      );
+    });
+
     test('Dart ↔ JS 调用桥：载入脚本后按名调用', () async {
       final sandbox = LumeSandbox.create(id: 'bridge');
       addTearDown(sandbox.dispose);

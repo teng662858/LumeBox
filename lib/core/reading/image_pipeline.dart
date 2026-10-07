@@ -36,6 +36,7 @@ class SectionImagePipeline {
     this.memoryBudgetBytes = defaultMemoryBudgetBytes,
     this.maxConcurrent = 6,
     this.timeout = const Duration(seconds: 20),
+    this.diskCache = true,
     int maxRetries = 2,
   })  : _client = client ?? http.Client(),
         _maxRetries = maxRetries < 0 ? 0 : maxRetries,
@@ -50,6 +51,16 @@ class SectionImagePipeline {
   /// 板块内的图片缓存目录（调用方从 ReadingLibrary.imageCacheDir 取得）。
   final String cacheDir;
   final http.Client _client;
+
+  /// 是否使用**磁盘**缓存（读与写都算）。
+  ///
+  /// 默认开：封面与漫画页跨会话复用，重开不必重新下载。
+  /// [diskCache] 为 false 时图片一律实取网络（内存缓存与管线复用仍在，当次会话
+  /// 内滑动 / 翻页照旧命中）——**漫画板块按用户要求这样关掉了**（「把漫画版块的
+  /// 图片缓存删了也不要了」）：它的 `sections/comic/reading_cache/images/` 不再
+  /// 新增文件，设置 →「缓存管理」里漫画一栏也就不再涨。代价是重开同一话要重新
+  /// 下载页面，这是有意的取舍。
+  final bool diskCache;
 
   /// 解码图内存预算（字节）。
   final int memoryBudgetBytes;
@@ -255,11 +266,15 @@ class SectionImagePipeline {
 
   /// 字节来源顺序：磁盘缓存 → 网络。网络结果落盘，跨会话复用。
   ///
+  /// [diskCache] 为 false 的板块（当前是漫画）直接走网络：不读盘也不落盘，
+  /// 目录里不会因为看漫画而多出文件。
+  ///
   /// 缓存判定用**同步** `stat`（`existsSync` / `lengthSync`）：这两个只是元数据
   /// 系统调用（微秒级），而一屏封面也就几十次。**不用异步版**是踩过坑的：
   /// `flutter_test` 的测试体跑在假时钟里，真实文件 IO 的完成回调等不到，
   /// 读缓存这条路径会把整个用例挂死（comic_reader 全套由绿变红）。
   Future<Uint8List?> _loadBytes(String url) async {
+    if (!diskCache) return _download(url);
     final file = File(_diskPath(url));
     try {
       if (file.existsSync() && file.lengthSync() > 0) {

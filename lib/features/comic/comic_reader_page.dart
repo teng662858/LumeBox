@@ -116,7 +116,12 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   @override
   void initState() {
     super.initState();
-    _pipeline = SectionImagePipeline(cacheDir: widget.library.imageCacheDir);
+    _pipeline = SectionImagePipeline(
+      cacheDir: widget.library.imageCacheDir,
+      // 漫画板块的图片缓存已按用户要求关闭（不读盘也不落盘）：翻页 / 预取照旧，
+      // 只是这一话跨会话再看会重新下载（内存缓存与管线复用仍在）。
+      diskCache: false,
+    );
     _settings = ComicReaderSettings.load(widget.library);
     _bookmarks = ComicBookmarks.decode(
       widget.library.setting(ComicBookmarks.keyFor(widget.target.itemId)),
