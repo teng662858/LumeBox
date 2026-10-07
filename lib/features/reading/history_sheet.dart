@@ -99,14 +99,14 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
   /// 只有视频板块在抽屉里提供删除（见 [showReadingHistorySheet] 的说明）。
   bool get _removable => widget.section == Section.video;
 
-  /// 是否提供「收藏」页签。
+  /// 是否提供「收藏」页签：**三个板块都有**（用户要求「历史里要有记录和收藏」）。
   ///
-  /// 小说 / 漫画的书架就是用户的收藏（详情页「加入书架」/ 阅读器自动入库），
-  /// 原先的抽屉只列「有进度」的那些，收藏了还没读的看不到——这一档补的正是它。
-  /// 视频板块的书架**就等于播放记录**（每次播放自动入库、没有单独的收藏动作），
-  /// 两个页签会列出同一份东西，因此视频只留「记录」。
-  bool get _hasFavoritesTab =>
-      widget.section == Section.novel || widget.section == Section.comic;
+  /// 各板块的「收藏」= 本板块书架：
+  /// - 小说 / 漫画：详情页「加入书架」或阅读器自动入库，原先的抽屉只列「有进度」
+  ///   的那些，收藏了还没读的看不到——这一档补的正是它；
+  /// - 视频：书架就是播放过的片子（每次播放自动入库），因此收藏一栏与播放记录
+  ///   内容一致，只是**按加入时间**排（记录按最近播放排）。
+  bool get _hasFavoritesTab => true;
 
   @override
   void initState() {
@@ -303,13 +303,18 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
   }
 
   /// 收藏一栏：整个书架（含还没开始读的），点一条进详情 / 续读。
+  ///
+  /// 删除能力与「记录」一栏同一口径：视频可以在抽屉里删（它的书架就是播放记录，
+  /// 清掉不丢别的），小说 / 漫画只读（要删请到书架长按，见类文档）。
   Widget _buildFavorites(DateTime now) {
     if (_favorites.isEmpty) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: const NoticeCard(
+        child: NoticeCard(
           title: '还没有收藏',
-          subtitle: '在详情页点「加入书架」，或者打开一本作品读几页，这里就会列出来',
+          subtitle: widget.section == Section.video
+              ? '从源列表点开一个视频，这里就会记下它（视频的书架就是这份列表）'
+              : '在详情页点「加入书架」，或者打开一本作品读几页，这里就会列出来',
         ),
       );
     }
@@ -325,8 +330,7 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
           progress: widget.library.progress(item.itemId),
           now: now,
           onResume: () => _openFavorite(item),
-          // 收藏一栏只读：小说 / 漫画的书架要删请到书架长按（见类文档）。
-          onRemove: null,
+          onRemove: _removable ? () => _remove(item) : null,
         );
       },
     );

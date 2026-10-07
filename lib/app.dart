@@ -69,11 +69,13 @@ class _LumeBoxAppState extends State<LumeBoxApp> {
             LumeTheme.applyBrightness(brightness);
             LumeTheme.applyAccent(appearance.accent);
             return KeyedSubtree(
-              // key 同时带亮度与主题色：任一项变化都整体重建，
-              // 静态色名（`LumeTheme.accent` 等）才会重新取值。
-              key: ValueKey<String>(
-                '${brightness.name}-${appearance.accent.id}',
-              ),
+              key: ValueKey<String>(LumeTheme.themeId),
+              // 注意：**这一层 key 换不动子树里的页面**。child 是带 GlobalKey 的
+              // Navigator，换 key 只是把它换个位置、原样复用（实测）。真正让
+              // 「切主题后整页换色」生效的是下面这层 key：
+              // `AppShell._buildPage` 按页签标识 + 主题身份建当前页签，
+              // 主题一变当前页签整体重建，页内静态色名（`LumeTheme.textPrimary`
+              // 等）才重新取值。这一层保留是为了兄弟子树（弹层等）也跟着重建。
               child: child ?? const SizedBox.shrink(),
             );
           },

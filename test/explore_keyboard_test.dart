@@ -116,4 +116,69 @@ void main() {
       );
     });
   }
+  testWidgets('键盘弹起时切换搜索模式：菜单要浮在键盘之上（真机反馈）', (tester) async {
+    // 真机现象：搜索框带 autofocus，点右侧的模式标签切换范围时键盘已经弹起——
+    // 菜单整块落在键盘下面，用户看到的是「点搜索没有搜索框、聚合/当前源切不了」。
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.padding = const FakeViewPadding(top: 59 * 3, bottom: 34 * 3);
+    tester.view.viewInsets = FakeViewPadding.zero;
+    addTearDown(tester.view.reset);
+
+    final cacheDir = Directory.systemTemp.createTempSync('lume_box_explore_kb_menu');
+    addTearDown(() {
+      if (cacheDir.existsSync()) cacheDir.deleteSync(recursive: true);
+    });
+    final pipeline = SectionImagePipeline(cacheDir: cacheDir.path);
+    addTearDown(pipeline.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        home: Scaffold(
+          body: ExploreView(
+            section: Section.video,
+            pipeline: pipeline,
+            layout: ExploreLayout.list,
+            manager: FakeSourceManager(
+              sources: <SourceDescriptor>[
+                const SourceDescriptor(
+                  id: 'a',
+                  name: '示例源',
+                  version: '1.0',
+                  enabled: true,
+                ),
+              ],
+              opened: <String, DataSource>{'a': MockDataSource(section: Section.video)},
+            ),
+            onOpenItem: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 开搜索（选模式 → 输入框带 autofocus）。
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('聚合搜索'));
+    await tester.pumpAndSettle();
+
+    // 键盘弹起后再切换模式。
+    const keyboard = 320.0;
+    tester.view.viewInsets = const FakeViewPadding(bottom: keyboard * 3);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(TextButton, '聚合搜索'));
+    await tester.pumpAndSettle();
+
+    final keyboardTop = 844 - keyboard;
+    final option = tester.getRect(find.text('当前源搜索'));
+    expect(
+      option.bottom,
+      lessThanOrEqualTo(keyboardTop),
+      reason: '模式菜单要浮在键盘之上（bottom=${option.bottom}，键盘顶沿=$keyboardTop）',
+    );
+  });
+
 }

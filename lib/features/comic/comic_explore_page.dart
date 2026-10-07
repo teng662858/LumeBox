@@ -27,6 +27,8 @@ class ComicExplorePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final sourceManager = manager ?? LumeSources.manager(Section.comic);
     return ExploreView(
+      // 用户要求：小说 / 漫画两块去掉工具栏里的「排序」（视频板块保留）。
+      showSort: false,
       section: Section.comic,
       pipeline: pipeline,
       manager: manager,

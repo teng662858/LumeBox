@@ -221,6 +221,9 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final rail = widget.desktopRail ?? _isDesktopPlatform;
+    // 依赖主题：切亮暗 / 换主题色时壳层整体重建（Dock 的磨砂底色、页签图标颜色
+    // 都是静态色名，不重建就会留在旧主题里）。
+    Theme.of(context);
     return ShellDockScope(
       controller: _controller,
       child: rail ? _buildRail() : _buildDock(),
@@ -373,10 +376,16 @@ class _AppShellState extends State<AppShell> {
 
   /// 当前页签的页面：只建当前这一个，切页签即热替换（旧页签资源随之释放）。
   ///
-  /// Key 用页签**标识**：同一页签在顺序变化时不该被重建（换了 key 会让板块的
-  /// 阅读库、滚动位置一起丢），而切到另一个页签必须重建（资源释放的既有口径）。
+  /// Key 用页签**标识 + 主题身份**：
+  /// - 页签标识——同一页签在顺序变化时不该被重建（换了 key 会让板块的阅读库、
+  ///   滚动位置一起丢），而切到另一个页签必须重建（资源释放的既有口径）；
+  /// - 主题身份——切亮暗 / 换主题色时**整页重建**，静态色名（`LumeTheme.*`）
+  ///   才会重新取值。少了它，切主题后页面里只读静态色名的部件会留在旧配色上
+  ///   （真机现象：设置页里两张**内容为 const 的分组卡**在深色下仍是白底、
+  ///   文字却是深色主题的浅色，糊成一片）。代价：切主题会重建当前页签，
+  ///   页内滚动位置等局部状态归零——这是静态色名架构下的取舍。
   Widget _buildPage() => KeyedSubtree(
-        key: ValueKey<String>(_activeId),
+        key: ValueKey<String>('$_activeId·${LumeTheme.themeId}'),
         child: _pageOf(_activeId).builder(),
       );
 }

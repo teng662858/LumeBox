@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lume_box/core/net/dns_cache.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
@@ -16,7 +15,8 @@ import 'support/fake_source_manager.dart';
 /// - **章节详情与封面**：磁盘缓存命中即不再发网络（用「没有网络的测试环境」证明）；
 /// - **切板块预加载**：[SectionPreloader] 的预热结果能被页面取走、过期即失效、
 ///   下拉刷新会丢弃；
-/// - **网络链路**：[DnsCache] 的 TTL 与「失败即失效重解析」。
+/// - **建连路径**：生产客户端**不许**装 `connectionFactory`（装了会把 https 变成明文，
+///   见 `LumeNet._newClient` 的说明）——本文件用一条源码扫描守住这条纪律。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -118,6 +118,33 @@ void main() {
     });
   });
 
+  group('建连路径（回归：DNS 缓存那层曾把 https 变成明文）', () {
+    test('生产代码不装 connectionFactory', () {
+      // 背景：dart:io 一旦设置了 connectionFactory，工厂返回的 socket 会被**原样**
+      // 使用，TLS 握手不会发生——所有 https 请求变成「明文打到 443 端口」：
+      // nginx 回 400（真机「拉取失败：HTTP 400」），或回一个指向自己的 302
+      // （真机「Redirect loop detected」）。上一轮正是为 DNS 解析缓存装了这个工厂。
+      // `flutter test` 里 HTTP 是被 mock 的（一律 400），环境测不出这类问题，
+      // 因此用一条源码扫描把这条纪律钉住（说明见 LumeNet._newClient 的注释）。
+      final offenders = <String>[];
+      for (final entity in Directory('lib').listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final lines = entity.readAsLinesSync();
+        for (var i = 0; i < lines.length; i++) {
+          final code = lines[i].split('//').first;
+          if (code.contains('connectionFactory')) {
+            offenders.add('${entity.path}:${i + 1}');
+          }
+        }
+      }
+      expect(
+        offenders,
+        isEmpty,
+        reason: '装了 connectionFactory 就等于关掉 TLS 握手：$offenders',
+      );
+    });
+  });
+
   group('切板块预加载', () {
     test('预热结果能被子页面取走（同一源 / 分类 / 关键词才算命中）', () async {
       final source = _WarmSource();
@@ -208,69 +235,6 @@ void main() {
       );
       await SectionPreloader.warm(Section.novel, manager: manager);
       expect(SectionPreloader.hasWarm(Section.novel), isFalse);
-    });
-  });
-
-  group('DNS 缓存', () {
-    test('TTL 内命中缓存，过期后重新解析', () async {
-      var lookups = 0;
-      final cache = DnsCache(
-        ttl: const Duration(minutes: 5),
-        lookup: (host) async {
-          lookups++;
-          return <InternetAddress>[InternetAddress('10.0.0.$lookups')];
-        },
-      );
-      final start = DateTime(2026, 10, 7, 12);
-
-      final first = await cache.resolve('example.com', start);
-      expect(first.address, '10.0.0.1');
-      expect(lookups, 1);
-
-      // TTL 内：不再解析。
-      final second = await cache.resolve(
-        'example.com',
-        start.add(const Duration(minutes: 4)),
-      );
-      expect(second.address, '10.0.0.1');
-      expect(lookups, 1, reason: '5 分钟内用缓存');
-
-      // 过期：重新解析。
-      final third = await cache.resolve(
-        'example.com',
-        start.add(const Duration(minutes: 6)),
-      );
-      expect(third.address, '10.0.0.2');
-      expect(lookups, 2);
-      expect(cache.hits, 1);
-      expect(cache.misses, 2);
-    });
-
-    test('失败即失效：调用方可以立刻重新解析（CDN 换 IP 的兜底）', () async {
-      var lookups = 0;
-      final cache = DnsCache(
-        lookup: (host) async {
-          lookups++;
-          return <InternetAddress>[InternetAddress('10.0.1.$lookups')];
-        },
-      );
-      final now = DateTime(2026, 10, 7);
-      await cache.resolve('cdn.example.com', now);
-      expect(cache.size, 1);
-
-      cache.invalidate('cdn.example.com');
-      expect(cache.size, 0, reason: '失效后下一次必然重新解析');
-      final next = await cache.resolve('cdn.example.com', now);
-      expect(next.address, '10.0.1.2');
-      expect(lookups, 2);
-    });
-
-    test('解析结果为空：如实报域名解析失败', () async {
-      final cache = DnsCache(lookup: (host) async => <InternetAddress>[]);
-      await expectLater(
-        cache.resolve('nowhere.example', DateTime(2026, 10, 7)),
-        throwsA(isA<SocketException>()),
-      );
     });
   });
 }

@@ -275,6 +275,7 @@ class SectionToolbar extends StatelessWidget {
     required this.onLayoutChanged,
     required this.onSearch,
     required this.onFilter,
+    this.showSort = true,
     this.filterActive = false,
     this.busy = false,
   });
@@ -300,6 +301,12 @@ class SectionToolbar extends StatelessWidget {
   /// 点「筛选」：由宿主打开筛选抽屉。
   final VoidCallback onFilter;
 
+  /// 是否显示「排序」按钮。
+  ///
+  /// 用户要求小说 / 漫画两块去掉它（那两块排序价值不大、工具栏也更挤），
+  /// 视频板块保留——因此做成开关而不是删掉。
+  final bool showSort;
+
   /// 当前是否有生效的筛选（按钮高亮）。
   final bool filterActive;
 
@@ -320,18 +327,22 @@ class SectionToolbar extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         // 2) 排序（当前档位在弹窗里选中；这里靠高亮表示「不是默认」）
-        _ToolbarAction(
-          icon: Icons.sort,
-          tooltip: '排序',
-          highlighted: sort != BrowseSort.none,
-          onTap: () => _pickSort(context),
-        ),
+        //    小说 / 漫画两块按用户要求不显示它（见 [showSort]）。
+        if (showSort)
+          _ToolbarAction(
+            icon: Icons.sort,
+            tooltip: '排序',
+            highlighted: sort != BrowseSort.none,
+            onTap: () => _pickSort(context),
+          ),
         // 3) 布局切换
         _ToolbarAction(
           icon: switch (layoutMode) {
             BrowseLayoutMode.list => Icons.view_list_outlined,
             BrowseLayoutMode.grid2 => Icons.grid_view_outlined,
             BrowseLayoutMode.grid3 => Icons.apps_outlined,
+            BrowseLayoutMode.grid4 => Icons.grid_on_outlined,
+            BrowseLayoutMode.grid5 => Icons.density_small_outlined,
           },
           tooltip: '布局',
           highlighted: layoutMode != BrowseLayoutMode.grid3,
@@ -451,60 +462,83 @@ class _ToolbarSheet<T> extends StatelessWidget {
         decoration: LumeTheme.background,
         child: SafeArea(
           top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: LumeTheme.textPrimary,
+          // **让开键盘**：这个弹窗经常是在「键盘已经弹起来」时打开的
+          //（搜索框带 autofocus，点右侧的模式标签切范围就是这种情况）——
+          // 不让开的话整份菜单落在键盘下面，用户看到的是「点搜索没有搜索框、
+          // 聚合 / 当前源也切不了」（真机反馈，实测选项 y=753 而键盘顶沿 524）。
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            // 让开键盘之后可用高度会明显变小（选项多时尤其），因此整份菜单
+            // 限高 + 选项区可滚：宁可滚，也不要溢出或被裁掉最后一个选项。
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: LumeTheme.textPrimary,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              for (final option in options)
-                ListTile(
-                  dense: true,
-                  leading: Icon(
-                    option == current
-                        ? Icons.check_circle
-                        : Icons.circle_outlined,
-                    size: 20,
-                    color: option == current
-                        ? LumeTheme.accent
-                        : LumeTheme.muted,
-                  ),
-                  title: Text(
-                    labelOf(option),
-                    style: TextStyle(color: LumeTheme.textPrimary),
-                  ),
-                  subtitle: detailOf == null
-                      ? null
-                      : Text(
-                          detailOf!(option),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: LumeTheme.muted,
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: <Widget>[
+                        for (final option in options)
+                          ListTile(
+                            dense: true,
+                            leading: Icon(
+                              option == current
+                                  ? Icons.check_circle
+                                  : Icons.circle_outlined,
+                              size: 20,
+                              color: option == current
+                                  ? LumeTheme.accent
+                                  : LumeTheme.muted,
+                            ),
+                            title: Text(
+                              labelOf(option),
+                              style: TextStyle(color: LumeTheme.textPrimary),
+                            ),
+                            subtitle: detailOf == null
+                                ? null
+                                : Text(
+                                    detailOf!(option),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: LumeTheme.muted,
+                                    ),
+                                  ),
+                            onTap: () => Navigator.of(context).pop(option),
                           ),
-                        ),
-                  onTap: () => Navigator.of(context).pop(option),
-                ),
-              if (note != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
-                  child: Text(
-                    note!,
-                    style: TextStyle(fontSize: 11, color: LumeTheme.muted),
+                      ],
+                    ),
                   ),
-                ),
-              const SizedBox(height: 8),
-            ],
+                  if (note != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+                      child: Text(
+                        note!,
+                        style: TextStyle(fontSize: 11, color: LumeTheme.muted),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -244,6 +244,17 @@ class LumeTheme {
     _accent = accent;
   }
 
+  /// 当前主题身份（亮度 + 主题色）。
+  ///
+  /// **用途只有一个：给「换主题就整体重建」的子树当 key**（见
+  /// `AppShell._buildPage`）。为什么需要它：本文件的色名是**进程级静态值**
+  /// （保住了全仓库大量 `LumeTheme.textPrimary` 这类引用），它们不会随
+  /// `ThemeData` 变化自动生效——依赖 `Theme.of(context)` 的部件会重建，只读
+  /// 静态色名的部件不会。而给 `MaterialApp.builder` 里那层 `KeyedSubtree`
+  /// 换 key **重建不了子树**：`child` 是带 GlobalKey 的 Navigator，换 key 只会
+  /// 把它换个位置、子树原样复用（实测，见 settings_page_test 的深色用例）。
+  static String get themeId => '${_brightness.name}-${_accent.id}';
+
   // ------------------------------------------------------------------ 色板
 
   /// 品牌紫（低饱和）：按钮、高亮、交互元素专用。

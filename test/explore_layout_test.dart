@@ -101,6 +101,42 @@ void main() {
     expect(gridColumns(tester), 3, reason: '漫画默认三列网格');
   });
 
+  testWidgets('布局菜单有五档：四列 / 五列也能选，当场生效（用户要求）', (tester) async {
+    await pumpExplore(tester, Section.comic, layout: ExploreLayout.grid);
+    expect(gridColumns(tester), 3);
+
+    await tester.tap(find.byTooltip('布局'));
+    await tester.pumpAndSettle();
+    // 五档都在（单列 / 双列 / 三列 / 四列 / 五列）。
+    for (final mode in BrowseLayoutMode.values) {
+      expect(find.text(mode.label), findsOneWidget, reason: '缺少 ${mode.label}');
+    }
+
+    await tester.tap(find.text('四列网格'));
+    await tester.pumpAndSettle();
+    expect(gridColumns(tester), 4, reason: '选四列当场变四列');
+    expect(
+      BrowseLayoutSettings.instance.modeFor(Section.comic),
+      BrowseLayoutMode.grid4,
+    );
+
+    await tester.tap(find.byTooltip('布局'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('五列网格'));
+    await tester.pumpAndSettle();
+    expect(gridColumns(tester), 5, reason: '选五列当场变五列');
+
+    // 列数表与比例表一一对应（少一档都会在渲染时拿到错的比例）。
+    for (final mode in BrowseLayoutMode.values) {
+      if (mode == BrowseLayoutMode.list) {
+        expect(mode.columns, 0);
+        continue;
+      }
+      expect(mode.columns, greaterThanOrEqualTo(2));
+      expect(mode.tileAspectRatio, greaterThan(0));
+    }
+  });
+
   testWidgets('切换布局：选双列当场变两列，并按板块记住', (tester) async {
     await pumpExplore(tester, Section.novel, layout: ExploreLayout.list);
     expect(gridColumns(tester), isNull);

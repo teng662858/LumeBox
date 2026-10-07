@@ -8,9 +8,9 @@ import 'package:path_provider/path_provider.dart';
 import '../session/section.dart';
 import '../util/lume_log.dart';
 
-/// 浏览页的布局档位（用户可选三档）。
+/// 浏览页的布局档位（用户可选五档）。
 ///
-/// 为什么是「档位」而不是「列数」：用户点的是「单列 / 双列 / 三列紧凑」这三种
+/// 为什么是「档位」而不是「列数」：用户点的是「单列 / 双列 / …」这几种
 /// **观感**，列表与网格的卡片内部排版本来就不一样（列表是横排大字、网格是竖排
 /// 封面 + 标题），把列数当唯一参数会逼展示层到处写 if。
 enum BrowseLayoutMode {
@@ -21,7 +21,13 @@ enum BrowseLayoutMode {
   grid2('grid2', '双列网格', '封面较大，两列并排'),
 
   /// 三列紧凑网格：一屏看到更多。
-  grid3('grid3', '三列网格', '封面较小，一屏更多');
+  grid3('grid3', '三列网格', '封面较小，一屏更多'),
+
+  /// 四列网格（用户要求）。
+  grid4('grid4', '四列网格', '封面更小，一屏更密'),
+
+  /// 五列网格（用户要求）。
+  grid5('grid5', '五列网格', '最小封面，一屏最多');
 
   const BrowseLayoutMode(this.id, this.label, this.hint);
 
@@ -32,6 +38,27 @@ enum BrowseLayoutMode {
 
   /// 菜单里的副标题：说清这一档长什么样。
   final String hint;
+
+  /// 网格列数；列表档返回 0（调用方按列表渲染）。
+  int get columns => switch (this) {
+        BrowseLayoutMode.list => 0,
+        BrowseLayoutMode.grid2 => 2,
+        BrowseLayoutMode.grid3 => 3,
+        BrowseLayoutMode.grid4 => 4,
+        BrowseLayoutMode.grid5 => 5,
+      };
+
+  /// 网格单元的宽高比（宽 / 高）。
+  ///
+  /// 列越多、单元越窄，而标题那两行文字的高度不缩——因此比例要跟着收窄，
+  /// 否则窄单元里的封面会被文字挤没。数值是「封面 1.5 倍宽 + 文字预留」反推的。
+  double get tileAspectRatio => switch (this) {
+        BrowseLayoutMode.list => 1,
+        BrowseLayoutMode.grid2 => 0.72,
+        BrowseLayoutMode.grid3 => 0.62,
+        BrowseLayoutMode.grid4 => 0.52,
+        BrowseLayoutMode.grid5 => 0.46,
+      };
 
   static BrowseLayoutMode? fromId(String? id) {
     for (final mode in values) {

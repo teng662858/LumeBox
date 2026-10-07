@@ -161,7 +161,28 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     return AppBar(
       title: title,
-      actions: actions,
+      // 右上角那排图标**收紧**（用户要求「收紧点」）：默认 IconButton 是
+      // 48×48 + 内边距，四个图标连排会占掉大半个标题栏。这里统一压到 38 的
+      // 触达尺寸、去掉内边距并把间距收到最小——图标本身大小不变，只是挨得近。
+      actionsPadding: const EdgeInsets.only(right: 6),
+      actions: actions == null
+          ? null
+          : <Widget>[
+              IconButtonTheme(
+                data: IconButtonThemeData(
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(38, 38),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: actions!,
+                ),
+              ),
+            ],
       bottom: bottom,
       leading: leading,
       automaticallyImplyLeading: automaticallyImplyLeading ?? true,

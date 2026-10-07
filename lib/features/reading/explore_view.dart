@@ -50,6 +50,7 @@ class ExploreView extends StatefulWidget {
     this.manager,
     this.layout = ExploreLayout.grid,
     this.showSourceManage = true,
+    this.showSort = true,
     this.revision = 0,
   });
 
@@ -79,6 +80,9 @@ class ExploreView extends StatefulWidget {
   /// 宿主自己顶栏已经有「源管理」时传 false：同一个入口在一屏里出现两次，
   /// 用户会以为是两个不同的东西（视频板块就是这种情况）。
   final bool showSourceManage;
+
+  /// 是否显示「排序」按钮（用户要求小说 / 漫画去掉，视频保留）。
+  final bool showSort;
 
   @override
   State<ExploreView> createState() => _ExploreViewState();
@@ -652,6 +656,7 @@ class _ExploreViewState extends State<ExploreView> {
       onLayoutChanged: (mode) => unawaited(
         BrowseLayoutSettings.instance.setMode(widget.section, mode),
       ),
+      showSort: widget.showSort,
       onSearch: _openSearch,
       onFilter: () => _scaffold.currentState?.openEndDrawer(),
       filterActive: _categoryId != null,
@@ -811,10 +816,10 @@ class _ExploreViewState extends State<ExploreView> {
             16 + _keyboardInset(context),
           ),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: _mode == BrowseLayoutMode.grid2 ? 2 : 3,
+            crossAxisCount: _mode.columns,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            childAspectRatio: _mode == BrowseLayoutMode.grid2 ? 0.72 : 0.62,
+            childAspectRatio: _mode.tileAspectRatio,
           ),
           itemCount: hits.length,
           itemBuilder: (context, index) {
@@ -961,11 +966,8 @@ class _ExploreViewState extends State<ExploreView> {
         onRetry: _bootstrap,
       );
     }
-    return switch (_mode) {
-      BrowseLayoutMode.list => _buildList(),
-      BrowseLayoutMode.grid2 => _buildGrid(crossAxisCount: 2),
-      BrowseLayoutMode.grid3 => _buildGrid(crossAxisCount: 3),
-    };
+    if (_mode == BrowseLayoutMode.list) return _buildList();
+    return _buildGrid(crossAxisCount: _mode.columns);
   }
 
   Widget _buildGrid({int crossAxisCount = 3}) {
@@ -986,8 +988,12 @@ class _ExploreViewState extends State<ExploreView> {
           crossAxisCount: crossAxisCount,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          // 列越少封面越大，卡片比例也相应放宽（双列时标题有一行更宽的余地）。
-          childAspectRatio: crossAxisCount <= 2 ? 0.72 : 0.62,
+          // 列越少封面越大，卡片比例也相应放宽（两列时标题有一行更宽的余地）——
+          // 比例表在 BrowseLayoutMode.tileAspectRatio 里统一维护。
+          childAspectRatio: BrowseLayoutMode.values
+              .firstWhere((mode) => mode.columns == crossAxisCount,
+                  orElse: () => _mode)
+              .tileAspectRatio,
         ),
         itemCount: _sortedItems.length + 1,
         itemBuilder: (context, index) {

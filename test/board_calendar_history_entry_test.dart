@@ -307,7 +307,7 @@ void main() {
       expect(resumed, 1);
     });
 
-    testWidgets('视频：抽屉里只有「记录」（视频的书架就等于播放记录）', (tester) async {
+    testWidgets('视频：抽屉里也有「记录 / 收藏」两个页签（用户点名）', (tester) async {
       await seed(
         Section.video,
         itemId: 'movie-1',
@@ -318,8 +318,16 @@ void main() {
       await tester.tap(find.byTooltip('播放历史'));
       await tester.pumpAndSettle();
 
-      expect(find.widgetWithText(ChoiceChip, '记录'), findsNothing);
-      expect(find.widgetWithText(ChoiceChip, '收藏'), findsNothing);
+      // 记录一栏（默认）：进度 + 可删单条。
+      expect(find.widgetWithText(ChoiceChip, '记录'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, '收藏'), findsOneWidget);
+      expect(find.text('示例影片'), findsWidgets);
+      expect(find.byTooltip('删除记录'), findsWidgets);
+
+      // 收藏一栏：同一份书架（视频的书架就是播放记录），按加入时间排。
+      await tester.tap(find.widgetWithText(ChoiceChip, '收藏'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 部收藏 · 最近加入在前'), findsOneWidget);
       expect(find.text('示例影片'), findsWidgets);
     });
   });

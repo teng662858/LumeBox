@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lume_box/core/js/lume_js_engine.dart';
+
+import 'js_sandbox/support/js_sandbox_support.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
@@ -11,6 +14,8 @@ import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/core/util/lume_log.dart';
 import 'package:lume_box/features/settings/log_report.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
+import 'package:lume_box/features/shell/app_shell.dart';
+import 'package:lume_box/features/shell/shell_dock.dart';
 import 'package:lume_box/shared/widgets/glass_card.dart';
 
 /// 设置页面的验证：缓存管理（分板块统计与清理，互不影响）、运行日志查看、
@@ -82,6 +87,87 @@ void main() {
         ),
         matching: find.widgetWithText(TextButton, '清理'),
       );
+
+  testWidgets('切到深色：设置页整页换色（含「显示」「播放」两张分组卡）', (tester) async {
+    // 走**真实壳层**：设置页挂在 AppShell 的页签里，主题接线与 app.dart 一致
+    // （theme + darkTheme + builder 里回写静态色名）。这正是真机那条路径：
+    // 只读静态色名的部件不会随 ThemeData 自动重建，靠壳层按主题身份重建当前页签。
+    Widget app(ThemeMode mode) => MaterialApp(
+          theme: LumeTheme.build(brightness: Brightness.light),
+          darkTheme: LumeTheme.build(brightness: Brightness.dark),
+          themeMode: mode,
+          builder: (context, child) {
+            final brightness = Theme.of(context).brightness;
+            LumeTheme.applyBrightness(brightness);
+            return KeyedSubtree(
+              key: ValueKey<String>(LumeTheme.themeId),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
+          home: AppShell(controller: ShellDockController(), desktopRail: false),
+        );
+
+    /// 某段文字所在的（最近的）GlassCard 的实际底色。
+    Color? cardColorOf(String text) {
+      final box = tester.widget<DecoratedBox>(
+        find
+            .descendant(
+              of: find
+                  .ancestor(
+                    of: find.text(text),
+                    matching: find.byType(GlassCard),
+                  )
+                  .first,
+              matching: find.byType(DecoratedBox),
+            )
+            .first,
+      );
+      return (box.decoration as BoxDecoration).color;
+    }
+
+    await tester.binding.setSurfaceSize(const Size(900, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // 非 iOS 平台默认只看骨架；装上原生桥 + 打开源运行时开关，
+    // 让壳层渲染**真实页面**（这正是真机那条路径）。装不上就跳过用例
+    //（本机没有原生库时跑不了这条）。
+    if (!installBridge()) {
+      markTestSkipped('本机没有 QuickJS 原生库，跳过（真机路径由设备验收覆盖）');
+      return;
+    }
+    LumeJsEngine.debugSupportedOverride = true;
+    addTearDown(() => LumeJsEngine.debugSupportedOverride = null);
+
+    await tester.pumpWidget(app(ThemeMode.light));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(AppShell.dockKey),
+        matching: find.text('设置'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final light = LumeTheme.paletteOf(Brightness.light).surface;
+    final dark = LumeTheme.paletteOf(Brightness.dark).surface;
+    expect(cardColorOf('外观'), light);
+    expect(cardColorOf('横屏播放'), light);
+
+    // 切深色：整页（含两张内容为 const 的分组卡）当场换成深色卡。
+    await tester.pumpWidget(app(ThemeMode.dark));
+    await tester.pumpAndSettle();
+    expect(LumeTheme.surface, dark, reason: '静态色名的活动色板要跟着亮度走');
+    expect(
+      cardColorOf('外观'),
+      dark,
+      reason: '「显示」分组卡要跟着变深（真机上它曾留在白底）',
+    );
+    expect(
+      cardColorOf('横屏播放'),
+      dark,
+      reason: '「播放」分组卡要跟着变深（真机同款白底）',
+    );
+    expect(cardColorOf('底部导航栏管理'), dark);
+  });
 
   testWidgets('缓存管理：分板块统计，清理只动所选板块', (tester) async {
     writeFile('sections/comic/reading_cache/images/a.img', 100);
