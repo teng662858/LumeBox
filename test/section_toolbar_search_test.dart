@@ -350,6 +350,39 @@ void main() {
       expect(source.keywords, <String>['影片 甲'], reason: '点联想直接发起搜索');
     });
 
+    testWidgets('点页面空白关闭联想弹窗；返回键也能关（用户点名）', (tester) async {
+      final source = _SuggestSource(
+        section: Section.video,
+        suggestions: const <String>['影片 甲'],
+      );
+      await pumpExplore(tester, section: Section.video, source: source);
+
+      await tester.tap(find.byTooltip('搜索'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('当前源搜索'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '影片');
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+      expect(find.text('影片 甲'), findsOneWidget);
+
+      // 联想开着时，返回键先关弹窗而不是退出搜索（PopScope 不弹路由）。
+      bool canPop() => tester
+          .widget<PopScope<dynamic>>(
+            find.byWidgetPredicate((widget) => widget is PopScope),
+          )
+          .canPop;
+      expect(canPop(), isFalse, reason: '联想开着时先关它');
+
+      // 点页面空白（列表区域的空白处）关掉它。
+      await tester.tapAt(const Offset(450, 1200));
+      await tester.pumpAndSettle();
+      expect(find.text('影片 甲'), findsNothing, reason: '点空白关闭联想');
+
+      // 关掉之后返回键恢复可用。
+      expect(canPop(), isTrue);
+    });
+
     test('联想候选：最多 10 条 / 空输入不给 / 去重且必须含关键词', () async {
       const suggestions = SearchSuggestions(source: null, history: <String>[]);
       expect(await suggestions.forKeyword(''), isEmpty);

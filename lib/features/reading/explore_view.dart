@@ -496,6 +496,14 @@ class _ExploreViewState extends State<ExploreView> {
     setState(() => _suggestions = suggestions);
   }
 
+  /// 关掉联想弹窗（点页面空白 / 按返回时调用）。
+  void _closeSuggestions() {
+    if (_suggestions.isEmpty) return;
+    _suggestDebounce?.cancel();
+    _suggestSeq++;
+    setState(() => _suggestions = const <String>[]);
+  }
+
   /// 搜索历史（本板块自己的库；库没打开时为 null，联想退化为纯服务端）。
   SearchHistoryStore? get _historyStore {
     final library = ReadingLibrary.find(widget.section);
@@ -591,21 +599,37 @@ class _ExploreViewState extends State<ExploreView> {
           _manageSources();
         },
       ),
-      body: Column(
-        children: <Widget>[
-          // 图源条 / 搜索行不在滚动视图里，自己让出玻璃顶栏（标题 + 页签条）。
-          SizedBox(
-            height: GlassScaffold.barHeight(
-              context,
-              extra: BoardTabHeader.height,
+      // 返回键：**联想弹窗开着时先关它**（用户点名「返回关闭联想弹窗」），
+      // 而不是直接退出搜索 / 退出页面。
+      body: PopScope(
+        canPop: _suggestions.isEmpty,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _closeSuggestions();
+        },
+        child: Column(
+          children: <Widget>[
+            // 图源条 / 搜索行不在滚动视图里，自己让出玻璃顶栏（标题 + 页签条）。
+            SizedBox(
+              height: GlassScaffold.barHeight(
+                context,
+                extra: BoardTabHeader.height,
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: _searching ? _buildSearchField() : _buildHeader(),
-          ),
-          Expanded(child: _buildBody()),
-        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: _searching ? _buildSearchField() : _buildHeader(),
+            ),
+            // 点页面空白也关联想弹窗（用户点名）：这一层只处理「没被列表项吃掉」
+            // 的那些点按，列表本身的点击 / 滚动照常（子级手势更靠内，优先胜出）。
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _closeSuggestions,
+                child: _buildBody(),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
