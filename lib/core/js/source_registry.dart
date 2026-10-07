@@ -2,6 +2,7 @@ import '../cache/section_memory_cache.dart';
 import '../db/section_database.dart';
 import '../db/source_record.dart';
 import '../net/lume_http.dart';
+import '../net/waf.dart';
 import '../net/network_settings.dart';
 import '../session/section.dart';
 import '../session/section_scope.dart';
@@ -86,12 +87,17 @@ class SourceRegistry {
     final client = LumeHttp(
       profile: record?.network ?? NetworkProfile.none,
       source: sourceId,
+      // 「网页视图」过完 Cloudflare 校验后存下的会话 Cookie：该图源的所有请求
+      // 自动带上（用户口径第 4 条）。没存过就是 null，行为与从前完全一致。
+      sessionCookies: () => WafSessions.cookiesFor(section, sourceId),
     );
     _httpBySource[sourceId] = client;
     return client;
   }
 
   /// 更新单图源的网络覆盖并丢弃旧客户端（下次请求即用新配置）。
+  ///
+  /// 这里**不动** WAF 会话：会话是用户手动过校验换来的凭据，与 UA/代理无关。
   void setSourceNetwork(
     String sourceId, {
     required String userAgent,

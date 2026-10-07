@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import '../../core/reading/reading.dart';
 import '../../core/reading/browse_layout.dart';
 import '../../core/session/section.dart';
+import '../../core/net/waf.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
+import '../source/waf_webview_page.dart';
 import '../shell/section_preloader.dart';
 import '../source/source_section_page.dart';
 import 'poster_card.dart';
@@ -466,6 +468,46 @@ class _ExploreViewState extends State<ExploreView> {
       );
       return;
     }
+    await _bootstrap();
+  }
+
+  /// 可读提示（不冒泡异常）。
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(duration: const Duration(seconds: 2), content: Text(message)),
+    );
+  }
+
+  /// 打开内置网页视图过 WAF 校验；关闭时把会话 Cookie 存进**当前图源**，
+  /// 然后自动重拉一次数据（用户口径第 3、4 条）。
+  Future<void> _openWebViewForWaf() async {
+    final source = _source;
+    if (source == null) return;
+    final failure = _failure;
+    final reason = failure is SourceException ? failure.message : null;
+    final url = originOf(urlFromFailure(reason)) ??
+        'https://${Uri.tryParse(_current?.id ?? '')?.host ?? ''}';
+    if (!url.startsWith('http')) {
+      _toast('拿不到源站地址：先打开网页视图后在地址栏手动进出一次再试');
+      return;
+    }
+    await showWafWebView(
+      context: context,
+      url: url,
+      sourceName: source.name,
+    ).then((cookies) {
+      if (cookies == null) return;
+      final saved = WafSessions.save(widget.section, source.id, cookies);
+      if (!mounted) return;
+      _toast(
+        saved == null
+            ? '没取到会话（可能是页面还没加载完就关闭了），请重试一次'
+            : '已取回会话（${WafSessions.countFor(widget.section, source.id)} 项），正在重新拉取',
+      );
+    });
+    if (!mounted) return;
+    // 取到没取到都重拉一次：取到了自然成功，没取到也只是再看一次同样的错误。
     await _bootstrap();
   }
 
@@ -986,10 +1028,25 @@ class _ExploreViewState extends State<ExploreView> {
     }
     final failure = _failure;
     if (failure != null) {
+      final detail = failure is SourceException ? failure.message : '$failure';
+      // 被 Cloudflare / WAF 拦下时多给一个出口：在 App 内置网页视图里过真人校验
+      // （用户要求；参考 AP 漫画那套）。普通失败照旧只有「重试」。
+      final waf = looksLikeWafFailure(detail) && _source != null;
       return SourceStateView(
         state: stateForError(failure),
-        detail: failure is SourceException ? failure.message : '$failure',
+        detail: detail,
         onRetry: _bootstrap,
+        action: waf
+            ? OutlinedButton.icon(
+                onPressed: _openWebViewForWaf,
+                icon: const Icon(Icons.public, size: 18),
+                label: Text(
+                  WafSessions.countFor(widget.section, _source!.id) > 0
+                      ? '网页视图（已存会话）'
+                      : '网页视图',
+                ),
+              )
+            : null,
       );
     }
     if (_hits != null) return _buildAggregateResults();

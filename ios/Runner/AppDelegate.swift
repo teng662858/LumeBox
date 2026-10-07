@@ -18,6 +18,7 @@ import UIKit
 
   /// 播放会话控制器：后台音频 + 锁屏 / 控制中心的媒体控制器。
   private let playback = PlaybackSessionController()
+  private let wafCookies = WafCookieController()
 
   override func application(
     _ application: UIApplication,
@@ -59,6 +60,13 @@ import UIKit
     if let messenger = engineBridge.pluginRegistry
       .registrar(forPlugin: "LumeBoxPlayback")?.messenger() {
       playback.register(with: messenger)
+    }
+
+    // 网页视图的 Cookie 仓库（内置 WebView 过完 Cloudflare 校验后取回会话）：
+    // 与 Dart 侧 `WafWebViewPage` 的契约一一对应。
+    if let messenger = engineBridge.pluginRegistry
+      .registrar(forPlugin: "LumeBoxWafCookies")?.messenger() {
+      wafCookies.register(with: messenger)
     }
   }
 }

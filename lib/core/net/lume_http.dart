@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import 'lume_net.dart';
+import 'waf.dart';
 import 'network_queue.dart';
 import 'network_settings.dart';
 
@@ -57,10 +58,13 @@ class LumeHttp {
     NetworkProfile? profile,
     this._source = '宿主',
     this._queue,
+    String? Function()? sessionCookies,
   })  : _client = client ?? http.Client(),
         _clientInjected = client != null,
         _settings = (settings ?? const NetworkSettings()).clamped(),
-        _profile = profile ?? NetworkProfile.none;
+        _profile = profile ?? NetworkProfile.none,
+        // ignore: prefer_initializing_formals —— 具名参数是公开契约，字段是私有的
+        _sessionCookies = sessionCookies;
 
   static const Duration defaultTimeout = NetworkSettings.defaultTimeout;
 
@@ -75,6 +79,12 @@ class LumeHttp {
 
   final NetworkSettings _settings;
   final NetworkProfile _profile;
+
+  /// 「网页视图」会话 Cookie 的提供者（按图源；为空表示这个客户端不需要）。
+  ///
+  /// **每次请求现取**而不是构造时定死：用户在网页视图里刚过完校验、Cookie 才刚
+  /// 写进库，下一次请求就该带上——定死会让「验证完还得重进页面」成为常态。
+  final String? Function()? _sessionCookies;
 
   /// 请求来源标记：日志里区分「哪个图源 / 哪个模块」在发请求。
   final String _source;
@@ -179,8 +189,18 @@ class LumeHttp {
   Map<String, String> _headersFor(Map<String, String>? headers) {
     final merged = <String, String>{...?headers};
     merged.putIfAbsent('User-Agent', () => effectiveUserAgent);
-    final cookie = _profile.mergedWith(_settings).cookie.trim();
-    if (cookie.isNotEmpty) merged.putIfAbsent('Cookie', () => cookie);
+    // Cookie 三段合并：脚本自己给的（最高优先，原样保留）→ 网页视图会话 →
+    // 图源 / 全局配置里的 Cookie。会话里那枚 cf_clearance 必须带上，否则永远 403。
+    final existing = merged['Cookie'];
+    final session = _sessionCookies?.call();
+    final profile = _profile.mergedWith(_settings).cookie.trim();
+    final mergedCookie = mergeCookieHeader(
+      existing: existing,
+      wafCookies: <String>[session ?? '', profile].where((v) => v.isNotEmpty).join('; '),
+    );
+    if (mergedCookie != null && mergedCookie.isNotEmpty) {
+      merged['Cookie'] = mergedCookie;
+    }
     return merged;
   }
 

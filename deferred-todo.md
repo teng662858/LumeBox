@@ -169,7 +169,31 @@
 - [ ] **用户的图源要各自补 `filters()`**：契约与示例写在 `docs/lumesource-guide.md`
       （「可选契约：筛选标签」一节）。没补的源在筛选页会显示「本源不支持筛选」。
 
-## 本轮验收（已出包：run 37669668949 / commit b9b253b）
+## 已完成（内置网页视图：Cloudflare 人机校验 + 会话自动复用）
+
+- [✓] **失败态给出口**：WAF 指纹命中时列表页 / 筛选页显示【网页视图】；普通失败只有
+      「重试」（判据是挑战指纹而不是 403 状态码）。
+- [✓] **弹窗式网页视图**（`webview_flutter` / WKWebView）：左上角 ✕ 关闭、右上角刷新、
+      顶栏写明「完成验证后点 ✕ 关闭」；不伪装 UA、不注入脚本。
+- [✓] **关闭即取会话**：`document.cookie` + **原生** `WKHTTPCookieStore.getAllCookies`
+      （新增通道 `lumebox/webview`，Swift 文件 `WafCookieController.swift` 已登记进
+      Xcode 工程三处）；HttpOnly 的 `cf_clearance` 因此也拿得到。
+- [✓] **存进图源自己的配置存储**：`reading_setting` 的 `waf.cookies.<源 id>`，同名覆盖、
+      新的追加；按图源隔离，清缓存不碰它。
+- [✓] **自动复用**：`LumeHttp` 每次请求现取会话，与脚本自带 / 图源配置的 Cookie 合并去重；
+      关闭弹窗后列表自动重拉。
+- [✓] **不做静态兜底**：筛选标签仍实时抓（用户口径第 5 条）；外部桥接代理保留为备选。
+- [✓] 校验：`flutter analyze` 无问题；`flutter test` **1330 例通过**（新增 WAF 组 8 例：
+      识别 3 / 会话 4 / 合并 1）。
+- [ ] **真机复验**：找一个真的挂着 CF 的源（例如用户提到的 92mh 那类），过一遍
+      「失败 → 网页视图 → 勾选 → 关闭 → 列表自动出数据」；若内置 WebView 被 CF 识别，
+      再启用外部桥接代理作为备选（用户口径第 6 条）。
+- [ ] **Android 侧**：已在 `AndroidManifest.xml` 声明 `supportsPictureInPicture` +
+      `configChanges`；但 Android 目前是「只保留骨架」的平台（不加载图源运行时、
+      没有播放器），**Kotlin 侧 PiP 与画中画要在 Android 能播之后才有意义**，
+      本次不动（用户口径：先做 iOS）。
+
+## 验收（run 37669668949 / commit b9b253b，上一批）
 
 - **产物**：Actions run `37669668949`（commit `b9b253b`，`Build unsigned IPA (iOS)`
   **success**，3m44s）；`LumeBox-unsigned.ipa` **21,536,783 B**，sha256 前缀

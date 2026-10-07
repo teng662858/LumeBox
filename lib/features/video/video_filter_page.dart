@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../core/net/waf.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
+import '../source/waf_webview_page.dart';
 
 /// 视频筛选：一次选择的结果（一级分类 + 各组选中的标签）。
 ///
@@ -279,6 +281,23 @@ class _VideoFilterPageState extends State<VideoFilterPage> {
 
   void _reset() => setState(_selected.clear);
 
+  /// 被 WAF 拦下时：内置网页视图过校验 → 存会话 → 重新加载标签（用户要求）。
+  Future<void> _openWebViewForWaf() async {
+    final reason = '$_error';
+    final url = originOf(urlFromFailure(reason));
+    if (url == null) return;
+    await showWafWebView(
+      context: context,
+      url: url,
+      sourceName: widget.source.name,
+    ).then((cookies) {
+      if (cookies == null) return;
+      WafSessions.save(widget.source.section, widget.source.id, cookies);
+    });
+    if (!mounted) return;
+    await _load(force: true);
+  }
+
   Map<String, String> get _filters => <String, String>{
         for (final entry in _selected.entries)
           if (entry.value.isNotEmpty) entry.key: entry.value.join(','),
@@ -298,11 +317,22 @@ class _VideoFilterPageState extends State<VideoFilterPage> {
                 const EdgeInsets.fromLTRB(16, 8, 16, 16),
               ),
               children: <Widget>[
-                if (_error != null)
+                if (_error != null) ...<Widget>[
                   NoticeCard(
                     title: '筛选标签没取到',
-                    subtitle: '${_error!}\n（筛选项来自源站，网络恢复后点「重新加载」）',
-                  )
+                    subtitle: '${_error!}\n（筛选项来自源站；被防护拦下时可点下面的'
+                        '「网页视图」过一下人机校验）',
+                  ),
+                  if (looksLikeWafFailure('$_error'))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: OutlinedButton.icon(
+                        onPressed: _openWebViewForWaf,
+                        icon: const Icon(Icons.public, size: 18),
+                        label: const Text('网页视图'),
+                      ),
+                    ),
+                ]
                 else if (groups == null)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 48),
