@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -14,6 +15,7 @@ import '../../core/player/pip_channel.dart';
 import '../../core/player/pip_frame_pump.dart';
 import '../../core/player/mpv_engine.dart';
 import '../../core/player/mpv_player.dart';
+import '../../core/player/playback_orientation.dart';
 import '../../core/player/player_factory.dart';
 import '../../core/player/player_kernel_launcher.dart';
 import '../../core/player/player_settings.dart';
@@ -31,6 +33,7 @@ import 'danmaku/danmaku_settings_sheet.dart';
 import 'player_gestures.dart';
 import 'player_hud.dart';
 import 'player_settings_sheet.dart';
+import 'player_source_sheet.dart';
 import 'player_speed_meter.dart';
 import 'source_playback.dart';
 import 'video_play_target.dart';
@@ -70,8 +73,9 @@ class VideoPlayerPage extends StatefulWidget {
 
   /// 起播媒体（含防盗链请求头）。
   ///
-  /// 为空时页面照常创建播放器，只是**不装载任何媒体**：地址栏留空，用户贴一个
-  /// 地址按播放键即可起播（手动地址没有作品身份，因此不记进度、不连播）。
+  /// 为空时页面照常创建播放器，只是**不装载任何媒体**：控制栏右侧「播放源」弹窗里
+  /// 的地址留空，用户贴一个地址按「播放这个地址」即可起播（手动地址没有作品身份，
+  /// 因此不记进度、不连播）。
   final PlayerMedia? media;
 
   /// 页面标题（作品名）；为空时用「播放」。
@@ -110,6 +114,24 @@ class VideoPlayerPage extends StatefulWidget {
 
   /// 网速表（测试注入用）。为空时用真实现（向播放地址发 Range 探测）。
   final PlaybackSpeedMeter? speedMeter;
+
+  /// 控制栏与上方画面之间的空白（用户要求：进度条整体下移、与画面之间拉开距离）。
+  ///
+  /// 取值是算术结果而不是随手挑的：原先这段距离由「地址行（约 52pt）+ 信息行
+  /// （约 30pt）+ 8pt」构成；地址行收进播放源弹窗后（见需求 1），这里给 64pt，
+  /// 于是「视频画面底边 → 进度条」的空白比改动前还大一点，控制栏本身其余部分
+  /// 一行未动（按钮大小 / 间距 / 颜色全部原样）。
+  static const double controlTopGap = 64;
+
+  /// 控制栏距屏幕底部的留白。比原值 16 收窄：整块控制区（进度条 + 下面所有按钮）
+  /// 跟着往下挪（下方还有 SafeArea 让出 home 指示条，不会贴到屏幕边缘）。
+  static const double controlBottomGap = 8;
+
+  /// 标准控制栏（非全屏时压在页面下方那块）的定位键。
+  ///
+  /// 全屏的浮层控制栏里也有同名按钮（设置 / 播放源），因此测试要区分两者时用
+  /// 这个键，而不是某个按钮的 tooltip。
+  static const Key controlPanelKey = Key('player-control-panel');
 
   @override
   State<VideoPlayerPage> createState() => _VideoPlayerPageState();
@@ -161,8 +183,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   final ValueNotifier<PlayerSnapshot> _idleSnapshot =
       ValueNotifier<PlayerSnapshot>(const PlayerSnapshot());
 
-  String? _error;
-
   /// 设置库打不开：设置读写不可用，但播放链路继续（用默认设置）。
   bool _storeFailed = false;
 
@@ -195,6 +215,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   /// 全屏模式下的浮层控制栏是否可见。
   bool _overlayVisible = true;
+
+  /// 方向锁定（用户要求）：自动 / 强制横屏 / 强制竖屏。
+  ///
+  /// 与全局设置里的「横屏播放」是**同一个值**（[PlaybackOrientationController]）：
+  /// 设置页改的是全局默认，这里改的是同一份偏好——两处不会各说各话。
+  PlaybackOrientation _orientation = PlaybackOrientation.fallback;
+
+  /// 最近一次真正下发的方向列表：同样的值不重复下发（内核每帧都在报参数，
+  /// 没有这道闸就会把同一条平台调用刷爆）。
+  List<DeviceOrientation>? _appliedOrientations;
 
   /// 进度条拖动预览的目标位置（拖动中显示，松手才真 seek）。
   Duration? _previewTarget;
@@ -273,6 +303,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     final media = widget.media;
     _input.text = media?.uri.toString() ?? '';
     _syncQualityIndex(media);
+    // 方向偏好：读当前值并订阅变化（设置页改了「横屏播放」当场生效）。
+    final orientation = PlaybackOrientationController.instance;
+    _orientation = orientation.orientation;
+    orientation.addListener(_onOrientationPreferenceChanged);
     // 作品身份由 [_startPlayback] 在起播时落定：这里不预设，否则「换作品前先落盘
     // 上一部进度」那一步会在首次起播时写出一条位置为 0 的空记录。
     _media = media;
@@ -287,15 +321,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     _progressTimer = null;
     _saveProgress(force: true);
 
+    PlaybackOrientationController.instance
+        .removeListener(_onOrientationPreferenceChanged);
+
     final session = _session;
     final player = _player;
     _session = null;
     _player = null;
     player?.snapshot.removeListener(_onSnapshotChanged);
+    player?.stats.removeListener(_onStatsChanged);
     // 锁屏播放条属于「当前这次播放」：页面退出即收起（听书那套随后可接管）。
     unawaited(_playback.stop());
     // 从全屏直接返回时把方向还原成竖屏（否则整个 App 留在横屏里）。
-    if (_fullscreen) unawaited(_applyOrientation(false));
+    if (_fullscreen) {
+      unawaited(
+        _sendOrientations(const <DeviceOrientation>[DeviceOrientation.portraitUp]),
+      );
+    }
     unawaited(_commandSubscription?.cancel());
     // 资源边界：先退画中画再释放播放器，最后关库（顺序不能反）。
     unawaited(() async {
@@ -444,6 +486,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (previous != null) {
       // 摘的必须是**当初挂上去的那个**回调（[onSnapshotChanged]）。
       previous.snapshot.removeListener(_onSnapshotChanged);
+      previous.stats.removeListener(_onStatsChanged);
       await _disposeQuietly(previous, '切换内核时释放旧播放器');
     }
 
@@ -511,6 +554,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       _rebuildFailure = null;
     });
     player.snapshot.addListener(_onSnapshotChanged);
+    // 分辨率参数也算全屏方向的输入（「自动」档要按宽高比判断，见 [_onStatsChanged]）。
+    player.stats.addListener(_onStatsChanged);
 
     try {
       await player.applySettings(_settings);
@@ -607,21 +652,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     return networkSchemes.contains(parsed.scheme) ? parsed : Uri.file(text);
   }
 
-  /// 手动贴地址起播（播放页自带的兜底入口）。
-  Future<void> _open() async {
-    final player = _player;
-    final text = _input.text.trim();
-    if (player == null || text.isEmpty) return;
-    final uri = _resolve(text);
-    if (uri == null) {
-      setState(() => _error = '地址无效');
-      return;
-    }
-    setState(() => _error = null);
-    // 手动地址没有作品身份：进度不记（与旧实现同口径），但连播要断开。
-    _target = null;
-    await _startPlaybackSafely(PlayerMedia(uri: uri), target: null);
-  }
+  /// 手动贴地址起播是**播放源弹窗**里的入口（见 [_playManualAddress]）：
+  /// 控制栏不再自带地址行（用户要求把长链接收起来）。
 
   // ---------------------------------------------------------------- 起播链路
 
@@ -685,7 +717,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   /// 起播的**异常安全**入口：内核的 load 抛错时不让异常冒到 initState 的异步
   /// 路径上（那会变成「页面还在、错误没人管」），而是如实说一次并保留出口
-  /// （画面仍在、地址栏与播放键仍在，用户可重试或改内核）。
+  /// （画面仍在、「播放源」与设置入口仍在，用户可重试、换内核或改地址）。
   Future<void> _startPlaybackSafely(
     PlayerMedia media, {
     VideoPlayTarget? target,
@@ -1280,6 +1312,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       onPickAudioTrack: _pickAudioTrack,
       onPickSubtitleTrack: _pickSubtitleTrack,
       onPickSubtitleFile: _pickSubtitleFile,
+      // 方向锁定：值来自应用级偏好（与全局设置的「横屏播放」同一份）。
+      orientation: _orientation,
+      onOrientationChanged: PlaybackOrientationController.instance.apply,
       // 弹幕设置也收进同一份设置弹窗（用户点名：所有功能入口都固定在这里）；
       // 控制栏那颗 tune 仍保留为快捷入口。
       danmaku: _danmakuSettings,
@@ -1428,32 +1463,98 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
-  /// 切换全屏：**进全屏自动横屏，退出还原竖屏**（用户要求）。
+  /// 切换全屏：**按视频宽高比自动选方向**，方向锁定可以覆盖（用户要求）。
   ///
-  /// 方向交给 `SystemChrome.setPreferredOrientations`：锁横屏两个方向（左右都收，
-  /// 用户横握哪边都行），退出时还原竖屏。页面 dispose 时也会还原一次——否则
-  /// 从全屏直接返回会把整个 App 留在横屏里。
+  /// 方向交给 `SystemChrome.setPreferredOrientations`：竖屏短剧进全屏即竖屏全屏
+  /// （9:16 正好铺满手机屏）；普通横片照旧横屏全屏（左右两个方向都收，用户横握
+  /// 哪边都行）。页面 dispose 时也会还原一次——否则从全屏直接返回会把整个 App
+  /// 留在横屏里。
   void _setFullscreen(bool value) {
     setState(() {
       _fullscreen = value;
       _overlayVisible = true;
     });
-    unawaited(_applyOrientation(value));
+    unawaited(_applyOrientation());
   }
 
-  /// 应用屏幕方向：全屏 = 横屏，否则竖屏。
-  Future<void> _applyOrientation(bool fullscreen) async {
-    try {
-      await SystemChrome.setPreferredOrientations(
-        fullscreen
-            ? const <DeviceOrientation>[
+  /// 方向偏好被改（设置页的「横屏播放」或本页设置弹窗的「方向锁定」）。
+  void _onOrientationPreferenceChanged() {
+    final next = PlaybackOrientationController.instance.orientation;
+    if (next == _orientation) return;
+    if (mounted) {
+      setState(() => _orientation = next);
+    } else {
+      _orientation = next;
+    }
+    // 已经全屏的话当场换方向；普通页面本来就只有竖屏一种可能，不必下发。
+    if (_fullscreen) unawaited(_applyOrientation());
+  }
+
+  /// 视频参数变化：分辨率变化要重新取景；全屏中还要按宽高比重算方向。
+  ///
+  /// 起播瞬间还没有分辨率参数，此时画面是「原样放」的（取景框算不出来）；参数到了
+  /// 这里补一次——竖屏短剧不会被一直按横屏摆着，全屏方向也不会留在兜底的横屏里。
+  void _onStatsChanged() {
+    if (!mounted) return;
+    final stats = _player?.stats.value;
+    final sizeKey = '${stats?.width}x${stats?.height}';
+    if (sizeKey != _lastVideoSize) {
+      setState(() => _lastVideoSize = sizeKey);
+    }
+    if (!_fullscreen) return;
+    if (_orientation != PlaybackOrientation.auto) return;
+    unawaited(_applyOrientation());
+  }
+
+  /// 最近一次用于取景的宽高（`宽x高`）；用来判断分辨率有没有变。
+  String? _lastVideoSize;
+
+  /// 按当前全屏状态 + 方向锁定算出该下发的方向。
+  List<DeviceOrientation> _preferredOrientations() {
+    // 普通页面播放（不进全屏）：资源浏览与阅读都是竖屏语境，保持竖屏。
+    if (!_fullscreen) return const <DeviceOrientation>[DeviceOrientation.portraitUp];
+    switch (_orientation) {
+      case PlaybackOrientation.landscape:
+        return const <DeviceOrientation>[
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ];
+      case PlaybackOrientation.portrait:
+        return const <DeviceOrientation>[DeviceOrientation.portraitUp];
+      case PlaybackOrientation.auto:
+        // 竖屏短剧（宽 < 高）→ 竖屏全屏；其余（含参数未知）→ 横屏全屏，
+        // 与历史行为一致：普通横片照旧横屏，不会因为这次改造反而变竖。
+        return _isPortraitVideo
+            ? const <DeviceOrientation>[DeviceOrientation.portraitUp]
+            : const <DeviceOrientation>[
                 DeviceOrientation.landscapeLeft,
                 DeviceOrientation.landscapeRight,
-              ]
-            : const <DeviceOrientation>[DeviceOrientation.portraitUp],
-      );
+              ];
+    }
+  }
+
+  /// 当前视频是不是竖屏（宽 < 高）。参数没到 / 内核不报时按横片处理。
+  bool get _isPortraitVideo {
+    final stats = _player?.stats.value;
+    final width = stats?.width;
+    final height = stats?.height;
+    if (width == null || height == null || width <= 0 || height <= 0) {
+      return false;
+    }
+    return width < height;
+  }
+
+  /// 应用当前该用的方向（同样的值不重复下发，见 [_appliedOrientations]）。
+  Future<void> _applyOrientation() =>
+      _sendOrientations(_preferredOrientations());
+
+  /// 真正下发方向；桌面 / 测试环境没有方向概念，失败只记日志、不影响播放。
+  Future<void> _sendOrientations(List<DeviceOrientation> orientations) async {
+    if (listEquals(orientations, _appliedOrientations)) return;
+    _appliedOrientations = orientations;
+    try {
+      await SystemChrome.setPreferredOrientations(orientations);
     } catch (error) {
-      // 桌面 / 测试环境没有方向概念：失败只记日志，不影响播放。
       LumeLog.info('[player] 设置屏幕方向失败（当前平台可能不支持）：$error');
     }
   }
@@ -1631,87 +1732,94 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   /// 就绪态的画面区：画面 + 亮度遮罩 + 弹幕层 + 手势层 + HUD（+ 锁屏开关）。
+  ///
+  /// 画面区铺一层**纯黑底**：竖屏短剧按原始比例居中渲染后，多出来的左右位置就是
+  /// 这块黑边（用户要求：留黑边，禁止拉伸变形）；横片上下留边同理。以前这里是
+  /// 页面底色（浅色），竖屏视频两侧会亮成一条白边，很显眼。
   Widget _buildVideoArea(AbstractPlayer player) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final size = Size(constraints.maxWidth, constraints.maxHeight);
-        return Stack(
-          // 铺满整个播放区域：手势与 HUD 必须覆盖黑边。
-          fit: StackFit.expand,
-          alignment: Alignment.bottomLeft,
-          children: <Widget>[
-            // 画面本身居中，并按设置做取景 / 缩放 / 旋转 / 镜像。
-            Center(child: _buildPicture(player, constraints)),
-            // 亮度遮罩：**降级路径**用（平台不支持改系统亮度时）。
-            if (!_systemBrightness && _brightness < 1.0)
+    return ColoredBox(
+      color: Colors.black,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final size = Size(constraints.maxWidth, constraints.maxHeight);
+          return Stack(
+            // 铺满整个播放区域：手势与 HUD 必须覆盖黑边。
+            fit: StackFit.expand,
+            alignment: Alignment.bottomLeft,
+            children: <Widget>[
+              // 画面本身居中，并按设置做取景 / 缩放 / 旋转 / 镜像。
+              Center(child: _buildPicture(player, constraints)),
+              // 亮度遮罩：**降级路径**用（平台不支持改系统亮度时）。
+              if (!_systemBrightness && _brightness < 1.0)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ColoredBox(
+                      color: Colors.black.withValues(
+                        alpha: (1.0 - _brightness) * 0.75,
+                      ),
+                    ),
+                  ),
+                ),
               Positioned.fill(
                 child: IgnorePointer(
-                  child: ColoredBox(
-                    color: Colors.black.withValues(
-                      alpha: (1.0 - _brightness) * 0.75,
+                  child: ValueListenableBuilder<PlayerSnapshot>(
+                    valueListenable: player.snapshot,
+                    builder: (context, snapshot, _) => DanmakuOverlay(
+                      position: snapshot.position,
+                      playing: snapshot.playing,
+                      track: _danmaku,
+                      settings: _danmakuSettings,
                     ),
                   ),
                 ),
               ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: ValueListenableBuilder<PlayerSnapshot>(
-                  valueListenable: player.snapshot,
-                  builder: (context, snapshot, _) => DanmakuOverlay(
-                    position: snapshot.position,
-                    playing: snapshot.playing,
-                    track: _danmaku,
-                    settings: _danmakuSettings,
+              // 手势层：锁定时不吃手势（防误触的本意就在这里）。
+              if (!_locked) Positioned.fill(child: _buildGestureLayer(size)),
+              if (_locked)
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _showToast('已锁定：点右上角的锁解开'),
+                  ),
+                ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: PlayerHud(stats: player.stats),
                   ),
                 ),
               ),
-            ),
-            // 手势层：锁定时不吃手势（防误触的本意就在这里）。
-            if (!_locked) Positioned.fill(child: _buildGestureLayer(size)),
-            if (_locked)
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _showToast('已锁定：点右上角的锁解开'),
-                ),
-              ),
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Align(
-                  alignment: Alignment.bottomLeft,
-                  child: PlayerHud(stats: player.stats),
-                ),
-              ),
-            ),
-            // 锁屏开关：锁定时只留它，其余控制全收起。
-            Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: IconButton(
-                  tooltip: _locked ? '解除锁定' : '锁定（防误触）',
-                  icon: Icon(
-                    _locked ? Icons.lock : Icons.lock_open,
-                    color: Colors.white,
-                    shadows: const <Shadow>[
-                      Shadow(color: Colors.black54, blurRadius: 6),
-                    ],
+              // 锁屏开关：锁定时只留它，其余控制全收起。
+              Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: IconButton(
+                    tooltip: _locked ? '解除锁定' : '锁定（防误触）',
+                    icon: Icon(
+                      _locked ? Icons.lock : Icons.lock_open,
+                      color: Colors.white,
+                      shadows: const <Shadow>[
+                        Shadow(color: Colors.black54, blurRadius: 6),
+                      ],
+                    ),
+                    onPressed: () => setState(() => _locked = !_locked),
                   ),
-                  onPressed: () => setState(() => _locked = !_locked),
                 ),
               ),
-            ),
-            // 全屏浮层收起时：点画面唤出控制栏。
-            if (_fullscreen && !_overlayVisible)
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => setState(() => _overlayVisible = true),
+              // 全屏浮层收起时：点画面唤出控制栏。
+              if (_fullscreen && !_overlayVisible)
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => setState(() => _overlayVisible = true),
+                  ),
                 ),
-              ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -1784,37 +1892,26 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
-  /// 控制栏：地址输入 + 进度（带拖动预览）+ 主控制 + 次级控制。
+  /// 控制栏：信息行 + 进度（带拖动预览）+ 主控制 + 次级控制。
   ///
-  /// [player] 为空时传输类按钮禁用，但**设置入口与地址栏照常可用**——「播不了」
-  /// 不该顺带剥夺「改设置、换内核、贴地址重试」这些出路。
+  /// [player] 为空时传输类按钮禁用，但**设置入口与「播放源」入口照常可用**——
+  /// 「播不了」不该顺带剥夺「改设置、换内核、贴地址重试」这些出路。
+  ///
+  /// 两处按用户要求改过（见 [VideoPlayerPage.controlTopGap] 的说明）：
+  /// - 地址行收进播放源弹窗（右下角那颗小信息图标），控制栏不再铺长链接；
+  /// - 上面留出更大空白（进度条与画面之间拉开距离），底部留白收窄（整块往下挪）。
   Widget _buildControlPanel(AbstractPlayer? player) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      key: VideoPlayerPage.controlPanelKey,
+      padding: const EdgeInsets.fromLTRB(
+        16,
+        VideoPlayerPage.controlTopGap,
+        16,
+        VideoPlayerPage.controlBottomGap,
+      ),
       child: GlassCard(
         child: Column(
           children: <Widget>[
-            TextField(
-              controller: _input,
-              style: TextStyle(color: LumeTheme.textPrimary),
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                hintText: '视频地址或本地路径',
-                hintStyle: TextStyle(color: LumeTheme.muted),
-                icon: Icon(Icons.link, color: LumeTheme.muted),
-                suffixIcon: IconButton(
-                  tooltip: '播放这个地址',
-                  icon: const Icon(Icons.play_arrow),
-                  onPressed: _open,
-                ),
-              ),
-              onSubmitted: (_) => _open(),
-            ),
-            if (_error != null)
-              Text(
-                _error!,
-                style: TextStyle(fontSize: 12, color: LumeTheme.danger),
-              ),
             // 当前视频的实时信息：分辨率 / 码率（内核 HUD 参数）+ 实测网速。
             _buildInfoRow(player),
             const SizedBox(height: 8),
@@ -1832,6 +1929,43 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         ),
       ),
     );
+  }
+
+  /// 打开播放源弹窗：看当前地址、复制、换线路、手动贴地址（用户要求）。
+  ///
+  /// 与「清晰度」按钮共用同一个切线路回调（[_selectQuality]），两条入口的行为
+  /// 因此永远一致；手动地址走 [_playManualAddress]，与旧地址栏同一套解析逻辑。
+  Future<void> _openSourceSheet() async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => PlayerSourceSheet(
+        address: _media?.uri.toString() ?? _input.text,
+        qualities: _qualities,
+        currentIndex: _qualityIndex,
+        onSelectQuality: _selectQuality,
+        onPlayAddress: _playManualAddress,
+      ),
+    );
+  }
+
+  /// 手动贴地址起播（原来的地址栏逻辑，一字未改地搬到这里）。
+  ///
+  /// 返回值：null = 已交出去；否则是给用户看的错误文案（弹窗就地展示）。
+  Future<String?> _playManualAddress(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return '请先填写视频地址';
+    final uri = _resolve(trimmed);
+    if (uri == null) return '地址无效';
+    final player = _player;
+    if (player == null) return '播放器还没准备好，请先重试或切回 AVPlayer';
+    // 手动地址没有作品身份：进度不记（与旧实现同口径），但连播要断开。
+    _input.text = trimmed;
+    _target = null;
+    await _startPlaybackSafely(PlayerMedia(uri: uri), target: null);
+    return null;
   }
 
   /// 当前视频信息行：分辨率 · 码率 · 网速（网速点一下重测）。
@@ -2020,59 +2154,75 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
-  /// 次级控制：清晰度 / 弹幕 / 连播 / 画中画 / 全屏 / 设置。
+  /// 次级控制：清晰度 / 弹幕 / 连播 / 画中画 / 全屏 / 设置，最右侧是播放源。
   ///
-  /// 用 [Wrap] 而不是 `Row`：这一排在小屏（iPhone SE 320pt）上放不下是常态，
-  /// 换行比溢出好——所有入口都在，只是排成两行。
+  /// 按钮一排用 [Wrap] 而不是 `Row`：这一排在小屏（iPhone SE 320pt）上放不下是
+  /// 常态，换行比溢出好——所有入口都在，只是排成两行。
+  ///
+  /// 播放源那颗小信息图标**钉在整排的右侧**（用户要求：长链接收起来后改成
+  /// 控制栏右侧的小图标），其余按钮的居中排布与大小、间距、颜色都不动。
   Widget _buildSecondaryControls() {
     return Padding(
       padding: const EdgeInsets.only(top: 4),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 2,
-        runSpacing: 2,
+      child: Row(
         children: <Widget>[
-          _compactIcon(
-            icon: Icons.high_quality_outlined,
-            tooltip: '清晰度',
-            onPressed: _openQualityMenu,
-            // 有线路时高亮：一眼能看出这部片有多清晰度可切。
-            highlighted: _qualities.length > 1,
-          ),
-          _compactIcon(
-            icon: Icons.subtitles_outlined,
-            tooltip: _danmakuSettings.enabled ? '弹幕：开' : '弹幕：关',
-            highlighted: _danmakuSettings.enabled,
-            onPressed: () => _applyDanmakuSettings(
-              _danmakuSettings.copyWith(enabled: !_danmakuSettings.enabled),
+          Expanded(
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 2,
+              runSpacing: 2,
+              children: <Widget>[
+                _compactIcon(
+                  icon: Icons.high_quality_outlined,
+                  tooltip: '清晰度',
+                  onPressed: _openQualityMenu,
+                  // 有线路时高亮：一眼能看出这部片有多清晰度可切。
+                  highlighted: _qualities.length > 1,
+                ),
+                _compactIcon(
+                  icon: Icons.subtitles_outlined,
+                  tooltip: _danmakuSettings.enabled ? '弹幕：开' : '弹幕：关',
+                  highlighted: _danmakuSettings.enabled,
+                  onPressed: () => _applyDanmakuSettings(
+                    _danmakuSettings.copyWith(enabled: !_danmakuSettings.enabled),
+                  ),
+                ),
+                _compactIcon(
+                  icon: Icons.chat_bubble_outline,
+                  tooltip: '发弹幕',
+                  onPressed: _composeDanmaku,
+                ),
+                _compactIcon(
+                  icon: Icons.tune,
+                  tooltip: '弹幕设置',
+                  onPressed: _openDanmakuSettings,
+                ),
+                _compactIcon(
+                  icon: Icons.skip_next,
+                  tooltip: _autoNext ? '自动连播：开' : '自动连播：关',
+                  highlighted: _autoNext,
+                  onPressed: () => setState(() => _autoNext = !_autoNext),
+                ),
+                _buildPipButton(),
+                _compactIcon(
+                  icon: _fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                  tooltip: _fullscreen ? '退出全屏' : '全屏',
+                  onPressed: () => _setFullscreen(!_fullscreen),
+                ),
+                _compactIcon(
+                  icon: Icons.settings_outlined,
+                  tooltip: '播放器设置',
+                  onPressed: _openSettings,
+                ),
+              ],
             ),
           ),
           _compactIcon(
-            icon: Icons.chat_bubble_outline,
-            tooltip: '发弹幕',
-            onPressed: _composeDanmaku,
-          ),
-          _compactIcon(
-            icon: Icons.tune,
-            tooltip: '弹幕设置',
-            onPressed: _openDanmakuSettings,
-          ),
-          _compactIcon(
-            icon: Icons.skip_next,
-            tooltip: _autoNext ? '自动连播：开' : '自动连播：关',
-            highlighted: _autoNext,
-            onPressed: () => setState(() => _autoNext = !_autoNext),
-          ),
-          _buildPipButton(),
-          _compactIcon(
-            icon: _fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
-            tooltip: _fullscreen ? '退出全屏' : '全屏',
-            onPressed: () => _setFullscreen(!_fullscreen),
-          ),
-          _compactIcon(
-            icon: Icons.settings_outlined,
-            tooltip: '播放器设置',
-            onPressed: _openSettings,
+            icon: Icons.info_outline,
+            tooltip: '播放源',
+            // 有候选线路时高亮：这颗图标里也是「换源」的入口。
+            highlighted: _qualities.length > 1,
+            onPressed: _openSourceSheet,
           ),
         ],
       ),

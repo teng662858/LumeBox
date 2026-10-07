@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/player/playback_orientation.dart';
 import '../../core/player/player_capabilities.dart';
 import '../../core/player/player_factory.dart';
 import '../../core/player/player_settings.dart';
@@ -23,6 +24,8 @@ Future<void> showPlayerSettingsSheet({
   VoidCallback? onPickAudioTrack,
   VoidCallback? onPickSubtitleTrack,
   VoidCallback? onPickSubtitleFile,
+  PlaybackOrientation? orientation,
+  ValueChanged<PlaybackOrientation>? onOrientationChanged,
   DanmakuSettings? danmaku,
   ValueChanged<DanmakuSettings>? onDanmakuChanged,
   int? danmakuCount,
@@ -40,6 +43,8 @@ Future<void> showPlayerSettingsSheet({
       onPickAudioTrack: onPickAudioTrack,
       onPickSubtitleTrack: onPickSubtitleTrack,
       onPickSubtitleFile: onPickSubtitleFile,
+      orientation: orientation,
+      onOrientationChanged: onOrientationChanged,
       danmaku: danmaku,
       onDanmakuChanged: onDanmakuChanged,
       danmakuCount: danmakuCount,
@@ -71,6 +76,8 @@ class PlayerSettingsSheet extends StatefulWidget {
     this.onPickAudioTrack,
     this.onPickSubtitleTrack,
     this.onPickSubtitleFile,
+    this.orientation,
+    this.onOrientationChanged,
     this.danmaku,
     this.onDanmakuChanged,
     this.danmakuCount,
@@ -100,6 +107,15 @@ class PlayerSettingsSheet extends StatefulWidget {
 
   /// 选外挂字幕文件。
   final VoidCallback? onPickSubtitleFile;
+
+  /// 方向锁定（自动 / 强制横屏 / 强制竖屏）。为空时不显示这一节。
+  ///
+  /// 与全局设置里的「横屏播放」是同一份偏好（应用级），因此宿主传进来的就是
+  /// 当前值、回调也是写同一处——两处不会各存一份互相打架。
+  final PlaybackOrientation? orientation;
+
+  /// 方向锁定变更回调。
+  final ValueChanged<PlaybackOrientation>? onOrientationChanged;
 
   /// 弹幕设置（与播放页的「弹幕设置」弹窗同一份数据）。
   ///
@@ -147,6 +163,16 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     widget.onDanmakuChanged?.call(next);
   }
 
+  /// 方向锁定（面板自己持一份，改一项立即回调宿主）。
+  late PlaybackOrientation _orientation =
+      widget.orientation ?? PlaybackOrientation.fallback;
+
+  void _updateOrientation(PlaybackOrientation next) {
+    if (next == _orientation) return;
+    setState(() => _orientation = next);
+    widget.onOrientationChanged?.call(next);
+  }
+
   @override
   Widget build(BuildContext context) {
     final list = ListView(
@@ -179,6 +205,15 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                       _section('画面', '缩放 / 旋转 / 镜像（三套内核都支持）'),
                       _pictureCard(context),
                       const SizedBox(height: 20),
+                      if (widget.onOrientationChanged != null) ...<Widget>[
+                        _section(
+                          '方向锁定',
+                          '全屏时的屏幕方向：自动 = 按视频比例判断'
+                          '（竖屏短剧竖屏全屏、横片横屏全屏）',
+                        ),
+                        _orientationCard(context),
+                        const SizedBox(height: 20),
+                      ],
                       _section(
                         '字幕',
                         '开关 / 字号 / 颜色 / 描边 / 底色 / 延迟；'
@@ -366,6 +401,42 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                     _update(settings.copyWith(mirrored: value)),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 方向锁定：三档芯片（与全局设置里的「横屏播放」写的是同一份偏好）。
+  Widget _orientationCard(BuildContext context) {
+    return GlassCard(
+      radius: 14,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          _label('方向锁定'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              for (final mode in PlaybackOrientation.values)
+                ChoiceChip(
+                  label: Text(mode.label),
+                  selected: _orientation == mode,
+                  onSelected: (_) => _updateOrientation(mode),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _orientation == PlaybackOrientation.portrait
+                ? '竖屏全屏（竖屏短剧想一直竖着看，或横片也想竖着看时选它）'
+                : (_orientation == PlaybackOrientation.landscape
+                    ? '全屏一律横屏；全局设置里的「横屏播放」开关就是这一档'
+                    : '按视频比例判断：竖屏短剧竖屏全屏，普通横片横屏全屏'),
+            style: TextStyle(fontSize: 12, height: 1.5, color: LumeTheme.muted),
           ),
         ],
       ),

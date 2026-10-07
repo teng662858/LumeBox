@@ -76,8 +76,22 @@ void main() {
     library.saveProgress(progress);
   }
 
-  VideoProgress videoProgressAt(String itemId, Duration position) => VideoProgress(
-        section: Section.video,
+  /// 只入库（放进书架），**不写进度**：模拟「收藏了还没读」。
+  Future<void> shelveOnly(
+    Section section, {
+    required String itemId,
+    required String title,
+  }) async {
+    final library = await ReadingLibrary.open(section);
+    library.shelve(
+      sourceId: 'demo-source',
+      itemId: itemId,
+      title: title,
+      chapterCount: 10,
+    );
+  }
+
+  VideoProgress videoProgressAt(String itemId, Duration position) => VideoProgress(        section: Section.video,
         itemId: itemId,
         chapterIndex: 2,
         chapterId: '$itemId-e3',
@@ -224,6 +238,89 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('还没有记录'), findsOneWidget);
+    });
+  });
+
+  group('历史抽屉的「收藏」页签（用户点名：历史图标里要有收藏记录）', () {
+    testWidgets('小说：收藏页签列出收藏了还没读的条目，点它走「打开详情」回调', (tester) async {
+      await shelveOnly(Section.novel, itemId: 'novel-2', title: '收藏未读的书');
+      final library = await ReadingLibrary.open(Section.novel);
+
+      LibraryItem? opened;
+      await pump(
+        tester,
+        Scaffold(
+          body: ReadingHistorySheet(
+            section: Section.novel,
+            library: library,
+            onResume: (_, _) {},
+            onOpenItem: (item) => opened = item,
+          ),
+        ),
+      );
+
+      // 两个页签都在；默认「记录」里看不到还没读的那本。
+      expect(find.widgetWithText(ChoiceChip, '记录'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, '收藏'), findsOneWidget);
+      expect(find.text('收藏未读的书'), findsNothing);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, '收藏'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1 部收藏 · 最近加入在前'), findsOneWidget);
+      expect(find.text('收藏未读的书'), findsOneWidget);
+      expect(find.text('还没开始读'), findsOneWidget);
+      // 收藏一栏只读：书架要删请到书架长按。
+      expect(find.byTooltip('删除记录'), findsNothing);
+
+      await tester.tap(find.text('收藏未读的书'));
+      await tester.pumpAndSettle();
+      expect(opened?.itemId, 'novel-2', reason: '未读的收藏点开去详情页');
+    });
+
+    testWidgets('收藏里已读的条目点开是续读（onResume 而不是详情）', (tester) async {
+      await seed(
+        Section.novel,
+        itemId: 'novel-1',
+        title: '读到一半的书',
+        progress: novelProgressAt('novel-1'),
+      );
+      final library = await ReadingLibrary.open(Section.novel);
+
+      var resumed = 0;
+      await pump(
+        tester,
+        Scaffold(
+          body: ReadingHistorySheet(
+            section: Section.novel,
+            library: library,
+            onResume: (_, _) => resumed++,
+            onOpenItem: (_) => fail('已读的条目应当续读，而不是进详情'),
+          ),
+        ),
+      );
+      await tester.tap(find.widgetWithText(ChoiceChip, '收藏'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('读到一半的书'));
+      await tester.pumpAndSettle();
+      expect(resumed, 1);
+    });
+
+    testWidgets('视频：抽屉里只有「记录」（视频的书架就等于播放记录）', (tester) async {
+      await seed(
+        Section.video,
+        itemId: 'movie-1',
+        title: '示例影片',
+        progress: videoProgressAt('movie-1', const Duration(minutes: 12)),
+      );
+      await pump(tester, const VideoPage(catalog: _NoKernelCatalog()));
+      await tester.tap(find.byTooltip('播放历史'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(ChoiceChip, '记录'), findsNothing);
+      expect(find.widgetWithText(ChoiceChip, '收藏'), findsNothing);
+      expect(find.text('示例影片'), findsWidgets);
     });
   });
 }

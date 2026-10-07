@@ -477,9 +477,6 @@ class _SearchSource implements DataSource {
 class _SuggestSource extends _SearchSource implements SuggestCapable {
   _SuggestSource({
     required super.section,
-    super.id,
-    super.name,
-    super.items,
     required this.suggestions,
   });
 

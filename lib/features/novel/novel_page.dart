@@ -152,32 +152,38 @@ class _NovelPageState extends State<NovelPage> {
   /// 图源导入后重挂书架与探索：两块内容各自重新解析本板块的图源与列表。
   void _onSourcesChanged() => setState(() => _revision++);
 
-  /// 阅读历史抽屉：底部 Sheet 里浏览最近的阅读记录（不新开全屏页面）。
+  /// 阅读历史抽屉：底部 Sheet 里浏览最近的阅读记录与收藏（不新开全屏页面）。
+  ///
+  /// 两条路径共用同一个「打开详情」动作：记录里点条目 = 续读（[continueOnOpen]），
+  /// 收藏里点一条还没读过的 = 直接进详情页（用户点名：历史图标里要有收藏记录）。
   Future<void> _openHistory(ReadingLibrary library) async {
     final manager = widget.manager ?? LumeSources.manager(Section.novel);
+    void openDetail(LibraryItem item, {bool continueOnOpen = false}) {
+      Navigator.of(context).pop();
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => NovelDetailPage(
+            library: library,
+            manager: manager,
+            target: ReadingTarget(
+              sourceId: item.sourceId,
+              itemId: item.itemId,
+              title: item.title,
+              cover: item.cover,
+              subtitle: item.subtitle,
+            ),
+            continueOnOpen: continueOnOpen,
+          ),
+        ),
+      );
+    }
+
     await showReadingHistorySheet(
       context: context,
       section: Section.novel,
       library: library,
-      onResume: (item, _) {
-        Navigator.of(context).pop();
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => NovelDetailPage(
-              library: library,
-              manager: manager,
-              target: ReadingTarget(
-                sourceId: item.sourceId,
-                itemId: item.itemId,
-                title: item.title,
-                cover: item.cover,
-                subtitle: item.subtitle,
-              ),
-              continueOnOpen: true,
-            ),
-          ),
-        );
-      },
+      onResume: (item, _) => openDetail(item, continueOnOpen: true),
+      onOpenItem: openDetail,
     );
   }
 

@@ -289,7 +289,6 @@ class _PagedSource implements DataSource {
     this.id = 'source-a',
     this.name = '分页源',
     this.delay,
-    this.perPage = 8,
   });
 
   @override
@@ -302,7 +301,9 @@ class _PagedSource implements DataSource {
   final String name;
 
   final int totalPages;
-  final int perPage;
+
+  /// 每页条数：固定值（用例只按「页」验证，不需要调它）。
+  static const int perPage = 8;
 
   /// 人为的响应延迟（验并发保护用）。
   final Duration? delay;

@@ -170,33 +170,39 @@ class _ComicPageState extends State<ComicPage> {
   /// 图源导入后重挂书架与探索：两块内容各自重新解析本板块的图源与列表。
   void _onSourcesChanged() => setState(() => _revision++);
 
-  /// 阅读历史抽屉：底部 Sheet 里浏览最近的阅读记录（不新开全屏页面）。
+  /// 阅读历史抽屉：底部 Sheet 里浏览最近的阅读记录与收藏（不新开全屏页面）。
   ///
   /// 漫画的抽屉**只读**：它的书架是用户的书库，抽屉里不提供清空 / 删除
   /// （要删请到书架长按），见 [showReadingHistorySheet] 的说明。
+  ///
+  /// 两条路径共用同一个「打开详情」动作：记录里点条目 = 续读，收藏里点一条
+  /// 还没读过的 = 直接进详情页（用户点名：历史图标里要有收藏记录）。
   Future<void> _openHistory(ReadingLibrary library, SourceManager manager) async {
+    void openDetail(LibraryItem item) {
+      Navigator.of(context).pop();
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ComicDetailPage(
+            library: library,
+            manager: manager,
+            target: ReadingTarget(
+              sourceId: item.sourceId,
+              itemId: item.itemId,
+              title: item.title,
+              cover: item.cover,
+              subtitle: item.subtitle,
+            ),
+          ),
+        ),
+      );
+    }
+
     await showReadingHistorySheet(
       context: context,
       section: Section.comic,
       library: library,
-      onResume: (item, _) {
-        Navigator.of(context).pop();
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => ComicDetailPage(
-              library: library,
-              manager: manager,
-              target: ReadingTarget(
-                sourceId: item.sourceId,
-                itemId: item.itemId,
-                title: item.title,
-                cover: item.cover,
-                subtitle: item.subtitle,
-              ),
-            ),
-          ),
-        );
-      },
+      onResume: (item, _) => openDetail(item),
+      onOpenItem: openDetail,
     );
   }
 

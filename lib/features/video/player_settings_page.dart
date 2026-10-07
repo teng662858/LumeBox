@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/player/playback_orientation.dart';
 import '../../core/player/player_capabilities.dart';
 import '../../core/player/player_factory.dart';
 import '../../core/player/player_settings.dart';
@@ -44,6 +45,10 @@ class PlayerSettingsPage extends StatelessWidget {
             capabilities: PlayerCapabilities.of(settings.kernel),
             catalog: catalog,
             onChanged: onChanged,
+            // 方向锁定是应用级偏好（与设置页的「横屏播放」同一份），
+            // 这里直接读写控制器，不必再由宿主转一手。
+            orientation: PlaybackOrientationController.instance.orientation,
+            onOrientationChanged: PlaybackOrientationController.instance.apply,
             embedded: true,
           ),
         ],

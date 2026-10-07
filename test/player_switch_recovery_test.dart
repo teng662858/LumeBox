@@ -97,8 +97,12 @@ void main() {
         reason: '失败态不能把「播放器设置」入口一起收走——用户上一次就是这么被卡住的',
       );
       // 板块顶栏那排入口（追剧日历 / 源管理）现在在**浏览页**上，与播放器状态
-      // 无关；播放器页这边钉住的是「控制栏与地址栏不会被失败态收走」。
-      expect(find.text('视频地址或本地路径'), findsOneWidget, reason: '地址栏也要能重新贴地址');
+      // 无关；播放器页这边钉住的是「控制栏与播放源入口不会被失败态收走」。
+      expect(
+        find.byTooltip('播放源'),
+        findsOneWidget,
+        reason: '播放源入口也要能重新贴地址（地址现在收在它的弹窗里）',
+      );
       // 传输按钮禁用（没有播放器可控制），但设置入口可用。
       final play = tester.widget<IconButton>(
         find.widgetWithIcon(IconButton, Icons.play_circle_fill),
@@ -149,9 +153,9 @@ void main() {
       expect(find.text('播放器准备失败'), findsNothing);
       expect(find.byTooltip('播放器设置'), findsOneWidget, reason: '设置入口不受切换影响');
       expect(
-        find.text('视频地址或本地路径'),
+        find.byTooltip('播放源'),
         findsOneWidget,
-        reason: '地址栏不受切换影响（失败时还能改地址或换内核）',
+        reason: '播放源入口不受切换影响（失败时还能改地址或换内核）',
       );
       expect(PlayerFactory.mpvInitFailed, isTrue, reason: '失败内核本次运行内熔断');
     });

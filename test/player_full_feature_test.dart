@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/net/lume_http.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/player/playback_orientation.dart';
 import 'package:lume_box/core/player/player_capabilities.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
@@ -17,6 +18,7 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/video/player_settings_sheet.dart';
+import 'package:lume_box/features/video/player_source_sheet.dart';
 import 'package:lume_box/features/video/player_speed_meter.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
 import 'package:lume_box/features/video/video_player_settings.dart';
@@ -52,6 +54,10 @@ void main() {
   });
 
   setUp(() => PlayerFactory.clearMpvInitFailure());
+
+  // 方向偏好是应用级单例：每条用例从「自动」起步，免得相互串。
+  setUp(PlaybackOrientationController.instance.resetForTesting);
+  tearDown(PlaybackOrientationController.instance.resetForTesting);
 
   /// 三套内核各一份能力矩阵（**唯一声明处**）。
   group('能力矩阵：控件不随内核显隐，差异只在提示', () {
@@ -278,7 +284,7 @@ void main() {
       return created;
     }
 
-    testWidgets('控制栏齐全：前进 / 后退 10 秒、清晰度、全屏、设置都在', (tester) async {
+    testWidgets('控制栏齐全：前进 / 后退 10 秒、清晰度、全屏、设置、播放源都在', (tester) async {
       await pump(tester);
 
       expect(find.byTooltip('前进 10 秒'), findsOneWidget);
@@ -286,7 +292,63 @@ void main() {
       expect(find.byTooltip('清晰度'), findsOneWidget);
       expect(find.byTooltip('全屏'), findsOneWidget);
       expect(find.byTooltip('播放器设置'), findsOneWidget);
-      expect(find.byTooltip('播放这个地址'), findsOneWidget, reason: '手动地址入口');
+      // 用户要求：长播放链接不再铺在控制栏上，改成右侧的小信息图标（弹窗里看 / 换）。
+      expect(find.byTooltip('播放源'), findsOneWidget, reason: '播放源入口（地址与线路）');
+      expect(find.byType(TextField), findsNothing, reason: '控制栏不再直接展示长链接');
+    });
+
+    testWidgets('播放源弹窗：展示当前地址、复制、按线路切换、手动贴地址', (tester) async {
+      final players = await pump(
+        tester,
+        qualities: <VideoQuality>[
+          VideoQuality(label: '1080P', url: Uri.parse('https://example.com/1080.mp4')),
+          VideoQuality(label: '720P', url: Uri.parse('https://example.com/720.mp4')),
+        ],
+      );
+
+      await tester.tap(find.byTooltip('播放源'));
+      await tester.pumpAndSettle();
+
+      // 弹窗里能看到当前地址（可选中复制），并有复制按钮。
+      expect(find.text('当前播放地址'), findsOneWidget);
+      expect(
+        find.text('https://example.com/a.mp4'),
+        findsNWidgets(2),
+        reason: '当前地址展示一处 + 手动地址框预填一处',
+      );
+      expect(find.byTooltip('复制地址'), findsOneWidget);
+
+      // 线路列表（与「清晰度」按钮同一份数据）：点一条即换源并从当前位置继续。
+      expect(find.text('线路（切换后从当前位置继续）'), findsOneWidget);
+      await tester.tap(find.text('720P'));
+      await tester.pumpAndSettle();
+      expect(players.single.media?.uri.toString(), 'https://example.com/720.mp4');
+      expect(find.textContaining('已切换到 720P'), findsOneWidget);
+    });
+
+    testWidgets('播放源弹窗：手动贴地址起播；地址无效就地报错不关面板', (tester) async {
+      final players = await pump(tester);
+
+      await tester.tap(find.byTooltip('播放源'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextField),
+        'https://example.com/manual.mp4',
+      );
+      await tester.tap(find.text('播放这个地址'));
+      await tester.pumpAndSettle();
+
+      expect(players.single.media?.uri.toString(), 'https://example.com/manual.mp4');
+      expect(find.byType(PlayerSourceSheet), findsNothing, reason: '交出去了就关面板');
+
+      // 空地址：就地报错，面板留在原地。
+      await tester.tap(find.byTooltip('播放源'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '   ');
+      await tester.tap(find.text('播放这个地址'));
+      await tester.pumpAndSettle();
+      expect(find.text('请先填写视频地址'), findsOneWidget);
+      expect(find.byType(PlayerSourceSheet), findsOneWidget, reason: '出错不关面板');
     });
 
     testWidgets('单线路：点清晰度弹提示，不弹菜单（按钮仍在）', (tester) async {
@@ -421,6 +483,60 @@ void main() {
       expect(find.textContaining('码率 1.8Mbps'), findsOneWidget);
     });
 
+    testWidgets('竖屏短剧：按视频原始比例居中渲染，两侧留黑边（不拉伸）', (tester) async {
+      final players = await pump(tester);
+      players.single.pushStats(
+        const PlayerStats(engineLabel: 'AVPlayer', width: 1080, height: 1920),
+      );
+      await tester.pumpAndSettle();
+
+      // 画面框的宽高比 = 视频原始比例（9:16），不是被拉伸去填满播放区。
+      final box = tester.getSize(
+        find
+            .ancestor(of: find.text('fake-view'), matching: find.byType(SizedBox))
+            .first,
+      );
+      expect(box.width / box.height, closeTo(1080 / 1920, 0.01));
+
+      // 播放区（含两侧留边）是黑底：这就是用户要的「黑边」。
+      final hasBlackBackdrop = tester
+          .widgetList<ColoredBox>(find.byType(ColoredBox))
+          .any((widget) => widget.color == Colors.black);
+      expect(hasBlackBackdrop, isTrue, reason: '多余位置留黑边（不再露出浅色页面底）');
+    });
+
+    testWidgets('底部控制区下移：上方留白拉大、底部留白收窄（用户要求）', (tester) async {
+      final players = await pump(tester);
+      players.single.pushStats(
+        const PlayerStats(engineLabel: 'AVPlayer', width: 1080, height: 1920),
+      );
+      await tester.pumpAndSettle();
+
+      final panel = tester.widget<Padding>(
+        find.byKey(VideoPlayerPage.controlPanelKey),
+      );
+      final padding = panel.padding as EdgeInsets;
+      expect(padding.top, VideoPlayerPage.controlTopGap);
+      expect(padding.bottom, VideoPlayerPage.controlBottomGap);
+      expect(
+        VideoPlayerPage.controlTopGap,
+        greaterThan(52),
+        reason: '比原先「地址行(≈52) + 信息行」那段距离还大：进度条与画面的空白变大',
+      );
+      expect(
+        VideoPlayerPage.controlBottomGap,
+        lessThan(16),
+        reason: '底部留白收窄 = 整块控制区（进度条 + 下面所有按钮）跟着往下挪',
+      );
+
+      // 顺序没变：信息行在上，进度条居中，按钮在下（只动垂直位置，不动结构）。
+      final infoY = tester.getCenter(find.textContaining('分辨率 1080×1920')).dy;
+      final sliderY = tester.getCenter(find.byType(Slider).first).dy;
+      final buttonY = tester.getCenter(find.byTooltip('播放器设置')).dy;
+      expect(infoY, lessThan(sliderY));
+      expect(sliderY, lessThan(buttonY));
+    });
+
     testWidgets('网速：点「测速」实测播放地址，读数显示在信息行', (tester) async {
       final client = _CountingClient(bytes: 256 * 1024);
       final meter = PlaybackSpeedMeter(
@@ -448,17 +564,21 @@ void main() {
 
     testWidgets('全屏：收起控制栏与顶栏，点画面唤回', (tester) async {
       await pump(tester);
-      expect(find.text('视频地址或本地路径'), findsOneWidget);
+      expect(find.byKey(VideoPlayerPage.controlPanelKey), findsOneWidget);
 
       await tester.tap(find.byTooltip('全屏'));
       await tester.pumpAndSettle();
       expect(find.byTooltip('退出全屏'), findsWidgets);
-      expect(find.text('视频地址或本地路径'), findsNothing, reason: '全屏收起标准控制栏');
+      expect(
+        find.byKey(VideoPlayerPage.controlPanelKey),
+        findsNothing,
+        reason: '全屏收起标准控制栏（换成压在画面上的浮层）',
+      );
 
       // 退出全屏回到常规布局。
       await tester.tap(find.byTooltip('退出全屏').first);
       await tester.pumpAndSettle();
-      expect(find.text('视频地址或本地路径'), findsOneWidget);
+      expect(find.byKey(VideoPlayerPage.controlPanelKey), findsOneWidget);
     });
 
     testWidgets('全屏：锁横屏；退出全屏：还原竖屏（用户要求）', (tester) async {
@@ -494,18 +614,88 @@ void main() {
       expect(portrait.arguments, <String>['DeviceOrientation.portraitUp']);
     });
 
+    testWidgets('全屏：竖屏短剧进竖屏全屏，横片进横屏全屏（用户要求）', (tester) async {
+      final calls = _captureOrientations(tester);
+      final players = await pump(tester);
+
+      // 竖屏短剧（1080×1920）：全屏 = 竖屏。
+      players.single.pushStats(
+        const PlayerStats(engineLabel: 'AVPlayer', width: 1080, height: 1920),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('全屏'));
+      await tester.pumpAndSettle();
+      expect(
+        _lastOrientations(calls),
+        <String>['DeviceOrientation.portraitUp'],
+        reason: '竖屏短剧（宽 < 高）进全屏就是竖屏全屏',
+      );
+
+      await tester.tap(find.byTooltip('退出全屏').first);
+      await tester.pumpAndSettle();
+
+      // 横片（1920×1080）：全屏 = 横屏（两个方向都收）。
+      players.single.pushStats(
+        const PlayerStats(engineLabel: 'AVPlayer', width: 1920, height: 1080),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('全屏'));
+      await tester.pumpAndSettle();
+      expect(
+        _lastOrientations(calls),
+        containsAll(<String>[
+          'DeviceOrientation.landscapeLeft',
+          'DeviceOrientation.landscapeRight',
+        ]),
+        reason: '普通横片照旧横屏全屏',
+      );
+    });
+
+    testWidgets('方向锁定：强制横屏 / 强制竖屏覆盖自动判断（用户要求）', (tester) async {
+      final calls = _captureOrientations(tester);
+      PlaybackOrientationController.instance
+          .apply(PlaybackOrientation.landscape);
+      addTearDown(PlaybackOrientationController.instance.resetForTesting);
+
+      final players = await pump(tester);
+      // 竖屏短剧 + 强制横屏：仍然是横屏（锁定覆盖自动判断）。
+      players.single.pushStats(
+        const PlayerStats(engineLabel: 'AVPlayer', width: 1080, height: 1920),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('全屏'));
+      await tester.pumpAndSettle();
+      expect(
+        _lastOrientations(calls),
+        containsAll(<String>[
+          'DeviceOrientation.landscapeLeft',
+          'DeviceOrientation.landscapeRight',
+        ]),
+      );
+
+      // 改成强制竖屏：当场换回竖屏（不必退出全屏重进）。
+      PlaybackOrientationController.instance
+          .apply(PlaybackOrientation.portrait);
+      await tester.pumpAndSettle();
+      expect(_lastOrientations(calls), <String>['DeviceOrientation.portraitUp']);
+    });
+
     testWidgets('锁屏：收起控制栏，只剩解锁按钮；再点回来', (tester) async {
       await pump(tester);
       expect(find.byTooltip('锁定（防误触）'), findsOneWidget);
 
       await tester.tap(find.byTooltip('锁定（防误触）'));
       await tester.pumpAndSettle();
-      expect(find.text('视频地址或本地路径'), findsNothing, reason: '锁定时控制全收起');
+      expect(
+        find.byKey(VideoPlayerPage.controlPanelKey),
+        findsNothing,
+        reason: '锁定时控制全收起',
+      );
       expect(find.byTooltip('解除锁定'), findsOneWidget);
 
       await tester.tap(find.byTooltip('解除锁定'));
       await tester.pumpAndSettle();
-      expect(find.text('视频地址或本地路径'), findsOneWidget);
+      expect(find.byKey(VideoPlayerPage.controlPanelKey), findsOneWidget);
     });
 
     testWidgets('进度条拖动：显示预览，松手才 seek', (tester) async {
@@ -567,9 +757,31 @@ void main() {
   });
 }
 
+/// 抓取平台方向调用：返回一个持续追加的调用列表（测试用）。
+List<MethodCall> _captureOrientations(WidgetTester tester) {
+  final calls = <MethodCall>[];
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+    calls.add(call);
+    return null;
+  });
+  addTearDown(
+    () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null),
+  );
+  return calls;
+}
+
+/// 最近一次下发的方向（平台渠道收到的是字符串列表）。
+List<String> _lastOrientations(List<MethodCall> calls) {
+  final call = calls.lastWhere(
+    (call) => call.method == 'SystemChrome.setPreferredOrientations',
+  );
+  return (call.arguments as List<Object?>).cast<String>();
+}
+
 /// 三套内核都可用。
-class _AllKernelsCatalog implements PlayerKernelCatalog {
-  const _AllKernelsCatalog();
+class _AllKernelsCatalog implements PlayerKernelCatalog {  const _AllKernelsCatalog();
 
   @override
   bool isAvailable(PlayerKernel kernel) => true;

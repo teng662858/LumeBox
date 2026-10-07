@@ -140,7 +140,7 @@ void main() {
       reason: '有封面的条目按图源给的地址取图',
     );
     expect(
-      (covers.last.url ?? '').isEmpty,
+      covers.last.url.isEmpty,
       isTrue,
       reason: '没封面的条目走主题占位（图位仍在，不留空位之外的空缺）',
     );
@@ -196,7 +196,15 @@ void main() {
     expect(created.single.media?.title, '测试视频');
     expect(source.chapterCalls, isEmpty, reason: '自带地址不必再去问剧集');
     expect(find.byTooltip('播放器设置'), findsWidgets, reason: '播放器页带设置入口');
-    expect(find.text('https://example.com/demo.mp4'), findsOneWidget);
+    // 地址不再铺在控制栏上（用户要求）：从「播放源」弹窗里能看到它。
+    expect(
+      find.text('https://example.com/demo.mp4'),
+      findsNothing,
+      reason: '控制栏不直接展示长链接',
+    );
+    await tester.tap(find.byTooltip('播放源'));
+    await tester.pumpAndSettle();
+    expect(find.text('https://example.com/demo.mp4'), findsWidgets);
   });
 
   testWidgets('条目没有地址：走剧集链路，选一集后起播取到的视频地址', (tester) async {

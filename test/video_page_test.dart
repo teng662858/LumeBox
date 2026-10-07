@@ -101,11 +101,14 @@ void main() {
     }
 
     Future<void> openMedia(WidgetTester tester) async {
+      // 地址入口现在收在「播放源」弹窗里（用户要求：控制栏不再铺长链接）。
+      await tester.tap(find.byTooltip('播放源'));
+      await tester.pumpAndSettle();
       await tester.enterText(
         find.byType(TextField),
         'https://example.com/a.mp4',
       );
-      await tester.tap(find.byTooltip('播放这个地址'));
+      await tester.tap(find.text('播放这个地址'));
       await tester.pumpAndSettle();
     }
 

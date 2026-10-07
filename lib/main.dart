@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'app.dart';
 import 'core/js/sandbox_settings.dart';
+import 'core/player/playback_orientation.dart';
 import 'core/reading/browse_layout.dart';
 import 'core/shell/shell_settings.dart';
 import 'core/theme/appearance.dart';
@@ -23,6 +24,9 @@ void main() {
       unawaited(DeveloperMode.boot());
       // 浏览页布局偏好（三档，按板块分别记住）：只影响列表长相，不阻塞启动。
       unawaited(BrowseLayoutSettings.instance.boot());
+      // 播放方向偏好（自动 / 强制横屏 / 强制竖屏）：只影响全屏时的方向，
+      // 与首帧长相无关；播放器打开时读到即可，因此不 await。
+      unawaited(PlaybackOrientationController.instance.boot());
       // 壳层设置（底部导航栏逐项开关 + 顺序）：这一项**必须 await**。
       // 它决定首帧的导航栏长什么样——不等的话，用户会先看到一份「全部显示、
       // 规范顺序」的默认导航栏，读盘完成后再跳成自己的配置（隐藏过的页签
