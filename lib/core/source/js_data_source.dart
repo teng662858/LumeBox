@@ -12,6 +12,13 @@ abstract interface class JsSourceRuntime {
   /// 调用图源脚本的 JS 方法。成功返回 JSON 解码值（脚本可以显式返回 null）；
   /// 失败必须抛 [SourceException]。
   Future<Object?> call(String method, [Object? argument]);
+
+  /// 脚本**实际提供**的契约方法集合（按别名表判定）。
+  ///
+  /// 用途：可选契约（`home` / `filters` / `suggest`）**不能因为接口实现了就当它
+  /// 一定存在**——老脚本没有 `home()` 时，进「首页模式」会直接抛错、把整块首页
+  /// 变成错误页（真机反馈过这条）。这里先问清楚「有没有」，没有就照旧走老路径。
+  Future<Set<String>> contractMethods();
 }
 
 /// JS 侧方法契约：方法挂在脚本的全局 `LumeSource` 上。
@@ -108,6 +115,19 @@ class JsDataSource
     final value = parseCategories(await _invoke(JsSourceContract.categories));
     cache?.write(section, id, key, value);
     return value;
+  }
+
+  /// 脚本是否真的实现了 `home()`（探测一次、缓存住）。
+  bool? _hasHome;
+
+  @override
+  Future<bool> supportsHome() async {
+    final cached = _hasHome;
+    if (cached != null) return cached;
+    final methods = await runtime.contractMethods();
+    final has = methods.contains(JsSourceContract.home);
+    _hasHome = has;
+    return has;
   }
 
   @override

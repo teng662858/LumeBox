@@ -448,6 +448,13 @@ class _EngineRuntime implements JsSourceRuntime {
   final String _sourceId;
 
   @override
+  Future<Set<String>> contractMethods() async {
+    final engine = await _registry.engineFor(_sourceId);
+    if (engine == null) return const <String>{};
+    return await engine.contractMethods() ?? const <String>{};
+  }
+
+  @override
   Future<Object?> call(String method, [Object? argument]) async {
     final engine = await _registry.engineFor(_sourceId);
     if (engine == null) {

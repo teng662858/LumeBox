@@ -273,6 +273,10 @@ class _SnapshotHttp extends LumeHttp {
 }
 
 class _SandboxRuntime implements JsSourceRuntime {
+
+  @override
+  Future<Set<String>> contractMethods() async =>
+      const <String>{'categories', 'list', 'detail', 'chapters', 'content'};
   _SandboxRuntime(this._sandbox);
 
   final LumeSandbox _sandbox;

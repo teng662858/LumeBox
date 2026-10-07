@@ -164,6 +164,10 @@ JsDataSource _source(JsSourceRuntime runtime) => JsDataSource(
 
 /// 记录调用的运行时替身：可配置返回结果或抛错。
 class _RecordingRuntime implements JsSourceRuntime {
+
+  @override
+  Future<Set<String>> contractMethods() async =>
+      const <String>{'categories', 'list', 'detail', 'chapters', 'content'};
   _RecordingRuntime({this.result, this.error});
 
   final Object? result;

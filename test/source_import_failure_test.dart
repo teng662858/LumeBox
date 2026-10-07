@@ -98,6 +98,25 @@ function getList(page) { return { list: [] }; }
     expect(registry.sources, isEmpty, reason: '失败不落库');
   }, skip: skipReason);
 
+  test('按脚本内容认出「打包过的 Node 程序」：报错文案点名它，并给两条出路', () async {
+    // 真机那份 6MB 订阅就是这一类：失败文案只有一句 TypeError: not a function，
+    // 但正文里到处是 process.hrtime / require —— 必须在导入阶段按内容定性。
+    final registry = await openRegistry(Section.cat);
+    final outcome = await registry.import('''
+// LumeSource: {"id":"node-bundle","name":"打包程序","version":"1.0.0"}
+var t = process.hrtime.bigint();
+var fs = require('fs');
+function getList(page) { return { list: [] }; }
+''');
+
+    expect(outcome.isSuccess, isFalse);
+    final message = outcome.message!;
+    expect(message, contains('打包过的 Node 程序'), reason: '要点名它是 Node 程序');
+    expect(message, contains('getList'), reason: '要给出「换接口型脚本」这条出路');
+    expect(message, contains('LumeSource.http'), reason: '并给薄壳转发的写法指引');
+    expect(registry.sources, isEmpty, reason: '失败不落库');
+  }, skip: skipReason);
+
   test('猫源脚本只是顺手 require 了服务端模块、没用到：照常导入（真机订阅源回归）', () async {
     // 真机实测：一份订阅源导入失败，报「猫源沙箱不支持 http2」。脚本只是沿用了
     // 别处的写法、顺手 require 了一堆模块，真正发请求用的是 fetch / LumeSource.http。

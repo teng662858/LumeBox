@@ -100,6 +100,10 @@ void main() {
 /// 生产链路上这一步由组合根（`LumeSources`）用图源引擎完成；测试里直接驱动
 /// 沙箱，就能在没有 iOS 图源引擎的平台上验证同一个 [JsDataSource] 适配器。
 class _SandboxRuntime implements JsSourceRuntime {
+
+  @override
+  Future<Set<String>> contractMethods() async =>
+      const <String>{'categories', 'list', 'detail', 'chapters', 'content'};
   _SandboxRuntime(this._sandbox);
 
   final LumeSandbox _sandbox;

@@ -1,5 +1,18 @@
 // LumeSource: {"id":"gztv5_video","name":"瓜子影视","version":"2.2.0","category":"video"}
 
+// ⚠️ 接口边界（2026-10-08 实测，务必先读）：
+//   PC 端 API **只提供固定 5 条的「最新」推送**（`/Index/latestVideo` 传
+//   page / pageSize / t_id 都只回 5 条），**没有分页目录接口**——我按它的命名
+//   风格探过 40+ 个候选路由（/Index/typeVideo、/Resource/GetVodList、
+//   /Index/vodListByType…），全部回「不存在的路由」。
+//   因此本脚本的取数策略是：
+//     · 首页 = **每个一级分类一块**（各 5 条，实时抓）→ 一屏就能看到几十条；
+//     · 分类列表 = 该分类的当前推送（5 条）+ 明确 hasMore=false，不假装能翻页；
+//     · 搜索 = `/Search/GetList`（分页可用，这条是真的）。
+//   想要「全量目录 + 翻页」需要站点 H5 那套 AES(`/gz`) 接口或直接解析网页 HTML，
+//   两者都要先过站点的人机校验（App 侧已支持：失败页点【网页视图】过校验后，
+//   本脚本的请求会自动带上会话 Cookie）。
+//
 // Verified live endpoints (plain JSON, no AES layer needed on /Pc/Resource/*):
 //   POST /Pc/Index/latestVideo          {}                              -> {data:[vod...]}
 //   POST /Pc/Index/latestVideoCategories {}                             -> {data:[category...]}
@@ -31,18 +44,24 @@ var LumeSource = {
     return result;
   },
 
+  /// 列表：传了分类就取**该分类**的当前推送（`t_id` 有效，实测按分类返回）。
+  ///
+  /// 注意 page > 1 时如实返回「没有更多」——PC 接口没有分页目录，宁可页面停住，
+  /// 也不要假装翻页把同一批 5 条反复贴出来（那看起来像加载坏了）。
   async list(argument) {
     var page = argument && argument.page ? Number(argument.page) : 1;
     var keyword = argument && argument.keyword ? String(argument.keyword).trim() : '';
     var category = argument && argument.categoryId ? String(argument.categoryId) : '';
+    // 筛选页（filters 契约）选中的分类经 argument.filters 传进来：优先用它。
+    var picked = argument && argument.filters ? argument.filters.category : '';
+    if (picked) category = String(picked);
 
+    if (keyword) return await this.__search(keyword, page);
     if (page > 1) return { items: [], hasMore: false };
 
-    if (keyword) {
-      return await this.__search(keyword, page);
-    }
-
-    var data = await this.__post('/Index/latestVideo', {});
+    var payload = {};
+    if (category && category !== '0') payload.t_id = category;
+    var data = await this.__post('/Index/latestVideo', payload);
     var list = data && data.data;
     if (!Array.isArray(list)) list = [];
     var items = [];
@@ -52,6 +71,44 @@ var LumeSource = {
       items.push(this.__toItem(item));
     }
     return { items: items, hasMore: false };
+  },
+
+  /// 首页（可选契约，用户口径任务 3）：**每个一级分类一块**。
+  ///
+  /// 为什么这样做：PC 接口的推送是「每类 5 条」，单看一类像只有几个片子；
+  /// 铺成横滑板块后一屏能同时看到十几个分类、几十上百条——这是这套接口能给出的
+  /// 最全的首页形态。点某块的「更多」→ 带该分类 id 进分类列表（同一个 list()）。
+  async home() {
+    var categories = await this.categories();
+    var boards = [];
+    for (var i = 0; i < categories.length; i++) {
+      var category = categories[i] || {};
+      var id = category.id ? String(category.id) : '';
+      if (!id || id === '0') continue;
+      var fresh = await this.list({ categoryId: id, page: 1 });
+      var items = fresh && fresh.items ? fresh.items : [];
+      if (!items.length) continue;
+      boards.push({
+        title: String(category.title || id),
+        moreUrl: id,
+        items: items.slice(0, 12)
+      });
+    }
+    return boards;
+  },
+
+  /// 筛选标签（可选契约，用户口径任务 1）：分类来自接口实时返回，不硬编码。
+  async filters() {
+    var categories = await this.categories();
+    var options = [];
+    for (var i = 0; i < categories.length; i++) {
+      var item = categories[i] || {};
+      if (item.id && String(item.id) !== '0') {
+        options.push({ id: String(item.id), title: String(item.title || item.id) });
+      }
+    }
+    if (!options.length) return [];
+    return { groups: [{ id: 'category', title: '分类', options: options }] };
   },
 
   async detail(argument) {
@@ -129,11 +186,15 @@ var LumeSource = {
 
   __toItem(item) {
     item = item || {};
+    var vertical = item.is_vertical === 1 || item.is_vertical === '1' ||
+      item.is_vertical === true;
+    var continuity = this.__continuity(item.vod_continu);
     return {
       id: String(item.vod_id != null ? item.vod_id : item.id),
       title: String(item.vod_name || item.vod_id || ''),
       cover: item.vod_pic || '',
-      subtitle: this.__continuity(item.vod_continu)
+      // 竖屏短剧（站点自报 is_vertical）：标出来，播放器侧也更好认。
+      subtitle: vertical ? (continuity + ' · 竖屏') : continuity
     };
   },
 

@@ -147,9 +147,12 @@ void main() {
       expect(find.text('去分类浏览'), findsOneWidget);
     });
 
-    testWidgets('图源没有 home 契约：同样走「暂无首页推荐内容」，不崩', (tester) async {
-      await pump(tester, _NoHomeSource());
-      expect(find.text('暂无首页推荐内容'), findsOneWidget);
+    testWidgets('图源没有 home 契约：不进首页模式（ExploreView 会走老路径）', (tester) async {
+      // 这里直接验「探测为 false 时不会去调 home()」——真机上老脚本曾因此整块变错误页。
+      final source = _NoHomeSource();
+      expect(await source.supportsHome(), isFalse);
+      // 独立组件仍能安全渲染空态（不崩、不空转）。
+      await pump(tester, source);
       expect(tester.takeException(), isNull);
     });
   });
@@ -169,6 +172,9 @@ class _HomeSource implements DataSource, HomeCapable {
 
   @override
   Section get section => Section.video;
+
+  @override
+  Future<bool> supportsHome() async => true;
 
   @override
   Future<SourceHome> home() async => _home;
@@ -200,8 +206,8 @@ class _HomeSource implements DataSource, HomeCapable {
       null;
 }
 
-/// 老图源：没有 HomeCapable。
-class _NoHomeSource implements DataSource {
+/// 老图源：没有 home()（接口存在但探测为 false）。
+class _NoHomeSource implements DataSource, HomeCapable {
   @override
   String get id => 'legacy-source';
 
@@ -210,6 +216,14 @@ class _NoHomeSource implements DataSource {
 
   @override
   Section get section => Section.novel;
+
+  /// 老脚本：接口在、但探测为 false（**不该**被调 home()）。
+  @override
+  Future<bool> supportsHome() async => false;
+
+  @override
+  Future<SourceHome> home() async =>
+      throw StateError('老脚本没有 home()，不该被调用');
 
   @override
   Future<List<SourceCategory>> categories() async => const <SourceCategory>[];

@@ -4,6 +4,9 @@ import '../../core/player/player_factory.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/notice_card.dart';
+import '../../core/reading/reading.dart';
+import '../../core/session/section.dart';
+import 'danmaku/danmaku_settings.dart';
 import 'player_settings_page.dart';
 import 'video_player_settings.dart';
 
@@ -27,6 +30,8 @@ class PlayerSettingsHost extends StatefulWidget {
 
 class _PlayerSettingsHostState extends State<PlayerSettingsHost> {
   VideoPlayerSettingsStore? _store;
+  ReadingLibrary? _library;
+  DanmakuSettings _danmaku = DanmakuSettings.defaults;
   PlayerSettings? _settings;
   bool _failed = false;
 
@@ -50,9 +55,14 @@ class _PlayerSettingsHostState extends State<PlayerSettingsHost> {
         store.close();
         return;
       }
+      // 弹幕设置也在视频板块的库里：全局设置页要能直接改它（用户口径）。
+      final library = await ReadingLibrary.open(Section.video);
+      if (!mounted) return;
       setState(() {
         _store = store;
         _settings = store.load();
+        _library = library;
+        _danmaku = DanmakuSettingsStore(library).load();
       });
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
@@ -64,6 +74,13 @@ class _PlayerSettingsHostState extends State<PlayerSettingsHost> {
   void _apply(PlayerSettings next) {
     _store?.save(next);
     setState(() => _settings = next);
+  }
+
+  /// 弹幕设置变更：上屏 + 落库（与播放页同一套口径）。
+  void _applyDanmaku(DanmakuSettings next) {
+    setState(() => _danmaku = next);
+    final library = _library;
+    if (library != null) DanmakuSettingsStore(library).save(next);
   }
 
   @override
@@ -90,6 +107,8 @@ class _PlayerSettingsHostState extends State<PlayerSettingsHost> {
       settings: settings,
       catalog: widget.catalog ?? const PlatformPlayerKernelCatalog(),
       onChanged: _apply,
+      danmaku: _danmaku,
+      onDanmakuChanged: _applyDanmaku,
     );
   }
 }

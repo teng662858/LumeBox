@@ -182,7 +182,9 @@ class SourceRegistry {
         // 「脚本载入失败」一句话解决不了问题，用户需要知道该改哪里。
         final reason = probe.loadFailure?.trim();
         LumeLog.warn('[${section.id}] 脚本载入失败: ${reason ?? '（引擎未给出原因）'}');
-        return SourceImportOutcome.failure(describeLoadFailure(reason));
+        return SourceImportOutcome.failure(
+          describeLoadFailure(reason, script: text),
+        );
       }
       // 先确认「这是不是一份图源脚本」：五个契约方法一个都没有，说明它根本不是
       // 给本 App 用的脚本（典型是别的客户端的扩展程序包：自带本地服务端与自有
@@ -260,8 +262,34 @@ class SourceRegistry {
         '网络请求用 fetch 或 LumeSource.http（由 App 代为发出）。';
   }
 
-  static String describeLoadFailure(String? reason) {
+  /// Node 打包程序的指纹（在脚本**原文**里找）。
+  ///
+  /// 为什么按内容判而不是按报错文案：真机上那份 6MB 订阅的失败文案只有一句
+  /// `TypeError: not a function`（加行号），一个字都没提 Node——而它的正文里
+  /// 到处都是 `process.hrtime.bigint()` / `require(` / `module.exports`。
+  /// 导入阶段是**唯一**能读到完整脚本的地方，因此在这里定性最准。
+  /// 只用**高置信**指纹：`require('dns')` 这种「顺手 require 一个模块」的普通
+  /// 图源脚本不能被误判成 Node 程序（那份脚本的真实原因是沙箱不支持 dns，
+  /// 报错要照旧点名 dns）。真正打包过的程序一定带 process.* / module.exports。
+  static final RegExp _nodeBundlePattern = RegExp(
+    r'process\.hrtime|process\.env|process\.nextTick|process\.pid|process\.cwd|'
+    r'module\.exports|__dirname|require\.main|Buffer\.from',
+    caseSensitive: false,
+  );
+
+  static String describeLoadFailure(String? reason, {String? script}) {
     final detail = reason?.trim() ?? '';
+    // 内容指纹优先：这类脚本「跑不起来」的原因不在报错文案里，而在它是不是
+    // 本 App 的图源脚本。先按内容定性，再按文案兜底。
+    if (script != null && _nodeBundlePattern.hasMatch(script)) {
+      return '这不是本 App 的图源脚本：脚本正文里用到了只有真 Node 才有的能力'
+          '（process.hrtime / require / module.exports / 网络服务等）——'
+          '它是一份**打包过的 Node 程序**（或别的客户端的扩展包），App 里跑不起来。\n'
+          '两条出路：① 换一份直接抓接口的图源脚本（getList / getDetail / getContent + fetch）；'
+          '② 让它跑在电脑 / NAS 上，App 侧用薄壳脚本经 LumeSource.http 转发'
+          '（写法见 assets/test_sources/catvod_bridge_source.dart 同目录的示例）。\n'
+          '引擎原文：$detail';
+    }
     if (detail.isEmpty) {
       return '脚本载入失败：语法错误、运行异常，或用到了沙箱不支持的能力'
           '（如 child_process / 自建 HTTP 服务）';

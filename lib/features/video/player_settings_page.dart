@@ -5,6 +5,7 @@ import '../../core/player/player_capabilities.dart';
 import '../../core/player/player_factory.dart';
 import '../../core/player/player_settings.dart';
 import '../../shared/widgets/glass_card.dart';
+import 'danmaku/danmaku_settings.dart';
 import 'player_settings_sheet.dart';
 
 /// 播放器设置页（全局设置 Tab → 播放器设置）。
@@ -20,7 +21,17 @@ class PlayerSettingsPage extends StatelessWidget {
     required this.settings,
     required this.onChanged,
     this.catalog = const PlatformPlayerKernelCatalog(),
+    this.danmaku,
+    this.onDanmakuChanged,
   });
+
+  /// 弹幕设置（与播放页的弹幕面板同一份数据；为空时不显示弹幕一节）。
+  ///
+  /// 由宿主从**视频板块的库**里读出来传进来——用户口径：全局设置里也要能改弹幕。
+  final DanmakuSettings? danmaku;
+
+  /// 弹幕设置变更回调（宿主写库）。
+  final ValueChanged<DanmakuSettings>? onDanmakuChanged;
 
   /// 进入页面时的当前设置。
   final PlayerSettings settings;
@@ -49,6 +60,8 @@ class PlayerSettingsPage extends StatelessWidget {
             // 这里直接读写控制器，不必再由宿主转一手。
             orientation: PlaybackOrientationController.instance.orientation,
             onOrientationChanged: PlaybackOrientationController.instance.apply,
+            danmaku: danmaku,
+            onDanmakuChanged: onDanmakuChanged,
             embedded: true,
           ),
         ],

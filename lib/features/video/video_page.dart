@@ -443,6 +443,10 @@ class _VideoPageState extends State<VideoPage> {
     return DefaultTabController(
       length: VideoPage.tabLabels.length,
       child: GlassScaffold(
+        // **不随键盘收缩**：板块内容区（ExploreView）自己处理键盘内边距
+        // （列表底部让出键盘高度）。外层若跟着收缩，固定的工具栏 / 搜索行会被
+        // 挤出屏幕——真机反馈过两次「键盘弹起后搜索框不见了」。
+        resizeToAvoidBottomInset: false,
         title: Section.video.label,
         actions: _buildActions(),
         // 页签条做成顶栏的一部分（整条玻璃），内容从它下面滚过。

@@ -122,6 +122,10 @@ class _ExploreViewState extends State<ExploreView> {
 
   String? _categoryId;
 
+  /// 当前图源是否真的实现了 home()（老脚本没有 → 照旧走分类列表）。
+  /// 在 [_bootstrap] 里探测一次，换源时重探。
+  bool _homeSupported = false;
+
   /// 已生效的分组筛选（视频板块的分页筛选写进来；其它板块恒为空）。
   Map<String, String> _facetFilters = const <String, String>{};
   String _keyword = '';
@@ -281,6 +285,7 @@ class _ExploreViewState extends State<ExploreView> {
         _state = SourceStateKind.ready;
         _failure = null;
       });
+      await _probeHomeSupport();
       await _loadCategories();
       await _loadPage();
     } on SourceException catch (error) {
@@ -295,6 +300,24 @@ class _ExploreViewState extends State<ExploreView> {
         _source = null;
       });
     }
+  }
+
+  /// 探测「本源有没有 home()」：老脚本没有就永远不进首页模式（照旧分类列表）。
+  ///
+  /// 探测失败（引擎没起来等）一律按「没有」处理——宁可走老路径，也不要让整块
+  /// 首页变成一个错误页。
+  Future<void> _probeHomeSupport() async {
+    final source = _source;
+    var supported = false;
+    if (source is HomeCapable) {
+      try {
+        supported = await (source as HomeCapable).supportsHome();
+      } catch (error) {
+        LumeLog.info('[${widget.section.id}] home() 探测失败，按「没有首页」处理：$error');
+      }
+    }
+    if (!mounted) return;
+    setState(() => _homeSupported = supported);
   }
 
   /// 分类失败不阻塞列表：拿不到分类就当图源没有分类。
@@ -1001,6 +1024,7 @@ class _ExploreViewState extends State<ExploreView> {
   /// 是否处于「首页模式」（用户口径任务 3）：图源提供 home()，且当前没有
   /// 分类 / 分组筛选 / 关键词 / 搜索结果在生效。旧源没有 home() → 照旧分类列表。
   bool get _isHomeMode {
+    if (!_homeSupported) return false;
     final source = _source;
     if (source is! HomeCapable) return false;
     if (_categoryId != null || _facetFilters.isNotEmpty) return false;

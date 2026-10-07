@@ -26,6 +26,13 @@ abstract interface class SuggestCapable {
 /// - **多板块模式**：网页有横滑模块 → 返回板块数组（`title` / `moreUrl` / `items`）；
 /// - **旧兼容模式**：没有横滑、纯列表 → 直接返回标准 Item 数组，App 渲染普通网格。
 abstract interface class HomeCapable {
+  /// 本源是否**真的**实现了 `home()`。
+  ///
+  /// 老脚本没有它时必须是 false——否则首页模式会把「没有首页」当成「首页加载
+  /// 失败」，整块内容变成错误页（真机回归）。宿主据此决定：有 home 才进首页模式，
+  /// 没有就照旧走分类列表。
+  Future<bool> supportsHome();
+
   Future<SourceHome> home();
 }
 

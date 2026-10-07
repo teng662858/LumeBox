@@ -132,6 +132,10 @@ void main() {
 
 /// 测试专用：把底层沙箱适配成数据源运行时端口（与 js_source_native_test 一致）。
 class _SandboxRuntime implements JsSourceRuntime {
+
+  @override
+  Future<Set<String>> contractMethods() async =>
+      const <String>{'categories', 'list', 'detail', 'chapters', 'content'};
   _SandboxRuntime(this._sandbox);
 
   final LumeSandbox _sandbox;

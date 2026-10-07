@@ -11,6 +11,10 @@ import 'package:lume_box/core/source/source.dart';
 /// 有了它，JS 适配器在没有图源引擎的平台上（Windows / Android）也能被
 /// 完整验证：断言方法名、入参裁剪、结果解析与错误归一。
 class _FakeRuntime implements JsSourceRuntime {
+
+  @override
+  Future<Set<String>> contractMethods() async =>
+      const <String>{'categories', 'list', 'detail', 'chapters', 'content'};
   _FakeRuntime(this.reply);
 
   final Future<Object?> Function(String method, Object? argument) reply;
