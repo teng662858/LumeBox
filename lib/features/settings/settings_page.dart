@@ -8,6 +8,7 @@ import '../source/global_source_page.dart';
 import '../video/player_kernel_section.dart';
 import '../video/player_settings_host.dart';
 import 'cache_settings_page.dart';
+import 'display_settings_group.dart';
 import 'debug_panel_page.dart';
 import 'network_settings_page.dart';
 import 'log_report.dart';
@@ -60,6 +61,10 @@ class SettingsPage extends StatelessWidget {
       child: ListView(
         padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
         children: <Widget>[
+          // 「显示」分组（外观 + 主题色，用户要求合并）放在最前：它是最纯的
+          // 界面偏好，改完立刻看得到效果。
+          const DisplaySettingsGroup(),
+          const SizedBox(height: 12),
           // 底部导航栏管理（逐项开关 + 拖拽排序）：放在最前，它是纯界面偏好，
           // 属于用户最先想调的东西。
           _SettingsEntry(

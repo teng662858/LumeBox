@@ -119,7 +119,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('MPV'));
       await tester.pumpAndSettle();
-      await tester.pageBack();
+      // 设置是弹窗：用它的关闭按钮收起（不再是整页返回）。
+      await tester.tap(find.byTooltip('关闭'));
       await tester.pumpAndSettle();
 
       // 1) Toast 文案（任务书指定原文）。
@@ -148,11 +149,8 @@ void main() {
     testWidgets('启动时库里的内核是 MPV 且初始化失败：照样回退并改写为 AVPlayer', (tester) async {
       final store = await VideoPlayerSettingsStore.open();
       store.save(
-        const PlayerSettings(
-          kernel: PlayerKernel.mpv,
-          speed: 1.5,
-          subtitlesEnabled: false,
-        ),
+        const PlayerSettings(kernel: PlayerKernel.mpv, subtitlesEnabled: false)
+            .copyWith(speed: 1.5),
       );
       store.close();
 
@@ -186,8 +184,15 @@ void main() {
       final probe = await VideoPlayerSettingsStore.open();
       final saved = probe.load();
       expect(saved.kernel, PlayerKernel.avplayer, reason: '回退后的内核落库');
-      expect(saved.speed, 1.5, reason: '只改内核，倍速与字幕保留');
-      expect(saved.subtitlesEnabled, isFalse);
+      // 倍速 / 画面 / 字幕**按内核分别记住**：回退到 AVPlayer 后读到的是 AVPlayer
+      // 自己的那一份（默认 1.0），原先在 MPV 上调的 1.5 仍留在 MPV 那一格。
+      expect(saved.speed, 1.0, reason: 'AVPlayer 读自己的那一格');
+      expect(
+        saved.copyWith(kernel: PlayerKernel.mpv).speed,
+        1.5,
+        reason: 'MPV 的那一格没被覆盖（下次切回去还是 1.5）',
+      );
+      expect(saved.subtitlesEnabled, isFalse, reason: '字幕总开关是全局的，跟着走');
     });
   });
 }
@@ -205,7 +210,7 @@ class _Catalog implements PlayerKernelCatalog {
       isAvailable(kernel) ? null : '${kernel.label} 内核尚未接入';
 }
 
-class _FakePlayer implements AbstractPlayer {
+class _FakePlayer extends AbstractPlayer {
   _FakePlayer(this.kernel);
 
   final PlayerKernel kernel;

@@ -29,15 +29,17 @@ void main() {
       expect(PlayerSettings.normalizeSpeed(1.0), 1.0);
       expect(PlayerSettings.normalizeSpeed(1.3), 1.25);
       expect(PlayerSettings.normalizeSpeed(1.9), 2.0);
-      expect(PlayerSettings.normalizeSpeed(0.1), 0.5);
+      expect(PlayerSettings.normalizeSpeed(0.1), 0.25, reason: '档位下限是 0.25');
       expect(PlayerSettings.normalizeSpeed(double.nan), 1.0);
       expect(PlayerSettings.normalizeSpeed(null), 1.0);
     });
 
     test('copyWith 只改传入项，倍速仍走归一', () {
       const base = PlayerSettings();
+      // 3.0 是合法档位（0.25 步长，上限 4.0）；5.0 会被夹到 4.0。
       final next = base.copyWith(speed: 3.0, subtitleSize: SubtitleSize.large);
-      expect(next.speed, 2.0);
+      expect(next.speed, 3.0);
+      expect(base.copyWith(speed: 5.0).speed, PlayerSettings.maxSpeed);
       expect(next.subtitleSize, SubtitleSize.large);
       expect(next.kernel, base.kernel);
       expect(next.subtitlesEnabled, base.subtitlesEnabled);
@@ -79,12 +81,8 @@ void main() {
     test('保存后可读回，关库重开仍在', () async {
       final store = await VideoPlayerSettingsStore.open();
       store.save(
-        const PlayerSettings(
-          kernel: PlayerKernel.mdk,
-          speed: 1.5,
-          subtitlesEnabled: false,
-          subtitleSize: SubtitleSize.large,
-        ),
+        const PlayerSettings(kernel: PlayerKernel.mdk, subtitlesEnabled: false)
+            .copyWith(speed: 1.5, subtitleSize: SubtitleSize.large),
       );
       store.close();
 
@@ -116,7 +114,7 @@ void main() {
 
     test('隔离：设置落在视频板块自己的库文件，其他板块读不到', () async {
       final store = await VideoPlayerSettingsStore.open();
-      store.save(const PlayerSettings(speed: 1.5));
+      store.save(const PlayerSettings().copyWith(speed: 1.5));
 
       // 视频板块的库文件在 sections/video/reading.db（与图源库分文件）。
       final videoDb = File('${root.path}/sections/video/reading.db');

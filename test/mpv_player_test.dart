@@ -56,14 +56,16 @@ void main() {
 
   test('applySettings：倍速与字幕开关都下发给引擎', () async {
     await player.applySettings(
-      const PlayerSettings(kernel: PlayerKernel.mpv, speed: 1.5, subtitlesEnabled: false),
+      const PlayerSettings(kernel: PlayerKernel.mpv, subtitlesEnabled: false)
+          .copyWith(speed: 1.5),
     );
 
     expect(engine.speed, 1.5);
     expect(engine.subtitleEnabled, isFalse);
 
     await player.applySettings(
-      const PlayerSettings(kernel: PlayerKernel.mpv, speed: 2.0, subtitlesEnabled: true),
+      const PlayerSettings(kernel: PlayerKernel.mpv)
+          .copyWith(speed: 2.0),
     );
     expect(engine.speed, 2.0);
     expect(engine.subtitleEnabled, isTrue);
@@ -168,7 +170,7 @@ void main() {
     await player.load(PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')));
     await player.play();
     await player.seek(const Duration(seconds: 1));
-    await player.applySettings(const PlayerSettings(speed: 1.5));
+    await player.applySettings(const PlayerSettings().copyWith(speed: 1.5));
     expect(engine.opened, isNull, reason: '已释放后不再触达引擎');
     // 重复释放是安全的。
     await player.dispose();

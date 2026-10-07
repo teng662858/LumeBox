@@ -95,7 +95,15 @@ void main() {
 
   testWidgets('设置页：顶部不留整条空白', (tester) async {
     await pump(tester, const SettingsPage(runtimeAvailable: true));
-    expectNormalGap(tester, '设置页');
+    // 设置页第一个元素是「显示」分组的小标题（卡片在它下面），因此这里量的是
+    // 标题到顶栏的距离：判据仍然是「16pt 一档，远小于一个栏高」。
+    final barBottom = tester.getRect(find.byType(AppBar)).bottom;
+    final firstTitle = tester.getRect(find.text('显示')).top;
+    expect(
+      firstTitle - barBottom,
+      inInclusiveRange(0, 32),
+      reason: '设置页顶部空隙应是一档常规间距；接近栏高说明顶栏高度被算了两遍',
+    );
   });
 
   testWidgets('图源生成器：顶部不留整条空白', (tester) async {

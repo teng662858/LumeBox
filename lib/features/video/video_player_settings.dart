@@ -1,12 +1,27 @@
+import 'dart:convert';
+
 import '../../core/player/player_settings.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
+import '../../core/util/lume_log.dart';
 
-/// 「自定义视频」板块的播放器设置持久化。
+/// 「视频」板块的播放器设置持久化。
 ///
 /// 存储落在本板块独占的 `sections/video/reading.db`（reading_setting 表），
 /// 与图源库分文件、与其他板块分库，隔离机制沿用阅读底座的路径校验与库内自证；
 /// 播放器设置不会跨板块共享。
+///
+/// ## 按内核分别记住（用户点名）
+///
+/// 倍速 / 画面（缩放 · 旋转 · 镜像）/ 字幕设置每个内核各存一格，键是
+/// `video.player.prefs.<内核 id>`，值是一份 [KernelPrefs] 的 JSON。
+/// 切内核时读的是那一格——这正是「切到 MPV 调好的字幕样式不会漂到 AVPlayer」。
+///
+/// ## 老库兼容
+///
+/// 早期版本把这些值存在全局键里（`video.player.speed` 等）。读的时候先看新键，
+/// 没有就用全局键**迁移一次**（迁给当前内核），因此升级后设置不会丢；
+/// 写的时候同时镜像一份到全局键，方便回退到旧版本时也读得到。
 class VideoPlayerSettingsStore {
   const VideoPlayerSettingsStore(this._library);
 
@@ -23,29 +38,69 @@ class VideoPlayerSettingsStore {
   static const String keySubtitleDelay = 'video.player.subtitleDelayMs';
   static const String keyHardwareDecoding = 'video.player.hardwareDecoding';
 
+  /// 每内核一格偏好的键前缀（后缀是内核 id）。
+  static const String keyPrefsPrefix = 'video.player.prefs.';
+
+  /// 某个内核的偏好键。
+  static String keyPrefsFor(PlayerKernel kernel) =>
+      '$keyPrefsPrefix${kernel.id}';
+
   final ReadingLibrary _library;
 
   /// 读取设置；缺项或值非法时回退默认值。
-  PlayerSettings load() => PlayerSettings(
-        kernel: PlayerKernel.fromId(_library.setting(keyKernel)),
-        speed: PlayerSettings.normalizeSpeed(
-          double.tryParse(_library.setting(keySpeed) ?? ''),
-        ),
-        // 旧库没有这一项时（键缺失）按「开」处理——与历史行为一致。
-        subtitlesEnabled: _library.setting(keySubtitles) != 'false',
-        subtitleSize: SubtitleSize.fromId(_library.setting(keySubtitleSize)),
-        subtitleColor: SubtitleColor.fromId(_library.setting(keySubtitleColor)),
-        subtitleOutline:
-            SubtitleOutline.fromId(_library.setting(keySubtitleOutline)),
-        subtitleDelay: PlayerSettings.normalizeSubtitleDelay(
-          _intMillis(_library.setting(keySubtitleDelay)),
-        ),
-        hardwareDecoding: _library.setting(keyHardwareDecoding) != 'false',
-      );
+  PlayerSettings load() {
+    final kernel = PlayerKernel.fromId(_library.setting(keyKernel));
 
-  /// 写回本板块的库。
+    // 先收各内核存过的偏好，再把「老全局键」作为**兜底**迁给当前内核。
+    final prefs = <PlayerKernel, KernelPrefs>{};
+    for (final candidate in PlayerKernel.values) {
+      final raw = _library.setting(keyPrefsFor(candidate));
+      if (raw == null || raw.trim().isEmpty) continue;
+      try {
+        prefs[candidate] = KernelPrefs.fromJson(jsonDecode(raw));
+      } catch (error) {
+        // 单格坏掉只影响那一格，其余内核照常。
+        LumeLog.warn('[video] 内核 ${candidate.id} 的播放偏好解析失败：$error');
+      }
+    }
+    // 老库迁移：只在**确实存过非默认值**时才给当前内核补一格。
+    // 空库不凭空造格——那会让「全新安装」与「读过一次」两种状态的设置对象不相等。
+    final legacy = _legacyPrefs();
+    if (legacy != const KernelPrefs()) prefs.putIfAbsent(kernel, () => legacy);
+
+    return PlayerSettings(
+      kernel: kernel,
+      // 旧库没有这一项时（键缺失）按「开」处理——与历史行为一致。
+      subtitlesEnabled: _library.setting(keySubtitles) != 'false',
+      hardwareDecoding: _library.setting(keyHardwareDecoding) != 'false',
+      prefs: prefs,
+    );
+  }
+
+  /// 写回本板块的库（**各内核那一格都写** + 全局键镜像）。
+  ///
+  /// 为什么要写全部而不是只写当前内核那一格：设置对象里带着各内核的偏好
+  /// （切来切去时它们都在内存里），一次保存把它们一起落库——否则「在 MPV 上调过、
+  /// 之后一直在用 AVPlayer」的情况下，MPV 那一格要等下次选中它才被写到，
+  /// 中间重启就丢了。
   void save(PlayerSettings settings) {
     _library.setSetting(keyKernel, settings.kernel.id);
+    for (final entry in settings.prefs.entries) {
+      _library.setSetting(
+        keyPrefsFor(entry.key),
+        jsonEncode(entry.value.toJson()),
+      );
+    }
+    // 当前内核那一格一定要有：内存里没记录过时用默认值补一份，
+    // 免得下次 load 又走一遍「从老键迁移」。
+    if (!settings.prefs.containsKey(settings.kernel)) {
+      _library.setSetting(
+        keyPrefsFor(settings.kernel),
+        jsonEncode(settings.current.toJson()),
+      );
+    }
+
+    // 全局键镜像：值为**当前内核**的那一份，回退到旧版本时仍读得出意义。
     _library.setSetting(keySpeed, settings.speed.toStringAsFixed(2));
     _library.setSetting(
       keySubtitles,
@@ -63,6 +118,20 @@ class VideoPlayerSettingsStore {
       settings.hardwareDecoding ? 'true' : 'false',
     );
   }
+
+  /// 老版本的全局键 → 一份偏好（迁移用）。
+  KernelPrefs _legacyPrefs() => KernelPrefs(
+        speed: PlayerSettings.normalizeSpeed(
+          double.tryParse(_library.setting(keySpeed) ?? ''),
+        ),
+        subtitleSize: SubtitleSize.fromId(_library.setting(keySubtitleSize)),
+        subtitleColor: SubtitleColor.fromId(_library.setting(keySubtitleColor)),
+        subtitleOutline:
+            SubtitleOutline.fromId(_library.setting(keySubtitleOutline)),
+        subtitleDelay: PlayerSettings.normalizeSubtitleDelay(
+          _intMillis(_library.setting(keySubtitleDelay)),
+        ),
+      );
 
   /// 读毫秒值；缺失或非法返回 null（由归一函数回退到零延迟）。
   static Duration? _intMillis(String? raw) {

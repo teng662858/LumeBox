@@ -9,6 +9,8 @@
 /// [FormatException]，由适配器转成数据源层异常。
 library;
 
+import 'package:flutter/foundation.dart';
+
 /// 图源分类。
 class SourceCategory {
   const SourceCategory({required this.id, required this.title});
@@ -173,12 +175,21 @@ sealed class ChapterContent {
         final images = _imageList(json['images']);
         return images.isEmpty ? null : ImageContent(images);
       case 'video':
+        // 宽容口径：多线路脚本可能只给 qualities 不给 url——那就用第一条当默认。
+        final qualities = _qualityList(json['qualities'] ?? json['levels']);
         final raw = '${json['url'] ?? ''}'.trim();
-        final uri = Uri.tryParse(raw);
+        var uri = Uri.tryParse(raw);
+        if ((uri == null || !uri.hasScheme) && qualities.isNotEmpty) {
+          uri = qualities.first.url;
+        }
         if (uri == null || !uri.hasScheme) {
           throw FormatException('章节内容的 video.url 非法: $raw');
         }
-        return VideoContent(url: uri, headers: _stringMap(json['headers']));
+        return VideoContent(
+          url: uri,
+          headers: _stringMap(json['headers']),
+          qualities: qualities,
+        );
       default:
         throw FormatException('未知的章节内容 kind: $kind');
     }
@@ -204,12 +215,99 @@ final class VideoContent extends ChapterContent {
   const VideoContent({
     required this.url,
     this.headers = const <String, String>{},
+    this.qualities = const <VideoQuality>[],
   });
 
   final Uri url;
 
   /// 播放时附带的请求头（防盗链等）。
   final Map<String, String> headers;
+
+  /// 候选清晰度线路（图源给多条地址时才有；空列表 = 单线路）。
+  ///
+  /// **清晰度由图源数据决定，播放器只消费地址、不生成清晰度**（用户点名的
+  /// 口径）：这里存的就是图源给的地址与它的标签，播放器只负责把它们列出来。
+  final List<VideoQuality> qualities;
+
+  /// 是否提供了多条线路（决定「清晰度」按钮是弹菜单还是弹提示）。
+  bool get hasQualities => qualities.length > 1;
+}
+
+/// 一条候选清晰度线路：标签 + 地址（+ 该线路自己的请求头）。
+///
+/// 标签完全由图源决定（`1080P` / `超清` / `蓝光` 都行）：播放器不认识分辨率，
+/// 只把它当展示名——「图源说这是什么画质」比播放器猜要可靠。
+@immutable
+class VideoQuality {
+  const VideoQuality({
+    required this.label,
+    required this.url,
+    this.headers = const <String, String>{},
+  });
+
+  /// 展示名（图源给的原始标签）。
+  final String label;
+
+  final Uri url;
+
+  /// 这一条线路自己的请求头；为空时沿用主地址的 headers。
+  final Map<String, String> headers;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VideoQuality &&
+      other.label == label &&
+      other.url == url &&
+      other.headers.length == headers.length &&
+      other.headers.entries.every((entry) => headers[entry.key] == entry.value);
+
+  @override
+  int get hashCode => Object.hash(
+        label,
+        url,
+        Object.hashAllUnordered(
+          headers.entries.map((entry) => Object.hash(entry.key, entry.value)),
+        ),
+      );
+
+  @override
+  String toString() => 'VideoQuality($label → $url)';
+}
+
+/// 解析候选清晰度线路。
+///
+/// 宽容口径（图源的写法五花八门，能救则救）：
+/// - 标签取 `label` / `name` / `quality` / `title` / `resolution` 里第一个非空的；
+/// - 地址取 `url` / `playUrl` / `src`；
+/// - 条目非法（没有地址）就跳过，不影响其余线路；
+/// - 标签缺失时用 `线路 N` 兜底——**不编造分辨率**（播放器不知道它是不是 1080P）。
+List<VideoQuality> _qualityList(Object? value) {
+  if (value is! List) return const <VideoQuality>[];
+  final qualities = <VideoQuality>[];
+  for (final entry in value) {
+    if (entry is! Map) continue;
+    final url = _text(entry['url']) ??
+        _text(entry['playUrl']) ??
+        _text(entry['src']) ??
+        _text(entry['address']);
+    if (url == null) continue;
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme) continue;
+    final label = _text(entry['label']) ??
+        _text(entry['name']) ??
+        _text(entry['quality']) ??
+        _text(entry['title']) ??
+        _text(entry['resolution']) ??
+        '线路 ${qualities.length + 1}';
+    qualities.add(
+      VideoQuality(
+        label: label,
+        url: uri,
+        headers: _stringMap(entry['headers']),
+      ),
+    );
+  }
+  return List<VideoQuality>.unmodifiable(qualities);
 }
 
 List<SourceCategory> parseCategories(Object? json) {

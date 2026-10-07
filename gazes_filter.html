@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+  <meta name="robots" content="noindex,nofollow">
+  <script data-cfasync="false">(() => {
+	window.CAP_SILENT = true;
+	window.CAP_DEBUG = false;
+	window.CAP_CUSTOM_WASM_URL = "/static/frontend/cap_wasm_bg.wasm";
+	try {
+		const saved = localStorage.getItem("gaze-theme");
+		const dark = saved === "dark" || saved !== "light" && matchMedia("(prefers-color-scheme: dark)").matches;
+		const root = document.documentElement;
+		const theme = dark ? "dark" : "light";
+		root.classList.toggle("dark", dark);
+		root.dataset.theme = theme;
+		root.style.colorScheme = theme;
+		root.style.backgroundColor = dark ? "#191d24" : "lab(96.5432% -.0000596046 0)";
+	} catch {}
+})();
+</script>
+  <title>访问验证</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <style>
+    :root {
+      color-scheme: light;
+      --page-bg: lab(96.5432% -.0000596046 0);
+      --text: #28323d;
+      --muted: #68727e;
+      --control-bg: #fff;
+      --control-shadow: 0 2px 2px rgb(0 0 0 / 14%), 0 3px 1px -2px rgb(0 0 0 / 12%), 0 1px 5px rgb(0 0 0 / 20%);
+    }
+    :root.dark {
+      color-scheme: dark;
+      --page-bg: #191d24;
+      --text: #d8dee6;
+      --muted: #9ca3af;
+      --control-bg: #fff;
+      --control-shadow: 0 2px 2px rgb(0 0 0 / 42%), 0 3px 1px -2px rgb(0 0 0 / 36%), 0 1px 5px rgb(0 0 0 / 52%);
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      position: relative;
+      color: var(--text);
+      background: var(--page-bg);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body::before {
+      position: fixed;
+      inset: 0;
+      background: center / 360px auto repeat url('https://edu-1258344700.cos.ap-guangzhou.myqcloud.com/project/21482578375/d32786b0a92f4ef7bd74ef7fcf919eeb.svg');
+      opacity: .28;
+      content: "";
+      pointer-events: none;
+    }
+    :root.dark body::before { opacity: .16; }
+    main {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      min-height: 100vh;
+      padding: 1rem;
+      place-content: center;
+      justify-items: center;
+      gap: .7rem;
+    }
+    cap-widget {
+      --cap-widget-width: min(200px, calc(100vw - 2.25rem));
+      --cap-widget-height: 62px;
+      --cap-widget-padding: 10px 14px;
+      --cap-gap: 9px;
+      --cap-background: var(--control-bg);
+      --cap-border-color: transparent;
+      --cap-border-radius: 15px;
+      --cap-color: #28323d;
+      --cap-focus-ring: #10b981;
+      --cap-spinner-color: #10b981;
+      --cap-checkbox-size: 30px;
+      --cap-checkbox-border-radius: 9px;
+      --cap-checkbox-background: rgb(16 185 129 / 13%);
+      --cap-checkbox-border: 1px solid rgb(16 185 129 / 34%);
+      opacity: 0;
+      position: relative;
+      z-index: 1;
+      border-radius: 15px;
+      box-shadow: var(--control-shadow);
+      transform: translateY(8px) scale(.98);
+      transition: opacity .32s ease, transform .42s cubic-bezier(.22, 1, .36, 1);
+    }
+    cap-widget[data-ready] { opacity: 1; transform: none; }
+    cap-widget::part(trigger) {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 10px 14px;
+      gap: 9px;
+    }
+    cap-widget::part(brand) {
+      position: absolute;
+      inset-block-end: 5px;
+      inset-inline-end: 9px;
+      display: inline-flex;
+      align-items: center;
+      gap: .26rem;
+      color: #56616d;
+      font-size: .66rem;
+      font-weight: 650;
+      line-height: 1;
+      pointer-events: none;
+    }
+    cap-widget::part(brand-name) {
+      color: #ff595e;
+      background: linear-gradient(90deg, #ff595e, #ff924c 18%, #ffca3a 34%, #c5ca30 48%, #8ac926 62%, #36949d 76%, #1982c4 88%, #565aa0);
+      background-clip: text;
+      font: inherit;
+      font-weight: 850;
+      letter-spacing: -.02em;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 1px 1px rgb(15 23 42 / 18%));
+    }
+    cap-widget::part(brand-label) {
+      color: inherit;
+      font: inherit;
+      letter-spacing: .02em;
+    }
+    cap-widget::part(checkbox) {
+      position: static;
+      margin: 0;
+      box-shadow: none;
+    }
+    cap-widget::part(label) {
+      justify-content: flex-start;
+      font-size: .89rem;
+      font-weight: 650;
+      letter-spacing: .006em;
+      text-align: start;
+    }
+    :root.dark cap-widget {
+      --cap-checkbox-background: rgb(16 185 129 / 14%);
+      --cap-checkbox-border: 1px solid rgb(52 211 153 / 34%);
+      --cap-spinner-background-color: rgb(255 255 255 / 14%);
+    }
+    cap-widget:is([data-state='working'], [data-state='done'], [data-state='error'])::part(checkbox) {
+      background-color: transparent;
+    }
+    :root.dark cap-widget::part(brand-label) { color: #68727e; }
+    #cap-status { min-height: 1.2rem; color: var(--muted); font-size: .76rem; letter-spacing: .01em; }
+    #cap-status:empty { display: none; }
+    @media (prefers-reduced-motion: reduce) {
+      cap-widget { transition: none; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <main aria-label="访问验证">
+    <cap-widget data-cap-api-endpoint="/event/cap/" data-cap-worker-count="2" data-cap-lang="zh-cn" data-cap-i18n-initial-state="点击完成验证" data-cap-i18n-verifying-label="正在验证…" data-cap-i18n-solved-label="验证已通过" data-cap-i18n-error-label="验证失败，请重试"></cap-widget>
+    <span id="cap-status" role="status" aria-live="polite"></span>
+  </main>
+  <script data-cfasync="false" type="module" src="/static/frontend/cap.js?v=mue3vidq"></script>
+<time hidden aria-hidden="true" g68e1981a3aeaea2ba5f4="eff6db77b894cd724d9e5483eb700bde3209216c217900642f09d29df8067874"></time><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a46abec1aa14e2f0',t:'MTc5MTM1MzQ1MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

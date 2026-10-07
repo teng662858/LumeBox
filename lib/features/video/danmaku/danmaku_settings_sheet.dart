@@ -28,6 +28,56 @@ class DanmakuSettingsSheet extends StatefulWidget {
 }
 
 class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      child: DecoratedBox(
+        decoration: LumeTheme.background,
+        child: SafeArea(
+          top: false,
+          // 面板内容与「播放器设置 → 弹幕」共用同一份（[DanmakuSettingsPanel]），
+          // 两处不各写一套控件，免得改了这边忘了那边。
+          child: SingleChildScrollView(
+            child: DanmakuSettingsPanel(
+              settings: widget.settings,
+              onChanged: widget.onChanged,
+              danmakuCount: widget.danmakuCount,
+              showTitle: true,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 弹幕设置面板（可内嵌）：标题 + 开关 + 各项滑杆 + 屏蔽词。
+///
+/// 自持一份设置：改一项立即生效并回调宿主（宿主写库）。
+class DanmakuSettingsPanel extends StatefulWidget {
+  const DanmakuSettingsPanel({
+    super.key,
+    required this.settings,
+    required this.onChanged,
+    this.danmakuCount,
+    this.showTitle = true,
+  });
+
+  final DanmakuSettings settings;
+  final ValueChanged<DanmakuSettings> onChanged;
+
+  /// 本集弹幕条数（展示用）；为空时不显示这一行。
+  final int? danmakuCount;
+
+  /// 是否显示面板自己的标题（内嵌到播放器设置里时可以关掉，避免两级标题）。
+  final bool showTitle;
+
+  @override
+  State<DanmakuSettingsPanel> createState() => _DanmakuSettingsPanelState();
+}
+
+class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
   late DanmakuSettings _settings = widget.settings;
 
   void _update(DanmakuSettings next) {
@@ -38,41 +88,43 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      child: DecoratedBox(
-        decoration: LumeTheme.background,
-        child: SafeArea(
-          top: false,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        '弹幕设置',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: LumeTheme.textPrimary,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+                if (widget.showTitle) ...<Widget>[
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          '弹幕设置',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: LumeTheme.textPrimary,
+                          ),
                         ),
                       ),
-                    ),
-                    if (widget.danmakuCount != null)
-                      Text(
-                        '本集 ${widget.danmakuCount} 条',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: LumeTheme.muted,
+                      if (widget.danmakuCount != null)
+                        Text(
+                          '本集 ${widget.danmakuCount} 条',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: LumeTheme.muted,
+                          ),
                         ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                ] else if (widget.danmakuCount != null) ...<Widget>[
+                  Text(
+                    '本集 ${widget.danmakuCount} 条',
+                    style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  ),
+                  const SizedBox(height: 4),
+                ],
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(
@@ -143,10 +195,7 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
                   icon: const Icon(Icons.restart_alt, size: 18),
                   label: const Text('恢复默认'),
                 ),
-              ],
-            ),
-          ),
-        ),
+        ],
       ),
     );
   }

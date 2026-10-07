@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'abstract_player.dart';
 import 'buffering.dart';
 import 'mpv_engine.dart';
+import 'player_capabilities.dart';
 import 'player_settings.dart';
 import 'player_stats.dart';
 
@@ -25,7 +26,7 @@ import 'player_stats.dart';
 ///
 /// 缓冲参数（[BufferingConfig]）：在**每次装载前**写进 libmpv（`cache` /
 /// `cache-pause-initial` / `demuxer-*`），也就是「起播前把缓冲策略定下来」。
-class MpvPlayer implements AbstractPlayer {
+class MpvPlayer extends AbstractPlayer {
   MpvPlayer({
     required MpvEngine engine,
     this.engineLabel = 'MPV',
@@ -60,6 +61,11 @@ class MpvPlayer implements AbstractPlayer {
 
   @override
   ValueListenable<PlayerStats> get stats => _stats;
+
+  /// 能力矩阵：见 [PlayerCapabilities.of] 的唯一声明处（MPV 那一栏）。
+  @override
+  PlayerCapabilities get capabilities =>
+      PlayerCapabilities.of(PlayerKernel.mpv);
 
   @override
   Future<void> load(PlayerMedia media) async {
@@ -125,18 +131,52 @@ class MpvPlayer implements AbstractPlayer {
     _settings = settings;
     await _engine.setSpeed(settings.speed);
     await _engine.setSubtitleEnabled(settings.subtitlesEnabled);
-    // 字幕样式（字号 / 颜色 / 描边）真实生效：media_kit 的字幕层收完整 TextStyle。
+    // 字幕样式（字号 / 颜色 / 描边 / 底色）真实生效：media_kit 的字幕层收
+    // 完整 TextStyle。
     await _engine.setSubtitleStyle(
       SubtitleStyle(
         fontScale: settings.subtitleSize.scale,
         colorArgb: settings.subtitleColor.argb,
         outlineWidth: settings.subtitleOutline.width,
+        backgroundOpacity: settings.subtitleBackground,
       ),
     );
-    // 延迟与硬解：当前内核未开放通道，引擎侧只记录（见 MpvEngine 的说明）。
+    // 字幕延迟 / 音频延迟 / 硬解都写 libmpv 属性（见 MediaKitMpvEngine）。
     await _engine.setSubtitleDelay(settings.subtitleDelay);
     await _engine.setHardwareDecoding(settings.hardwareDecoding);
+    await setAudioDelay(settings.audioDelay);
   }
+
+  // ------------------------------------------------------------ 轨道 / 字幕
+
+  /// 引擎有没有轨道读写通道（替身引擎可能没有，能力就如实为「不支持」）。
+  TrackCapable? get _tracks => _engine is TrackCapable
+      ? _engine as TrackCapable
+      : null;
+
+  @override
+  Future<List<PlayerTrack>> audioTracks() async =>
+      await _tracks?.audioTracks() ?? const <PlayerTrack>[];
+
+  @override
+  Future<void> selectAudioTrack(String id) async =>
+      await _tracks?.selectAudioTrack(id);
+
+  @override
+  Future<List<PlayerTrack>> subtitleTracks() async =>
+      await _tracks?.subtitleTracks() ?? const <PlayerTrack>[];
+
+  @override
+  Future<void> selectSubtitleTrack(String? id) async =>
+      await _tracks?.selectSubtitleTrack(id);
+
+  @override
+  Future<bool> loadSubtitleFile(String path) async =>
+      await _tracks?.loadSubtitleFile(path) ?? false;
+
+  @override
+  Future<void> setAudioDelay(Duration delay) async =>
+      await _tracks?.setAudioDelay(delay);
 
   @override
   Widget buildView() => _engine.buildView();

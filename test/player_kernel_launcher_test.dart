@@ -131,7 +131,7 @@ void main() {
   });
 }
 
-class _FakePlayer implements AbstractPlayer {
+class _FakePlayer extends AbstractPlayer {
   _FakePlayer(this.kernel);
 
   final PlayerKernel kernel;

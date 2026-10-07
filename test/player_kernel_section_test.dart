@@ -95,9 +95,11 @@ void main() {
     }
   });
 
-  testWidgets('逃生切换：只改内核并写回视频板块的库，倍速与字幕不动', (tester) async {
+  testWidgets('逃生切换：只改内核并写回视频板块的库；字幕不动，倍速按内核各记一份', (tester) async {
     final store = await VideoPlayerSettingsStore.open();
-    store.save(const PlayerSettings(speed: 1.5, subtitlesEnabled: false));
+    store.save(
+      const PlayerSettings(subtitlesEnabled: false).copyWith(speed: 1.5),
+    );
     store.close();
 
     await pumpSection(tester);
@@ -109,8 +111,15 @@ void main() {
     final probe = await VideoPlayerSettingsStore.open();
     final saved = probe.load();
     expect(saved.kernel, PlayerKernel.mpv, reason: '内核必须落库');
-    expect(saved.speed, 1.5, reason: '逃生入口不碰倍速');
-    expect(saved.subtitlesEnabled, isFalse, reason: '逃生入口不碰字幕');
+    expect(saved.subtitlesEnabled, isFalse, reason: '逃生入口不碰字幕（它是全局的）');
+    // 倍速按内核分别记住：逃生入口不碰倍速，因此 AVPlayer 那一格仍是 1.5；
+    // 当前内核（MPV）读自己的那一格（默认 1.0）。
+    expect(
+      saved.copyWith(kernel: PlayerKernel.avplayer).speed,
+      1.5,
+      reason: '原内核的倍速没被逃生切换动过',
+    );
+    expect(saved.speed, PlayerSettings.defaultSpeed);
   });
 
   testWidgets('逃生场景：库里的 MPV 不可用时，能在这里切回 AVPlayer', (tester) async {

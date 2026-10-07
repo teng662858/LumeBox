@@ -228,6 +228,8 @@ class _VideoPageState extends State<VideoPage> {
           chapterId: chapter.id,
           chapterTitle: chapter.title,
         ),
+        // 图源给了多条清晰度线路就一起带进播放器（单条 / 空表时按钮弹提示）。
+        qualities: SourcePlayback.contentQualities(content),
       );
     } on SourceException catch (error) {
       _toast(error.message);
@@ -238,6 +240,7 @@ class _VideoPageState extends State<VideoPage> {
   Future<void> _openPlayer(
     PlayerMedia media, {
     VideoPlayTarget? target,
+    List<VideoQuality> qualities = const <VideoQuality>[],
   }) async {
     if (!mounted) return;
     _playerRouteOpen = true;
@@ -255,6 +258,7 @@ class _VideoPageState extends State<VideoPage> {
             brightnessBackend: widget.brightnessBackend,
             sourceManager: widget.sourceManager,
             library: _library,
+            qualities: qualities,
           ),
         ),
       );
@@ -339,6 +343,7 @@ class _VideoPageState extends State<VideoPage> {
           chapterId: chapter.id,
           chapterTitle: chapter.title,
         ),
+        qualities: SourcePlayback.contentQualities(content),
       );
     } on SourceException catch (error) {
       _toast(error.message);

@@ -236,7 +236,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('MPV'));
       await tester.pumpAndSettle();
-      await tester.pageBack();
+      // 设置是弹窗：用它的关闭按钮收起（不再是整页返回）。
+      await tester.tap(find.byTooltip('关闭'));
       await tester.pumpAndSettle();
 
       expect(first.disposals, greaterThan(0), reason: '旧实例应已释放');
@@ -280,7 +281,8 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text(kernel));
         await tester.pumpAndSettle();
-        await tester.pageBack();
+        // 设置是弹窗：用它的关闭按钮收起（不再是整页返回）。
+      await tester.tap(find.byTooltip('关闭'));
         await tester.pumpAndSettle();
       }
 
@@ -351,7 +353,7 @@ class _Catalog implements PlayerKernelCatalog {
 ///
 /// 「页面是否还挂在这个实例上」是 Bug 3 的直接可观测量：监听计数在挂 / 摘后
 /// 立刻变化，不依赖内核是否真的吐快照、也不受 dispose 时机影响。
-class _ProbePlayer implements AbstractPlayer {
+class _ProbePlayer extends AbstractPlayer {
   _ProbePlayer(this.kernel);
 
   final PlayerKernel kernel;

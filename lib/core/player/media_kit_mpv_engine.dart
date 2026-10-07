@@ -10,6 +10,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../util/lume_log.dart';
 import 'buffering.dart';
 import 'mpv_engine.dart';
+import 'player_capabilities.dart';
 
 /// [MpvEngine] 的真实实现：media_kit（其内核即 **libmpv**）。
 ///
@@ -31,7 +32,8 @@ import 'mpv_engine.dart';
 /// 的高层 API 不开放它，但它的 `NativePlayer` 把 **FFI 绑定实例（`mpv`）与 mpv
 /// 句柄（`ctx`）做成了公开字段**，libmpv 的客户端 API 又是线程安全的，
 /// 因此这一层可以直接调用 `mpv_set_property_string`——不 fork、不反射、不猜。
-class MediaKitMpvEngine implements MpvEngine, FrameTickCapable, EnginePropertyCapable {
+class MediaKitMpvEngine
+    implements MpvEngine, FrameTickCapable, EnginePropertyCapable, TrackCapable {
   /// 私有构造：只接受**已经**建好的 Player。
   ///
   /// 外部只能走 [create]——它保证 media_kit 先初始化、再碰任何 media_kit API。
@@ -252,6 +254,116 @@ class MediaKitMpvEngine implements MpvEngine, FrameTickCapable, EnginePropertyCa
     await _writeSubtitleDelay(delay);
   }
 
+  // ------------------------------------------------------------ 轨道读写
+
+  /// 可选音轨（media_kit 的轨道列表里已经带标题 / 语言 / 默认标记）。
+  @override
+  Future<List<PlayerTrack>> audioTracks() async {
+    if (_disposed) return const <PlayerTrack>[];
+    final selected = _player.state.track.audio.id;
+    final tracks = _player.state.tracks.audio;
+    return <PlayerTrack>[
+      for (var index = 0; index < tracks.length; index++)
+        PlayerTrack(
+          id: tracks[index].id,
+          label: _trackLabel(tracks[index].title, tracks[index].language,
+              tracks[index].codec, '音轨', index),
+          language: tracks[index].language,
+          selected: tracks[index].id == selected,
+        ),
+    ];
+  }
+
+  /// 可选字幕轨（含外挂字幕：媒体里加载过的外挂轨也会出现在这里）。
+  @override
+  Future<List<PlayerTrack>> subtitleTracks() async {
+    if (_disposed) return const <PlayerTrack>[];
+    final selected = _player.state.track.subtitle.id;
+    final tracks = _player.state.tracks.subtitle;
+    return <PlayerTrack>[
+      for (var index = 0; index < tracks.length; index++)
+        PlayerTrack(
+          id: tracks[index].id,
+          label: _trackLabel(tracks[index].title, tracks[index].language,
+              tracks[index].codec, '字幕', index),
+          language: tracks[index].language,
+          selected: tracks[index].id == selected,
+        ),
+    ];
+  }
+
+  /// 轨道展示名：内核给了标题就用标题，否则语言，再否则「音轨 1」这类兜底。
+  static String _trackLabel(
+    String? title,
+    String? language,
+    String? codec,
+    String prefix,
+    int index,
+  ) {
+    final name = title?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final lang = language?.trim();
+    if (lang != null && lang.isNotEmpty && lang != 'und') return '$prefix ${lang.toUpperCase()}';
+    final code = codec?.trim();
+    if (code != null && code.isNotEmpty) return '$prefix ${code.toUpperCase()}';
+    return '$prefix ${index + 1}';
+  }
+
+  @override
+  Future<void> selectAudioTrack(String id) async {
+    if (_disposed) return;
+    try {
+      await _player.setAudioTrack(AudioTrack(id, null, null));
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      LumeLog.warn('[mpv] 切音轨失败（$id）：$error');
+    }
+  }
+
+  @override
+  Future<void> selectSubtitleTrack(String? id) async {
+    if (_disposed) return;
+    try {
+      await _player.setSubtitleTrack(
+        id == null ? SubtitleTrack.no() : SubtitleTrack(id, null, null),
+      );
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      LumeLog.warn('[mpv] 切字幕轨失败（$id）：$error');
+    }
+  }
+
+  /// 外挂字幕：media_kit 的 `SubtitleTrack.uri` 支持本地文件（SRT / ASS / VTT）。
+  @override
+  Future<bool> loadSubtitleFile(String path) async {
+    if (_disposed) return false;
+    try {
+      final uri = path.startsWith('file:') ? path : Uri.file(path).toString();
+      await _player.setSubtitleTrack(SubtitleTrack.uri(uri));
+      LumeLog.info('[mpv] 已加载外挂字幕：$path');
+      return true;
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      LumeLog.warn('[mpv] 加载外挂字幕失败：$error');
+      return false;
+    }
+  }
+
+  /// 音频延迟（libmpv 的 `audio-delay`，单位秒）。
+  @override
+  Future<void> setAudioDelay(Duration delay) async {
+    if (_disposed) return;
+    if (_audioDelay == delay) return;
+    _audioDelay = delay;
+    final accepted = await _setProperties(MpvProperties.audioDelay(delay));
+    if (accepted == 0) {
+      LumeLog.warn('[mpv] 音频延迟（${delay.inMilliseconds}ms）未能写入内核');
+    }
+  }
+
+  /// 音频延迟的最近一次写入值（null = 还没写过）。
+  Duration? _audioDelay;
+
   @override
   Future<void> setSubtitleStyle(SubtitleStyle style) async {
     if (_disposed) return;
@@ -411,6 +523,9 @@ class MediaKitMpvEngine implements MpvEngine, FrameTickCapable, EnginePropertyCa
     final style = _subtitleStyle;
     final base = 32.0 * style.fontScale;
     final outline = style.outlineWidth;
+    // 底色：把「不透明度」翻成 ARGB 的 alpha 通道（0 = 完全透明，不画底色）。
+    final backgroundAlpha =
+        (style.backgroundOpacity.clamp(0.0, 1.0) * 255).round();
     return SubtitleViewConfiguration(
       visible: _subtitlesEnabled,
       textScaler: TextScaler.noScaling,
@@ -421,7 +536,7 @@ class MediaKitMpvEngine implements MpvEngine, FrameTickCapable, EnginePropertyCa
         wordSpacing: 0.0,
         color: Color(style.colorArgb),
         fontWeight: FontWeight.w600,
-        backgroundColor: const Color(0xAA000000),
+        backgroundColor: Color(backgroundAlpha << 24),
         shadows: outline <= 0
             ? const <Shadow>[]
             : <Shadow>[

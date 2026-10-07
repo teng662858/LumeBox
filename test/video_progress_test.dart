@@ -689,7 +689,7 @@ class _FakeCatalog implements PlayerKernelCatalog {
 }
 
 /// 播放器替身：记录 seek 与加载的媒体，位置由用例手动推进。
-class _FakePlayer implements AbstractPlayer {
+class _FakePlayer extends AbstractPlayer {
   _FakePlayer(this.kernel);
 
   final PlayerKernel kernel;

@@ -66,6 +66,9 @@ dev_dependencies:
   # 图标生成工具（只在本地生成 iOS 图标资源，不参与运行时）。
   flutter_launcher_icons: ^0.14.1
 
+  # 测试替身用它的类型（假 video_player 平台，验请求头 / 缓冲参数到达平台层）。
+  video_player_platform_interface: ^6.9.0
+
 # 本地 vendored 副本（路径覆盖）：上游 2.12.0 + 一处补丁
 # （把宿主写入的播放缓冲参数应用到 AVPlayer，见
 # third_party/video_player_avfoundation/PATCHES.md）。

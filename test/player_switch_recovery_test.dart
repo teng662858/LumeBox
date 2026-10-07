@@ -137,11 +137,12 @@ void main() {
         },
       );
 
-      await tester.tap(find.byTooltip('播放器设置'));
+      await tester.tap(find.byTooltip('播放器设置'), warnIfMissed: false);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('MPV'));
+      // 设置是弹窗：选 MPV 后用它自己的关闭按钮收起。
+      await tester.tap(find.text('MPV'), warnIfMissed: false);
       await tester.pumpAndSettle();
-      await tester.pageBack();
+      await tester.tap(find.byTooltip('关闭'), warnIfMissed: false);
       await tester.pumpAndSettle();
 
       expect(find.text('fake:avplayer'), findsOneWidget, reason: '回退后要有画面');
@@ -170,11 +171,15 @@ void main() {
         },
       );
 
+      // 失败态下控制栏仍然可用（这条用例前半段就是在验它：起播失败时**不弹**
+      // 「还在准备」的提示——那条 SnackBar 会盖住控制栏，真机上点哪都没反应）。
+      expect(find.byType(SnackBar), findsNothing, reason: '失败态不弹误导性提示');
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('MPV'));
       await tester.pumpAndSettle();
-      await tester.pageBack();
+      // 设置是弹窗：用它的关闭按钮收起（不再是整页返回）。
+      await tester.tap(find.byTooltip('关闭'));
       await tester.pumpAndSettle();
       expect(find.text('播放器准备失败'), findsOneWidget);
       expect(PlayerFactory.mpvInitFailed, isTrue);
@@ -252,7 +257,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 1));
       await tester.tap(find.text('AVPlayer'));
       await tester.pumpAndSettle();
-      await tester.pageBack();
+      // 设置是弹窗：用它的关闭按钮收起（不再是整页返回）。
+      await tester.tap(find.byTooltip('关闭'));
       await tester.pumpAndSettle();
 
       expect(find.text('fake:avplayer'), findsOneWidget, reason: '以最后一次选择为准');
@@ -303,7 +309,7 @@ class _Catalog implements PlayerKernelCatalog {
       isAvailable(kernel) ? null : '${kernel.label} 内核尚未接入';
 }
 
-class _FakePlayer implements AbstractPlayer {
+class _FakePlayer extends AbstractPlayer {
   _FakePlayer(this.kernel, {this.failLoad = false});
 
   final PlayerKernel kernel;

@@ -113,11 +113,10 @@ void main() {
     });
 
     test('copyWith 保留未提及的字段', () {
-      const base = PlayerSettings(
+      final base = const PlayerSettings(hardwareDecoding: false).copyWith(
         subtitleColor: SubtitleColor.yellow,
         subtitleOutline: SubtitleOutline.thick,
-        subtitleDelay: Duration(seconds: 2),
-        hardwareDecoding: false,
+        subtitleDelay: const Duration(seconds: 2),
       );
       final next = base.copyWith(subtitleSize: SubtitleSize.huge);
       expect(next.subtitleSize, SubtitleSize.huge);
@@ -151,13 +150,12 @@ void main() {
     test('全部新字段写进板块库并读回', () {
       final store = VideoPlayerSettingsStore(ReadingLibrary.find(Section.video)!);
       store.save(
-        const PlayerSettings(
+        const PlayerSettings(hardwareDecoding: false).copyWith(
           subtitlesEnabled: true,
           subtitleSize: SubtitleSize.huge,
           subtitleColor: SubtitleColor.yellow,
           subtitleOutline: SubtitleOutline.thick,
-          subtitleDelay: Duration(milliseconds: 2500),
-          hardwareDecoding: false,
+          subtitleDelay: const Duration(milliseconds: 2500),
         ),
       );
 
@@ -171,7 +169,11 @@ void main() {
 
     test('负延迟也能落库（提前字幕）', () {
       final store = VideoPlayerSettingsStore(ReadingLibrary.find(Section.video)!);
-      store.save(const PlayerSettings(subtitleDelay: Duration(seconds: -3)));
+      store.save(
+        const PlayerSettings().copyWith(
+          subtitleDelay: const Duration(seconds: -3),
+        ),
+      );
       expect(store.load().subtitleDelay, const Duration(seconds: -3));
     });
 
@@ -244,18 +246,32 @@ void main() {
       expect(find.text('细'), findsOneWidget);
       expect(find.text('粗'), findsOneWidget);
 
-      // 延迟（滑杆 + 当前值）
-      expect(find.textContaining('延迟 0s'), findsOneWidget);
+      // 底色（新增：压在亮画面上也能读）。分组说明里也提到「底色」，因此按值找。
+      expect(find.textContaining('底色 45%'), findsOneWidget);
+
+      // 延迟（滑杆 + 当前值）。字幕与音频各有一条延迟，因此是两条。
+      expect(find.textContaining('延迟 0s'), findsWidgets);
     });
 
-    testWidgets('解码区有硬件解码开关', (tester) async {
-      await pumpPage(tester);
-
+    testWidgets('解码区：支持的内核给开关，不支持的给「不支持」入口', (tester) async {
+      // MPV（libmpv 的 hwdec 属性通道已打通）→ 真开关。
+      await pumpPage(
+        tester,
+        initial: const PlayerSettings(kernel: PlayerKernel.mpv),
+      );
       expect(find.text('解码'), findsOneWidget);
       expect(find.text('硬件解码'), findsOneWidget);
       expect(find.textContaining('优先硬解'), findsOneWidget);
-      // 如实标注边界（当前未开放写通道）。
-      expect(find.textContaining('未开放写解码属性'), findsOneWidget);
+
+      // AVPlayer（插件不暴露解码配置）→ 控件照旧在，但点了弹统一提示。
+      await pumpPage(tester);
+      expect(find.text('硬件解码'), findsOneWidget);
+      expect(find.text('不支持'), findsOneWidget);
+      expect(
+        find.textContaining('没有切换解码链的通道'),
+        findsOneWidget,
+        reason: '如实说明边界，并指向可换的内核',
+      );
     });
 
     testWidgets('切换颜色真的回调出去', (tester) async {
@@ -266,7 +282,9 @@ void main() {
         MaterialApp(
           theme: LumeTheme.build(),
           home: PlayerSettingsPage(
-            settings: const PlayerSettings(),
+            // 字幕样式（字号 / 颜色 / 描边 / 底色）只有 MPV 有通道；
+            // AVPlayer 上这些控件照旧显示，但点了弹统一提示。
+            settings: const PlayerSettings(kernel: PlayerKernel.mpv),
             catalog: const _AllAvailableCatalog(),
             onChanged: (next) => changed = next,
           ),
@@ -287,7 +305,8 @@ void main() {
         MaterialApp(
           theme: LumeTheme.build(),
           home: PlayerSettingsPage(
-            settings: const PlayerSettings(),
+            // 硬解开关只有 MPV 真的能切（AVPlayer 上是「不支持」入口）。
+            settings: const PlayerSettings(kernel: PlayerKernel.mpv),
             catalog: const _AllAvailableCatalog(),
             onChanged: (next) => changed = next,
           ),
@@ -295,7 +314,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 硬件解码是页面上的最后一个开关（字幕开关在前）。
+      // 硬件解码是页面上的最后一个开关。
       await tester.tap(find.byType(Switch).last);
       await tester.pumpAndSettle();
       expect(changed?.hardwareDecoding, isFalse);

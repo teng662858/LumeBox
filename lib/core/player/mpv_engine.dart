@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'buffering.dart';
+import 'player_capabilities.dart';
 
 /// MPV 引擎端口（libmpv 的能力面）。
 ///
@@ -128,6 +129,33 @@ Future<int> writeEngineProperties(
   return accepted;
 }
 
+/// 可选能力：**轨道读写**（音轨 / 字幕轨 / 外挂字幕 / 音频延迟）。
+///
+/// 为什么是可选端口：这三件事都靠引擎的高层 API（media_kit 的
+/// `setAudioTrack` / `setSubtitleTrack` / `SubtitleTrack.uri`），而替身引擎不一定
+/// 实现。真实引擎（[MediaKitMpvEngine]）实现了它，因此 MPV 内核的能力矩阵里
+/// 这几项为真；替身没有就为假——能力如实来自「引擎到底会不会做这件事」，
+/// 不是写死的一张表。
+abstract interface class TrackCapable {
+  /// 可选音轨（当前选中的那条 `selected: true`）。
+  Future<List<PlayerTrack>> audioTracks();
+
+  /// 可选字幕轨（含外挂字幕）。
+  Future<List<PlayerTrack>> subtitleTracks();
+
+  /// 切音轨（[PlayerTrack.id] 原样回传）。
+  Future<void> selectAudioTrack(String id);
+
+  /// 切字幕轨；`null` = 关闭字幕。
+  Future<void> selectSubtitleTrack(String? id);
+
+  /// 加载外挂字幕文件（本地路径）。引擎没有这条通路时返回 false。
+  Future<bool> loadSubtitleFile(String path);
+
+  /// 音频延迟（正值表示音频延后）。
+  Future<void> setAudioDelay(Duration delay);
+}
+
 /// MPV 属性映射：本项目写进 libmpv 的属性名与单位**在这里定死**。
 ///
 /// 为什么要把这张表单独拿出来：真机才知道 libmpv 收不收某个属性，但「我们打算写
@@ -158,7 +186,7 @@ class MpvProperties {
       '${value.inMicroseconds / Duration.microsecondsPerSecond}';
 }
 
-/// 字幕样式：字号缩放 / 颜色 / 描边宽度。
+/// 字幕样式：字号缩放 / 颜色 / 描边宽度 / 底色不透明度。
 ///
 /// 与 `PlayerSettings` 的字段一一对应，但刻意独立：引擎层不认识「档位」
 /// （那是设置页的表达），只认识最终要用的数值。
@@ -167,6 +195,7 @@ class SubtitleStyle {
     this.fontScale = 1.0,
     this.colorArgb = 0xFFFFFFFF,
     this.outlineWidth = 1.5,
+    this.backgroundOpacity = 0.45,
   });
 
   /// 字号缩放（相对基准字号）。
@@ -177,6 +206,12 @@ class SubtitleStyle {
 
   /// 描边宽度（逻辑像素）；0 表示不描边。
   final double outlineWidth;
+
+  /// 字幕底色不透明度（0..1）：0 = 完全透明，1 = 纯黑。
+  ///
+  /// 底色的作用是「压在花画面上也能读」：纯透明在亮画面上白字会糊，
+  /// 纯黑又太挡镜头，因此留给用户一档可调。
+  final double backgroundOpacity;
 
   static const SubtitleStyle defaults = SubtitleStyle();
 }

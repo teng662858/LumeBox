@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'appearance.dart';
+
 /// 全局主题色板：**浅色与深色两套值**，由 [LumeTheme.of] 按当前亮度取用。
 ///
 /// ## 为什么是「色板对象 + 静态转发」而不是直接换成 ThemeExtension
@@ -24,6 +26,7 @@ import 'package:flutter/services.dart';
 /// 它们读的是 `NovelTypesetting` / `ComicSettings` 里的颜色，与本文件无关。
 class LumePalette {
   const LumePalette({
+    required this.brightness,
     required this.accent,
     required this.base,
     required this.surface,
@@ -48,6 +51,9 @@ class LumePalette {
     required this.snackBar,
     required this.onAccent,
   });
+
+  /// 这套色板属于哪种亮度（主题色提亮要用它）。
+  final Brightness brightness;
 
   final Color accent;
   final Color base;
@@ -81,6 +87,7 @@ class LumePalette {
 
   /// 浅色主题：极浅分层底 + 白卡。
   static const LumePalette light = LumePalette(
+    brightness: Brightness.light,
     accent: Color(0xFF7C5CFF),
     base: Color(0xFFF7F7F9),
     surface: Color(0xFFFFFFFF),
@@ -117,6 +124,7 @@ class LumePalette {
   /// 玻璃改成半透明深色，文字三档整体反转；语义色换成深底上可读的**亮色版本**
   /// （浅色那套深色语义色在深底上看不清，正是浅色主题当初反过来的理由）。
   static const LumePalette dark = LumePalette(
+    brightness: Brightness.dark,
     accent: Color(0xFF9B84FF),
     base: Color(0xFF121214),
     surface: Color(0xFF1C1C1F),
@@ -150,6 +158,39 @@ class LumePalette {
   /// 按亮度取色板。
   static LumePalette of(Brightness brightness) =>
       brightness == Brightness.dark ? dark : light;
+
+  /// 换一套主题色的副本：**结构与两套固定色板完全一致，只替换 [accent]**
+  /// （连同它衍生出的选中态、进度条、芯片等——那些都读 `LumeTheme.accent`）。
+  ///
+  /// 为什么不做「按主色重新推导整套色板」：对比度与分层规则是逐值调过的，
+  /// 由主色算法推导出来的底色/文字色在 11 种颜色下未必都够读。锁住结构、
+  /// 只换主色，是「换主题色不牺牲可读性」的稳妥做法。
+  LumePalette withAccent(ThemeAccent accent) => LumePalette(
+        brightness: brightness,
+        accent: accent.colorFor(brightness),
+        base: base,
+        surface: surface,
+        surfaceAlt: surfaceAlt,
+        glass: glass,
+        glassStrong: glassStrong,
+        textPrimary: textPrimary,
+        textSecondary: textSecondary,
+        textHint: textHint,
+        divider: divider,
+        hairline: hairline,
+        fill: fill,
+        fillStrong: fillStrong,
+        success: success,
+        danger: danger,
+        warning: warning,
+        info: info,
+        cardShadow: cardShadow,
+        floatShadow: floatShadow,
+        backgroundGradient: backgroundGradient,
+        overlayStyle: overlayStyle,
+        snackBar: snackBar,
+        onAccent: onAccent,
+      );
 }
 
 /// 全局主题：分层底 + 玻璃磨砂 + 极淡阴影，**浅色与深色两套**。
@@ -182,8 +223,12 @@ class LumeTheme {
   /// 当前生效亮度。由 [build] 写入；默认浅色（未设定时的历史行为）。
   static Brightness _brightness = Brightness.light;
 
-  /// 当前生效色板。
-  static LumePalette get palette => LumePalette.of(_brightness);
+  /// 当前生效主题色（设置页「显示 → 主题色」写入，见 `appearance.dart`）。
+  static ThemeAccent _accent = ThemeAccent.fallback;
+
+  /// 当前生效色板：亮度定结构、主题色定主色。
+  static LumePalette get palette =>
+      LumePalette.of(_brightness).withAccent(_accent);
 
   /// 按亮度取色板（供需要显式区分的场合，如阅读页的工具栏）。
   static LumePalette paletteOf(Brightness brightness) =>
@@ -192,6 +237,11 @@ class LumeTheme {
   /// 显式设定当前亮度（[build] 会调；测试也可直接调来验深色）。
   static void applyBrightness(Brightness brightness) {
     _brightness = brightness;
+  }
+
+  /// 显式设定主题色（[build] 会调）。
+  static void applyAccent(ThemeAccent accent) {
+    _accent = accent;
   }
 
   // ------------------------------------------------------------------ 色板
@@ -278,15 +328,21 @@ class LumeTheme {
 
   // ------------------------------------------------------------------ 主题
 
-  /// 构建主题。[brightness] 决定用哪套色板。
-  static ThemeData build({Brightness brightness = Brightness.light}) {
+  /// 构建主题。[brightness] 决定用哪套色板，[accent] 决定主色。
+  static ThemeData build({
+    Brightness brightness = Brightness.light,
+    ThemeAccent accent = ThemeAccent.fallback,
+  }) {
     applyBrightness(brightness);
+    applyAccent(accent);
+    // 局部别名：下面所有裸 `accent` 要的都是**颜色**，而参数是档位。
+    final accentColor = accent.colorFor(brightness);
     final isDark = brightness == Brightness.dark;
     final scheme = ColorScheme.fromSeed(
-      seedColor: accent,
+      seedColor: accentColor,
       brightness: brightness,
     ).copyWith(
-      primary: accent,
+      primary: accentColor,
       onPrimary: onAccent,
       surface: surface,
       onSurface: textPrimary,
@@ -307,8 +363,8 @@ class LumeTheme {
         thickness: 1,
         space: 1,
       ),
-      splashColor: accent.withValues(alpha: 0.06),
-      highlightColor: accent.withValues(alpha: 0.04),
+      splashColor: accentColor.withValues(alpha: 0.06),
+      highlightColor: accentColor.withValues(alpha: 0.04),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
@@ -359,37 +415,37 @@ class LumeTheme {
         labelLarge: TextStyle(color: textPrimary),
       ),
       iconTheme: IconThemeData(color: textPrimary),
-      progressIndicatorTheme: ProgressIndicatorThemeData(color: accent),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: accentColor),
       sliderTheme: SliderThemeData(
-        activeTrackColor: accent,
-        thumbColor: accent,
+        activeTrackColor: accentColor,
+        thumbColor: accentColor,
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) =>
             states.contains(WidgetState.selected) ? onAccent : surface),
         trackColor: WidgetStateProperty.resolveWith((states) =>
-            states.contains(WidgetState.selected) ? accent : fillStrong),
+            states.contains(WidgetState.selected) ? accentColor : fillStrong),
         trackOutlineColor: WidgetStateProperty.resolveWith((states) =>
-            states.contains(WidgetState.selected) ? accent : hairline),
+            states.contains(WidgetState.selected) ? accentColor : hairline),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: accent),
+        style: TextButton.styleFrom(foregroundColor: accentColor),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: accent,
+          backgroundColor: accentColor,
           foregroundColor: onAccent,
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: accent,
+          foregroundColor: accentColor,
           side: BorderSide(color: hairline),
         ),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: surfaceAlt,
-        selectedColor: accent,
+        selectedColor: accentColor,
         side: BorderSide(color: hairline),
         labelStyle: TextStyle(color: textPrimary, fontSize: 12),
         secondaryLabelStyle: TextStyle(color: onAccent, fontSize: 12),
@@ -413,7 +469,7 @@ class LumeTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: accent, width: 1.4),
+          borderSide: BorderSide(color: accentColor, width: 1.4),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
@@ -432,7 +488,7 @@ class LumeTheme {
       segmentedButtonTheme: SegmentedButtonThemeData(
         style: ButtonStyle(
           foregroundColor: WidgetStateProperty.resolveWith((states) =>
-              states.contains(WidgetState.selected) ? accent : textSecondary),
+              states.contains(WidgetState.selected) ? accentColor : textSecondary),
           backgroundColor: WidgetStateProperty.resolveWith((states) =>
               states.contains(WidgetState.selected) ? fill : surface),
           side: WidgetStatePropertyAll<BorderSide>(
@@ -441,10 +497,10 @@ class LumeTheme {
         ),
       ),
       tabBarTheme: TabBarThemeData(
-        labelColor: accent,
+        labelColor: accentColor,
         unselectedLabelColor: textSecondary,
         dividerColor: Colors.transparent,
-        indicatorColor: accent,
+        indicatorColor: accentColor,
       ),
     );
   }

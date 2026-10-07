@@ -6,6 +6,7 @@ import 'package:fvp/mdk.dart' as mdk;
 
 import '../util/lume_log.dart';
 import 'abstract_player.dart';
+import 'player_capabilities.dart';
 import 'player_settings.dart';
 import 'player_stats.dart';
 
@@ -36,7 +37,7 @@ import 'player_stats.dart';
 ///   实际在用、语义明确的网络重连两项（`avio.reconnect` /
 ///   `avio.reconnect_delay_max`）——它们解决的是「起播/播放中连接被掐断后
 ///   要重新握手」这一类卡顿，与缓冲策略是两回事，如实分开说。
-class MdkEngine implements AbstractPlayer {
+class MdkEngine extends AbstractPlayer {
   MdkEngine._(this._player);
 
   /// 创建引擎。原生库不可用时抛 [StateError]（由工厂转成可读提示）。
@@ -138,6 +139,121 @@ class MdkEngine implements AbstractPlayer {
 
   @override
   ValueListenable<PlayerStats> get stats => _stats;
+
+  /// 能力矩阵：见 [PlayerCapabilities.of] 的唯一声明处（MDK 那一栏）。
+  @override
+  PlayerCapabilities get capabilities => PlayerCapabilities.of(PlayerKernel.mdk);
+
+  /// 可选音轨：列表来自 libmdk 的媒体信息，选中项从当前激活轨道反查。
+  @override
+  Future<List<PlayerTrack>> audioTracks() async {
+    if (!_live) return const <PlayerTrack>[];
+    final streams = _player.mediaInfo.audio ?? const <mdk.AudioStreamInfo>[];
+    final active = _player.activeAudioTracks;
+    return <PlayerTrack>[
+      for (final stream in streams)
+        PlayerTrack(
+          id: '${stream.index}',
+          label: _trackLabel(stream, '音轨', streams.indexOf(stream)),
+          language: _metadata(stream.metadata, 'language'),
+          // MDK 的隐式约定：空列表 = 自动（第一条），因此「没有显式选择」时
+          // 第一条算选中——与播放器实际行为一致。
+          selected: active.isEmpty
+              ? stream.index == streams.first.index
+              : active.contains(stream.index),
+        ),
+    ];
+  }
+
+  @override
+  Future<void> selectAudioTrack(String id) async {
+    if (!_live) return;
+    final index = int.tryParse(id);
+    if (index == null) return;
+    try {
+      _player.activeAudioTracks = <int>[index];
+    } catch (error) {
+      LumeLog.warn('[mdk] 切音轨失败（$id）：$error');
+    }
+  }
+
+  /// 可选字幕轨（含用 [loadSubtitleFile] 加进来的外挂轨）。
+  @override
+  Future<List<PlayerTrack>> subtitleTracks() async {
+    if (!_live) return const <PlayerTrack>[];
+    final streams =
+        _player.mediaInfo.subtitle ?? const <mdk.SubtitleStreamInfo>[];
+    final active = _player.activeSubtitleTracks;
+    return <PlayerTrack>[
+      for (final stream in streams)
+        PlayerTrack(
+          id: '${stream.index}',
+          label: _trackLabel(stream, '字幕', streams.indexOf(stream)),
+          language: _metadata(stream.metadata, 'language'),
+          selected: active.isEmpty
+              ? stream.index == streams.first.index
+              : active.contains(stream.index),
+        ),
+    ];
+  }
+
+  @override
+  Future<void> selectSubtitleTrack(String? id) async {
+    if (!_live) return;
+    try {
+      if (id == null) {
+        // 空列表 = 不选任何字幕轨（关闭字幕）。
+        _player.activeSubtitleTracks = const <int>[];
+        return;
+      }
+      final index = int.tryParse(id);
+      if (index == null) return;
+      _player.activeSubtitleTracks = <int>[index];
+    } catch (error) {
+      LumeLog.warn('[mdk] 切字幕轨失败（$id）：$error');
+    }
+  }
+
+  /// 外挂字幕：fvp 的 `setMedia(uri, MediaType.subtitle)` 支持本地字幕文件。
+  @override
+  Future<bool> loadSubtitleFile(String path) async {
+    if (!_live) return false;
+    try {
+      final uri = path.startsWith('file:') ? path : Uri.file(path).toString();
+      _player.setMedia(uri, mdk.MediaType.subtitle);
+      LumeLog.info('[mdk] 已加载外挂字幕：$path');
+      return true;
+    } catch (error) {
+      LumeLog.warn('[mdk] 加载外挂字幕失败：$error');
+      return false;
+    }
+  }
+
+  /// 轨道展示名：元数据标题 → 语言 → 「音轨 1」兜底。
+  static String _trackLabel(Object stream, String prefix, int index) {
+    final metadata = switch (stream) {
+      final mdk.AudioStreamInfo info => info.metadata,
+      final mdk.SubtitleStreamInfo info => info.metadata,
+      _ => const <String, String>{},
+    };
+    final title = metadata['title']?.trim();
+    if (title != null && title.isNotEmpty) return title;
+    final language = _metadata(metadata, 'language');
+    if (language != null && language.isNotEmpty && language != 'und') {
+      return '$prefix ${language.toUpperCase()}';
+    }
+    return '$prefix ${index + 1}';
+  }
+
+  static String? _metadata(Map<String, String> metadata, String key) {
+    for (final entry in metadata.entries) {
+      if (entry.key.toLowerCase() == key) {
+        final value = entry.value.trim();
+        return value.isEmpty ? null : value;
+      }
+    }
+    return null;
+  }
 
   @override
   Future<void> load(PlayerMedia media) async {

@@ -79,6 +79,22 @@ return { kind: 'images', images: ['https://…/1.jpg', 'https://…/2.jpg'] };
 
 // 视频：播放地址（headers 可选，用于防盗链）
 return { kind: 'video', url: 'https://…/play.m3u8', headers: { Referer: '…' } };
+
+// 多条清晰度线路（可选）：给了它，播放器控制栏的「清晰度」按钮就会列出这些线路。
+// 只给一条或不给时，按钮点了会提示「当前图源不提供多清晰度选项」。
+// **清晰度由图源数据决定**：播放器只消费 label + url，不做分辨率推断。
+return {
+  kind: 'video',
+  url: 'https://…/1080p.m3u8',            // 默认线路（仍用 url 字段，向后兼容）
+  headers: { Referer: '…' },              // 主请求头：逐线路没写头时继承它
+  qualities: [
+    { label: '1080P', url: 'https://…/1080p.m3u8' },
+    { label: '720P',  url: 'https://…/720p.m3u8' },
+    { label: '480P',  url: 'https://…/480p.m3u8', headers: { Referer: '…' } },
+  ],
+};
+// 别名：qualities 也可以写成 levels；label 可以写成 name / quality / title /
+// resolution；url 可以写成 playUrl / src。没有地址的条目会被跳过。
 ```
 
 **形态必须与板块匹配**：漫画板块拿到 `text` 会报「该章节不是图片内容：源返回了文本」。

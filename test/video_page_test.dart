@@ -105,13 +105,13 @@ void main() {
         find.byType(TextField),
         'https://example.com/a.mp4',
       );
-      await tester.tap(find.byIcon(Icons.download));
+      await tester.tap(find.byTooltip('播放这个地址'));
       await tester.pumpAndSettle();
     }
 
     testWidgets('启动：按本板块设置创建内核并立即应用设置', (tester) async {
       final store = await VideoPlayerSettingsStore.open();
-      store.save(const PlayerSettings(speed: 1.5));
+      store.save(const PlayerSettings().copyWith(speed: 1.5));
 
       final created = await pumpVideo(
         tester,
@@ -183,7 +183,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('MPV'));
       await tester.pumpAndSettle();
-      await tester.pageBack();
+      // 设置是弹窗：用它的关闭按钮收起（不再是整页返回）。
+      await tester.tap(find.byTooltip('关闭'));
       await tester.pumpAndSettle();
 
       expect(created, hasLength(2));
@@ -232,7 +233,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('MPV'));
       await tester.pumpAndSettle();
-      await tester.pageBack();
+      // 设置是弹窗：用它的关闭按钮收起（不再是整页返回）。
+      await tester.tap(find.byTooltip('关闭'));
       await tester.pumpAndSettle();
 
       expect(
@@ -281,7 +283,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('MPV'));
       await tester.pumpAndSettle();
-      await tester.pageBack();
+      // 设置是弹窗：用它的关闭按钮收起（不再是整页返回）。
+      await tester.tap(find.byTooltip('关闭'));
       await tester.pumpAndSettle();
 
       final mpv = created[1];
@@ -315,7 +318,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('1.5x'));
       await tester.pumpAndSettle();
-      await tester.pageBack();
+      // 设置是弹窗：用它的关闭按钮收起（不再是整页返回）。
+      await tester.tap(find.byTooltip('关闭'));
       await tester.pumpAndSettle();
 
       expect(created.single.applied?.speed, 1.5);
@@ -747,7 +751,7 @@ class _FakePipBackend implements PipBackend {
   Future<void> close() => _events.close();
 }
 
-class _FakePlayer implements AbstractPlayer {
+class _FakePlayer extends AbstractPlayer {
   _FakePlayer(this.kernel, this.log);
 
   final PlayerKernel kernel;

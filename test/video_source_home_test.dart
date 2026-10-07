@@ -335,7 +335,7 @@ class _FakeCatalog implements PlayerKernelCatalog {
 }
 
 /// 播放器替身：只记录「加载了什么」，渲染面用一行文字代替。
-class _FakePlayer implements AbstractPlayer {
+class _FakePlayer extends AbstractPlayer {
   _FakePlayer(this.kernel);
 
   final PlayerKernel kernel;

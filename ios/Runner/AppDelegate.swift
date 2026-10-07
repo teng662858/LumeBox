@@ -16,6 +16,9 @@ import UIKit
   /// （经 UserDefaults 与 vendored 插件交接，见该文件文档）。
   private let buffering = BufferingController()
 
+  /// 播放会话控制器：后台音频 + 锁屏 / 控制中心的媒体控制器。
+  private let playback = PlaybackSessionController()
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -49,6 +52,13 @@ import UIKit
     if let messenger = engineBridge.pluginRegistry
       .registrar(forPlugin: "LumeBoxBuffering")?.messenger() {
       buffering.register(with: messenger)
+    }
+
+    // 播放会话通道（后台音频 + 锁屏控制）：与 Dart 侧
+    // `MethodChannelPlaybackBackend` 的契约一一对应。
+    if let messenger = engineBridge.pluginRegistry
+      .registrar(forPlugin: "LumeBoxPlayback")?.messenger() {
+      playback.register(with: messenger)
     }
   }
 }

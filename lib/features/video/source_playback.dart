@@ -45,6 +45,21 @@ class SourcePlayback {
   static Map<String, String> contentHeaders(ChapterContent? content) =>
       content is VideoContent ? content.headers : const <String, String>{};
 
+  /// 候选清晰度线路（图源给了多条时才非空）。
+  ///
+  /// 逐线路的请求头为空时**继承主 headers**：图源往往只在一处写防盗链头，
+  /// 若按「线路自己的 headers 优先、没有就空」处理，切一条线路就 403。
+  static List<VideoQuality> contentQualities(ChapterContent? content) {
+    if (content is! VideoContent) return const <VideoQuality>[];
+    final base = content.headers;
+    return <VideoQuality>[
+      for (final quality in content.qualities)
+        quality.headers.isEmpty
+            ? VideoQuality(label: quality.label, url: quality.url, headers: base)
+            : quality,
+    ];
+  }
+
   /// 本地文件的绝对路径判定（POSIX 与 Windows 两种写法）。
   /// 相对路径不认——图源条目里的纯 id 落到这里只会是 id，不是文件。
   static bool _looksLikeFilePath(String text) {

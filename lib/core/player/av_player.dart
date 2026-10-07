@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 import '../util/lume_log.dart';
 import 'abstract_player.dart';
 import 'buffering.dart';
+import 'player_capabilities.dart';
 import 'player_error.dart';
 import 'player_settings.dart';
 import 'player_stats.dart';
@@ -27,7 +28,7 @@ import 'player_stats.dart';
 /// video_player_avfoundation 在建播放器时应用——详见 `third_party/
 /// video_player_avfoundation/PATCHES.md`。写入只做一次：原生侧的参数一旦落定就
 /// 对之后创建的每个播放器生效。
-class AvPlayer implements AbstractPlayer {
+class AvPlayer extends AbstractPlayer {
   AvPlayer({BufferingBackend? buffering})
       : _buffering = buffering ?? createPlatformBufferingBackend();
 
@@ -61,6 +62,63 @@ class AvPlayer implements AbstractPlayer {
   @override
   ValueListenable<PlayerStats> get stats => _stats;
 
+  /// 能力矩阵：见 [PlayerCapabilities.of] 的唯一声明处（AVPlayer 那一栏）。
+  @override
+  PlayerCapabilities get capabilities =>
+      PlayerCapabilities.of(PlayerKernel.avplayer);
+
+  /// 可选音轨（video_player 在 iOS 上支持；不支持时如实返回空表）。
+  @override
+  Future<List<PlayerTrack>> audioTracks() async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return const <PlayerTrack>[];
+    }
+    if (!controller.isAudioTrackSupportAvailable()) {
+      return const <PlayerTrack>[];
+    }
+    try {
+      final tracks = await controller.getAudioTracks();
+      return <PlayerTrack>[
+        for (final track in tracks)
+          PlayerTrack(
+            id: track.id,
+            label: _trackLabel(track.label, track.language, track.codec),
+            language: track.language,
+            selected: track.isSelected,
+          ),
+      ];
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      return const <PlayerTrack>[];
+    }
+  }
+
+  @override
+  Future<void> selectAudioTrack(String id) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    try {
+      await controller.selectAudioTrack(id);
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      LumeLog.warn('[avplayer] 切音轨失败（$id）：$error');
+    }
+  }
+
+  /// 轨道展示名：标题 → 语言 → 编码 → 「音轨 N」兜底（与 MPV 侧同一套口径）。
+  static String _trackLabel(String? label, String? language, String? codec) {
+    final name = label?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    final lang = language?.trim();
+    if (lang != null && lang.isNotEmpty && lang != 'und') {
+      return '音轨 ${lang.toUpperCase()}';
+    }
+    final code = codec?.trim();
+    if (code != null && code.isNotEmpty) return '音轨 ${code.toUpperCase()}';
+    return '音轨';
+  }
+
   @override
   Future<void> load(PlayerMedia media) async {
     if (_disposed) return;
@@ -73,8 +131,19 @@ class AvPlayer implements AbstractPlayer {
         ? VideoPlayerController.networkUrl(
             media.uri,
             httpHeaders: media.headers ?? const <String, String>{},
+            // 后台音频继续播放：切到后台时画面停、声音不停（用户在听内容）。
+            // `allowBackgroundPlayback` 是插件暴露的唯一后台开关，它顺带把
+            // 音画会话设成播放类，与另一条原生通道（锁屏控制）配合工作。
+            videoPlayerOptions: VideoPlayerOptions(
+              allowBackgroundPlayback: true,
+            ),
           )
-        : VideoPlayerController.file(File.fromUri(media.uri));
+        : VideoPlayerController.file(
+            File.fromUri(media.uri),
+            videoPlayerOptions: VideoPlayerOptions(
+              allowBackgroundPlayback: true,
+            ),
+          );
     _controller = controller;
     controller.addListener(_sync);
     try {

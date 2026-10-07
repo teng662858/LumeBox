@@ -85,27 +85,35 @@ void main() {
     PlayerSettings? changed;
     await pumpPage(
       tester,
-      settings: const PlayerSettings(speed: 1.0),
+      settings: const PlayerSettings().copyWith(speed: 1.0),
       catalog: _FakeCatalog(<PlayerKernel>{PlayerKernel.avplayer}),
       onChanged: (next) => changed = next,
     );
 
-    for (final label in <String>['0.5x', '0.75x', '1x', '1.25x', '1.5x', '2x']) {
-      expect(find.text(label), findsOneWidget);
+    // 档位是 0.25~4.0 步长 0.25（滑杆给全档位，芯片给常用预设）。
+    expect(PlayerSettings.minSpeed, 0.25);
+    expect(PlayerSettings.maxSpeed, 4.0);
+    for (final label in <String>['0.5x', '1x', '2x', '3x']) {
+      expect(find.widgetWithText(ChoiceChip, label), findsOneWidget);
     }
+    expect(
+      find.widgetWithText(ChoiceChip, '1.5x'),
+      findsWidgets,
+      reason: '1.5x 在倍速与画面缩放里都有（同一个数字档）',
+    );
     expect(
       tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '1x')).selected,
       isTrue,
     );
 
-    await tester.tap(find.text('1.5x'));
+    // 点「2x」而不是「1.5x」：画面缩放里也有一个「1.5x」档，标签会重名；
+    // 2x 只在倍速里出现，按标签就能唯一定位。
+    await tester.tap(find.widgetWithText(ChoiceChip, '2x'));
     await tester.pumpAndSettle();
 
-    expect(changed?.speed, 1.5);
+    expect(changed?.speed, 2.0);
     expect(
-      tester
-          .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '1.5x'))
-          .selected,
+      tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '2x')).selected,
       isTrue,
     );
   });
@@ -114,7 +122,9 @@ void main() {
     PlayerSettings? changed;
     await pumpPage(
       tester,
-      settings: const PlayerSettings(),
+      // 字号 / 颜色 / 描边只有 MPV 有通道：换成 AVPlayer 时这些控件照旧显示，
+      // 但点了会弹统一提示（见另一条用例），因此这里用 MPV 验「真的写进去」。
+      settings: const PlayerSettings(kernel: PlayerKernel.mpv),
       catalog: _FakeCatalog(<PlayerKernel>{PlayerKernel.avplayer}),
       onChanged: (next) => changed = next,
     );
