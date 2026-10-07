@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/net/lume_http.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/player_capabilities.dart';
 import 'package:lume_box/core/player/player_factory.dart';
@@ -15,6 +17,7 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/video/player_settings_sheet.dart';
+import 'package:lume_box/features/video/player_speed_meter.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
 import 'package:lume_box/features/video/video_player_settings.dart';
 
@@ -250,6 +253,7 @@ void main() {
       PlayerKernelCatalog? catalog,
       List<VideoQuality> qualities = const <VideoQuality>[],
       _FakePlayer? player,
+      PlaybackSpeedMeter? speedMeter,
     }) async {
       final created = <_FakePlayer>[];
       await tester.binding.setSurfaceSize(const Size(900, 1600));
@@ -261,6 +265,7 @@ void main() {
             media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
             qualities: qualities,
             catalog: catalog ?? const _AllKernelsCatalog(),
+            speedMeter: speedMeter,
             playerFactory: (kernel) {
               final created_ = player ?? _FakePlayer(kernel: kernel);
               created.add(created_);
@@ -390,6 +395,57 @@ void main() {
       expect(find.text('不透明度'), findsOneWidget);
     });
 
+    testWidgets('打开视频即自动播放（用户要求）', (tester) async {
+      final players = await pump(tester);
+      expect(
+        players.single.plays,
+        greaterThan(0),
+        reason: '装载与续播定位之后要自动起播，不必再点一下播放键',
+      );
+      expect(find.byTooltip('暂停'), findsOneWidget, reason: '控制栏显示为「正在播放」');
+    });
+
+    testWidgets('信息行：分辨率 / 码率来自内核参数', (tester) async {
+      final players = await pump(tester);
+      players.single.pushStats(
+        const PlayerStats(
+          engineLabel: 'AVPlayer',
+          width: 1920,
+          height: 1080,
+          videoBitrateKbps: 1800,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('分辨率 1920×1080'), findsOneWidget);
+      expect(find.textContaining('码率 1.8Mbps'), findsOneWidget);
+    });
+
+    testWidgets('网速：点「测速」实测播放地址，读数显示在信息行', (tester) async {
+      final client = _CountingClient(bytes: 256 * 1024);
+      final meter = PlaybackSpeedMeter(
+        http: LumeHttp(client: client, source: '测速'),
+      );
+      addTearDown(meter.dispose);
+      await pump(tester, speedMeter: meter);
+
+      // 起播自动测一次（同一地址不重复测）。
+      expect(client.urls, hasLength(1), reason: '起播自动测一次');
+      expect(
+        client.headers.first['Range'],
+        startsWith('bytes=0-'),
+        reason: '用 Range 只取前一段，不把整片视频拉下来',
+      );
+      expect(meter.kbps.value, isNotNull, reason: '读数已经出来了');
+      expect(find.textContaining('网速'), findsOneWidget, reason: '信息行显示实测网速');
+
+      // 点一下强制重测。
+      await tester.tap(find.byIcon(Icons.speed));
+      await tester.pumpAndSettle();
+      expect(client.urls, hasLength(2), reason: '点「网速」可强制重测');
+      expect(find.textContaining('网速'), findsOneWidget);
+    });
+
     testWidgets('全屏：收起控制栏与顶栏，点画面唤回', (tester) async {
       await pump(tester);
       expect(find.text('视频地址或本地路径'), findsOneWidget);
@@ -403,6 +459,39 @@ void main() {
       await tester.tap(find.byTooltip('退出全屏').first);
       await tester.pumpAndSettle();
       expect(find.text('视频地址或本地路径'), findsOneWidget);
+    });
+
+    testWidgets('全屏：锁横屏；退出全屏：还原竖屏（用户要求）', (tester) async {
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        calls.add(call);
+        return null;
+      });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      await pump(tester);
+      await tester.tap(find.byTooltip('全屏'));
+      await tester.pumpAndSettle();
+
+      final landscape = calls.lastWhere(
+        (call) => call.method == 'SystemChrome.setPreferredOrientations',
+      );
+      expect(
+        landscape.arguments,
+        containsAll(<String>['DeviceOrientation.landscapeLeft', 'DeviceOrientation.landscapeRight']),
+        reason: '进全屏自动横屏（左右都收）',
+      );
+
+      await tester.tap(find.byTooltip('退出全屏').first);
+      await tester.pumpAndSettle();
+      final portrait = calls.lastWhere(
+        (call) => call.method == 'SystemChrome.setPreferredOrientations',
+      );
+      expect(portrait.arguments, <String>['DeviceOrientation.portraitUp']);
     });
 
     testWidgets('锁屏：收起控制栏，只剩解锁按钮；再点回来', (tester) async {
@@ -515,12 +604,15 @@ class _FakePlayer extends AbstractPlayer {
 
   PlayerMedia? media;
   final List<Duration> seeks = <Duration>[];
+  int plays = 0;
 
   @override
   ValueListenable<PlayerSnapshot> get snapshot => _snapshot;
 
   @override
   ValueListenable<PlayerStats> get stats => _stats;
+
+  void pushStats(PlayerStats next) => _stats.value = next;
 
   void emit({Duration? position, Duration? duration, bool? playing, String? error}) {
     _snapshot.value = PlayerSnapshot(
@@ -537,7 +629,10 @@ class _FakePlayer extends AbstractPlayer {
   }
 
   @override
-  Future<void> play() async => emit(playing: true);
+  Future<void> play() async {
+    plays++;
+    emit(playing: true);
+  }
 
   @override
   Future<void> pause() async => emit(playing: false);
@@ -559,4 +654,26 @@ class _FakePlayer extends AbstractPlayer {
 
   @override
   Future<void> dispose() async {}
+}
+
+/// 假 HTTP 客户端：返回固定体积的响应，用于网速表计时（真实等待极短）。
+class _CountingClient extends http.BaseClient {
+  _CountingClient({required this.bytes});
+
+  final int bytes;
+  final List<String> urls = <String>[];
+  final List<Map<String, String>> headers = <Map<String, String>>[];
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    urls.add(request.url.toString());
+    headers.add(Map<String, String>.from(request.headers));
+    // 让「耗时为 0」不会发生：真实网络里耗时不会为 0，这里补 5ms。
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    return http.StreamedResponse(
+      Stream<List<int>>.value(List<int>.filled(bytes, 0)),
+      206,
+      headers: const <String, String>{'content-range': 'bytes 0-262143/99999999'},
+    );
+  }
 }

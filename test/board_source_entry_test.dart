@@ -83,7 +83,8 @@ void main() {
 
     expect(find.byTooltip('源管理'), findsOneWidget);
     expect(find.byTooltip('扩展仓库'), findsOneWidget);
-    expect(find.byTooltip('图片缓存'), findsOneWidget);
+    // 「图片缓存」入口已按用户要求移除（缓存本体的管理在设置 → 缓存管理）。
+    expect(find.byTooltip('图片缓存'), findsNothing);
 
     await tester.tap(find.byTooltip('源管理'));
     await tester.pumpAndSettle();

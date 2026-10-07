@@ -11,8 +11,6 @@ import '../reading/history_sheet.dart';
 import '../reading/reading_hub_page.dart';
 import '../source/add_source_button.dart';
 import '../source/source_section_page.dart';
-import '../video/watch_calendar.dart';
-import '../video/watch_calendar_page.dart';
 import 'comic_detail_page.dart';
 import 'comic_explore_page.dart';
 import 'comic_repo_page.dart';
@@ -101,45 +99,6 @@ class _ComicPageState extends State<ComicPage> {
     );
   }
 
-  /// 图片缓存：显示占用并可一键清理（用户保存的图片不在清理范围）。
-  Future<void> _manageCache() async {
-    final library = _library;
-    if (library == null) return;
-    final bytes = library.cacheBytes();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('图片缓存'),
-        content: Text(
-          '漫画板块当前占用 ${_formatBytes(bytes)}。\n'
-          '清理只删除缓存图片，书架、进度与保存的图片都不受影响。',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('清理'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    library.clearCache();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已清理 ${_formatBytes(bytes)} 图片缓存')),
-    );
-  }
-
-  static String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
-
   @override
   Widget build(BuildContext context) {
     if (!_runtimeAvailable) {
@@ -169,13 +128,7 @@ class _ComicPageState extends State<ComicPage> {
     return ReadingHubPage(
       section: Section.comic,
       actions: <Widget>[
-        // 右上角统一的两枚独立图标（与视频 / 小说同一套设计）：
-        // 📅 追更日历（哪话有更新 / 哪天读过）、⏱️ 历史（底部抽屉）。
-        IconButton(
-          tooltip: '追更日历',
-          icon: const Icon(Icons.calendar_month_outlined),
-          onPressed: () => _openCalendar(library, sourceManager),
-        ),
+        // 右上角统一的入口（与视频 / 小说同一套设计）：⏱️ 历史（底部抽屉）。
         IconButton(
           tooltip: '阅读历史',
           icon: const Icon(Icons.history),
@@ -191,11 +144,6 @@ class _ComicPageState extends State<ComicPage> {
           tooltip: '扩展仓库',
           icon: const Icon(Icons.extension_outlined),
           onPressed: _manageRepos,
-        ),
-        IconButton(
-          tooltip: '图片缓存',
-          icon: const Icon(Icons.cleaning_services_outlined),
-          onPressed: _manageCache,
         ),
         // 右上角统一的「+」添加图源：本地文件 / 订阅链接，只写漫画板块。
         AddSourceButton(
@@ -221,62 +169,6 @@ class _ComicPageState extends State<ComicPage> {
 
   /// 图源导入后重挂书架与探索：两块内容各自重新解析本板块的图源与列表。
   void _onSourcesChanged() => setState(() => _revision++);
-
-  /// 追更日历：哪话有更新、哪天读过（与小说 / 视频同一套页面）。
-  Future<void> _openCalendar(
-    ReadingLibrary library,
-    SourceManager manager,
-  ) async {
-    final updates = await collectCalendarUpdates(
-      library: library,
-      manager: manager,
-      isCancelled: () => !mounted,
-    );
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => WatchCalendarPage(
-          library: library,
-          updates: updates,
-          title: '${Section.comic.label} · 追更日历',
-          onOpen: (entry) => _openFromCalendar(library, manager, entry),
-        ),
-      ),
-    );
-  }
-
-  /// 从日历点条目：打开作品详情页（详情页上有「继续阅读」）。
-  ///
-  /// 漫画与小说的差别只有一处：漫画详情页要在拿到章节列表后才能定位到「读到的
-  /// 那一话」，因此这里不直接进阅读器，由详情页的按钮负责续读。
-  void _openFromCalendar(
-    ReadingLibrary library,
-    SourceManager manager,
-    CalendarEntry entry,
-  ) {
-    final item = library.item(entry.itemId);
-    if (item == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('「${entry.title}」已不在书架里')),
-      );
-      return;
-    }
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ComicDetailPage(
-          library: library,
-          manager: manager,
-          target: ReadingTarget(
-            sourceId: item.sourceId,
-            itemId: item.itemId,
-            title: item.title,
-            cover: item.cover,
-            subtitle: item.subtitle,
-          ),
-        ),
-      ),
-    );
-  }
 
   /// 阅读历史抽屉：底部 Sheet 里浏览最近的阅读记录（不新开全屏页面）。
   ///

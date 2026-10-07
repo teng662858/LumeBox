@@ -20,16 +20,13 @@ import 'continue_watching.dart';
 import 'source_playback.dart';
 import 'video_play_target.dart';
 import 'video_player_page.dart';
-import 'watch_calendar.dart';
-import 'watch_calendar_page.dart';
 
 /// 视频板块：**只保留【浏览】**（真机反馈：播放子页签移除）。
 ///
 /// 页面职责只剩浏览与快速入口：
 /// - 图源条（切换当前图源）+ 分类 / 搜索 / 列表（[SourceBrowsePane]）；
 /// - 列表最底部少量「继续观看」记录（[ContinueWatchingSection]）；
-/// - 右上角两枚独立图标：📅 追剧日历、⏱️ 历史（底部抽屉）；
-///   外加既有的图源管理与「+」添加图源。
+/// - 右上角：⏱️ 历史（底部抽屉）+ 既有的图源管理与「+」添加图源。
 ///
 /// **点条目不再切页签，而是唤起独立播放器页**（[VideoPlayerPage]）：播放是沉浸
 /// 场景，独立页面能返回、能带自己的标题，也不再占板块的页签位。没有可用图源时
@@ -360,46 +357,6 @@ class _VideoPageState extends State<VideoPage> {
 
   // ------------------------------------------------------------ 日历 / 历史
 
-  /// 打开追剧日历：按月看「哪天有更新 / 哪天看过」。
-  ///
-  /// 更新时间来自图源的章节时间（可选能力）：当前图源支持就带进来，不支持则
-  /// 日历只显示播放记录——如实降级，不编造更新。
-  Future<void> _openCalendar() async {
-    final library = _library;
-    if (library == null) return;
-    final manager = widget.sourceManager ?? LumeSources.manager(Section.video);
-    final updates = await collectCalendarUpdates(
-      library: library,
-      manager: manager,
-      isCancelled: () => !mounted,
-    );
-    if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => WatchCalendarPage(
-          library: library,
-          updates: updates,
-          onOpen: (entry) => _openFromCalendar(entry),
-        ),
-      ),
-    );
-    if (!mounted) return;
-    setState(() => _continueWatchingRevision++);
-  }
-
-  /// 从日历点条目：按作品找回播放记录并续看。
-  void _openFromCalendar(CalendarEntry entry) {
-    final library = _library;
-    if (library == null) return;
-    final item = library.item(entry.itemId);
-    final progress = library.videoProgress(entry.itemId);
-    if (item == null || progress == null) {
-      _toast('「${entry.title}」还没有播放记录，先从源列表打开一次');
-      return;
-    }
-    _resumeFromProgress(item, progress);
-  }
-
   /// 打开历史抽屉（底部 Sheet）：在抽屉里直接浏览播放记录。
   ///
   /// 真机反馈：时钟图标点进来是「随手看一眼就回去」，因此**不新开全屏页面**。
@@ -432,15 +389,10 @@ class _VideoPageState extends State<VideoPage> {
   // ------------------------------------------------------------------ 构建
 
   /// 右上角动作（三个板块统一口径）：
-  /// 📅 追剧日历、⏱️ 历史抽屉，外加**图源管理**与「+」添加图源。
+  /// ⏱️ 历史抽屉，外加**图源管理**与「+」添加图源。
   ///
-  /// 播放器设置不在这里——它属于播放器本身，在播放器页的控制栏与顶栏齿轮上。
+  /// 播放器设置不在这里——它属于播放器本身，在播放器页的控制栏齿轮上。
   List<Widget> _buildActions() => <Widget>[
-        IconButton(
-          tooltip: '追剧日历',
-          icon: const Icon(Icons.calendar_month_outlined),
-          onPressed: _openCalendar,
-        ),
         IconButton(
           tooltip: '播放历史',
           icon: const Icon(Icons.history),

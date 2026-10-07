@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/player/abstract_player.dart';
 import '../../core/player/brightness.dart';
@@ -30,6 +31,7 @@ import 'danmaku/danmaku_settings_sheet.dart';
 import 'player_gestures.dart';
 import 'player_hud.dart';
 import 'player_settings_sheet.dart';
+import 'player_speed_meter.dart';
 import 'source_playback.dart';
 import 'video_play_target.dart';
 import 'video_player_settings.dart';
@@ -63,6 +65,7 @@ class VideoPlayerPage extends StatefulWidget {
     this.sourceManager,
     this.library,
     this.playbackBackend,
+    this.speedMeter,
   });
 
   /// 起播媒体（含防盗链请求头）。
@@ -104,6 +107,9 @@ class VideoPlayerPage extends StatefulWidget {
 
   /// 播放会话后端（后台音频 + 锁屏控制）。为空时按平台选择。
   final PlaybackSessionBackend? playbackBackend;
+
+  /// 网速表（测试注入用）。为空时用真实现（向播放地址发 Range 探测）。
+  final PlaybackSpeedMeter? speedMeter;
 
   @override
   State<VideoPlayerPage> createState() => _VideoPlayerPageState();
@@ -169,6 +175,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// 连播 / 弹幕用的图源（按 [VideoPlayerPage.sourceId] 打开）。
   DataSource? _source;
 
+  /// 图源管理器的兜底实例（调用方没注入时用板块级管理器）。
+  ///
+  /// **本页绝不 close 它**：`LumeSources.manager(section)` 的所有方法都转发到
+  /// 板块级的图源状态（注册表与库句柄是共享的），关掉一个管理器等于关掉整个板块
+  /// 的图源库——浏览页随后再点条目就会报「This database has already been
+  /// closed」（真机实测：退出播放后再点别的视频就是这么炸的）。
+  SourceManager? _fallbackManager;
+
   /// 候选清晰度线路 + 当前线路下标（图源给多条时才有）。
   late List<VideoQuality> _qualities = widget.qualities;
   int _qualityIndex = 0;
@@ -184,6 +198,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   /// 进度条拖动预览的目标位置（拖动中显示，松手才真 seek）。
   Duration? _previewTarget;
+
+  /// 网速表：按播放地址实测（三套内核都适用，见 [PlaybackSpeedMeter]）。
+  late final PlaybackSpeedMeter _speed = widget.speedMeter ?? PlaybackSpeedMeter();
 
   /// 进度落盘节流：播放中每 5 秒写一次，暂停 / 切集 / 退出时立即写。
   Timer? _progressTimer;
@@ -277,6 +294,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     player?.snapshot.removeListener(_onSnapshotChanged);
     // 锁屏播放条属于「当前这次播放」：页面退出即收起（听书那套随后可接管）。
     unawaited(_playback.stop());
+    // 从全屏直接返回时把方向还原成竖屏（否则整个 App 留在横屏里）。
+    if (_fullscreen) unawaited(_applyOrientation(false));
     unawaited(_commandSubscription?.cancel());
     // 资源边界：先退画中画再释放播放器，最后关库（顺序不能反）。
     unawaited(() async {
@@ -285,15 +304,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }());
     _store?.close();
     if (widget.library == null) ReadingLibrary.close(Section.video);
-    // 连播 / 弹幕用的图源句柄：自己开的自己关。
-    _ownedManager?.close();
     _input.dispose();
     _idleSnapshot.dispose();
+    // 注入进来的网速表由调用方释放。
+    if (widget.speedMeter == null) _speed.dispose();
     super.dispose();
   }
-
-  /// 自己创建的图源管理器（注入进来的不代管）。
-  SourceManager? _ownedManager;
 
   /// 播放状态变化：在「从播放转为非播放」时立即落盘进度，并检查是否播完。
   void _onSnapshotChanged() {
@@ -555,6 +571,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     _media = media;
     if (mounted) setState(() => _loaded = false);
     await player.load(media);
+    // 起播时实测一次网速（同一地址不重复测；点信息条上的「测速」可强制重测）。
+    if (media.isNetwork) {
+      unawaited(_speed.measure(media.uri, headers: media.headers));
+    }
     if (!mounted) return;
     setState(() => _loaded = player.snapshot.value.error == null);
   }
@@ -715,6 +735,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     await _restoreProgress();
     _startProgressTicker();
     unawaited(_loadDanmaku(target));
+    // 打开视频即自动播放（用户要求）：装载与续播定位都做完之后再发 play，
+    // 免得播放器在 seek 之前就开跑、位置被拉回开头。
+    if (_player != null && mounted) {
+      await _player!.play();
+    }
   }
 
   /// 能携带逐媒体请求头的内核；当前内核就能带、或没有别的可用内核时原样返回。
@@ -808,15 +833,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   /// 打开当前作品的图源（连播 / 弹幕用）。
   ///
-  /// 页面自己开、自己关：与浏览页的图源管理器**不是同一个实例**（那一个由
-  /// 浏览面持有并在它退出时关闭），互不牵连。
+  /// 管理器**只借不关**（见 [_fallbackManager] 的说明）：注入进来的由调用方管，
+  /// 兜底的那个是板块级共享实例，关它会顺手关掉浏览页在用的图源库。
   Future<DataSource?> _openSource() async {
     final existing = _source;
     if (existing != null) return existing;
     final sourceId = _target?.sourceId ?? widget.sourceId;
     if (sourceId == null) return null;
     final manager = widget.sourceManager ??
-        (_ownedManager ??= LumeSources.manager(Section.video));
+        (_fallbackManager ??= LumeSources.manager(Section.video));
     try {
       final source = await manager.open(sourceId);
       if (source == null) return null;
@@ -1403,6 +1428,36 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
+  /// 切换全屏：**进全屏自动横屏，退出还原竖屏**（用户要求）。
+  ///
+  /// 方向交给 `SystemChrome.setPreferredOrientations`：锁横屏两个方向（左右都收，
+  /// 用户横握哪边都行），退出时还原竖屏。页面 dispose 时也会还原一次——否则
+  /// 从全屏直接返回会把整个 App 留在横屏里。
+  void _setFullscreen(bool value) {
+    setState(() {
+      _fullscreen = value;
+      _overlayVisible = true;
+    });
+    unawaited(_applyOrientation(value));
+  }
+
+  /// 应用屏幕方向：全屏 = 横屏，否则竖屏。
+  Future<void> _applyOrientation(bool fullscreen) async {
+    try {
+      await SystemChrome.setPreferredOrientations(
+        fullscreen
+            ? const <DeviceOrientation>[
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ]
+            : const <DeviceOrientation>[DeviceOrientation.portraitUp],
+      );
+    } catch (error) {
+      // 桌面 / 测试环境没有方向概念：失败只记日志，不影响播放。
+      LumeLog.info('[player] 设置屏幕方向失败（当前平台可能不支持）：$error');
+    }
+  }
+
   /// 全屏模式的布局：画面铺满 + 浮层控制栏（点画面切换显隐）。
   Widget _buildImmersive(Widget body) {
     return Stack(
@@ -1446,7 +1501,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             IconButton(
               tooltip: '退出全屏',
               icon: const Icon(Icons.fullscreen_exit, color: Colors.white),
-              onPressed: () => setState(() => _fullscreen = false),
+              onPressed: () => _setFullscreen(false),
             ),
             Expanded(
               child: Text(
@@ -1760,6 +1815,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 _error!,
                 style: TextStyle(fontSize: 12, color: LumeTheme.danger),
               ),
+            // 当前视频的实时信息：分辨率 / 码率（内核 HUD 参数）+ 实测网速。
+            _buildInfoRow(player),
             const SizedBox(height: 8),
             ValueListenableBuilder<PlayerSnapshot>(
               valueListenable: player?.snapshot ?? _idleSnapshot,
@@ -1775,6 +1832,85 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         ),
       ),
     );
+  }
+
+  /// 当前视频信息行：分辨率 · 码率 · 网速（网速点一下重测）。
+  ///
+  /// 分辨率与码率来自内核自己报的 HUD 参数（[PlayerStats]，三套内核各自填）；
+  /// 网速是本页对播放地址的**实测**读数（见 [PlaybackSpeedMeter]：
+  /// 播放器内核在原生侧取流，Dart 侧没有可统计的对象，只能自己探测）。
+  Widget _buildInfoRow(AbstractPlayer? player) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.info_outline, size: 14, color: LumeTheme.muted),
+          const SizedBox(width: 6),
+          Expanded(
+            child: player == null
+                ? Text(
+                    '等待播放器就绪…',
+                    style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+                  )
+                : ValueListenableBuilder<PlayerStats>(
+                    valueListenable: player.stats,
+                    builder: (context, stats, _) => Text(
+                      _infoText(stats),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+                    ),
+                  ),
+          ),
+          ValueListenableBuilder<int?>(
+            valueListenable: _speed.kbps,
+            builder: (context, kbps, _) => ValueListenableBuilder<bool>(
+              valueListenable: _speed.busy,
+              builder: (context, busy, _) => TextButton.icon(
+                onPressed: _measureSpeed,
+                icon: busy
+                    ? const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.speed, size: 16),
+                label: Text(
+                  busy
+                      ? '测速中'
+                      : (PlaybackSpeedMeter.describe(kbps) == null
+                          ? '测速'
+                          : '网速 ${PlaybackSpeedMeter.describe(kbps)}'),
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 信息行文案：分辨率 · 码率 · 缓冲（缺项自动省略，不编造）。
+  static String _infoText(PlayerStats stats) {
+    final pieces = <String>[
+      if (stats.resolutionText != null) '分辨率 ${stats.resolutionText}',
+      if (stats.bitrateText != null) '码率 ${stats.bitrateText}',
+      if (stats.codecText != null) stats.codecText!,
+      if (stats.fpsText != null) stats.fpsText!,
+      if (stats.bufferText != null) stats.bufferText!,
+    ];
+    return pieces.isEmpty ? '等待视频参数…' : pieces.join(' · ');
+  }
+
+  /// 手动测速（同一地址强制重测一次）。
+  void _measureSpeed() {
+    final media = _media;
+    if (media == null || !media.isNetwork) {
+      _showToast('当前不是网络地址，无需测速');
+      return;
+    }
+    unawaited(_speed.measure(media.uri, headers: media.headers, force: true));
   }
 
   /// 进度条：拖动中显示预览（松手才真 seek），两端是时间。
@@ -1931,10 +2067,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           _compactIcon(
             icon: _fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
             tooltip: _fullscreen ? '退出全屏' : '全屏',
-            onPressed: () => setState(() {
-              _fullscreen = !_fullscreen;
-              _overlayVisible = true;
-            }),
+            onPressed: () => _setFullscreen(!_fullscreen),
           ),
           _compactIcon(
             icon: Icons.settings_outlined,

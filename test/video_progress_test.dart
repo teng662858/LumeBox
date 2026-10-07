@@ -334,6 +334,39 @@ void main() {
     expect(library.onShelf('movie-1'), isFalse);
   });
 
+  testWidgets('退出播放后再点别的视频：图源管理器不能被播放页关掉（真机报库已关闭的回归）', (tester) async {
+    source.items = const <SourceItem>[
+      SourceItem(id: 'movie-1', title: '示例影片'),
+      SourceItem(id: 'movie-2', title: '另一部片子'),
+    ];
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+    ];
+    source.contentUrl = 'https://example.com/e1.mp4';
+    final created = await pumpBoard(tester);
+
+    // 第一条：点开播放页再返回。
+    await tester.tap(find.text('示例影片'));
+    await tester.pumpAndSettle();
+    expect(find.text('player:avplayer'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    // 播放页退出时**不能关掉图源管理器**：它是板块级共享实例，关了之后浏览页
+    // 再点条目就会报「This database has already been closed」（真机截图那种）。
+    expect(
+      manager.closed,
+      isFalse,
+      reason: '播放页只借不关：关掉会连带关掉板块的图源库',
+    );
+
+    // 第二条照样能起播。
+    await tester.tap(find.text('另一部片子'));
+    await tester.pumpAndSettle();
+    expect(find.text('player:avplayer'), findsOneWidget);
+    expect(created.length, greaterThanOrEqualTo(1));
+  });
+
   testWidgets('没有播放记录时：首页不显示「继续观看」', (tester) async {
     source.items = const <SourceItem>[
       SourceItem(id: 'movie-1', title: '示例影片'),

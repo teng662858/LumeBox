@@ -423,6 +423,16 @@ class SandboxContext {
     if (lower.contains('out of memory') || lower.contains('stack overflow')) {
       return SandboxError(SandboxErrorKind.memory, message);
     }
+    // 「不是函数」这类最含糊的报错补一句定向说明：内核只说 "not a function"，
+    // 既不说哪个对象缺方法，也不说该怎么办。这条提示把用户指向真正的原因
+    // （脚本用到的模块 / 宿主能力本环境没有）。
+    if (lower.contains('not a function') || message.contains('不是函数')) {
+      return SandboxError(
+        SandboxErrorKind.script,
+        '$message\n（脚本调用了宿主没有提供的东西：常见于 require 进来的模块缺方法，'
+        '或那份脚本依赖它自己客户端的宿主能力）',
+      );
+    }
     return SandboxError(SandboxErrorKind.script, message);
   }
 

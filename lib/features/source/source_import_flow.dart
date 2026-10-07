@@ -58,6 +58,7 @@ class SourceImportOutcome {
     this.name = '',
     this.message = '',
     this.subscription = false,
+    this.originUrl = '',
   });
 
   /// 来源标签（失败行靠它定位是哪一条）。
@@ -74,12 +75,22 @@ class SourceImportOutcome {
   /// 来自订阅 / 清单（结果里标一下，与既有口径一致）。
   final bool subscription;
 
+  /// 订阅来源地址（脚本自身的 URL）：失败时一并带出来。
+  ///
+  /// 为什么失败行要显示地址：脚本载入失败的原因往往只有引擎那句 message
+  /// （例如 `TypeError: not a function`），没有地址就没法复现同一份脚本——
+  /// 「复制明细」把地址带上，排障时能直接拉同一份文件核对。
+  final String originUrl;
+
   bool get isFailure => status == SourceImportStatus.failed;
 
   /// 一句话结论（单条成功时的 Toast 与结果弹窗的行文本共用）。
   String describe() {
     if (isFailure) {
-      return label.isEmpty ? '导入失败：$message' : '导入失败：$label — $message';
+      final head = label.isEmpty ? '导入失败：$message' : '导入失败：$label — $message';
+      // 订阅失败时把脚本地址附在下一行：一句话结论在 Toast 里只显示第一行，
+      // 弹窗与「复制明细」里能看到完整内容。
+      return originUrl.trim().isEmpty ? head : '$head\n地址：$originUrl';
     }
     return '${status.label}：$name${subscription ? '（订阅）' : ''}';
   }
@@ -237,6 +248,7 @@ Future<bool> importSources(
           status: SourceImportStatus.failed,
           message: '导入异常：$error',
           subscription: item.isSubscription,
+          originUrl: item.originUrl,
         ),
       );
       continue;
@@ -249,6 +261,7 @@ Future<bool> importSources(
           status: SourceImportStatus.failed,
           message: result.message ?? '未知原因',
           subscription: item.isSubscription,
+          originUrl: item.originUrl,
         ),
       );
       continue;

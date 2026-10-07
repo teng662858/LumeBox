@@ -16,13 +16,14 @@ import 'package:lume_box/features/video/video_page.dart';
 
 import 'support/fake_source_manager.dart';
 
-/// 三个板块右上角的**两枚独立图标**与它们的落点（真机反馈的改造）：
+/// 三个板块右上角的入口与它们的落点（真机反馈的改造，其后按用户要求删掉了日历）：
 ///
-/// - 📅 日历 → 独立页：追更 / 追剧日历（更新排期 + 观看记录），**不是历史入口**；
-/// - ⏱️ 时钟 → **底部 Sheet 抽屉**里的历史（播放 / 阅读记录），不新开全屏页面。
+/// - ⏱️ 时钟 → **底部 Sheet 抽屉**里的历史（播放 / 阅读记录），不新开全屏页面；
+/// - 📅 日历（追更 / 追剧日历）→ **已按用户要求整体删除**，本文件同时钉住
+///   「三个板块都不再出现日历入口」。
 ///
-/// 用真实板块页挂载（注入替身图源管理器），因此验的是「用户点得到的那两个图标
-/// 真的落在对的地方」——图标错挂 / 点开是另一个页面这类问题会当场失败。
+/// 用真实板块页挂载（注入替身图源管理器），因此验的是「用户点得到的图标真的落在
+/// 对的地方」——图标错挂 / 点开是另一个页面这类问题会当场失败。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -98,11 +99,12 @@ void main() {
       );
 
   group('右上角两枚独立图标', () {
-    testWidgets('视频：「追剧日历」+「播放历史」，页签只剩【浏览】', (tester) async {
+    testWidgets('视频：「播放历史」在、日历已删，页签只剩【浏览】', (tester) async {
       await pump(tester, const VideoPage(catalog: _NoKernelCatalog()));
 
-      expect(find.byTooltip('追剧日历'), findsOneWidget);
       expect(find.byTooltip('播放历史'), findsOneWidget);
+      expect(find.byTooltip('追剧日历'), findsNothing, reason: '日历已按用户要求删除');
+      expect(find.byTooltip('追更日历'), findsNothing);
       expect(find.widgetWithText(Tab, '浏览'), findsOneWidget);
       expect(
         find.widgetWithText(Tab, '播放'),
@@ -111,68 +113,24 @@ void main() {
       );
     });
 
-    testWidgets('小说：「追更日历」+「阅读历史」', (tester) async {
+    testWidgets('小说：「阅读历史」在、日历已删', (tester) async {
       await pump(
         tester,
         NovelPage(runtimeAvailable: true, manager: FakeSourceManager()),
       );
 
-      expect(find.byTooltip('追更日历'), findsOneWidget);
       expect(find.byTooltip('阅读历史'), findsOneWidget);
+      expect(find.byTooltip('追更日历'), findsNothing, reason: '日历已按用户要求删除');
     });
 
-    testWidgets('漫画：「追更日历」+「阅读历史」（与小说同款）', (tester) async {
+    testWidgets('漫画：「阅读历史」在、日历已删（与小说同款）', (tester) async {
       await pump(
         tester,
         ComicPage(runtimeAvailable: true, manager: FakeSourceManager()),
       );
 
-      expect(find.byTooltip('追更日历'), findsOneWidget);
       expect(find.byTooltip('阅读历史'), findsOneWidget);
-    });
-  });
-
-  group('📅 日历进独立页', () {
-    testWidgets('视频：标题「视频 · 追剧日历」', (tester) async {
-      await pump(tester, const VideoPage(catalog: _NoKernelCatalog()));
-      await tester.tap(find.byTooltip('追剧日历'));
-      await tester.pumpAndSettle();
-
-      expect(find.widgetWithText(AppBar, '视频 · 追剧日历'), findsOneWidget);
-    });
-
-    testWidgets('小说：标题「小说 · 追更日历」，用的是本板块的记录', (tester) async {
-      await seed(
-        Section.novel,
-        itemId: 'novel-1',
-        title: '示例小说',
-        progress: novelProgressAt('novel-1'),
-      );
-      await pump(
-        tester,
-        NovelPage(runtimeAvailable: true, manager: FakeSourceManager()),
-      );
-      await tester.tap(find.byTooltip('追更日历'));
-      await tester.pumpAndSettle();
-
-      expect(find.widgetWithText(AppBar, '小说 · 追更日历'), findsOneWidget);
-      // 今天读过 → 日历当天应有记录（点一下今天那一格）。
-      expect(
-        find.textContaining('追更'),
-        findsWidgets,
-        reason: '标题里就写明这是追更日历',
-      );
-    });
-
-    testWidgets('漫画：标题「漫画 · 追更日历」', (tester) async {
-      await pump(
-        tester,
-        ComicPage(runtimeAvailable: true, manager: FakeSourceManager()),
-      );
-      await tester.tap(find.byTooltip('追更日历'));
-      await tester.pumpAndSettle();
-
-      expect(find.widgetWithText(AppBar, '漫画 · 追更日历'), findsOneWidget);
+      expect(find.byTooltip('追更日历'), findsNothing, reason: '日历已按用户要求删除');
     });
   });
 
