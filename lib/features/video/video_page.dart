@@ -778,8 +778,24 @@ class _VideoPageState extends State<VideoPage>
       return;
     }
     if (!mounted) return;
+
+    // 防盗链降级：图源给了**逐媒体请求头**（Referer / UA），而当前内核带不了
+    // （目前只有 MDK 带不了），就改用能带的内核——否则 CDN 回 403，网络层的
+    // 退避重试会把起播拖到一两分钟（真机反馈的「等一两分钟」就是这个）。
+    final headers = media.headers;
+    if (headers != null && headers.isNotEmpty) {
+      final fallback = _headerCapableKernel();
+      if (fallback != _settings.kernel) {
+        _showPlayerToast(
+          '该图源带防盗链请求头，${_settings.kernel.label} 内核带不了，'
+          '已改用 ${fallback.label}',
+        );
+        await _applySettings(_settings.copyWith(kernel: fallback));
+        if (!mounted) return;
+      }
+    }
+
     // 换作品前先把上一部的进度落盘（切集也走这里）。
-    //
     _saveProgress(force: true);
     _target = target;
     _playSource = source;
@@ -790,6 +806,19 @@ class _VideoPageState extends State<VideoPage>
     _startProgressTicker();
     // 弹幕按「作品 + 剧集」加载：手动地址没有身份，自然没有弹幕。
     unawaited(_loadDanmaku(target, source));
+  }
+
+  /// 能携带逐媒体请求头的内核；当前内核就能带、或没有别的可用内核时原样返回。
+  ///
+  /// 顺序刻意是 MPV → AVPlayer：MPV 的解封装对防盗链 / 非常规流更宽容，
+  /// 而 AVPlayer 受系统解封装限制更多（两者都能带请求头）。
+  PlayerKernel _headerCapableKernel() {
+    if (PlayerFactory.supportsMediaHeaders(_settings.kernel)) return _settings.kernel;
+    for (final kernel in <PlayerKernel>[PlayerKernel.mpv, PlayerKernel.avplayer]) {
+      if (_catalog.isAvailable(kernel)) return kernel;
+    }
+    // 一个都不可用：保持现状（播放会照常尝试，失败文案由内核给）。
+    return _settings.kernel;
   }
 
   /// 加载本集弹幕：先查内存缓存，再问图源契约（`danmaku({id, chapterId})`）。

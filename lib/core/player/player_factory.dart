@@ -59,6 +59,18 @@ class PlayerFactory {
         PlayerKernel.mdk => Platform.isIOS && !_mdkInitFailed,
       };
 
+  /// 该内核能不能携带**逐媒体的请求头**（防盗链用的 Referer / UA）。
+  ///
+  /// - AVPlayer：能（`video_player` 的 `httpHeaders`）；
+  /// - MPV：能（media_kit 的 `httpHeaders`）；
+  /// - **MDK：不能**——fvp 0.39 的 `Player` 没有任何 header / option 通道
+  ///   （`media` 只收一个 URL 字符串，源码里 grep 不到 headers / httpHeaders）。
+  ///
+  /// 调用方据此做降级：图源给了请求头而当前内核带不了时，改用能带的内核，
+  /// 否则 CDN 会回 403，网络层的退避重试会把起播拖到一两分钟。
+  static bool supportsMediaHeaders(PlayerKernel kernel) =>
+      kernel != PlayerKernel.mdk;
+
   /// 内核不可用的原因；可用时为 null（设置页直接展示这段文案）。
   static String? unavailableReason(PlayerKernel kernel) {
     if (isAvailable(kernel)) return null;
