@@ -292,9 +292,9 @@ void main() {
   });
 
   group('1e 超时预算口径（不依赖原生中断通路）', () {
-    test('策略超时被收敛到 3–5 秒区间', () {
+    test('策略超时被收敛到 3–10 秒区间', () {
       expect(SandboxPolicy.minTimeout, const Duration(seconds: 3));
-      expect(SandboxPolicy.maxTimeout, const Duration(seconds: 5));
+      expect(SandboxPolicy.maxTimeout, const Duration(seconds: 10));
       expect(smokePolicy().timeout, SandboxPolicy.minTimeout);
       expect(
         const SandboxPolicy(timeout: Duration(milliseconds: 100)).clamped().timeout,

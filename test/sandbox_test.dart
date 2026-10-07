@@ -23,7 +23,8 @@ void main() {
     });
 
     test('预设策略符合文档区间', () {
-      expect(SandboxPolicy.standard.timeout, const Duration(seconds: 4));
+      // 默认 6 秒（真机反馈后从 4 秒放宽到区间 3–10 的偏下位置）。
+      expect(SandboxPolicy.standard.timeout, SandboxPolicy.defaultTimeout);
       expect(SandboxPolicy.standard.allowHostAccess, isFalse);
       expect(SandboxPolicy.strict.timeout, SandboxPolicy.minTimeout);
       expect(SandboxPolicy.strict.poisonOnScriptError, isTrue);

@@ -343,6 +343,12 @@ class _ExploreViewState extends State<ExploreView> {
   Widget build(BuildContext context) {
     if (!_manager.runtimeAvailable) return const SkeletonNotice();
     return Scaffold(
+      // **本页不随键盘收缩**（真机反馈：唤起键盘后顶部搜索框被顶出屏幕，
+      // 小说 / 漫画 / 视频三块都复现）。这里的布局契约是：
+      //   顶栏占位 + 搜索行是**固定头部**，键盘只能影响下面的内容列表。
+      // 交给 Scaffold 收缩的话，头部会跟着被挤压/位移；因此关掉自动收缩，
+      // 让键盘的高度由列表自己用底部内边距让出来（见 _keyboardInset）。
+      resizeToAvoidBottomInset: false,
       backgroundColor: Colors.transparent,
       key: _scaffold,
       drawerScrimColor: Colors.black54,
@@ -447,6 +453,13 @@ class _ExploreViewState extends State<ExploreView> {
     );
   }
 
+  /// 键盘占住的高度：列表拿它做底部内边距。
+  ///
+  /// 本页关掉了 Scaffold 的自动收缩（见 build），所以键盘不会改变页面布局；
+  /// 代价是列表底部会被键盘盖住，这里补上这段内边距，让最后几条仍能滚出来。
+  double _keyboardInset(BuildContext context) =>
+      MediaQuery.viewInsetsOf(context).bottom;
+
   Widget _buildBody() {
     if (_state != SourceStateKind.ready) {
       return SourceStateView(
@@ -484,7 +497,7 @@ class _ExploreViewState extends State<ExploreView> {
         return false;
       },
       child: GridView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + _keyboardInset(context)),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
           mainAxisSpacing: 12,
@@ -512,7 +525,7 @@ class _ExploreViewState extends State<ExploreView> {
         return false;
       },
       child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + _keyboardInset(context)),
         itemCount: _items.length + 1,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (context, index) {

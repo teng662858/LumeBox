@@ -21,6 +21,16 @@
 //      因此统一升级协议。
 var BASE_URL = 'https://seyoumanhua.com';
 
+// **必须带移动浏览器 UA**：站点按 UA 决定发哪套模板——没有浏览器 UA 时它返回
+// **PC 版页面**（实测 80–86KB，没有 .comic_cover_container 那套标记），
+// 于是列表解析出 0 条，界面上就是「暂无内容」。带上手机 UA 后返回移动版
+// （25KB，20 条/页），这才是本文件解析的那套标记。
+var HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
+    + 'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  'Referer': 'https://seyoumanhua.com/'
+};
+
 var LumeSource = {
   id: 'seyoumanhua_comic',
   name: '色友漫画',
@@ -199,7 +209,7 @@ var LumeSource = {
   },
 
   async __get(url) {
-    var response = await LumeSource.http.get(url);
+    var response = await LumeSource.http.get(url, { headers: HEADERS });
     if (!response || response.status !== 200) {
       throw new Error('拉取失败：HTTP ' + (response ? response.status : 0) + ' ' + url);
     }

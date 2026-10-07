@@ -155,6 +155,31 @@
       「至少保留 1 个」拦不住这种锁死）。顺序是肌肉记忆：隐藏不等于移除，
       重开回到原位；桌面端左侧栏跟随顺序。36 例测试（含真拖拽手势）
 
+## 视频播放启动慢（真机反馈，待处理）
+
+> 现象：同一个视频源，电脑上立刻能播；iPhone 上「拿到播放地址之后」要等 1–2 分钟才出画面。
+> 已确认**不是解析慢**（地址已经拿到了），瓶颈在 iOS 本地播放器的**缓冲启动**。
+
+待查四件事（用户点名）：
+
+1. **多余预加载 / 多余重定向校验**：检查拿到 URL 后到真正喂给播放器之间是否存在
+   多余的 HEAD/GET 预检（本项目的网络层与播放页都可能各做一次）。
+2. **AVPlayer 初始化参数与缓冲策略**：`AVPlayerItem` 的
+   `preferredForwardBufferDuration`、`automaticallyWaitsToMinimizeStalling`、
+   `AVURLAsset` 的选项（`AVURLAssetPreferPreciseDurationAndTimingKey` 等）
+   —— 目标是**降低最小启动缓冲**，让它尽早出画面。
+3. **重定向跟随**：部分视频 URL 有 301/302，当前处理链路效率低（可能每条分片都
+   重新走一次跳转）。应在解析后先跟到最终地址再交给播放器。
+4. **请求重试**：对首包/分片做简单重试。
+
+落点（待确认后动手）：
+- 播放器侧：`lib/core/player/av_player.dart`（video_player / AVPlayer 路径）与
+  `lib/features/video/video_page.dart` 的起播链路；
+- 网络侧：`lib/core/net/lume_http.dart` / `network_queue.dart`（重定向与重试都在这里）；
+- **验收口径**：同源同集，从点播到出画面的时间；与电脑端对照。
+
+---
+
 ## UI 优化批次（真机验收结束后统一迭代）
 
 > **状态：只记录需求，本轮不实施。** 用户 2026-10-07 明确要求：这批等真机测试结束后

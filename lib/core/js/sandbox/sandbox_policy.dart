@@ -17,11 +17,17 @@ class SandboxPolicy {
     this.poisonOnScriptError = false,
   });
 
-  /// 单次操作（求值 / 调用）的墙钟预算。文档要求 3–5 秒，构造后由
-  /// [clamped] 强制收敛到该区间，越界配置不会生效。
+  /// 单次操作（求值 / 调用）的墙钟预算。构造后由 [clamped] 强制收敛到
+  /// [minTimeout]~[maxTimeout]，越界配置不会生效。
+  ///
+  /// 上限从 5 秒放宽到 10 秒（真机反馈）：原区间是按「本地/快站」定的，
+  /// 而列表接口走的是远端站点，**慢站点 + 移动网络下 4 秒经常不够**——
+  /// 表现是「同样的源在别的阅读器很快、在这里超时」。放宽上限的同时把默认
+  /// 值提到 6 秒：既给慢站留余量，又仍然是一个「失控脚本会被兜住」的量级
+  /// （纯 CPU 死循环由指令计数与中断处理器兜，不依赖这个值）。
   static const Duration minTimeout = Duration(seconds: 3);
-  static const Duration maxTimeout = Duration(seconds: 5);
-  static const Duration defaultTimeout = Duration(seconds: 4);
+  static const Duration maxTimeout = Duration(seconds: 10);
+  static const Duration defaultTimeout = Duration(seconds: 6);
 
   static const int defaultMemoryLimitBytes = 64 * 1024 * 1024;
 
@@ -46,7 +52,11 @@ class SandboxPolicy {
   static const int defaultMaxInstructions = 200 * 1000 * 1000;
 
   /// 单次操作内允许的宿主代理调用次数。
-  static const int defaultMaxHostCalls = 64;
+  ///
+  /// 64 → 256（真机反馈）：脚本一次列表/详情里并发发十几个 http 是常态
+  /// （逐条目取详情、并发拉多页），64 会在正常脚本上先撞线，表现成
+  /// 「莫名其妙的脚本错误」而不是网络问题。
+  static const int defaultMaxHostCalls = 256;
 
   /// 单次操作内允许的引擎步数（求值 + 微任务排空 + 宿主回调往返 + 定时器注册）。
   static const int defaultMaxSteps = 4096;

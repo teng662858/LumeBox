@@ -56,11 +56,11 @@ void main() {
   });
 
   group('设置模型：区间收敛与落盘', () {
-    test('默认是 4 秒（区间中值，文档允许 3–5）', () {
-      expect(SandboxSettings.defaultTimeout, const Duration(seconds: 4));
-      expect(const SandboxSettings().timeout, const Duration(seconds: 4));
+    test('默认是 6 秒（区间 3–10，真机反馈后放宽）', () {
+      expect(SandboxSettings.defaultTimeout, const Duration(seconds: 6));
+      expect(const SandboxSettings().timeout, const Duration(seconds: 6));
       expect(SandboxSettings.minTimeout, const Duration(seconds: 3));
-      expect(SandboxSettings.maxTimeout, const Duration(seconds: 5));
+      expect(SandboxSettings.maxTimeout, const Duration(seconds: 10));
     });
 
     test('越界值被钳到区间内（不给用户关掉保护的口子）', () {
@@ -71,8 +71,8 @@ void main() {
       );
       expect(
         const SandboxSettings(timeout: Duration(seconds: 60)).clamped().timeout,
-        const Duration(seconds: 5),
-        reason: '高于上沿钳到 5 秒——调大超时等于让卡住的脚本占更久',
+        const Duration(seconds: 10),
+        reason: '高于上沿钳到 10 秒——调大超时等于让卡住的脚本占更久',
       );
       expect(
         const SandboxSettings(timeout: Duration(seconds: 5)).clamped().timeout,
@@ -93,7 +93,7 @@ void main() {
     test('落盘时也收敛：写进去的越界值不会生效', () async {
       final store = await SandboxSettingsStore.open();
       store.save(const SandboxSettings(timeout: Duration(seconds: 30)));
-      expect(store.load().timeout, const Duration(seconds: 5));
+      expect(store.load().timeout, const Duration(seconds: 10));
     });
 
     test('文件缺失 / 损坏时回退默认，不让沙箱起不来', () async {
@@ -142,9 +142,9 @@ void main() {
 
   group('引擎真的用这份设置', () {
     test('引擎装配取的是全局设置（改完立即对新建引擎生效）', () async {
-      // 默认 4 秒。
-      expect(LumeJsEngine.callTimeout, const Duration(seconds: 4));
-      expect(LumeJsEngine.policy.timeout, const Duration(seconds: 4));
+      // 默认 6 秒（真机反馈后从 4 秒放宽）。
+      expect(LumeJsEngine.callTimeout, const Duration(seconds: 6));
+      expect(LumeJsEngine.policy.timeout, const Duration(seconds: 6));
 
       // 改成 5 秒。
       LumeSandboxSettings.apply(const SandboxSettings(timeout: Duration(seconds: 5)));
@@ -167,7 +167,8 @@ void main() {
       await LumeSandboxSettings.save(
         const SandboxSettings(timeout: Duration(seconds: 99)),
       );
-      expect(LumeJsEngine.callTimeout, const Duration(seconds: 5));
+      // 99 秒越界 → 收敛到新的上沿 10 秒（不再是不能改的保护口径，只是防呆上限）。
+      expect(LumeJsEngine.callTimeout, const Duration(seconds: 10));
     });
   });
 

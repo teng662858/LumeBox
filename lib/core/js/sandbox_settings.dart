@@ -39,7 +39,7 @@ class SandboxSettings {
   static const Duration defaultTimeout = SandboxPolicy.defaultTimeout;
 
   /// 用户可选的档位（秒）。区间由文档钉死为 3–5 秒，因此只有三档。
-  static const List<int> timeoutOptionsSeconds = <int>[3, 4, 5];
+  static const List<int> timeoutOptionsSeconds = <int>[3, 4, 5, 6, 8, 10];
 
   /// 收敛到文档允许的区间（越界值不会生效，与网络设置同一口径）。
   SandboxSettings clamped() => SandboxSettings(

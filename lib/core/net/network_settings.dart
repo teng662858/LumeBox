@@ -26,10 +26,15 @@ class NetworkSettings {
     this.retryBaseDelay = defaultRetryBaseDelay,
   });
 
-  /// 全局并发下限 / 上限 / 默认（文档给的区间是 6~12）。
+  /// 全局并发下限 / 上限 / 默认。
+  ///
+  /// 上限 12 → 16、默认 8 → 12（真机反馈：沙箱里的脚本一次要发很多请求，
+  /// 并发太低时整体加载明显慢于同类阅读器）。**单域名并发保持 2~3 不动**：
+  /// 那是防封核心，提速不该拿被目标站限流来换（本机实测：短时间内连续打
+  /// 同一个站会开始返回 503）。
   static const int minGlobalConcurrency = 6;
-  static const int maxGlobalConcurrency = 12;
-  static const int defaultGlobalConcurrency = 8;
+  static const int maxGlobalConcurrency = 16;
+  static const int defaultGlobalConcurrency = 12;
 
   /// 单域名并发下限 / 上限 / 默认（文档给的区间是 2~3）。
   static const int minPerHostConcurrency = 2;
