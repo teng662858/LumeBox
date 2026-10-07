@@ -39,6 +39,27 @@
   - 已保留站点元信息和分类接口
   - 站点 API 返回自定义加密数据，列表、详情、选集和播放会明确提示未支持
 
+### 5. vv3nwjk_video.js - 金牌影院源（受站点 WAF 限制）
+- **类型**: 视频 (category: `video`)
+- **网站**: https://www.vv3nwjk.com
+- **说明**: Next.js 前端 + 自建 JSON API（`/api/mw-movie/anonymous/**`）
+- **已实现**（逻辑均已独立验证）:
+  - 完整还原了站点请求签名：`t = Date.now()`，`sign = sha1(md5(参数&key=<SIGN_KEY>&t=<t>))`，
+    用线上抓包逐个核对通过（3/3 命中）
+  - 纯 JS 的 MD5 / SHA1（沙箱无 Node crypto / atob），标准向量 + 站点真实签名双重校验
+  - 分类、双列分页、搜索、详情、选集、多清晰度播放地址
+  - `deviceId` 用 `LumeSource.fs` 持久化
+- **当前状态（重要）**: 站点整站（含 API）挂在 **OKooK-CDN 的 Google
+  reCAPTCHA v3 WAF** 后面，未过验证的 HTTP 客户端一律 `521`。该放行状态绑定
+  「完成验证的浏览器会话 + 服务端信誉」，**不落在可读 Cookie 上、也无法被
+  HTTP 客户端复现**（实测：curl / Node / curl_cffi 模拟各浏览器指纹全部 521；
+  `curl_cffi` 不行、真实浏览器带 Electron UA 却能过；把浏览器 Cookie 拷给
+  curl 仍 521）。
+  - 结论：脚本在 LumeBox 沙箱里直连会稳定返回 `521`，脚本对这种情况给出
+    点名到原因的中文提示（不会再只报「HTTP 521」）。
+  - 出路：在同一网络放一个「已过 WAF」的代理/桥接，把 `SITE_URL` 指过去
+    （参见 `docs/lumesource-guide.md` 附录 B 的远端代理模式）。
+
 ## 🚀 使用方法
 
 ### 安装

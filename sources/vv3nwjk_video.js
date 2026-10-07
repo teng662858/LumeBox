@@ -1,11 +1,32 @@
-// LumeSource: {"id":"vv3nwjk_video","name":"金牌影院","version":"1.0.0","category":"video"}
+// LumeSource: {"id":"vv3nwjk_video","name":"金牌影院","version":"1.0.1","category":"video"}
 
 // 站点：https://www.vv3nwjk.com （Next.js + 自建 JSON API）
 //
-// 关键点（都是实测确认、不是猜的）：
-//   1. 站点前端被一套 reCAPTCHA v3 的 WAF 挡着（未过验证时整站 521），
-//      但 **数据 API 不受该 WAF 保护**：只要带上正确的签名头就能直接拿到
-//      JSON，不需要 Cookie、不需要过验证。脚本因此直连 API。
+// ⚠️ 重要现状（2026-10-08 复测，务必先读）：
+//   站点整站（HTML 与 `/api/mw-movie/**` 一并）挂在 **OKooK-CDN 的
+//   Google reCAPTCHA v3 WAF** 后面。未过验证的客户端（浏览器外的任何
+//   HTTP 客户端：curl / Node / Dart / 本 App 的网络层都一样）会收到
+//   `521`，响应体是一个「跳转到自身并带 waf_captcha_marker」的脚本，
+//   随后弹出人机验证页；只有真实浏览器执行 reCAPTCHA v3、再命中
+//   `/okokcdn_recaptcha_verify` 通过后，才会被放行。
+//
+//   验证结论（都实测过）：
+//     - 不是 TLS/JA3 指纹问题：用 curl_cffi 模拟 chrome/safari/firefox
+//       全部 521；反而是带 Electron UA 的真实浏览器能过。
+//     - 不是 Cookie 问题：浏览器 `document.cookie` 里**没有任何鉴权
+//       Cookie**，`credentials:'omit'`（完全不带 Cookie）在浏览器里也能
+//       拿到 200；而把浏览器会话的 Cookie 拷给 curl 仍然 521。
+//     - 也就是：放行状态绑在「完成验证的会话 + 服务端 IP/会话信誉」上，
+//       既不落在可读 Cookie 上，也无法靠 HTTP 客户端复现。
+//
+//   → **因此本脚本在 LumeBox 沙箱里直连会稳定拿到 `521`。** 沙箱没有任
+//     何能力去解 reCAPTCHA（无浏览器、无 WebAssembly、无法执行验证页
+//     脚本）。脚本对 521 给出了点名到原因的提示，方便用户判断。
+//     若要让本源真正可用，需要在同一网络环境放一个「已过 WAF 的代理/
+//     桥接」并改下面 BASE 指向它（见 docs/lumesource-guide.md 附录 B）。
+//
+// 下面这些是**已独立验证**的部分，一旦 WAF 被绕开（或通过可用代理转发）
+// 即可直接工作：
 //   2. API 前缀 `/api/mw-movie`，公共接口都在 `/anonymous/**` 下，需要一个
 //      `sign` 头。签名算法（从站点 www.vv3nwjk.com 的 Next.js chunk 里还原、
 //      并用线上真实请求逐个核对过）是：
@@ -40,7 +61,7 @@ var DEVICE_KEY = 'vv3nwjk/device-id';
 var LumeSource = {
   id: 'vv3nwjk_video',
   name: '金牌影院',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'video',
 
   async categories() {
@@ -267,7 +288,24 @@ var LumeSource = {
       }
     });
     if (!response || response.status !== 200) {
-      throw new Error('拉取失败：HTTP ' + (response ? response.status : 0) + ' ' + path);
+      var status = response ? response.status : 0;
+      // 站点在生产环境启用了 reCAPTCHA v3 的 WAF：未过验证时整站（含 API）
+      // 返回 521。沙箱里没有浏览器，跑不出这段验证，如实告诉用户原因与出路。
+      if (status === 521) {
+        throw new Error(
+          '金牌影院：站点启用了人机验证（reCAPTCHA v3 WAF，HTTP 521）。' +
+          '本 App 无法在脚本沙箱里完成验证；请改用网页/浏览器访问该站，' +
+          '或为它配置一个已经通过验证的代理地址后再试。'
+        );
+      }
+      throw new Error('拉取失败：HTTP ' + status + ' ' + path);
+    }
+    // 极少数情况下 WAF 会以 200 返回验证页（HTML 而非 JSON），一并点明。
+    if (/waf_captcha_marker|okokcdn_recaptcha_verify/.test(response.body || '')) {
+      throw new Error(
+        '金牌影院：请求被站点的人机验证（reCAPTCHA v3 WAF）拦截，' +
+        '无法在脚本沙箱内完成验证。请改用网页访问，或配置已过验证的代理。'
+      );
     }
     var parsed;
     try {
