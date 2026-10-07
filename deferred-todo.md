@@ -284,6 +284,27 @@
 第 6 批的其余三项（沙箱 HTTP 并发、超时阈值、图片下载重试与并发）已在本轮完成，
 **只剩这一项**。
 
+### 结论（本轮已处理）
+
+- **A 已修**：请求头确实是被丢在**起播点**（三处都只取了 `contentAddress`、没取
+  `VideoContent.headers`）。AVPlayer / MPV 两条内核通路本来都支持 `httpHeaders`，
+  现已在三处起播点接上（含自动连播与继续观看恢复），并补了回归用例
+  （`video_progress_test`：图源给的 Referer 必须原样到达内核）。
+- **MDK 仍带不了**：fvp 0.39 的 `Player` **没有任何 header / option 通道**
+  （grep 其源码无 headers/httpHeaders；`media` 只收 URL 字符串）。要让 MDK 支持，
+  得等 fvp 开放通道或 fork；当前遇到带请求头的媒体会 warn 并点名建议改用
+  AVPlayer / MPV。
+- **B（缓冲启动参数）本机做不了**，原因写在这里备查：
+  - AVPlayer 路径走 `video_player`，其 `VideoPlayerOptions` **只暴露**
+    `mixWithOthers` / `allowBackgroundPlayback`，没有
+    `preferredForwardBufferDuration` / `automaticallyWaitsToMinimizeStalling`
+    —— 要调就得照项目既有的 `lumebox/pip`、`lumebox/speech` 加**原生 Swift 通道**；
+  - MPV 路径的 `sub-delay` / `hwdec` 已有结论：media_kit 1.2.6 未开放写通道
+    （见本文档既有条目）；
+  - MDK 路径的 fvp `Player` 有 `setProperty`，但 libmdk 的缓冲相关属性名没有权威
+    文档可查，靠猜写进去属于「声称支持但没验证」，不做。
+  - 因此 B 建议和第 4/5 项一起，在**新会话**里按原生通道的方式做。
+
 ### 已经查过的（本机可查的部分，结论：Dart 侧没有多余预检）
 
 逐段看过起播链路，**没有发现**「多余预加载」或「多余重定向校验」：

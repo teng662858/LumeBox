@@ -262,6 +262,43 @@ void main() {
     );
   });
 
+  testWidgets('起播：图源给的防盗链请求头原样交给内核（真机 403 慢播的回归）', (tester) async {
+    // 真机反馈：同一个源电脑上立刻能播、iPhone 上要等一两分钟。原因是图源给的
+    // 地址带防盗链头，而起播点只取了地址、把 VideoContent.headers 丢在了原地——
+    // CDN 回 403 后网络队列按退避重试，累积起来正是那个量级。
+    // 这条守的是「地址与请求头必须一起交给播放器」。
+    source.items = const <SourceItem>[
+      SourceItem(id: 'movie-1', title: '示例影片'),
+    ];
+    source.contentUrl = 'https://cdn.example/with-referer.mp4';
+    source.contentHeaders = const <String, String>{
+      'Referer': 'https://example.com/',
+      'User-Agent': 'Mozilla/5.0 (iPhone)',
+    };
+    // 两章：单章时播放器会跳过选集直接起播，就点不到「第 1 集」了。
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+      SourceChapter(id: 'movie-1-e2', title: '第 2 集'),
+    ];
+
+    final players = await pumpBoard(tester);
+    await tester.tap(find.text('示例影片').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('第 1 集'));
+    await tester.pumpAndSettle();
+
+    final media = players.single.media;
+    expect(media, isNotNull, reason: '应当已经把媒体交给内核');
+    expect(
+      media!.headers,
+      <String, String>{
+        'Referer': 'https://example.com/',
+        'User-Agent': 'Mozilla/5.0 (iPhone)',
+      },
+      reason: '防盗链请求头不能丢：丢了就是 CDN 403 + 退避重试（等一两分钟）',
+    );
+  });
+
   testWidgets('继续观看：移除后记录与条目一起消失', (tester) async {
     source.items = const <SourceItem>[
       SourceItem(id: 'movie-1', title: '示例影片'),
@@ -606,6 +643,9 @@ class _VideoSource implements DataSource {
   List<SourceChapter> chapterList = const <SourceChapter>[];
   String contentUrl = 'https://example.com/chapter.mp4';
 
+  /// 图源给的播放请求头（防盗链）。默认空；用例可设成 Referer 之类。
+  Map<String, String> contentHeaders = const <String, String>{};
+
   @override
   Future<List<SourceCategory>> categories() async => const <SourceCategory>[];
 
@@ -633,7 +673,7 @@ class _VideoSource implements DataSource {
     final url = contentUrl.contains(chapterId)
         ? contentUrl
         : 'https://example.com/$chapterId.mp4';
-    return VideoContent(url: Uri.parse(url));
+    return VideoContent(url: Uri.parse(url), headers: contentHeaders);
   }
 }
 

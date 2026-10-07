@@ -36,6 +36,15 @@ class SourcePlayback {
   static Uri? contentAddress(ChapterContent? content) =>
       content is VideoContent ? content.url : null;
 
+  /// 播放时要带的请求头（`VideoContent.headers`，防盗链用的 Referer / UA 等）。
+  ///
+  /// 为什么必须传下去：真机反馈「同一个源电脑上立刻能播、iPhone 上要等一两分钟」
+  /// —— 图源给的地址多带防盗链头，丢掉它们 CDN 会回 403，随后网络队列按退避
+  /// 反复重试，累积起来正是那个量级。此前两处起播点都只取了地址、把请求头留在了
+  /// `VideoContent` 里（AVPlayer 与 MPV 两条内核通路本来都支持携带它们）。
+  static Map<String, String> contentHeaders(ChapterContent? content) =>
+      content is VideoContent ? content.headers : const <String, String>{};
+
   /// 本地文件的绝对路径判定（POSIX 与 Windows 两种写法）。
   /// 相对路径不认——图源条目里的纯 id 落到这里只会是 id，不是文件。
   static bool _looksLikeFilePath(String text) {

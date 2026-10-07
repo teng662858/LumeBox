@@ -337,7 +337,12 @@ class _VideoPageState extends State<VideoPage>
       if (address == null || !mounted) return;
 
       await _startPlayback(
-        PlayerMedia(uri: address, title: '${target.title} · ${next.title}'),
+        PlayerMedia(
+          uri: address,
+          title: '${target.title} · ${next.title}',
+          // 自动连播同样要带防盗链头（否则连播的第一集很可能 403 卡住）。
+          headers: SourcePlayback.contentHeaders(content),
+        ),
         target: VideoPlayTarget(
           sourceId: target.sourceId,
           itemId: target.itemId,
@@ -735,7 +740,13 @@ class _VideoPageState extends State<VideoPage>
         (candidate) => candidate.id == chapter.id,
       );
       await _startPlayback(
-        PlayerMedia(uri: address, title: '${item.title} · ${chapter.title}'),
+        PlayerMedia(
+          uri: address,
+          title: '${item.title} · ${chapter.title}',
+          // 图源给的防盗链头必须原样交给内核（AVPlayer 走 httpHeaders、
+          // MPV 走 media_kit 的 httpHeaders）。丢掉它们 = CDN 403 + 退避重试。
+          headers: SourcePlayback.contentHeaders(content),
+        ),
         source: source,
         target: VideoPlayTarget(
           sourceId: source.id,
@@ -768,6 +779,7 @@ class _VideoPageState extends State<VideoPage>
     }
     if (!mounted) return;
     // 换作品前先把上一部的进度落盘（切集也走这里）。
+    //
     _saveProgress(force: true);
     _target = target;
     _playSource = source;
@@ -1290,7 +1302,11 @@ class _VideoPageState extends State<VideoPage>
         return;
       }
       await _startPlayback(
-        PlayerMedia(uri: address, title: '${item.title} · ${chapter.title}'),
+        PlayerMedia(
+          uri: address,
+          title: '${item.title} · ${chapter.title}',
+          headers: SourcePlayback.contentHeaders(content),
+        ),
         source: source,
         target: VideoPlayTarget(
           sourceId: item.sourceId,

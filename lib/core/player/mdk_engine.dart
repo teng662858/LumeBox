@@ -137,11 +137,15 @@ class MdkEngine implements AbstractPlayer {
     if (!_live) return;
     _emit(error: null, clearError: true);
     if (media.headers != null && media.headers!.isNotEmpty) {
-      // 如实记录：MDK 侧没有稳定的公开写通道把逐媒体请求头递下去。
-      // 需要 Referer 的地址在 MDK 上可能 403——这条日志是排查时的第一线索。
-      LumeLog.info(
+      // 如实记录，并把「怎么办」一起说了：fvp 0.39 的 Player **没有任何**
+      // header / option 通道（`media` 只收一个 URL 字符串），因此 MDK 内核
+      // 递不过逐媒体请求头——这不是本层漏传，是依赖的能力缺口。
+      // 需要 Referer/UA 的地址（防盗链）在 MDK 上会 403：这条日志是排查时的
+      // 第一线索，用户看到它就知道该换 AVPlayer / MPV（两者都支持）。
+      LumeLog.warn(
         '[mdk] 该媒体带了自定义请求头（${media.headers!.keys.join(', ')}），'
-        '当前内核暂不透传',
+        '但 MDK（fvp）没有透传通道：防盗链地址可能 403。'
+        '请在播放器设置里改用 AVPlayer 或 MPV。',
       );
     }
     _player.media = media.uri.toString();
