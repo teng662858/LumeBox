@@ -136,6 +136,12 @@
 
 ## 已完成（本轮：播放器全套对齐 + 视频栏目改造 + 缓冲通道 + 显示分组）
 
+> **验收**：全量单测 1294 例通过、`flutter analyze` 无问题、CI 出包成功
+> （run `37639834875` / commit `7b372a0`，IPA 20.5MB），二进制级复核确认
+> 三条新原生通路与 vendored 插件补丁都在包里。**真机手动核对部分本机做不了**
+> （Windows 无 iOS 工具链），逐步清单见
+> `.zcode/plans/batch6-player-alignment-acceptance-report.md` 第三节。
+
 - [✓] **缓冲参数 B 收尾**：新增原生通道 `lumebox/buffering` + vendored
       `video_player_avfoundation`（补丁见 `third_party/…/PATCHES.md`）→ AVPlayer 的
       `preferredForwardBufferDuration` / `automaticallyWaitsToMinimizeStalling` 真的写进去；
