@@ -167,8 +167,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // 重新进入并选第 2 集。
+    // 注意：继续观看模块已挪到浏览页**底部**，树序上排在浏览区条目之后，
+    // 因此「浏览区那一条」是 .first，「历史卡」是 .last（与从前相反）。
     final second = await pumpBoard(tester);
-    await tester.tap(find.text('示例影片').last);
+    await tester.tap(find.text('示例影片').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('第 2 集'));
     await tester.pumpAndSettle();
@@ -286,8 +288,8 @@ void main() {
     await pumpBoard(tester);
     expect(find.text('继续观看'), findsOneWidget);
 
-    // 长按移除（区块提供的手势）。
-    await tester.longPress(find.text('示例影片').first);
+    // 长按移除（区块提供的手势）。历史卡在树序末尾，用 .last 取它。
+    await tester.longPress(find.text('示例影片').last);
     await tester.pumpAndSettle();
 
     expect(find.text('继续观看'), findsNothing, reason: '移除后整块隐藏');

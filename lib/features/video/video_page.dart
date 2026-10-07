@@ -1444,17 +1444,9 @@ class _VideoPageState extends State<VideoPage>
             ),
             child: Column(
               children: <Widget>[
-                if (_library != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                    child: ContinueWatchingSection(
-                      key: ValueKey<int>(_continueWatchingRevision),
-                      library: _library!,
-                      onResume: _resumeFromProgress,
-                      onRemove: _removeProgress,
-                      onShowAll: _openHistory,
-                    ),
-                  ),
+                // **内容在前，历史在后**（真机反馈：历史条目一多就把搜索栏、
+                // 分类与首页内容全部挤到屏幕下方，进页面第一眼看不到内容）。
+                // 顺序按用户要求固定为：搜索 → 分类 → 内容列表 → 继续观看。
                 Expanded(
                   child: SourceBrowsePane(
                     section: Section.video,
@@ -1468,6 +1460,21 @@ class _VideoPageState extends State<VideoPage>
                     revision: _browseRevision,
                   ),
                 ),
+                if (_library != null)
+                  // 放在整页最底端；只展示最近 3 条（不再限高包一层滚动）：
+                  // 条目数与高度都可预期，不会把上面的内容列表压没。
+                  // 完整历史走标题栏那个「全部」按钮（onShowAll）。
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: ContinueWatchingSection(
+                      key: ValueKey<int>(_continueWatchingRevision),
+                      library: _library!,
+                      onResume: _resumeFromProgress,
+                      onRemove: _removeProgress,
+                      onShowAll: _openHistory,
+                      maxItems: 3,
+                    ),
+                  ),
               ],
             ),
           ),
