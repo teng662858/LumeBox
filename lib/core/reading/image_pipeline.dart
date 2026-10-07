@@ -33,9 +33,11 @@ class SectionImagePipeline {
     required this.cacheDir,
     http.Client? client,
     this.memoryBudgetBytes = defaultMemoryBudgetBytes,
-    this.maxConcurrent = 4,
+    this.maxConcurrent = 6,
     this.timeout = const Duration(seconds: 20),
+    int maxRetries = 2,
   })  : _client = client ?? http.Client(),
+        _maxRetries = maxRetries < 0 ? 0 : maxRetries,
         _memory = ImageMemoryCache(memoryBudgetBytes);
 
   /// 阅读器默认内存预算。漫画长图按屏宽解码，64MB 约对应十余页。
@@ -52,7 +54,18 @@ class SectionImagePipeline {
   final int memoryBudgetBytes;
 
   /// 同时进行的网络请求上限，避免滑动时把连接池占满。
+  /// 同时下载的图片数。
+  ///
+  /// 4 → 6（真机反馈：漫画翻页时图片出得慢）。真正的上限仍在全局网络队列
+  /// （单域名并发 2~3，图床保护），这里只是别让自己排得太保守。
   final int maxConcurrent;
+
+  /// 单张图片的额外重试次数（不含首次）。
+  ///
+  /// 只重试「可能自己好」的失败：连接层异常、5xx、空响应体。
+  /// 4xx（404/403）是这张图本身的问题，重试只会让翻页更慢。
+  int get maxRetries => _maxRetries;
+  final int _maxRetries;
 
   /// 单张图片的请求超时。
   final Duration timeout;
@@ -265,6 +278,24 @@ class SectionImagePipeline {
     final allowed = await _acquireSlot();
     if (allowed != true || _disposed) return null;
     try {
+      for (var attempt = 0; attempt <= _maxRetries; attempt++) {
+        if (_disposed) return null;
+        final outcome = await _fetchOnce(url);
+        if (outcome.bytes != null) return outcome.bytes;
+        if (!outcome.retryable || attempt == _maxRetries) break;
+        // 退避：200ms、400ms。图片是**可见内容**，等太久不如让用户先看到缺口
+        // 再自己重试——因此重试次数刻意少（默认 2）。
+        await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+      }
+      return null;
+    } finally {
+      _releaseSlot();
+    }
+  }
+
+  /// 取一次图片字节，并回报「重试有没有意义」。
+  Future<({Uint8List? bytes, bool retryable})> _fetchOnce(String url) async {
+    try {
       // 图片同样走全局网络队列：单域名并发（2~3）保护图床，429/503 自动退避。
       // 队列管「什么时候发」，这里只管「拿到字节后怎么用」。
       final response = await LumeNet.queue.send(
@@ -279,19 +310,25 @@ class SectionImagePipeline {
           proxy: LumeNet.settings.proxy,
         ),
       );
-      if (_disposed) return null;
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        LumeLog.warn('图片请求失败(${response.statusCode}): $url');
-        return null;
+      if (_disposed) return (bytes: null, retryable: false);
+      final code = response.statusCode;
+      if (code >= 200 && code < 300) {
+        final bytes = response.body;
+        if (bytes.isEmpty) {
+          LumeLog.warn('图片响应为空: $url');
+          return (bytes: null, retryable: true);
+        }
+        return (bytes: Uint8List.fromList(bytes), retryable: false);
       }
-      final bytes = response.body;
-      return bytes.isEmpty ? null : Uint8List.fromList(bytes);
+      // 4xx 是「这张图本身有问题」（链接失效 / 防盗链），重试不会变好。
+      final retryable = code < 400 || code >= 500;
+      LumeLog.warn('图片请求失败($code${retryable ? '，将重试' : '，不重试'}): $url');
+      return (bytes: null, retryable: retryable);
     } on Object catch (error) {
-      // 管线已释放导致的请求中断不算错误。
-      if (!_disposed) LumeLog.warn('图片请求异常: $url ($error)');
-      return null;
-    } finally {
-      _releaseSlot();
+      // 管线已释放导致的请求中断不算错误，也不值得重试。
+      if (_disposed) return (bytes: null, retryable: false);
+      LumeLog.warn('图片请求异常(将重试): $url ($error)');
+      return (bytes: null, retryable: true);
     }
   }
 
