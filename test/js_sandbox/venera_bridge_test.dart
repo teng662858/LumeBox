@@ -202,24 +202,91 @@ void main() {
     );
   });
 
-  group('兼容层的能力边界（如实报错，不假装支持）', () {
-    /// 驱动脚本里的探针方法。
-    ///
-    /// 探针不是五个契约方法之一——垫片会把**实例自己的方法一并挂到桥接全局**
-    /// （见 `venera_bridge.dart` 的认领段），因此这里用同一条调用链拿得到，
-    /// 与将来的可选能力（如弹幕）走的是同一条路。
-    Future<Map<Object?, Object?>> callProbe(String file, String method) async {
-      final engine = await openEngine(
-        sourceId: 'venera-probe-$method',
-        script: scriptFor(file),
-        section: Section.comic,
-      );
-      addTearDown(engine.dispose);
-      final result = await engine.callResult(method);
-      expect(result.isOk, isTrue, reason: result.error?.message ?? '探针调用失败');
-      return result.value! as Map<Object?, Object?>;
-    }
+  /// 驱动脚本里的探针方法。
+  ///
+  /// 探针不是五个契约方法之一——垫片会把**实例自己的方法一并挂到桥接全局**
+  /// （见 `venera_bridge.dart` 的认领段），因此这里用同一条调用链拿得到，
+  /// 与将来的可选能力（如弹幕）走的是同一条路。
+  Future<Map<Object?, Object?>> callProbe(
+    String file,
+    String method, {
+    Object? arguments,
+  }) async {
+    final engine = await openEngine(
+      sourceId: 'venera-probe-$method',
+      script: scriptFor(file),
+      section: Section.comic,
+    );
+    addTearDown(engine.dispose);
+    final result = await engine.callResult(method, arguments);
+    expect(result.isOk, isTrue, reason: result.error?.message ?? '探针调用失败');
+    return result.value! as Map<Object?, Object?>;
+  }
 
+  group('getter 读设置的源：认领不得执行 getter（真机 MH18 崩溃的回归）', () {
+    /// 真机实测：18漫画（venera-configs 的 mh18.js）导入报
+    /// 「Venera 源认领失败（MH18）：TypeError: not a function」。
+    /// 根因在兼容层的认领段——它用 `typeof instance[name] === 'function'`
+    /// 遍历「脚本自己的方法」，那一句会把属性**读出来**，于是
+    /// `get baseUrl() { return 'https://' + this.loadSetting('domains') }`
+    /// 被顺带执行；而当时垫片里没有 loadSetting → TypeError → 整份源认领失败。
+    ///
+    /// 两条都要守住：① 认领只挂**数据属性里的函数**（不碰 getter）；
+    /// ② `loadSetting` 同步可用（脚本在 getter 里直接调它）。
+    test(
+      '导入成功且元信息正确（原先是认领失败）',
+      () async {
+        await ensureSectionScope(Section.comic);
+        final manager = LumeSources.manager(Section.comic);
+        final result =
+            await manager.importScript(scriptFor('venera_getter_settings.js'));
+
+        expect(result.isSuccess, isTrue, reason: result.message ?? '导入应成功');
+        expect(result.descriptor!.id, 'venera-getter-settings');
+        expect(result.descriptor!.name, 'Venera 夹具（getter 设置）');
+        expect(result.descriptor!.version, '1.0.0');
+      },
+      skip: skipReason,
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
+
+    test(
+      'getter 求值正常：loadSetting 同步给出声明 default，未声明的键为 null',
+      () async {
+        final value = await callProbe('venera_getter_settings.js', 'probeRead');
+        expect(
+          value['domains'],
+          'example.com',
+          reason: '没保存过时应回落到脚本声明的 default',
+        );
+        expect(
+          value['baseUrl'],
+          'https://example.com',
+          reason: 'getter 里同步用 loadSetting，认领后必须能正常求值',
+        );
+        expect(value['missing'], isNull, reason: '未声明的键不应抛错');
+      },
+      skip: skipReason,
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
+
+    test(
+      'saveSetting 之后：同会话内读回新值，getter 跟着变',
+      () async {
+        final value = await callProbe(
+          'venera_getter_settings.js',
+          'probeSave',
+          arguments: <String, Object?>{'value': 'saved.example'},
+        );
+        expect(value['after'], 'saved.example');
+        expect(value['baseUrl'], 'https://saved.example');
+      },
+      skip: skipReason,
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
+  });
+
+  group('兼容层的能力边界（如实报错，不假装支持）', () {
     test(
       'HtmlDocument：类 / 属性 / id 选择器可用，伪类明确报错',
       () async {

@@ -229,7 +229,10 @@ void main() {
       Future<String> requireError(String name) async =>
           (await evalValue(sandbox, '''
             (function () {
-              try { require(${_jsString(name)}); return 'no-error'; }
+              // 取一个属性即算「用到」：新契约下 require 本身不抛
+              // （顺手 require 但没用的脚本要能照常载入，真机回归），
+              // 用到才抛点名到模块的可读错误。
+              try { require(${_jsString(name)}).use(); return 'no-error'; }
               catch (error) { return error.code + '|' + error.message; }
             })()
           '''))! as String;

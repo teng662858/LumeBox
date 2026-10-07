@@ -158,4 +158,60 @@ async function getList(page) {
       timeout: const Timeout(Duration(seconds: 60)),
     );
   });
+
+  group('不支持的模块：require 不再当场致命（真机订阅源导入失败的回归）', () {
+    /// 真机实测：一份订阅源导入失败，报「猫源沙箱不支持「http2」」。
+    /// 脚本只是**顺手 require** 了它（真正发请求用 fetch / LumeSource.http），
+    /// 却在载入期被整份挡下。现在 require 返回一个「用到才炸」的占位：
+    /// 没用到的照常跑；真用到的仍给同一句可读错误。
+    test(
+      'require 了但没用到：导入成功，且导入后能真的出内容',
+      () async {
+        await ensureSectionScope(Section.cat);
+        final manager = LumeSources.manager(Section.cat);
+        final outcome =
+            await manager.importScript(fixture('cat_unused_server_module.js'));
+
+        expect(outcome.isSuccess, isTrue, reason: outcome.message ?? '');
+        expect(outcome.descriptor!.id, 'cat-unused-server-module');
+
+        final source =
+            await LumeSources.open(Section.cat, 'cat-unused-server-module');
+        expect(source, isNotNull);
+        final list = await source!.list(page: 1);
+        expect(list.items.single.title, '示例条目', reason: '导入后要能真的用到');
+      },
+      skip: skipReason,
+      timeout: const Timeout(Duration(seconds: 60)),
+    );
+
+    test(
+      '真的用到（取属性 / 调用）：仍抛点名到模块的可读错误',
+      () async {
+        const usesIt = '''
+// LumeSource: {"id":"cat-uses-http2","name":"用到 http2 的源","version":"1.0.0","category":"cat"}
+var http2 = require('http2');
+// 取属性即算「用到」：这里应当抛错，而不是静默给个 undefined。
+var server = http2.createServer(function () {});
+async function getList(page) { return []; }
+''';
+        await ensureSectionScope(Section.cat);
+        final manager = LumeSources.manager(Section.cat);
+        final outcome = await manager.importScript(usesIt);
+
+        expect(outcome.isSuccess, isFalse, reason: '真用到了就不该导入成功');
+        final message = outcome.message ?? '';
+        expect(message, contains('http2'), reason: '点名是哪个模块');
+        expect(message, contains('自建服务端'), reason: '说清它是什么用途的模块');
+        expect(
+          message,
+          contains('补上这个模块也跑不起来'),
+          reason: '明确否掉「补个垫片就能跑」的猜测',
+        );
+        expect(await manager.list(), isEmpty, reason: '失败不落库');
+      },
+      skip: skipReason,
+      timeout: const Timeout(Duration(seconds: 60)),
+    );
+  });
 }

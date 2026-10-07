@@ -621,6 +621,89 @@ class VeneraComicSourcePolyfill implements SandboxPolyfill {
   };
   ComicSource.prototype.init = function () {};
   ComicSource.prototype.dispose = function () {};
+
+  // 设置项（Venera 的 `settings = { domains: { type: 'input', default: 'x' } }`）。
+  //
+  // **必须是同步的**：Venera 脚本习惯在 getter 里直接用
+  // （真实案例 18漫画/MH18：`get baseUrl() { return 'https://' + this.loadSetting('domains') }`），
+  // 而宿主存储（`LumeBridge.invoke`）是异步的——同步接口没法等它。
+  // 因此这里用一张实例级内存表：实例化时按脚本声明的 `default` 灌初值，
+  // 随后异步补一次已保存的值（[hydrateSettings]），`saveSetting` 则
+  // 同时写内存表与沙盒存储。内存表在上下文重建后会重新灌一遍（值仍在
+  // 沙盒存储里，补读即回来）。
+  function declaredSettings(instance) {
+    var declared = instance && instance.settings;
+    var table = {};
+    if (declared && typeof declared === 'object') {
+      var keys = Object.keys(declared);
+      for (var i = 0; i < keys.length; i++) {
+        var entry = declared[keys[i]];
+        if (entry && typeof entry === 'object' && entry.default !== undefined) {
+          table[keys[i]] = entry.default;
+        }
+      }
+    }
+    return table;
+  }
+
+  function settingsOf(instance) {
+    if (!instance.__lumeSettings) instance.__lumeSettings = declaredSettings(instance);
+    return instance.__lumeSettings;
+  }
+
+  /// 设置值在存储里的键名前缀：与 `loadData` 的键空间分开，避免撞名。
+  function settingKey(key) { return 'setting:' + String(key); }
+
+  function encodeSetting(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return JSON.stringify(value);
+    try {
+      return JSON.stringify(value);
+    } catch (error) {
+      return String(value);
+    }
+  }
+
+  function decodeSetting(text) {
+    var raw = String(text == null ? '' : text);
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      // 存的不是 JSON（手改过、或旧版本写入的裸字符串）：原样当字符串用。
+      return raw;
+    }
+  }
+
+  /// 把已保存的设置值补进内存表；没有保存过就保留脚本声明的 default。
+  function hydrateSettings(instance) {
+    var keys = Object.keys(declaredSettings(instance));
+    if (keys.length === 0) return Promise.resolve();
+    var tasks = keys.map(function (key) {
+      return store('store.read', settingKey(key)).then(function (reply) {
+        var value = reply ? reply.value : null;
+        if (value === null || value === undefined) return;
+        settingsOf(instance)[key] = decodeSetting(value);
+      }).catch(function () {
+        // 存储不可用时按「没保存过」处理：脚本仍拿到 default，功能不受影响。
+      });
+    });
+    return Promise.all(tasks);
+  }
+
+  ComicSource.prototype.loadSetting = function (key) {
+    var table = settingsOf(this);
+    var name = String(key);
+    return Object.prototype.hasOwnProperty.call(table, name) ? table[name] : undefined;
+  };
+  ComicSource.prototype.saveSetting = function (key, value) {
+    settingsOf(this)[String(key)] = value;
+    return store('store.write', settingKey(key), encodeSetting(value));
+  };
+  ComicSource.prototype.deleteSetting = function (key) {
+    delete settingsOf(this)[String(key)];
+    return store('store.remove', settingKey(key));
+  };
+
   Object.defineProperty(ComicSource.prototype, 'isLogged', { get: function () { return false; } });
   ComicSource.prototype.login = function () { throw unsupported('login（账号登录）'); };
   ComicSource.prototype.logout = function () { throw unsupported('logout（账号登录）'); };
@@ -926,21 +1009,38 @@ class VeneraComicSourcePolyfill implements SandboxPolyfill {
       // 契约之外的可选能力（例如将来的弹幕方法）与调试探针都靠这条路，
       // 不必为每个能力在垫片里再写一份转发。已有的名字（http / fs / 五个契约）
       // 一律不覆盖。
+      //
+      // **只认「数据属性里的函数」，绝不读 getter**：这里原先是
+      // `typeof instance[name] === 'function'`——那一句会把属性**读出来**，
+      // 于是 getter 被顺带执行。真机实测（18漫画 / MH18）：
+      // `get baseUrl() { return 'https://' + this.loadSetting('domains') }`
+      // 在读属性的那一刻执行并抛 `TypeError: not a function`，整个源认领失败。
+      // getter 本来也不是「方法」，跳过它既修了崩溃、也更贴合本段意图。
       var reservedNames = { constructor: 1, init: 1, dispose: 1 };
-      var candidates = Object.getOwnPropertyNames(instance).concat(
-        Object.getOwnPropertyNames(Object.getPrototypeOf(instance) || {})
-      );
-      for (var c = 0; c < candidates.length; c++) {
-        var methodName = candidates[c];
-        if (reservedNames[methodName] || methodName.indexOf('_') === 0) continue;
-        if (typeof instance[methodName] !== 'function') continue;
-        if (bridge[methodName] !== undefined) continue;
-        bridge[methodName] = instance[methodName].bind(instance);
+      var seenNames = {};
+      var holders = [instance, Object.getPrototypeOf(instance)];
+      for (var h = 0; h < holders.length; h++) {
+        var holder = holders[h];
+        if (!holder) continue;
+        var names = Object.getOwnPropertyNames(holder);
+        for (var c = 0; c < names.length; c++) {
+          var methodName = names[c];
+          if (seenNames[methodName]) continue;
+          seenNames[methodName] = 1;
+          if (reservedNames[methodName] || methodName.indexOf('_') === 0) continue;
+          var descriptor = Object.getOwnPropertyDescriptor(holder, methodName);
+          if (!descriptor || typeof descriptor.value !== 'function') continue;
+          if (bridge[methodName] !== undefined) continue;
+          bridge[methodName] = descriptor.value.bind(instance);
+        }
       }
     }
 
-    var initialization = instance.init ? instance.init() : null;
-    return Promise.resolve(initialization).then(function () { return true; });
+    // 设置项就位后再跑 init（脚本可能在 init 里读设置）。
+    return hydrateSettings(instance).then(function () {
+      var initialization = instance.init ? instance.init() : null;
+      return Promise.resolve(initialization);
+    }).then(function () { return true; });
   };
 })();
 ''';

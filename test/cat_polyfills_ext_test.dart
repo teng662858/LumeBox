@@ -654,22 +654,33 @@ void main() {
       final sandbox = catSandbox();
       addTearDown(sandbox.dispose);
 
+      // 契约分两半，两半都要守：
+      //  ① **只 require、不使用**不抛——真机实测有订阅源只是顺手 require 了
+      //     http2 / net（真正发请求用 fetch），载入期抛会把整份源挡在门外；
+      //  ② **用到**（取属性 / 调用 / new）时抛点名到模块的可读错误。
+      // 因此下面一律连一个属性访问一起取，测的是「用到才拒」。
+      expect(await evalValue(sandbox, "typeof require('net')"), 'function');
+      expect(
+        await evalValue(sandbox, "typeof require('net').createServer"),
+        'function',
+        reason: '取属性拿到的是「调用即抛」的函数（不是静默 undefined）',
+      );
       for (final name in <String>['net', 'node:tls', 'dns', 'child_process', 'worker_threads', 'http2']) {
-        final message = await evalValue(sandbox, errorProbe("require('$name')"));
-        expect(message, contains('LUME_UNSUPPORTED'), reason: '$name 应当被拒绝');
+        final message = await evalValue(sandbox, errorProbe("require('$name').createServer()"));
+        expect(message, contains('LUME_UNSUPPORTED'), reason: '$name 用到了就该被拒');
       }
       // net / tls / http2 这类归到「自建服务端」那一类：文案要说清「为什么
       // 补上模块也跑不起来」（需要端口与进程），而不是只报「没内置」。
       expect(
-        await evalValue(sandbox, errorProbe("require('node:net')")),
+        await evalValue(sandbox, errorProbe("require('node:net').connect()")),
         allOf(contains('自建服务端'), contains('补上这个模块也跑不起来')),
       );
       expect(
-        await evalValue(sandbox, errorProbe("require('node:dns')")),
+        await evalValue(sandbox, errorProbe("require('node:dns').lookup()")),
         contains('沙箱不提供进程、线程与底层网络'),
       );
       expect(
-        await evalValue(sandbox, errorProbe("require('lodash')")),
+        await evalValue(sandbox, errorProbe("require('lodash').map()")),
         contains('可用内建模块'),
       );
     });

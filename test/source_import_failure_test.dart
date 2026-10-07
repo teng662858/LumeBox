@@ -71,11 +71,13 @@ void main() {
     return SourceRegistry.open(section);
   }
 
-  test('猫源脚本 require dns：提示点名 dns，并说明自建服务端程序不是图源脚本', () async {
+  test('猫源脚本真的用到 dns：提示点名 dns，并说明自建服务端程序不是图源脚本', () async {
     final registry = await openRegistry(Section.cat);
     final outcome = await registry.import('''
 // LumeSource: {"id":"cat-dns","name":"猫源服务","version":"1.0.0"}
 var dns = require('dns');
+// 真调用才算「用到了」——require 本身不再抛（见下一条）。
+dns.lookup('example.com');
 function getList(page) { return { list: [] }; }
 ''');
 
@@ -89,6 +91,27 @@ function getList(page) { return { list: [] }; }
       reason: '这类脚本（node 服务端）要给一句「App 跑不了它」的定向说明',
     );
     expect(registry.sources, isEmpty, reason: '失败不落库');
+  }, skip: skipReason);
+
+  test('猫源脚本只是顺手 require 了服务端模块、没用到：照常导入（真机订阅源回归）', () async {
+    // 真机实测：一份订阅源导入失败，报「猫源沙箱不支持 http2」。脚本只是沿用了
+    // 别处的写法、顺手 require 了一堆模块，真正发请求用的是 fetch / LumeSource.http。
+    // 载入期抛会把这类脚本整份挡在门外——因此 require 不再当场致命。
+    final registry = await openRegistry(Section.cat);
+    final outcome = await registry.import('''
+// LumeSource: {"id":"cat-dns-unused","name":"猫源（没用到服务端模块）","version":"1.0.0"}
+var dns = require('dns');
+var http2 = require('http2');
+function getList(page) { return { list: [] }; }
+''');
+
+    expect(outcome.isSuccess, isTrue, reason: outcome.message ?? '应当照常导入');
+    expect(outcome.message, isNull);
+    expect(
+      registry.sources.map((item) => item.id),
+      contains('cat-dns-unused'),
+      reason: '成功导入的源要真的落库',
+    );
   }, skip: skipReason);
 
   test('语法错误：提示带上引擎给出的 SyntaxError 原文', () async {

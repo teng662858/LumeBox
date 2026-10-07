@@ -1034,6 +1034,36 @@ class CatRequirePolyfill implements SandboxPolyfill {
     }
   };
 
+  // 不支持的模块：给一个「用到才炸」的占位，而不是在 require 的当下抛。
+  //
+  // 为什么不在载入期抛：真机实测有一份订阅源导入失败，报的是
+  // 「猫源沙箱不支持 http2」——而脚本很可能只是沿用了别处的写法、顺手
+  // require 了一堆模块（真正发请求用的是 fetch / LumeSource.http）。
+  // 载入期抛会把这类脚本整份挡在门外，还会抢在「这不是本 App 的图源脚本」
+  // 那条更准确的判定（它看有没有图源入口，见导入守卫）之前先报模块名，
+  // 让人读成「沙箱少装了个模块、补上就能跑」。
+  // 现在：require 照常返回，**取属性 / 调用 / new** 时才抛出同一句可读错误；
+  // 真正用不了的脚本（例如载入期就起服务端）报错文案与以前逐字一致。
+  function unsupportedTrap(name) {
+    function boom() { throw globalThis.__lumeUnsupportedModule(name); }
+    if (typeof Proxy !== 'function') return boom;
+    return new Proxy(boom, {
+      get: function (target, property) {
+        // 这几个探针放行，否则「看一眼」就会炸：
+        // 符号（Symbol.toPrimitive / Symbol.iterator 等）、`then`（别被当成
+        // thenable，await 它会挂）、以及字符串化用的三个方法。
+        if (typeof property === 'symbol') return undefined;
+        if (property === 'then') return undefined;
+        if (property === 'inspect' || property === 'toString' || property === 'valueOf') {
+          return function () { return '[沙箱不支持的模块 ' + name + ']'; };
+        }
+        return boom;
+      },
+      apply: boom,
+      construct: boom
+    });
+  }
+
   var requireModule = function (name) {
     var id = String(name === undefined || name === null ? '' : name).trim();
     if (id.indexOf('node:') === 0) id = id.slice(5);
@@ -1043,7 +1073,7 @@ class CatRequirePolyfill implements SandboxPolyfill {
     if (modules && Object.prototype.hasOwnProperty.call(modules, id) && modules[id]) {
       return modules[id];
     }
-    throw globalThis.__lumeUnsupportedModule(id);
+    return unsupportedTrap(id);
   };
   requireModule.__lumeCat = true;
   requireModule.resolve = function (name) { return String(name); };
