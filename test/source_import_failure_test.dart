@@ -87,8 +87,13 @@ function getList(page) { return { list: [] }; }
     expect(message, contains('dns'), reason: '必须点名是哪个能力不支持');
     expect(
       message,
-      contains('自建服务端程序'),
-      reason: '这类脚本（node 服务端）要给一句「App 跑不了它」的定向说明',
+      contains('Node 程序'),
+      reason: '这类脚本要给一句「这是打包过的 Node 程序，App 跑不了它」的定向说明',
+    );
+    expect(
+      message,
+      contains('catvod_bridge_source.js'),
+      reason: '并给出可行动的出路（薄壳脚本经 LumeSource.http 转发）',
     );
     expect(registry.sources, isEmpty, reason: '失败不落库');
   }, skip: skipReason);

@@ -258,8 +258,11 @@ class SourceRegistry {
     final message = '脚本载入失败：$detail';
     if (!_serverCapabilityPattern.hasMatch(detail)) return message;
     return '$message\n'
-        '（若这是需要 node 运行的自建服务端程序，它不是源脚本，App 不能直接运行它；'
-        '源脚本只需提供 getList / getDetail 这类函数，用 fetch 取数据）';
+        '（这像是**打包过的 Node 程序**（用到 process.hrtime / require / socket 这类'
+        '只有真 Node 才有的能力），不是本 App 的图源脚本，App 里跑不起来；'
+        '出路：① 换一份直接抓接口的图源脚本（getList / getDetail / getContent + fetch）；'
+        '② 这个服务跑在电脑 / NAS 上，App 侧用薄壳脚本经 LumeSource.http 转发'
+        '（写法见 assets/test_sources/catvod_bridge_source.js））';
   }
 
   /// 服务端能力特征：socket / 端口 / 进程 / 线程这类「跑服务」才需要的东西。
@@ -271,7 +274,10 @@ class SourceRegistry {
   /// 紧邻的是 `:` 与 `.`，两者都要能命中。
   static final RegExp _serverCapabilityPattern = RegExp(
     r'(?<![A-Za-z0-9_$])'
-    r'(net|tls|http2|dgram|dns|child_process|worker_threads|cluster|createServer|listen)'
+    r'(net|tls|http2|dgram|dns|child_process|worker_threads|cluster|createServer|listen'
+    // Node 打包程序的典型指纹：实测 9280.kstore.vip 那份 6MB 订阅就死在
+    // `process.hrtime.bigint` 不是函数（真 Node 才有）。
+    r'|hrtime|nextTick|setImmediate)'
     r'(?![A-Za-z0-9_$])',
     caseSensitive: false,
   );
