@@ -16,6 +16,7 @@ import '../video/player_settings_host.dart';
 import 'cache_settings_page.dart';
 import 'display_settings_group.dart';
 import 'debug_panel_page.dart';
+import 'module_settings_pages.dart';
 import 'network_settings_page.dart';
 import 'playback_settings_group.dart';
 import 'log_report.dart';
@@ -97,6 +98,16 @@ class SettingsPage extends StatelessWidget {
           // 与视频板块的快捷入口共用同一份列表组件。播放器设置库打不开时，
           // 这里是唯一还能换内核的地方，因此独立成卡而不是并进上面那一行。
           const PlayerKernelSection(),
+          const SizedBox(height: 20),
+          const _GroupTitle('模块设置'),
+          // 用户口径：全局入口不藏到深层子页面，点一下就是四个模块的设置入口。
+          _SettingsEntry(
+            icon: Icons.tune,
+            title: '各模块独立设置',
+            subtitle: '小说 / 漫画 / 视频 / 猫源分开配置（各存各的，互不影响；'
+                '阅读页与播放页里的就地设置仍然保留）',
+            onTap: () => _push(context, const ModuleSettingsHubPage()),
+          ),
           const SizedBox(height: 20),
           const _GroupTitle('源与网络'),
           _SettingsEntry(

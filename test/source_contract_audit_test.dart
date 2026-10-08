@@ -120,14 +120,14 @@ String _syntheticListPage({required int anchors}) {
   for (var i = 0; i < anchors; i++) {
     if (i % 5 == 0) {
       // 章节页：解析器必须跳过它们（而且不能在这些链接上回溯）
-      buffer.write('<a href="/chapter/${100000 + i}-1122334455">第${i}话 很长很长的章节标题足够长</a>');
+      buffer.write('<a href="/chapter/${100000 + i}-1122334455">第 $i 话 很长很长的章节标题足够长</a>');
       continue;
     }
     buffer.write(
       // 长 href + 长标题 + 长图片地址：回溯型正则会在这里爆炸，线性实现不受影响。
-      '<a href="/comic/${100000 + i}/${'very-long-path-segment-' * 6}${i}-${i}/'
-      '?tracking=${'abcdefghij' * 4}${i}" title="作品$i 很长的标题${'标题' * 8}">'
-      '<img data-original="https://img.example.com/${'folder/' * 6}${i}.jpg" '
+      '<a href="/comic/${100000 + i}/${'very-long-path-segment-' * 6}$i-$i/'
+      '?tracking=${'abcdefghij' * 4}$i" title="作品$i 很长的标题${'标题' * 8}">'
+      '<img data-original="https://img.example.com/${'folder/' * 6}$i.jpg" '
       'alt="作品$i"></a>',
     );
   }

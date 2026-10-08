@@ -42,6 +42,9 @@ class VideoPlayerSettingsStore {
   /// 手势灵敏度（亮度 / 音量垂直滑动）。
   static const String keyGestureSensitivity = 'video.player.gestureSensitivity';
 
+  /// 自动连播（缺键按「开」；与模块设置页同一步数据）。
+  static const String keyAutoNext = 'video.player.autoNext';
+
   /// 字幕字体 / 阴影强度 / 垂直偏移（用户口径三项）。
   static const String keySubtitleFont = 'video.player.subtitleFont';
   static const String keySubtitleShadow = 'video.player.subtitleShadow';
@@ -84,6 +87,8 @@ class VideoPlayerSettingsStore {
       hardwareDecoding: _library.setting(keyHardwareDecoding) != 'false',
       // 缺键按「开」处理（默认开启自动隐藏）。
       autoHideControls: _library.setting(keyAutoHideControls) != 'false',
+      // 同上：缺键按「开」（历史行为就是一集播完自动进下一集）。
+      autoNext: _library.setting(keyAutoNext) != 'false',
       gestureSensitivity: _gestureSensitivityOf(_library),
       prefs: prefs,
     );
@@ -97,6 +102,7 @@ class VideoPlayerSettingsStore {
   /// 中间重启就丢了。
   void save(PlayerSettings settings) {
     _library.setSetting(keyKernel, settings.kernel.id);
+    _library.setSetting(keyAutoNext, settings.autoNext ? 'true' : 'false');
     for (final entry in settings.prefs.entries) {
       _library.setSetting(
         keyPrefsFor(entry.key),

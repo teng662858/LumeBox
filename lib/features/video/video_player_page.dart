@@ -193,6 +193,17 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// 当前正在播的图源条目：有它才记进度。
   VideoPlayTarget? _target;
 
+  /// 改「自动连播」并落库（与模块设置页双向同步）。
+  Future<void> _setAutoNext(bool value) async {
+    setState(() => _settings = _settings.copyWith(autoNext: value));
+    try {
+      final store = await VideoPlayerSettingsStore.open();
+      store.save(_settings);
+    } catch (error) {
+      LumeLog.warn('[video] 自动连播写库失败：$error');
+    }
+  }
+
   /// 连播 / 弹幕用的图源（按 [VideoPlayerPage.sourceId] 打开）。
   DataSource? _source;
 
@@ -252,7 +263,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// 自动连播开关（默认开：看完一集接着下一集是追剧的常态）。
   // 用户可在控制栏切换（setState 改它），因此不是 final。
   // ignore: prefer_final_fields
-  bool _autoNext = true;
+  /// 自动连播：**存在视频板块的设置里**（与「各模块独立设置 → 视频设置」同一份
+  /// 数据，两边改哪边都同步；以前只活在本页内存里，重进就复位）。
+  bool get _autoNext => _settings.autoNext;
 
   /// 画中画帧转发泵：画中画激活期间按帧率节拍取帧并转发（仅 MPV 内核）。
   PipFramePump? _framePump;
@@ -467,6 +480,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       }
       _store = store;
       _settings = store.load();
+      if (mounted) setState(() {});
     } catch (error, stackTrace) {
       // 本板块的库打不开：起不了播放器，页面给出可读提示。
       LumeLog.error(error, stackTrace);
@@ -2566,7 +2580,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           icon: Icons.skip_next,
           tooltip: _autoNext ? '自动连播：开' : '自动连播：关',
           highlighted: _autoNext,
-          onPressed: () => setState(() => _autoNext = !_autoNext),
+          onPressed: () => _setAutoNext(!_autoNext),
         ),
       ];
 
@@ -2658,7 +2672,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         autoNext: _autoNext,
         onToggleAutoNext: (value) {
           Navigator.of(sheetContext).pop();
-          setState(() => _autoNext = value);
+          _setAutoNext(value);
         },
       ),
     );

@@ -380,9 +380,16 @@ class PlayerSettings {
     this.subtitlesEnabled = true,
     this.hardwareDecoding = true,
     this.autoHideControls = true,
+    this.autoNext = true,
     this.gestureSensitivity = defaultGestureSensitivity,
     this.prefs = const <PlayerKernel, KernelPrefs>{},
   });
+
+  /// 自动连播：一集播完自动进下一集（时长未知时不跳）。
+  ///
+  /// 以前它只活在播放页的内存里（每次重进视频页都复位成「开」）。做成持久化
+  /// 才能与「各模块独立设置」双向同步：播放页里的开关与模块设置页改的是同一个值。
+  final bool autoNext;
 
   /// 手势灵敏度默认值（1.0 = 一屏高度对应 100% 变化）。
   static const double defaultGestureSensitivity = 1.0;
@@ -508,6 +515,7 @@ class PlayerSettings {
     double? speed,
     bool? subtitlesEnabled,
     bool? autoHideControls,
+    bool? autoNext,
     double? gestureSensitivity,
     SubtitleSize? subtitleSize,
     SubtitleColor? subtitleColor,
@@ -566,6 +574,7 @@ class PlayerSettings {
       subtitlesEnabled: subtitlesEnabled ?? this.subtitlesEnabled,
       hardwareDecoding: hardwareDecoding ?? this.hardwareDecoding,
       autoHideControls: autoHideControls ?? this.autoHideControls,
+      autoNext: autoNext ?? this.autoNext,
       gestureSensitivity: gestureSensitivity == null
           ? this.gestureSensitivity
           : gestureSensitivity
@@ -611,6 +620,7 @@ class PlayerSettings {
         other.subtitlesEnabled != subtitlesEnabled ||
         other.hardwareDecoding != hardwareDecoding ||
         other.autoHideControls != autoHideControls ||
+        other.autoNext != autoNext ||
         other.gestureSensitivity != gestureSensitivity) {
       return false;
     }

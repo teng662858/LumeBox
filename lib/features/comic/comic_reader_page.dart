@@ -15,6 +15,7 @@ import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
 import 'comic_bookmarks.dart';
+import '../../core/session/section_module_settings.dart';
 import 'comic_reader_settings_page.dart';
 import 'comic_settings.dart';
 
@@ -125,6 +126,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       diskCache: SectionImagePipeline.diskCacheFor(Section.comic),
     );
     _settings = ComicReaderSettings.load(widget.library);
+    // 模块设置（手势阈值 / 控件尺寸 / 间距）：与全局「漫画设置」同一份数据。
+    _module = SectionModuleSettings.load(widget.library);
     _bookmarks = ComicBookmarks.decode(
       widget.library.setting(ComicBookmarks.keyFor(widget.target.itemId)),
     );
@@ -536,7 +539,13 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   /// 延后一拍再呼出 / 收起工具栏（见 [_onTapUp] 的说明）。
   void _scheduleToolbarToggle() {
     _toolbarTimer?.cancel();
-    _toolbarTimer = Timer(const Duration(milliseconds: 260), () {
+    // 延后时长 = 模块设置里的「呼出工具栏延时」，且**不小于双击判定窗口**：
+    // 否则「双击判定窗口调大、呼出延时很小」时，双击还没判定完面板就弹出来了
+    //（用户口径：双击放大时不该弹面板）。
+    final delay = _module.toolbarToggleDelay >= _module.doubleTapWindow
+        ? _module.toolbarToggleDelay
+        : _module.doubleTapWindow;
+    _toolbarTimer = Timer(delay, () {
       _toolbarTimer = null;
       if (!mounted) return;
       _toggleToolbar();
@@ -550,6 +559,12 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   }
 
   Timer? _toolbarTimer;
+
+  /// 本板块的模块设置（手势阈值 / 控件尺寸 / 间距 / 动画）。
+  ///
+  /// 与「设置 → 各模块独立设置 → 漫画设置」是**同一份数据**：那边改完回到阅读页
+  /// 立即生效（本页每次进页面读一次；页内不重复读，避免与就地调整打架）。
+  SectionModuleSettings _module = const SectionModuleSettings();
 
   /// 分区点击翻页：按逻辑页序前进 / 后退一页。
   ///

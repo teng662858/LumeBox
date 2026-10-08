@@ -62,6 +62,18 @@ void main() {
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
 
+  /// 滚到目标行再断言 / 点击。
+  ///
+  /// 设置页比一屏长（新增分组会把诊断区推到折叠线以下），ListView 是懒构建的，
+  /// 不滚过去就「找不到」——这不是功能坏了，是测试没滚。
+  Future<void> scrollTo(WidgetTester tester, String label) async {
+    await tester.scrollUntilVisible(
+      find.text(label),
+      260,
+      scrollable: find.byType(Scrollable).first,
+    );
+  }
+
   Future<void> pumpSettings(
     WidgetTester tester, {
     bool runtimeAvailable = true,
@@ -175,10 +187,14 @@ void main() {
     writeFile('sections/novel/reading_cache/images/b.img', 200);
 
     await pumpSettings(tester);
+    await scrollTo(tester, '缓存管理');
     expect(find.text('缓存管理'), findsOneWidget);
+    await scrollTo(tester, '运行日志');
     expect(find.text('运行日志'), findsOneWidget);
+    await scrollTo(tester, '错误报告');
     expect(find.text('错误报告'), findsOneWidget);
 
+    await scrollTo(tester, '缓存管理');
     await tester.tap(find.text('缓存管理'));
     await tester.pumpAndSettle();
 
@@ -277,6 +293,7 @@ void main() {
     LumeLog.warn('报告警告');
 
     await pumpSettings(tester);
+    await scrollTo(tester, '错误报告');
     await tester.tap(find.text('错误报告'));
     await tester.pumpAndSettle();
 
@@ -310,6 +327,7 @@ void main() {
 
     LumeLog.warn('要复制的警告');
     await pumpSettings(tester);
+    await scrollTo(tester, '错误报告');
     await tester.tap(find.text('错误报告'));
     await tester.pumpAndSettle();
 
@@ -325,6 +343,7 @@ void main() {
     LumeLog.error(StateError('x'));
 
     await pumpSettings(tester);
+    await scrollTo(tester, '错误报告');
     await tester.tap(find.text('错误报告'));
     await tester.pumpAndSettle();
 
