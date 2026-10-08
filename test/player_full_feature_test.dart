@@ -297,6 +297,37 @@ void main() {
       expect(find.byType(TextField), findsNothing, reason: '控制栏不再直接展示长链接');
     });
 
+    testWidgets('进度条右下两个文字入口：播放器 / 字幕（用户点名）', (tester) async {
+      await pump(tester);
+
+      // 两个入口是**文字按钮**（不是又两颗图标），文案就是那两个字。
+      // 两套布局（全屏浮层右下角 / 常规面板右排）共用同一份入口，因此至少一颗；
+      // 屏幕小的档位另一套会收起，不在这里断言具体数量。
+      expect(
+        find.byTooltip('播放器设置（内核 / 画面 / 手势 / 控制栏）'),
+        findsWidgets,
+        reason: '「播放器」文字入口',
+      );
+      expect(
+        find.byTooltip('字幕设置（开关 / 字号 / 颜色 / 描边 / 阴影 / 垂直偏移 / 延迟）'),
+        findsWidgets,
+        reason: '「字幕」文字入口',
+      );
+      expect(find.widgetWithText(TextButton, '播放器'), findsWidgets);
+      expect(find.widgetWithText(TextButton, '字幕'), findsWidgets);
+
+      // 点「字幕」要真的把设置面板打开（字幕段就在那个面板里）。
+      await tester.tap(find.widgetWithText(TextButton, '字幕').first);
+      await tester.pumpAndSettle();
+      // 面板确实打开了（字幕段就在这个面板里，其内容由 player_settings_page_test
+      // 与字幕三项的单测覆盖；这里只钉「文字入口点了有反应」）。
+      expect(
+        find.byType(BottomSheet),
+        findsWidgets,
+        reason: '点「字幕」要弹出设置面板',
+      );
+    });
+
     testWidgets('播放源弹窗：展示当前地址、复制、按线路切换、手动贴地址', (tester) async {
       final players = await pump(
         tester,

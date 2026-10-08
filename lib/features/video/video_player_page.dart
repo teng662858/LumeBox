@@ -2447,6 +2447,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         ),
       ];
 
+  /// 「播放器」「字幕」两个文字入口（用户点名：放在进度条右下方）。
+  ///
+  /// 两处布局（全屏浮层右下角 / 常规面板右排）共用这一份，避免以后一处改了
+  /// 另一处漂移；两者都打开同一个设置面板——字幕段就在那个面板里。
+  List<Widget> _settingsEntryActions() => <Widget>[
+        _textAction(
+          '播放器',
+          tooltip: '播放器设置（内核 / 画面 / 手势 / 控制栏）',
+          onPressed: _openSettings,
+        ),
+        _textAction(
+          '字幕',
+          tooltip: '字幕设置（开关 / 字号 / 颜色 / 描边 / 阴影 / 垂直偏移 / 延迟）',
+          onPressed: _openSettings,
+          highlighted: !_settings.subtitlesEnabled,
+        ),
+      ];
+
   /// 窗口 / 信息类次级按钮（画中画 / 播放源 / 全屏 / 设置）：全屏时归右下角。
   ///
   /// [includeSource] 为 false 时不含「播放源」那颗 ⓘ——常规面板把它单独钉在
@@ -2478,6 +2496,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           tooltip: '播放器设置',
           onPressed: _openSettings,
         ),
+        ..._settingsEntryActions(),
+
       ];
 
   /// 打开右上角的「更多」悬浮弹窗（用户口径）：
@@ -2551,7 +2571,36 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             highlighted: _qualities.length > 1,
             onPressed: _openSourceSheet,
           ),
+          // 用户口径：进度条右下方两个**文字**入口（与全屏右下角共用一份）。
+          ..._settingsEntryActions(),
         ],
+      ),
+    );
+  }
+
+  /// 紧凑的**文字按钮**（用户口径：进度条右下方两个文字入口「播放器」「字幕」）。
+  ///
+  /// 与 [_compactIcon] 同一套配色与高度口径（未选中用 muted、40 高），只是把图标
+  /// 换成文字——用户明确要的是文字按钮，不是又两颗图标。
+  Widget _textAction(
+    String label, {
+    required String tooltip,
+    required VoidCallback? onPressed,
+    bool highlighted = false,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: TextButton(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(
+          minimumSize: const Size(44, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+          foregroundColor: highlighted ? LumeTheme.textPrimary : LumeTheme.muted,
+          textStyle: const TextStyle(fontSize: 13),
+        ),
+        child: Text(label),
       ),
     );
   }
