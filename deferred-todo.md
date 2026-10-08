@@ -923,3 +923,28 @@
   Cloudflare 站点确认；本机只有单元测试覆盖（钩子 / 去重 / 重试一次）。
 - **全量 flutter test 的稳定性**：本机跑到 1300+ 例时测试进程会掉（内存），
   以 CI 的全量结果为准；单文件 / 分组运行均正常。
+
+## 瓜子影视（gztv5.com）：要「做全」必须先复刻它的入参编码（已定性，未完成）
+
+用内置浏览器（能直连，站点**没有** CF 挑战）实测到的真实接口面：
+
+- 站点是 **Nuxt SPA**，分类页是站内路由 `/searchPage?type=…&nav_id=…&tid=…&class=…`；
+- 真正的 API 在 **`https://haiwaiapi.1fc8ab0.com/Pc/…`**：
+  - `POST /Pc/Index/indexPid` —— **带不带 token 都返回 200**，给出站点的**分类树**
+    （pid / t_id / type：热门 / 动漫 / 电影 / 连续剧 …），可直接用于 categories；
+  - `POST /Pc/Resource/IndexShow/ShowOnes`、`/Pc/Resource/BannerInfo/ShowOnes`
+    —— 首页各板块（首页 home() 可用这条）；
+  - `POST /Pc/Search/GetCondition`（入参 `{"params":{}}`）——筛选条件树；
+  - **`POST /Pc/Search/GetConditionList` —— 列表接口，但入参是
+    `{"params":"<112 字节的十六进制串>"}`：编码后的载荷（不是明文 JSON，
+    也不是简单 hex-of-text）**，`page` 等分页参数就在里面。
+
+**结论**：旧源「只能显示几个视频」= 没走这条编码接口（只能拿首页那几块）。
+要「做全」的正解是**从打包产物里把编码器抠出来**（实测编码器在
+`/_nuxt/4e13b2b.js`，该文件含 `GetConditionList`），在脚本里用纯 JS 复刻
+（沙箱无 CryptoJS，需要自己实现），再按 `page` 翻页。
+
+**下一步（同一套浏览器工具有现成路径）**：
+1. 拉 `/_nuxt/4e13b2b.js`，定位编码函数与密钥；
+2. 在页面里用同参数调用它，把自己算出的串与站点发出的串比对（一致即复刻成功）；
+3. 写进 `sources/gztv5_video.js` 的 `__params(...)`，list/search 都走它，带 page 翻页。
