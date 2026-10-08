@@ -700,7 +700,9 @@ class _ExploreViewState extends State<ExploreView> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              // 顶部间距 12 → 6：顶栏已经贴到状态栏，这里再收一档，
+              // 让图源条紧跟着顶栏（列表区整体上移、更高）。
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
               child: _searching ? _buildSearchField() : _buildHeader(),
             ),
             // 点页面空白也关联想弹窗（用户点名）：这一层只处理「没被列表项吃掉」

@@ -1384,6 +1384,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           startValue: _gestureStartBrightness,
           dy: totalDy,
           height: size.height,
+          // 手势灵敏度是用户设置（播放器设置里可调）。
+          sensitivity: _settings.gestureSensitivity,
         );
         setState(() {
           _brightness = next;
@@ -1401,6 +1403,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           startValue: _gestureStartVolume,
           dy: totalDy,
           height: size.height,
+          sensitivity: _settings.gestureSensitivity,
         );
         setState(() {
           _gesture = _gesture.copyWith(

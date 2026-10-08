@@ -46,13 +46,17 @@ class PlayerGesturePolicy {
   ///
   /// 口径：**向上滑增大**（与系统音量面板一致），整屏高度对应 100% 变化，
   /// 因此「滑过半个屏幕」约改变 50%——既不过于灵敏，也不用滑好几次。
+  /// [sensitivity] 是用户设置里的手势灵敏度倍率（1.0 = 原口径：一屏高度 → 100%）。
+  /// 调大就更灵敏（同样的滑动改变更多），调小更稳（适合小屏 / 手抖）。
   static double applyVerticalDelta({
     required double startValue,
     required double dy,
     required double height,
+    double sensitivity = 1.0,
   }) {
     if (height <= 0) return startValue;
-    return (startValue - dy / height).clamp(0.0, 1.0);
+    final factor = sensitivity <= 0 ? 1.0 : sensitivity;
+    return (startValue - dy / height * factor).clamp(0.0, 1.0);
   }
 
   /// 水平滑动 → 目标位置。

@@ -358,8 +358,16 @@ class PlayerSettings {
     this.subtitlesEnabled = true,
     this.hardwareDecoding = true,
     this.autoHideControls = true,
+    this.gestureSensitivity = defaultGestureSensitivity,
     this.prefs = const <PlayerKernel, KernelPrefs>{},
   });
+
+  /// 手势灵敏度默认值（1.0 = 一屏高度对应 100% 变化）。
+  static const double defaultGestureSensitivity = 1.0;
+
+  /// 手势灵敏度可调范围（用户口径：在播放器设置里可自定义）。
+  static const double minGestureSensitivity = 0.5;
+  static const double maxGestureSensitivity = 2.0;
 
   /// 便捷构造：给某个内核一份偏好（测试与非 const 场景用）。
   ///
@@ -418,6 +426,10 @@ class PlayerSettings {
   /// 与内核无关（三套内核共用一份），因此放在全局项里而不是 KernelPrefs。
   final bool autoHideControls;
 
+  /// 手势灵敏度倍率（亮度 / 音量垂直滑动用）：
+  /// 1.0 = 现在的口径（一屏高度 = 100% 变化），调大更灵敏、调小更稳。
+  final double gestureSensitivity;
+
   /// 按内核分别记住的偏好（键是内核，没记录过的内核用默认值）。
   final Map<PlayerKernel, KernelPrefs> prefs;
 
@@ -465,6 +477,7 @@ class PlayerSettings {
     double? speed,
     bool? subtitlesEnabled,
     bool? autoHideControls,
+    double? gestureSensitivity,
     SubtitleSize? subtitleSize,
     SubtitleColor? subtitleColor,
     SubtitleOutline? subtitleOutline,
@@ -513,6 +526,11 @@ class PlayerSettings {
       subtitlesEnabled: subtitlesEnabled ?? this.subtitlesEnabled,
       hardwareDecoding: hardwareDecoding ?? this.hardwareDecoding,
       autoHideControls: autoHideControls ?? this.autoHideControls,
+      gestureSensitivity: gestureSensitivity == null
+          ? this.gestureSensitivity
+          : gestureSensitivity
+              .clamp(minGestureSensitivity, maxGestureSensitivity)
+              .toDouble(),
       prefs: nextPrefs,
     );
   }
@@ -552,7 +570,8 @@ class PlayerSettings {
     if (other.kernel != kernel ||
         other.subtitlesEnabled != subtitlesEnabled ||
         other.hardwareDecoding != hardwareDecoding ||
-        other.autoHideControls != autoHideControls) {
+        other.autoHideControls != autoHideControls ||
+        other.gestureSensitivity != gestureSensitivity) {
       return false;
     }
     // 逐格比较：Map 的 == 是引用比较，必须按内容比。

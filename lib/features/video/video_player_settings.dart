@@ -39,6 +39,9 @@ class VideoPlayerSettingsStore {
   static const String keyHardwareDecoding = 'video.player.hardwareDecoding';
   static const String keyAutoHideControls = 'video.player.autoHideControls';
 
+  /// 手势灵敏度（亮度 / 音量垂直滑动）。
+  static const String keyGestureSensitivity = 'video.player.gestureSensitivity';
+
   /// 每内核一格偏好的键前缀（后缀是内核 id）。
   static const String keyPrefsPrefix = 'video.player.prefs.';
 
@@ -76,6 +79,7 @@ class VideoPlayerSettingsStore {
       hardwareDecoding: _library.setting(keyHardwareDecoding) != 'false',
       // 缺键按「开」处理（默认开启自动隐藏）。
       autoHideControls: _library.setting(keyAutoHideControls) != 'false',
+      gestureSensitivity: _gestureSensitivityOf(_library),
       prefs: prefs,
     );
   }
@@ -124,6 +128,7 @@ class VideoPlayerSettingsStore {
       keyAutoHideControls,
       settings.autoHideControls ? 'true' : 'false',
     );
+    _library.setSetting(keyGestureSensitivity, '${settings.gestureSensitivity}');
   }
 
   /// 老版本的全局键 → 一份偏好（迁移用）。
@@ -149,4 +154,17 @@ class VideoPlayerSettingsStore {
 
   /// 释放本板块的库（页面退出时调用）。
   void close() => ReadingLibrary.close(Section.video);
+}
+
+/// 读手势灵敏度：没写过 / 解析失败 / 越界都回落到默认 1.0。
+double _gestureSensitivityOf(ReadingLibrary library) {
+  final raw = library.setting(VideoPlayerSettingsStore.keyGestureSensitivity);
+  final value = double.tryParse((raw ?? '').trim());
+  if (value == null || value.isNaN) return PlayerSettings.defaultGestureSensitivity;
+  return value
+      .clamp(
+        PlayerSettings.minGestureSensitivity,
+        PlayerSettings.maxGestureSensitivity,
+      )
+      .toDouble();
 }

@@ -599,6 +599,28 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
             ),
           ),
           const SizedBox(height: 12),
+          // 手势灵敏度（用户口径：在播放器设置里可自定义）。
+          // 只作用于**亮度 / 音量**的垂直滑动：一屏高度对应「100% × 灵敏度」。
+          _label(
+            '手势灵敏度 ${settings.gestureSensitivity.toStringAsFixed(1)}×',
+          ),
+          Slider(
+            value: settings.gestureSensitivity,
+            min: PlayerSettings.minGestureSensitivity,
+            max: PlayerSettings.maxGestureSensitivity,
+            divisions: 6,
+            label: '${settings.gestureSensitivity.toStringAsFixed(1)}×',
+            onChanged: (value) =>
+                _update(settings.copyWith(gestureSensitivity: value)),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 4),
+            child: Text(
+              '只影响亮度 / 音量的上下滑动幅度：调大更灵敏，调小更稳（左右横滑调进度不受影响）。',
+              style: TextStyle(fontSize: 11, color: LumeTheme.muted),
+            ),
+          ),
+          const SizedBox(height: 12),
           _label('底色 ${(prefs.subtitleBackground * 100).round()}%', dim: !enabled),
           _gated(
             context,
