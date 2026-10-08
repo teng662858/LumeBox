@@ -25,8 +25,10 @@ class BoardTabBar extends StatelessWidget {
       labelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
       unselectedLabelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w400),
       tabs: <Widget>[
-        // 页签本体 42 → 38：只收容器，文字与下划线尺寸不变。
-        for (final label in labels) Tab(text: label, height: 38),
+        // 页签本体 42 → 38 → **36**：只收容器，文字与下划线尺寸不变。
+        // 36 是这一档的余量：15pt 文字的行高约 21 + 下划线 2 = 23，再往下
+        // 就开始挤文字（那是改字号，用户不许）。
+        for (final label in labels) Tab(text: label, height: 36),
       ],
     );
   }
@@ -46,9 +48,9 @@ class BoardTabHeader extends StatelessWidget implements PreferredSizeWidget {
 
   /// 页签容器高度（用户口径：收窄容器、文字尺寸不变）。
   ///
-  /// 44 → 38：页签本体 42 里上下各收 2pt 的容器留白；页签文字、下划线宽度
-  /// 与颜色都不动。
-  static const double height = 38;
+  /// 44 → 38 → **36**：页签本体里上下各再收一点容器留白；页签文字、下划线宽度
+  /// 与颜色都不动。36 之下就要挤 15pt 的文字了（那等于改字号）。
+  static const double height = 36;
 
   @override
   Size get preferredSize => const Size.fromHeight(height);

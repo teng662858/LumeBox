@@ -64,20 +64,41 @@ class SourceSubscription {
   }
 
   /// 地址清单 → 脚本清单。
-  Future<List<String>> resolve(List<String> urls) async {
-    final scripts = <String>[];
+  Future<List<String>> resolve(List<String> urls) async =>
+      (await resolveRefs(urls)).map((ref) => ref.script).toList(growable: false);
+
+  /// 地址清单 → 「脚本 + 它自己的来源地址」清单。
+  ///
+  /// **为什么每条都要留自己的地址**：一个订阅链接（清单）里往往有几份脚本，
+  /// 而「更新订阅源」是**按图源**去重取它自己那一份的。以前每条都记清单地址，
+  /// 更新时只能拿到清单里的第一条 → 第二个源永远更新不了（真机报「换了源 id」）。
+  Future<List<SourceScriptRef>> resolveRefs(List<String> urls) async {
+    final refs = <SourceScriptRef>[];
     final visited = <String>{};
     for (final url in urls) {
-      if (scripts.length >= maxScripts) break;
-      scripts.addAll(await scriptsAt(url, visited));
+      if (refs.length >= maxScripts) break;
+      refs.addAll(await scriptRefsAt(url, visited));
     }
-    return scripts;
+    return refs;
   }
 
   /// 单个订阅地址 → 脚本清单（0..n 条）。
-  Future<List<String>> scriptsAt(String url, Set<String> visited) async {
+  Future<List<String>> scriptsAt(String url, Set<String> visited) async =>
+      (await scriptRefsAt(url, visited))
+          .map((ref) => ref.script)
+          .toList(growable: false);
+
+  /// 单个订阅地址 → 「脚本 + 来源地址」清单。
+  ///
+  /// 来源地址的口径：**能让「更新」重新拿到同一份脚本的那一个**——
+  /// `.js.md5` 是校验清单的地址（更新时重新核对 MD5），清单里的一行是那一行
+  /// 自己的地址（不是清单地址），正文即脚本时就是它自己。
+  Future<List<SourceScriptRef>> scriptRefsAt(
+    String url,
+    Set<String> visited,
+  ) async {
     if (!visited.add(url) || visited.length > maxScripts * 2) {
-      return const <String>[];
+      return const <SourceScriptRef>[];
     }
     final download = await fetch(url);
 
@@ -85,27 +106,30 @@ class SourceSubscription {
     final expected = Md5.parseHex(download.text);
     if (expected != null) {
       final target = scriptUrlFor(url);
-      if (target == null) return const <String>[];
+      if (target == null) return const <SourceScriptRef>[];
       final entity = await fetch(target);
       // 注意用 hex（先摘要再转十六进制），不是 toHex（那是原始字节的十六进制）。
       final actual = Md5.hex(entity.bytes);
       if (actual != expected) {
         throw StateError('MD5 校验不一致（清单 $expected，实际 $actual）');
       }
-      return <String>[entity.text];
+      // 记**校验清单**的地址：更新时重新核对 MD5 才是它存在的意义。
+      return <SourceScriptRef>[SourceScriptRef(script: entity.text, url: url)];
     }
 
     // 形态二：正文就是脚本。
-    if (looksLikeScript(download.text)) return <String>[download.text];
+    if (looksLikeScript(download.text)) {
+      return <SourceScriptRef>[SourceScriptRef(script: download.text, url: url)];
+    }
 
     // 形态三：地址清单，逐个再拉。
-    final scripts = <String>[];
+    final refs = <SourceScriptRef>[];
     final nested = urlsIn(download.text, limit: maxScripts);
     for (final item in nested) {
-      if (scripts.length >= maxScripts) break;
-      scripts.addAll(await scriptsAt(item, visited));
+      if (refs.length >= maxScripts) break;
+      refs.addAll(await scriptRefsAt(item, visited));
     }
-    return scripts;
+    return refs;
   }
 
   /// `.js.md5` 约定：清单地址去掉 `.md5` 后缀就是脚本实体地址。
@@ -144,6 +168,18 @@ class SourceSubscription {
     if (uri == null) return false;
     return uri.scheme == 'http' || uri.scheme == 'https';
   }
+}
+
+/// 一份脚本 + **它自己的来源地址**（订阅里的每一条都按这个地址更新）。
+class SourceScriptRef {
+  const SourceScriptRef({required this.script, required this.url});
+
+  /// 脚本文本。
+  final String script;
+
+  /// 这一份的来源地址：`.js.md5` 是校验清单地址；清单里的一行是那一行自己的地址
+  ///（不是清单地址——否则更新时只会拿到清单的第一条）；正文即脚本时就是它自己。
+  final String url;
 }
 
 /// 去掉脚本文本开头的 UTF-8 BOM。

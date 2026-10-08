@@ -171,8 +171,9 @@ void main() {
       expect(manager.imported.length, 2);
       expect(
         manager.importedOrigins,
-        everyElement('https://example.com/a.js'),
-        reason: '清单文件也要记来源，之后能用「更新订阅源」重新拉',
+        <String>['https://example.com/a.js', 'https://example.com/b.js'],
+        reason: '清单里每一份记**自己**的地址（不是清单地址）：'
+            '「更新订阅源」各更各的，记清单地址只会拿到第一条',
       );
     });
 
@@ -365,8 +366,9 @@ void main() {
       expect(find.text('已导入：新图源（订阅）'), findsNWidgets(2));
       expect(
         manager.importedOrigins,
-        everyElement('https://example.com/sub.txt'),
-        reason: '清单导入时来源记的是用户填的那个地址',
+        <String>['https://example.com/a.js', 'https://example.com/b.js'],
+        reason: '清单导入时每条记自己那一行地址：记用户填的清单地址会让'
+            '「更新订阅源」只能更新到清单里的第一条（第二个源永远更新不了）',
       );
     });
 

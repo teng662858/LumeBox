@@ -4,6 +4,7 @@ import '../js/cat_engines.dart';
 import '../js/lume_js_engine.dart';
 import '../js/sandbox/sandbox.dart';
 import '../js/source_registry.dart';
+import '../js/source_script.dart';
 import '../util/lume_log.dart';
 import '../session/section.dart';
 import 'data_source.dart';
@@ -39,6 +40,24 @@ class LumeSources {
     if (!runtimeAvailableFor(section)) return const <SourceDescriptor>[];
     final registry = await SourceRegistry.open(section);
     return registry.sources.map(_describe).toList(growable: false);
+  }
+
+  /// 这个图源的 API 请求会用的 UA（图源覆盖 → 全局设置 → 内置默认）。
+  ///
+  /// **给「网页视图」用**：CF 把 `cf_clearance` 绑在 IP + UA 上，验证窗与后续
+  /// API 必须是同一个 UA；而且 WKWebView 的默认 UA 不带 `Safari/…` 段，
+  /// CF 会因此给一张渲染不出勾选框的白页（真机反馈）。取不到时返回 null，
+  /// 调用方按「没有覆盖」处理（页面会记一条日志说明用的是默认 UA）。
+  static Future<String?> userAgentFor(Section section, String sourceId) async {
+    if (!runtimeAvailableFor(section)) return null;
+    try {
+      final registry = await SourceRegistry.open(section);
+      final ua = registry.httpFor(sourceId).effectiveUserAgent.trim();
+      return ua.isEmpty ? null : ua;
+    } catch (error) {
+      LumeLog.warn('[${section.id}] 解析 $sourceId 的 UA 失败：$error');
+      return null;
+    }
   }
 
   /// 导入图源脚本：先校验脚本，再把元信息与源码写入本板块数据库。
@@ -227,7 +246,19 @@ class LumeSources {
       return const SourceUpdateResult.failed('订阅里没有可用的源脚本');
     }
 
-    final script = scripts.first;
+    // 一个订阅链接里可能有好几份脚本（清单式订阅）：**按 id 找自己那一份**。
+    // 直接拿第一条会把别人的脚本当成自己的更新——轻则报「换了源 id」，
+    // 重则覆盖掉这个源。头部元信息读得到 id 就按 id 匹配；读不到（老脚本没写头）
+    // 退回第一条，后面的 id 校验会拦住错配。
+    var script = scripts.first;
+    if (scripts.length > 1) {
+      for (final candidate in scripts) {
+        if (SourceMetadata.parseHeader(candidate)?.id == record.id) {
+          script = candidate;
+          break;
+        }
+      }
+    }
     if (script.trim() == record.script.trim()) {
       return SourceUpdateResult.unchanged(_describe(record));
     }

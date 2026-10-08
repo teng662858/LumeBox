@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- 网页视图（内置「网页视图」过 Cloudflare 校验）里允许明文 http。
+		     源站的正文与挑战页都会嵌 http 子资源，ATS 默认把它们拦掉，
+		     表现就是「页面一片白、看不到验证勾选框」（真机反馈）。
+		     只作用于 Web 内容：App 自己的 Dart 网络请求不受影响。 -->
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+	</dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

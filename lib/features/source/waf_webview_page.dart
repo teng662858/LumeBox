@@ -11,6 +11,7 @@ import '../../core/net/waf.dart';
 //（引擎层判 WAF 时也要用，core 不能反向依赖界面层），这里原样导出。
 export '../../core/net/waf.dart' show originOf, urlFromFailure;
 import '../../core/session/section.dart';
+import '../../core/source/lume_sources.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 
@@ -22,6 +23,18 @@ import '../../core/util/lume_log.dart';
 /// - **取回整套 Cookie**：关闭时同时取 JS 可见的 `document.cookie` 与**原生 Cookie
 ///   仓库**（`lumebox/webview` 通道）——`cf_clearance` 是 HttpOnly，只取 JS 那份会漏掉关键的一枚；
 /// - **只存会话，不改脚本**：Cookie 交给宿主网络层附加（用户口径第 4 条）。
+///
+/// ## 页面上要「看得见勾选框」（真机反馈：白屏，没有验证控件）
+///
+/// 三条口径缺一不可，缺任何一条 CF 都会给一张**渲染不出控件的空页**：
+/// 1. **UA 必须是浏览器 UA**：WKWebView 的默认 UA 是 `… Mobile/15E148`（**没有
+///    `Safari/…` 这一段**），CF 会把它当非浏览器；这里统一用 App 请求侧的 UA
+///    （Safari 形态），顺带满足 `cf_clearance` 绑定 IP + UA 的要求（见 [userAgentOverride]）；
+/// 2. **网页内容允许明文 http**：源站正文与挑战页里都有 http 子资源，iOS 的 ATS
+///    默认会把它们拦掉 → 白屏（见 `ios/Runner/Info.plist` 的
+///    `NSAllowsArbitraryLoadsInWebContent`）；
+/// 3. **补齐浏览器请求头**：`Accept-Language` / `Upgrade-Insecure-Requests` 这类
+///    默认头缺了，挑战页的脚本可能直接不渲染控件。
 class WafWebViewPage extends StatefulWidget {
   const WafWebViewPage({
     super.key,
@@ -41,10 +54,13 @@ class WafWebViewPage extends StatefulWidget {
   /// 小悬浮窗布局：只占屏幕一小块（不做全屏页），提示文案也压缩成一行。
   final bool compact;
 
-  /// 用指定 UA 打开页面（App 的请求 UA）。
+  /// 用指定 UA 打开页面（**App 请求侧那一个**：图源覆盖 → 全局设置 → 内置默认）。
   ///
-  /// Cloudflare 把 `cf_clearance` 绑在「IP + UA」上：验证时与后续 API 用同一个 UA
-  /// 才认，因此两边必须对齐（不传就用 WKWebView 默认 UA）。
+  /// 两个理由，缺一不可：
+  /// - Cloudflare 把 `cf_clearance` 绑在「IP + UA」上：验证时与后续 API 用同一个
+  ///   UA 才认；
+  /// - WKWebView 的默认 UA 不带 `Safari/…` 段，CF 会给一张渲染不出控件的空页
+  ///   （真机反馈的「白屏、看不到勾选框」）。
   final String? userAgentOverride;
 
   /// 要打开的源站地址（通常是失败请求的 origin）。
@@ -67,10 +83,30 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
   /// 原生 Cookie 仓库通道（iOS 实现；其它平台回落为只取 JS 可见的那份）。
   static const MethodChannel _cookieChannel = MethodChannel('lumebox/webview');
 
+  /// 起播前带上的浏览器请求头（用户口径 1：补齐请求头）。
+  ///
+  /// 只补「缺了会出问题」的三个：语言（挑战页按它选文案）、Accept（HTML）、
+  /// `Upgrade-Insecure-Requests`（老站点的 http 资源升级）。WKWebView 自己会补
+  /// `Sec-Fetch-*` / `Accept-Encoding`，这里不重复造。
+  static const Map<String, String> _browserHeaders = <String, String>{
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,'
+        'image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Upgrade-Insecure-Requests': '1',
+  };
+
   WebViewController? _controller;
   String _title = '请稍候…';
   int _progress = 0;
   bool _collecting = false;
+
+  /// 主框架加载失败的原因（空 = 没失败）。有值时页面上给一张可读的失败卡——
+  /// 白屏是最没用的失败方式：用户既不知道发生了什么，也不知道下一步做什么。
+  String? _loadError;
+
+  /// 是否已经成功加载过至少一次（用来区分「从来没打开」与「打开过、后面的
+  /// 导航被取消」——后者不该压失败卡）。
+  bool _loadedOnce = false;
 
   /// 自动模式的轮询计时器：定时看 Cloudflare 的放行 Cookie 到了没有。
   Timer? _autoPoll;
@@ -80,12 +116,16 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      // 校验靠的是真实浏览器环境：保留默认 UA（WKWebView 的 UA 就是 Safari 系），
-      // 不伪装、也不注入任何脚本——注入反而会被 CF 识别。
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (value) => setState(() => _progress = value),
-          onPageStarted: (_) => setState(() => _progress = 0),
+          onPageStarted: (url) {
+            LumeLog.info('[waf] 网页视图开始加载：$url');
+            setState(() {
+              _progress = 0;
+              _loadError = null;
+            });
+          },
           onPageFinished: (url) async {
             final title = await _controller?.getTitle();
             // UA 与 cf_clearance 绑定：验证用哪个 UA，后续 API 就得用哪个，
@@ -95,23 +135,86 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
             );
             widget.onUserAgent?.call('$ua'.replaceAll('"', '').trim());
             if (!mounted) return;
-            setState(() => _title = (title == null || title.trim().isEmpty)
-                ? widget.sourceName
-                : title.trim());
+            _loadedOnce = true;
+            setState(() {
+              _title = (title == null || title.trim().isEmpty)
+                  ? widget.sourceName
+                  : title.trim();
+              // 页面已经能出内容：把可能残留的失败卡撤掉。
+              _loadError = null;
+            });
+            // 真机诊断：CF 挑战页渲染不出来时，日志里要能看出「页面到底有没有内容」
+            //（白屏是真机上唯一看不出来的失败）。
+            unawaited(_probePage(url));
             if (widget.auto) _startAutoPoll();
           },
-          onWebResourceError: (error) => LumeLog.info(
-            '[waf] 网页视图加载出错：${error.description}',
+          // 4xx / 5xx 不是加载失败（CF 的挑战页本身就是 403/503），但要留证。
+          onHttpError: (error) => LumeLog.info(
+            '[waf] 网页视图 HTTP ${error.response?.statusCode}：'
+            '${error.request?.uri}',
           ),
+          onWebResourceError: (error) {
+            LumeLog.info(
+              '[waf] 网页视图加载出错（主框架=${error.isForMainFrame}）：'
+              '${error.errorType} / ${error.description} / ${error.url}',
+            );
+            // 只在「一次都没成功加载过」时压失败卡：挑战页自己会 reload / 跳转，
+            // 那些被取消的导航也会报主框架错误，不该盖住已经出内容的页面。
+            if (error.isForMainFrame != true || !mounted || _loadedOnce) return;
+            setState(() => _loadError = error.description);
+          },
         ),
       );
+    unawaited(_boot());
+  }
+
+  /// 起播顺序：**先设 UA，再带头加载**（顺序反了第一次加载用的还是 WKWebView 默认 UA，
+  /// 那就是 CF 给白屏的那一份）。
+  Future<void> _boot() async {
+    final controller = _controller;
+    if (controller == null) return;
     final ua = widget.userAgentOverride?.trim();
     if (ua != null && ua.isNotEmpty) {
-      // 与 App 的请求 UA 对齐：不然验完拿到的 Cookie 在 API 请求里照样不认。
-      // **必须在 loadRequest 之前**设好，否则第一次加载用的还是默认 UA。
-      unawaited(_controller!.setUserAgent(ua));
+      try {
+        await controller.setUserAgent(ua);
+      } catch (error) {
+        LumeLog.warn('[waf] 设置网页视图 UA 失败（用默认 UA 继续）：$error');
+      }
+    } else {
+      LumeLog.warn('[waf] 网页视图没有拿到 App 的 UA，用 WKWebView 默认 UA：'
+          'CF 挑战页可能渲染不出控件');
     }
-    unawaited(_controller!.loadRequest(Uri.parse(widget.url)));
+    if (!mounted) return;
+    LumeLog.info('[waf] 网页视图打开：${widget.url}（UA=$ua）');
+    try {
+      await controller.loadRequest(
+        Uri.parse(widget.url),
+        headers: _browserHeaders,
+      );
+    } catch (error) {
+      LumeLog.warn('[waf] 网页视图加载失败：$error');
+      if (mounted) setState(() => _loadError = '$error');
+    }
+  }
+
+  /// 页面加载完之后取一次正文摘要与挑战标记，写进运行日志。
+  ///
+  /// 这是给「白屏」留的证据链：正文为空 → 网络/ATS/UA 有问题；正文有内容但没有
+  /// 挑战 iframe → 站点没给挑战页；两者都在 → 是控件没画出来（浏览器环境问题）。
+  Future<void> _probePage(String url) async {
+    try {
+      final raw = await _controller?.runJavaScriptReturningResult(
+        'JSON.stringify({'
+        't:(document.title||"").slice(0,80),'
+        'n:((document.body&&document.body.innerText)||"").replace(/\\s+/g," ").slice(0,160),'
+        'f:document.querySelectorAll("iframe").length,'
+        'c:/challenges\\.cloudflare\\.com|turnstile|cf-chl|challenge-platform/i.test(document.documentElement.innerHTML)'
+        '})',
+      );
+      LumeLog.info('[waf] 网页视图正文摘要（$url）：$raw');
+    } catch (error) {
+      LumeLog.info('[waf] 读取网页视图正文失败：$error');
+    }
   }
 
   /// 自动模式轮询：Cloudflare 放行后会写 `cf_clearance`，看到它就自动收尾。
@@ -281,7 +384,10 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
                           ),
                         ),
                         Text(
-                          '完成页面上的验证后，点左上角 ✕ 关闭（会自动取回会话）',
+                          // 第二行给出**正在验证哪个站**（用户口径：能当场核对地址），
+                          // 以及唯一的操作动作——过完校验点左上角 ✕。
+                          '${originOf(widget.url) ?? widget.url} · '
+                          '完成后点左上角 ✕ 关闭（自动取回会话）',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -308,7 +414,12 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
             Expanded(
               child: controller == null
                   ? const Center(child: CircularProgressIndicator(strokeWidth: 2.5))
-                  : WebViewWidget(controller: controller),
+                  : Stack(
+                      children: <Widget>[
+                        WebViewWidget(controller: controller),
+                        if (_loadError != null) _buildLoadError(controller),
+                      ],
+                    ),
             ),
             if (_collecting)
               const LinearProgressIndicator(minHeight: 2),
@@ -317,6 +428,53 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
       ),
     );
   }
+
+  /// 主框架加载失败时压在 WebView 上的一张卡：**白屏换成可读原因 + 出口**。
+  ///
+  /// 真机反馈的「页面空白、看不到勾选框」有一类就是这个：请求根本没到达站点
+  ///（代理 / DNS / 超时）。以前这种情况下页面一片白，用户无从判断，只能反复点。
+  Widget _buildLoadError(WebViewController controller) {
+    return ColoredBox(
+      color: Colors.white,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Icon(Icons.cloud_off_outlined, size: 34),
+              const SizedBox(height: 10),
+              const Text(
+                '这个地址没打开',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '$_loadError\n\n$_loadErrorHint',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12.5, color: LumeTheme.muted),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                onPressed: () {
+                  setState(() => _loadError = null);
+                  unawaited(controller.reload());
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('重试'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 加载失败时给一句能照着做的下一步（真机上最常见的是代理没配到网页视图上）。
+  String get _loadErrorHint =>
+      '网页视图走的是**系统网络**，App 里给这个图源配的代理 / UA 不会作用到它。\n'
+      '如果这个站需要代理才能访问，请在「源管理 → 网络配置」确认代理后，'
+      '或在系统设置里配好 VPN / 代理再试。';
 }
 
 /// 打开网页视图并返回取到的 Cookie（宿主据此写进图源会话存储）。
@@ -331,6 +489,7 @@ Future<Map<String, String>?> showWafWebView({
   required String sourceName,
   Section? section,
   String? sourceId,
+  String? userAgent,
 }) {
   Map<String, String>? collected;
   return showModalBottomSheet<Map<String, String>>(
@@ -344,9 +503,10 @@ Future<Map<String, String>?> showWafWebView({
         child: WafWebViewPage(
           url: url,
           sourceName: sourceName,
+          // 手动验证也要用 App 的 UA：一来 cf_clearance 绑 UA（不带上等于白验），
+          // 二来 WKWebView 默认 UA 不带 Safari 段，CF 会给一张没有勾选框的白页。
+          userAgentOverride: userAgent,
           onCollected: (cookies) => collected = cookies,
-          // 手动验证同样要存 UA：cf_clearance 与 UA 绑定，不存的话后续 API
-          // 请求用的是另一个 UA，等于白验（用户反馈「验完还是被拦」）。
           onUserAgent: (ua) {
             if (section != null && sourceId != null) {
               WafSessions.saveUserAgent(section, sourceId, ua);
@@ -386,9 +546,10 @@ typedef WafWebViewOpener = Future<Map<String, String>?> Function({
   required String sourceName,
   Section? section,
   String? sourceId,
+  String? userAgent,
 });
 
-/// **手动「网页视图」的统一入口**：首页 / 探索页 / 筛选页三处共用一份流程。
+/// 手动「网页视图」的统一入口：首页 / 探索页 / 筛选页三处共用一份流程。
 ///
 /// 真机反馈过三轮「点了没反应」，所以这个函数把三件事钉死，任何一条都不许
 /// 静默退出：
@@ -399,6 +560,9 @@ typedef WafWebViewOpener = Future<Map<String, String>?> Function({
 ///    说明，而不是什么都不发生；
 /// 3. **取到会话就落库**：手动验证同样记 UA（`cf_clearance` 绑 IP + UA，
 ///    不记 UA 等于白验）。
+///
+/// UA 由调用方通过 [userAgentFor] 解析后传进来（默认走 [LumeSources]）：
+/// **验证窗与后续 API 必须同一个 UA**，否则拿回来的 cf_clearance 一样被拒。
 Future<WafWebViewOutcome> runWafWebViewFlow({
   required BuildContext context,
   required Section section,
@@ -407,6 +571,7 @@ Future<WafWebViewOutcome> runWafWebViewFlow({
   String? failureMessage,
   String originUrl = '',
   WafWebViewOpener opener = showWafWebView,
+  Future<String?> Function(Section section, String sourceId)? userAgentFor,
 }) async {
   if (!context.mounted) return WafWebViewOutcome.notOpened;
   var url = resolveWebViewOrigin(
@@ -429,6 +594,11 @@ Future<WafWebViewOutcome> runWafWebViewFlow({
   // 地址输入框是异步的：用户可能已经离开这个页面了。
   if (!context.mounted) return WafWebViewOutcome.notOpened;
 
+  // 验证窗用与 API 请求同一个 UA（cf_clearance 绑 IP + UA）；解析失败就交给
+  // 页面自己的兜底（它会在日志里写明用的是 WKWebView 默认 UA）。
+  final ua = await (userAgentFor ?? LumeSources.userAgentFor)(section, sourceId);
+  if (!context.mounted) return WafWebViewOutcome.notOpened;
+
   final Map<String, String>? cookies;
   try {
     cookies = await opener(
@@ -437,6 +607,7 @@ Future<WafWebViewOutcome> runWafWebViewFlow({
       sourceName: sourceName,
       section: section,
       sourceId: sourceId,
+      userAgent: ua,
     );
   } catch (error) {
     // 例如 WebView 插件没就绪、地址打不开：这类失败以前就是「点了没反应」，

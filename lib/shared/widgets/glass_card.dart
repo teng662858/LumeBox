@@ -226,9 +226,13 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
 /// 用户口径（第三次反馈）：不再往外推坐标，而是**收窄容器自身的垂直高度**——
 /// 上下内边距各收 2pt，文字与图标尺寸**完全不变**，中间内容区因此多出一截。
 ///
-/// 36 是硬下限：右上角那排图标按钮经 compact 密度折算后的布局盒是 34
-/// （见 [GlassAppBar] 的 actions 样式），再矮 AppBar 就会把它压到 32——
-/// 那是「缩放控件」，用户明确不许。
+/// 用户口径（第五次反馈）：再薄一档。这一档试过 34，几何回归当场逮到
+/// **图标按钮被压到 32**（`NavigationToolbar` 在栏高等于控件盒高时会再挤一次）
+/// ——那正是用户明确不许的「缩放控件」。因此工具栏停在 36：
+/// 上下各留 1pt 的容器余量，控件保持 34 的布局盒；
+/// 这一轮把「再薄一点」落在页签条上（38 → 36，见 [BoardTabHeader.height]）。
+///
+/// 34 是硬下限：右上角那排图标按钮经 compact 密度折算后的布局盒就是 34。
 const double kLumeToolbarHeight = 36;
 
 /// 两种行为：

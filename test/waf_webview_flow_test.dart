@@ -61,6 +61,7 @@ void main() {
           required sourceName,
           section,
           sourceId,
+          userAgent,
         }) async {
           opened.add(url);
           return <String, String>{'cf_clearance': 'x'};
@@ -69,7 +70,42 @@ void main() {
     );
 
     expect(await pending, WafWebViewOutcome.collected);
-    expect(opened, <String>['https://www.92mh.com']);
+    expect(opened, <String>['https://www.92mh.com']);  });
+
+  testWidgets('验证窗用与 API 同一个 UA（cf_clearance 绑 IP + UA）', (tester) async {
+    SourceRequestLog.record('s', 'https://guarded.example.com/list');
+    String? openedWith;
+
+    final pending = await start<WafWebViewOutcome>(
+      tester,
+      (context) => runWafWebViewFlow(
+        context: context,
+        section: Section.comic,
+        sourceId: 's',
+        sourceName: '带防护的源',
+        opener: ({
+          required context,
+          required url,
+          required sourceName,
+          section,
+          sourceId,
+          userAgent,
+        }) async {
+          openedWith = userAgent;
+          return <String, String>{'cf_clearance': 'x'};
+        },
+        // 解析器注入：真机走 LumeSources（图源覆盖 → 全局 → 内置默认）。
+        userAgentFor: (_, _) async => 'Safari-UA/17.0',
+      ),
+    );
+
+    expect(await pending, WafWebViewOutcome.collected);
+    expect(
+      openedWith,
+      'Safari-UA/17.0',
+      reason: '网页视图必须用 App 请求侧那一个 UA：'
+          'WKWebView 默认 UA 不带 Safari 段，CF 会给一张没有勾选框的白页',
+    );
   });
 
   testWidgets('地址全落空：弹地址输入框，填了就能开', (tester) async {
@@ -89,6 +125,7 @@ void main() {
           required sourceName,
           section,
           sourceId,
+          userAgent,
         }) async {
           opened.add(url);
           return <String, String>{'cf_clearance': 'x'};
@@ -125,6 +162,7 @@ void main() {
           required sourceName,
           section,
           sourceId,
+          userAgent,
         }) async {
           opened.add(url);
           return <String, String>{'cf_clearance': 'x'};
@@ -160,6 +198,7 @@ void main() {
           required sourceName,
           section,
           sourceId,
+          userAgent,
         }) async =>
             throw StateError('WebView 插件未就绪'),
       ),
@@ -189,6 +228,7 @@ void main() {
           required sourceName,
           section,
           sourceId,
+          userAgent,
         }) async =>
             const <String, String>{},
       ),

@@ -82,13 +82,18 @@ class _AppShellState extends State<AppShell> {
   /// 64 → 56：Dock 项内部上下留白各收 4pt，视觉上更薄、更贴底，
   /// 中间内容区随之变高。
   static const double _dockHeight = 56;
-  /// Dock 与屏幕左右的留白；底边留白为 **0**。
-  ///
-  /// 用户要求「底部栏整体向下移，贴近系统安全区，距离屏幕底边保留 iOS 标准底部
-  /// 安全距离」：底边留白清零后，Dock 的下沿正好落在安全区边界上——那段距离由
-  /// `SafeArea` 给（刘海机 34），也就是 iOS 标准；左右仍是 12 的悬浮感。
-  static const double _dockBottomMargin = 0;
+  /// Dock 与屏幕左右的留白。
   static const double _dockMargin = 12;
+
+  /// Dock 与屏幕**底边**的距离（用户口径第四次：对齐参考图）。
+  ///
+  /// 参考图里那条胶囊的下沿离屏幕底边只有 ~8pt，不是 iOS 安全区的 34——底栏往下
+  /// 靠之后，中间内容区又多出一截。这里取 10：既落在参考图的位置上，又与
+  /// Home Indicator 留出一点缝（从屏幕底边往上划不会先打到胶囊）。
+  ///
+  /// 因此 Dock **不再整体套 SafeArea**：底部留白就是这一个值（安全区的 34 会把
+  /// 胶囊又推上去，那就回到「离底边太远」的观感）。
+  static const double _dockBottomMargin = 10;
   static const double _dockSpacing = 8;
 
   /// 页签目录：标识 + 展示文案 + 两个图标 + 页面构造。
@@ -204,13 +209,19 @@ class _AppShellState extends State<AppShell> {
           LumeLog.warn('[waf] $sourceId 自动校验拿不到站址，交给页面上的手动出口');
           return Future<bool>.value(false);
         }
-        return showWafAutoVerify(
-          context: context,
-          section: section,
-          sourceId: sourceId,
-          sourceName: sourceName,
-          url: target,
-        );
+        // 验证窗与 API 请求用同一个 UA：`cf_clearance` 绑 IP + UA；而且 WKWebView
+        // 默认 UA 不带 `Safari/…`，CF 会给一张渲染不出勾选框的白页。
+        return LumeSources.userAgentFor(section, sourceId).then((userAgent) {
+          if (!mounted) return false;
+          return showWafAutoVerify(
+            context: context,
+            section: section,
+            sourceId: sourceId,
+            sourceName: sourceName,
+            url: target,
+            userAgentOverride: userAgent,
+          );
+        });
       },
     );
   }
@@ -299,33 +310,32 @@ class _AppShellState extends State<AppShell> {
   Widget _buildSettingsEntry({required bool visible}) {
     return Positioned(
       left: _dockMargin,
-      bottom: _dockBottomMargin,
-      child: SafeArea(
-        child: TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 0, end: visible ? 0 : _entryHideTravel),
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          builder: (context, dy, child) =>
-              Transform.translate(offset: Offset(0, dy), child: child),
-          child: IgnorePointer(
-            ignoring: !visible,
-            child: Tooltip(
-              message: '设置（底部导航栏里已隐藏）',
-              child: Material(
-                key: AppShell.settingsEntryKey,
-                color: LumeTheme.surface,
-                shape: const CircleBorder(),
-                elevation: 3,
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: () => _select(ShellTab.settingsId),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Icon(
-                      Icons.settings_outlined,
-                      size: 22,
-                      color: LumeTheme.textSecondary,
-                    ),
+      // 落在 Dock 上方一档：Dock 现在贴着屏幕底边，套 SafeArea 会与它叠在一起。
+      bottom: _dockBottomMargin + _dockHeight + _dockSpacing,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: visible ? 0 : _entryHideTravel),
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        builder: (context, dy, child) =>
+            Transform.translate(offset: Offset(0, dy), child: child),
+        child: IgnorePointer(
+          ignoring: !visible,
+          child: Tooltip(
+            message: '设置（底部导航栏里已隐藏）',
+            child: Material(
+              key: AppShell.settingsEntryKey,
+              color: LumeTheme.surface,
+              shape: const CircleBorder(),
+              elevation: 3,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () => _select(ShellTab.settingsId),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Icon(
+                    Icons.settings_outlined,
+                    size: 22,
+                    color: LumeTheme.textSecondary,
                   ),
                 ),
               ),
@@ -339,7 +349,9 @@ class _AppShellState extends State<AppShell> {
   Widget _buildDock() {
     final tabs = _visibleTabs;
     final settingsHidden = !_shellSettings.settingsVisible;
-    final bottomInset = MediaQuery.of(context).padding.bottom +
+    // 内容要让出的底部高度：Dock 的下沿 + 容器高 + 一档呼吸间距。
+    // 不含底部安全区——Dock 自己就压在安全区之上（见 [_dockBottomMargin]）。
+    final bottomInset = _dockBottomMargin +
         _dockHeight +
         _dockMargin * 2 +
         _dockSpacing;
@@ -489,40 +501,39 @@ class _DockBar extends StatelessWidget {
       offset: visible ? Offset.zero : const Offset(0, 1.2),
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(margin, 0, margin, bottomMargin),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              // 圆角椭圆（胶囊）：半径取容器高度的一半，容器越薄越像胶囊。
-              borderRadius: BorderRadius.circular(height / 2),
-              boxShadow: LumeTheme.floatShadow,
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(height / 2),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: LumeTheme.glass,
-                    borderRadius: BorderRadius.circular(height / 2),
-                    border: Border.all(color: LumeTheme.hairline),
-                  ),
-                  child: SizedBox(
-                    height: height,
-                    child: Row(
-                      children: <Widget>[
-                        for (final tab in tabs)
-                          Expanded(
-                            child: _DockItem(
-                              tab: tab,
-                              selected: tab.id == activeId,
-                              onTap: () => onSelect(tab.id),
-                            ),
+      // 不再套 SafeArea：底边留白就是 [bottomMargin]（参考图那条胶囊离底边 ~8-10pt）。
+      // 套上安全区（刘海机 34）会把胶囊又推上去，回到「离底边太远」的观感。
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(margin, 0, margin, bottomMargin),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            // 圆角椭圆（胶囊）：半径取容器高度的一半，容器越薄越像胶囊。
+            borderRadius: BorderRadius.circular(height / 2),
+            boxShadow: LumeTheme.floatShadow,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(height / 2),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: LumeTheme.glass,
+                  borderRadius: BorderRadius.circular(height / 2),
+                  border: Border.all(color: LumeTheme.hairline),
+                ),
+                child: SizedBox(
+                  height: height,
+                  child: Row(
+                    children: <Widget>[
+                      for (final tab in tabs)
+                        Expanded(
+                          child: _DockItem(
+                            tab: tab,
+                            selected: tab.id == activeId,
+                            onTap: () => onSelect(tab.id),
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
                 ),
               ),

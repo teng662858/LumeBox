@@ -126,8 +126,10 @@ void main() {
     );
     // 容器收窄（用户口径第三次反馈）：工具栏与页签条都比上一版更薄，
     // 但**不能薄到压住控件**——右上角图标盒 34 是硬下限。
+    // 34 是硬下限：右上角图标盒就是 34（再矮 AppBar 会把它压到 32 = 缩放控件）。
     expect(kLumeToolbarHeight, greaterThanOrEqualTo(34.0));
     expect(kLumeToolbarHeight, lessThanOrEqualTo(38.0), reason: '收窄但别过冲');
+    expect(BoardTabHeader.height, greaterThanOrEqualTo(36.0));
     expect(BoardTabHeader.height, lessThanOrEqualTo(40.0));
 
     // 页签条确实在顶栏里（书架 / 探索）。
@@ -160,19 +162,17 @@ void main() {
     }
   });
 
-  testWidgets('底部 Dock 下沿贴 iOS 标准安全距离（安全区 + 0 余量）', (tester) async {
+  testWidgets('底部 Dock 贴在屏幕底边上方一档（对齐参考图的位置）', (tester) async {
     await pumpShell(tester);
 
     final capsule = tester.getRect(dockCapsule());
+    // 用户口径第四次：参考图里那条胶囊下沿离屏幕底边只有 ~8pt（不是安全区的 34）。
+    // 允许 8–14：既要「往下靠」，又要与 Home Indicator 留一点缝。
+    final gap = height - capsule.bottom;
     expect(
-      height - capsule.bottom,
-      closeTo(bottomInset, 1.5),
-      reason: 'Dock 距屏幕底边应为安全区高度 $bottomInset，实测 ${height - capsule.bottom}',
-    );
-    expect(
-      capsule.bottom,
-      lessThanOrEqualTo(height - bottomInset + 1.5),
-      reason: 'Dock 不许压进底部安全区',
+      gap,
+      inInclusiveRange(8.0, 14.0),
+      reason: 'Dock 距屏幕底边应为 ~10pt（参考图的位置），实测 $gap',
     );
     expect(capsule.left, closeTo(12, 0.01), reason: '左右悬浮留白仍是 12');
   });

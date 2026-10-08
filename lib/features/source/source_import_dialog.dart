@@ -587,9 +587,9 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
     });
     try {
       if (urls.isNotEmpty) {
-        final scripts = await _resolve(urls);
+        final refs = await _resolveRefs(urls);
         if (!mounted) return;
-        if (scripts.isEmpty) {
+        if (refs.isEmpty) {
           // 清单拉完一条脚本也没有（互相引用的清单、空清单）：说清楚，不静默收场。
           setState(() {
             _error = '订阅里没有可导入的源脚本';
@@ -597,9 +597,15 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
           });
           return;
         }
-        for (final script in scripts) {
+        for (final ref in refs) {
+          // **记这一份脚本自己的地址**（不是清单地址）：清单里有几个源时，
+          // 「更新订阅源」要按各自的地址去重取，否则第二个源永远更新不了。
           items.add(
-            SourceImportItem(script: script, label: '订阅', originUrl: urls.first),
+            SourceImportItem(
+              script: ref.script,
+              label: '订阅',
+              originUrl: ref.url,
+            ),
           );
         }
       }
@@ -637,7 +643,10 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
   ///
   /// 解析逻辑在 [SourceSubscription]（与「更新订阅源」共用同一份实现）；
   /// 这里额外包一层计数，只为在弹窗里显示「正在拉取第 N 个地址」。
-  Future<List<String>> _resolve(List<String> urls) {
+  ///
+  /// 返回**带各自地址**的清单：每一份脚本落库的来源地址是它自己的那一份，
+  /// 「更新订阅源」才能各自更新（见 [SourceScriptRef]）。
+  Future<List<SourceScriptRef>> _resolveRefs(List<String> urls) {
     var fetches = 0;
     final fetch = widget.fetchSubscription ?? _fetchSubscriptionText;
     return SourceSubscription(
@@ -647,7 +656,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
         if (mounted) setState(() => _progress = '正在拉取第 $fetches 个地址…');
         return fetch(url);
       },
-    ).resolve(urls);
+    ).resolveRefs(urls);
   }
 
   /// 默认订阅拉取：走宿主网络层（统一 UA），与图源请求同一出口。

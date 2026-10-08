@@ -12,6 +12,8 @@ import 'package:lume_box/core/net/lume_http.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
 
+import 'support/source_scripts.dart';
+
 /// 色友漫画源：用**实时抓下来的页面快照**跑生产调用链（脚本载入 → HTTP 桥接 →
 /// 数据源适配 → 统一内容模型）。站点临时不可达不会让契约回归失效。
 ///
@@ -29,9 +31,11 @@ void main() {
     Qjs.reclaimRuntime = false;
   }
 
-  final skipReason = Qjs.isAvailable
-      ? null
-      : '未找到可用的 quickjs 原生桥（${Qjs.availabilityDetail}）';
+  /// 引擎不可用 / 本机没拉脚本缓存 → 跳过（不是失败）。
+  /// 脚本在 https://github.com/teng662858/LumeBox-Sources，
+  /// 本机先跑 `dart run tool/fetch_sources.dart`。
+  String? skipOf(String name) =>
+      Qjs.isAvailable ? _skipOf(name) : '未找到可用的 quickjs 原生桥（${Qjs.availabilityDetail}）';
 
   setUp(() => LumeJsEngine.debugSupportedOverride = true);
   tearDown(() => LumeJsEngine.debugSupportedOverride = null);
@@ -40,7 +44,7 @@ void main() {
     '色友漫画：分类列表 / 详情 / 章节顺序 / 正文图片（快照）',
     () async {
       final source = await _boot(
-        'sources/seyoumanhua_comic.js',
+        _script('seyoumanhua_comic.js'),
         section: Section.comic,
         http: _SnapshotHttp(get: <String, String>{
           'https://seyoumanhua.com/index.php/category/list/5': _read('seyoumanhua_list.html'),
@@ -105,7 +109,7 @@ void main() {
         reason: '正文图片也必须升级到 https',
       );
     },
-    skip: skipReason,
+    skip: skipOf('seyoumanhua_comic.js'),
     timeout: const Timeout(Duration(seconds: 90)),
   );
   test(
@@ -124,7 +128,7 @@ void main() {
         'https://99xs.sbs/?s=%E7%BE%8E%E5%A5%B3&paged=1': _read('99xs_search.html'),
       });
       final source = await _boot(
-        'sources/99xs_novel.js',
+        _script('99xs_novel.js'),
         section: Section.novel,
         http: http,
       );
@@ -167,13 +171,20 @@ void main() {
         reason: '其余请求也统一带头（站点自己就是让用户写这枚 cookie 的）',
       );
     },
-    skip: skipReason,
+    skip: skipOf('99xs_novel.js'),
     timeout: const Timeout(Duration(seconds: 90)),
   );
 
 }
 
 String _read(String file) => File(file).readAsStringSync();
+
+/// 脚本路径（本机没拉缓存时用例会被 skip，不会走到这里）。
+String _script(String name) => sourceScriptPath(name)!;
+
+/// 本机缺这份脚本 → 给 skip 原因；有就返回 null（照常跑）。
+String? _skipOf(String name) =>
+    sourceScriptPath(name) == null ? sourceScriptsSkipReason(name) : null;
 
 Future<_BootedSource> _boot(
   String scriptPath, {

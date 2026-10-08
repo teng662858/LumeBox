@@ -281,6 +281,78 @@ async function getList(page) { return { list: [{ id: 'b', title: '新条目' }] 
     expect(updated.network.userAgent, 'UA', reason: '网络覆盖同样不该丢');
   }, skip: skipReason);
 
+  test('清单式订阅：每一份脚本记**自己**的来源地址（不是清单地址）', () async {
+    // 新库（用户口径）：小说 / 漫画 / 视频各一个订阅链接，链接正文是「一行一个地址」
+    // 的清单。清单里的每一条都必须记自己的地址——旧实现一律记 `urls.first`，
+    // 于是「更新订阅源」只能拿到清单第一条，第二个源永远更新不了。
+    const listUrl = 'https://example.com/comic/sources.txt';
+    const a = 'https://example.com/comic/a.js';
+    const b = 'https://example.com/comic/b.js';
+    String script(String id, String name) =>
+        '// LumeSource: {"id":"$id","name":"$name","version":"1.0.0"}\n'
+        'async function getList(page) { return { list: [] }; }';
+    final resolver = SourceSubscription(
+      fetch: (url) async {
+        final text = switch (url) {
+          listUrl => '# 漫画源\n$a\n$b\n',
+          a => script('src-a', '甲'),
+          _ => script('src-b', '乙'),
+        };
+        return SourceFetchResult(
+          bytes: Uint8List.fromList(utf8.encode(text)),
+          text: text,
+        );
+      },
+    );
+
+    final refs = await resolver.resolveRefs(<String>[listUrl]);
+    expect(refs.length, 2);
+    expect(refs[0].url, a, reason: '第一条的来源地址是它自己那一行');
+    expect(refs[1].url, b, reason: '第二条同样记自己那一行');
+    expect(refs[1].script, contains('src-b'));
+  });
+
+  test('订阅更新：清单里有多个源时按 id 找自己那一份', () async {
+    // 用视频板块：本文件的 tearDown 只关猫源 / 视频两个注册表。
+    final registry = await openRegistry(Section.video);
+    await registry.import('''
+// LumeSource: {"id":"mine","name":"我的源","version":"1.0.0"}
+async function getList(page) { return { list: [{ id: 'a', title: '旧' }] }; }
+''', originUrl: 'https://example.com/list.txt');
+
+    // 订阅地址是一个清单（正文只有地址）：第一条是别人的源，第二条才是这个源的新版本。
+    const listUrl = 'https://example.com/list.txt';
+    const otherUrl = 'https://example.com/other.js';
+    const mineUrl = 'https://example.com/mine.js';
+    const other = '// LumeSource: {"id":"other","name":"别的源","version":"9.0.0"}\n'
+        'async function getList(page) { return { list: [] }; }';
+    const mine = '// LumeSource: {"id":"mine","name":"我的源","version":"2.0.0"}\n'
+        "async function getList(page) { return { list: [{ id: 'a', title: '新' }] }; }";
+    final resolver = SourceSubscription(
+      fetch: (url) async {
+        final text = switch (url) {
+          listUrl => '# 清单\n$otherUrl\n$mineUrl\n',
+          otherUrl => other,
+          _ => mine,
+        };
+        return SourceFetchResult(
+          bytes: Uint8List.fromList(utf8.encode(text)),
+          text: text,
+        );
+      },
+    );
+
+    final result = await LumeSources.updateFromSubscription(
+      Section.video,
+      'mine',
+      subscription: resolver,
+    );
+    expect(result.status, SourceUpdateStatus.updated, reason: result.message);
+    final updated = registry.source('mine')!;
+    expect(updated.script, contains('新'), reason: '按 id 命中自己那一份，不是清单第一条');
+    expect(updated.script, isNot(contains('别的源')));
+  }, skip: skipReason);
+
   test('订阅更新（真实引擎）：内容一致 → 已是最新', () async {
     final registry = await openRegistry(Section.video);
     const script = '''

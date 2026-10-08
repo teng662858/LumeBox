@@ -12,6 +12,8 @@ import 'package:lume_box/core/net/lume_http.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
 
+import 'support/source_scripts.dart';
+
 /// 真实 QuickJS + LumeSourceBridge 下的四个站点源联调。
 ///
 /// HTTP 使用固定快照替身，测试的是生产调用链本身：脚本载入 → 宿主 HTTP
@@ -32,7 +34,7 @@ void main() {
   group('真实引擎 · 四个扩展源', () {
     test('99xs 小说：列表 / 详情 / 分页正文', () async {
       final source = await _boot(
-        'sources/99xs_novel.js',
+        _script('99xs_novel.js'),
         section: Section.novel,
         http: _SnapshotHttp(
           get: <String, String>{
@@ -61,11 +63,11 @@ void main() {
       );
       expect(content, isA<TextContent>());
       expect((content! as TextContent).text, isNotEmpty);
-    });
+    }, skip: _skipOf('99xs_novel.js'));
 
     test('daniao5 漫画：列表 / 详情 / 章节 / 图片', () async {
       final source = await _boot(
-        'sources/daniao5_comic.js',
+        _script('daniao5_comic.js'),
         section: Section.comic,
         http: _SnapshotHttp(
           get: <String, String>{
@@ -98,7 +100,7 @@ void main() {
       );
       expect(content, isA<ImageContent>());
       expect((content! as ImageContent).images.length, greaterThan(50));
-    });
+    }, skip: _skipOf('daniao5_comic.js'));
 
     // 2026-10-08：接口换成了**实测到的全量那条**。
     //
@@ -136,7 +138,7 @@ void main() {
           },
       );
       final source = await _boot(
-        'sources/gztv5_video.js',
+        _script('gztv5_video.js'),
         section: Section.video,
         http: http,
       );
@@ -189,7 +191,7 @@ void main() {
         (content! as VideoContent).url.toString(),
         'https://cdn.example/2/index.m3u8',
       );
-    });
+    }, skip: _skipOf('gztv5_video.js'));
 
     test('dage 视频：加密信封能解开（/core.json 菜单）+ 无快照时明确失败', () async {
       // 这个站每个 JSON 都被包成 {"status":1,"data":"<混淆串>"}，data 要按
@@ -202,7 +204,7 @@ void main() {
         get: <String, String>{'https://dage.one/api/core.json': coreEnvelope},
       );
       final source = await _boot(
-        'sources/dage_video.js',
+        _script('dage_video.js'),
         section: Section.video,
         http: http,
       );
@@ -222,11 +224,11 @@ void main() {
         source.data.list(categoryId: 'dy'),
         throwsA(isA<SourceException>()),
       );
-    });
+    }, skip: _skipOf('dage_video.js'));
 
     test('luttt 视频：列表 / 详情 / 选集 / 播放 m3u8', () async {
       final source = await _boot(
-        'sources/luttt_video.js',
+        _script('luttt_video.js'),
         section: Section.video,
         http: _SnapshotHttp(
           get: <String, String>{
@@ -261,11 +263,11 @@ void main() {
       );
       expect(content, isA<VideoContent>());
       expect((content! as VideoContent).url.toString(), contains('.m3u8'));
-    });
+    }, skip: _skipOf('luttt_video.js'));
 
     test('p5mh 漫画：列表 / 详情 / 章节 / 多页图片拼接', () async {
       final source = await _boot(
-        'sources/p5mh_comic.js',
+        _script('p5mh_comic.js'),
         section: Section.comic,
         http: _SnapshotHttp(
           get: <String, String>{
@@ -306,11 +308,11 @@ void main() {
       );
       expect(content, isA<ImageContent>());
       expect((content! as ImageContent).images.length, greaterThanOrEqualTo(55));
-    });
+    }, skip: _skipOf('p5mh_comic.js'));
 
     test('xxs 小说：列表 / 详情 / 章节 / 正文', () async {
       final source = await _boot(
-        'sources/xxiaoshuo_novel.js',
+        _script('xxiaoshuo_novel.js'),
         section: Section.novel,
         http: _SnapshotHttp(
           get: <String, String>{
@@ -341,11 +343,11 @@ void main() {
       );
       expect(content, isA<TextContent>());
       expect((content! as TextContent).text, isNotEmpty);
-    });
+    }, skip: _skipOf('xxiaoshuo_novel.js'));
 
     test('xchina 小说：列表 / 详情 / 章节 / 正文', () async {
       final source = await _boot(
-        'sources/xchina_novel.js',
+        _script('xchina_novel.js'),
         section: Section.novel,
         http: _SnapshotHttp(
           get: <String, String>{
@@ -377,7 +379,7 @@ void main() {
       );
       expect(content, isA<TextContent>());
       expect((content! as TextContent).text, isNotEmpty);
-    });
+    }, skip: _skipOf('xchina_novel.js'));
   }, skip: skipReason);
 }
 
@@ -502,3 +504,10 @@ DynamicLibrary? _resolveBridge() {
   }
   return null;
 }
+
+/// 脚本路径（本机没拉缓存时用例会被 skip，不会走到这里）。
+String _script(String name) => sourceScriptPath(name)!;
+
+/// 本机缺这份脚本 → 给 skip 原因；有就返回 null（照常跑）。
+String? _skipOf(String name) =>
+    sourceScriptPath(name) == null ? sourceScriptsSkipReason(name) : null;
