@@ -118,6 +118,13 @@ class _NovelCatalogPageState extends State<NovelCatalogPage> {
       appBar: GlassAppBar(
         title: const Text('目录'),
         actions: <Widget>[
+          // 明确的退出出口（用户口径：章节多时滚到哪儿都能关掉目录）。
+          // 返回箭头本来就有，这里再给一个「关闭」——两者都在顶栏，恒定可见。
+          IconButton(
+            tooltip: '关闭',
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.close, size: 20),
+          ),
           IconButton(
             tooltip: _searching ? '收起搜索' : '搜索章节',
             icon: Icon(_searching ? Icons.search_off : Icons.search, size: 20),

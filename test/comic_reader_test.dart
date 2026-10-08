@@ -331,6 +331,25 @@ void main() {
     expect(progress.page, 0);
   });
 
+  testWidgets('目录面板有恒定的关闭出口（章节多时也滚不掉）', (tester) async {
+    await pumpReader(tester);
+    await openToolbar(tester);
+
+    await tester.tap(find.byIcon(Icons.list));
+    await tester.pumpAndSettle();
+
+    // 用户口径：不管滚到哪儿，目录面板都要有一个「关闭」能回阅读页。
+    expect(find.byTooltip('关闭'), findsOneWidget);
+    // 把列表滚一段，关闭按钮依旧在（它固定在列表之上，不随内容滚走）。
+    await tester.drag(find.byType(ListView).last, const Offset(0, -260));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('关闭'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.text('目录'), findsNothing, reason: '关闭后回到阅读页，面板消失');
+  });
+
   testWidgets('平台守卫：无图源运行时时只渲染骨架，不取章节、不落进度', (tester) async {
     await pumpReader(tester, runtimeAvailable: false);
 

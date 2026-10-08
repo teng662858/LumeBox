@@ -1559,15 +1559,30 @@ class _ChapterSheet extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              // 抬头**固定在列表之上**（不随滚动走）：章节多的时候也要一眼能看到出口
+              //（用户口径：滚到哪儿都能关掉目录回阅读页）。
               Padding(
-                padding: EdgeInsets.symmetric(vertical: 14),
-                child: Text(
-                  '目录',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: LumeTheme.textPrimary,
-                  ),
+                padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+                child: Row(
+                  children: <Widget>[
+                    const SizedBox(width: 40),
+                    Expanded(
+                      child: Text(
+                        '目录',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: LumeTheme.textPrimary,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '关闭',
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, size: 20),
+                    ),
+                  ],
                 ),
               ),
               Flexible(
