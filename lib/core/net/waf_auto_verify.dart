@@ -27,6 +27,32 @@ class WafAutoVerify {
   /// 正在跑的验证（按板块 + 源去重）：脚本并发发请求时，多个失败共用同一次验证。
   static final Map<String, Future<bool>> _running = <String, Future<bool>>{};
 
+  /// 手动验证窗是否正开着（含选地址那一步）。
+  ///
+  /// **同一时刻只允许一个验证窗**（真机反馈「半屏窗口里又套了一层小圆角弹窗」：
+  /// 用户点了手动的【网页视图】，背后的页面重拉又触发了自动小窗，两个窗口叠在一起）。
+  /// 手动窗开着时，自动路径直接按「没通过」返回，界面照旧给错误卡与出口。
+  static bool _manualOpen = false;
+
+  /// 手动流程开始（弹窗/选地址之前调用）。
+  static void beginManual() => _manualOpen = true;
+
+  /// 手动流程结束（**无论有没有拿到会话**都要调）。
+  ///
+  /// 没拿到会话时还会给这个源压一小段冷却：刚关掉的窗口马上又弹一个一模一样的小窗，
+  /// 用户只会觉得「关不掉」。冷却期内自动路径不弹窗（页面上的【网页视图】按钮照常可用）。
+  static void endManual({Section? section, String? sourceId, bool collected = false}) {
+    _manualOpen = false;
+    if (collected || section == null || sourceId == null) return;
+    _cooldown['${section.id}/${sourceId.trim()}'] = DateTime.now();
+  }
+
+  /// 「刚手动关过一次、没拿到会话」的时间戳（按板块 + 源）。
+  static final Map<String, DateTime> _cooldown = <String, DateTime>{};
+
+  /// 冷却时长：够用户看清错误卡并决定下一步，又不至于把后续的正常自动校验永久挡掉。
+  static const Duration cooldown = Duration(seconds: 90);
+
   static void install(
     Future<bool> Function({
       required Section section,
@@ -51,6 +77,20 @@ class WafAutoVerify {
     final handler = _handler;
     if (handler == null) return Future<bool>.value(false);
     final key = '${section.id}/${sourceId.trim()}';
+    // 同一时刻只允许一个验证窗：手动窗开着、或刚手动关掉没拿到会话（冷却中），
+    // 自动路径都不再弹第二个窗。
+    if (_manualOpen) {
+      LumeLog.info('[waf] 手动验证窗正开着，自动校验不重复弹窗：$key');
+      return Future<bool>.value(false);
+    }
+    final until = _cooldown[key];
+    if (until != null) {
+      if (DateTime.now().difference(until) < cooldown) {
+        LumeLog.info('[waf] 刚手动关过一次（冷却中），自动校验不弹窗：$key');
+        return Future<bool>.value(false);
+      }
+      _cooldown.remove(key);
+    }
     final existing = _running[key];
     if (existing != null) {
       LumeLog.info('[waf] 复用正在进行的校验：$key');
@@ -69,9 +109,11 @@ class WafAutoVerify {
     return future.whenComplete(() => _running.remove(key));
   }
 
-  /// 仅测试用：清掉钩子与在飞记录。
+  /// 仅测试用：清掉钩子、在飞记录、手动窗状态与冷却。
   static void resetForTesting() {
     _handler = null;
     _running.clear();
+    _manualOpen = false;
+    _cooldown.clear();
   }
 }

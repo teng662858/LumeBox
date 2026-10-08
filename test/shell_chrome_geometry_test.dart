@@ -184,16 +184,19 @@ void main() {
     await pumpShell(tester);
 
     final capsule = tester.getRect(dockCapsule());
-    // 用户口径第六次：**外框直接画到屏幕底边**（不再被安全区整体抬起）。
+    // 用户口径第七次：**保留一小段悬浮留白**——上一版怼死屏幕底边「改过头了」，
+    // 要的是「缩短空隙、不消除空隙」。
+    final gap = height - capsule.bottom;
     expect(
-      height - capsule.bottom,
-      lessThanOrEqualTo(1.0),
-      reason: '胶囊外轮廓要贴紧屏幕底边，实测还差 ${height - capsule.bottom}pt',
+      gap,
+      inInclusiveRange(6.0, 14.0),
+      reason: '胶囊要悬浮在屏幕底边之上（约 8pt），实测 $gap',
     );
     expect(capsule.left, closeTo(12, 0.01), reason: '左右悬浮留白仍是 12');
 
-    // 而**里面的内容**要避开手势条：图标与文字整体上缩一档。
-    final inset = bottomInset - 14;
+    // 而**里面的内容**要避开手势条：图标与文字整体上缩一档；
+    // 「内容离屏幕底边」的总净空固定 20（外框留白 + 内部避让）。
+    const inset = 20.0;
     final item = tester.getRect(
       find.descendant(
         of: find.byKey(AppShell.dockKey),

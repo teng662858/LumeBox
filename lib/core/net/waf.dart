@@ -283,11 +283,16 @@ String? urlFromFailure(String? message) {
 
 /// 弹「网页视图」时要打开的地址：**统一兜底链**，四层依次尝试。
 ///
-/// 1. 失败文案里的 URL（脚本把地址写进报错文案时）；
+/// 1. 失败文案里的 URL（脚本把地址写进报错文案时）——**整条地址，不裁成域名**；
 /// 2. **该图源最近请求过的地址**（见 [SourceRequestLog]——只要报的是 WAF 错，
-///    就一定发过请求；这条与脚本写法、导入方式都无关，是最可靠的一层）；
-/// 3. 图源的订阅地址；
+///    就一定发过请求；这条与脚本写法、导入方式都无关，是最可靠的一层），同样整条；
+/// 3. 图源的订阅地址（拿不到具体路径，退回域名）；
 /// 4. 源 id 里带的域名（导入器允许 `www.example.com_备注` 这种写法）。
+///
+/// **为什么必须要具体路径、不能只用域名**（真机反馈）：CF 的挑战是**按路径**下发的
+/// ——很多站点的首页早就被站点自己缓存/放行（实测 92 漫画就是），打开首页根本不会
+/// 出现勾选框，用户「验证」了个寂寞，接口依旧 403。打开**被拦的那一条地址**才会
+/// 触发挑战页，验证完拿到的 `cf_clearance` 才对这个域有效。
 ///
 /// 都没有才返回 null（调用方**不要静默退出**：界面层会接着弹地址输入框，见
 /// `askWebViewOrigin`）。
@@ -300,13 +305,26 @@ String? resolveWebViewOrigin({
   String? originUrl,
   bool quiet = false,
 }) {
-  final fromMessage = originOf(urlFromFailure(failureMessage));
+  // ①② 拿得到具体地址就用具体地址（挑战按路径下发）。
+  final fromMessage = _absoluteUrlFrom(urlFromFailure(failureMessage));
   if (fromMessage != null) return fromMessage;
-  final fromLog = originOf(SourceRequestLog.lastFor(sourceId ?? '', quiet: quiet));
+  final fromLog = _absoluteUrlFrom(SourceRequestLog.lastFor(sourceId ?? '', quiet: quiet));
   if (fromLog != null) return fromLog;
-  // 后两层：订阅地址 → 源 id 里的域名。
+  // ③④ 只有订阅地址 / 源 id 里的域名可用时，退回域名（聊胜于无）。
   final fallback = guessWebViewAddress(sourceId: sourceId, originUrl: originUrl);
   return fallback.isEmpty ? null : fallback;
+}
+
+/// 让一条 http(s) 地址保持原样返回（校验可解析且有主机），否则 null。
+///
+/// 与 [originOf] 的区别：**不裁路径**——被拦的就是那条路径。
+String? _absoluteUrlFrom(String? url) {
+  final text = (url ?? '').trim();
+  if (text.isEmpty) return null;
+  final uri = Uri.tryParse(text);
+  if (uri == null || !uri.hasScheme || uri.host.isEmpty) return null;
+  if (uri.scheme != 'http' && uri.scheme != 'https') return null;
+  return text;
 }
 
 /// 地址兜底链的**后两层**（订阅地址 → 源 id 里的域名），也用作地址输入框的预填值。

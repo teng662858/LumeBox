@@ -70,7 +70,12 @@ void main() {
     );
 
     expect(await pending, WafWebViewOutcome.collected);
-    expect(opened, <String>['https://www.92mh.com']);  });
+    expect(
+      opened,
+      <String>['https://www.92mh.com/list/1/1.html'],
+      reason: '要打开**被拦的那条地址**（挑战按路径下发）',
+    );
+  });
 
   testWidgets('验证窗用与 API 同一个 UA（cf_clearance 绑 IP + UA）', (tester) async {
     SourceRequestLog.record('s', 'https://guarded.example.com/list');
@@ -304,7 +309,7 @@ void main() {
           failureMessage: 'NEED_WEBVIEW_VERIFY（HTTP 403）',
           sourceId: 's',
         ),
-        '网页视图将打开：https://www.92mh.com',
+        '网页视图将打开：https://www.92mh.com/',
       );
       expect(webViewTargetHint(sourceId: 'mystery'), isNull);
     });

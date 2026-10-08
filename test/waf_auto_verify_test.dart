@@ -91,6 +91,91 @@ void main() {
     expect(calls, 2);
   });
 
+  group('同一时刻只允许一个验证窗（真机反馈的两个窗口叠在一起）', () {
+    test('手动窗开着时：自动路径不弹第二个窗', () async {
+      var calls = 0;
+      WafAutoVerify.install(({
+        required section,
+        required sourceId,
+        required sourceName,
+        required url,
+      }) async {
+        calls++;
+        return true;
+      });
+
+      WafAutoVerify.beginManual();
+      expect(
+        await WafAutoVerify.run(
+          section: Section.comic,
+          sourceId: 's',
+          sourceName: '源',
+          url: 'https://example.com/list/1/',
+        ),
+        isFalse,
+        reason: '用户正在看手动窗，背后不许再弹一个自动小窗',
+      );
+      expect(calls, 0);
+
+      // 手动流程收尾（拿到了会话）：自动路径恢复正常。
+      WafAutoVerify.endManual(
+        section: Section.comic,
+        sourceId: 's',
+        collected: true,
+      );
+      expect(
+        await WafAutoVerify.run(
+          section: Section.comic,
+          sourceId: 's',
+          sourceName: '源',
+          url: 'https://example.com/list/1/',
+        ),
+        isTrue,
+      );
+      expect(calls, 1);
+    });
+
+    test('手动关掉但没拿到会话：冷却期内自动路径不弹（页面按钮照常可用）', () async {
+      var calls = 0;
+      WafAutoVerify.install(({
+        required section,
+        required sourceId,
+        required sourceName,
+        required url,
+      }) async {
+        calls++;
+        return true;
+      });
+
+      WafAutoVerify.beginManual();
+      // 用户直接点 ✕ 关掉、一个 Cookie 都没取到。
+      WafAutoVerify.endManual(section: Section.comic, sourceId: 's');
+      expect(
+        await WafAutoVerify.run(
+          section: Section.comic,
+          sourceId: 's',
+          sourceName: '源',
+          url: 'https://example.com/list/1/',
+        ),
+        isFalse,
+        reason: '刚关掉就马上弹一个一模一样的小窗，用户只会觉得「关不掉」',
+      );
+      expect(calls, 0);
+
+      // 别的源不受影响。
+      expect(
+        await WafAutoVerify.run(
+          section: Section.comic,
+          sourceId: 'other',
+          sourceName: '另一个源',
+          url: 'https://example.com/list/1/',
+        ),
+        isTrue,
+      );
+      expect(calls, 1);
+    });
+  });
+
   group('引擎层接线：标记 → 自动校验 → 重试', () {
     /// 第一次调用抛 NEED_WEBVIEW_VERIFY，校验通过后再调就成功。
     test('分类调用被拦下时自动校验并重试，成功后继续解析', () async {
@@ -117,9 +202,9 @@ void main() {
 
       final categories = await source.categories();
       expect(verifications, 1, reason: '被拦下要自动过一次校验');
-      expect(askedUrl, 'https://guarded.example.com',
-          reason: '校验地址从失败文本里捞出来，统一收口到 origin'
-              '（cf_clearance 是整域的，开首页就够；与手动出口同一套解析）');
+      expect(askedUrl, 'https://guarded.example.com/api/x',
+          reason: '校验地址用**被拦的那一条**（不是域名）：CF 的挑战按路径下发，'
+              '很多站点首页早就被放行——开首页根本不会出勾选框（真机反馈）');
       expect(categories.length, 1);
       expect(runtime.calls, 2, reason: '校验通过后要重试同一次调用');
     });
@@ -203,8 +288,9 @@ void main() {
       await expectLater(source.categories(), throwsA(isA<SourceException>()));
       expect(
         askedUrl,
-        'https://www.92mh.com',
-        reason: '自动弹窗不能因为文案里没有 URL 就静默不动',
+        'https://www.92mh.com/list/1/1.html',
+        reason: '自动弹窗不能因为文案里没有 URL 就静默不动；'
+            '并且要用网络层记下的**具体地址**（挑战按路径下发）',
       );
     });
   });
@@ -228,19 +314,28 @@ void webViewOriginTests() {
       sourceId: 'mh92_comic',
       originUrl: '', // 粘贴导入：没有订阅地址
     );
-    expect(url, 'https://www.92mh.com', reason: '必须拿得到源站 origin 才能弹窗');
+    expect(
+      url,
+      'https://www.92mh.com/list/1/1.html',
+      reason: '必须拿到**被拦的那条地址**才能触发挑战页（92 漫画首页是放行的，'
+          '开首页看不到勾选框——真机反馈）',
+    );
   });
 
-  test('文案里带 URL 时优先用它（新脚本）', () {
+  test('文案里带 URL 时优先用它，且**保留整条路径**（新脚本）', () {
     final url = resolveWebViewOrigin(
       failureMessage: 'NEED_WEBVIEW_VERIFY（HTTP 403 https://a.example.com/api/x）',
       sourceId: 'x',
       originUrl: '',
     );
-    expect(url, 'https://a.example.com');
+    expect(
+      url,
+      'https://a.example.com/api/x',
+      reason: '挑战按路径下发：裁成域名会打开一个「不需要验证」的首页',
+    );
   });
 
-  test('订阅地址与源 id 里的域名也能兜底', () {
+  test('只有域名可用时（订阅地址 / 源 id）退回域名：聊胜于无', () {
     expect(
       resolveWebViewOrigin(
         failureMessage: 'NEED_WEBVIEW_VERIFY',

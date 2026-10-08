@@ -85,22 +85,23 @@ class _AppShellState extends State<AppShell> {
   /// Dock 与屏幕左右的留白。
   static const double _dockMargin = 12;
 
-  /// 胶囊外框与屏幕**底边**的距离：**0 = 外框直接画到屏幕底边**。
+  /// 胶囊外框与屏幕**底边**的距离：**保留一小段悬浮留白**。
   ///
-  /// 用户口径（第六次反馈，对齐参考 APP）：胶囊的外轮廓贴到屏幕最底部，
-  /// 而不是被安全区整体抬起来；要避开系统手势条的是**胶囊内部的内容**——
-  /// 见 [_dockContentInset]。
-  static const double _dockBottomMargin = 0;
+  /// 用户口径（第七次反馈）：上一版把胶囊怼到屏幕底边「改过头了」——要的是
+  /// **缩短空隙、不是消除空隙**：胶囊保持悬浮观感，下面留一小段；避开系统手势条
+  /// 交给**胶囊内部的内容**去做（见 [dockContentInset]）。
+  static const double _dockBottomMargin = 8;
   static const double _dockSpacing = 8;
 
   /// 胶囊**内部**内容要让出的底部高度（手势条避让）。
   ///
-  /// 安全区（刘海机 34）里画的正是那根 Home Indicator（约 3–8pt 高、贴底几 pt）；
-  /// 内容再留出 20 的净空就不会被它压住，同时比「整体抬 34」低 14pt——
-  /// 中间内容区比上一版还多出这一段。
+  /// 「内容离屏幕底边」的总净空 = 外框留白 + 这一段，固定按 20 留：
+  /// 安全区（刘海机 34）里画的正是那根 Home Indicator（约 5pt 高、离底边约 8pt），
+  /// 20 的净空不会被它压住，也不会像「整体套安全区」那样把胶囊抬到 34 那么高。
+  /// 因此胶囊越贴近底边，内部这一段就越大——总净空不变。
   static double dockContentInset(BuildContext context) {
     final bottom = MediaQuery.paddingOf(context).bottom;
-    final inset = bottom - 14;
+    final inset = bottom - 14 - _dockBottomMargin;
     return inset > 0 ? inset : 0;
   }
 

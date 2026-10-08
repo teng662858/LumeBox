@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/net/waf.dart';
+import '../../core/net/waf_auto_verify.dart';
 
 // 兼容既有引用：这两个纯字符串工具的**定义**已搬到 core/net/waf.dart
 //（引擎层判 WAF 时也要用，core 不能反向依赖界面层），这里原样导出。
@@ -474,9 +475,10 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
                           ),
                         ),
                         Text(
-                          // 第二行给出**正在验证哪个站**（用户口径：能当场核对地址），
-                          // 以及唯一的操作动作——过完校验点左上角 ✕。
-                          '${originOf(widget.url) ?? widget.url} · '
+                          // 第二行给出**正在验证哪条地址**（含路径，用户口径：能当场
+                          // 核对），以及唯一的操作动作——过完校验点左上角 ✕。
+                          // 显示路径是有用的：挑战按路径下发，用户看到的与接口一致。
+                          '${_urlLabel(widget.url)} · '
                           '完成后点左上角 ✕ 关闭（自动取回会话）',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -517,6 +519,15 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
         ),
       ),
     );
+  }
+
+  /// 顶栏第二行里显示的地址标签：去掉协议，保留主机 + 路径。
+  static String _urlLabel(String url) {
+    final text = url.trim();
+    final uri = Uri.tryParse(text);
+    if (uri == null || uri.host.isEmpty) return text;
+    final path = uri.path == '/' ? '' : uri.path;
+    return '${uri.host}$path';
   }
 
   /// 主框架加载失败时压在 WebView 上的一张卡：**白屏换成可读原因 + 出口**。
@@ -694,6 +705,35 @@ Future<WafWebViewOutcome> runWafWebViewFlow({
   Future<String?> Function(Section section, String sourceId)? userAgentFor,
 }) async {
   if (!context.mounted) return WafWebViewOutcome.notOpened;
+  // **同一时刻只允许一个验证窗**：占上手动的位子，自动路径就不会在背后再弹一个小窗
+  //（真机反馈的两个窗口叠在一起）。无论哪条出口返回，都在 finally 里收尾。
+  WafAutoVerify.beginManual();
+  try {
+    return await _runWafWebViewFlow(
+      context: context,
+      section: section,
+      sourceId: sourceId,
+      sourceName: sourceName,
+      failureMessage: failureMessage,
+      originUrl: originUrl,
+      opener: opener,
+      userAgentFor: userAgentFor,
+    );
+  } finally {
+    WafAutoVerify.endManual(section: section, sourceId: sourceId);
+  }
+}
+
+Future<WafWebViewOutcome> _runWafWebViewFlow({
+  required BuildContext context,
+  required Section section,
+  required String sourceId,
+  required String sourceName,
+  String? failureMessage,
+  String originUrl = '',
+  WafWebViewOpener opener = showWafWebView,
+  Future<String?> Function(Section section, String sourceId)? userAgentFor,
+}) async {
   var url = resolveWebViewOrigin(
     failureMessage: failureMessage,
     sourceId: sourceId,
@@ -756,6 +796,7 @@ Future<WafWebViewOutcome> runWafWebViewFlow({
   }
   if (cookies == null || cookies.isEmpty) {
     LumeLog.info('[waf] $sourceId 的验证窗口开着，但没取到会话');
+    WafAutoVerify.endManual(section: section, sourceId: sourceId);
     return WafWebViewOutcome.emptySession;
   }
   WafSessions.save(section, sourceId, cookies);
@@ -878,7 +919,9 @@ Future<bool> showWafAutoVerify({
     await Navigator.of(context, rootNavigator: true).push<void>(
       PageRouteBuilder<void>(
         opaque: false,
-        barrierDismissible: false,
+        // 可点空白处关掉：万一它冒出来打扰用户（例如手动窗刚关、页面又重拉），
+        // 用户能一键退出——关掉即按「没拿到会话」处理，不会静默当作通过。
+        barrierDismissible: true,
         barrierColor: const Color(0x33000000),
         transitionDuration: const Duration(milliseconds: 160),
         pageBuilder: (context, _, _) => Align(
