@@ -67,7 +67,7 @@ var LumeSource = {
     }
     var html = await this.__get(url);
     var items = this.__listItems(html);
-    return { items: items, hasMore: this.__hasNextPage(html) };
+    return { items: items, hasMore: this.__hasNextPage(html, page) };
   },
 
   async detail(argument) {
@@ -168,27 +168,43 @@ var LumeSource = {
     return '';
   },
 
+  /// 列表条目。
+  ///
+  /// **站点改过版**（2026-10-08 实测）：旧的 `ul.mh-list > li > div.mh-item` 已经
+  /// 全部消失，现在是 `ul.manga-list-2 > li > div.manga-list-2-cover > a[href=/book/id]`
+  /// + 封面在 `img[data-original]`。这里两种都认（先新后旧），改版不再等于「一个条目
+  /// 都解析不出来」（真机表现就是「暂无首页推荐内容」）。
   __listItems(html) {
     var items = [];
     var seen = {};
-    var pattern = /<li>\s*<div class="mh-item">\s*<a href="(\/book\/(\d+))" title="([^"]*)"[\s\S]*?data-original="([^"]*)"/g;
-    var match;
-    while ((match = pattern.exec(html)) !== null) {
-      var id = match[2];
-      if (seen[id]) continue;
-      seen[id] = true;
-      items.push({
-        id: id,
-        title: this.__clean(match[3]),
-        cover: this.__absolute(match[4]),
-        subtitle: this.__itemSubtitle(html, match.index)
-      });
+    var patterns = [
+      /<div class="manga-list-2-cover">\s*<a href="(\/book\/(\d+))"[^>]*title="([^"]*)"[\s\S]*?data-original="([^"]*)"/g,
+      /<li>\s*<div class="mh-item">\s*<a href="(\/book\/(\d+))" title="([^"]*)"[\s\S]*?data-original="([^"]*)"/g
+    ];
+    for (var p = 0; p < patterns.length; p++) {
+      var match;
+      while ((match = patterns[p].exec(html)) !== null) {
+        var id = match[2];
+        if (seen[id]) continue;
+        seen[id] = true;
+        items.push({
+          id: id,
+          title: this.__clean(match[3]),
+          cover: this.__absolute(match[4]),
+          subtitle: this.__itemSubtitle(html, match.index)
+        });
+      }
     }
     return items;
   },
 
   __itemSubtitle(html, from) {
-    var tail = html.slice(from, from + 1200);
+    var tail = html.slice(from, from + 1400);
+    // 新结构：条目里一般带「第 N 话」「更新 2026-10-08」这类文本（没有再留空）。
+    var update = this.__clean(this.__match(tail, /(更新[^<]{0,18})</));
+    if (update) return update;
+    var count = this.__clean(this.__match(tail, /(第\s*\d+\s*[话章])/));
+    if (count) return count;
     var state = this.__clean(this.__match(tail, /<span class="(?:mh-state|state)[^"]*">([^<]*)</));
     if (!state) state = this.__clean(this.__match(tail, /<em[^>]*>([^<]*(?:连载|完结)[^<]*)<\/em>/));
     return state;
@@ -196,7 +212,7 @@ var LumeSource = {
 
   __images(html) {
     var images = [];
-    var pattern = /<img class="lazy"[^>]*data-original="([^"]+)"/g;
+    var pattern = /<img[^>]*class="[^"]*lazy[^"]*"[^>]*data-original="([^"]+)"/g;
     var match;
     while ((match = pattern.exec(html)) !== null) {
       var url = this.__absolute(match[1]);
@@ -205,7 +221,17 @@ var LumeSource = {
     return images;
   },
 
-  __hasNextPage(html) {
+  /// 还有没有下一页。
+  ///
+  /// 列表页**没有** `#nextPage` 标记（那是章节页的），它把页码链接写成
+  /// `/booklist?page=N`：窗口里只要出现比当前页大的号就说明还有。
+  __hasNextPage(html, page) {
+    var current = page > 0 ? page : 1;
+    var pattern = /booklist\?page=(\d+)/g;
+    var match;
+    while ((match = pattern.exec(html)) !== null) {
+      if (Number(match[1]) > current) return true;
+    }
     return /id="nextPage"|下一[页章]/.test(html);
   },
 
