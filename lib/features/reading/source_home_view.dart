@@ -89,35 +89,36 @@ class _SourceHomeViewState extends State<SourceHomeView> {
   }
 
   /// 被 WAF 拦下：网页视图过校验 → 存会话 → 重新拉首页（用户口径 2.1）。
-
+  ///
+  /// **点这里的按钮一定会有反应**（真机反馈过三轮「点了没反应」）：地址走统一
+  /// 兜底链，四层全落空时弹地址输入框；开窗失败也会弹窗说明——三条出口都在
+  /// [runWafWebViewFlow] 里，三个页面共用。
   Future<void> _openWebViewForWaf() async {
     final detail = _error is SourceException
         ? (_error! as SourceException).message
         : '$_error';
-    // 地址兜底：失败文案 → 订阅地址 → 源 id 里的域名（用户反馈「点了没反应」）。
-    final url = resolveWebViewOrigin(
-      failureMessage: detail,
-      sourceId: widget.source.id,
-      originUrl: widget.originUrl,
-    );
-    if (url == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('拿不到源站地址：请到该站点首页手动过一次校验')),
-      );
-      return;
-    }
-    await showWafWebView(
+    final outcome = await runWafWebViewFlow(
       context: context,
-      url: url,
-      sourceName: widget.source.name,
       section: widget.source.section,
       sourceId: widget.source.id,
-    ).then((cookies) {
-      if (cookies == null || cookies.isEmpty) return;
-      WafSessions.save(widget.source.section, widget.source.id, cookies);
-    });
+      sourceName: widget.source.name,
+      failureMessage: detail,
+      originUrl: widget.originUrl,
+    );
     if (!mounted) return;
-    await _load();
+    switch (outcome) {
+      case WafWebViewOutcome.notOpened:
+        return;
+      case WafWebViewOutcome.emptySession:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('没取到会话：等验证通过、站点页面真正显示出来后再点 ✕ 关闭'),
+          ),
+        );
+        return;
+      case WafWebViewOutcome.collected:
+        await _load();
+    }
   }
 
   @override
@@ -126,6 +127,12 @@ class _SourceHomeViewState extends State<SourceHomeView> {
     if (error != null) {
       final detail = error is SourceException ? error.message : '$error';
       final kind = wafKindOf(detail);
+      // 站址解析结果直接写在卡片上（用户口径：报错信息里要能看出拿到了源站地址）。
+      final hint = webViewTargetHint(
+        failureMessage: detail,
+        sourceId: widget.source.id,
+        originUrl: widget.originUrl,
+      );
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -136,7 +143,7 @@ class _SourceHomeViewState extends State<SourceHomeView> {
                 title: '首页加载失败',
                 subtitle: kind == WafFailureKind.bridge
                     ? '$detail\n\n$wafBridgeHint'
-                    : detail,
+                    : (hint == null ? detail : '$detail\n\n$hint'),
               ),
               const SizedBox(height: 12),
               Row(

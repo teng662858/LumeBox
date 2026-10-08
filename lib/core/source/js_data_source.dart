@@ -309,11 +309,17 @@ class JsDataSource
       return await runtime.call(method, argument);
     } on SourceException catch (error) {
       if (!retriedWaf && _needsWebView(error.message)) {
+        // 地址同样走**统一兜底链**（不只是从报错文案里捞）：老脚本的标记文案里
+        // 没有 URL，只靠文案会让这条自动路径静默不动（用户反馈的「弹不出来」）。
         final handled = await WafAutoVerify.run(
           section: section,
           sourceId: id,
           sourceName: name,
-          url: urlFromFailure(error.message) ?? '',
+          url: resolveWebViewOrigin(
+                failureMessage: error.message,
+                sourceId: id,
+              ) ??
+              '',
         );
         if (handled) {
           LumeLog.info('[$id] WAF 校验完成，重试 $method');

@@ -511,46 +511,37 @@ class _ExploreViewState extends State<ExploreView> {
 
   /// 打开内置网页视图过 WAF 校验；关闭时把会话 Cookie 存进**当前图源**，
   /// 然后自动重拉一次数据（用户口径第 3、4 条）。
+  ///
+  /// 点这个按钮**一定会有反应**（真机反馈过三轮「点了没反应」）：地址走统一兜底链
+  /// （报错文案 → 该源最近请求过的地址 → 订阅地址 → 源 id 域名），四层全落空时
+  /// 弹地址输入框；开窗失败也会弹窗说明。三条出口都在 [runWafWebViewFlow] 里。
   Future<void> _openWebViewForWaf() async {
     final source = _source;
     if (source == null) return;
     final failure = _failure;
     final reason = failure is SourceException ? failure.message : null;
-    // 地址按优先级兜底（用户反馈「点了没反应」——以前拿不到地址就静默退出）：
-    // 统一兜底链（见 resolveWebViewOrigin）：报错文案 → **该源最近请求过的地址**
-    // → 订阅地址 → 源 id 里的域名。只要报的是 WAF 错，就一定发过请求，
-    // 因此这一层基本必然命中（真机反馈过两轮「点了没反应」）。
-    final url = resolveWebViewOrigin(
-      failureMessage: reason,
-      sourceId: source.id,
-      originUrl: _current?.originUrl ?? '',
-    );
-    if (url == null) {
-      _toast('拿不到源站地址：请到该站点首页手动过一次校验');
-      return;
-    }
-    await showWafWebView(
+    final outcome = await runWafWebViewFlow(
       context: context,
-      url: url,
-      sourceName: source.name,
       section: widget.section,
       sourceId: source.id,
-    ).then((cookies) {
-      // 半屏 sheet 的返回：空表 = 没取到（页面还没过完校验就关了）。
-      if (cookies == null || cookies.isEmpty) {
-        if (!mounted) return;
+      sourceName: source.name,
+      failureMessage: reason,
+      originUrl: _current?.originUrl ?? '',
+    );
+    if (!mounted) return;
+    switch (outcome) {
+      case WafWebViewOutcome.notOpened:
+        // 用户取消了地址输入框（或开窗失败，异常已单独弹窗说明）：不再追着提示。
+        return;
+      case WafWebViewOutcome.emptySession:
         _toast('没取到会话：等验证通过、站点页面真正显示出来后再点 ✕ 关闭');
         return;
-      }
-      WafSessions.save(widget.section, source.id, cookies);
-      if (!mounted) return;
-      _toast(
-        '已取回会话（${WafSessions.countFor(widget.section, source.id)} 项），正在重新拉取',
-      );
-    });
-    if (!mounted) return;
-    // 取到没取到都重拉一次：取到了自然成功，没取到也只是再看一次同样的错误。
-    await _bootstrap();
+      case WafWebViewOutcome.collected:
+        _toast(
+          '已取回会话（${WafSessions.countFor(widget.section, source.id)} 项），正在重新拉取',
+        );
+        await _bootstrap();
+    }
   }
 
   /// 点「筛选」：视频板块走外挂的分页筛选（一级分类 → 筛选子页），
@@ -938,13 +929,21 @@ class _ExploreViewState extends State<ExploreView> {
       final kind = wafKindOf(detail);
       final hasSession = _source != null &&
           WafSessions.countFor(widget.section, _source!.id) > 0;
+      // 站址解析结果直接写在卡片上（用户口径：报错信息里要能看出拿到了源站地址）。
+      final hint = kind == WafFailureKind.webView
+          ? webViewTargetHint(
+              failureMessage: detail,
+              sourceId: _source?.id,
+              originUrl: _current?.originUrl ?? '',
+            )
+          : null;
       return SourceStateView(
         state: stateForError(failure),
         // 需要外部桥接的那类（reCAPTCHA v3 等）直接把出路写在正文里：
         // 它**没有**可导出复用的会话，网页视图对它无效（用户口径 2.2）。
         detail: kind == WafFailureKind.bridge
             ? '$detail\n\n$wafBridgeHint'
-            : detail,
+            : (hint == null ? detail : '$detail\n\n$hint'),
         onRetry: _bootstrap,
         action: kind == WafFailureKind.webView && _source != null
             ? OutlinedButton.icon(

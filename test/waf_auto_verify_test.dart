@@ -117,8 +117,9 @@ void main() {
 
       final categories = await source.categories();
       expect(verifications, 1, reason: '被拦下要自动过一次校验');
-      expect(askedUrl, 'https://guarded.example.com/api/x',
-          reason: '校验地址要从失败文本里捞出来');
+      expect(askedUrl, 'https://guarded.example.com',
+          reason: '校验地址从失败文本里捞出来，统一收口到 origin'
+              '（cf_clearance 是整域的，开首页就够；与手动出口同一套解析）');
       expect(categories.length, 1);
       expect(runtime.calls, 2, reason: '校验通过后要重试同一次调用');
     });
@@ -174,6 +175,37 @@ void main() {
       await expectLater(source.categories(), throwsA(isA<SourceException>()));
       expect(verifications, 1, reason: '一次调用只自动校验一次');
       expect(runtime.calls, 2, reason: '首次 + 重试各一次');
+    });
+
+    test('老脚本（标记文案里没有 URL）：自动校验也要拿得到站址', () async {
+      // 真机那份 92 漫画脚本就是这么写的：抛标记但不带地址。
+      final runtime = _StaleMarkedRuntime();
+      final source = JsDataSource(
+        id: 'mh92_comic',
+        name: '92漫画',
+        section: Section.comic,
+        runtime: runtime,
+      );
+      // 报 WAF 错之前一定发过请求：网络层记下的地址就是自动校验窗的地址来源。
+      SourceRequestLog.record('mh92_comic', 'https://www.92mh.com/list/1/1.html');
+
+      String? askedUrl;
+      WafAutoVerify.install(({
+        required section,
+        required sourceId,
+        required sourceName,
+        required url,
+      }) async {
+        askedUrl = url;
+        return false;
+      });
+
+      await expectLater(source.categories(), throwsA(isA<SourceException>()));
+      expect(
+        askedUrl,
+        'https://www.92mh.com',
+        reason: '自动弹窗不能因为文案里没有 URL 就静默不动',
+      );
     });
   });
 
@@ -277,6 +309,23 @@ class _AlwaysMarkedRuntime implements JsSourceRuntime {
     throw const SourceException(
       SourceErrorKind.callFailed,
       'NEED_WEBVIEW_VERIFY https://guarded.example.com/api/y',
+    );
+  }
+}
+
+/// 老脚本那种抛法：**标记里不带任何 URL**（真机那份 92 漫画脚本的原文）。
+class _StaleMarkedRuntime implements JsSourceRuntime {
+  int calls = 0;
+
+  @override
+  Future<Set<String>> contractMethods() async => const <String>{'categories'};
+
+  @override
+  Future<Object?> call(String method, [Object? argument]) async {
+    calls++;
+    throw const SourceException(
+      SourceErrorKind.callFailed,
+      'NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP 403）',
     );
   }
 }

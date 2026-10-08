@@ -227,38 +227,49 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
   }
 
   /// 被 WAF 拦下时：内置网页视图过校验 → 存会话 → 重新加载标签（用户要求）。
-
+  ///
+  /// 与首页 / 探索页共用同一份流程（[runWafWebViewFlow]）：地址四层兜底，全落空时
+  /// 弹地址输入框，开窗失败也会弹窗说明——**点了不会没反应**。
   Future<void> _openWebViewForWaf() async {
-    final reason = '$_error';
-    final url = resolveWebViewOrigin(
-      failureMessage: reason,
-      sourceId: widget.source.id,
-      originUrl: widget.originUrl,
-    );
-    if (url == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('拿不到源站地址：请到该站点首页手动过一次校验')),
-      );
-      return;
-    }
-    await showWafWebView(
+    final outcome = await runWafWebViewFlow(
       context: context,
-      url: url,
-      sourceName: widget.source.name,
       section: widget.source.section,
       sourceId: widget.source.id,
-    ).then((cookies) {
-      if (cookies == null || cookies.isEmpty) return;
-      WafSessions.save(widget.source.section, widget.source.id, cookies);
-    });
+      sourceName: widget.source.name,
+      failureMessage: '$_error',
+      originUrl: widget.originUrl,
+    );
     if (!mounted) return;
-    await _load(force: true);
+    switch (outcome) {
+      case WafWebViewOutcome.notOpened:
+        return;
+      case WafWebViewOutcome.emptySession:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('没取到会话：等验证通过、站点页面真正显示出来后再点 ✕ 关闭'),
+          ),
+        );
+        return;
+      case WafWebViewOutcome.collected:
+        await _load(force: true);
+    }
   }
 
   Map<String, String> get _filters => <String, String>{
         for (final entry in _selected.entries)
           if (entry.value.isNotEmpty) entry.key: entry.value.join(','),
       };
+
+  /// 卡片末尾追加的「将打开哪个站」（用户口径：报错信息里要能看出拿到了源站地址）。
+  /// 解析不出时返回空串——点击时的地址输入框会兜住，卡片上不写空话。
+  String _targetHint() {
+    final hint = webViewTargetHint(
+      failureMessage: '$_error',
+      sourceId: widget.source.id,
+      originUrl: widget.originUrl,
+    );
+    return hint == null ? '' : '\n\n$hint';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -280,7 +291,7 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
                   NoticeCard(
                     title: '筛选标签没取到',
                     subtitle: '${_error!}\n（筛选项来自源站；被防护拦下时可点下面的'
-                        '「网页视图」过一下人机校验）',
+                        '「网页视图」过一下人机校验）${_targetHint()}',
                   ),
                   if (looksLikeWafFailure('$_error'))
                     Padding(

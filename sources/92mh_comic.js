@@ -59,26 +59,48 @@ var LumeSource = {
   },
 
   /// 给首页条目补封面（并发、失败静默：拿不到就还是空占位，不影响其它条目）。
+  ///
+  /// 分两批跑（每批 6 条）：一次甩 12 个详情请求会把站点的限流招出来，
+  /// 真机反馈就是「有格子空着」。
+  ///
+  /// **补图必须给首页让路**：沙箱对一次脚本调用有墙钟预算（默认 6s，**含网络
+  /// 等待**，每次宿主调用都吃这份预算），补封面只是「锦上添花」——累计超过 3.5s
+  /// 就收手，宁可留下几个空占位，也不能让整页首页变成超时失败。
   async __fillCovers(items) {
-    var tasks = [];
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].cover) continue;
-      tasks.push(this.__fillOne(items[i]));
-    }
-    if (tasks.length) {
-      try { await Promise.all(tasks); } catch (error) { /* 单条失败无所谓 */ }
+    var deadline = Date.now() + 3500;
+    var batchSize = 6;
+    for (var start = 0; start < items.length; start += batchSize) {
+      if (Date.now() > deadline) break;
+      var tasks = [];
+      for (var i = start; i < start + batchSize && i < items.length; i++) {
+        if (items[i].cover) continue;
+        tasks.push(this.__fillOne(items[i], 0, deadline));
+      }
+      if (tasks.length) {
+        try { await Promise.all(tasks); } catch (error) { /* 单条失败无所谓 */ }
+      }
+      if (start + batchSize < items.length && Date.now() < deadline) {
+        await new Promise(function (resolve) { setTimeout(resolve, 150); });
+      }
     }
     return items;
   },
 
-  async __fillOne(item) {
+  /// 补一条封面。失败再试一次（并发补图时偶尔会撞上站点的限流，重试一次基本都能拿到）。
+  async __fillOne(item, attempt, deadline) {
     try {
       var html = await this.__get(this.__detailUrl(item.id));
       var cover = this.__match(html, /<meta[^>]+property="og:image"[^>]+content="([^"]*)"/);
       if (!cover) cover = this.__match(html, /data-original="([^"]+)"/);
       if (!cover) cover = this.__match(html, /<img[^>]+src="([^"]+)"/);
       if (cover) item.cover = this.__pic(cover);
-    } catch (error) { /* 拿不到就留空 */ }
+    } catch (error) {
+      if (attempt < 1 && Date.now() < (deadline || 0)) {
+        await new Promise(function (resolve) { setTimeout(resolve, 250); });
+        return this.__fillOne(item, attempt + 1, deadline);
+      }
+      /* 两次都拿不到就留空占位 */
+    }
   },
 
   async list(argument) {

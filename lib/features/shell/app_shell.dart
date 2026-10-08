@@ -5,12 +5,14 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../../core/net/waf.dart';
 import '../../core/net/waf_auto_verify.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/shell/shell_settings.dart';
 import '../../core/theme/lume_theme.dart';
+import '../../core/util/lume_log.dart';
 import '../cat/cat_page.dart';
 import '../comic/comic_page.dart';
 import '../novel/novel_page.dart';
@@ -192,8 +194,16 @@ class _AppShellState extends State<AppShell> {
         required String sourceName,
         required String url,
       }) {
-        final target = url.trim().isEmpty ? null : url.trim();
-        if (target == null) return Future<bool>.value(false);
+        // 引擎层已经走过四层兜底链；这里再兜一次，是为了那些「只把脚本原文递上来」
+        // 的调用点（老脚本的标记文案里没有 URL）：没有地址就弹不出窗口，
+        // 而「弹不出来」正是用户反馈的「点/报错之后什么也没发生」。
+        final target = url.trim().isEmpty
+            ? resolveWebViewOrigin(sourceId: sourceId)
+            : url.trim();
+        if (target == null || target.isEmpty) {
+          LumeLog.warn('[waf] $sourceId 自动校验拿不到站址，交给页面上的手动出口');
+          return Future<bool>.value(false);
+        }
         return showWafAutoVerify(
           context: context,
           section: section,

@@ -289,16 +289,31 @@ String? urlFromFailure(String? message) {
 /// 3. 图源的订阅地址；
 /// 4. 源 id 里带的域名（导入器允许 `www.example.com_备注` 这种写法）。
 ///
-/// 都没有才返回 null（调用方给一句可操作提示，不再静默退出）。
+/// 都没有才返回 null（调用方**不要静默退出**：界面层会接着弹地址输入框，见
+/// `askWebViewOrigin`）。
+///
+/// [quiet] 关掉兜底层的那条 info 日志：界面在 build 里算「将打开哪个站」的提示
+/// 文案时会反复问同一个问题，那种查询不该刷日志。
 String? resolveWebViewOrigin({
   String? failureMessage,
   String? sourceId,
   String? originUrl,
+  bool quiet = false,
 }) {
   final fromMessage = originOf(urlFromFailure(failureMessage));
   if (fromMessage != null) return fromMessage;
-  final fromLog = originOf(SourceRequestLog.lastFor(sourceId ?? ''));
+  final fromLog = originOf(SourceRequestLog.lastFor(sourceId ?? '', quiet: quiet));
   if (fromLog != null) return fromLog;
+  // 后两层：订阅地址 → 源 id 里的域名。
+  final fallback = guessWebViewAddress(sourceId: sourceId, originUrl: originUrl);
+  return fallback.isEmpty ? null : fallback;
+}
+
+/// 地址兜底链的**后两层**（订阅地址 → 源 id 里的域名），也用作地址输入框的预填值。
+///
+/// 单独抽出来是因为它有两个用处：解析链的尾部，和「四层全落空时」给用户看的
+/// 默认值——用户点开输入框就该看到最可能的那个站，而不是一个空框。
+String guessWebViewAddress({String? sourceId, String? originUrl}) {
   final fromOrigin = originOf(originUrl);
   if (fromOrigin != null) return fromOrigin;
   final id = (sourceId ?? '').trim();
@@ -309,5 +324,45 @@ String? resolveWebViewOrigin({
       if (uri != null && uri.host.contains('.')) return 'https://${uri.host}';
     }
   }
-  return null;
+  return '';
+}
+
+/// 用户在地址输入框里手输 / 粘贴的内容 → 可打开的 origin。
+///
+/// 规整两件事：缺协议就补 `https://`，带路径 / 查询串就只留 origin（网页视图打开
+/// 源站首页即可触发校验，多余的部分只会让校验流程更难复现）。看不懂就返回 null
+/// （调用方在对话框里就地提示，不让用户点了没反应）。
+String? normalizeWebViewAddress(String? input) {
+  final text = (input ?? '').trim();
+  if (text.isEmpty) return null;
+  final uri = Uri.tryParse(text.contains('://') ? text : 'https://$text');
+  final host = uri?.host ?? '';
+  // 域名形状必须自己认一遍：`Uri` 会把 `https://随便写点什么` 这种解析成
+  // 百分号编码的 host，直接拿去开窗只会打不开——那又变成「点了没反应」。
+  if (!_looksLikeHost(host)) return null;
+  final scheme = uri?.scheme == 'http' ? 'http' : 'https';
+  return uri?.hasPort == true ? '$scheme://$host:${uri!.port}' : '$scheme://$host';
+}
+
+/// 域名形状：ASCII 字母数字与短横线，至少两段（`www.example.com`）。
+bool _looksLikeHost(String host) =>
+    RegExp(r'^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$').hasMatch(host);
+
+/// 错误卡片上给用户看的一句「将打开哪个站」。
+///
+/// 加这一行是用户口径：报错信息里要能看出**源站地址确实拿到了**——三轮「点了
+/// 没反应」之后，用户需要一个当场能核对的证据。解析不出时返回 null（不给
+/// 空话，点击时的输入框会兜住）。
+String? webViewTargetHint({
+  String? failureMessage,
+  String? sourceId,
+  String? originUrl,
+}) {
+  final url = resolveWebViewOrigin(
+    failureMessage: failureMessage,
+    sourceId: sourceId,
+    originUrl: originUrl,
+    quiet: true,
+  );
+  return url == null ? null : '网页视图将打开：$url';
 }

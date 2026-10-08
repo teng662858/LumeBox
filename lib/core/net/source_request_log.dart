@@ -28,10 +28,13 @@ class SourceRequestLog {
   }
 
   /// 取某图源最近请求过的地址；没有则 null。
-  static String? lastFor(String sourceId) {
+  ///
+  /// [quiet] 不写日志：界面为了显示「将打开哪个站」这类提示文案会在 build 里
+  /// 问一次，那种查询刷日志没有意义（真正的兜底发生在用户点击时）。
+  static String? lastFor(String sourceId, {bool quiet = false}) {
     final value = _last[sourceId.trim()];
     if (value == null) return null;
-    LumeLog.info('[waf] 用最近请求过的地址兜底：$value');
+    if (!quiet) LumeLog.info('[waf] 用最近请求过的地址兜底：$value');
     return value;
   }
 

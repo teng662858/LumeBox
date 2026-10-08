@@ -200,8 +200,9 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
       scrolledUnderElevation: 0,
       flexibleSpace: ClipRRect(
         // 顶栏容器圆角（用户口径：容器加圆角、控件尺寸不变）——只圆下沿两角，
-        // 上沿贴着屏幕顶端保持直角。
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+        // 上沿贴着屏幕顶端保持直角。16 → 20：第三次口径要的是「大圆角」，这个
+        // 半径在 36 高的工具栏 + 38 高的页签条上已经明显看得出两个圆角。
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
         child: GlassPanel(
           border: Border(
             bottom: BorderSide(color: LumeTheme.hairline),

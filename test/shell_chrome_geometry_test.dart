@@ -177,6 +177,57 @@ void main() {
     expect(capsule.left, closeTo(12, 0.01), reason: '左右悬浮留白仍是 12');
   });
 
+  testWidgets('底栏容器更薄 + 圆角椭圆（只收容器，图标文字尺寸不变）', (tester) async {
+    await pumpShell(tester);
+
+    final capsule = tester.getRect(dockCapsule());
+    // 容器高度收窄（用户口径第三次）：64 → 56。下限 48 是留给「图标 20 + 间距 +
+    // 文字 11」这套既有控件尺寸的余量，再薄就会挤压它们（那才叫缩放控件）。
+    expect(capsule.height, lessThanOrEqualTo(58.0), reason: '容器还是老高度（64）');
+    expect(capsule.height, greaterThanOrEqualTo(48.0), reason: '别压到里面的控件');
+
+    final radius = tester.widget<ClipRRect>(dockCapsule()).borderRadius;
+    expect(
+      radius,
+      BorderRadius.circular(capsule.height / 2),
+      reason: '外框要是胶囊 / 椭圆：半径 = 容器高度的一半',
+    );
+
+    // 控件尺寸一如既往：选中态的图标与文字都没被缩放。
+    final icon = tester.widget<Icon>(
+      find.descendant(of: find.byKey(AppShell.dockKey), matching: find.byType(Icon)).first,
+    );
+    expect(icon.size, 20, reason: '底栏图标尺寸不许随容器收窄而变小');
+    final label = tester.widget<Text>(
+      find
+          .descendant(
+            of: find.byKey(AppShell.dockKey),
+            matching: find.text(Section.novel.label),
+          )
+          .first,
+    );
+    expect(label.style?.fontSize, 11, reason: '底栏文字尺寸不许随容器收窄而变小');
+  });
+
+  testWidgets('顶栏容器下沿两个大圆角（贴屏幕顶端的那两个角保持直角）', (tester) async {
+    await pumpBoard(tester);
+
+    final clip = tester.widget<ClipRRect>(
+      find
+          .descendant(of: find.byType(AppBar), matching: find.byType(ClipRRect))
+          .first,
+    );
+    final radius = clip.borderRadius as BorderRadius;
+    expect(radius.topLeft.x, 0, reason: '上沿贴着屏幕顶端，保持直角');
+    expect(radius.topRight.x, 0);
+    expect(
+      radius.bottomLeft.x,
+      greaterThanOrEqualTo(16.0),
+      reason: '用户口径要「大圆角」：下沿两角至少 16',
+    );
+    expect(radius.bottomRight, radius.bottomLeft);
+  });
+
   testWidgets('中间内容区自动撑开：页签内容占满顶栏与 Dock 之间的空间', (tester) async {
     await pumpBoard(tester);
 

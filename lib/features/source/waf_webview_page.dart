@@ -363,6 +363,206 @@ Future<Map<String, String>?> showWafWebView({
 bool shouldOfferWebView(String? failureMessage) =>
     looksLikeWafFailure(failureMessage);
 
+/// 手动「网页视图」的结果。
+///
+/// 刻意不用 bool：三种结局的后续动作完全不同——「用户取消」不该再弹提示
+/// （他刚说过不要），「没取到会话」要教他等页面出内容再关。把它压成一个布尔
+/// 就会在这两种情况下给错话（用户口径里「点了没反应」有一半是这类错话）。
+enum WafWebViewOutcome {
+  /// 窗口开过、会话已落库：调用方可以重拉数据了。
+  collected,
+
+  /// 窗口开了，但一个 Cookie 都没取到（多半是没过完校验就关了）。
+  emptySession,
+
+  /// 窗口没打开：地址没拿到且用户取消了，或者开窗本身失败（异常已弹窗说明）。
+  notOpened,
+}
+
+/// 打开验证窗口的函数签名（默认是 [showWafWebView]；测试注入替身用）。
+typedef WafWebViewOpener = Future<Map<String, String>?> Function({
+  required BuildContext context,
+  required String url,
+  required String sourceName,
+  Section? section,
+  String? sourceId,
+});
+
+/// **手动「网页视图」的统一入口**：首页 / 探索页 / 筛选页三处共用一份流程。
+///
+/// 真机反馈过三轮「点了没反应」，所以这个函数把三件事钉死，任何一条都不许
+/// 静默退出：
+/// 1. **地址一定有着落**：先走 [resolveWebViewOrigin] 的四层兜底链，四层全落空
+///    就**弹出地址输入框**（预填最可能的那个站）——粘贴导入的源、老脚本、
+///    没有订阅地址这些组合都还能过校验；
+/// 2. **点了一定有反应**：开窗失败（WebView 插件异常、地址非法）也如实弹窗
+///    说明，而不是什么都不发生；
+/// 3. **取到会话就落库**：手动验证同样记 UA（`cf_clearance` 绑 IP + UA，
+///    不记 UA 等于白验）。
+Future<WafWebViewOutcome> runWafWebViewFlow({
+  required BuildContext context,
+  required Section section,
+  required String sourceId,
+  required String sourceName,
+  String? failureMessage,
+  String originUrl = '',
+  WafWebViewOpener opener = showWafWebView,
+}) async {
+  if (!context.mounted) return WafWebViewOutcome.notOpened;
+  var url = resolveWebViewOrigin(
+    failureMessage: failureMessage,
+    sourceId: sourceId,
+    originUrl: originUrl,
+  );
+  if (url == null || url.trim().isEmpty) {
+    LumeLog.info('[waf] $sourceId 的站址四层兜底都没拿到，改问用户要一次');
+    url = await askWebViewOrigin(
+      context: context,
+      sourceName: sourceName,
+      initial: guessWebViewAddress(sourceId: sourceId, originUrl: originUrl),
+    );
+  }
+  if (url == null || url.trim().isEmpty) {
+    LumeLog.info('[waf] $sourceId 未打开验证窗口（没有地址或用户取消）');
+    return WafWebViewOutcome.notOpened;
+  }
+  // 地址输入框是异步的：用户可能已经离开这个页面了。
+  if (!context.mounted) return WafWebViewOutcome.notOpened;
+
+  final Map<String, String>? cookies;
+  try {
+    cookies = await opener(
+      context: context,
+      url: url,
+      sourceName: sourceName,
+      section: section,
+      sourceId: sourceId,
+    );
+  } catch (error) {
+    // 例如 WebView 插件没就绪、地址打不开：这类失败以前就是「点了没反应」，
+    // 现在必须留下可读结论。
+    LumeLog.warn('[waf] 网页视图打开失败：$error');
+    if (context.mounted) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('验证窗口打不开'),
+          content: Text(
+            '打开 $url 时出错：$error\n\n'
+            '可以先在「源管理 → 网络配置」里检查这个源的代理 / UA；'
+            '站点本身不可达时也可以先试试【重试】。',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+    }
+    return WafWebViewOutcome.notOpened;
+  }
+  if (cookies == null || cookies.isEmpty) {
+    LumeLog.info('[waf] $sourceId 的验证窗口开着，但没取到会话');
+    return WafWebViewOutcome.emptySession;
+  }
+  WafSessions.save(section, sourceId, cookies);
+  LumeLog.info('[waf] $sourceId 手动验证取回 ${cookies.length} 项 Cookie');
+  return WafWebViewOutcome.collected;
+}
+
+/// 地址兜底链四层全落空时，问用户要一次源站地址。
+///
+/// 这是「点了没反应」的最后一根保险绳：粘贴导入（没有订阅地址）、老脚本（报错
+/// 文案里没有 URL）、进程刚重启（网络层还没记到请求）——这些组合同时出现时，
+/// 用户仍然要有一个办法把验证窗口打开，而不是面对一个死键。
+///
+/// 返回可打开的 origin；用户明确取消时返回 null。输入看不懂**不会**关掉对话框
+/// （就地给一行红字），因此这里不会出现「填了东西却什么都没发生」。
+Future<String?> askWebViewOrigin({
+  required BuildContext context,
+  required String sourceName,
+  String initial = '',
+}) =>
+    showDialog<String>(
+      context: context,
+      builder: (_) => _WafOriginDialog(sourceName: sourceName, initial: initial),
+    );
+
+/// 地址输入框本体。
+///
+/// 做成 State 而不是 `StatefulBuilder` + 局部变量：输入框的 `TextEditingController`
+/// 必须在**对话框整段退出动画走完**之后才销毁。早先那版在 `showDialog(…).whenComplete`
+/// 里 dispose，退场那一帧还在重建 TextField，直接抛
+/// 「A TextEditingController was used after being disposed」（回归用例逮到的）。
+class _WafOriginDialog extends StatefulWidget {
+  const _WafOriginDialog({required this.sourceName, required this.initial});
+
+  final String sourceName;
+  final String initial;
+
+  @override
+  State<_WafOriginDialog> createState() => _WafOriginDialogState();
+}
+
+class _WafOriginDialogState extends State<_WafOriginDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initial);
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final url = normalizeWebViewAddress(_controller.text);
+    if (url == null) {
+      // 输入看不懂就**留在对话框里**给一行提示，绝不「填了却没反应」。
+      setState(() => _error = '像这样填：www.example.com');
+      return;
+    }
+    Navigator.of(context).pop(url);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('过「${widget.sourceName}」的人机校验'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text('这个图源没给出站址，填一次就能打开验证窗口（填站点地址，不是脚本地址）：'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              hintText: 'www.example.com',
+              errorText: _error,
+              border: const OutlineInputBorder(),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('打开')),
+      ],
+    );
+  }
+}
+
 /// 自动静默校验（用户口径 2 / 3 / 4）：脚本抛 `NEED_WEBVIEW_VERIFY` 时由应用自己调起。
 ///
 /// - **小悬浮窗**：不做全屏页——一个 320×420 的圆角小窗浮在界面上，用户能继续看
