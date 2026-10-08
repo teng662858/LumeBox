@@ -22,6 +22,26 @@ dart run tool/fetch_sources.dart   # → .sources-cache/<section>/（已 gitigno
 没拉缓存时那些用例**整组跳过**（不是失败）：它们验的是「脚本对得上站点真实结构」，
 不是 App 自身的行为。
 
+## 打包产物（未签名 IPA）
+
+**构建产物统一放 `ipa/`**（目录已忽略，不进版本库）。文件名带**构建号**：
+
+```
+ipa/LumeBox-unsigned-1.0.<run_number>.ipa
+```
+
+拉最新一次 CI 构建（`gh` 已登录即可）：
+
+```bash
+bash tool/fetch_ipa.sh        # 等价于「把最新成功的 IPA 拉到 ipa/」
+bash tool/fetch_ipa.sh <run>  # 指定某次 run
+```
+
+装到手机后**核对装的是哪一版**：设置 →「关于」会显示
+`LumeBox · 版本 1.0.<run_number>（构建 <run_number>）`——与文件名对上才是这一版。
+（以前所有包都是 `1.0.0(1)`、文件名也一直相同，装上旧包看不出来，真机踩过一次
+「代码改了但界面没变」。）
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.
