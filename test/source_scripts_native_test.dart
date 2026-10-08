@@ -516,12 +516,3 @@ DynamicLibrary? _resolveBridge() {
 
 /// 脚本路径（本机没拉缓存时用例会被 skip，不会走到这里）。
 String _script(String name) => sourceScriptPath(name)!;
-
-/// 读一份缓存里的资产（脚本或站点快照）——传文件名即可。
-String _readAsset(String file) {
-  final path = sourceAssetPath(file);
-  if (path == null) {
-    throw StateError('缓存里没有 $file：先跑 `dart run tool/fetch_sources.dart`');
-  }
-  return File(path).readAsStringSync();
-}

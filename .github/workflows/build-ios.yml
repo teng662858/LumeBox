@@ -34,8 +34,15 @@ jobs:
         run: flutter pub get
 
       # 只编译不签名：flutter 会打 xcarchive；签名与导出（exportArchive）由本地重签名流程负责。
-      - name: 编译（--no-codesign）
-        run: flutter build ipa --no-codesign
+      #
+      # **每个构建一个可辨认的版本号**（1.0.<run_number>）：设置 →「关于」会显示它。
+      # 以前所有包都是 1.0.0(1)，装上旧包从界面上看不出来——真机踩过一次
+      # 「代码改了但界面没变」，排查第一步就得能回答「装的是哪一版」。
+      - name: 编译（--no-codesign，带构建号）
+        run: >-
+          flutter build ipa --no-codesign
+          --build-name=1.0.${{ github.run_number }}
+          --build-number=${{ github.run_number }}
 
       - name: 打包未签名 IPA
         run: |

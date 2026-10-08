@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/source/source.dart';
 import '../../core/reading/browse_layout.dart';
 import '../../core/theme/lume_theme.dart';
+import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../source/global_source_page.dart';
@@ -147,6 +152,13 @@ class SettingsPage extends StatelessWidget {
             subtitle: '请求抓包（方法 / 状态 / 耗时 / 来源）与 JS 上下文统计；抓包默认关闭',
             onTap: () => _push(context, const DebugPanelPage()),
           ),
+          const SizedBox(height: 20),
+          const _GroupTitle('关于'),
+          // **装的是哪一版**：CI 每个构建都会带上构建号（见 build-ios.yml 的
+          // `--build-name/--build-number`），这里直接显示出来。以前所有包的
+          // 版本号都是 1.0.0，装上旧包看不出来——排查「代码改了但界面没变」
+          // 时第一句话就得能回答这个问题（真机踩过一次）。
+          const _BuildInfoRow(),
         ],
       ),
     );
@@ -276,6 +288,60 @@ class GridTitleStyleRow extends StatelessWidget {
           await settings.setGridTitleStyle(picked);
         },
       ),
+    );
+  }
+}
+
+/// 「关于」里的一行：应用名 + 版本 + 构建号（CI 每次构建都会刷新构建号）。
+///
+/// 平台信息读不到时如实显示「未知」，不猜：这一行的作用就是让用户与排查者
+/// 一眼确认「装的是哪一版」，猜一个数字比空着更糟。
+class _BuildInfoRow extends StatefulWidget {
+  const _BuildInfoRow();
+
+  @override
+  State<_BuildInfoRow> createState() => _BuildInfoRowState();
+}
+
+class _BuildInfoRowState extends State<_BuildInfoRow> {
+  String _line = '正在读取版本…';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final version = info.version.trim().isEmpty ? '未知' : info.version.trim();
+      final build = info.buildNumber.trim().isEmpty ? '未知' : info.buildNumber.trim();
+      if (!mounted) return;
+      setState(() => _line = '版本 $version（构建 $build）');
+    } catch (error) {
+      LumeLog.warn('[settings] 读取版本信息失败：$error');
+      if (!mounted) return;
+      setState(() => _line = '版本信息不可用（当前平台不支持）');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsEntry(
+      icon: Icons.info_outline,
+      title: LumeTheme.appName,
+      subtitle: _line,
+      // 这一行不需要「进入下一页」：它本身就是答案。
+      onTap: () async {
+        await Clipboard.setData(
+          ClipboardData(text: '${LumeTheme.appName} · $_line'),
+        );
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已复制版本信息')),
+        );
+      },
     );
   }
 }
