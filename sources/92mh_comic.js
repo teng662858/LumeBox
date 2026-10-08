@@ -9,20 +9,20 @@
 //   因此本脚本被拦时抛 `NEED_WEBVIEW_VERIFY`：App 会自动拉起网页视图过一次校验、
 //   存下 Cookie 与 UA，再**自动重试**这次调用（见 core/net/waf_auto_verify.dart）。
 //
-// ⚠️ 构建说明（请知悉）：正因为 CF 拦住了 curl 这类客户端，开发机上**取不到页面
-//   HTML**，所以下面的解析器是按**常见漫画站模板**写的多套兜底（列表 / 详情 /
-//   章节 / 图片各备 2~3 种写法，命中哪个都行）。第一次跑如果某一环是空的，把那一屏
-//   截图给我，我按真实结构把选择器收敛掉。
+// ✅ 真实结构（2026-10-08 用**真浏览器**过完 CF 后实测，已按它写解析器）：
+//   · 分类：`/list/{slug}/`（少年 shaonian / 少女 shaonv / 青年 qingnian /
+//     连载 lianzai / 完结 wanjie）与 `/list/update/`（最近更新）。
+//   · 分页：`/list/{slug}/{n}/`，页脚有「下一页 / 尾页」。
+//   · 列表条目：`<li data-key><a href="https://www.92mh.com/manhua/{书id}/">书名</a></li>`
+//     ——**列表页只有书名没有封面**，封面只出现在首页更新流与详情页。
+//   · 详情：`h1` 是书名；简介在 `meta[name=description]`；**没有 og:image**，
+//     封面是 `img[src*="cover.alltucdn.cc"]`（站点用 http:// 嵌的图，App 侧会自动升
+//     https，见 image_pipeline 的 ATS 修复）；章节是
+//     `a[href="/manhua/{书id}/{章节id}.html"]`，标题在 `span.list_con_zj`。
+//   · 正文：章节页里的 `img[src]` 就是漫画页；站点 logo（`images/92mh-`）与
+//     `cover.alltucdn.cc/.../cover/...` 缩略图要排掉。一章一页，页脚给「第 N 话」直达下一话。
 //
-// 结构假设（多套兜底）：
-//   · 列表：`/list/{id}/{page}.html`、`/sort/{id}/{page}.html`、`/booklist?page=`。
-//     条目形如 `<a href="/comic/{id}">` / `/book/{id}` / `/mh/{id}`，封面在
-//     `img[data-original|data-src|src]`。
-//   · 详情：标题 `h1` / `og:title`；封面 `og:image` 或首个 img；简介
-//     `meta[name=description]` 或 `class=desc|content|intro|summary` 段。
-//   · 章节：`a[href*="/chapter/"]` / `/read/` / `/comic/{id}/{n}.html`，去重。
-//   · 正文：章节页里的 `img`（data-original / data-src / src），`?page=N` 翻页
-//     （有 `#nextPage` 或「下一页」才继续）。
+// 仍然保留多套兜底：站点模板换版时先按老结构试，再按新结构试。
 
 var BASE_URL = 'https://www.92mh.com';
 var PAGE_SIZE = 30;
@@ -146,24 +146,20 @@ var LumeSource = {
     return id;
   },
 
-  /// 列表地址：按分类 id 的形状挑一种常见写法（多套兜底）。
+  /// 列表地址：真站点就是 `/list/{slug}/{n}/`（分类 slug 直接来自导航）。
   __listUrl(category, page) {
-    var value = String(category || '');
-    // 导航抓下来的 id 形如 `/sort/hot`（带前缀，才分得清 list / sort），
-    // 直接拼成 `{path}/{page}.html`。
-    if (value.indexOf('/') === 0) return BASE_URL + value + '/' + page + '.html';
-    if (value === 'update') return BASE_URL + '/list/update/' + page + '.html';
-    if (!value) return BASE_URL + '/list/1/' + page + '.html';
-    if (/^\d+$/.test(value)) return BASE_URL + '/list/' + value + '/' + page + '.html';
-    return BASE_URL + '/' + value + '/' + page + '.html';
+    var value = String(category || '').trim();
+    var slug = value.replace(/^\/?(list\/)?/, '').replace(/\/+$/, '');
+    if (!slug) slug = 'update';
+    return BASE_URL + '/list/' + slug + '/' + page + '/';
   },
 
   __detailUrl(id) {
     var value = String(id || '');
     if (value.indexOf('http') === 0) return value;
     if (value.indexOf('/') === 0) return BASE_URL + value;
-    // 章节链接自带完整路径（见 __chapterLinks），走到这里的是纯 id。
-    return BASE_URL + '/comic/' + encodeURIComponent(value) + '.html';
+    // 纯书号 → `/manhua/{id}/`（真站点的详情页形态）。
+    return BASE_URL + '/manhua/' + encodeURIComponent(value) + '/';
   },
 
   /// 顶部导航里的一级分类（`/list/{id}/`、`/sort/{id}/` 这类）。
@@ -179,7 +175,8 @@ var LumeSource = {
     var match;
     while ((match = pattern.exec(source)) !== null) {
       // id 保留完整路径（`/sort/hot`）：只留 `hot` 就分不清该走 list 还是 sort。
-      var id = '/' + match[1] + '/' + match[2];
+      // 真站点：`/list/{slug}/`（少年/少女/青年/连载/完结/update）。保留 slug 作 id。
+      var id = match[2];
       if (seen[id]) continue;
       var title = this.__clean(match[3]);
       if (!title) continue;
@@ -193,18 +190,20 @@ var LumeSource = {
     var items = [];
     var seen = {};
     var patterns = [
-      /<a[^>]+href="((?:https?:\/\/[^"]+)?\/(?:comic|book|mh)\/[^"?#]+)"[^>]*title="([^"]*)"[\s\S]{0,600}?data-original="([^"]*)"/g,
-      /<a[^>]+href="((?:https?:\/\/[^"]+)?\/(?:comic|book|mh)\/[^"?#]+)"[^>]*>[\s\S]{0,400}?<img[^>]+(?:data-original|data-src|src)="([^"]*)"[\s\S]{0,200}?>([^<]{2,60})</g
+      // 真站点：条目就是「书号链接 + 书名」，列表页不给封面。
+      /<a[^>]+href="((?:https?:\/\/[^"]+)?\/manhua\/(\d+)\/)"[^>]*>([^<]{1,60})<\/a>/g,
+      /<a[^>]+href="((?:https?:\/\/[^"]+)?\/(?:comic|book|mh)\/[^"?#]+)"[^>]*title="([^"]*)"[\s\S]{0,600}?data-original="([^"]*)"/g
     ];
     for (var p = 0; p < patterns.length; p++) {
       var match;
       while ((match = patterns[p].exec(html)) !== null) {
         var href = match[1];
-        if (!href || seen[href]) continue;
-        var title = this.__clean(p === 0 ? match[2] : match[3]);
-        var cover = p === 0 ? match[3] : match[2];
+        var key = p === 0 ? match[2] : href;
+        if (!href || seen[key]) continue;
+        var title = this.__clean(p === 0 ? match[3] : match[2]);
+        var cover = p === 0 ? '' : match[3];
         if (!title) continue;
-        seen[href] = true;
+        seen[key] = true;
         items.push({
           id: href,
           title: title,
@@ -221,9 +220,10 @@ var LumeSource = {
     var chapters = [];
     var seen = {};
     var patterns = [
+      // 真站点：`/manhua/{书id}/{章节id}.html`，标题在 `<span class="list_con_zj">第01话…`。
+      /href="([^"]*\/manhua\/\d+\/\d+\.html)"[^>]*>([\s\S]{0,200}?)<\/a>/g,
       /href="([^"]*\/chapter\/[^"]+)"[^>]*>([\s\S]{0,40}?)<\/a>/g,
-      /href="([^"]*\/read\/[^"]+)"[^>]*>([\s\S]{0,40}?)<\/a>/g,
-      /href="([^"]*\/(?:comic|book)\/[^"\/]+\/\d+[^"]*)"[^>]*>([\s\S]{0,40}?)<\/a>/g
+      /href="([^"]*\/read\/[^"]+)"[^>]*>([\s\S]{0,40}?)<\/a>/g
     ];
     for (var p = 0; p < patterns.length; p++) {
       var match;
@@ -248,9 +248,13 @@ var LumeSource = {
     var pattern = /<img[^>]+(?:data-original|data-src|src)="([^"]+)"/g;
     var match;
     while ((match = pattern.exec(html)) !== null) {
-      var url = this.__absolute(match[1]);
-      if (!url || /\/static\/|placeholder|loading|\.gif$/i.test(url)) continue;
-      if (seen[url]) continue;
+      var raw = String(match[1]).trim();
+      if (!raw) continue;
+      // 排掉站点自身的图：logo / 图标 / 封面缩略图（真站点实测：
+      // `images/92mh-pc.png` 与 `cover.alltucdn.cc/.../cover/...`）。
+      if (/images\/92mh|\/cover\/|logo|placeholder|loading|\.gif$/i.test(raw)) continue;
+      var url = this.__absolute(raw);
+      if (!url || seen[url]) continue;
       seen[url] = true;
       images.push(url);
     }
@@ -262,6 +266,7 @@ var LumeSource = {
     // 两种常见分页写法都认：查询串 `?page=N` / 查询串 `page=N`，以及路径式
     // `/list/{id}/{n}.html`（这一种在自检里曾经漏掉，列表就再也翻不动）。
     var patterns = [
+      /\/list\/[a-z0-9_-]+\/(\d+)\//g,
       /(?:list|sort|booklist)[^"'#]*[\/?]page[=\/](\d+)/g,
       /\/(?:list|sort)\/[^"'\/]+\/(\d+)\.html/g
     ];
