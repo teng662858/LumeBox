@@ -414,6 +414,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
       cookie: profile.cookie,
       proxy: profile.proxy,
       bridge: profile.bridge,
+      allowBadCertificate: profile.allowBadCertificate,
     );
     // 运行时重建：旧客户端带着旧 UA / Cookie，必须释放。
     await _manager.setEnabled(source.id, source.enabled);
@@ -1077,6 +1078,9 @@ class _NetworkDialogState extends State<_NetworkDialog> {
   late final TextEditingController _bridge =
       TextEditingController(text: widget.source.network.bridge);
 
+  /// 「忽略证书错误」：按源开放，默认关闭（值从该源当前配置读，不会自己变开）。
+  late bool _allowBadCertificate = widget.source.network.allowBadCertificate;
+
   @override
   void dispose() {
     _ua.dispose();
@@ -1146,6 +1150,23 @@ class _NetworkDialogState extends State<_NetworkDialog> {
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 8),
+              // 「忽略证书错误」（用户口径）：站点证书过期时系统会直接拒连
+              // （CERTIFICATE_VERIFY_FAILED），这是唯一出路。**按源开放、默认关**，
+              // 并把风险写在旁边——不能让它看起来像个普通开关。
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _allowBadCertificate,
+                onChanged: (value) =>
+                    setState(() => _allowBadCertificate = value == true),
+                title: const Text('忽略证书错误'),
+                subtitle: const Text(
+                  '站点证书过期 / 链不完整时才需要开。开启后该源的请求不再校验证书，'
+                  '存在被中间人冒充的风险；证书修好后请立刻关闭。',
+                ),
+                controlAffinity: ListTileControlAffinity.leading,
+                dense: true,
+              ),
             ],
           ),
         ),
@@ -1166,6 +1187,7 @@ class _NetworkDialogState extends State<_NetworkDialog> {
               cookie: _cookie.text,
               proxy: _proxy.text,
               bridge: _bridge.text,
+              allowBadCertificate: _allowBadCertificate,
             ),
           ),
           child: const Text('保存'),

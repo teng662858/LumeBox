@@ -175,6 +175,7 @@ class NetworkProfile {
     this.cookie = '',
     this.proxy = '',
     this.bridge = '',
+    this.allowBadCertificate = false,
   });
 
   /// 图源级 UA；为空时用全局 UA。
@@ -193,11 +194,19 @@ class NetworkProfile {
   /// 交给脚本，见 `LumeSource.bridge`）。
   final String bridge;
 
+  /// **容忍证书错误**（用户口径：按源开放、默认关、显式勾选）。
+  ///
+  /// 站点证书过期 / 链不完整时，系统会拒绝连接（`CERTIFICATE_VERIFY_FAILED`），
+  /// 该源永远打不开。开启后这一源的请求不再校验证书——**有中间人风险**，
+  /// 因此只在个别站点上开、证书修好就关（界面里有对应的风险说明）。
+  final bool allowBadCertificate;
+
   bool get isEmpty =>
       userAgent.trim().isEmpty &&
       cookie.trim().isEmpty &&
       proxy.trim().isEmpty &&
-      bridge.trim().isEmpty;
+      bridge.trim().isEmpty &&
+      !allowBadCertificate;
 
   static const NetworkProfile none = NetworkProfile();
 
@@ -214,12 +223,14 @@ class NetworkProfile {
     String? cookie,
     String? proxy,
     String? bridge,
+    bool? allowBadCertificate,
   }) =>
       NetworkProfile(
         userAgent: userAgent ?? this.userAgent,
         cookie: cookie ?? this.cookie,
         proxy: proxy ?? this.proxy,
         bridge: bridge ?? this.bridge,
+        allowBadCertificate: allowBadCertificate ?? this.allowBadCertificate,
       );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -227,6 +238,7 @@ class NetworkProfile {
         'cookie': cookie,
         'proxy': proxy,
         'bridge': bridge,
+        'allowBadCertificate': allowBadCertificate,
       };
 
   static NetworkProfile fromJson(Object? json) {
@@ -236,13 +248,16 @@ class NetworkProfile {
       cookie: '${json['cookie'] ?? ''}',
       proxy: '${json['proxy'] ?? ''}',
       bridge: '${json['bridge'] ?? ''}',
+      // 缺字段一律按**关闭**：老配置不能因为读不出来就悄悄放宽证书校验。
+      allowBadCertificate: json['allowBadCertificate'] == true,
     );
   }
 
   @override
   String toString() => 'NetworkProfile(UA ${userAgent.isEmpty ? '继承' : '自定义'}, '
       'Cookie ${cookie.isEmpty ? '无' : '有'}, '
-      '代理 ${proxy.isEmpty ? '继承' : proxy})';
+      '代理 ${proxy.isEmpty ? '继承' : proxy}'
+      '${allowBadCertificate ? ', 忽略证书错误' : ''})';
 }
 
 /// 全局网络设置的持久化：`<应用支持目录>/network_settings.json`。

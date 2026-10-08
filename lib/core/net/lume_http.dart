@@ -148,6 +148,8 @@ class LumeHttp {
       // 只有幂等方法参与重试：POST 重试可能造成重复提交。
       retryOn: _isIdempotent(method),
       proxy: _profile.mergedWith(_settings).proxy,
+      // 证书过期站点的唯一出路（按源显式开启，默认关）。
+      allowBadCertificate: _profile.mergedWith(_settings).allowBadCertificate,
     );
 
     // 单次请求的超时兜底：队列内部含重试等待，这里按「重试次数 + 1」放宽，

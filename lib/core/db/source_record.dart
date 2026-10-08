@@ -69,6 +69,8 @@ class SourceRecord {
           cookie: '${row['cookie'] ?? ''}',
           proxy: '${row['proxy'] ?? ''}',
           bridge: '${row['bridge'] ?? ''}',
+          // 缺列（老库还没来得及迁移）时按「关闭」读：宁可连不上，也不悄悄放宽校验。
+          allowBadCertificate: '${row['allow_bad_cert'] ?? ''}' == '1',
         ),
         originUrl: '${row['origin_url'] ?? ''}',
         group: '${row['source_group'] ?? ''}',

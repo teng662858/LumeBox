@@ -12,7 +12,7 @@ import 'source_record.dart';
 class SectionDatabase {
   SectionDatabase._(this._db, this._sectionId);
 
-  static const int _schemaVersion = 6;
+  static const int _schemaVersion = 7;
 
   /// 库内自证键：本库属于哪个板块。
   static const String _ownerKey = 'owner_section';
@@ -130,6 +130,10 @@ CREATE TABLE IF NOT EXISTS section_setting (
       // 地址按图源存，交给脚本去转发请求（见 NetworkProfile.bridge）。
       _db.execute("ALTER TABLE source ADD COLUMN bridge TEXT NOT NULL DEFAULT ''");
     }
+    if (version < 7) {
+      // 「忽略证书错误」按源存（'1' 开 / '' 关）：证书过期站点的唯一出路。
+      _db.execute("ALTER TABLE source ADD COLUMN allow_bad_cert TEXT NOT NULL DEFAULT ''");
+    }
     if (version < _schemaVersion) {
       _db.execute('PRAGMA user_version = $_schemaVersion');
     }
@@ -205,10 +209,19 @@ CREATE TABLE IF NOT EXISTS section_setting (
     required String cookie,
     required String proxy,
     String bridge = '',
+    bool allowBadCertificate = false,
   }) {
     _db.execute(
-      'UPDATE source SET user_agent = ?, cookie = ?, proxy = ?, bridge = ? WHERE id = ?',
-      [userAgent, cookie, proxy, bridge, id],
+      'UPDATE source SET user_agent = ?, cookie = ?, proxy = ?, bridge = ?, '
+      'allow_bad_cert = ? WHERE id = ?',
+      [
+        userAgent,
+        cookie,
+        proxy,
+        bridge,
+        allowBadCertificate ? '1' : '',
+        id,
+      ],
     );
   }
 

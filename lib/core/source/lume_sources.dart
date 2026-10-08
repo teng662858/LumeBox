@@ -101,6 +101,7 @@ class LumeSources {
     required String cookie,
     required String proxy,
     String bridge = '',
+    bool allowBadCertificate = false,
   }) async {
     if (!runtimeAvailableFor(section)) return;
     final registry = await SourceRegistry.open(section);
@@ -110,6 +111,7 @@ class LumeSources {
       cookie: cookie,
       proxy: proxy,
       bridge: bridge,
+      allowBadCertificate: allowBadCertificate,
     );
   }
 
@@ -374,6 +376,7 @@ class _LumeSourceManager implements SourceManager {
     required String cookie,
     required String proxy,
     String bridge = '',
+    bool allowBadCertificate = false,
   }) =>
       LumeSources.setNetwork(
         _section,
@@ -382,6 +385,7 @@ class _LumeSourceManager implements SourceManager {
         cookie: cookie,
         proxy: proxy,
         bridge: bridge,
+        allowBadCertificate: allowBadCertificate,
       );
 
   @override

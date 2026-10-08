@@ -84,7 +84,13 @@ class LumeNet {
     // 客户端**复用**（见 [_proxyClient]）：这里不再「用完就关」——每次新建再关闭
     // 等于每个请求都重新做一次 TCP + TLS 握手，开了代理之后尤其明显
     // （真机反馈「即使开启代理速度依然不理想」，根因之一就是它）。
-    final client = proxy.isEmpty ? _sharedClient() : _proxyClient(proxy);
+    final client = request.allowBadCertificate
+        ? _relaxedClient(proxy)
+        : (proxy.isEmpty ? _sharedClient() : _proxyClient(proxy));
+    if (request.allowBadCertificate) {
+      // 显式放宽的请求逐条留痕：这类请求的安全性由用户自己承担，日志要能查到。
+      LumeLog.warn('本次请求已放宽证书校验（按源开启）：${request.url}');
+    }
     final outgoing = http.Request(request.method, Uri.parse(request.url));
     outgoing.headers.addAll(request.headers);
     if (request.body != null) outgoing.body = request.body!;
@@ -102,7 +108,35 @@ class LumeNet {
   /// 按代理地址缓存的客户端：同一个代理最多一个（连接池才有效）。
   static final Map<String, http.Client> _proxyClients = <String, http.Client>{};
 
+  /// 「容忍证书错误」的客户端（按代理去重）。
+  ///
+  /// 与普通客户端分开缓存：**绝不**污染共享客户端——那是全 App 都在用的通道，
+  /// 只因为某一个源证书过期就全局放宽校验，等于把所有源都摊开给中间人。
+  static final Map<String, http.Client> _relaxedClients = <String, http.Client>{};
+
   static http.Client _sharedClient() => _shared ??= _newClient();
+
+  /// 「容忍证书错误」的客户端：与普通客户端同一套建法，只是放行证书校验失败。
+  ///
+  /// 只给**按源显式开启**「忽略证书错误」的请求用（见 [NetworkRequest]）：
+  /// 站点证书过期时这是唯一的出路（真机案例：北觅影视 v.luttt.com 的 Let's
+  /// Encrypt 证书已过期，dart:io 直接 `CERTIFICATE_VERIFY_FAILED`）。
+  static http.Client _relaxedClient(String proxy) {
+    final key = proxy.trim().isEmpty ? 'direct' : proxy.trim();
+    return _relaxedClients.putIfAbsent(key, () {
+      final inner = HttpClient();
+      inner.badCertificateCallback = (cert, host, port) {
+        LumeLog.warn('放行证书校验失败：$host:$port（该源已开启「忽略证书错误」）');
+        return true;
+      };
+      final uri = Uri.tryParse(proxy);
+      if (uri != null && uri.host.isNotEmpty && !uri.scheme.toLowerCase().startsWith('socks')) {
+        final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
+        inner.findProxy = (target) => 'PROXY ${uri.host}:$port';
+      }
+      return IOClient(inner);
+    });
+  }
 
   /// 建一个**标准**客户端：解析、连接池、TLS 全部交给 `dart:io`。
   ///

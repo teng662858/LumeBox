@@ -16,6 +16,7 @@ class NetworkRequest {
     this.source = '宿主',
     this.retryOn = true,
     this.proxy = '',
+    this.allowBadCertificate = false,
   });
 
   final String url;
@@ -28,6 +29,13 @@ class NetworkRequest {
 
   /// 是否参与退避重试（幂等的 GET 默认参与；上传类请求可关掉）。
   final bool retryOn;
+
+  /// 是否容忍站点证书错误（**按源显式开启**，默认关闭）。
+  ///
+  /// 站点证书过期/链不完整时，dart:io 会直接拒连（真机报
+  /// `CERTIFICATE_VERIFY_FAILED`）。这类站点要么等它修证书，要么由用户**显式**
+  /// 为这一个源开这个开关；开启后每一次请求都会打日志，方便事后回查。
+  final bool allowBadCertificate;
 
   /// 本次请求的代理（图源覆盖或全局设置解析后的结果）；空串表示直连。
   final String proxy;

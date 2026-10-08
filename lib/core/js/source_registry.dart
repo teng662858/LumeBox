@@ -107,6 +107,7 @@ class SourceRegistry {
     required String cookie,
     required String proxy,
     String bridge = '',
+    bool allowBadCertificate = false,
   }) {
     if (!_owns(sourceId)) return;
     _database.setSourceNetwork(
@@ -115,6 +116,7 @@ class SourceRegistry {
       cookie: cookie.trim(),
       proxy: proxy.trim(),
       bridge: bridge.trim(),
+      allowBadCertificate: allowBadCertificate,
     );
     _httpBySource.remove(sourceId)?.dispose();
   }

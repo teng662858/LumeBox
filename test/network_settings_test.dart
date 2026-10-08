@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/db/section_database.dart';
+import 'package:lume_box/core/net/network_queue.dart';
 import 'package:lume_box/core/net/network_settings.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
@@ -206,4 +207,50 @@ void main() {
       expect(record.network.isEmpty, isTrue, reason: '旧记录的覆盖列默认为空');
     });
   });
+  group('忽略证书错误（按源开放，默认关）', () {
+    test('默认关闭；copyWith / JSON 往返都带着它', () {
+      expect(NetworkProfile.none.allowBadCertificate, isFalse);
+      const profile = NetworkProfile();
+      expect(profile.allowBadCertificate, isFalse);
+
+      final relaxed = profile.copyWith(allowBadCertificate: true);
+      expect(relaxed.allowBadCertificate, isTrue);
+
+      final decoded = NetworkProfile.fromJson(relaxed.toJson());
+      expect(decoded.allowBadCertificate, isTrue, reason: '开了就要存得住');
+    });
+
+    test('老配置读不出来一律按「关闭」处理（绝不悄悄放宽）', () {
+      final legacy = NetworkProfile.fromJson(<String, Object?>{
+        'userAgent': 'x',
+        'cookie': '',
+        'proxy': '',
+        'bridge': '',
+      });
+      expect(legacy.allowBadCertificate, isFalse);
+      expect(NetworkProfile.fromJson(null).allowBadCertificate, isFalse);
+      expect(
+        NetworkProfile.fromJson(<String, Object?>{'allowBadCertificate': 'true'})
+            .allowBadCertificate,
+        isFalse,
+        reason: '只有布尔 true 才算开：字符串不算，避免脏配置把校验关掉',
+      );
+    });
+
+    test('请求默认不放宽：只有图源显式开启才会带上这个标记', () {
+      const plain = NetworkRequest(url: 'https://example.com');
+      expect(plain.allowBadCertificate, isFalse);
+      const relaxed = NetworkRequest(
+        url: 'https://example.com',
+        allowBadCertificate: true,
+      );
+      expect(relaxed.allowBadCertificate, isTrue);
+    });
+
+    test('非空判定：只开了这个开关也算「有覆盖」', () {
+      const profile = NetworkProfile(allowBadCertificate: true);
+      expect(profile.isEmpty, isFalse);
+    });
+  });
+
 }
