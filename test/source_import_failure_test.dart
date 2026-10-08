@@ -353,6 +353,92 @@ async function getList(page) { return { list: [{ id: 'a', title: '旧' }] }; }
     expect(updated.script, isNot(contains('别的源')));
   }, skip: skipReason);
 
+  test('订阅清单里有一条 404：跳过它，其余照常收下（真机反馈：整批导入失败）', () async {
+    // 真机反馈：漫画 / 视频板块的订阅**整批**导入失败，报「订阅拉取失败：
+    // Bad state: HTTP 404」——清单里有一行指向已被删掉的脚本，而展开清单时任何
+    // 一条失败都会把整次解析打断，其余源也一起进不来。
+    const listUrl = 'https://example.com/comic/sources.js';
+    const good = 'https://example.com/comic/a.js';
+    const dead = 'https://example.com/comic/deleted.js';
+    const script = '// LumeSource: {"id":"a","name":"甲","version":"1.0.0"}\n'
+        'async function getList(page) { return { list: [] }; }';
+    final skips = <String>[];
+    final resolver = SourceSubscription(
+      onSkip: (url, error) => skips.add('$url|$error'),
+      fetch: (url) async {
+        if (url == dead) throw StateError('HTTP 404');
+        final text = switch (url) {
+          listUrl => '# 清单\n$good\n$dead\n',
+          _ => script,
+        };
+        return SourceFetchResult(
+          bytes: Uint8List.fromList(utf8.encode(text)),
+          text: text,
+        );
+      },
+    );
+
+    final refs = await resolver.resolveRefs(<String>[listUrl]);
+    expect(refs.length, 1, reason: '好的那条照常收下');
+    expect(refs.single.url, good, reason: '来源地址记它自己那一行');
+    expect(skips.length, 1, reason: '坏的那条被跳过并如实上报（界面要能说明）');
+    expect(skips.single, contains('deleted.js'));
+  });
+
+  test('用户手输的那条订阅地址拉不到：仍然照旧报错，不许静默吞掉', () async {
+    // 跳过只针对**清单里的条目**；用户自己粘的那条拉不到，必须让他看见。
+    final resolver = SourceSubscription(
+      onSkip: (url, error) => fail('手输地址不该走跳过逻辑：$url'),
+      fetch: (url) async => throw StateError('HTTP 404'),
+    );
+    await expectLater(
+      resolver.resolveRefs(<String>['https://example.com/nope.js']),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('订阅更新：清单里另一条 404，本源的更新照常成功并在结果里说明', () async {
+    final registry = await openRegistry(Section.video);
+    await registry.import(
+      '// LumeSource: {"id":"mine2","name":"我的源","version":"1.0.0"}\n'
+      "async function getList(page) { return { list: [{ id: 'a', title: '旧' }] }; }",
+      originUrl: 'https://example.com/list2.txt',
+    );
+
+    const listUrl = 'https://example.com/list2.txt';
+    const deadUrl = 'https://example.com/gone.js';
+    const mineUrl = 'https://example.com/mine2.js';
+    const mine = '// LumeSource: {"id":"mine2","name":"我的源","version":"2.0.0"}\n'
+        "async function getList(page) { return { list: [{ id: 'a', title: '新' }] }; }";
+    final skippedNames = <String>[];
+    final resolver = SourceSubscription(
+      onSkip: (url, error) =>
+          skippedNames.add(Uri.parse(url).pathSegments.last),
+      fetch: (url) async {
+        if (url == deadUrl) throw StateError('HTTP 404');
+        final text = switch (url) {
+          listUrl => '# 清单\n$deadUrl\n$mineUrl\n',
+          _ => mine,
+        };
+        return SourceFetchResult(
+          bytes: Uint8List.fromList(utf8.encode(text)),
+          text: text,
+        );
+      },
+    );
+
+    final result = await LumeSources.updateFromSubscription(
+      Section.video,
+      'mine2',
+      subscription: resolver,
+    );
+    expect(result.status, SourceUpdateStatus.updated, reason: result.message);
+    expect(registry.source('mine2')!.script, contains('新'));
+    expect(skippedNames, <String>['gone.js'], reason: '坏的那条被上报给调用方');
+    // 结果里的「另有 N 条拉不到」由**生产用的那个解析器**（viaHttp）的许可
+    // 回调拼出；本用例注入的是自己的解析器，因此只验它把跳过报给调用方。
+  }, skip: skipReason);
+
   test('订阅更新（真实引擎）：内容一致 → 已是最新', () async {
     final registry = await openRegistry(Section.video);
     const script = '''

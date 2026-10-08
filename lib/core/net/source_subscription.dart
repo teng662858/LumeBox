@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import '../util/lume_log.dart';
 import '../util/md5.dart';
 import 'lume_http.dart';
 
@@ -32,6 +33,7 @@ class SourceSubscription {
   SourceSubscription({
     required this.fetch,
     this.maxScripts = 20,
+    this.onSkip,
   });
 
   /// 拉取动作（URL → 字节 + 文本）。默认走宿主网络层。
@@ -40,11 +42,25 @@ class SourceSubscription {
   /// 单次订阅最多收多少份脚本（防止清单无限展开）。
   final int maxScripts;
 
+  /// 清单里的**某一条**拉不到时的回调（地址 + 原因）。
+  ///
+  /// 真机反馈：漫画 / 视频板块的订阅整批导入失败，报「订阅拉取失败：
+  /// Bad state: HTTP 404」——清单里有一行指向已被删掉的脚本，而展开清单时
+  /// 任何一条失败都会把整次解析打断，其余源也一起进不来。**一条坏条目不该让
+  /// 整批失败**：现在跳过它并回调告知（界面照常显示「其余都导入成功 + 哪几条
+  /// 没拉到」）。注意只有**清单里的条目**这样处理；用户手输的那条地址拉不到
+  /// 仍然照旧报错——那是他真正要拉的东西。
+  final void Function(String url, Object error)? onSkip;
+
   /// 默认实现：走宿主网络层（统一队列 / UA / 代理 / 重试）。
-  factory SourceSubscription.viaHttp({int maxScripts = 20}) {
+  factory SourceSubscription.viaHttp({
+    int maxScripts = 20,
+    void Function(String url, Object error)? onSkip,
+  }) {
     final http = LumeHttp(source: '订阅拉取');
     return SourceSubscription(
       maxScripts: maxScripts,
+      onSkip: onSkip,
       fetch: (url) async {
         try {
           final response = await http.send(url: url);
@@ -127,7 +143,13 @@ class SourceSubscription {
     final nested = urlsIn(download.text, limit: maxScripts);
     for (final item in nested) {
       if (refs.length >= maxScripts) break;
-      refs.addAll(await scriptRefsAt(item, visited));
+      try {
+        refs.addAll(await scriptRefsAt(item, visited));
+      } catch (error) {
+        // 这一条拉不到（脚本被删 / 地址写错 / 临时 404）：跳过它，其余照常。
+        onSkip?.call(item, error);
+        LumeLog.warn('订阅条目拉取失败，已跳过：$item（$error）');
+      }
     }
     return refs;
   }

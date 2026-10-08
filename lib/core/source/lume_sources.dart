@@ -237,8 +237,14 @@ class LumeSources {
       );
     }
 
+    final skipped = <String>[];
     final resolver = subscription ??
-        SourceSubscription.viaHttp();
+        SourceSubscription.viaHttp(
+          // 清单里别的条目拉不到（脚本被删）不该挡住这一个源的更新：
+          // 记下来，更新完在结果里如实说明。
+          onSkip: (url, error) =>
+              skipped.add('${Uri.tryParse(url)?.pathSegments.last ?? url}（$error）'),
+        );
     final List<String> scripts;
     try {
       scripts = await resolver.resolve(<String>[record.originUrl]);
@@ -279,7 +285,12 @@ class LumeSources {
       );
     }
     // 覆盖导入不会动网络覆盖与来源地址（它们属于用户配置，不属于脚本）。
-    return SourceUpdateResult.updated(_describe(updated));
+    return SourceUpdateResult.updated(
+      _describe(updated),
+      note: skipped.isEmpty
+          ? ''
+          : '订阅里另有 ${skipped.length} 条拉不到：${skipped.join('、')}',
+    );
   }
 
   /// 测试单个图源的连通性：载入脚本 → 取分类 → 取首屏列表。

@@ -587,7 +587,20 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
     });
     try {
       if (urls.isNotEmpty) {
-        final refs = await _resolveRefs(urls);
+        final refs = await _resolveRefs(
+          urls,
+          onSkip: (url, error) {
+            // 清单里的一条拉不到（脚本被删 / 地址写错）：跳过它，其余照常导入，
+            // 并在「未导入」里列出来——整批失败会让人以为订阅坏了（真机反馈）。
+            final name = Uri.tryParse(url)?.pathSegments.last ?? url;
+            skipped.add(
+              SourceImportSkip(
+                label: '订阅条目',
+                message: '$name 拉不到（$error），已跳过；其余源照常导入',
+              ),
+            );
+          },
+        );
         if (!mounted) return;
         if (refs.isEmpty) {
           // 清单拉完一条脚本也没有（互相引用的清单、空清单）：说清楚，不静默收场。
@@ -646,11 +659,15 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
   ///
   /// 返回**带各自地址**的清单：每一份脚本落库的来源地址是它自己的那一份，
   /// 「更新订阅源」才能各自更新（见 [SourceScriptRef]）。
-  Future<List<SourceScriptRef>> _resolveRefs(List<String> urls) {
+  Future<List<SourceScriptRef>> _resolveRefs(
+    List<String> urls, {
+    void Function(String url, Object error)? onSkip,
+  }) {
     var fetches = 0;
     final fetch = widget.fetchSubscription ?? _fetchSubscriptionText;
     return SourceSubscription(
       maxScripts: widget.maxScripts,
+      onSkip: onSkip,
       fetch: (url) async {
         fetches++;
         if (mounted) setState(() => _progress = '正在拉取第 $fetches 个地址…');

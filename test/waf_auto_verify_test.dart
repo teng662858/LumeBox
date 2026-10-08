@@ -715,7 +715,7 @@ void webViewOriginTests() {
 
   group('网页视图地址解析（点了没反应那条）', webViewOriginTests);
 
-  group('真机反馈那条链路：被动失败只出错误卡，点【重试】才允许弹窗', () {
+  group('真机反馈那条链路：加载与【重试】都只出错误卡，验证窗只能由【网页视图】开', () {
     /// 一个「每次调用都被 WAF 拦下」的源：走**真实的** JsDataSource 接线
     /// （`_invokeOnce` 认标记 → 问自动校验 → 重试一次），只是脚本永远过不去。
     DataSource blockedSource() => JsDataSource(
@@ -785,23 +785,24 @@ void webViewOriginTests() {
       expect(find.text('网页视图'), findsOneWidget, reason: '手动出口照旧在');
     });
 
-    testWidgets('点【重试】：武装这一次尝试 → 仍被拦下才弹窗，且不反复弹', (tester) async {
+    testWidgets('点【重试】：也不弹窗（连续两轮口径），出口仍是【网页视图】', (tester) async {
       final windows = installWindowCounter();
       await pumpExplore(tester, blockedSource());
 
       await tester.tap(find.text('重试'));
       await tester.pumpAndSettle();
-      expect(windows[0], 1, reason: '用户显式点了重试：这一次允许弹');
+      expect(windows[0], 0, reason: '点【重试】不自动弹窗');
+      expect(find.text('重试'), findsOneWidget, reason: '仍被拦下 → 回到错误卡');
       expect(
-        find.text('重试'),
+        find.text('网页视图'),
         findsOneWidget,
-        reason: '没拿到会话 → 回到错误卡，出口照旧在',
+        reason: '验证窗的唯一入口是用户按【网页视图】',
       );
 
-      // 再点一次【重试】：冷却期内不再弹（否则用户只会觉得这个窗关不掉）。
+      // 再点几次也一个都不弹（不是「弹一次就冷却」，而是根本不弹）。
       await tester.tap(find.text('重试'));
       await tester.pumpAndSettle();
-      expect(windows[0], 1, reason: '刚关掉的窗马上又弹一个一模一样的，用户只会觉得「关不掉」');
+      expect(windows[0], 0, reason: '反复点重试也不该蹦出验证窗');
     });
   });
 }

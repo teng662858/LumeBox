@@ -230,17 +230,9 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
   /// 用户显式发起的一次尝试（卡片上的【重试】）：**先武装，再重放**。
   ///
   /// 武装是给 [WafAutoVerify] 的一次性许可：这一次若仍被 WAF 拦下，自动验证小窗
-  /// 才允许弹出来；进页面时自己拉的那一次是被动加载——不武装，因此不弹窗（用户
-  /// 抱怨的正是「一进筛选页就自己蹦出一个验证窗」）。收尾后立刻撤回许可。
-  Future<void> _retryWithWaf() async {
-    final source = widget.source;
-    WafAutoVerify.arm(section: source.section, sourceId: source.id);
-    try {
-      await _load(force: true);
-    } finally {
-      WafAutoVerify.disarm(section: source.section, sourceId: source.id);
-    }
-  }
+  /// **不自动开验证窗**（用户口径，连续两轮）：验证窗只在用户点【网页视图】时
+  /// 打开；点【重试】若仍被拦下，看到的还是这张错误卡。
+  Future<void> _retry() => _load(force: true);
 
   /// 被 WAF 拦下时：内置网页视图过校验 → 存会话 → 重新加载标签（用户要求）。
   ///
@@ -321,7 +313,7 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
                         // WAF 拦下，自动验证小窗才允许弹出来（进页面时自己拉的那一次
                         // 是被动加载，不弹窗，只给这张卡）。
                         OutlinedButton(
-                          onPressed: _retryWithWaf,
+                          onPressed: _retry,
                           child: const Text('重试'),
                         ),
                         if (looksLikeWafFailure('$_error'))

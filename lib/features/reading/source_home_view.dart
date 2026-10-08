@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../core/reading/browse_layout.dart';
 import '../../core/reading/reading.dart';
 import '../../core/net/waf.dart';
-import '../../core/net/waf_auto_verify.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
@@ -92,18 +91,9 @@ class _SourceHomeViewState extends State<SourceHomeView> {
 
   /// 用户显式发起的一次尝试（卡片上的【重试】）：**先武装，再重放**。
   ///
-  /// 武装是给 [WafAutoVerify] 的一次性许可：这一次若仍被 WAF 拦下，自动验证小窗
-  /// 才允许弹出来；被动路径（切图源、切页签预热、下拉刷新）不武装，因此不弹窗
-  /// （用户抱怨的正是「首页还没进来就自己蹦出一个验证窗」）。收尾后立刻撤回许可。
-  Future<void> _retryWithWaf() async {
-    final source = widget.source;
-    WafAutoVerify.arm(section: source.section, sourceId: source.id);
-    try {
-      await _load();
-    } finally {
-      WafAutoVerify.disarm(section: source.section, sourceId: source.id);
-    }
-  }
+  /// **不自动开验证窗**（用户口径，连续两轮）：验证窗只在用户点【网页视图】时
+  /// 打开；点【重试】若仍被拦下，看到的还是这张错误卡。
+  Future<void> _retry() => _load();
 
   /// 首屏封面的预取：第一块板块的前几张。
   ///
@@ -186,7 +176,7 @@ class _SourceHomeViewState extends State<SourceHomeView> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  OutlinedButton(onPressed: _retryWithWaf, child: const Text('重试')),
+                  OutlinedButton(onPressed: _retry, child: const Text('重试')),
                   if (kind == WafFailureKind.webView) ...<Widget>[
                     const SizedBox(width: 10),
                     // 与列表页同一个出口（用户口径 2.1）：内置网页视图过校验后自动重拉。
@@ -451,17 +441,8 @@ class _SourceHomeMorePageState extends State<SourceHomeMorePage> {
     }
   }
 
-  /// 尾部「加载失败，点击重试」：用户显式发起的一次尝试——同样先武装再重放，
-  /// 这一次若被 WAF 拦下才允许弹自动验证小窗（滚动触底的被动加载不武装）。
-  Future<void> _retryWithWaf() async {
-    final source = widget.source;
-    WafAutoVerify.arm(section: source.section, sourceId: source.id);
-    try {
-      await _loadMore();
-    } finally {
-      WafAutoVerify.disarm(section: source.section, sourceId: source.id);
-    }
-  }
+  /// 尾部「加载失败，点击重试」：同上，不自动开验证窗。
+  Future<void> _retryMore() => _loadMore();
 
   /// 预取封面（与探索页同一套口径：只取开头一小段、解码宽度与 tile 一致）。
   ///
@@ -506,7 +487,7 @@ class _SourceHomeMorePageState extends State<SourceHomeMorePage> {
               if (_error != null) {
                 return Center(
                   child: TextButton(
-                    onPressed: _retryWithWaf,
+                    onPressed: _retryMore,
                     child: const Text('加载失败，点击重试'),
                   ),
                 );

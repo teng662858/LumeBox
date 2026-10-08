@@ -258,7 +258,9 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
         SnackBar(
           content: Text(
             switch (result.status) {
-              SourceUpdateStatus.updated => '「${source.name}」已更新到最新脚本',
+              SourceUpdateStatus.updated => result.message.isEmpty
+                  ? '「${source.name}」已更新到最新脚本'
+                  : '「${source.name}」已更新到最新脚本（${result.message}）',
               SourceUpdateStatus.unchanged => '「${source.name}」已是最新',
               SourceUpdateStatus.skipped => '跳过：${result.message}',
               SourceUpdateStatus.failed => '更新失败：${result.message}',

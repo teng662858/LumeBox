@@ -88,10 +88,12 @@ class SourceUpdateResult {
     this.descriptor,
   });
 
-  const SourceUpdateResult.updated(SourceDescriptor descriptor)
+  /// [note] 是成功时的**附带说明**（例如「订阅里另有 1 条拉不到」）：
+  /// 状态仍是 updated，界面照常报成功，只是把这件事如实写出来。
+  const SourceUpdateResult.updated(SourceDescriptor descriptor, {String note = ''})
       : this._(
           status: SourceUpdateStatus.updated,
-          message: '',
+          message: note,
           descriptor: descriptor,
         );
 

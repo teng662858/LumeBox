@@ -7,7 +7,6 @@ import '../../core/reading/browse_layout.dart';
 import '../../core/js/source_registry.dart';
 import '../../core/session/section.dart';
 import '../../core/net/waf.dart';
-import '../../core/net/waf_auto_verify.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
@@ -311,34 +310,17 @@ class _ExploreViewState extends State<ExploreView> {
     }
   }
 
-  /// 用户显式发起的一次尝试：**先武装，再重放**（被动加载不武装，不会弹窗）。
-  ///
-  /// 武装是给 [WafAutoVerify] 的一次性许可：这一次尝试（含它里面的分类 / 列表
-  /// 调用）若仍被 WAF 拦下，自动验证小窗才允许弹出来；切图源、切页签、下拉刷新、
-  /// 板块预热都是被动加载——不武装，因此**不会**弹窗（那正是用户抱怨的「切个源
-  /// 自己蹦出个验证窗」）。尝试收尾后立刻撤回许可（不让它留在空气里）。
-  ///
-  /// 拿不到当前图源（从没解析出源）时不武装：宁可退回「错误卡 + 网页视图」那条
-  /// 手动出口，也不要弹一个不知道该验哪个站的窗。
-  Future<void> _withWafArmed(Future<void> Function() attempt) async {
-    final sourceId = _current?.id ?? _source?.id ?? '';
-    if (sourceId.isNotEmpty) {
-      WafAutoVerify.arm(section: widget.section, sourceId: sourceId);
-    }
-    try {
-      await attempt();
-    } finally {
-      if (sourceId.isNotEmpty) {
-        WafAutoVerify.disarm(section: widget.section, sourceId: sourceId);
-      }
-    }
-  }
-
   /// 错误卡 / 空态卡上的【重试】。
-  Future<void> _retryWithWaf() => _withWafArmed(_bootstrap);
+  ///
+  /// **不做任何「自动过验证」的动作**（用户口径，连续两轮点名）：验证窗只在用户
+  /// 点卡片上的【网页视图】时打开。点【重试】若仍被 WAF 拦下，看到的还是这张
+  /// 错误卡——自动蹦出来的验证窗无法预期，等用户以为「切个源它自己就弹」。
+  /// 引擎层那条「许可驱动」的自动通道因此在这三个页面里都不再被许可（见
+  /// `WafAutoVerify.run` 的说明）。
+  Future<void> _retry() => _bootstrap();
 
-  /// 列表尾部「加载失败，点击重试」：同样是用户显式发起的一次尝试。
-  Future<void> _retryMoreWithWaf() => _withWafArmed(() => _loadPage(more: true));
+  /// 列表尾部「加载失败，点击重试」：同上，也不自动开验证窗。
+  Future<void> _retryMore() => _loadPage(more: true);
 
   /// 探测「本源有没有 home()」：老脚本没有就永远不进首页模式（照旧分类列表）。
   ///
@@ -985,7 +967,7 @@ class _ExploreViewState extends State<ExploreView> {
         state: _state,
         title: _title,
         detail: _detail,
-        onRetry: _state == SourceStateKind.loading ? null : _retryWithWaf,
+        onRetry: _state == SourceStateKind.loading ? null : _retry,
         action: _state == SourceStateKind.loading
             ? null
             : FilledButton(onPressed: _manageSources, child: const Text('源管理')),
@@ -1018,7 +1000,7 @@ class _ExploreViewState extends State<ExploreView> {
         detail: kind == WafFailureKind.bridge
             ? '$detail\n\n$wafBridgeHint'
             : (hint == null ? detail : '$detail\n\n$hint'),
-        onRetry: _retryWithWaf,
+        onRetry: _retry,
         action: kind == WafFailureKind.webView && _source != null
             ? OutlinedButton.icon(
                 onPressed: _openWebViewForWaf,
@@ -1035,7 +1017,7 @@ class _ExploreViewState extends State<ExploreView> {
       return SourceStateView(
         state: SourceStateKind.empty,
         detail: '换个分类或关键词试试',
-        onRetry: _retryWithWaf,
+        onRetry: _retry,
       );
     }
     if (_mode == BrowseLayoutMode.list) return _buildList();
@@ -1206,7 +1188,7 @@ class _ExploreViewState extends State<ExploreView> {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Center(
           child: TextButton(
-            onPressed: _retryMoreWithWaf,
+            onPressed: _retryMore,
             child: const Text('加载失败，点击重试'),
           ),
         ),
