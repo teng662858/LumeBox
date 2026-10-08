@@ -1798,7 +1798,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
-  /// 全屏浮层顶栏：退出全屏 + 标题。
+  /// 全屏浮层顶栏（用户口径的排布）：
+  ///
+  /// **最左**：实时网速（点一下重新测）；**左**：关闭(X) / 投屏 / 旋转 / 比例；
+  /// **中**：当前标题；**右**：弹幕 / 倍速 / 锁定。
+  ///
+  /// 「投屏」在 iOS 上没有可用的投屏通道（没有原生 AirPlay 选屏入口），因此做成
+  /// **明确不可用**：点了会告诉你为什么，而不是放一个按了没反应的假按钮。
   Widget _buildImmersiveTopBar() {
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -1812,18 +1818,68 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 4, 12, 12),
+        padding: const EdgeInsets.fromLTRB(4, 4, 8, 12),
         child: Row(
           children: <Widget>[
-            IconButton(
-              tooltip: '退出全屏',
-              icon: const Icon(Icons.fullscreen_exit, color: Colors.white),
+            // 最左角：实时下载网速（点一下重测）。测速失败时显示「测速」而不是编个数。
+            ValueListenableBuilder<int?>(
+              valueListenable: _speed.kbps,
+              builder: (context, kbps, _) => ValueListenableBuilder<bool>(
+                valueListenable: _speed.busy,
+                builder: (context, busy, _) => TextButton(
+                  onPressed: _measureSpeed,
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(40, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text(
+                    busy
+                        ? '…'
+                        : (PlaybackSpeedMeter.describe(kbps) ?? '测速'),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      shadows: <Shadow>[Shadow(color: Colors.black54, blurRadius: 6)],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            _topIcon(
+              icon: Icons.close,
+              tooltip: '关闭（退出全屏）',
               onPressed: () => _setFullscreen(false),
+            ),
+            // 投屏：明确不可用（点了说明原因，不做假按钮）。
+            _topIcon(
+              icon: Icons.cast,
+              tooltip: '投屏（本版本未接入）',
+              onPressed: () => _showToast(
+                '本版本未接入投屏：iOS 端没有可用的投屏通道，接好会在这里给出口',
+              ),
+            ),
+            // 旋转：按「不旋转 → 90° → 180° → 270°」循环，当前角度在提示里。
+            _topIcon(
+              icon: Icons.screen_rotation,
+              tooltip: '旋转（当前：${_settings.rotation.label}）',
+              highlighted: _settings.rotation != RotationMode.none,
+              onPressed: _cycleRotation,
+            ),
+            // 比例：按缩放模式循环（适应 / 填充 / 0.75x / 1.0x / 1.25x / 1.5x）。
+            _topIcon(
+              icon: Icons.aspect_ratio,
+              tooltip: '画面比例（当前：${_settings.zoom.label}）',
+              highlighted: _settings.zoom != ZoomMode.fit,
+              onPressed: _cycleZoom,
             ),
             Expanded(
               child: Text(
                 widget.title ?? _target?.title ?? '播放',
                 maxLines: 1,
+                textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 14,
@@ -1832,10 +1888,77 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 ),
               ),
             ),
+            // 弹幕开关（与底栏那颗共用同一份状态）。
+            _topIcon(
+              icon: Icons.subtitles_outlined,
+              tooltip: _danmakuSettings.enabled ? '弹幕：开' : '弹幕：关',
+              highlighted: _danmakuSettings.enabled,
+              onPressed: () => _applyDanmakuSettings(
+                _danmakuSettings.copyWith(enabled: !_danmakuSettings.enabled),
+              ),
+            ),
+            // 倍速：小按钮留在顶栏（用户点名不藏进弹窗）。
+            _topIcon(
+              icon: Icons.speed,
+              tooltip: '倍速（当前 ${_settings.speed}x）',
+              highlighted: _settings.speed != 1.0,
+              onPressed: _cycleSpeed,
+            ),
+            _topIcon(
+              icon: _locked ? Icons.lock : Icons.lock_open,
+              tooltip: _locked ? '解除锁定' : '锁定（防误触）',
+              highlighted: _locked,
+              onPressed: () => setState(() => _locked = !_locked),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  /// 顶栏上的紧凑图标按钮（白字 + 投影，压在画面上也看得清）。
+  Widget _topIcon({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    bool highlighted = false,
+  }) {
+    return IconButton(
+      iconSize: 20,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      padding: EdgeInsets.zero,
+      color: highlighted ? Colors.white : Colors.white70,
+      tooltip: tooltip,
+      icon: Icon(icon),
+      onPressed: onPressed,
+    );
+  }
+
+  /// 旋转循环：不旋转 → 90° → 180° → 270°（改的是当前内核的偏好，立即生效）。
+  void _cycleRotation() {
+    final values = RotationMode.values;
+    final next = values[(values.indexOf(_settings.rotation) + 1) % values.length];
+    _applySettings(_settings.copyWith(rotation: next));
+    _showToast('旋转：${next.label}');
+  }
+
+  /// 比例循环：适应 → 填充 → 0.75x → 1.0x → 1.25x → 1.5x（同一档位表）。
+  void _cycleZoom() {
+    final values = ZoomMode.values;
+    final current = _settings.zoom;
+    final next = values[(values.indexOf(current) + 1) % values.length];
+    _applySettings(_settings.copyWith(zoom: next));
+    _showToast('画面比例：${next.label}');
+  }
+
+  /// 倍速循环：走与设置面板同一份档位表（[PlayerSettings.speeds]），1.0x 在中间。
+  void _cycleSpeed() {
+    final values = PlayerSettings.speeds;
+    final index = values.indexOf(_settings.speed);
+    final next = values[index < 0 ? 0 : (index + 1) % values.length];
+    _applySettings(_settings.copyWith(speed: next));
+    _showToast('倍速：${next}x');
   }
 
   /// 全屏浮层控制栏：进度 + 主要控制 + 次级控制（退出全屏与设置都在里面）。

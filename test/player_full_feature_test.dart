@@ -612,6 +612,55 @@ void main() {
       expect(find.byKey(VideoPlayerPage.controlPanelKey), findsOneWidget);
     });
 
+    testWidgets('全屏顶栏按用户口径排布，投屏是明确不可用', (tester) async {
+      await pump(tester);
+      await tester.tap(find.byTooltip('全屏'));
+      await tester.pumpAndSettle();
+
+      // 左：关闭(X) / 投屏 / 旋转 / 比例；右：弹幕 / 倍速 / 锁定；中：标题。
+      // 提示文案在 Tooltip.message 上（不是 Text 节点），动态项用谓词匹配。
+      Finder tipContains(String part) => find.byWidgetPredicate(
+            (widget) => widget is Tooltip && (widget.message ?? '').contains(part),
+            description: 'Tooltip 含「$part」',
+          );
+
+      expect(find.byTooltip('关闭（退出全屏）'), findsWidgets);
+      expect(find.byTooltip('投屏（本版本未接入）'), findsWidgets);
+      expect(tipContains('旋转（当前：'), findsWidgets);
+      expect(tipContains('画面比例（当前：'), findsWidgets);
+      expect(tipContains('弹幕：'), findsWidgets);
+      expect(tipContains('倍速（当前 '), findsWidgets);
+      expect(find.byTooltip('锁定（防误触）'), findsWidgets);
+
+      // 投屏：点了要**说明原因**（明确不可用），不是按了没反应。
+      await tester.tap(find.byTooltip('投屏（本版本未接入）').first);
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('本版本未接入投屏'),
+        findsWidgets,
+        reason: '投屏要做成明确不可用并给出原因',
+      );
+
+      // 旋转/比例/倍速三个循环按钮当场改档位并给回执。
+      // 点一下旋转：档位当场往后走一档（提示里的「当前」值跟着变，这就是回执）。
+      await tester.tap(tipContains('旋转（当前：').first);
+      await tester.pumpAndSettle();
+      expect(
+        tipContains('旋转（当前：顺时针 90°）'),
+        findsWidgets,
+        reason: '旋转档位真的变了（提示里的当前值跟着走）',
+      );
+
+      // 同理：比例从「适应」走到「填充」。
+      await tester.tap(tipContains('画面比例（当前：').first);
+      await tester.pumpAndSettle();
+      expect(
+        tipContains('画面比例（当前：填充）'),
+        findsWidgets,
+        reason: '比例档位也真的变了',
+      );
+    });
+
     testWidgets('全屏：锁横屏；退出全屏：还原竖屏（用户要求）', (tester) async {
       final calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
