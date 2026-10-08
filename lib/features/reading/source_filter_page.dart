@@ -130,9 +130,13 @@ class SourceFilterPage extends StatefulWidget {
     this.categoryId,
     this.categoryTitle,
     this.initial = const <String, String>{},
+    this.originUrl = '',
   });
 
   final DataSource source;
+
+  /// 图源的订阅地址（可选）：过 WAF 时用它兜底拿站点 origin。
+  final String originUrl;
 
   /// 当前已选的一级分类（进入时高亮）；为空表示没选过。
   final String? categoryId;
@@ -223,16 +227,34 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
   }
 
   /// 被 WAF 拦下时：内置网页视图过校验 → 存会话 → 重新加载标签（用户要求）。
+  /// 从源 id 里猜站点地址（导入器允许「域名_备注」写法）；猜不出返回 null。
+  static String? _hostFromSourceId(String id) {
+    final head = id.split('_').first.trim();
+    if (!head.contains('.')) return null;
+    final uri = Uri.tryParse('https://$head');
+    if (uri == null || uri.host.isEmpty || !uri.host.contains('.')) return null;
+    return 'https://${uri.host}';
+  }
+
   Future<void> _openWebViewForWaf() async {
     final reason = '$_error';
-    final url = originOf(urlFromFailure(reason));
-    if (url == null) return;
+    final url = originOf(urlFromFailure(reason)) ??
+        originOf(widget.originUrl) ??
+        _hostFromSourceId(widget.source.id);
+    if (url == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('拿不到源站地址：请到该站点首页手动过一次校验')),
+      );
+      return;
+    }
     await showWafWebView(
       context: context,
       url: url,
       sourceName: widget.source.name,
+      section: widget.source.section,
+      sourceId: widget.source.id,
     ).then((cookies) {
-      if (cookies == null) return;
+      if (cookies == null || cookies.isEmpty) return;
       WafSessions.save(widget.source.section, widget.source.id, cookies);
     });
     if (!mounted) return;
@@ -437,6 +459,7 @@ Future<({String? categoryId, Map<String, String> filters})?>
   required BuildContext context,
   required DataSource source,
   String? currentCategoryId,
+  String originUrl = '',
 }) async {
   final selection = await Navigator.of(context).push<SourceFilterSelection>(
     MaterialPageRoute<SourceFilterSelection>(
@@ -444,6 +467,7 @@ Future<({String? categoryId, Map<String, String> filters})?>
         source: source,
         cache: SourceFilterCache.instance,
         categoryId: currentCategoryId,
+        originUrl: originUrl,
       ),
     ),
   );

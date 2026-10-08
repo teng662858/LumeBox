@@ -325,7 +325,7 @@ var LumeSource = {
     if (status !== 200) {
       if (status === 403 || status === 503 || status === 429 ||
           /just a moment|__cf_chl|cf-chl|challenge-platform|cf-mitigated|checking your browser|cf_chl_opt/i.test(body)) {
-        throw new Error('NEED_WEBVIEW_VERIFY：xChina 需要网页视图过一次 Cloudflare 校验（HTTP ' + status + '）');
+        throw new Error('NEED_WEBVIEW_VERIFY：xChina 需要网页视图过一次 Cloudflare 校验（HTTP ' + status + ' ' + url + '）');
       }
       throw new Error('拉取失败：HTTP ' + status + ' ' + url);
     }

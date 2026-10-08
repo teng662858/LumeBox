@@ -291,7 +291,7 @@ var LumeSource = {
       // 站点偶发也走 CF：按统一标记抛，App 会自动过校验并重试这次调用。
       if (status === 403 || status === 503 || status === 429 ||
           /just a moment|__cf_chl|cf-chl|challenge-platform|cf-mitigated/i.test(text)) {
-        throw new Error('NEED_WEBVIEW_VERIFY：瓜子影视 需要网页视图过一次 Cloudflare 校验（HTTP ' + status + '）');
+        throw new Error('NEED_WEBVIEW_VERIFY：瓜子影视 需要网页视图过一次 Cloudflare 校验（HTTP ' + status + ' ' + url + '）');
       }
       throw new Error('瓜子影视：接口 HTTP ' + status + ' ' + path);
     }

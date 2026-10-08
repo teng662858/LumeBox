@@ -36,7 +36,8 @@ class SectionImagePipeline {
     http.Client? client,
     this.memoryBudgetBytes = defaultMemoryBudgetBytes,
     this.maxConcurrent = 6,
-    this.timeout = const Duration(seconds: 20),
+    // 超时 20s → 30s：真机弱网下 20s 偏紧，封面被误判成失败就只剩空占位。
+    this.timeout = const Duration(seconds: 30),
     this.diskCache = true,
     int maxRetries = 3,
   })  : _client = client ?? http.Client(),
@@ -185,7 +186,7 @@ class SectionImagePipeline {
   Future<Uint8List?> fetch(String url) {
     final trimmed = url.trim();
     if (trimmed.isEmpty || _disposed) return Future<Uint8List?>.value();
-    return _download(upgradeToHttps(trimmed));
+    return _download(upgradeToHttps(normalizeTransform(trimmed)));
   }
 
   /// 预加载一批图片（阅读器前后 N 张）。结果只进缓存，不返回给调用方。
@@ -285,6 +286,24 @@ class SectionImagePipeline {
   ///
   /// 只升级 `http://` 且主机名不是 IP / localhost 的：本地回环与纯 IP 站点通常没有
   /// 证书，升级只会把能用的链接弄坏。
+  /// 规整「图片变换型」地址：Cloudflare Image Resizing 那类
+  /// `https://host/cdn-cgi/image/<变换参数>/<真实路径>` 在个别边缘/并发下会取不到图
+  /// （真机反馈「首页封面很多是空白占位」）。这里统一退回**真实路径**——
+  /// 实测原图稳定 200（image/webp），Flutter 直接能解。
+  ///
+  /// 只动这一种已知形态，其它 URL 原样返回（不猜、不改写）。
+  static String normalizeTransform(String url) {
+    final text = url.trim();
+    if (text.isEmpty) return text;
+    const marker = '/cdn-cgi/image/';
+    final at = text.indexOf(marker);
+    if (at <= 0) return text;
+    final rest = text.substring(at + marker.length);
+    final slash = rest.indexOf('/');
+    if (slash <= 0) return text;
+    return text.substring(0, at) + rest.substring(slash);
+  }
+
   static String upgradeToHttps(String url) {
     if (!url.startsWith('http://')) return url;
     final host = Uri.tryParse(url)?.host ?? '';
@@ -297,7 +316,7 @@ class SectionImagePipeline {
   Future<Uint8List?> _loadBytes(String rawUrl) async {
     // 明文地址在这里一次性升级：内存缓存键、磁盘文件名、实际请求三者保持一致，
     // 不会同一张图存两份。
-    final url = upgradeToHttps(rawUrl);
+    final url = upgradeToHttps(normalizeTransform(rawUrl));
     if (!diskCache) return _download(url);
     final file = File(_diskPath(url));
     try {
@@ -450,7 +469,8 @@ class SectionImagePipeline {
   /// 与 [_loadBytes] 一样先做明文升级：文件名按升级后的地址算，`http://…` 与
   /// `https://…` 两种写法落到同一个文件，同一张图不会存两份。
   @visibleForTesting
-  String cachePathFor(String url) => _diskPath(upgradeToHttps(url.trim()));
+  String cachePathFor(String url) =>
+      _diskPath(upgradeToHttps(normalizeTransform(url)));
 }
 
 /// 解码图的内存缓存：按字节预算做 LRU，带引用计数与钉住集合。

@@ -215,7 +215,7 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
       return;
     }
     widget.onCollected(cookies);
-    Navigator.of(context).pop(cookies.length);
+    Navigator.of(context).pop();
   }
 
   /// 解析 `document.cookie` 的返回：可能是裸串，也可能被包成 JSON 字符串。
@@ -320,24 +320,42 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
 }
 
 /// 打开网页视图并返回取到的 Cookie（宿主据此写进图源会话存储）。
+/// 手动「网页视图」：**半屏弹窗**（用户口径：不要全屏页，别影响主界面操作）。
+///
+/// - 占屏幕下方约 3/4 高，圆角浮层；用户能看见背后页面，确认「这是在验证哪个站」；
+/// - 过完校验点左上角 ✕（或等自动收尾）→ Cookie 原样返回给调用方落库；
+/// - 返回 null = 用户直接关掉/没拿到；非空 Map = 至少取到一枚 Cookie。
 Future<Map<String, String>?> showWafWebView({
   required BuildContext context,
   required String url,
   required String sourceName,
+  Section? section,
+  String? sourceId,
 }) {
   Map<String, String>? collected;
-  return Navigator.of(context)
-      .push<int>(
-        MaterialPageRoute<int>(
-          fullscreenDialog: true,
-          builder: (_) => WafWebViewPage(
-            url: url,
-            sourceName: sourceName,
-            onCollected: (cookies) => collected = cookies,
-          ),
+  return showModalBottomSheet<Map<String, String>>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (_) => SizedBox(
+      height: MediaQuery.of(context).size.height * 0.75,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+        child: WafWebViewPage(
+          url: url,
+          sourceName: sourceName,
+          onCollected: (cookies) => collected = cookies,
+          // 手动验证同样要存 UA：cf_clearance 与 UA 绑定，不存的话后续 API
+          // 请求用的是另一个 UA，等于白验（用户反馈「验完还是被拦」）。
+          onUserAgent: (ua) {
+            if (section != null && sourceId != null) {
+              WafSessions.saveUserAgent(section, sourceId, ua);
+            }
+          },
         ),
-      )
-      .then((count) => count == null ? null : (collected ?? <String, String>{}));
+      ),
+    ),
+  ).then((_) => collected ?? const <String, String>{});
 }
 
 

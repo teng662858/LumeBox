@@ -29,9 +29,13 @@ class SourceHomeView extends StatefulWidget {
     required this.pipeline,
     required this.onOpenItem,
     this.onOpenMore,
+    this.originUrl = '',
   });
 
   final DataSource source;
+
+  /// 图源的订阅地址（可选）：过 WAF 时用它兜底拿站点 origin。
+  final String originUrl;
   final SectionImagePipeline? pipeline;
 
   /// 点条目：交给宿主打开（与列表条目同一条链路）。
@@ -85,18 +89,37 @@ class _SourceHomeViewState extends State<SourceHomeView> {
   }
 
   /// 被 WAF 拦下：网页视图过校验 → 存会话 → 重新拉首页（用户口径 2.1）。
+  /// 从源 id 里猜站点地址（导入器允许「域名_备注」写法）；猜不出返回 null。
+  static String? _hostFromSourceId(String id) {
+    final head = id.split('_').first.trim();
+    if (!head.contains('.')) return null;
+    final uri = Uri.tryParse('https://$head');
+    if (uri == null || uri.host.isEmpty || !uri.host.contains('.')) return null;
+    return 'https://${uri.host}';
+  }
+
   Future<void> _openWebViewForWaf() async {
     final detail = _error is SourceException
         ? (_error! as SourceException).message
         : '$_error';
-    final url = originOf(urlFromFailure(detail));
-    if (url == null) return;
+    // 地址兜底：失败文案 → 订阅地址 → 源 id 里的域名（用户反馈「点了没反应」）。
+    final url = originOf(urlFromFailure(detail)) ??
+        originOf(widget.originUrl) ??
+        _hostFromSourceId(widget.source.id);
+    if (url == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('拿不到源站地址：请到该站点首页手动过一次校验')),
+      );
+      return;
+    }
     await showWafWebView(
       context: context,
       url: url,
       sourceName: widget.source.name,
+      section: widget.source.section,
+      sourceId: widget.source.id,
     ).then((cookies) {
-      if (cookies == null) return;
+      if (cookies == null || cookies.isEmpty) return;
       WafSessions.save(widget.source.section, widget.source.id, cookies);
     });
     if (!mounted) return;

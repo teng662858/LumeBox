@@ -189,6 +189,11 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
       automaticallyImplyLeading: automaticallyImplyLeading ?? true,
       toolbarHeight: toolbarHeight ?? kLumeToolbarHeight,
       centerTitle: centerTitle,
+      // 标题与图标**贴状态栏下沿**：Material 默认还会在工具栏里再垂直居中一次，
+      // 视觉上就是「顶栏往下陷」（用户反馈）。这里把标题内边距收到最小，
+      // 控件尺寸不变、只是整条内容上移。
+      titleSpacing: 0,
+      leadingWidth: 48,
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       elevation: 0,

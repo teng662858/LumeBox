@@ -38,11 +38,12 @@ class ComicExplorePage extends StatelessWidget {
       manager: manager,
       layout: ExploreLayout.grid,
       // 分页跳转筛选（用户口径任务 1，三板块共用）：点「筛选」直接进独立筛选页。
-      onOpenFacetFilter: (context, source, currentCategoryId) =>
+      onOpenFacetFilter: (context, source, currentCategoryId, originUrl) =>
           openSourceFacetFilter(
         context: context,
         source: source,
         currentCategoryId: currentCategoryId,
+        originUrl: originUrl,
       ),
       onOpenItem: (selection) => Navigator.of(context).push(
         MaterialPageRoute<void>(

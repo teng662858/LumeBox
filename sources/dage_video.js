@@ -242,7 +242,7 @@ var LumeSource = {
       // 【重试】+【网页视图】两个出口（普通 HTTP 错误不抛这个标记）。
       if ((status === 403 || status === 503 || status === 429) &&
           /just a moment|__cf_chl|cf-chl|challenge-platform|cf-mitigated|checking your browser/i.test(body)) {
-        throw new Error('NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP ' + status + '）');
+        throw new Error('NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP ' + status + ' ' + url + '）');
       }
       throw new Error('拉取失败：HTTP ' + status + ' ' + path);
     }

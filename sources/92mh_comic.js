@@ -49,9 +49,36 @@ var LumeSource = {
     var boards = [];
     var latest = await this.list({ categoryId: '', page: 1 });
     if (latest && latest.items && latest.items.length) {
-      boards.push({ title: '最近更新', moreUrl: '', items: latest.items.slice(0, 12) });
+      // 列表页**没有封面**（站点只在详情页给图）：首页要好看，就得补一次详情。
+      // 只补首页这一屏（前 12 条）且并发跑，翻页列表不受影响。
+      var top = latest.items.slice(0, 12);
+      var filled = await this.__fillCovers(top);
+      boards.push({ title: '最近更新', moreUrl: '', items: filled });
     }
     return boards;
+  },
+
+  /// 给首页条目补封面（并发、失败静默：拿不到就还是空占位，不影响其它条目）。
+  async __fillCovers(items) {
+    var tasks = [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].cover) continue;
+      tasks.push(this.__fillOne(items[i]));
+    }
+    if (tasks.length) {
+      try { await Promise.all(tasks); } catch (error) { /* 单条失败无所谓 */ }
+    }
+    return items;
+  },
+
+  async __fillOne(item) {
+    try {
+      var html = await this.__get(this.__detailUrl(item.id));
+      var cover = this.__match(html, /<meta[^>]+property="og:image"[^>]+content="([^"]*)"/);
+      if (!cover) cover = this.__match(html, /data-original="([^"]+)"/);
+      if (!cover) cover = this.__match(html, /<img[^>]+src="([^"]+)"/);
+      if (cover) item.cover = this.__pic(cover);
+    } catch (error) { /* 拿不到就留空 */ }
   },
 
   async list(argument) {
@@ -97,7 +124,7 @@ var LumeSource = {
     return {
       id: id,
       title: title,
-      cover: this.__absolute(cover),
+      cover: this.__pic(cover),
       subtitle: author ? '作者：' + author : '',
       description: description,
       tags: tags,
@@ -207,7 +234,7 @@ var LumeSource = {
         items.push({
           id: href,
           title: title,
-          cover: this.__absolute(cover),
+          cover: this.__pic(cover),
           subtitle: ''
         });
       }
@@ -293,7 +320,7 @@ var LumeSource = {
     if (status !== 200) {
       if (status === 403 || status === 503 || status === 429 ||
           /just a moment|__cf_chl|cf-chl|challenge-platform|cf-mitigated|checking your browser/i.test(body)) {
-        throw new Error('NEED_WEBVIEW_VERIFY：92漫画 需要网页视图过一次 Cloudflare 校验（HTTP ' + status + '）');
+        throw new Error('NEED_WEBVIEW_VERIFY：92漫画 需要网页视图过一次 Cloudflare 校验（HTTP ' + status + ' ' + url + '）');
       }
       throw new Error('拉取失败：HTTP ' + status + ' ' + url);
     }
@@ -301,6 +328,20 @@ var LumeSource = {
       throw new Error('NEED_WEBVIEW_VERIFY：92漫画 需要网页视图过一次 Cloudflare 校验');
     }
     return body;
+  },
+
+  /// 封面/图片地址规整：http → https（站点用明文嵌图，iOS ATS 会拦），
+  /// 并去掉 CF 图片变换段（那类地址个别边缘拿不到图）。
+  __pic(url) {
+    var text = String(url || '').trim();
+    if (!text) return '';
+    var at = text.indexOf('/cdn-cgi/image/');
+    if (at > 0) {
+      var rest = text.slice(at + '/cdn-cgi/image/'.length);
+      var slash = rest.indexOf('/');
+      if (slash > 0) text = text.slice(0, at) + rest.slice(slash);
+    }
+    return this.__absolute(text);
   },
 
   __absolute(url) {

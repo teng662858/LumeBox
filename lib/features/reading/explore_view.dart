@@ -98,6 +98,7 @@ class ExploreView extends StatefulWidget {
     BuildContext context,
     DataSource source,
     String? currentCategoryId,
+    String originUrl,
   )? onOpenFacetFilter;
 
   @override
@@ -515,29 +516,52 @@ class _ExploreViewState extends State<ExploreView> {
     if (source == null) return;
     final failure = _failure;
     final reason = failure is SourceException ? failure.message : null;
+    // 地址按优先级兜底（用户反馈「点了没反应」——以前拿不到地址就静默退出）：
+    // 1) 失败文案里的 URL（脚本写清楚才有）；2) 图源记录的订阅地址；
+    // 3) 源 id 里带域名的（如 `site.example.com_xxx` 的约定写法）。
+    // 真的都没有时，用站点通用入口让用户手动进一次，**不再静默 return**。
+    final descriptor = _current;
     final url = originOf(urlFromFailure(reason)) ??
-        'https://${Uri.tryParse(_current?.id ?? '')?.host ?? ''}';
+        originOf(descriptor?.originUrl ?? '') ??
+        _hostFromSourceId(source.id) ??
+        'https://www.google.com';
     if (!url.startsWith('http')) {
-      _toast('拿不到源站地址：先打开网页视图后在地址栏手动进出一次再试');
+      _toast('拿不到源站地址：请到该站点首页手动过一次校验');
       return;
     }
     await showWafWebView(
       context: context,
       url: url,
       sourceName: source.name,
+      section: widget.section,
+      sourceId: source.id,
     ).then((cookies) {
-      if (cookies == null) return;
-      final saved = WafSessions.save(widget.section, source.id, cookies);
+      // 半屏 sheet 的返回：空表 = 没取到（页面还没过完校验就关了）。
+      if (cookies == null || cookies.isEmpty) {
+        if (!mounted) return;
+        _toast('没取到会话：等验证通过、站点页面真正显示出来后再点 ✕ 关闭');
+        return;
+      }
+      WafSessions.save(widget.section, source.id, cookies);
       if (!mounted) return;
       _toast(
-        saved == null
-            ? '没取到会话（可能是页面还没加载完就关闭了），请重试一次'
-            : '已取回会话（${WafSessions.countFor(widget.section, source.id)} 项），正在重新拉取',
+        '已取回会话（${WafSessions.countFor(widget.section, source.id)} 项），正在重新拉取',
       );
     });
     if (!mounted) return;
     // 取到没取到都重拉一次：取到了自然成功，没取到也只是再看一次同样的错误。
     await _bootstrap();
+  }
+
+  /// 从源 id 里猜站点地址：导入器允许「域名_备注」这种 id 写法
+  /// （例如 `www.92mh.com_备用`）。猜不出返回 null。
+  static String? _hostFromSourceId(String id) {
+    final head = id.split('_').first.trim();
+    if (!head.contains('.')) return null;
+    final candidate = 'https://$head';
+    final uri = Uri.tryParse(candidate);
+    if (uri == null || uri.host.isEmpty || !uri.host.contains('.')) return null;
+    return candidate;
   }
 
   /// 点「筛选」：视频板块走外挂的分页筛选（一级分类 → 筛选子页），
@@ -549,7 +573,7 @@ class _ExploreViewState extends State<ExploreView> {
       // 宿主没提供筛选入口（例如没有图源）：什么也不做，别弹一个空抽屉。
       return;
     }
-    final picked = await hook(context, source, _categoryId);
+    final picked = await hook(context, source, _categoryId, _current?.originUrl ?? '');
     if (picked == null || !mounted) return;
     setState(() {
       _categoryId = picked.categoryId;
@@ -886,6 +910,7 @@ class _ExploreViewState extends State<ExploreView> {
       return SourceHomeView(
         source: _source!,
         pipeline: widget.pipeline,
+        originUrl: _current?.originUrl ?? '',
         onOpenItem: _open,
         onOpenMore: (title, moreUrl) => Navigator.of(context).push(
           MaterialPageRoute<void>(

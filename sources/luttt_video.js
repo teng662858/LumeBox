@@ -291,7 +291,7 @@ var LumeSource = {
       var body = response && response.body ? String(response.body) : '';
       if ((status === 403 || status === 503 || status === 429) &&
           /just a moment|__cf_chl|cf-chl|challenge-platform|cf-mitigated|checking your browser/i.test(body)) {
-        throw new Error('NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP ' + status + '）');
+        throw new Error('NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP ' + status + ' ' + url + '）');
       }
       throw new Error('拉取失败：HTTP ' + status + ' ' + url);
     }

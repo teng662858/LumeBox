@@ -291,11 +291,13 @@ class _VideoPageState extends State<VideoPage> {
     BuildContext context,
     DataSource source,
     String? currentCategoryId,
+    String originUrl,
   ) async {
     return openSourceFacetFilter(
       context: context,
       source: source,
       currentCategoryId: currentCategoryId,
+      originUrl: originUrl,
     );
   }
 

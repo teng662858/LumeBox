@@ -66,4 +66,34 @@ void main() {
       pipeline.cachePathFor('https://img.example.com/a.jpg'),
     );
   });
+  test('变换型地址退回真实路径（CF Image Resizing 那类）', () {
+    expect(
+      SectionImagePipeline.normalizeTransform(
+        'https://img2.ms39pn.com/cdn-cgi/image/quality=80,height=260/upload/vod/a.webp',
+      ),
+      'https://img2.ms39pn.com/upload/vod/a.webp',
+    );
+    expect(
+      SectionImagePipeline.normalizeTransform('https://a.com/upload/b.webp'),
+      'https://a.com/upload/b.webp',
+      reason: '不带变换段的原样返回（不猜、不改写）',
+    );
+    expect(SectionImagePipeline.normalizeTransform(''), '');
+  });
+
+  test('规整 + 升 https 是同一套顺序（缓存键一致，不会存两份）', () {
+    final pipeline = SectionImagePipeline(
+      cacheDir: Directory.systemTemp.createTempSync('lume_box_tf').path,
+      memoryBudgetBytes: 1024 * 1024,
+    );
+    addTearDown(pipeline.dispose);
+    expect(
+      pipeline.cachePathFor(
+        'http://img.a.com/cdn-cgi/image/height=260/upload/x.webp',
+      ),
+      pipeline.cachePathFor('https://img.a.com/upload/x.webp'),
+      reason: '两种写法要落到同一个缓存文件',
+    );
+  });
+
 }
