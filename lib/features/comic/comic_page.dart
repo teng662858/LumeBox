@@ -81,6 +81,8 @@ class _ComicPageState extends State<ComicPage> {
         _pipeline = SectionImagePipeline(
           cacheDir: library.imageCacheDir,
           memoryBudgetBytes: SectionImagePipeline.thumbnailBudgetBytes,
+          // 封面网格按封面并发（4）跑：并发太大被图床限流，反而更多空白。
+          maxConcurrent: SectionImagePipeline.coverConcurrency,
           // 漫画板块的图片缓存已按用户要求关闭：不读盘也不落盘
           // （见 SectionImagePipeline.diskCache 的说明）。
           diskCache: SectionImagePipeline.diskCacheFor(Section.comic),

@@ -38,6 +38,8 @@ void main() {
     Qjs.reclaimRuntime = false;
   }
 
+  _heavyPageTest();
+
   test('审计：三份订阅里的脚本都能载入、元信息对得上、被拦时抛对标记', () async {
     final scripts = _cachedScripts();
     if (scripts.isEmpty) {
@@ -59,6 +61,122 @@ void main() {
 
     expect(problems, isEmpty, reason: problems.join('\n'));
   }, skip: _cachedScripts().isEmpty ? _auditSkipReason() : null);
+}
+
+/// 大页面解析不许撞沙箱预算（真机反馈：鸟鸟韩漫首页报「超出指令计数上限」）。
+///
+/// 真因是识别作品页那条正则的**嵌套量词**在匹配失败时指数级回溯（实测 V8：
+/// 81 个字符跑 85 秒）。这条用例拿「200KB 以上、上千锚点、还夹着一批又长又没数字的
+/// 链接」的合成页面当回归网：解析必须跑完并出条目——将来谁再把回溯型正则写回去，
+/// 这条用例在沙箱里也不会跑得动。
+void _heavyPageTest() {
+  test('大页面（≈200KB / 上千锚点）解析不撞指令预算', () async {
+    final scriptPath = sourceScriptPath('nnhanman_comic.js');
+    if (scriptPath == null) {
+      fail('本机没有 nnhanman_comic.js：先跑 `dart run tool/fetch_sources.dart`');
+    }
+    final html = _syntheticListPage(anchors: 2000);
+    expect(html.length, greaterThan(150 * 1024), reason: '合成页面要真的够大');
+
+    final host = LumeSourceHost(
+      _StaticHttp(html),
+      timeout: const Duration(seconds: 6),
+      section: Section.comic,
+      sourceId: 'nnhanman_comic',
+    );
+    final sandbox = LumeSandbox.create(
+      id: host.expectedSandboxId,
+      policy: LumeJsEngine.policy.copyWith(allowHostAccess: true),
+      host: host,
+      polyfills: LumeSourcePolyfills.forSection(Section.comic),
+    );
+    addTearDown(() {
+      sandbox.dispose();
+      host.dispose();
+    });
+    final loaded = await sandbox.load(File(scriptPath).readAsStringSync());
+    expect(loaded.isOk, isTrue, reason: '${loaded.error}');
+
+    final source = JsDataSource(
+      id: 'nnhanman_comic',
+      name: 'NN韩漫',
+      section: Section.comic,
+      runtime: _SandboxRuntime(sandbox),
+    );
+    final list = await source.list(page: 1);
+    expect(list.items, isNotEmpty, reason: '大页面也要解析得出条目');
+    stdout.writeln('[audit] 大页面解析：${list.items.length} 条，未撞指令预算');
+  });
+}
+
+/// 合成一个「很像漫画站首页」的大页面：上千个锚点，穿插作品页 / 章节页 / 导航链。
+String _syntheticListPage({required int anchors}) {
+  final buffer = StringBuffer('<html><head><title>示例漫画站</title></head><body>');
+  buffer.write('<nav>');
+  for (var i = 0; i < 20; i++) {
+    buffer.write('<a href="/list/genre$i/">分类$i</a>');
+  }
+  buffer.write('</nav><div class="list">');
+  for (var i = 0; i < anchors; i++) {
+    if (i % 5 == 0) {
+      // 章节页：解析器必须跳过它们（而且不能在这些链接上回溯）
+      buffer.write('<a href="/chapter/${100000 + i}-1122334455">第${i}话 很长很长的章节标题足够长</a>');
+      continue;
+    }
+    buffer.write(
+      // 长 href + 长标题 + 长图片地址：回溯型正则会在这里爆炸，线性实现不受影响。
+      '<a href="/comic/${100000 + i}/${'very-long-path-segment-' * 6}${i}-${i}/'
+      '?tracking=${'abcdefghij' * 4}${i}" title="作品$i 很长的标题${'标题' * 8}">'
+      '<img data-original="https://img.example.com/${'folder/' * 6}${i}.jpg" '
+      'alt="作品$i"></a>',
+    );
+  }
+  buffer.write('</div>');
+  buffer.write('<a rel="next" href="/?page=2">下一页</a>');
+  buffer.write('</body></html>');
+  return buffer.toString();
+}
+
+/// 固定返回同一份 HTML 的替身（不区分地址：第一跳就命中）。
+class _StaticHttp implements LumeHttp {
+  _StaticHttp(this.body);
+
+  final String body;
+
+  @override
+  Future<LumeHttpResponse> send({
+    required String url,
+    String method = 'GET',
+    Map<String, String>? headers,
+    String? body,
+    Duration? timeout,
+  }) async =>
+      LumeHttpResponse(
+        statusCode: 200,
+        body: Uint8List.fromList(utf8.encode(this.body)),
+        headers: const <String, String>{'content-type': 'text/html'},
+      );
+
+  @override
+  String get bridge => '';
+
+  @override
+  String get configuredUserAgent => '';
+
+  @override
+  void dispose() {}
+
+  @override
+  String get effectiveProxy => '';
+
+  @override
+  Duration get effectiveTimeout => const Duration(seconds: 6);
+
+  @override
+  String get effectiveUserAgent => LumeHttp.defaultUserAgent;
+
+  @override
+  void useQueue(NetworkQueue queue) {}
 }
 
 /// 本机没有脚本缓存时，用一个「明确失败」把话说清楚（而不是静默什么都不做）。

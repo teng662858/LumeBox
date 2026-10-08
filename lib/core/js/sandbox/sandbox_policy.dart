@@ -51,6 +51,17 @@ class SandboxPolicy {
   /// 耗尽即中断；通路不可用时退化为记录（见 [SandboxGuard]）。
   static const int defaultMaxInstructions = 200 * 1000 * 1000;
 
+  /// 按墙钟预算换算指令预算：**每秒 5000 万条**，下限就是 [defaultMaxInstructions]。
+  ///
+  /// 为什么要换算而不是写死（用户口径：大运算量的解析要能过）：指令计数是
+  /// 「防纯 CPU 空转」的兜底，墙钟超时才是一级闸门（可在设置里调 3–10s）。
+  /// 两者本来就该同向：超时调到 10s 的用户，等于明说「这个源解析重、我愿意等」，
+  /// 指令预算还卡在 6s 的量就不合理。纯死循环依旧会在墙钟到点时被回收。
+  static int instructionsFor(Duration timeout) {
+    final scaled = timeout.inMilliseconds * 50000;
+    return scaled > defaultMaxInstructions ? scaled : defaultMaxInstructions;
+  }
+
   /// 单次操作内允许的宿主代理调用次数。
   ///
   /// 64 → 256（真机反馈）：脚本一次列表/详情里并发发十几个 http 是常态

@@ -281,8 +281,8 @@ void main() {
 
     expect(find.text('暂无源'), findsOneWidget);
     expect(find.text('源管理'), findsOneWidget, reason: '给一个去导入的按钮');
-    // 页签只剩【浏览】：播放已搬到独立播放器页（真机反馈的改造）。
-    expect(find.widgetWithText(Tab, '浏览'), findsOneWidget);
+    // 顶部**没有页签条**了（用户口径：删掉「浏览」，内容直接顶上去，对齐猫源板块）。
+    expect(find.byType(Tab), findsNothing);
     expect(find.widgetWithText(Tab, '播放'), findsNothing);
     expect(find.text('视频地址或本地路径'), findsNothing, reason: '地址栏在播放器页里');
   });

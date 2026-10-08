@@ -106,16 +106,20 @@ void main() {
     });
   });
 
-  group('可配项只影响超时：安全上限必须原样', () {
+  group('可配项只影响超时（指令预算随超时同向放大）', () {
     test('策略只改超时，其余与标准预设逐项相同', () {
       const custom = SandboxSettings(timeout: Duration(seconds: 5));
       final policy = custom.policy();
 
       expect(policy.timeout, const Duration(seconds: 5));
-      // 逐项核对：这些是防死循环 / 防内存失控的兜底，不许跟着超时一起变。
+      // 指令预算**是唯一跟着超时走的**：超时 5s → 5×5000 万 = 2.5 亿（详见
+      // SandboxPolicy.instructionsFor 的说明：它只是「更早发现 CPU 空转」的辅助，
+      // 一级闸门是墙钟超时）。
+      expect(policy.maxInstructions, SandboxPolicy.instructionsFor(const Duration(seconds: 5)));
+      expect(policy.maxInstructions, greaterThan(SandboxPolicy.standard.maxInstructions));
+      // 逐项核对：其余是防死循环 / 防内存失控的兜底，不许跟着超时一起变。
       expect(policy.memoryLimitBytes, SandboxPolicy.standard.memoryLimitBytes);
       expect(policy.stackLimitBytes, SandboxPolicy.standard.stackLimitBytes);
-      expect(policy.maxInstructions, SandboxPolicy.standard.maxInstructions);
       expect(policy.maxHostCalls, SandboxPolicy.standard.maxHostCalls);
       expect(policy.maxSteps, SandboxPolicy.standard.maxSteps);
       expect(policy.maxJobRounds, SandboxPolicy.standard.maxJobRounds);

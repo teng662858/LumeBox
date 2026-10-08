@@ -79,18 +79,18 @@ class _AppShellState extends State<AppShell> {
 
   /// Dock 容器高度（用户口径：收窄容器、图标与文字尺寸不变）。
   ///
-  /// 64 → 56：Dock 项内部上下留白各收 4pt，视觉上更薄、更贴底，
-  /// 中间内容区随之变高。这是**内容那一条**的高度，不含手势条避让。
-  static const double _dockHeight = 56;
+  /// 64 → 56 → **48**：只收「内容条」里的上下留白；图标 20、文字 11 与选中态
+  /// 底座尺寸一律不动（48 仍容得下 20 + 3 + 15 = 38 的内容）。这是**内容那一条**
+  /// 的高度，不含手势条避让。
+  static const double _dockHeight = 48;
   /// Dock 与屏幕左右的留白。
   static const double _dockMargin = 12;
 
   /// 胶囊外框与屏幕**底边**的距离：**保留一小段悬浮留白**。
   ///
-  /// 用户口径（第七次反馈）：上一版把胶囊怼到屏幕底边「改过头了」——要的是
-  /// **缩短空隙、不是消除空隙**：胶囊保持悬浮观感，下面留一小段；避开系统手势条
-  /// 交给**胶囊内部的内容**去做（见 [dockContentInset]）。
-  static const double _dockBottomMargin = 8;
+  /// 用户口径（第八次反馈）：整套（胶囊 + 底部留白）一起收紧、往下收，但**仍然要
+  /// 留一小段**空白，不许贴死（悬浮感要有）。8 → 6。
+  static const double _dockBottomMargin = 6;
   static const double _dockSpacing = 8;
 
   /// 胶囊**内部**内容要让出的底部高度（手势条避让）。

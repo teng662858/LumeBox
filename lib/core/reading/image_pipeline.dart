@@ -73,12 +73,15 @@ class SectionImagePipeline {
   /// 解码图内存预算（字节）。
   final int memoryBudgetBytes;
 
-  /// 同时进行的网络请求上限，避免滑动时把连接池占满。
-  /// 同时下载的图片数。
+  /// 同时下载的图片数（封面网格用 [coverConcurrency]，阅读器可以更高）。
   ///
-  /// 4 → 6（真机反馈：漫画翻页时图片出得慢）。真正的上限仍在全局网络队列
-  /// （单域名并发 2~3，图床保护），这里只是别让自己排得太保守。
+  /// 4 → 6 → **4**：真机反馈「首页封面偶发空白、有的能显示有的不显示」——
+  /// 一次性并发太多会被图床按 IP 限流（429 / 空响应），反而更慢。
+  /// 真正的上限仍在全局网络队列（单域名并发 2~3），这里只是别把 burst 开太大。
   final int maxConcurrent;
+
+  /// 封面 / 缩略图网格的并发：**4**。阅读器（一屏 1–2 张大图）可以照常给 6。
+  static const int coverConcurrency = 4;
 
   /// 单张图片的额外重试次数（不含首次）。
   ///
@@ -394,6 +397,8 @@ class SectionImagePipeline {
                 ? LumeHttp.defaultUserAgent
                 : LumeNet.settings.userAgent.trim(),
             'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+            // 与浏览器一致的语言头：个别图床会按它做地区/防盗判断。
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Referer': ?referer,
           },
           source: '图片缓存',
@@ -412,10 +417,12 @@ class SectionImagePipeline {
         }
         return (bytes: Uint8List.fromList(bytes), retryable: false, forbidden: false);
       }
-      // 4xx 是「这张图本身有问题」（链接失效 / 防盗链），重试不会变好——
-      // 403 例外：换一种 Referer 再试一次（见 [_download]）。
+      // 4xx 是「这张图本身有问题」（链接失效 / 防盗链），重试不会变好——例外两类：
+      // · **429 / 408**：限流与超时，正是「有时能出、有时空白」的典型（真机反馈），
+      //   必须重试（退避在下面的重试循环里）；
+      // · 403：换一种 Referer 再试一次（见 [_download]）。
       final forbidden = code == 403;
-      final retryable = code < 400 || code >= 500;
+      final retryable = code < 400 || code == 408 || code == 429 || code >= 500;
       LumeLog.warn('图片请求失败($code${retryable ? '，将重试' : '，不重试'}): $url');
       return (bytes: null, retryable: retryable, forbidden: forbidden);
     } on Object catch (error) {

@@ -20,8 +20,10 @@ import 'sandbox/sandbox_policy.dart';
 /// 可配的只有**墙钟超时**：它是文档点名的项（3–5 秒），而且用户的机器与站点
 /// 差异会让同一个值体验不同（慢站点的正常脚本可能刚好卡在 4 秒）。
 ///
-/// 其余上限（内存、栈、指令计数、宿主调用数、微任务轮数…）**刻意不做成可配**：
-/// 它们是安全兜底，调大等于把「防死循环 / 防内存失控」的保护关掉。栈上限尤其
+/// 其余上限（内存、栈、宿主调用数、微任务轮数…）**刻意不做成可配**：
+/// 它们是安全兜底，调大等于把「防死循环 / 防内存失控」的保护关掉。
+/// 唯一的例外是指令计数：它**跟随超时同向放大**（见 [SandboxSettings.policy]），
+/// 因为纯 CPU 空转由墙钟超时一级闸门兜住，指令计数只是「更早发现」的辅助。栈上限尤其
 /// 危险——`SandboxPolicy.defaultStackLimitBytes` 的注释里记着实测数据：
 /// 调到 1MB 会让进程当场死亡（无异常、无日志）。这类值不该交给设置页。
 class SandboxSettings {
@@ -55,8 +57,14 @@ class SandboxSettings {
   ///
   /// 其余上限全部沿用 [SandboxPolicy.standard] —— 这是「可配项只影响它该影响
   /// 的那一项」的落地：用户调超时，不会顺带把内存 / 栈 / 指令预算改掉。
-  SandboxPolicy policy() =>
-      SandboxPolicy.standard.copyWith(timeout: clamped().timeout);
+  /// 指令预算**跟随超时同向放大**（[SandboxPolicy.instructionsFor]）：用户把超时
+  /// 调到 8–10s，等于明说「这个源解析重、我愿意等」——这时还按默认的 2 亿条卡死
+  /// 说不通（真机反馈：鸟鸟韩漫首页解析撞「超出指令计数上限」）。纯死循环仍由
+  /// 墙钟超时一级闸门回收，安全性不靠这个数。
+  SandboxPolicy policy() => SandboxPolicy.standard.copyWith(
+        timeout: clamped().timeout,
+        maxInstructions: SandboxPolicy.instructionsFor(clamped().timeout),
+      );
 
   Map<String, Object?> toJson() => <String, Object?>{
         'timeoutMs': clamped().timeout.inMilliseconds,

@@ -340,6 +340,12 @@ class SourceRegistry {
   static String describeRuntimeFailure(String detail) {
     final text = detail.trim();
     if (text.isEmpty) return text;
+    if (text.contains('超出指令预算') || text.contains('指令计数上限')) {
+      return '$text\n'
+          '（这个源在一次调用里做了太多运算——最常见的是正则回溯（嵌套量词套长文本）'
+          '或对整页 HTML 反复遍历。把运行日志发回来收敛脚本；'
+          '也可以把「设置 → 沙箱设置」的超时调大一档：指令预算按它同向放大。）';
+    }
     if (_veneraPattern.hasMatch(text)) {
       return '$text\n'
           '（这个源用到了**网页 DOM 解析**：querySelectorAll / cheerio / innerHTML——'

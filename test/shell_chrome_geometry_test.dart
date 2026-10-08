@@ -15,6 +15,7 @@ import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/shell/shell_dock.dart';
+import 'package:lume_box/features/reading/explore_view.dart';
 import 'package:lume_box/features/video/video_page.dart';
 import 'package:lume_box/shared/widgets/glass_card.dart';
 
@@ -112,7 +113,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('顶部导航贴近状态栏：整条顶栏 = 状态区 + 工具栏 44 + 页签 44', (tester) async {
+  testWidgets('顶部导航贴近状态栏：外框贴上移一档、内部内容避让状态栏', (tester) async {
     await pumpBoard(tester);
 
     final appBar = tester.getRect(find.byType(AppBar));
@@ -121,16 +122,20 @@ void main() {
     expect(appBar.top, closeTo(-kLumeTopInsetTrim, 0.01),
         reason: '顶栏要向上顶一档：外框贴近屏幕顶端，只让内容避让状态栏');
 
-    final chromeHeight =
-        trimmedTopInset(statusInset) + kLumeToolbarHeight + BoardTabHeader.height;
+    // 视频页现在**没有页签条**（用户口径：删掉「浏览」，内容直接顶上去），
+    // 因此这里量的是「避让后的状态栏 + 工具栏」；页签条的常量单独钉在下面。
+    final chromeHeight = trimmedTopInset(statusInset) + kLumeToolbarHeight;
     expect(
       appBar.bottom,
       closeTo(chromeHeight, 2),
-      reason: '顶栏下沿应为「避让后的状态栏 + 工具栏 + 页签条」=$chromeHeight，'
+      reason: '顶栏下沿应为「避让后的状态栏 + 工具栏」=$chromeHeight，'
           '实测 ${appBar.bottom}（比状态栏原值高出一档才对）',
     );
-    expect(appBar.bottom, lessThan(statusInset + kLumeToolbarHeight + BoardTabHeader.height - 1),
-        reason: '必须比「完整安全区」那一版更高：这一档就是向上顶的幅度');
+    expect(
+      appBar.bottom,
+      lessThan(statusInset + kLumeToolbarHeight + BoardTabHeader.height - 1),
+      reason: '必须比「完整安全区 + 页签条」那一版更高：这一档就是向上顶的幅度',
+    );
     // 容器收窄（用户口径第三次反馈）：工具栏与页签条都比上一版更薄，
     // 但**不能薄到压住控件**——右上角图标盒 34 是硬下限。
     // 34 是硬下限：右上角图标盒就是 34（再矮 AppBar 会把它压到 32 = 缩放控件）。
@@ -139,10 +144,11 @@ void main() {
     expect(BoardTabHeader.height, greaterThanOrEqualTo(36.0));
     expect(BoardTabHeader.height, lessThanOrEqualTo(40.0));
 
-    // 页签条确实在顶栏里（书架 / 探索）。
+    // 视频页顶部**不再有**页签条（书架 / 探索那种只出现在小说 / 漫画页）。
     expect(
       find.descendant(of: find.byType(AppBar), matching: find.byType(TabBar)),
-      findsOneWidget,
+      findsNothing,
+      reason: '用户口径：删掉视频页顶部的「浏览」页签条，内容直接顶上去',
     );
     expect(kLumeToolbarHeight, lessThanOrEqualTo(44.0));
     expect(BoardTabHeader.height, lessThanOrEqualTo(44.0));
@@ -189,8 +195,8 @@ void main() {
     final gap = height - capsule.bottom;
     expect(
       gap,
-      inInclusiveRange(6.0, 14.0),
-      reason: '胶囊要悬浮在屏幕底边之上（约 8pt），实测 $gap',
+      inInclusiveRange(4.0, 10.0),
+      reason: '胶囊要悬浮在屏幕底边之上（约 6pt），实测 $gap',
     );
     expect(capsule.left, closeTo(12, 0.01), reason: '左右悬浮留白仍是 12');
 
@@ -223,8 +229,9 @@ void main() {
           .descendant(of: find.byKey(AppShell.dockKey), matching: find.byType(InkWell))
           .first,
     );
-    expect(item.height, lessThanOrEqualTo(58.0), reason: '内容条还是老高度（64）');
-    expect(item.height, greaterThanOrEqualTo(48.0), reason: '别压到里面的控件');
+    // 内容条 64 → 56 → 48：只收留白；下限 44 是留给「图标 20 + 间距 3 + 文字 15」的。
+    expect(item.height, lessThanOrEqualTo(50.0), reason: '内容条还没收窄（应 ≤48）');
+    expect(item.height, greaterThanOrEqualTo(44.0), reason: '别压到里面的控件');
 
     final radius = tester.widget<ClipRRect>(dockCapsule()).borderRadius;
     expect(
@@ -274,7 +281,7 @@ void main() {
     final appBar = tester.getRect(find.byType(AppBar));
     // 板块页是「内容铺满整屏、顶栏浮在其上」（behindBar）——因此内容区的上下边界
     // 就是屏幕本身：两端移动后中间这块自动变大，不会再被夹出一条死白。
-    final content = tester.getRect(find.byType(BoardTabs));
+    final content = tester.getRect(find.byType(ExploreView));
     expect(content.top, closeTo(0, 1), reason: '内容铺满整屏（顶栏浮在其上）');
     expect(
       content.bottom,

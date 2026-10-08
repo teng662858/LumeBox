@@ -407,9 +407,22 @@ class _ExploreViewState extends State<ExploreView> {
         filters: _facetFilters.isEmpty ? null : _facetFilters,
       );
       if (!mounted || seq != _requestSeq) return;
+      // 翻页拿到「一条新条目都没有」的一页，通常是两种事：真的到底了，或者
+      // 站点的分页参数写法不对（第 2 页又返回了第 1 页）。前者照常收尾；
+      // 后者如果就这么停下，用户看到的就是「下拉到底再也不加载」——真机反馈过。
+      // 这里只做一件事：把重复页记进日志（下一轮按日志收敛脚本的分页写法），
+      // 并据此收尾，不再空转。
+      final fresh = more ? _countFresh(result.items) : result.items.length;
+      final repeated = more && result.items.isNotEmpty && fresh == 0;
+      if (repeated) {
+        LumeLog.warn(
+          '[${source.id}] 第 $page 页没有新条目（疑似分页写法不对：'
+          '又返回了上一页），先按到底处理',
+        );
+      }
       setState(() {
         _page = page;
-        _hasMore = result.hasMore;
+        _hasMore = repeated ? false : result.hasMore;
         _loadingMore = false;
         _loadingFirst = false;
         if (more) {
@@ -449,6 +462,16 @@ class _ExploreViewState extends State<ExploreView> {
     SectionPreloader.discard(widget.section);
     await _loadCategories();
     await _loadPage();
+  }
+
+  /// 这一页里有几条是**新**的（按 id 与已有列表比）。
+  int _countFresh(List<SourceItem> items) {
+    final seen = <String>{for (final item in _items) item.id};
+    var fresh = 0;
+    for (final item in items) {
+      if (seen.add(item.id)) fresh++;
+    }
+    return fresh;
   }
 
   /// 预取这一页的封面：列表还在滑的时候图就已经在路上了。

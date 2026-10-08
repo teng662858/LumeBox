@@ -14,7 +14,6 @@ import '../../shared/widgets/chapter_tile.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../reading/explore_view.dart';
 import '../reading/history_sheet.dart';
-import '../shell/board_tabs.dart';
 import '../source/add_source_button.dart';
 import '../source/source_section_page.dart';
 import 'source_playback.dart';
@@ -68,9 +67,6 @@ class VideoPage extends StatefulWidget {
 
   /// 本板块阅读库（播放进度）；为空时按板块打开正式实现。
   final ReadingLibrary? library;
-
-  /// 页签文案：**只保留【浏览】**（播放已移到独立播放器页）。
-  static const List<String> tabLabels = <String>['浏览'];
 
   @override
   State<VideoPage> createState() => _VideoPageState();
@@ -128,6 +124,8 @@ class _VideoPageState extends State<VideoPage> {
         _pipeline = SectionImagePipeline(
           cacheDir: library.imageCacheDir,
           memoryBudgetBytes: SectionImagePipeline.thumbnailBudgetBytes,
+          // 封面网格按封面并发（4）跑：并发太大被图床限流，反而更多空白。
+          maxConcurrent: SectionImagePipeline.coverConcurrency,
         );
       });
     } catch (error, stackTrace) {
@@ -448,23 +446,18 @@ class _VideoPageState extends State<VideoPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 页签控制器提到最外层（与小说 / 漫画的阅读外壳同款）：页签条在顶部栏里、
-    // 内容区在 body 里，两边共用同一个控制器。**只剩【浏览】一个页签**：播放已
-    // 搬到独立播放器页，页签位不再被播放占用。
-    return DefaultTabController(
-      length: VideoPage.tabLabels.length,
-      child: GlassScaffold(
+    return GlassScaffold(
         // **不随键盘收缩**：板块内容区（ExploreView）自己处理键盘内边距
         // （列表底部让出键盘高度）。外层若跟着收缩，固定的工具栏 / 搜索行会被
         // 挤出屏幕——真机反馈过两次「键盘弹起后搜索框不见了」。
         resizeToAvoidBottomInset: false,
         title: Section.video.label,
         actions: _buildActions(),
-        // 页签条做成顶栏的一部分（整条玻璃），内容从它下面滚过。
-        bottom: const BoardTabHeader(labels: VideoPage.tabLabels),
-        behindBar: true,
-        child: BoardTabs(children: <Widget>[_buildBrowseTab()]),
-      ),
+        // **不再有页签条**（用户口径：删掉顶部那个「浏览」文字，内容直接往上顶，
+        // 与猫源板块的顶部一致）。视频页本来也只剩一个浏览面——播放是独立的
+        // 播放器页，页签条只是白占一条高度。
+      behindBar: true,
+      child: _buildBrowseTab(),
     );
   }
 

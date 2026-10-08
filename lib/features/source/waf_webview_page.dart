@@ -609,9 +609,12 @@ String safariUserAgentFrom(String webViewUserAgent) {
 }
 
 /// 打开网页视图并返回取到的 Cookie（宿主据此写进图源会话存储）。
-/// 手动「网页视图」：**半屏弹窗**（用户口径：不要全屏页，别影响主界面操作）。
 ///
-/// - 占屏幕下方约 3/4 高，圆角浮层；用户能看见背后页面，确认「这是在验证哪个站」；
+/// 手动「网页视图」：**屏幕 2/3 高的悬浮窗**（用户口径第七次）——
+/// - 高度 = 屏幕高 × 2/3，上下各留 1/6 空余：顶部能看到 App 自己的标题栏与
+///   上半屏内容，底部也留出一段（不是贴死屏幕底边的全宽弹层，也不是小悬浮窗）；
+/// - **只有一层**：手动窗开着时自动验证路径被 [WafAutoVerify] 挡住（见
+///   `beginManual/endManual`），不会再叠一个小圆角窗；
 /// - 过完校验点左上角 ✕（或等自动收尾）→ Cookie 原样返回给调用方落库；
 /// - 返回 null = 用户直接关掉/没拿到；非空 Map = 至少取到一枚 Cookie。
 Future<Map<String, String>?> showWafWebView({
@@ -622,15 +625,22 @@ Future<Map<String, String>?> showWafWebView({
   String? sourceId,
   String? userAgent,
 }) {
+  final size = MediaQuery.of(context).size;
+  final panelHeight = size.height * 2 / 3;
+  // 上下各留 1/6：上面露出 App 标题栏，下面留出空余区域（都不是贴边）。
+  final gap = (size.height - panelHeight) / 2;
   Map<String, String>? collected;
-  return showModalBottomSheet<Map<String, String>>(
+  return showGeneralDialog<Map<String, String>>(
     context: context,
-    backgroundColor: Colors.transparent,
-    isScrollControlled: true,
-    builder: (_) => SizedBox(
-      height: MediaQuery.of(context).size.height * 0.75,
+    // 中途不许点空白关掉：用户没点 ✕，验证就还没结束（口径 3）。
+    barrierDismissible: false,
+    barrierLabel: '网页视图',
+    barrierColor: const Color(0x66000000),
+    transitionDuration: const Duration(milliseconds: 160),
+    pageBuilder: (context, _, _) => Padding(
+      padding: EdgeInsets.only(top: gap, bottom: gap),
       child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+        borderRadius: BorderRadius.circular(18),
         child: WafWebViewPage(
           url: url,
           sourceName: sourceName,
@@ -648,7 +658,6 @@ Future<Map<String, String>?> showWafWebView({
     ),
   ).then((_) => collected ?? const <String, String>{});
 }
-
 
 /// WAF 判定与失败文本的桥（页面用它决定要不要显示【网页视图】）。
 bool shouldOfferWebView(String? failureMessage) =>

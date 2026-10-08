@@ -113,18 +113,16 @@ void main() {
       );
 
   group('右上角两枚独立图标', () {
-    testWidgets('视频：「播放历史」在、日历已删，页签只剩【浏览】', (tester) async {
+    testWidgets('视频：「播放历史」在、日历已删，顶部无页签条', (tester) async {
       await pump(tester, const VideoPage(catalog: _NoKernelCatalog()));
 
       expect(find.byTooltip('播放历史'), findsOneWidget);
       expect(find.byTooltip('追剧日历'), findsNothing, reason: '日历已按用户要求删除');
       expect(find.byTooltip('追更日历'), findsNothing);
-      expect(find.widgetWithText(Tab, '浏览'), findsOneWidget);
-      expect(
-        find.widgetWithText(Tab, '播放'),
-        findsNothing,
-        reason: '播放子页签已移除（播放走独立播放器页）',
-      );
+      // 用户口径：连「浏览」这条页签条也删掉，内容直接顶上去（对齐猫源板块）。
+      expect(find.byType(Tab), findsNothing, reason: '视频页顶部不再有页签条');
+      expect(find.widgetWithText(Tab, '浏览'), findsNothing);
+      expect(find.widgetWithText(Tab, '播放'), findsNothing);
     });
 
     testWidgets('小说：「阅读历史」在、日历已删', (tester) async {

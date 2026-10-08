@@ -4,6 +4,7 @@ import '../js/cat_engines.dart';
 import '../js/lume_js_engine.dart';
 import '../js/sandbox/sandbox.dart';
 import '../js/source_registry.dart';
+import 'source_display_names.dart';
 import '../js/source_script.dart';
 import '../util/lume_log.dart';
 import '../session/section.dart';
@@ -205,7 +206,7 @@ class LumeSources {
     if (await registry.engineFor(sourceId) == null) return null;
     return JsDataSource(
       id: record.id,
-      name: record.name,
+      name: SourceDisplayNames.of(record.id, record.name),
       section: section,
       runtime: _EngineRuntime(registry, sourceId),
       cache: cached ? SectionMemoryCache.instance : null,
@@ -362,7 +363,8 @@ class LumeSources {
 
   static SourceDescriptor _describe(SourceRecord record) => SourceDescriptor(
         id: record.id,
-        name: record.name,
+        // 展示名过一层中文字典（只影响界面文字；id 与脚本都不动）。
+        name: SourceDisplayNames.of(record.id, record.name),
         version: record.version,
         enabled: record.enabled,
         network: record.network,
