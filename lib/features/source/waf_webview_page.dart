@@ -35,6 +35,26 @@ import '../../core/util/lume_log.dart';
 ///    `NSAllowsArbitraryLoadsInWebContent`）；
 /// 3. **补齐浏览器请求头**：`Accept-Language` / `Upgrade-Insecure-Requests` 这类
 ///    默认头缺了，挑战页的脚本可能直接不渲染控件。
+///
+/// ## UA 必须是**设备自己的** Safari UA（真机反馈：勾选框一闪就跳空白页）
+///
+/// 真机现象：挑战页的勾选框能瞥见一眼，还没点就自己跳成空白页。CF 会做客户端
+/// 一致性检测——UA 里写的系统版本、WebKit 版本与真实环境对不上（或带 WebView
+/// 特征），它就认定这是内置控件，**跳过交互直接把人赶走**。
+/// 因此这里不再用配置里那串硬编码 UA，而是拿 WKWebView 的**默认 UA**（它带着这台
+/// 设备真实的 iOS / WebKit 版本）补上 `Version/… Safari/…` 两段，拼出一个与
+/// 本机 Safari 完全一致的 UA（见 [safariUserAgentFrom]）。
+///
+/// ## 挑战页被跳走时把它拉回来（[._restoreChallengeIfBlanked]）
+///
+/// 即便 UA 对了，CF 也可能在挑战过期 / 网络抖动时跳到一张空白页。用户口径：
+/// 「至少把挑战页保留住，给足时间点勾选框」。这里在页面变成空白且**刚才确实
+/// 是挑战页**时，把挑战页重新打开（最多几次），而不是任由用户面对白屏。
+///
+/// ## 什么时候才读 Cookie
+///
+/// **只有用户点左上角 ✕ 的那一刻**（手动模式）。中途无论页面跳转多少次都不读
+/// Cookie、不关窗、不重置 WebView——用户没说「好了」，验证流程就还没结束。
 class WafWebViewPage extends StatefulWidget {
   const WafWebViewPage({
     super.key,
@@ -104,6 +124,15 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
   /// 白屏是最没用的失败方式：用户既不知道发生了什么，也不知道下一步做什么。
   String? _loadError;
 
+  /// 刚才这一页是不是 CF 挑战页（用来判断「跳成空白」要不要把挑战页拉回来）。
+  bool _challengeSeen = false;
+
+  /// 已经拉回来过几次（防死循环：CF 一直跳走就停手，把白屏如实呈现）。
+  int _challengeRestores = 0;
+
+  /// 挑战页最多自动重开几次。
+  static const int _maxChallengeRestores = 3;
+
   /// 是否已经成功加载过至少一次（用来区分「从来没打开」与「打开过、后面的
   /// 导航被取消」——后者不该压失败卡）。
   bool _loadedOnce = false;
@@ -168,21 +197,18 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
     unawaited(_boot());
   }
 
-  /// 起播顺序：**先设 UA，再带头加载**（顺序反了第一次加载用的还是 WKWebView 默认 UA，
-  /// 那就是 CF 给白屏的那一份）。
+  /// 起播顺序：**先定 UA，再带头加载**（顺序反了第一次加载用的还是 WKWebView
+  /// 默认 UA，那就是 CF 给白屏的那一份）。
   Future<void> _boot() async {
     final controller = _controller;
     if (controller == null) return;
-    final ua = widget.userAgentOverride?.trim();
-    if (ua != null && ua.isNotEmpty) {
+    final ua = await _resolveUserAgent(controller);
+    if (ua.isNotEmpty) {
       try {
         await controller.setUserAgent(ua);
       } catch (error) {
         LumeLog.warn('[waf] 设置网页视图 UA 失败（用默认 UA 继续）：$error');
       }
-    } else {
-      LumeLog.warn('[waf] 网页视图没有拿到 App 的 UA，用 WKWebView 默认 UA：'
-          'CF 挑战页可能渲染不出控件');
     }
     if (!mounted) return;
     LumeLog.info('[waf] 网页视图打开：${widget.url}（UA=$ua）');
@@ -197,23 +223,87 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
     }
   }
 
+  /// 定下这个 WebView 用哪个 UA。
+  ///
+  /// 两种来源，优先级分明：
+  /// 1. **用户显式配过 UA**（图源网络覆盖 / 全局设置里填了 UA）：照用——后续 API
+  ///    请求也会用同一个（cf_clearance 绑 IP + UA），用户的选择优先；
+  /// 2. 没配过：拿 **WKWebView 的默认 UA**（本机真实的 iOS / WebKit 版本）补上
+  ///    `Version/… Safari/…`，拼成与本机 Safari 一致的 UA。
+  ///
+  /// 第 2 条是关键：写死版本号（或带 WebView 特征）的 UA 会被 CF 识别成内置控件，
+  /// 挑战页勾选框一闪就被强制跳走（真机反馈）。
+  Future<String> _resolveUserAgent(WebViewController controller) async {
+    final configured = widget.userAgentOverride?.trim() ?? '';
+    if (configured.isNotEmpty) return configured;
+    String fallback = '';
+    try {
+      fallback = (await controller.getUserAgent())?.trim() ?? '';
+    } catch (error) {
+      LumeLog.warn('[waf] 读取 WebView 默认 UA 失败：$error');
+    }
+    if (fallback.isEmpty) return '';
+    return safariUserAgentFrom(fallback);
+  }
+
   /// 页面加载完之后取一次正文摘要与挑战标记，写进运行日志。
   ///
   /// 这是给「白屏」留的证据链：正文为空 → 网络/ATS/UA 有问题；正文有内容但没有
   /// 挑战 iframe → 站点没给挑战页；两者都在 → 是控件没画出来（浏览器环境问题）。
   Future<void> _probePage(String url) async {
+    Map<String, Object?> probe = const <String, Object?>{};
     try {
       final raw = await _controller?.runJavaScriptReturningResult(
         'JSON.stringify({'
         't:(document.title||"").slice(0,80),'
         'n:((document.body&&document.body.innerText)||"").replace(/\\s+/g," ").slice(0,160),'
         'f:document.querySelectorAll("iframe").length,'
-        'c:/challenges\\.cloudflare\\.com|turnstile|cf-chl|challenge-platform/i.test(document.documentElement.innerHTML)'
+        'c:/challenges\\.cloudflare\\.com|turnstile|cf-chl|challenge-platform|just a moment|请稍候/i'
+        '.test(document.documentElement.innerHTML+document.title)'
         '})',
       );
       LumeLog.info('[waf] 网页视图正文摘要（$url）：$raw');
+      final decoded = jsonDecode('$raw');
+      if (decoded is Map) probe = decoded.cast<String, Object?>();
     } catch (error) {
       LumeLog.info('[waf] 读取网页视图正文失败：$error');
+      return;
+    }
+    if (!mounted) return;
+    final body = '${probe['n'] ?? ''}'.trim();
+    if (probe['c'] == true) _challengeSeen = true;
+    // 挑战页被 CF 自己跳成空白页：把挑战页拉回来，让用户还有机会点勾选框。
+    if (_challengeSeen && body.isEmpty) {
+      await _restoreChallengeIfBlanked();
+    }
+  }
+
+  /// 挑战页跳成空白时把它重新打开。
+  ///
+  /// 用户口径（真机反馈「勾选框一闪就跳空白页，还没点就没了」）：**别让用户面对
+  /// 白屏**——只要刚才这一页确实是挑战页、而当前页正文是空的，就把挑战页重新打开，
+  /// 给人足够时间完成手动验证。最多重开几次，免得 CF 一直跳走时我们跟着刷个没完。
+  ///
+  /// 这里**只做重开**：不读 Cookie、不关窗、不重置控制器（用户没点 ✕ 之前，
+  /// 验证流程就还没结束）。
+  Future<void> _restoreChallengeIfBlanked() async {
+    if (_collecting || !mounted) return;
+    if (_challengeRestores >= _maxChallengeRestores) {
+      LumeLog.warn('[waf] 挑战页已被跳走 $_challengeRestores 次，不再自动重开：'
+          '多半是 UA / 网络环境被识别（换网络或更新 App 版本再试）');
+      setState(() => _title = '验证页无法停留（可点右上角刷新重试）');
+      return;
+    }
+    _challengeRestores++;
+    LumeLog.info('[waf] 挑战页被跳成空白，重新打开第 $_challengeRestores 次：${widget.url}');
+    setState(() => _title = '验证页被跳走了，正在重新打开…');
+    try {
+      await _controller?.loadRequest(
+        Uri.parse(widget.url),
+        headers: _browserHeaders,
+      );
+    } catch (error) {
+      LumeLog.warn('[waf] 重新打开挑战页失败：$error');
     }
   }
 
@@ -475,6 +565,36 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
       '网页视图走的是**系统网络**，App 里给这个图源配的代理 / UA 不会作用到它。\n'
       '如果这个站需要代理才能访问，请在「源管理 → 网络配置」确认代理后，'
       '或在系统设置里配好 VPN / 代理再试。';
+}
+
+/// 把 WKWebView 的默认 UA 变成**与本机 Safari 一致**的 Safari UA。
+///
+/// 默认 UA（WKWebView）：
+/// `Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15
+///  (KHTML, like Gecko) Mobile/15E148`
+/// 本机 Safari：
+/// `… AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1`
+///
+/// 只补 `Version/x.y` 与 `Safari/604.1` 两段，其余**原样保留**：这样 UA 里写的
+/// iOS 版本、WebKit 版本、`Mobile/15E148` 全都是这台设备真实的值——CF 的客户端
+/// 一致性检测挑不出毛病。写死版本号（旧实现是 `iPhone OS 17_0`）在真机上会出现
+/// 「挑战页勾选框一闪就被强制跳走」。
+///
+/// 已经是 Safari UA（带 `Safari/`）就原样返回；解析不出 iOS 版本时退回
+/// `Version/17.0 Safari/604.1` 两段通用值（至少不是 WebView 特征）。
+String safariUserAgentFrom(String webViewUserAgent) {
+  final ua = webViewUserAgent.trim();
+  if (ua.isEmpty || ua.contains('Safari/')) return ua;
+  // 版本号取 UA 里自报的 iOS 版本：`iPhone OS 18_5` → `18.5`。
+  final match = RegExp(r'OS (\d+)_(\d+)').firstMatch(ua);
+  final version = match == null ? '17.0' : '${match.group(1)}.${match.group(2)}';
+  if (ua.contains('Version/')) {
+    return '$ua Safari/604.1';
+  }
+  if (ua.contains('Mobile/')) {
+    return '${ua.replaceFirst('Mobile/', 'Version/$version Mobile/')} Safari/604.1';
+  }
+  return '$ua Version/$version Mobile/15E148 Safari/604.1';
 }
 
 /// 打开网页视图并返回取到的 Cookie（宿主据此写进图源会话存储）。

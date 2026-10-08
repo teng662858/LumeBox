@@ -31,11 +31,12 @@ void main() {
     Qjs.reclaimRuntime = false;
   }
 
-  /// 引擎不可用 / 本机没拉脚本缓存 → 跳过（不是失败）。
-  /// 脚本在 https://github.com/teng662858/LumeBox-Sources，
+  /// 引擎不可用 / 本机没拉脚本与快照缓存 → 跳过（不是失败）。
+  /// 脚本与快照都在 https://github.com/teng662858/LumeBox-Sources，
   /// 本机先跑 `dart run tool/fetch_sources.dart`。
-  String? skipOf(String name) =>
-      Qjs.isAvailable ? _skipOf(name) : '未找到可用的 quickjs 原生桥（${Qjs.availabilityDetail}）';
+  String? skipUnless(List<String> names) => Qjs.isAvailable
+      ? _skipUnless(names)
+      : '未找到可用的 quickjs 原生桥（${Qjs.availabilityDetail}）';
 
   setUp(() => LumeJsEngine.debugSupportedOverride = true);
   tearDown(() => LumeJsEngine.debugSupportedOverride = null);
@@ -109,7 +110,7 @@ void main() {
         reason: '正文图片也必须升级到 https',
       );
     },
-    skip: skipOf('seyoumanhua_comic.js'),
+    skip: skipUnless(<String>['seyoumanhua_comic.js', 'seyoumanhua_list.html', 'seyoumanhua_comic.html', 'seyoumanhua_chapter.html']),
     timeout: const Timeout(Duration(seconds: 90)),
   );
   test(
@@ -171,20 +172,40 @@ void main() {
         reason: '其余请求也统一带头（站点自己就是让用户写这枚 cookie 的）',
       );
     },
-    skip: skipOf('99xs_novel.js'),
+    skip: skipUnless(<String>['99xs_novel.js', '99xs_enter.html', '99xs_category.html', '99xs_search.html']),
     timeout: const Timeout(Duration(seconds: 90)),
   );
 
 }
 
-String _read(String file) => File(file).readAsStringSync();
+/// 读一份缓存里的资产（脚本或站点快照）。
+///
+/// 用例的 skip 条件理应保证它存在；真缺了就抛一句点名的话——
+/// 不要变成一句 `Null check operator used on a null value`（那种失败读不出问题）。
+String _read(String file) {
+  // 两种调用都认：传文件名（在缓存里找）或传已经解析好的路径（_script 的返回值）。
+  final direct = File(file);
+  if (direct.existsSync()) return direct.readAsStringSync();
+  final path = sourceAssetPath(file);
+  if (path == null) {
+    throw StateError(
+      '缓存里没有 $file：跳过条件漏了这个文件？'
+      '（先跑 `dart run tool/fetch_sources.dart`）',
+    );
+  }
+  return File(path).readAsStringSync();
+}
 
 /// 脚本路径（本机没拉缓存时用例会被 skip，不会走到这里）。
 String _script(String name) => sourceScriptPath(name)!;
 
-/// 本机缺这份脚本 → 给 skip 原因；有就返回 null（照常跑）。
-String? _skipOf(String name) =>
-    sourceScriptPath(name) == null ? sourceScriptsSkipReason(name) : null;
+/// 用例需要的资产（脚本 + 站点快照）都在本机才跑；缺哪个就点名哪一个。
+String? _skipUnless(List<String> names) {
+  for (final name in names) {
+    if (sourceAssetPath(name) == null) return sourceScriptsSkipReason(name);
+  }
+  return null;
+}
 
 Future<_BootedSource> _boot(
   String scriptPath, {

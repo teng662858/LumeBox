@@ -47,7 +47,8 @@ Future<void> main(List<String> args) async {
   }
 
   for (final section in sections) {
-    final indexUrl = '$base/$section/sources.txt';
+    // 清单文件是 `sources.js`：一行一个脚本地址（App 也按这个口径解析）。
+    final indexUrl = '$base/$section/sources.js';
     final list = await get(indexUrl);
     if (list == null) {
       failed++;
@@ -67,6 +68,28 @@ Future<void> main(List<String> args) async {
       target.parent.createSync(recursive: true);
       target.writeAsStringSync(text, flush: true);
       stdout.writeln('[ok] ${target.path} （${text.length} 字符）');
+      ok++;
+    }
+  }
+
+  // 站点快照（与脚本一起放在源仓库的 snapshots/）：校验脚本解析规则时要用。
+  final snapshotList = await get('$base/snapshots/snapshots.txt');
+  if (snapshotList == null) {
+    failed++;
+  } else {
+    final target = Directory('${root.path}/snapshots');
+    target.createSync(recursive: true);
+    for (final line in snapshotList.split('\n')) {
+      final name = line.trim();
+      if (name.isEmpty || name.startsWith('#')) continue;
+      final text = await get('$base/snapshots/$name');
+      if (text == null) {
+        failed++;
+        continue;
+      }
+      final file = File('${target.path}/$name');
+      file.writeAsStringSync(text, flush: true);
+      stdout.writeln('[ok] ${file.path} （${text.length} 字符）');
       ok++;
     }
   }

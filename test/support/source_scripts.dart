@@ -21,22 +21,28 @@ const String lumeSourcesRawBase =
 /// 缓存根目录（相对仓库根；测试的工作目录就是仓库根）。
 Directory get sourceCacheDir => Directory('.sources-cache');
 
-/// 找一个源脚本的本地路径：先看缓存，再看历史位置（`sources/`）。
+/// 缓存里的一份资产（脚本或站点快照）的本地路径；没有则 null。
 ///
-/// 返回 null 表示本机没有这份脚本（调用方跳过用例并说明去哪拉）。
-String? sourceScriptPath(String name) {
-  if (sourceCacheDir.existsSync()) {
-    for (final entity in sourceCacheDir.listSync(recursive: true)) {
-      if (entity is File && entity.uri.pathSegments.last == name) {
-        return entity.path;
-      }
+/// 缓存由 `dart run tool/fetch_sources.dart` 从源仓库拉下来：
+/// `novel|comic|video/` 放脚本，`snapshots/` 放站点快照（写脚本时站点的样子，
+/// 校验解析规则对着它跑；站点改版后旧快照不适用，就该更新它）。
+String? sourceAssetPath(String name) {
+  if (!sourceCacheDir.existsSync()) return null;
+  for (final entity in sourceCacheDir.listSync(recursive: true)) {
+    if (entity is File && entity.uri.pathSegments.last == name) {
+      return entity.path;
     }
   }
-  final legacy = File('sources/$name');
-  return legacy.existsSync() ? legacy.path : null;
+  return null;
 }
+
+/// 找一个源脚本的本地路径（语义别名）。
+String? sourceScriptPath(String name) => sourceAssetPath(name);
+
+/// 找一份站点快照的本地路径（语义别名）。
+String? sourceSnapshotPath(String name) => sourceAssetPath(name);
 
 /// 整组跳过时给的原因（[sourceScriptPath] 返回 null 时用）。
 String sourceScriptsSkipReason(String name) =>
-    '本机没有 $name：脚本在 $lumeSourcesRepo，'
+    '本机没有 $name：脚本与站点快照都在 $lumeSourcesRepo，'
     '先跑 `dart run tool/fetch_sources.dart`（缓存到 .sources-cache/）再测';

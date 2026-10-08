@@ -42,17 +42,20 @@ class LumeSources {
     return registry.sources.map(_describe).toList(growable: false);
   }
 
-  /// 这个图源的 API 请求会用的 UA（图源覆盖 → 全局设置 → 内置默认）。
+  /// 用户给这个图源**显式配过**的 UA（图源网络覆盖 → 全局设置）；没配过返回 null。
   ///
-  /// **给「网页视图」用**：CF 把 `cf_clearance` 绑在 IP + UA 上，验证窗与后续
-  /// API 必须是同一个 UA；而且 WKWebView 的默认 UA 不带 `Safari/…` 段，
-  /// CF 会因此给一张渲染不出勾选框的白页（真机反馈）。取不到时返回 null，
-  /// 调用方按「没有覆盖」处理（页面会记一条日志说明用的是默认 UA）。
+  /// **给「网页视图」用**：返回 null 时验证窗自己派生一个「与设备 Safari 一致」的
+  /// UA（见 `WafWebViewPage` 的 UA 派生）——CF 会检测客户端一致性，写死版本号的
+  /// UA 会被当成内置控件、挑战页勾选框一闪就被跳走（真机反馈）。
+  /// 配过就照用：后续 API 请求也会用同一个（cf_clearance 绑 IP + UA）。
   static Future<String?> userAgentFor(Section section, String sourceId) async {
     if (!runtimeAvailableFor(section)) return null;
     try {
       final registry = await SourceRegistry.open(section);
-      final ua = registry.httpFor(sourceId).effectiveUserAgent.trim();
+      // 用**用户显式配过**的 UA（configured），**不回落到内置默认值**：
+      // 没配过时网页视图要拿设备自己的 Safari UA（CF 会做客户端一致性检测，
+      // 写死版本号 / 带 WebView 特征会被强制跳走），而不是那串硬编码 UA。
+      final ua = registry.httpFor(sourceId).configuredUserAgent.trim();
       return ua.isEmpty ? null : ua;
     } catch (error) {
       LumeLog.warn('[${section.id}] 解析 $sourceId 的 UA 失败：$error');

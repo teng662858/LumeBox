@@ -214,6 +214,30 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
+/// 顶栏「向上顶」的幅度：外框贴屏幕顶端，内容只做**状态栏避让**。
+///
+/// 用户口径（第六次反馈）：顶栏外框本来就铺到 y=0，但内容被**完整的**安全区
+/// （刘海机 62）压在下面，视觉上「整条横条不能往上靠」。参考做法是
+/// **容器贴顶、内容单独避让**：内容少让一档（默认 12），标题与图标跟着上移，
+/// 中间内容区同时多出这一段。
+///
+/// 12 是保守值：刘海机状态栏 62，缩到 50 之后图标盒（34）落在 50..84，
+/// 灵动岛（约 11..48）与两侧时间/电量（约 22..42）都在它上面，不会压到。
+/// 小状态栏（无刘海机 / 安卓，inset ≤ 24）不缩——那里时间电量就贴着顶，
+/// 缩了会撞上（见 [trimmedTopInset]）。
+const double kLumeTopInsetTrim = 12;
+
+/// 顶栏内容实际要让出的顶部高度：状态栏高度减去一档 [kLumeTopInsetTrim]。
+///
+/// 状态栏太薄时（无刘海机 / 安卓，≤ 24）原样返回：那里没有可让的余地。
+double trimmedTopInset(double statusInset) {
+  if (statusInset <= 24) return statusInset;
+  final trim = statusInset - 24 < kLumeTopInsetTrim
+      ? statusInset - 24
+      : kLumeTopInsetTrim;
+  return statusInset - trim;
+}
+
 /// 带玻璃顶部栏的页面骨架，供各板块页面复用。
 ///
 /// 标题默认使用项目名称；板块页面传入对应板块名（小说 / 漫画等）。
@@ -289,7 +313,7 @@ class GlassScaffold extends StatelessWidget {
     final provided =
         context.dependOnInheritedWidgetOfExactType<_GlassBarHeight>();
     if (provided != null) return provided.height;
-    return MediaQuery.paddingOf(context).top +
+    return trimmedTopInset(MediaQuery.paddingOf(context).top) +
         kLumeToolbarHeight +
         (extra > 0 ? extra : 0);
   }
@@ -300,18 +324,23 @@ class GlassScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 顶栏总高度：用壳自己的 context 读（此时还没被 Scaffold 注入顶栏高度）。
+    // 顶栏内容要让出的高度：**避让后的**状态栏 + 工具栏 + 页签条。
+    // 用壳自己的 context 读（此时还没被 Scaffold 注入顶栏高度）。
+    final statusInset = MediaQuery.paddingOf(context).top;
     final height =
-        MediaQuery.paddingOf(context).top + kLumeToolbarHeight + bottomExtra;
+        trimmedTopInset(statusInset) + kLumeToolbarHeight + bottomExtra;
+    // 外框贴屏幕顶端、内容单独避让（用户口径 6）：把整条 AppBar 向上平移
+    // 「让出来的那一档」，玻璃因此仍铺满状态栏区域（上沿被屏幕裁掉一点），
+    // 而下沿与内部内容一起上移一档。Scaffold 给的约束不变，所以
+    // body 的注入内边距仍是「未缩」的总高——下方 _GlassBarHeight 用 [height]
+    // 覆盖它，列表与页面内容跟顶栏下沿严丝合缝。
+    final unusedInset = statusInset - trimmedTopInset(statusInset);
     return Scaffold(
       extendBodyBehindAppBar: true,
       resizeToAvoidBottomInset: resizeToAvoidBottomInset ?? true,
-      appBar: GlassAppBar(
-        title: Text(title ?? LumeTheme.appName),
-        actions: actions,
-        bottom: bottom,
-        leading: leading,
-      ),
+      appBar: unusedInset <= 0
+          ? _buildBar()
+          : _ShiftedAppBar(dy: unusedInset, child: _buildBar()),
       floatingActionButton: floatingActionButton,
       body: DecoratedBox(
         decoration: LumeTheme.background,
@@ -329,6 +358,34 @@ class GlassScaffold extends StatelessWidget {
 
   /// 页签条高度。
   double get bottomExtra => bottom?.preferredSize.height ?? 0;
+
+  /// 顶栏本体（外框是否整体上移由 [build] 决定）。
+  GlassAppBar _buildBar() => GlassAppBar(
+        title: Text(title ?? LumeTheme.appName),
+        actions: actions,
+        bottom: bottom,
+        leading: leading,
+      );
+}
+
+/// 把顶栏整体上移一档，同时保持 `PreferredSizeWidget` 契约。
+///
+/// 为什么是「整体平移」而不是「少加内边距」：`Scaffold` 按
+/// `preferredSize + 状态栏高度` 给顶栏分配高度，改内边距只会让内容在那一格里
+/// 悬空（玻璃下沿与页签条错位）。整体平移则让外框与内容一起上移，玻璃照样铺满
+/// 状态栏区域，下沿与内容区严丝合缝（见 [kLumeTopInsetTrim]）。
+class _ShiftedAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _ShiftedAppBar({required this.dy, required this.child});
+
+  final double dy;
+  final PreferredSizeWidget child;
+
+  @override
+  Size get preferredSize => child.preferredSize;
+
+  @override
+  Widget build(BuildContext context) =>
+      Transform.translate(offset: Offset(0, -dy), child: child);
 }
 
 /// 把「顶栏总高度」交给内容区（见 [GlassScaffold.barHeight]）。

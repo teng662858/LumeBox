@@ -80,21 +80,29 @@ class _AppShellState extends State<AppShell> {
   /// Dock 容器高度（用户口径：收窄容器、图标与文字尺寸不变）。
   ///
   /// 64 → 56：Dock 项内部上下留白各收 4pt，视觉上更薄、更贴底，
-  /// 中间内容区随之变高。
+  /// 中间内容区随之变高。这是**内容那一条**的高度，不含手势条避让。
   static const double _dockHeight = 56;
   /// Dock 与屏幕左右的留白。
   static const double _dockMargin = 12;
 
-  /// Dock 与屏幕**底边**的距离（用户口径第四次：对齐参考图）。
+  /// 胶囊外框与屏幕**底边**的距离：**0 = 外框直接画到屏幕底边**。
   ///
-  /// 参考图里那条胶囊的下沿离屏幕底边只有 ~8pt，不是 iOS 安全区的 34——底栏往下
-  /// 靠之后，中间内容区又多出一截。这里取 10：既落在参考图的位置上，又与
-  /// Home Indicator 留出一点缝（从屏幕底边往上划不会先打到胶囊）。
-  ///
-  /// 因此 Dock **不再整体套 SafeArea**：底部留白就是这一个值（安全区的 34 会把
-  /// 胶囊又推上去，那就回到「离底边太远」的观感）。
-  static const double _dockBottomMargin = 10;
+  /// 用户口径（第六次反馈，对齐参考 APP）：胶囊的外轮廓贴到屏幕最底部，
+  /// 而不是被安全区整体抬起来；要避开系统手势条的是**胶囊内部的内容**——
+  /// 见 [_dockContentInset]。
+  static const double _dockBottomMargin = 0;
   static const double _dockSpacing = 8;
+
+  /// 胶囊**内部**内容要让出的底部高度（手势条避让）。
+  ///
+  /// 安全区（刘海机 34）里画的正是那根 Home Indicator（约 3–8pt 高、贴底几 pt）；
+  /// 内容再留出 20 的净空就不会被它压住，同时比「整体抬 34」低 14pt——
+  /// 中间内容区比上一版还多出这一段。
+  static double dockContentInset(BuildContext context) {
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    final inset = bottom - 14;
+    return inset > 0 ? inset : 0;
+  }
 
   /// 页签目录：标识 + 展示文案 + 两个图标 + 页面构造。
   ///
@@ -311,7 +319,10 @@ class _AppShellState extends State<AppShell> {
     return Positioned(
       left: _dockMargin,
       // 落在 Dock 上方一档：Dock 现在贴着屏幕底边，套 SafeArea 会与它叠在一起。
-      bottom: _dockBottomMargin + _dockHeight + _dockSpacing,
+      bottom: _dockBottomMargin +
+          _dockHeight +
+          dockContentInset(context) +
+          _dockSpacing,
       child: TweenAnimationBuilder<double>(
         tween: Tween<double>(begin: 0, end: visible ? 0 : _entryHideTravel),
         duration: const Duration(milliseconds: 180),
@@ -349,10 +360,13 @@ class _AppShellState extends State<AppShell> {
   Widget _buildDock() {
     final tabs = _visibleTabs;
     final settingsHidden = !_shellSettings.settingsVisible;
-    // 内容要让出的底部高度：Dock 的下沿 + 容器高 + 一档呼吸间距。
-    // 不含底部安全区——Dock 自己就压在安全区之上（见 [_dockBottomMargin]）。
+    // 胶囊里内容避让手势条的那一档（外框贴屏幕底边，内容往上缩）。
+    final contentInset = dockContentInset(context);
+    // 内容要让出的底部高度：胶囊外框离底边的距离 + 胶囊高 + 一档呼吸间距。
+    // 胶囊高 = 内容条高 + 手势条避让（外框把避让那段也画上，所以是整块贴底）。
     final bottomInset = _dockBottomMargin +
         _dockHeight +
+        contentInset +
         _dockMargin * 2 +
         _dockSpacing;
     return Scaffold(
@@ -386,6 +400,7 @@ class _AppShellState extends State<AppShell> {
           onSelect: _select,
           visible: _controller.visible,
           height: _dockHeight,
+          contentInset: contentInset,
           margin: _dockMargin,
           bottomMargin: _dockBottomMargin,
         ),
@@ -480,6 +495,7 @@ class _DockBar extends StatelessWidget {
     required this.onSelect,
     required this.visible,
     required this.height,
+    required this.contentInset,
     required this.margin,
     required this.bottomMargin,
   });
@@ -488,11 +504,21 @@ class _DockBar extends StatelessWidget {
   final String activeId;
   final ValueChanged<String> onSelect;
   final bool visible;
+
+  /// 内容条高度（图标 + 文字那一条）。
   final double height;
+
+  /// 胶囊**内部**给系统手势条让出的高度：外框照样画到底，只是里面的
+  /// 图标与文字往上缩这一段（用户口径 6）。
+  final double contentInset;
+
   final double margin;
 
-  /// 底边留白（与左右的分开）：0 = 下沿正好落在安全区边界上（用户口径）。
+  /// 胶囊外框离屏幕底边的距离：0 = 外框直接画到屏幕底边（用户口径 6）。
   final double bottomMargin;
+
+  /// 胶囊总高（外框）= 内容条 + 手势条避让。
+  double get capsuleHeight => height + contentInset;
 
   @override
   Widget build(BuildContext context) {
@@ -501,39 +527,44 @@ class _DockBar extends StatelessWidget {
       offset: visible ? Offset.zero : const Offset(0, 1.2),
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
-      // 不再套 SafeArea：底边留白就是 [bottomMargin]（参考图那条胶囊离底边 ~8-10pt）。
-      // 套上安全区（刘海机 34）会把胶囊又推上去，回到「离底边太远」的观感。
+      // **不套 SafeArea**（用户口径 6）：胶囊外框直接画到屏幕底边，
+      // 给手势条让路的是**里面的内容**——见下面的 [contentInset]。
       child: Padding(
         padding: EdgeInsets.fromLTRB(margin, 0, margin, bottomMargin),
         child: DecoratedBox(
           decoration: BoxDecoration(
             // 圆角椭圆（胶囊）：半径取容器高度的一半，容器越薄越像胶囊。
-            borderRadius: BorderRadius.circular(height / 2),
+            borderRadius: BorderRadius.circular(capsuleHeight / 2),
             boxShadow: LumeTheme.floatShadow,
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(height / 2),
+            borderRadius: BorderRadius.circular(capsuleHeight / 2),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: LumeTheme.glass,
-                  borderRadius: BorderRadius.circular(height / 2),
+                  borderRadius: BorderRadius.circular(capsuleHeight / 2),
                   border: Border.all(color: LumeTheme.hairline),
                 ),
                 child: SizedBox(
-                  height: height,
-                  child: Row(
-                    children: <Widget>[
-                      for (final tab in tabs)
-                        Expanded(
-                          child: _DockItem(
-                            tab: tab,
-                            selected: tab.id == activeId,
-                            onTap: () => onSelect(tab.id),
+                  height: capsuleHeight,
+                  child: Padding(
+                    // 内容往上缩：底部这一段只留给手势条（这一段也不响应点击——
+                    // 手指从屏幕底边往上划是系统手势，不该先打到胶囊里的按钮）。
+                    padding: EdgeInsets.only(bottom: contentInset),
+                    child: Row(
+                      children: <Widget>[
+                        for (final tab in tabs)
+                          Expanded(
+                            child: _DockItem(
+                              tab: tab,
+                              selected: tab.id == activeId,
+                              onTap: () => onSelect(tab.id),
+                            ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

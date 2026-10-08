@@ -60,6 +60,7 @@ class LumeHttp {
     this._source = '宿主',
     this._queue,
     String? Function()? sessionCookies,
+    String? Function()? sessionUserAgent,
     String bridge = '',
   })  : _client = client ?? http.Client(),
         _clientInjected = client != null,
@@ -67,6 +68,8 @@ class LumeHttp {
         _profile = profile ?? NetworkProfile.none,
         // ignore: prefer_initializing_formals —— 具名参数是公开契约，字段是私有的
         _sessionCookies = sessionCookies,
+        // ignore: prefer_initializing_formals
+        _sessionUserAgent = sessionUserAgent,
         _bridge = bridge.trim();
 
   static const Duration defaultTimeout = NetworkSettings.defaultTimeout;
@@ -89,6 +92,13 @@ class LumeHttp {
   /// 写进库，下一次请求就该带上——定死会让「验证完还得重进页面」成为常态。
   final String? Function()? _sessionCookies;
 
+  /// 「网页视图里验证过的 UA」提供者（按图源；为空表示没有会话）。
+  ///
+  /// **必须优先于配置里的 UA**：Cloudflare 把 `cf_clearance` 绑在 IP + UA 上，
+  /// 验证时用的是哪个 UA，后续请求就得用哪个——否则 Cookie 带上了照样 403
+  /// （真机反馈的「验完还是被拦」）。没有会话时返回 null，按配置走。
+  final String? Function()? _sessionUserAgent;
+
   /// 桥接服务地址（用户口径 2.2）：非空时脚本会把 API 请求指到它。
   ///
   /// 宿主只负责**存与给**：转发逻辑在脚本里（不同站点的桥不一样），
@@ -105,8 +115,20 @@ class LumeHttp {
 
   /// 生效的 UA：图源覆盖 → 全局设置 → 内置默认。
   String get effectiveUserAgent {
+    final verified = _sessionUserAgent?.call()?.trim() ?? '';
+    if (verified.isNotEmpty) return verified;
     final merged = _profile.mergedWith(_settings);
     return merged.userAgent.isEmpty ? defaultUserAgent : merged.userAgent;
+  }
+
+  /// **用户显式配过**的 UA（图源覆盖 → 全局设置）；没配过返回空串。
+  ///
+  /// 与 [effectiveUserAgent] 的区别：这里**不回落到内置默认值**。网页视图要用它
+  /// 判断「用户是不是专门指定了 UA」——没指定时，验证窗应该用**设备自己的**
+  /// Safari UA（见 `WafWebViewPage` 的 UA 派生），而不是内置的那串硬编码版本号。
+  String get configuredUserAgent {
+    final merged = _profile.mergedWith(_settings);
+    return merged.userAgent.trim();
   }
 
   /// 生效的代理；为空表示直连。

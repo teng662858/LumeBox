@@ -63,7 +63,7 @@ void main() {
       );
       expect(content, isA<TextContent>());
       expect((content! as TextContent).text, isNotEmpty);
-    }, skip: _skipOf('99xs_novel.js'));
+    }, skip: _skipUnless(<String>['99xs_novel.js', '99xs.html', '99xs_detail.html']));
 
     test('daniao5 漫画：列表 / 详情 / 章节 / 图片', () async {
       final source = await _boot(
@@ -100,7 +100,7 @@ void main() {
       );
       expect(content, isA<ImageContent>());
       expect((content! as ImageContent).images.length, greaterThan(50));
-    }, skip: _skipOf('daniao5_comic.js'));
+    }, skip: _skipUnless(<String>['daniao5_comic.js', 'daniao5.html']));
 
     // 2026-10-08：接口换成了**实测到的全量那条**。
     //
@@ -191,7 +191,7 @@ void main() {
         (content! as VideoContent).url.toString(),
         'https://cdn.example/2/index.m3u8',
       );
-    }, skip: _skipOf('gztv5_video.js'));
+    }, skip: _skipUnless(<String>['gztv5_video.js']));
 
     test('dage 视频：加密信封能解开（/core.json 菜单）+ 无快照时明确失败', () async {
       // 这个站每个 JSON 都被包成 {"status":1,"data":"<混淆串>"}，data 要按
@@ -224,7 +224,7 @@ void main() {
         source.data.list(categoryId: 'dy'),
         throwsA(isA<SourceException>()),
       );
-    }, skip: _skipOf('dage_video.js'));
+    }, skip: _skipUnless(<String>['dage_video.js']));
 
     test('luttt 视频：列表 / 详情 / 选集 / 播放 m3u8', () async {
       final source = await _boot(
@@ -263,7 +263,7 @@ void main() {
       );
       expect(content, isA<VideoContent>());
       expect((content! as VideoContent).url.toString(), contains('.m3u8'));
-    }, skip: _skipOf('luttt_video.js'));
+    }, skip: _skipUnless(<String>['luttt_video.js', 'luttt_detail.html', 'luttt_play.html']));
 
     test('p5mh 漫画：列表 / 详情 / 章节 / 多页图片拼接', () async {
       final source = await _boot(
@@ -308,7 +308,7 @@ void main() {
       );
       expect(content, isA<ImageContent>());
       expect((content! as ImageContent).images.length, greaterThanOrEqualTo(55));
-    }, skip: _skipOf('p5mh_comic.js'));
+    }, skip: _skipUnless(<String>['p5mh_comic.js', 'p5mh_list.html', 'p5mh_detail.html']));
 
     test('xxs 小说：列表 / 详情 / 章节 / 正文', () async {
       final source = await _boot(
@@ -343,7 +343,7 @@ void main() {
       );
       expect(content, isA<TextContent>());
       expect((content! as TextContent).text, isNotEmpty);
-    }, skip: _skipOf('xxiaoshuo_novel.js'));
+    }, skip: _skipUnless(<String>['xxiaoshuo_novel.js', 'xxs_list.html', 'xxs_book.html', 'xxs_read.html']));
 
     test('xchina 小说：列表 / 详情 / 章节 / 正文', () async {
       final source = await _boot(
@@ -379,8 +379,16 @@ void main() {
       );
       expect(content, isA<TextContent>());
       expect((content! as TextContent).text, isNotEmpty);
-    }, skip: _skipOf('xchina_novel.js'));
+    }, skip: _skipUnless(<String>['xchina_novel.js', 'xchina_list.html', 'xchina_chapter.html']));
   }, skip: skipReason);
+}
+
+/// 用例需要的资产（脚本 + 站点快照）都在本机才跑；缺哪个就点名哪一个。
+String? _skipUnless(List<String> names) {
+  for (final name in names) {
+    if (sourceAssetPath(name) == null) return sourceScriptsSkipReason(name);
+  }
+  return null;
 }
 
 Future<_BootedSource> _boot(
@@ -417,7 +425,8 @@ Future<_BootedSource> _boot(
   );
 }
 
-String _read(String file) => File(file).readAsStringSync();
+/// 读一份缓存里的资产（脚本或站点快照）。用例的 skip 条件保证它存在。
+String _read(String file) => File(sourceAssetPath(file)!).readAsStringSync();
 
 class _BootedSource {
   _BootedSource({required this.data, required this.dispose});
@@ -508,6 +517,11 @@ DynamicLibrary? _resolveBridge() {
 /// 脚本路径（本机没拉缓存时用例会被 skip，不会走到这里）。
 String _script(String name) => sourceScriptPath(name)!;
 
-/// 本机缺这份脚本 → 给 skip 原因；有就返回 null（照常跑）。
-String? _skipOf(String name) =>
-    sourceScriptPath(name) == null ? sourceScriptsSkipReason(name) : null;
+/// 读一份缓存里的资产（脚本或站点快照）——传文件名即可。
+String _readAsset(String file) {
+  final path = sourceAssetPath(file);
+  if (path == null) {
+    throw StateError('缓存里没有 $file：先跑 `dart run tool/fetch_sources.dart`');
+  }
+  return File(path).readAsStringSync();
+}

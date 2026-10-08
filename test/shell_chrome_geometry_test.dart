@@ -116,14 +116,21 @@ void main() {
     await pumpBoard(tester);
 
     final appBar = tester.getRect(find.byType(AppBar));
-    expect(appBar.top, 0, reason: '磨砂条要铺到屏幕最顶端（含状态区）');
+    // 用户口径 6：外框**向上顶**——整条上移一档（让出来的状态栏那一段被屏幕裁掉），
+    // 所以 top 是负的、玻璃依然铺满状态栏区域。
+    expect(appBar.top, closeTo(-kLumeTopInsetTrim, 0.01),
+        reason: '顶栏要向上顶一档：外框贴近屏幕顶端，只让内容避让状态栏');
 
-    final chromeHeight = statusInset + kLumeToolbarHeight + BoardTabHeader.height;
+    final chromeHeight =
+        trimmedTopInset(statusInset) + kLumeToolbarHeight + BoardTabHeader.height;
     expect(
       appBar.bottom,
       closeTo(chromeHeight, 2),
-      reason: '顶栏总高应为 $chromeHeight，实测 ${appBar.bottom}（下沉即说明容器又变高了）',
+      reason: '顶栏下沿应为「避让后的状态栏 + 工具栏 + 页签条」=$chromeHeight，'
+          '实测 ${appBar.bottom}（比状态栏原值高出一档才对）',
     );
+    expect(appBar.bottom, lessThan(statusInset + kLumeToolbarHeight + BoardTabHeader.height - 1),
+        reason: '必须比「完整安全区」那一版更高：这一档就是向上顶的幅度');
     // 容器收窄（用户口径第三次反馈）：工具栏与页签条都比上一版更薄，
     // 但**不能薄到压住控件**——右上角图标盒 34 是硬下限。
     // 34 是硬下限：右上角图标盒就是 34（再矮 AppBar 会把它压到 32 = 缩放控件）。
@@ -159,6 +166,17 @@ void main() {
         greaterThanOrEqualTo(34.0 - 0.01),
         reason: '图标按钮高度被压到 ${rect.height}，违反「不缩放控件」',
       );
+      // 内容避让状态栏：icon 盒仍落在状态栏下沿之下（上移的是容器，不是内容压顶）。
+      expect(
+        rect.top,
+        greaterThanOrEqualTo(statusInset - kLumeTopInsetTrim - 1),
+        reason: '图标不能压到状态栏时间/电量（实测 ${rect.top}）',
+      );
+      expect(
+        rect.top + rect.height,
+        lessThanOrEqualTo(statusInset - kLumeTopInsetTrim + kLumeToolbarHeight + 1),
+        reason: '图标仍要在工具栏之内',
+      );
     }
   });
 
@@ -166,25 +184,44 @@ void main() {
     await pumpShell(tester);
 
     final capsule = tester.getRect(dockCapsule());
-    // 用户口径第四次：参考图里那条胶囊下沿离屏幕底边只有 ~8pt（不是安全区的 34）。
-    // 允许 8–14：既要「往下靠」，又要与 Home Indicator 留一点缝。
-    final gap = height - capsule.bottom;
+    // 用户口径第六次：**外框直接画到屏幕底边**（不再被安全区整体抬起）。
     expect(
-      gap,
-      inInclusiveRange(8.0, 14.0),
-      reason: 'Dock 距屏幕底边应为 ~10pt（参考图的位置），实测 $gap',
+      height - capsule.bottom,
+      lessThanOrEqualTo(1.0),
+      reason: '胶囊外轮廓要贴紧屏幕底边，实测还差 ${height - capsule.bottom}pt',
     );
     expect(capsule.left, closeTo(12, 0.01), reason: '左右悬浮留白仍是 12');
+
+    // 而**里面的内容**要避开手势条：图标与文字整体上缩一档。
+    final inset = bottomInset - 14;
+    final item = tester.getRect(
+      find.descendant(
+        of: find.byKey(AppShell.dockKey),
+        matching: find.text(Section.novel.label),
+      ).first,
+    );
+    expect(
+      height - item.bottom,
+      greaterThanOrEqualTo(inset),
+      reason: '胶囊里的文字要避开系统手势条（至少离底边 ${inset}pt，'
+          '实测 ${height - item.bottom}）',
+    );
   });
 
   testWidgets('底栏容器更薄 + 圆角椭圆（只收容器，图标文字尺寸不变）', (tester) async {
     await pumpShell(tester);
 
     final capsule = tester.getRect(dockCapsule());
-    // 容器高度收窄（用户口径第三次）：64 → 56。下限 48 是留给「图标 20 + 间距 +
-    // 文字 11」这套既有控件尺寸的余量，再薄就会挤压它们（那才叫缩放控件）。
-    expect(capsule.height, lessThanOrEqualTo(58.0), reason: '容器还是老高度（64）');
-    expect(capsule.height, greaterThanOrEqualTo(48.0), reason: '别压到里面的控件');
+    // **内容那一条**的高度收窄（用户口径第三次）：64 → 56。注意不是胶囊外框的高
+    // ——外框现在还要把「手势条避让」那一段一起画上（用户口径 6：外框贴屏幕底边，
+    // 内容往上缩），所以外框比内容条高。
+    final item = tester.getRect(
+      find
+          .descendant(of: find.byKey(AppShell.dockKey), matching: find.byType(InkWell))
+          .first,
+    );
+    expect(item.height, lessThanOrEqualTo(58.0), reason: '内容条还是老高度（64）');
+    expect(item.height, greaterThanOrEqualTo(48.0), reason: '别压到里面的控件');
 
     final radius = tester.widget<ClipRRect>(dockCapsule()).borderRadius;
     expect(

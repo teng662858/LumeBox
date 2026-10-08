@@ -90,6 +90,9 @@ class SourceRegistry {
       // 「网页视图」过完 Cloudflare 校验后存下的会话 Cookie：该图源的所有请求
       // 自动带上（用户口径第 4 条）。没存过就是 null，行为与从前完全一致。
       sessionCookies: () => WafSessions.cookiesFor(section, sourceId),
+      // 验证时用的那个 UA 同样要用在后续请求上：cf_clearance 绑 IP + UA，
+      // 换了 UA 等于没验（真机反馈「验完还是被拦」）。
+      sessionUserAgent: () => WafSessions.userAgentFor(section, sourceId),
       // 桥接服务地址（用户口径 2.2）：脚本用 `LumeSource.bridge` 转发请求，
       // 宿主把它随图源记录一起给引擎（见 LumeJsEngine.create 的 bridge 参数）。
       bridge: record?.network.bridge ?? '',

@@ -237,6 +237,39 @@ void main() {
     expect(await pending, WafWebViewOutcome.emptySession);
   });
 
+  group('网页视图 UA：必须与设备自己的 Safari 一致', () {
+    test('WKWebView 默认 UA → 补 Version/Safari 两段，其余原样', () {
+      const webView = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
+          'AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+      expect(
+        safariUserAgentFrom(webView),
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
+        'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 '
+        'Mobile/15E148 Safari/604.1',
+        reason: 'iOS 版本必须来自这台设备的 UA——写死 17.0 会被 CF 识别成内置控件，'
+            '挑战页勾选框一闪就被强制跳走（真机反馈）',
+      );
+    });
+
+    test('已经是 Safari UA 的不动它', () {
+      const safari = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) '
+          'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 '
+          'Mobile/15E148 Safari/604.1';
+      expect(safariUserAgentFrom(safari), safari);
+    });
+
+    test('套了 Version 但缺 Safari 的补齐；解析不出系统版本也给通用值', () {
+      const partial = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
+          'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148';
+      expect(safariUserAgentFrom(partial), endsWith('Safari/604.1'));
+      expect(
+        safariUserAgentFrom('SomeWeirdAgent/1.0'),
+        'SomeWeirdAgent/1.0 Version/17.0 Mobile/15E148 Safari/604.1',
+      );
+      expect(safariUserAgentFrom(''), '');
+    });
+  });
+
   group('地址工具', () {
     test('guessWebViewAddress：订阅地址优先，其次是源 id 里的域名', () {
       expect(
