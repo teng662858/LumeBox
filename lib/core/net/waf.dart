@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../reading/reading.dart';
 import '../session/section.dart';
+import 'source_request_log.dart';
 import '../util/lume_log.dart';
 
 /// Cloudflare / WAF 拦截的识别与会话（Cookie）保存（用户要求）。
@@ -278,4 +279,35 @@ String? urlFromFailure(String? message) {
   // 只取「http(s)://…」这一截：到空白 / 引号 / 括号为止（含全角括号）。
   final match = RegExp('https?://[^\\s"\')\\uFF09]+').firstMatch(text);
   return match?.group(0);
+}
+
+/// 弹「网页视图」时要打开的地址：**统一兜底链**，四层依次尝试。
+///
+/// 1. 失败文案里的 URL（脚本把地址写进报错文案时）；
+/// 2. **该图源最近请求过的地址**（见 [SourceRequestLog]——只要报的是 WAF 错，
+///    就一定发过请求；这条与脚本写法、导入方式都无关，是最可靠的一层）；
+/// 3. 图源的订阅地址；
+/// 4. 源 id 里带的域名（导入器允许 `www.example.com_备注` 这种写法）。
+///
+/// 都没有才返回 null（调用方给一句可操作提示，不再静默退出）。
+String? resolveWebViewOrigin({
+  String? failureMessage,
+  String? sourceId,
+  String? originUrl,
+}) {
+  final fromMessage = originOf(urlFromFailure(failureMessage));
+  if (fromMessage != null) return fromMessage;
+  final fromLog = originOf(SourceRequestLog.lastFor(sourceId ?? ''));
+  if (fromLog != null) return fromLog;
+  final fromOrigin = originOf(originUrl);
+  if (fromOrigin != null) return fromOrigin;
+  final id = (sourceId ?? '').trim();
+  if (id.isNotEmpty) {
+    final head = id.split('_').first.trim();
+    if (head.contains('.')) {
+      final uri = Uri.tryParse('https://$head');
+      if (uri != null && uri.host.contains('.')) return 'https://${uri.host}';
+    }
+  }
+  return null;
 }

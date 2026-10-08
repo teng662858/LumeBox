@@ -124,6 +124,12 @@ void main() {
       closeTo(chromeHeight, 2),
       reason: '顶栏总高应为 $chromeHeight，实测 ${appBar.bottom}（下沉即说明容器又变高了）',
     );
+    // 容器收窄（用户口径第三次反馈）：工具栏与页签条都比上一版更薄，
+    // 但**不能薄到压住控件**——右上角图标盒 34 是硬下限。
+    expect(kLumeToolbarHeight, greaterThanOrEqualTo(34.0));
+    expect(kLumeToolbarHeight, lessThanOrEqualTo(38.0), reason: '收窄但别过冲');
+    expect(BoardTabHeader.height, lessThanOrEqualTo(40.0));
+
     // 页签条确实在顶栏里（书架 / 探索）。
     expect(
       find.descendant(of: find.byType(AppBar), matching: find.byType(TabBar)),

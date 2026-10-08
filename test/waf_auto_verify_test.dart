@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lume_box/core/net/source_request_log.dart';
+import 'package:lume_box/core/net/waf.dart';
 import 'package:lume_box/core/net/waf_auto_verify.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
@@ -174,6 +176,70 @@ void main() {
       expect(runtime.calls, 2, reason: '首次 + 重试各一次');
     });
   });
+
+/// 「网页视图」按钮的地址解析（真机反馈两轮「点了没反应」）。
+///
+/// 场景就是 92 漫画：脚本是**粘贴导入**的（没有订阅地址）、老脚本的报错文案里
+/// 也**没有 URL**。以前这种组合解析不出地址 → 按钮点了静默退出。
+/// 现在必须能从「该源最近请求过的地址」兜底拿到 origin。
+void webViewOriginTests() {
+  setUp(SourceRequestLog.resetForTesting);
+  tearDown(SourceRequestLog.resetForTesting);
+
+  test('老脚本 + 粘贴导入：用最近请求过的地址兜底（92漫画那种）', () {
+    // 报错文案里没有任何 URL（老脚本就是这么写的）。
+    const message = 'NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP 403）';
+    // 但报 WAF 错之前一定发过请求，网络层记下了地址。
+    SourceRequestLog.record('mh92_comic', 'https://www.92mh.com/list/1/1.html');
+    final url = resolveWebViewOrigin(
+      failureMessage: message,
+      sourceId: 'mh92_comic',
+      originUrl: '', // 粘贴导入：没有订阅地址
+    );
+    expect(url, 'https://www.92mh.com', reason: '必须拿得到源站 origin 才能弹窗');
+  });
+
+  test('文案里带 URL 时优先用它（新脚本）', () {
+    final url = resolveWebViewOrigin(
+      failureMessage: 'NEED_WEBVIEW_VERIFY（HTTP 403 https://a.example.com/api/x）',
+      sourceId: 'x',
+      originUrl: '',
+    );
+    expect(url, 'https://a.example.com');
+  });
+
+  test('订阅地址与源 id 里的域名也能兜底', () {
+    expect(
+      resolveWebViewOrigin(
+        failureMessage: 'NEED_WEBVIEW_VERIFY',
+        sourceId: 'x',
+        originUrl: 'https://sub.example.com/feed.json',
+      ),
+      'https://sub.example.com',
+    );
+    expect(
+      resolveWebViewOrigin(
+        failureMessage: 'NEED_WEBVIEW_VERIFY',
+        sourceId: 'www.92mh.com_备用',
+      ),
+      'https://www.92mh.com',
+    );
+  });
+
+  test('真的都没有才返回 null（调用方给提示，不再静默退出）', () {
+    expect(
+      resolveWebViewOrigin(failureMessage: 'NEED_WEBVIEW_VERIFY', sourceId: ''),
+      isNull,
+    );
+  });
+
+  test('非 http 的地址不进记录（本地路径对验证窗没意义）', () {
+    SourceRequestLog.record('s', 'file:///tmp/a.html');
+    expect(SourceRequestLog.lastFor('s'), isNull);
+  });
+}
+
+  group('网页视图地址解析（点了没反应那条）', webViewOriginTests);
 }
 
 /// 第一次抛 NEED_WEBVIEW_VERIFY，之后正常返回。

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'source_request_log.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -154,6 +155,10 @@ class LumeHttp {
 
     // 单次请求的超时兜底：队列内部含重试等待，这里按「重试次数 + 1」放宽，
     // 避免把正常退避误判成超时。
+    // 记住「这个源最近请求过的地址」：脚本抛 WAF 标记时用它兜底弹验证窗
+    //（老脚本的报错文案里没有 URL，粘贴导入的源也没有订阅地址）。
+    SourceRequestLog.record(_source, url);
+
     final budget = (timeout ?? _settings.timeout) * (_settings.maxRetries + 1);
     final NetworkResponse response;
     try {

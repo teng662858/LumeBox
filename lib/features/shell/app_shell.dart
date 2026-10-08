@@ -75,7 +75,11 @@ class _AppShellState extends State<AppShell> {
   /// 当前页签的**标识**（不是下标：顺序会变、页签会隐藏）。
   String _activeId = _pageCatalog.first.id;
 
-  static const double _dockHeight = 64;
+  /// Dock 容器高度（用户口径：收窄容器、图标与文字尺寸不变）。
+  ///
+  /// 64 → 56：Dock 项内部上下留白各收 4pt，视觉上更薄、更贴底，
+  /// 中间内容区随之变高。
+  static const double _dockHeight = 56;
   /// Dock 与屏幕左右的留白；底边留白为 **0**。
   ///
   /// 用户要求「底部栏整体向下移，贴近系统安全区，距离屏幕底边保留 iOS 标准底部
@@ -481,17 +485,18 @@ class _DockBar extends StatelessWidget {
           padding: EdgeInsets.fromLTRB(margin, 0, margin, bottomMargin),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
+              // 圆角椭圆（胶囊）：半径取容器高度的一半，容器越薄越像胶囊。
+              borderRadius: BorderRadius.circular(height / 2),
               boxShadow: LumeTheme.floatShadow,
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(height / 2),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: LumeTheme.glass,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(height / 2),
                     border: Border.all(color: LumeTheme.hairline),
                   ),
                   child: SizedBox(

@@ -25,7 +25,8 @@ class BoardTabBar extends StatelessWidget {
       labelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
       unselectedLabelStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w400),
       tabs: <Widget>[
-        for (final label in labels) Tab(text: label, height: 42),
+        // 页签本体 42 → 38：只收容器，文字与下划线尺寸不变。
+        for (final label in labels) Tab(text: label, height: 38),
       ],
     );
   }
@@ -43,11 +44,11 @@ class BoardTabHeader extends StatelessWidget implements PreferredSizeWidget {
   final List<String> labels;
   final TabController? controller;
 
-  /// 页签本体 42 + 下划线 2。
+  /// 页签容器高度（用户口径：收窄容器、文字尺寸不变）。
   ///
-  /// 46 → 44：配合顶栏工具栏一起上移（用户要求整条顶部导航贴近状态栏），
-  /// 去掉的只是多余余量，页签文字与下划线尺寸不变。
-  static const double height = 44;
+  /// 44 → 38：页签本体 42 里上下各收 2pt 的容器留白；页签文字、下划线宽度
+  /// 与颜色都不动。
+  static const double height = 38;
 
   @override
   Size get preferredSize => const Size.fromHeight(height);

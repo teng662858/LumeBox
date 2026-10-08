@@ -198,7 +198,10 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 0,
-      flexibleSpace: ClipRect(
+      flexibleSpace: ClipRRect(
+        // 顶栏容器圆角（用户口径：容器加圆角、控件尺寸不变）——只圆下沿两角，
+        // 上沿贴着屏幕顶端保持直角。
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
         child: GlassPanel(
           border: Border(
             bottom: BorderSide(color: LumeTheme.hairline),
@@ -219,11 +222,13 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
 /// 用户要求「顶部导航整条往上移、贴近状态栏，只留一小段标准安全边距，不要往下
 /// 陷」：栏矮一档，标题与图标就跟着上移，内容区同时多出这段高度。
 ///
-/// 38 是**不缩小控件**前提下能到的最低一档：那排图标按钮经 compact 密度折算后的
-/// 布局盒是 34（见 [GlassAppBar] 的 actions 样式），再矮就要挤压控件本身——而用户
-/// 明确要求「只改容器位置，不要缩放控件尺寸」。真机反馈顶栏仍然偏低，因此从
-/// 44 再收到这一档（标题与图标整体再上移 3pt，页签条跟着上移 6pt）。
-const double kLumeToolbarHeight = 38;
+/// 用户口径（第三次反馈）：不再往外推坐标，而是**收窄容器自身的垂直高度**——
+/// 上下内边距各收 2pt，文字与图标尺寸**完全不变**，中间内容区因此多出一截。
+///
+/// 36 是硬下限：右上角那排图标按钮经 compact 密度折算后的布局盒是 34
+/// （见 [GlassAppBar] 的 actions 样式），再矮 AppBar 就会把它压到 32——
+/// 那是「缩放控件」，用户明确不许。
+const double kLumeToolbarHeight = 36;
 
 /// 两种行为：
 /// - **[behindBar] = false（默认）**：内容和以前一样从顶栏下方开始，顶栏是一层

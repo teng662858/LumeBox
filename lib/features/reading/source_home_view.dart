@@ -89,23 +89,17 @@ class _SourceHomeViewState extends State<SourceHomeView> {
   }
 
   /// 被 WAF 拦下：网页视图过校验 → 存会话 → 重新拉首页（用户口径 2.1）。
-  /// 从源 id 里猜站点地址（导入器允许「域名_备注」写法）；猜不出返回 null。
-  static String? _hostFromSourceId(String id) {
-    final head = id.split('_').first.trim();
-    if (!head.contains('.')) return null;
-    final uri = Uri.tryParse('https://$head');
-    if (uri == null || uri.host.isEmpty || !uri.host.contains('.')) return null;
-    return 'https://${uri.host}';
-  }
 
   Future<void> _openWebViewForWaf() async {
     final detail = _error is SourceException
         ? (_error! as SourceException).message
         : '$_error';
     // 地址兜底：失败文案 → 订阅地址 → 源 id 里的域名（用户反馈「点了没反应」）。
-    final url = originOf(urlFromFailure(detail)) ??
-        originOf(widget.originUrl) ??
-        _hostFromSourceId(widget.source.id);
+    final url = resolveWebViewOrigin(
+      failureMessage: detail,
+      sourceId: widget.source.id,
+      originUrl: widget.originUrl,
+    );
     if (url == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('拿不到源站地址：请到该站点首页手动过一次校验')),

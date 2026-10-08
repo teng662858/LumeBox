@@ -517,15 +517,15 @@ class _ExploreViewState extends State<ExploreView> {
     final failure = _failure;
     final reason = failure is SourceException ? failure.message : null;
     // 地址按优先级兜底（用户反馈「点了没反应」——以前拿不到地址就静默退出）：
-    // 1) 失败文案里的 URL（脚本写清楚才有）；2) 图源记录的订阅地址；
-    // 3) 源 id 里带域名的（如 `site.example.com_xxx` 的约定写法）。
-    // 真的都没有时，用站点通用入口让用户手动进一次，**不再静默 return**。
-    final descriptor = _current;
-    final url = originOf(urlFromFailure(reason)) ??
-        originOf(descriptor?.originUrl ?? '') ??
-        _hostFromSourceId(source.id) ??
-        'https://www.google.com';
-    if (!url.startsWith('http')) {
+    // 统一兜底链（见 resolveWebViewOrigin）：报错文案 → **该源最近请求过的地址**
+    // → 订阅地址 → 源 id 里的域名。只要报的是 WAF 错，就一定发过请求，
+    // 因此这一层基本必然命中（真机反馈过两轮「点了没反应」）。
+    final url = resolveWebViewOrigin(
+      failureMessage: reason,
+      sourceId: source.id,
+      originUrl: _current?.originUrl ?? '',
+    );
+    if (url == null) {
       _toast('拿不到源站地址：请到该站点首页手动过一次校验');
       return;
     }
@@ -551,17 +551,6 @@ class _ExploreViewState extends State<ExploreView> {
     if (!mounted) return;
     // 取到没取到都重拉一次：取到了自然成功，没取到也只是再看一次同样的错误。
     await _bootstrap();
-  }
-
-  /// 从源 id 里猜站点地址：导入器允许「域名_备注」这种 id 写法
-  /// （例如 `www.92mh.com_备用`）。猜不出返回 null。
-  static String? _hostFromSourceId(String id) {
-    final head = id.split('_').first.trim();
-    if (!head.contains('.')) return null;
-    final candidate = 'https://$head';
-    final uri = Uri.tryParse(candidate);
-    if (uri == null || uri.host.isEmpty || !uri.host.contains('.')) return null;
-    return candidate;
   }
 
   /// 点「筛选」：视频板块走外挂的分页筛选（一级分类 → 筛选子页），
