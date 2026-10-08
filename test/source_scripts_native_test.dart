@@ -100,25 +100,35 @@ void main() {
       expect((content! as ImageContent).images.length, greaterThan(50));
     });
 
-    test('gztv5 视频：列表 / 详情 / 选集 / 播放', () async {
+    // 2026-10-08：接口换成了**实测到的全量那条**。
+    //
+    // 上一版脚本走 `/Index/latestVideo`（首页那几块，每类固定几条）——真机表现就是
+    // 「只能显示几个视频」。新版走 SPA 自己的 `/Search/GetConditionList`：
+    // 真浏览器 + curl 双向实测（电影 42960 条、国产剧 23222 条、全站 147232 条，
+    // page/pageSize 翻页有效，按 **tid** 过滤）。下面的快照按真实返回形状录制。
+    test('gztv5 视频：分类树 / 全量列表 + 翻页 / 详情 / 选集 / 播放', () async {
       final source = await _boot(
         'sources/gztv5_video.js',
         section: Section.video,
         http: _SnapshotHttp(
           post: <String, String>{
-            'https://haiwaiapi.1fc8ab0.com/Pc/Index/latestVideoCategories':
-                '{"data":[{"id":0,"name":"全部"},{"id":74,"name":"短剧"}],"code":200}',
-            'https://haiwaiapi.1fc8ab0.com/Pc/Index/latestVideo':
-                '{"data":[{"vod_id":154150,"vod_name":"测试短剧",'
-                '"vod_pic":"https://img.example/cover.jpg",'
-                '"t_id":74,"vod_continu":6,"vod_scroe":"8.0"}],"code":200}',
+            'https://haiwaiapi.1fc8ab0.com/Pc/Index/indexPid':
+                '{"data":[{"id":1,"pid":1,"t_id":0,"name":"热门","type":"recommend"},'
+                '{"id":3,"pid":3,"t_id":1,"name":"电影","type":"video"},'
+                '{"id":4,"pid":4,"t_id":2,"name":"国产剧","type":"video"},'
+                '{"id":10,"pid":10,"t_id":0,"name":"游戏","type":"game"}],"code":200}',
+            'https://haiwaiapi.1fc8ab0.com/Pc/Search/GetConditionList':
+                '{"data":{"total":23222,"list":[{"vod_id":"154204",'
+                '"vod_name":"狂王第二季","vod_pic":"https://img.example/cover.webp",'
+                '"vod_area":"内地","vod_year":"2026","vod_scroe":"7.4",'
+                '"vod_continu":"12","d_total":"24","t_id":2}]},"code":200}',
             'https://haiwaiapi.1fc8ab0.com/Pc/Resource/GetVodInfo':
-                '{"data":{"vodInfo":{"vod_id":"154150","vod_name":"测试短剧",'
-                '"pic":"https://img.example/pic.jpg","vod_continu":"更新至6集",'
-                '"vod_scroe":"8.0","videoTag":["短剧","都市"],'
-                '"vod_addtime":"2026-10-07","vod_area":"内地"},'
-                '"recommendVod":[{"vod_id":999,"vod_name":"推荐剧",'
-                '"vod_pic":"https://img.example/rec.jpg"}]},"code":200}',
+                '{"data":{"vodInfo":{"vod_id":"154204","vod_name":"狂王第二季",'
+                '"pic":"https://img.example/pic.jpg","vod_continu":"12",'
+                '"vod_total":"24","vod_scroe":"7.4","videoTag":["国产剧","热血"],'
+                '"vod_year":"2026","vod_area":"内地","vod_actor":"甲,乙",'
+                '"vod_director":"丙","vod_use_content":"简介正文"},'
+                '"recommendVod":[]},"code":200}',
             'https://haiwaiapi.1fc8ab0.com/Pc/Resource/GetOnePlayList':
                 '{"data":{"total_vod_vurl":"2","urls":['
                 '{"name":"01","vurl_id":4726345,'
@@ -130,28 +140,34 @@ void main() {
       );
       addTearDown(source.dispose);
 
+      // 分类树：只留能出片的 video / recommend（游戏那类被过滤掉），
+      // id 用 **t_id**（列表接口按 tid 过滤，传 pid 会被服务端忽略）。
       final categories = await source.data.categories();
-      expect(categories.length, 2);
-      expect(categories.last.id, '74');
-      expect(categories.last.title, '短剧');
+      expect(categories.map((c) => c.title), containsAll(<String>['全部', '热门', '电影', '国产剧']));
+      expect(categories.any((c) => c.title == '游戏'), isFalse);
+      expect(categories.last.title, '国产剧');
+      expect(categories.last.id, '2', reason: 'id 必须是 t_id');
 
-      final list = await source.data.list(categoryId: '74');
-      expect(list.items.single.id, '154150');
-      expect(list.items.single.subtitle, '更新至 6 集');
+      // 全量列表：条目字段与「更新至 N 集」的进度文案。
+      final list = await source.data.list(categoryId: '2', page: 1);
+      expect(list.items.single.id, '154204');
+      expect(list.items.single.subtitle, contains('更新至 12 集'));
+      expect(list.hasMore, isTrue, reason: 'total 23222 > 30，必须能翻页');
 
-      final detail = await source.data.detail('154150');
-      expect(detail?.title, '测试短剧');
+      final detail = await source.data.detail('154204');
+      expect(detail?.title, '狂王第二季');
       expect(detail?.cover, 'https://img.example/pic.jpg');
-      expect(detail?.subtitle, '更新至6集');
+      expect(detail?.subtitle, contains('更新至 12 集'));
+      expect(detail?.description, '简介正文');
 
-      final chapters = await source.data.chapters('154150');
+      final chapters = await source.data.chapters('154204');
       expect(chapters.length, 2);
-      expect(chapters.first.id, '4726345');
+      expect(chapters.first.id, '0', reason: '章节 id 用线路下标');
       expect(chapters.first.title, '01');
 
       final content = await source.data.content(
-        itemId: '154150',
-        chapterId: '4821170',
+        itemId: '154204',
+        chapterId: '1',
       );
       expect(content, isA<VideoContent>());
       expect(
