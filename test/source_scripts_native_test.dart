@@ -107,10 +107,7 @@ void main() {
     // 真浏览器 + curl 双向实测（电影 42960 条、国产剧 23222 条、全站 147232 条，
     // page/pageSize 翻页有效，按 **tid** 过滤）。下面的快照按真实返回形状录制。
     test('gztv5 视频：分类树 / 全量列表 + 翻页 / 详情 / 选集 / 播放', () async {
-      final source = await _boot(
-        'sources/gztv5_video.js',
-        section: Section.video,
-        http: _SnapshotHttp(
+      final http = _SnapshotHttp(
           post: <String, String>{
             'https://haiwaiapi.1fc8ab0.com/Pc/Index/indexPid':
                 '{"data":[{"id":1,"pid":1,"t_id":0,"name":"热门","type":"recommend"},'
@@ -119,7 +116,8 @@ void main() {
                 '{"id":10,"pid":10,"t_id":0,"name":"游戏","type":"game"}],"code":200}',
             'https://haiwaiapi.1fc8ab0.com/Pc/Search/GetConditionList':
                 '{"data":{"total":23222,"list":[{"vod_id":"154204",'
-                '"vod_name":"狂王第二季","vod_pic":"https://img.example/cover.webp",'
+                '"vod_name":"狂王第二季",'
+                '"vod_pic":"https://img.example/cdn-cgi/image/height=260/upload/cover.webp",'
                 '"vod_area":"内地","vod_year":"2026","vod_scroe":"7.4",'
                 '"vod_continu":"12","d_total":"24","t_id":2}]},"code":200}',
             'https://haiwaiapi.1fc8ab0.com/Pc/Resource/GetVodInfo':
@@ -136,7 +134,11 @@ void main() {
                 '{"name":"02","vurl_id":4821170,'
                 '"url":"https://cdn.example/2/index.m3u8"}]},"code":200}',
           },
-        ),
+      );
+      final source = await _boot(
+        'sources/gztv5_video.js',
+        section: Section.video,
+        http: http,
       );
       addTearDown(source.dispose);
 
@@ -153,6 +155,12 @@ void main() {
       expect(list.items.single.id, '154204');
       expect(list.items.single.subtitle, contains('更新至 12 集'));
       expect(list.hasMore, isTrue, reason: 'total 23222 > 30，必须能翻页');
+      // 封面：接口给的是 Cloudflare 变换地址，脚本要退回原图（真机反馈首页没封面）。
+      expect(
+        list.items.single.cover,
+        'https://img.example/upload/cover.webp',
+        reason: '变换段（/cdn-cgi/image/<变换>/）要被去掉，直接用原图地址',
+      );
 
       final detail = await source.data.detail('154204');
       expect(detail?.title, '狂王第二季');
@@ -162,6 +170,13 @@ void main() {
 
       final chapters = await source.data.chapters('154204');
       expect(chapters.length, 2);
+      // 线路只取一次：chapters 与 content 共用（真机反馈「打开播放器后加载慢」，
+      // 不记忆就是两次往返）。
+      expect(
+        http.calls.where((c) => c.$2.contains('GetOnePlayList')).length,
+        1,
+        reason: 'chapters + content 只该打一次 GetOnePlayList（少一次往返，起播更快）',
+      );
       expect(chapters.first.id, '0', reason: '章节 id 用线路下标');
       expect(chapters.first.title, '01');
 
@@ -418,6 +433,10 @@ class _SnapshotHttp extends LumeHttp {
   final Map<String, String> get;
   final Map<String, String> post;
 
+  /// 实际发出的请求（method, url）：用来断言「同一条接口只打了一次」这类
+  /// 请求次数口径（真机反馈「打开播放器加载慢」，重复往返就是其中一类原因）。
+  final List<(String, String)> calls = <(String, String)>[];
+
   @override
   Future<LumeHttpResponse> send({
     required String url,
@@ -427,6 +446,7 @@ class _SnapshotHttp extends LumeHttp {
     Duration? timeout,
   }) async {
     final table = method.toUpperCase() == 'POST' ? post : get;
+    calls.add((method.toUpperCase(), url));
     final response = table[url];
     if (response == null) {
       return LumeHttpResponse(

@@ -130,7 +130,7 @@ var LumeSource = {
     return {
       id: String(info.vod_id || id),
       title: String(info.vod_name || id),
-      cover: info.pic || info.vod_pic || '',
+      cover: this.__pic(info.pic || info.vod_pic || ''),
       subtitle: [this.__continuityText(info), info.vod_scroe ? ('评分 ' + info.vod_scroe) : '']
         .filter(function (t) { return !!t; }).join(' · '),
       description: String(info.vod_use_content || info.vod_douban_name || ''),
@@ -199,15 +199,23 @@ var LumeSource = {
     return id;
   },
 
-  /// 剧集线路（详情与正文共用一份，避免两处各写一遍翻页参数）。
+  /// 剧集线路（详情与正文共用一份）。
+  ///
+  /// **带记忆**：播放器打开时会连着问 chapters() 与 content()，两处都要这份线路。
+  /// 不记忆就是两次网络往返，真机感受就是「点开播放器要等一下才起播」。
+  /// 缓存只活在这一次数据源实例里（换源 / 重开即失效），不会拿到过期地址。
   async __playList(id) {
+    var cache = this.__playCache || (this.__playCache = {});
+    if (cache[id]) return cache[id];
     var data = await this.__post('/Resource/GetOnePlayList', {
       vod_id: id,
       pageSize: 0,
       page: 1
     });
     var payload = data && data.data ? data.data : {};
-    return payload.urls ? payload.urls : [];
+    var urls = payload.urls ? payload.urls : [];
+    cache[id] = urls;
+    return urls;
   },
 
   /// 「更新至 N 集 / 全 N 集」：连载进度比评分更有用，放最前面。
@@ -222,6 +230,26 @@ var LumeSource = {
     return '';
   },
 
+  /// 封面地址规整。
+  ///
+  /// 接口给的是 Cloudflare 图片变换地址：
+  /// `https://img2.ms39pn.com/cdn-cgi/image/quality=80,height=260/upload/vod/…webp`。
+  /// 真机反馈「首页没有封面」，而同一个文件**去掉变换段**（`…/upload/vod/…webp`）
+  /// 实测稳定 200（image/webp，Flutter 直接能解）。变换段那种 URL 依赖 CDN 的
+  /// 按需处理，个别边缘/并发下会拿不到图——这里统一退回原图地址，更稳。
+  __pic(url) {
+    var text = String(url || '').trim();
+    if (!text) return '';
+    var marker = '/cdn-cgi/image/';
+    var at = text.indexOf(marker);
+    if (at > 0) {
+      var rest = text.slice(at + marker.length);
+      var slash = rest.indexOf('/');
+      if (slash > 0) return text.slice(0, at) + rest.slice(slash);
+    }
+    return text;
+  },
+
   __toItem(item) {
     item = item || {};
     var parts = [];
@@ -233,7 +261,7 @@ var LumeSource = {
     return {
       id: String(item.vod_id != null ? item.vod_id : (item.id != null ? item.id : '')),
       title: String(item.vod_name || item.vod_id || ''),
-      cover: item.vod_pic || '',
+      cover: this.__pic(item.vod_pic),
       subtitle: parts.filter(function (t) { return !!t; }).join(' · ')
     };
   },
