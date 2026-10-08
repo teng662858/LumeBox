@@ -1,0 +1,358 @@
+// LumeSource: {"id":"mh92_comic","name":"92漫画","version":"1.0.0","category":"comic"}
+
+// 站点：https://www.92mh.com （漫画站，**整站在 Cloudflare 后面**）
+//
+// 实测（2026-10-08，非浏览器客户端一律被拦）：
+//   `GET /` → `HTTP 403` + `Cf-Mitigated: challenge`，页面含 “Just a moment” /
+//   `__cf_chl` / `challenge-platform` —— 也就是这台站需要过一次 CF 的 JS 挑战，
+//   过完之后拿到的 `cf_clearance` 可以复用。
+//   因此本脚本被拦时抛 `NEED_WEBVIEW_VERIFY`：App 会自动拉起网页视图过一次校验、
+//   存下 Cookie 与 UA，再**自动重试**这次调用（见 core/net/waf_auto_verify.dart）。
+//
+// ⚠️ 构建说明（请知悉）：正因为 CF 拦住了 curl 这类客户端，开发机上**取不到页面
+//   HTML**，所以下面的解析器是按**常见漫画站模板**写的多套兜底（列表 / 详情 /
+//   章节 / 图片各备 2~3 种写法，命中哪个都行）。第一次跑如果某一环是空的，把那一屏
+//   截图给我，我按真实结构把选择器收敛掉。
+//
+// 结构假设（多套兜底）：
+//   · 列表：`/list/{id}/{page}.html`、`/sort/{id}/{page}.html`、`/booklist?page=`。
+//     条目形如 `<a href="/comic/{id}">` / `/book/{id}` / `/mh/{id}`，封面在
+//     `img[data-original|data-src|src]`。
+//   · 详情：标题 `h1` / `og:title`；封面 `og:image` 或首个 img；简介
+//     `meta[name=description]` 或 `class=desc|content|intro|summary` 段。
+//   · 章节：`a[href*="/chapter/"]` / `/read/` / `/comic/{id}/{n}.html`，去重。
+//   · 正文：章节页里的 `img`（data-original / data-src / src），`?page=N` 翻页
+//     （有 `#nextPage` 或「下一页」才继续）。
+
+var BASE_URL = 'https://www.92mh.com';
+var PAGE_SIZE = 30;
+var MAX_CHAPTER_PAGES = 30;
+
+var LumeSource = {
+  id: 'mh92_comic',
+  name: '92漫画',
+  version: '1.0.0',
+  category: 'comic',
+
+  async categories() {
+    var html = await this.__get(BASE_URL + '/');
+    var items = this.__navCategories(html);
+    if (items.length) return items;
+    // 兜底：只保证「进得去」，真实分类仍以站点为主。
+    return [
+      { id: '', title: '全部' },
+      { id: 'update', title: '最近更新' }
+    ];
+  },
+
+  async home() {
+    var boards = [];
+    var latest = await this.list({ categoryId: '', page: 1 });
+    if (latest && latest.items && latest.items.length) {
+      boards.push({ title: '最近更新', moreUrl: '', items: latest.items.slice(0, 12) });
+    }
+    return boards;
+  },
+
+  async list(argument) {
+    var page = argument && argument.page ? Number(argument.page) : 1;
+    if (!(page > 0)) page = 1;
+    var keyword = argument && argument.keyword ? String(argument.keyword).trim() : '';
+    var category = argument && argument.categoryId ? String(argument.categoryId) : '';
+
+    var url = keyword
+      ? BASE_URL + '/search?q=' + this.__encode(keyword) + (page > 1 ? '&page=' + page : '')
+      : this.__listUrl(category, page);
+    var html = await this.__get(url);
+    var items = this.__listItems(html);
+    return {
+      items: items,
+      hasMore: this.__hasNextPage(html, page) || items.length >= PAGE_SIZE
+    };
+  },
+
+  async detail(argument) {
+    var id = this.__id(argument);
+    var html = await this.__get(this.__detailUrl(id));
+    var title = this.__clean(this.__match(html, /<h1[^>]*>([\s\S]*?)<\/h1>/));
+    if (!title) {
+      title = this.__clean(this.__match(html, /<meta[^>]+property="og:title"[^>]+content="([^"]*)"/));
+    }
+    if (!title) return null;
+    var cover = this.__match(html, /<meta[^>]+property="og:image"[^>]+content="([^"]*)"/);
+    if (!cover) cover = this.__match(html, /data-original="([^"]+)"/);
+    if (!cover) cover = this.__match(html, /<img[^>]+src="([^"]+)"/);
+    var description = this.__clean(
+      this.__match(html, /<meta[^>]+name="description"[^>]+content="([^"]*)"/)
+    );
+    if (!description) {
+      description = this.__clean(
+        this.__match(html, /class="[^"]*(?:desc|content|intro|summary)[^"]*"[^>]*>([\s\S]{0,600}?)<\//)
+      );
+    }
+    var author = this.__clean(this.__match(html, /作者[：:]\s*<a[^>]*>([\s\S]*?)<\/a>/));
+    var status = this.__clean(this.__match(html, /(?:状态|连载)[：:]?\s*<span[^>]*>([^<]*)</));
+    var tags = [];
+    if (status) tags.push(status);
+    return {
+      id: id,
+      title: title,
+      cover: this.__absolute(cover),
+      subtitle: author ? '作者：' + author : '',
+      description: description,
+      tags: tags,
+      extra: { author: author, status: status }
+    };
+  },
+
+  async chapters(argument) {
+    var id = this.__id(argument);
+    var html = await this.__get(this.__detailUrl(id));
+    var chapters = this.__chapterLinks(html, id);
+    if (!chapters.length) {
+      throw new Error('92漫画：该作品没有解析到章节（站点结构可能又变了，请把详情页截图给我）');
+    }
+    return chapters;
+  },
+
+  async content(argument) {
+    var id = this.__id(argument);
+    var chapterId = argument && argument.chapterId ? String(argument.chapterId) : '';
+    if (!chapterId) throw new Error('92漫画：缺少章节（请先选一话）');
+
+    var path = chapterId.indexOf('http') === 0 ? chapterId : this.__absolute(chapterId);
+    var images = [];
+    var seen = {};
+    for (var page = 1; page <= MAX_CHAPTER_PAGES; page++) {
+      var url = path + (page > 1 ? (path.indexOf('?') >= 0 ? '&' : '?') + 'page=' + page : '');
+      var html = await this.__get(url);
+      var found = this.__images(html);
+      for (var i = 0; i < found.length; i++) {
+        if (!seen[found[i]]) { seen[found[i]] = true; images.push(found[i]); }
+      }
+      if (!found.length || !/id="nextPage"|下一[页话章]/.test(html)) break;
+    }
+    if (!images.length) throw new Error('92漫画：这一话没有解析到图片');
+    return { kind: 'images', images: images };
+  },
+
+  // ---------------------------------------------------------------- 内部工具
+
+  __id(argument) {
+    var id = '';
+    if (argument && argument.id != null) id = String(argument.id);
+    else if (argument && argument.comicId != null) id = String(argument.comicId);
+    if (!id) throw new Error('92漫画：缺少作品 ID');
+    return id;
+  },
+
+  /// 列表地址：按分类 id 的形状挑一种常见写法（多套兜底）。
+  __listUrl(category, page) {
+    var value = String(category || '');
+    // 导航抓下来的 id 形如 `/sort/hot`（带前缀，才分得清 list / sort），
+    // 直接拼成 `{path}/{page}.html`。
+    if (value.indexOf('/') === 0) return BASE_URL + value + '/' + page + '.html';
+    if (value === 'update') return BASE_URL + '/list/update/' + page + '.html';
+    if (!value) return BASE_URL + '/list/1/' + page + '.html';
+    if (/^\d+$/.test(value)) return BASE_URL + '/list/' + value + '/' + page + '.html';
+    return BASE_URL + '/' + value + '/' + page + '.html';
+  },
+
+  __detailUrl(id) {
+    var value = String(id || '');
+    if (value.indexOf('http') === 0) return value;
+    if (value.indexOf('/') === 0) return BASE_URL + value;
+    // 章节链接自带完整路径（见 __chapterLinks），走到这里的是纯 id。
+    return BASE_URL + '/comic/' + encodeURIComponent(value) + '.html';
+  },
+
+  /// 顶部导航里的一级分类（`/list/{id}/`、`/sort/{id}/` 这类）。
+  __navCategories(html) {
+    var items = [];
+    var seen = {};
+    var block = this.__match(html, /<nav[^>]*>([\s\S]*?)<\/nav>/);
+    if (!block) {
+      block = this.__match(html, /class="[^"]*(?:nav|menu|header)[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+    }
+    var source = block || html;
+    var pattern = /<a[^>]+href="(?:https?:\/\/[^"]+)?\/(list|sort|type|category)\/([A-Za-z0-9_-]+)\/?"[^>]*>([\s\S]{0,30}?)<\/a>/g;
+    var match;
+    while ((match = pattern.exec(source)) !== null) {
+      // id 保留完整路径（`/sort/hot`）：只留 `hot` 就分不清该走 list 还是 sort。
+      var id = '/' + match[1] + '/' + match[2];
+      if (seen[id]) continue;
+      var title = this.__clean(match[3]);
+      if (!title) continue;
+      seen[id] = true;
+      items.push({ id: id, title: title });
+    }
+    return items;
+  },
+
+  __listItems(html) {
+    var items = [];
+    var seen = {};
+    var patterns = [
+      /<a[^>]+href="((?:https?:\/\/[^"]+)?\/(?:comic|book|mh)\/[^"?#]+)"[^>]*title="([^"]*)"[\s\S]{0,600}?data-original="([^"]*)"/g,
+      /<a[^>]+href="((?:https?:\/\/[^"]+)?\/(?:comic|book|mh)\/[^"?#]+)"[^>]*>[\s\S]{0,400}?<img[^>]+(?:data-original|data-src|src)="([^"]*)"[\s\S]{0,200}?>([^<]{2,60})</g
+    ];
+    for (var p = 0; p < patterns.length; p++) {
+      var match;
+      while ((match = patterns[p].exec(html)) !== null) {
+        var href = match[1];
+        if (!href || seen[href]) continue;
+        var title = this.__clean(p === 0 ? match[2] : match[3]);
+        var cover = p === 0 ? match[3] : match[2];
+        if (!title) continue;
+        seen[href] = true;
+        items.push({
+          id: href,
+          title: title,
+          cover: this.__absolute(cover),
+          subtitle: ''
+        });
+      }
+      if (items.length) break;
+    }
+    return items;
+  },
+
+  __chapterLinks(html, id) {
+    var chapters = [];
+    var seen = {};
+    var patterns = [
+      /href="([^"]*\/chapter\/[^"]+)"[^>]*>([\s\S]{0,40}?)<\/a>/g,
+      /href="([^"]*\/read\/[^"]+)"[^>]*>([\s\S]{0,40}?)<\/a>/g,
+      /href="([^"]*\/(?:comic|book)\/[^"\/]+\/\d+[^"]*)"[^>]*>([\s\S]{0,40}?)<\/a>/g
+    ];
+    for (var p = 0; p < patterns.length; p++) {
+      var match;
+      while ((match = patterns[p].exec(html)) !== null) {
+        var href = match[1];
+        if (seen[href]) continue;
+        seen[href] = true;
+        var title = this.__clean(match[2]);
+        if (!title || title.indexOf('开始阅读') >= 0) {
+          title = '第' + (chapters.length + 1) + '话';
+        }
+        chapters.push({ id: href, title: title });
+      }
+      if (chapters.length) break;
+    }
+    return chapters;
+  },
+
+  __images(html) {
+    var images = [];
+    var seen = {};
+    var pattern = /<img[^>]+(?:data-original|data-src|src)="([^"]+)"/g;
+    var match;
+    while ((match = pattern.exec(html)) !== null) {
+      var url = this.__absolute(match[1]);
+      if (!url || /\/static\/|placeholder|loading|\.gif$/i.test(url)) continue;
+      if (seen[url]) continue;
+      seen[url] = true;
+      images.push(url);
+    }
+    return images;
+  },
+
+  __hasNextPage(html, page) {
+    var current = page > 0 ? page : 1;
+    // 两种常见分页写法都认：查询串 `?page=N` / 查询串 `page=N`，以及路径式
+    // `/list/{id}/{n}.html`（这一种在自检里曾经漏掉，列表就再也翻不动）。
+    var patterns = [
+      /(?:list|sort|booklist)[^"'#]*[\/?]page[=\/](\d+)/g,
+      /\/(?:list|sort)\/[^"'\/]+\/(\d+)\.html/g
+    ];
+    for (var p = 0; p < patterns.length; p++) {
+      var match;
+      while ((match = patterns[p].exec(html)) !== null) {
+        if (Number(match[1]) > current) return true;
+      }
+    }
+    return /id="nextPage"|下一[页话章]/.test(html);
+  },
+
+  async __get(url) {
+    var response = await LumeSource.http.get(url, {
+      headers: {
+        'Referer': BASE_URL + '/',
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Language': 'zh-CN,zh;q=0.9'
+      }
+    });
+    var status = response ? response.status : 0;
+    var body = response && response.body ? String(response.body) : '';
+    // 整站在 Cloudflare 后面：被拦时抛固定标记，App 自动过校验并重试同一调用。
+    if (status !== 200) {
+      if (status === 403 || status === 503 || status === 429 ||
+          /just a moment|__cf_chl|cf-chl|challenge-platform|cf-mitigated|checking your browser/i.test(body)) {
+        throw new Error('NEED_WEBVIEW_VERIFY：92漫画 需要网页视图过一次 Cloudflare 校验（HTTP ' + status + '）');
+      }
+      throw new Error('拉取失败：HTTP ' + status + ' ' + url);
+    }
+    if (/<title>\s*Just a moment/i.test(body) || /challenge-platform/.test(body)) {
+      throw new Error('NEED_WEBVIEW_VERIFY：92漫画 需要网页视图过一次 Cloudflare 校验');
+    }
+    return body;
+  },
+
+  __absolute(url) {
+    var text = String(url || '').trim();
+    if (!text) return '';
+    if (text.indexOf('http://') === 0 || text.indexOf('https://') === 0) return text;
+    if (text.indexOf('//') === 0) return 'https:' + text;
+    return BASE_URL + (text.charAt(0) === '/' ? text : '/' + text);
+  },
+
+  __encode(text) {
+    var str = String(text);
+    var out = '';
+    for (var i = 0; i < str.length; i++) {
+      var code = str.charCodeAt(i);
+      if (code < 0x80) {
+        if (/[A-Za-z0-9\-_.~]/.test(str.charAt(i))) out += str.charAt(i);
+        else out += '%' + ('0' + code.toString(16)).slice(-2).toUpperCase();
+      } else {
+        var bytes = this.__utf8(str.charAt(i));
+        for (var j = 0; j < bytes.length; j++) {
+          out += '%' + ('0' + bytes[j].toString(16)).slice(-2).toUpperCase();
+        }
+      }
+    }
+    return out;
+  },
+
+  __utf8(text) {
+    var str = String(text);
+    var bytes = [];
+    for (var i = 0; i < str.length; i++) {
+      var code = str.charCodeAt(i);
+      if (code < 0x80) bytes.push(code);
+      else if (code < 0x800) bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+      else bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+    }
+    return bytes;
+  },
+
+  __match(text, pattern) {
+    var match = pattern.exec(text);
+    if (!match || match[1] == null) return '';
+    return String(match[1]).trim();
+  },
+
+  __clean(text) {
+    return String(text || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&hellip;/g, '…')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+};
