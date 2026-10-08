@@ -8,6 +8,7 @@ import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../shell/shell_dock.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
 import '../cat/cat_engine_settings_page.dart';
@@ -552,7 +553,15 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
       );
     }
     return ListView.separated(
-      padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
+      padding: GlassScaffold.barInset(context).add(
+        EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          // 滚到最末才让出悬浮 Dock 那一段（猫源板块页就在 Dock 之上）。
+          16 + ShellDockScope.bottomInset(context),
+        ),
+      ),
       itemCount: sources.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) {

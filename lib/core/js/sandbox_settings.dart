@@ -17,7 +17,7 @@ import 'sandbox/sandbox_policy.dart';
 ///
 /// ## 可配与不可配（为什么这样切）
 ///
-/// 可配的只有**墙钟超时**：它是文档点名的项（3–5 秒），而且用户的机器与站点
+/// 可配的只有**墙钟超时**（3–10 秒，默认 10）：用户的机器与站点
 /// 差异会让同一个值体验不同（慢站点的正常脚本可能刚好卡在 4 秒）。
 ///
 /// 其余上限（内存、栈、宿主调用数、微任务轮数…）**刻意不做成可配**：
@@ -40,7 +40,7 @@ class SandboxSettings {
 
   static const Duration defaultTimeout = SandboxPolicy.defaultTimeout;
 
-  /// 用户可选的档位（秒）。区间由文档钉死为 3–5 秒，因此只有三档。
+  /// 用户可选的档位（秒）。区间 3–10 秒（默认 10：含网络等待，慢站点要留余量）。
   static const List<int> timeoutOptionsSeconds = <int>[3, 4, 5, 6, 8, 10];
 
   /// 收敛到文档允许的区间（越界值不会生效，与网络设置同一口径）。

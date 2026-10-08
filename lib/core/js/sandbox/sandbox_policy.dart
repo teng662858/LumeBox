@@ -22,12 +22,16 @@ class SandboxPolicy {
   ///
   /// 上限从 5 秒放宽到 10 秒（真机反馈）：原区间是按「本地/快站」定的，
   /// 而列表接口走的是远端站点，**慢站点 + 移动网络下 4 秒经常不够**——
-  /// 表现是「同样的源在别的阅读器很快、在这里超时」。放宽上限的同时把默认
-  /// 值提到 6 秒：既给慢站留余量，又仍然是一个「失控脚本会被兜住」的量级
-  /// （纯 CPU 死循环由指令计数与中断处理器兜，不依赖这个值）。
+  /// 表现是「同样的源在别的阅读器很快、在这里超时」。
+  ///
+  /// 默认值 6 → **10 秒**（用户口径：对全部图源统一放宽；真机反馈大鸟禁漫的
+  /// `home()` 报「执行超时:调用超时」——那一档预算里**含网络等待**，两个板块
+  /// 各一次慢请求就顶到 6 秒了）。10 是区间上沿：既给慢站足额余量，失控脚本
+  /// 也仍在 10 秒内被兜住（纯 CPU 死循环另由指令计数与中断处理器兜，
+  /// 指令预算随超时同向放大，见 [instructionsFor]）。
   static const Duration minTimeout = Duration(seconds: 3);
   static const Duration maxTimeout = Duration(seconds: 10);
-  static const Duration defaultTimeout = Duration(seconds: 6);
+  static const Duration defaultTimeout = Duration(seconds: 10);
 
   static const int defaultMemoryLimitBytes = 64 * 1024 * 1024;
 

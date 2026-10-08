@@ -125,7 +125,7 @@ class SettingsPage extends StatelessWidget {
           _SettingsEntry(
             icon: Icons.hourglass_bottom_outlined,
             title: '沙箱设置',
-            subtitle: 'JS 脚本执行超时（3–5 秒，四板块共用）；其余安全上限不可调',
+            subtitle: 'JS 脚本执行超时（3–10 秒，默认 10，四板块共用）；其余安全上限不可调',
             onTap: () => _push(context, const SandboxSettingsPage()),
           ),
           const SizedBox(height: 20),

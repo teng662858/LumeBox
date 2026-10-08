@@ -4,6 +4,7 @@ import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../shell/shell_dock.dart';
 import '../reading/poster_card.dart';
 import '../shell/board_tabs.dart';
 import 'novel_detail_page.dart';
@@ -206,7 +207,13 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
   /// 网格视图：3 列海报（与漫画书架同口径，跨板块手感一致）。
   Widget _buildGrid() {
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        // 滚到最末才让出悬浮 Dock 那一段。
+        24 + ShellDockScope.bottomInset(context),
+      ),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
         mainAxisSpacing: 14,
@@ -256,7 +263,13 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
   /// 列表视图：横向卡片，进度与「续读」按钮一眼可见（信息量比网格大）。
   Widget _buildList() {
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        // 滚到最末才让出悬浮 Dock 那一段。
+        24 + ShellDockScope.bottomInset(context),
+      ),
       itemCount: _items.length,
       separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {

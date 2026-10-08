@@ -4,6 +4,7 @@ import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../shell/shell_dock.dart';
 import '../shell/board_tabs.dart';
 import '../reading/poster_card.dart';
 import 'comic_detail_page.dart';
@@ -118,8 +119,15 @@ class _ComicShelfPageState extends State<ComicShelfPage> {
       onRefresh: () async => _reload(),
       child: GridView.builder(
         // 让出玻璃顶栏（标题 + 页签条）：内边距随内容滚走，列表从栏下穿过。
-        padding: GlassScaffold.barInset(context, extra: BoardTabHeader.height)
-            .add(const EdgeInsets.fromLTRB(16, 12, 16, 24)),
+        padding: GlassScaffold.barInset(context, extra: BoardTabHeader.height).add(
+          EdgeInsets.fromLTRB(
+            16,
+            12,
+            16,
+            // 滚到最末才真正让出悬浮 Dock 那一段（没滚到底不预留）。
+            24 + ShellDockScope.bottomInset(context),
+          ),
+        ),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
           mainAxisSpacing: 14,

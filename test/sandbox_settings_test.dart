@@ -57,8 +57,9 @@ void main() {
 
   group('设置模型：区间收敛与落盘', () {
     test('默认是 6 秒（区间 3–10，真机反馈后放宽）', () {
-      expect(SandboxSettings.defaultTimeout, const Duration(seconds: 6));
-      expect(const SandboxSettings().timeout, const Duration(seconds: 6));
+      // 默认 10 秒（用户口径：统一放宽，慢站点的 home 不再一撞就失败）。
+      expect(SandboxSettings.defaultTimeout, const Duration(seconds: 10));
+      expect(const SandboxSettings().timeout, const Duration(seconds: 10));
       expect(SandboxSettings.minTimeout, const Duration(seconds: 3));
       expect(SandboxSettings.maxTimeout, const Duration(seconds: 10));
     });
@@ -147,8 +148,8 @@ void main() {
   group('引擎真的用这份设置', () {
     test('引擎装配取的是全局设置（改完立即对新建引擎生效）', () async {
       // 默认 6 秒（真机反馈后从 4 秒放宽）。
-      expect(LumeJsEngine.callTimeout, const Duration(seconds: 6));
-      expect(LumeJsEngine.policy.timeout, const Duration(seconds: 6));
+      expect(LumeJsEngine.callTimeout, const Duration(seconds: 10));
+      expect(LumeJsEngine.policy.timeout, const Duration(seconds: 10));
 
       // 改成 5 秒。
       LumeSandboxSettings.apply(const SandboxSettings(timeout: Duration(seconds: 5)));

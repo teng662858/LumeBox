@@ -287,8 +287,18 @@ class _AppShellState extends State<AppShell> {
     // 依赖主题：切亮暗 / 换主题色时壳层整体重建（Dock 的磨砂底色、页签图标颜色
     // 都是静态色名，不重建就会留在旧主题里）。
     Theme.of(context);
+    // 悬浮 Dock（含悬浮留白）占掉的底部高度：交给页面当**滚动尾部内边距**用
+    // （见 [ShellDockScope.dockInset]），不再注入 MediaQuery——注入等于给每个页面
+    // 固定留一大块底部空白，没滚到底时也空着（用户口径：改成动态边距）。
+    final dockInset = rail
+        ? 0.0
+        : _dockBottomMargin +
+            _dockHeight +
+            dockContentInset(context) +
+            _dockSpacing;
     return ShellDockScope(
       controller: _controller,
+      dockInset: dockInset,
       child: rail ? _buildRail() : _buildDock(),
     );
   }
@@ -363,34 +373,20 @@ class _AppShellState extends State<AppShell> {
     final settingsHidden = !_shellSettings.settingsVisible;
     // 胶囊里内容避让手势条的那一档（外框贴屏幕底边，内容往上缩）。
     final contentInset = dockContentInset(context);
-    // 内容要让出的底部高度：胶囊外框离底边的距离 + 胶囊高 + 一档呼吸间距。
-    // 胶囊高 = 内容条高 + 手势条避让（外框把避让那段也画上，所以是整块贴底）。
-    final bottomInset = _dockBottomMargin +
-        _dockHeight +
-        contentInset +
-        _dockMargin * 2 +
-        _dockSpacing;
     return Scaffold(
       extendBody: true,
-      body: MediaQuery(
-        // 悬浮 Dock 盖在内容之上：把它的高度加进底部安全区，页面里的 SafeArea
-        // 会自动让列表等内容滚出 Dock 的遮挡范围。
-        data: MediaQuery.of(context).copyWith(
-          padding: MediaQuery.of(context).padding.copyWith(bottom: bottomInset),
-        ),
-        child: Stack(
-          children: <Widget>[
-            _buildPage(),
-            if (settingsHidden)
-              // 与底栏同一个显隐来源：Dock 收起（播放中 / 全屏页压栈）时，
-              // 恢复入口一并收起。
-              AnimatedBuilder(
-                animation: _controller,
-                builder: (context, _) =>
-                    _buildSettingsEntry(visible: _controller.visible),
-              ),
-          ],
-        ),
+      body: Stack(
+        children: <Widget>[
+          _buildPage(),
+          if (settingsHidden)
+            // 与底栏同一个显隐来源：Dock 收起（播放中 / 全屏页压栈）时，
+            // 恢复入口一并收起。
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) =>
+                  _buildSettingsEntry(visible: _controller.visible),
+            ),
+        ],
       ),
       bottomNavigationBar: AnimatedBuilder(
         animation: _controller,

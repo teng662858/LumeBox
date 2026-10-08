@@ -16,6 +16,7 @@ import '../../shared/widgets/state_view.dart';
 import '../source/waf_webview_page.dart';
 import 'source_home_view.dart';
 import '../shell/section_preloader.dart';
+import '../shell/shell_dock.dart';
 import '../source/source_section_page.dart';
 import 'poster_card.dart';
 import 'search_results_page.dart';
@@ -1004,7 +1005,15 @@ class _ExploreViewState extends State<ExploreView> {
         child: GridView.builder(
         // 内容不足一屏时也要能下拉刷新。
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + _keyboardInset(context)),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          // 底部内边距 = 常规间距 + 键盘 + **悬浮 Dock 的占用**：
+          // 只有滚到最末才真正让出 Dock 那一段，没滚到底时内容尽量往下铺
+          //（用户口径：不要固定预留一大块空白）。
+          16 + _keyboardInset(context) + ShellDockScope.bottomInset(context),
+        ),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
           mainAxisSpacing: 12,
@@ -1044,7 +1053,15 @@ class _ExploreViewState extends State<ExploreView> {
         },
         child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + _keyboardInset(context)),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          // 底部内边距 = 常规间距 + 键盘 + **悬浮 Dock 的占用**：
+          // 只有滚到最末才真正让出 Dock 那一段，没滚到底时内容尽量往下铺
+          //（用户口径：不要固定预留一大块空白）。
+          16 + _keyboardInset(context) + ShellDockScope.bottomInset(context),
+        ),
         itemCount: _sortedItems.length + 1,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (context, index) {

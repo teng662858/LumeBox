@@ -49,7 +49,7 @@ class LumeJsEngine {
   /// 宿主代理：持有沙盒存储（`LumeSource.fs` 的后端），随引擎释放。
   final LumeSourceHost _host;
 
-  /// 单次图源调用的墙钟预算：**取自全局沙箱设置**（设置页可配，文档要求 3–5 秒）。
+  /// 单次图源调用的墙钟预算：**取自全局沙箱设置**（设置页可配，3–10 秒，默认 10）。
   ///
   /// 此前是写死的 `SandboxPolicy.defaultTimeout`；现在每次创建引擎时从
   /// [LumeSandboxSettings] 读，因此用户改了设置后**新建的引擎立即生效**。

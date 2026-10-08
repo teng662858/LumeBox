@@ -30,11 +30,25 @@ class ShellDockScope extends InheritedNotifier<ShellDockController> {
   const ShellDockScope({
     super.key,
     required ShellDockController controller,
+    this.dockInset = 0,
     required super.child,
   }) : super(notifier: controller);
 
+  /// Dock（含悬浮留白）占掉的底部高度。
+  ///
+  /// **给滚动视图当尾部内边距用**，不要再把它当整页的安全区用——那是「列表底部
+  /// 永远空一大块」的来源（用户口径：没滚到底时不该预留，内容要尽量往下铺）。
+  /// 滚动视图把它加进 padding.bottom，只有**滚到最末**时才会真正让出这一段。
+  final double dockInset;
+
   static ShellDockController? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ShellDockScope>()?.notifier;
+
+  /// Dock 占用的底部高度；不在壳里（或没有 Dock）时为 0。
+  static double bottomInset(BuildContext context) {
+    final scope = context.dependOnInheritedWidgetOfExactType<ShellDockScope>();
+    return scope?.dockInset ?? 0;
+  }
 }
 
 /// 全屏页监听：任何全屏页面（小说 / 漫画阅读器、详情、二级设置页）压栈时
