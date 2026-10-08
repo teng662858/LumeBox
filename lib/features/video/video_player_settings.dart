@@ -42,6 +42,11 @@ class VideoPlayerSettingsStore {
   /// 手势灵敏度（亮度 / 音量垂直滑动）。
   static const String keyGestureSensitivity = 'video.player.gestureSensitivity';
 
+  /// 字幕字体 / 阴影强度 / 垂直偏移（用户口径三项）。
+  static const String keySubtitleFont = 'video.player.subtitleFont';
+  static const String keySubtitleShadow = 'video.player.subtitleShadow';
+  static const String keySubtitleOffsetY = 'video.player.subtitleOffsetY';
+
   /// 每内核一格偏好的键前缀（后缀是内核 id）。
   static const String keyPrefsPrefix = 'video.player.prefs.';
 
@@ -114,6 +119,9 @@ class VideoPlayerSettingsStore {
       settings.subtitlesEnabled ? 'true' : 'false',
     );
     _library.setSetting(keySubtitleSize, settings.subtitleSize.id);
+    _library.setSetting(keySubtitleFont, settings.subtitleFont);
+    _library.setSetting(keySubtitleShadow, '${settings.subtitleShadow}');
+    _library.setSetting(keySubtitleOffsetY, '${settings.subtitleOffsetY}');
     _library.setSetting(keySubtitleColor, settings.subtitleColor.id);
     _library.setSetting(keySubtitleOutline, settings.subtitleOutline.id);
     _library.setSetting(
@@ -137,6 +145,9 @@ class VideoPlayerSettingsStore {
           double.tryParse(_library.setting(keySpeed) ?? ''),
         ),
         subtitleSize: SubtitleSize.fromId(_library.setting(keySubtitleSize)),
+      subtitleFont: _library.setting(keySubtitleFont) ?? '',
+      subtitleShadow: _double(_library, keySubtitleShadow, 0.0, 0.0, 1.0),
+      subtitleOffsetY: _double(_library, keySubtitleOffsetY, 0.0, -1.0, 1.0),
         subtitleColor: SubtitleColor.fromId(_library.setting(keySubtitleColor)),
         subtitleOutline:
             SubtitleOutline.fromId(_library.setting(keySubtitleOutline)),
@@ -167,4 +178,12 @@ double _gestureSensitivityOf(ReadingLibrary library) {
         PlayerSettings.maxGestureSensitivity,
       )
       .toDouble();
+}
+
+/// 读一个 double 设置：没写过 / 解析失败 / 越界都回落到 [fallback] 并夹进范围。
+double _double(ReadingLibrary library, String key, double fallback, double min, double max) {
+  final raw = library.setting(key);
+  final value = double.tryParse((raw ?? '').trim());
+  if (value == null || value.isNaN) return fallback;
+  return value.clamp(min, max).toDouble();
 }

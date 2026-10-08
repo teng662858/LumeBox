@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lume_box/core/player/mpv_engine.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/features/video/player_gestures.dart';
 
@@ -73,4 +74,48 @@ void main() {
       PlayerSettings.minGestureSensitivity,
     );
   });
+
+/// 字幕三项（用户口径）：字体 / 阴影强度 / 垂直偏移。
+///
+/// 口径：字体**只给系统字体**（思源黑体没随包内置，选了会被系统回落）；
+/// 阴影强度与垂直偏移都夹在 0..1 / -1..1，写脏值不会把字幕顶出画面。
+void subtitleStyleTests() {
+  test('三项默认值：系统字体 / 无阴影 / 不偏移', () {
+    const prefs = KernelPrefs();
+    expect(prefs.subtitleFont, '');
+    expect(prefs.subtitleShadow, 0.0);
+    expect(prefs.subtitleOffsetY, 0.0);
+    expect(PlayerSettings().subtitleFont, '');
+  });
+
+  test('copyWith 三项写读一致，且越界值被夹回范围', () {
+    const settings = PlayerSettings();
+    final styled = settings.copyWith(
+      subtitleFont: 'PingFang SC',
+      subtitleShadow: 0.6,
+      subtitleOffsetY: -0.4,
+    );
+    expect(styled.subtitleFont, 'PingFang SC');
+    expect(styled.subtitleShadow, closeTo(0.6, 1e-9));
+    expect(styled.subtitleOffsetY, closeTo(-0.4, 1e-9));
+
+    expect(settings.copyWith(subtitleShadow: 9).subtitleShadow, 1.0);
+    expect(settings.copyWith(subtitleShadow: -9).subtitleShadow, 0.0);
+    expect(settings.copyWith(subtitleOffsetY: 9).subtitleOffsetY, 1.0);
+    expect(settings.copyWith(subtitleOffsetY: -9).subtitleOffsetY, -1.0);
+  });
+
+  test('样式落到 MPV 的 SubtitleStyle：三项原样带过去', () {
+    const style = SubtitleStyle(
+      fontFamily: 'Heiti SC',
+      shadowStrength: 0.5,
+      offsetY: -0.25,
+    );
+    expect(style.fontFamily, 'Heiti SC');
+    expect(style.shadowStrength, 0.5);
+    expect(style.offsetY, -0.25);
+  });
+}
+
+  group('字幕样式三项', subtitleStyleTests);
 }

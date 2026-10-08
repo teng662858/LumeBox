@@ -196,6 +196,9 @@ class SubtitleStyle {
     this.colorArgb = 0xFFFFFFFF,
     this.outlineWidth = 1.5,
     this.backgroundOpacity = 0.45,
+    this.fontFamily = '',
+    this.shadowStrength = 0.0,
+    this.offsetY = 0.0,
   });
 
   /// 字号缩放（相对基准字号）。
@@ -212,6 +215,26 @@ class SubtitleStyle {
   /// 底色的作用是「压在花画面上也能读」：纯透明在亮画面上白字会糊，
   /// 纯黑又太挡镜头，因此留给用户一档可调。
   final double backgroundOpacity;
+
+  /// 字幕字体（系统字体族名）；空串 = 跟随系统默认。
+  ///
+  /// 说明：**思源黑体没有随包内置**（iOS / Android 都取不到这份字体文件），
+  /// 因此选项只给系统字体（苹方 / 黑体 / 宋体 / 楷体…）；选一个设备上没有的
+  /// 字体会被系统回落到默认字体，这是字体渲染的既有规则，不做伪装。
+  final String fontFamily;
+
+  /// 阴影强度（0..1）：0 = 不投阴影，越大越重。
+  ///
+  /// 与「描边」是两回事：描边是四向硬阴影（保证亮画面下也能读），阴影是往
+  /// 单一方向的柔和投影（观感更自然）。两者叠加就是「描边 + 投影」。
+  final double shadowStrength;
+
+  /// 垂直偏移（-1..1）：负值上移、正值下移（0 = 保持默认位置）。
+  ///
+  /// 实现是改字幕层的底部内边距（见 media_kit_mpv_engine 的
+  /// `SubtitleViewConfiguration.padding`）：正值把字幕推离底边（视觉上移），
+  /// 负值贴近底边（视觉下移）。
+  final double offsetY;
 
   static const SubtitleStyle defaults = SubtitleStyle();
 }

@@ -139,6 +139,9 @@ class MpvPlayer extends AbstractPlayer {
         colorArgb: settings.subtitleColor.argb,
         outlineWidth: settings.subtitleOutline.width,
         backgroundOpacity: settings.subtitleBackground,
+        fontFamily: settings.subtitleFont,
+        shadowStrength: settings.subtitleShadow,
+        offsetY: settings.subtitleOffsetY,
       ),
     );
     // 字幕延迟 / 音频延迟 / 硬解都写 libmpv 属性（见 MediaKitMpvEngine）。

@@ -599,6 +599,72 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
             ),
           ),
           const SizedBox(height: 12),
+          // 字体：**只给系统字体**——思源黑体没有随包内置（iOS / Android 都取不到
+          // 这份字体文件），选了会被系统回落，因此这里不列它，也不假装支持。
+          _label('字体', dim: !enabled),
+          const SizedBox(height: 8),
+          _gated(
+            context,
+            supported: style,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                // 空串 = 跟随系统默认（iOS 上是苹方）。
+                for (final font in const <(String, String)>[
+                  ('', '系统默认'),
+                  ('PingFang SC', '苹方'),
+                  ('Heiti SC', '黑体'),
+                  ('Songti SC', '宋体'),
+                  ('Kaiti SC', '楷体'),
+                ])
+                  ChoiceChip(
+                    label: Text(font.$2),
+                    selected: prefs.subtitleFont == font.$1,
+                    onSelected: enabled
+                        ? (_) =>
+                            _update(settings.copyWith(subtitleFont: font.$1))
+                        : null,
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _label(
+            '阴影 ${(prefs.subtitleShadow * 100).round()}%',
+            dim: !enabled,
+          ),
+          _gated(
+            context,
+            supported: style,
+            child: Slider(
+              value: prefs.subtitleShadow,
+              divisions: 10,
+              label: '${(prefs.subtitleShadow * 100).round()}%',
+              onChanged: enabled
+                  ? (value) => _update(settings.copyWith(subtitleShadow: value))
+                  : null,
+            ),
+          ),
+          _label(
+            '垂直偏移 ${(prefs.subtitleOffsetY * 100).round()}',
+            dim: !enabled,
+          ),
+          _gated(
+            context,
+            supported: style,
+            child: Slider(
+              value: prefs.subtitleOffsetY,
+              min: -1,
+              max: 1,
+              divisions: 20,
+              label: (prefs.subtitleOffsetY * 100).round().toString(),
+              onChanged: enabled
+                  ? (value) => _update(settings.copyWith(subtitleOffsetY: value))
+                  : null,
+            ),
+          ),
+          const SizedBox(height: 12),
           // 手势灵敏度（用户口径：在播放器设置里可自定义）。
           // 只作用于**亮度 / 音量**的垂直滑动：一屏高度对应「100% × 灵敏度」。
           _label(

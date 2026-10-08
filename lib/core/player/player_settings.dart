@@ -195,6 +195,9 @@ class KernelPrefs {
     this.subtitleColor = SubtitleColor.white,
     this.subtitleOutline = SubtitleOutline.thin,
     this.subtitleBackground = defaultSubtitleBackground,
+    this.subtitleFont = '',
+    this.subtitleShadow = 0.0,
+    this.subtitleOffsetY = 0.0,
     this.subtitleDelay = Duration.zero,
     this.audioDelay = Duration.zero,
   });
@@ -230,6 +233,16 @@ class KernelPrefs {
   /// 字幕底色不透明度（0..1）。
   final double subtitleBackground;
 
+  /// 字幕字体族名（空串 = 系统默认）。**只给系统字体**：思源黑体没随包内置，
+  /// 选设备上没有的字体会被系统回落（不假装支持）。
+  final String subtitleFont;
+
+  /// 字幕阴影强度（0..1；0 = 不投阴影）。
+  final double subtitleShadow;
+
+  /// 字幕垂直偏移（-1..1；0 = 默认位置，正 = 视觉上移）。
+  final double subtitleOffsetY;
+
   /// 字幕延迟：正值表示字幕**延后**出现，负值表示提前。
   final Duration subtitleDelay;
 
@@ -245,6 +258,9 @@ class KernelPrefs {
     SubtitleColor? subtitleColor,
     SubtitleOutline? subtitleOutline,
     double? subtitleBackground,
+    String? subtitleFont,
+    double? subtitleShadow,
+    double? subtitleOffsetY,
     Duration? subtitleDelay,
     Duration? audioDelay,
   }) {
@@ -259,6 +275,9 @@ class KernelPrefs {
       subtitleBackground: subtitleBackground == null
           ? this.subtitleBackground
           : normalizeSubtitleBackground(subtitleBackground),
+      subtitleFont: subtitleFont ?? this.subtitleFont,
+      subtitleShadow: (subtitleShadow ?? this.subtitleShadow).clamp(0.0, 1.0),
+      subtitleOffsetY: (subtitleOffsetY ?? this.subtitleOffsetY).clamp(-1.0, 1.0),
       subtitleDelay: subtitleDelay == null
           ? this.subtitleDelay
           : PlayerSettings.normalizeSubtitleDelay(subtitleDelay),
@@ -334,6 +353,9 @@ class KernelPrefs {
       other.subtitleOutline == subtitleOutline &&
       other.subtitleBackground == subtitleBackground &&
       other.subtitleDelay == subtitleDelay &&
+      other.subtitleFont == subtitleFont &&
+      other.subtitleShadow == subtitleShadow &&
+      other.subtitleOffsetY == subtitleOffsetY &&
       other.audioDelay == audioDelay;
 
   @override
@@ -462,6 +484,15 @@ class PlayerSettings {
   /// 字幕底色不透明度（0..1）。
   double get subtitleBackground => current.subtitleBackground;
 
+  /// 字幕字体族名（空串 = 系统默认；思源黑体没内置，选了会被系统回落）。
+  String get subtitleFont => current.subtitleFont;
+
+  /// 字幕阴影强度（0..1）。
+  double get subtitleShadow => current.subtitleShadow;
+
+  /// 字幕垂直偏移（-1..1，正 = 视觉上移）。
+  double get subtitleOffsetY => current.subtitleOffsetY;
+
   /// 字幕延迟：正值表示字幕**延后**出现，负值表示提前。
   Duration get subtitleDelay => current.subtitleDelay;
 
@@ -482,6 +513,9 @@ class PlayerSettings {
     SubtitleColor? subtitleColor,
     SubtitleOutline? subtitleOutline,
     double? subtitleBackground,
+    String? subtitleFont,
+    double? subtitleShadow,
+    double? subtitleOffsetY,
     Duration? subtitleDelay,
     Duration? audioDelay,
     ZoomMode? zoom,
@@ -502,6 +536,9 @@ class PlayerSettings {
         subtitleColor != null ||
         subtitleOutline != null ||
         subtitleBackground != null ||
+        subtitleFont != null ||
+        subtitleShadow != null ||
+        subtitleOffsetY != null ||
         subtitleDelay != null ||
         audioDelay != null;
     final nextPrefs = prefChanged
@@ -516,6 +553,9 @@ class PlayerSettings {
               subtitleColor: subtitleColor,
               subtitleOutline: subtitleOutline,
               subtitleBackground: subtitleBackground,
+              subtitleFont: subtitleFont,
+              subtitleShadow: subtitleShadow,
+              subtitleOffsetY: subtitleOffsetY,
               subtitleDelay: subtitleDelay,
               audioDelay: audioDelay,
             ),

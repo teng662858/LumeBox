@@ -526,9 +526,14 @@ class MediaKitMpvEngine
     // 底色：把「不透明度」翻成 ARGB 的 alpha 通道（0 = 完全透明，不画底色）。
     final backgroundAlpha =
         (style.backgroundOpacity.clamp(0.0, 1.0) * 255).round();
+    // 阴影强度 → 单向柔和投影（与四向描边叠加；强度 0 时不加）。
+    final shadow = style.shadowStrength.clamp(0.0, 1.0);
+    final fontFamily = style.fontFamily.trim();
     return SubtitleViewConfiguration(
       visible: _subtitlesEnabled,
       textScaler: TextScaler.noScaling,
+      // 垂直偏移：改字幕层到底边的距离。正偏移 = 离底边更远（视觉上移）。
+      padding: EdgeInsets.only(bottom: 24 + style.offsetY.clamp(-1.0, 1.0) * 120),
       style: TextStyle(
         height: 1.4,
         fontSize: base,
@@ -536,27 +541,34 @@ class MediaKitMpvEngine
         wordSpacing: 0.0,
         color: Color(style.colorArgb),
         fontWeight: FontWeight.w600,
+        fontFamily: fontFamily.isEmpty ? null : fontFamily,
         backgroundColor: Color(backgroundAlpha << 24),
-        shadows: outline <= 0
-            ? const <Shadow>[]
-            : <Shadow>[
-                Shadow(
-                  color: const Color(0xFF000000),
-                  offset: Offset(-outline, 0),
-                ),
-                Shadow(
-                  color: const Color(0xFF000000),
-                  offset: Offset(outline, 0),
-                ),
-                Shadow(
-                  color: const Color(0xFF000000),
-                  offset: Offset(0, -outline),
-                ),
-                Shadow(
-                  color: const Color(0xFF000000),
-                  offset: Offset(0, outline),
-                ),
-              ],
+        shadows: <Shadow>[
+          if (shadow > 0)
+            Shadow(
+              color: Color(0xFF000000).withValues(alpha: 0.55 * shadow),
+              offset: Offset(shadow * 2.5, shadow * 2.5),
+              blurRadius: shadow * 6,
+            ),
+          if (outline > 0) ...<Shadow>[
+            Shadow(
+              color: const Color(0xFF000000),
+              offset: Offset(-outline, 0),
+            ),
+            Shadow(
+              color: const Color(0xFF000000),
+              offset: Offset(outline, 0),
+            ),
+            Shadow(
+              color: const Color(0xFF000000),
+              offset: Offset(0, -outline),
+            ),
+            Shadow(
+              color: const Color(0xFF000000),
+              offset: Offset(0, outline),
+            ),
+          ],
+        ],
       ),
     );
   }
