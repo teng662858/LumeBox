@@ -86,8 +86,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 呼出工具栏：点一下之后要等过**双击窗口**（呼出被刻意延后 260ms，
+  /// 免得阅读时误触弹出底部面板）。
   Future<void> openToolbar(WidgetTester tester) async {
     await tester.tapAt(const Offset(210, 440));
+    await tester.pump(const Duration(milliseconds: 320));
+    await tester.pumpAndSettle();
+  }
+
+  /// 书签列表的入口现在在【阅读设置】二级页里（顶栏那个按钮已按用户口径移除）。
+  Future<void> openBookmarkList(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('阅读设置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '查看'));
     await tester.pumpAndSettle();
   }
 
@@ -207,8 +218,7 @@ void main() {
       await pumpReader(tester);
       await openToolbar(tester);
 
-      await tester.tap(find.byIcon(Icons.bookmarks_outlined));
-      await tester.pumpAndSettle();
+      await openBookmarkList(tester);
       expect(find.text('第 1 章 · 第 3 页'), findsOneWidget);
       expect(find.text('第 3 章 · 第 4 页'), findsOneWidget);
 
@@ -235,9 +245,9 @@ void main() {
     testWidgets('书签列表空态：给出添加指引而不是空白面板', (tester) async {
       await pumpReader(tester);
       await openToolbar(tester);
-      await tester.tap(find.byIcon(Icons.bookmarks_outlined));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('还没有书签'), findsOneWidget);
+      await openBookmarkList(tester);
+      // 两处都会说「还没有书签」：阅读设置页那行提示 + 列表面板自己的空态。
+      expect(find.textContaining('还没有书签'), findsWidgets);
     });
   });
 }

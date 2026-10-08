@@ -97,8 +97,14 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 呼出工具栏（连带底部面板）。
+  ///
+  /// 点一下之后要**等过一个双击窗口**：呼出被刻意延后 260ms（用户口径：面板太容易
+  /// 误触，双击放大时更要撤掉这次呼出），pending 的 Timer 不会让 pumpAndSettle
+  /// 有事可做，所以这里显式推一下时间。
   Future<void> openToolbar(WidgetTester tester) async {
     await tester.tapAt(const Offset(210, 440));
+    await tester.pump(const Duration(milliseconds: 320));
     await tester.pumpAndSettle();
   }
 
@@ -219,10 +225,11 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('调节控件：侧边距与双击放大都会落库', (tester) async {    await pumpReader(tester);
+  testWidgets('调节控件：侧边距在底部面板、双击放大在阅读设置页，都会落库', (tester) async {
+    await pumpReader(tester);
     await openToolbar(tester);
 
-    // 侧边距滑杆：面板里第一根滑杆就是它。
+    // 侧边距滑杆：面板里第一根滑杆就是它（常用项留在面板）。
     await tester.drag(find.byType(Slider).first, const Offset(80, 0));
     await tester.pumpAndSettle();
     expect(
@@ -230,10 +237,20 @@ void main() {
       greaterThan(0),
       reason: '侧边距要落库，重进阅读器仍然生效',
     );
+    // 用户口径：面板里不再有「双击放大」这类不常用项。
+    expect(find.byType(Switch), findsNothing, reason: '双击放大已搬去阅读设置页');
 
+    // 顶栏 →「阅读设置」二级页：双击放大在这里。
+    await tester.tap(find.byTooltip('阅读设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('阅读设置'), findsWidgets);
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
-    expect(ComicReaderSettings.load(library).doubleTapZoom, isTrue);
+    expect(
+      ComicReaderSettings.load(library).doubleTapZoom,
+      isTrue,
+      reason: '在阅读设置页改的开关同样立刻写回阅读器',
+    );
   });
 
   testWidgets('阅读背景：切到纯白后落库，页面底色立即跟着换', (tester) async {
@@ -276,11 +293,15 @@ void main() {
     // 注意避开屏幕正中：加载失败的占位在那里画了「点击重试」按钮，
     // 会把正中点击吞掉（生产环境图能加载，不存在这个按钮）。
     await tester.tapAt(const Offset(210, 300));
+    // 呼出面板延后一个双击窗口（见 openToolbar 的说明）。
+    await tester.pump(const Duration(milliseconds: 320));
     await tester.pumpAndSettle();
     expect(find.byType(Slider), findsNothing);
 
     // 右 1/3：下一页。
     await tester.tapAt(const Offset(390, 440));
+    // 呼出面板延后一个双击窗口（见 openToolbar 的说明）。
+    await tester.pump(const Duration(milliseconds: 320));
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 900));
     expect(library.comicProgress(target.itemId)!.page, 1);
@@ -298,6 +319,8 @@ void main() {
 
     // 瀑布流没有「页」可翻：右 1/3 点击只呼出工具栏，进度不动。
     await tester.tapAt(const Offset(390, 440));
+    // 呼出面板延后一个双击窗口（见 openToolbar 的说明）。
+    await tester.pump(const Duration(milliseconds: 320));
     await tester.pumpAndSettle();
     expect(find.byType(Slider), findsWidgets);
     expect(library.comicProgress(target.itemId)!.page, 0);
@@ -308,6 +331,8 @@ void main() {
     const ComicReaderSettings(mode: ComicReadingMode.doublePage).save(library);
     await pumpReader(tester, surface: const Size(640, 360));
     await tester.tapAt(const Offset(320, 180));
+    // 呼出面板延后一个双击窗口（见 openToolbar 的说明）。
+    await tester.pump(const Duration(milliseconds: 320));
     await tester.pumpAndSettle();
 
     // 溢出会以 FlutterError 直接判失败；能走到这里说明面板被约束住了。

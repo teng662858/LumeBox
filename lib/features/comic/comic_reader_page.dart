@@ -15,6 +15,7 @@ import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../../shared/widgets/state_view.dart';
 import 'comic_bookmarks.dart';
+import 'comic_reader_settings_page.dart';
 import 'comic_settings.dart';
 
 /// 漫画阅读器：条漫瀑布流 / 单页左右翻页 / 双页跨页三种模式，共用一套调节控件。
@@ -483,14 +484,40 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
 
   void _toggleToolbar() => setState(() => _toolbar = !_toolbar);
 
+  /// 打开「阅读设置」二级页（顶部工具栏入口）。
+  ///
+  /// 页面与阅读器共用同一份 `ComicReaderSettings`：那里改完立刻写回，
+  /// 返回阅读页即生效（不需要额外的「保存」按钮）。
+  Future<void> _openReaderSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ComicReaderSettingsPage(
+          settings: _settings,
+          onChanged: _updateSettings,
+          canSavePage: _images.isNotEmpty && !_saving,
+          onSavePage: () => _saveImage(_page),
+          // 顶栏撤掉了「书签列表」按钮，但这个功能不能变成看得见摸不着——
+          // 挪到这个二级页（这也是「不常用项」的正确去处）。
+          bookmarkCount: _bookmarks.length,
+          onOpenBookmarks: _showBookmarkSheet,
+        ),
+      ),
+    );
+  }
+
   /// 点按分区：默认呼出 / 收起工具栏；设置成「点击翻页」后，左 1/3 上一页、
   /// 右 1/3 下一页、中间仍是工具栏。分区方向随阅读方向：从右往左（日漫）时
   /// 下一页在左边——与滑动方向（`reverse`）一致，用户不必记哪边是前。
+  ///
+  /// **呼出工具栏（连带底部面板）要过一个「双击窗口」的延时**（用户口径：面板
+  /// 太容易误触，稍微点重一点就弹出来）：
+  /// - 期间若发生**双击放大**，这次呼出直接作废（放大是用户的本意，不是要面板）；
+  /// - 翻页那两区**不等**：翻页要跟手，延时会让它发木。
   void _onTapUp(TapUpDetails details, Size size) {
     final zones = _settings.tapAction == ComicTapAction.pageTurn &&
         _settings.mode != ComicReadingMode.waterfall;
     if (!zones) {
-      _toggleToolbar();
+      _scheduleToolbarToggle();
       return;
     }
     final x = details.localPosition.dx;
@@ -503,8 +530,26 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
       _turnPage(rtl ? -1 : 1);
       return;
     }
-    _toggleToolbar();
+    _scheduleToolbarToggle();
   }
+
+  /// 延后一拍再呼出 / 收起工具栏（见 [_onTapUp] 的说明）。
+  void _scheduleToolbarToggle() {
+    _toolbarTimer?.cancel();
+    _toolbarTimer = Timer(const Duration(milliseconds: 260), () {
+      _toolbarTimer = null;
+      if (!mounted) return;
+      _toggleToolbar();
+    });
+  }
+
+  /// 双击放大即将生效：撤掉待呼出的工具栏（用户要的是放大，不是面板）。
+  void _cancelToolbarToggle() {
+    _toolbarTimer?.cancel();
+    _toolbarTimer = null;
+  }
+
+  Timer? _toolbarTimer;
 
   /// 分区点击翻页：按逻辑页序前进 / 后退一页。
   ///
@@ -864,6 +909,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
             decodeWidth: _decodeWidth,
             fit: BoxFit.cover,
             doubleTapZoom: _settings.doubleTapZoom,
+            // 双击放大 = 用户要的是放大，不是面板：把待呼出的那次撤掉。
+            onDoubleTapZoom: _cancelToolbarToggle,
             onLongPress: () => _onImageLongPress(index),
             onRatio: (ratio) => _onRatio(index, ratio),
           ),
@@ -908,6 +955,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                     index: page,
                     decodeWidth: _decodeWidth,
                     doubleTapZoom: _settings.doubleTapZoom,
+            // 双击放大 = 用户要的是放大，不是面板：把待呼出的那次撤掉。
+            onDoubleTapZoom: _cancelToolbarToggle,
                     onLongPress: () => _onImageLongPress(page),
                   ),
           );
@@ -1007,13 +1056,12 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                 ),
                 onPressed: _images.isEmpty ? null : _toggleBookmark,
               ),
+              // 「书签列表」按用户口径移除（使用频次很低；书签仍可在书籍页的历史/收藏
+              // 抽屉里看）。「加书签 / 移除书签」保留，那是高频动作。
               IconButton(
-                tooltip: '书签列表',
-                icon: Icon(
-                  Icons.bookmarks_outlined,
-                  color: LumeTheme.textPrimary,
-                ),
-                onPressed: _showBookmarkSheet,
+                tooltip: '阅读设置',
+                icon: Icon(Icons.tune, color: LumeTheme.textPrimary),
+                onPressed: _openReaderSettings,
               ),
               IconButton(
                 tooltip: '目录',
@@ -1116,26 +1164,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                           ),
                         ],
                       ),
-                      Row(
-                        children: <Widget>[
-                          Text(
-                            '双击放大',
-                            style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
-                          ),
-                          Switch(
-                            value: _settings.doubleTapZoom,
-                            onChanged: (value) => _updateSettings(
-                              _settings.copyWith(doubleTapZoom: value),
-                            ),
-                          ),
-                          const Spacer(),
-                          TextButton.icon(
-                            onPressed: _images.isEmpty ? null : () => _saveImage(_page),
-                            icon: const Icon(Icons.download, size: 18),
-                            label: const Text('保存本页'),
-                          ),
-                        ],
-                      ),
+                      // 「双击放大」「保存本页」已搬到顶栏的【阅读设置】二级页
+                      //（用户口径：不常用的别占底部面板的空间）。
                       Row(
                         children: <Widget>[
                           SizedBox(
@@ -1368,6 +1398,7 @@ class _ComicImageTile extends StatefulWidget {
     required this.decodeWidth,
     required this.doubleTapZoom,
     required this.onLongPress,
+    this.onDoubleTapZoom,
     this.onRatio,
     this.fit = BoxFit.contain,
   });
@@ -1377,6 +1408,9 @@ class _ComicImageTile extends StatefulWidget {
   final int index;
   final int decodeWidth;
   final bool doubleTapZoom;
+
+  /// 双击放大真正生效前回调（阅读器用它取消「待呼出工具栏」）。
+  final VoidCallback? onDoubleTapZoom;
   final VoidCallback onLongPress;
 
   /// 解码完成后回报「高/宽」比（瀑布流据此精确定位）。
@@ -1508,7 +1542,10 @@ class _ComicImageTileState extends State<_ComicImageTile>
       behavior: HitTestBehavior.opaque,
       onLongPress: widget.onLongPress,
       onDoubleTapDown: (details) => _zoomPoint = details.localPosition,
-      onDoubleTap: _toggleZoom,
+      onDoubleTap: () {
+        widget.onDoubleTapZoom?.call();
+        _toggleZoom();
+      },
       child: InteractiveViewer(
         transformationController: _transform,
         minScale: 1,
