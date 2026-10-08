@@ -52,10 +52,33 @@ import '../../core/util/lume_log.dart';
 /// 「至少把挑战页保留住，给足时间点勾选框」。这里在页面变成空白且**刚才确实
 /// 是挑战页**时，把挑战页重新打开（最多几次），而不是任由用户面对白屏。
 ///
+/// **判定必须是「稳定空白」，不能是一次采样**（真机反馈：勾选框一直不出现）：
+/// CF 的挑战控件是脚本后画出来的（`innerText` 也看不见 `display:none` 的东西），
+/// 页面加载完那一刻正文为空完全正常；这时立刻重开，会把还在路上的
+/// `challenge-platform` 脚本和 `challenges.cloudflare.com` 的 iframe 一起掐掉，
+/// 越修越白。因此：加载完先等一拍再采一次，两次都空、且页面上**现在**没有挑战
+/// 痕迹 / iframe、用户也没在页面上操作过，才允许重开（见
+/// [shouldRestoreChallengePage]）。
+///
+/// ## 什么才算「放过了」（[cookieJarLooksPassed]）
+///
+/// **只有 `cf_clearance` 算放行**。`__cf_bm` 是挑战**之前**就写下的 bot 管理
+/// Cookie：早先把它也当放行信号，自动小窗常常在开出 1~2 秒后就自己关掉——用户
+/// 看到的正是「窗口一闪，勾选框还没出现就没了」。因此 `__cf_bm` 只在「这一页
+/// 从没出现过挑战痕迹」时才当作已经放行。
+///
+/// ## 网页视图实际用的 UA（[wafFallbackUserAgent]）
+///
+/// 读不到 WKWebView 默认 UA 时**不许留空**：不放 UA 就等于用 WKWebView 默认那份
+///（没有 `Safari/…` 段），CF 给一张渲染不出控件的空页。兜底一律给 Safari 形态的
+/// UA，并在页面加载完之后核对 `navigator.userAgent` 里真的带 `Safari/`（见
+/// [webViewUserAgentNeedsRepair]），不带就换兜底 UA 只重开一次。
+///
 /// ## 什么时候才读 Cookie
 ///
 /// **只有用户点左上角 ✕ 的那一刻**（手动模式）。中途无论页面跳转多少次都不读
 /// Cookie、不关窗、不重置 WebView——用户没说「好了」，验证流程就还没结束。
+/// 自动模式（[WafWebViewPage.auto]）例外：轮询到真放行信号后自己收尾关窗。
 class WafWebViewPage extends StatefulWidget {
   const WafWebViewPage({
     super.key,
@@ -65,15 +88,14 @@ class WafWebViewPage extends StatefulWidget {
     this.onUserAgent,
     this.userAgentOverride,
     this.auto = false,
-    this.compact = false,
   });
 
   /// 自动模式（用户口径 2 / 4）：脚本抛 `NEED_WEBVIEW_VERIFY` 时由应用自己调起。
   /// 这个模式下**不要求用户点关闭**——一拿到会话就自己收尾关窗。
+  ///
+  /// 它**不改变窗口尺寸**：小悬浮窗（320×420，右下角）的外框由调用方
+  /// [showWafAutoVerify] 决定，本页只负责里面的内容与流程。
   final bool auto;
-
-  /// 小悬浮窗布局：只占屏幕一小块（不做全屏页），提示文案也压缩成一行。
-  final bool compact;
 
   /// 用指定 UA 打开页面（**App 请求侧那一个**：图源覆盖 → 全局设置 → 内置默认）。
   ///
@@ -131,12 +153,28 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
   /// 已经拉回来过几次（防死循环：CF 一直跳走就停手，把白屏如实呈现）。
   int _challengeRestores = 0;
 
-  /// 挑战页最多自动重开几次。
-  static const int _maxChallengeRestores = 3;
-
   /// 是否已经成功加载过至少一次（用来区分「从来没打开」与「打开过、后面的
   /// 导航被取消」——后者不该压失败卡）。
   bool _loadedOnce = false;
+
+  /// 用户是否已经在这个页面上操作过（碰过屏幕）。
+  ///
+  /// 碰过之后不再自动重开挑战页：他多半正在点那个勾选框，重开等于把他做到一半的
+  /// 那一步扔掉（而这个页面存在的全部意义就是让他把那一步做完）。
+  bool _pageTouched = false;
+
+  /// 「稳定空白」的二次采样延迟：挑战控件是脚本后画的，加载完那一刻正文为空是
+  /// 常态（见文件头那段），隔一拍再采才是真的空白。
+  static const Duration _blankResampleDelay = Duration(milliseconds: 2000);
+
+  /// 主框架错误压失败卡之前先等一小段：挑战页自己会 reload / 跳转，那些被取消的
+  /// 导航也会报主框架错误，立刻压卡会盖住已经出内容的页面，看起来就是「白卡、
+  /// 没有勾选框」。
+  static const Duration _loadErrorDelay = Duration(milliseconds: 1200);
+  Timer? _loadErrorTimer;
+
+  /// UA 没生效（页面里的 `navigator.userAgent` 不带 `Safari/`）时只修一次。
+  bool _uaRepaired = false;
 
   /// 自动模式的轮询计时器：定时看 Cloudflare 的放行 Cookie 到了没有。
   Timer? _autoPoll;
@@ -151,6 +189,8 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
           onProgress: (value) => setState(() => _progress = value),
           onPageStarted: (url) {
             LumeLog.info('[waf] 网页视图开始加载：$url');
+            // 新的一页开始了：上一个失败卡与它的定时器都作废。
+            _loadErrorTimer?.cancel();
             setState(() {
               _progress = 0;
               _loadError = null;
@@ -160,12 +200,24 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
             final title = await _controller?.getTitle();
             // UA 与 cf_clearance 绑定：验证用哪个 UA，后续 API 就得用哪个，
             // 因此把网页视图里的真实 UA 记下来（用户口径 2：拿到验证后的请求头）。
-            final ua = await _controller?.runJavaScriptReturningResult(
-              'navigator.userAgent',
-            );
-            widget.onUserAgent?.call('$ua'.replaceAll('"', '').trim());
+            final liveUa =
+                '${await _controller?.runJavaScriptReturningResult('navigator.userAgent')}'
+                    .replaceAll('"', '')
+                    .trim();
             if (!mounted) return;
+            // 这一页拿到的 UA 不带 `Safari/`：说明 setUserAgent 没生效，CF 会给
+            // 一张**没有勾选框**的页。换兜底 UA 只重开一次（见 [._repairUserAgent]）。
+            if (!_uaRepaired &&
+                webViewUserAgentNeedsRepair(
+                  liveUserAgent: liveUa,
+                  override: widget.userAgentOverride,
+                )) {
+              await _repairUserAgent();
+              return;
+            }
+            widget.onUserAgent?.call(liveUa);
             _loadedOnce = true;
+            _loadErrorTimer?.cancel();
             setState(() {
               _title = (title == null || title.trim().isEmpty)
                   ? widget.sourceName
@@ -190,8 +242,22 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
             );
             // 只在「一次都没成功加载过」时压失败卡：挑战页自己会 reload / 跳转，
             // 那些被取消的导航也会报主框架错误，不该盖住已经出内容的页面。
-            if (error.isForMainFrame != true || !mounted || _loadedOnce) return;
-            setState(() => _loadError = error.description);
+            // 另外**看过挑战页就不再压卡**：那一下多半就是挑战页自己引起的，
+            // 盖上白卡等于把勾选框藏起来（真实的白屏是「没控件」，不是「有卡」）。
+            if (error.isForMainFrame != true ||
+                !mounted ||
+                _loadedOnce ||
+                _challengeSeen) {
+              return;
+            }
+            // 还要再等一小段：这一下错误可能只是跳转途中的一次取消，页面马上
+            // 就会自己画出来（那时 onPageFinished 会把这张卡撤掉）。
+            final detail = error.description;
+            _loadErrorTimer?.cancel();
+            _loadErrorTimer = Timer(_loadErrorDelay, () {
+              if (!mounted || _loadedOnce || _challengeSeen) return;
+              setState(() => _loadError = detail);
+            });
           },
         ),
       );
@@ -204,12 +270,12 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
     final controller = _controller;
     if (controller == null) return;
     final ua = await _resolveUserAgent(controller);
-    if (ua.isNotEmpty) {
-      try {
-        await controller.setUserAgent(ua);
-      } catch (error) {
-        LumeLog.warn('[waf] 设置网页视图 UA 失败（用默认 UA 继续）：$error');
-      }
+    // **一定**要设 UA（[_resolveUserAgent] 保证非空）：不设就等于用 WKWebView
+    // 默认那份（没有 `Safari/…` 段），CF 会给一张渲染不出勾选框的空页。
+    try {
+      await controller.setUserAgent(ua);
+    } catch (error) {
+      LumeLog.warn('[waf] 设置网页视图 UA 失败（用默认 UA 继续）：$error');
     }
     if (!mounted) return;
     LumeLog.info('[waf] 网页视图打开：${widget.url}（UA=$ua）');
@@ -224,72 +290,118 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
     }
   }
 
-  /// 定下这个 WebView 用哪个 UA。
+  /// 定下这个 WebView 用哪个 UA（**一定返回可用 UA**，见 [resolveWebViewUserAgent]）。
   ///
   /// 两种来源，优先级分明：
   /// 1. **用户显式配过 UA**（图源网络覆盖 / 全局设置里填了 UA）：照用——后续 API
   ///    请求也会用同一个（cf_clearance 绑 IP + UA），用户的选择优先；
   /// 2. 没配过：拿 **WKWebView 的默认 UA**（本机真实的 iOS / WebKit 版本）补上
-  ///    `Version/… Safari/…`，拼成与本机 Safari 一致的 UA。
+  ///    `Version/… Safari/…`，拼成与本机 Safari 一致的 UA；**读不到**（平台通道
+  ///    抛错 / 返回空）就用内置的 Safari 形态兜底 UA——绝不能留空，留空等于用
+  ///    WKWebView 默认那份，CF 会给一张没有控件的页（真机反馈的「白屏、看不到
+  ///    勾选框」）。
   ///
-  /// 第 2 条是关键：写死版本号（或带 WebView 特征）的 UA 会被 CF 识别成内置控件，
-  /// 挑战页勾选框一闪就被强制跳走（真机反馈）。
+  /// 第 2 条里的「本机版本」是关键：写死版本号（或带 WebView 特征）的 UA 会被 CF
+  /// 识别成内置控件，挑战页勾选框一闪就被强制跳走（真机反馈）。
   Future<String> _resolveUserAgent(WebViewController controller) async {
     final configured = widget.userAgentOverride?.trim() ?? '';
     if (configured.isNotEmpty) return configured;
-    String fallback = '';
+    String webViewDefault = '';
     try {
-      fallback = (await controller.getUserAgent())?.trim() ?? '';
+      webViewDefault = (await controller.getUserAgent())?.trim() ?? '';
     } catch (error) {
       LumeLog.warn('[waf] 读取 WebView 默认 UA 失败：$error');
     }
-    if (fallback.isEmpty) return '';
-    return safariUserAgentFrom(fallback);
+    final resolved = resolveWebViewUserAgent(
+      configured: configured,
+      webViewDefault: webViewDefault,
+    );
+    if (webViewDefault.isEmpty) {
+      LumeLog.warn('[waf] 读不到 WebView 默认 UA，本次改用内置 Safari UA 兜底：$resolved');
+    }
+    return resolved;
   }
 
-  /// 页面加载完之后取一次正文摘要与挑战标记，写进运行日志。
+  /// 页面里读回来的 UA 不带 `Safari/` 时的补救：换兜底 UA，重新打开一次。
+  ///
+  /// 只做一次（[_uaRepaired]）：这是「setUserAgent 没生效」的兜底，不是常规路径；
+  /// 反复重开会把挑战页自己的跳转搅乱。
+  Future<void> _repairUserAgent() async {
+    _uaRepaired = true;
+    LumeLog.warn(
+      '[waf] 网页视图实际 UA 不含 Safari/，改用内置 Safari UA 重开一次：'
+      '$wafFallbackUserAgent',
+    );
+    // 后续 API 请求要用**实际生效的**这个 UA（cf_clearance 绑 IP + UA）。
+    widget.onUserAgent?.call(wafFallbackUserAgent);
+    try {
+      await _controller?.setUserAgent(wafFallbackUserAgent);
+      await _controller?.loadRequest(
+        Uri.parse(widget.url),
+        headers: _browserHeaders,
+      );
+    } catch (error) {
+      LumeLog.warn('[waf] 换兜底 UA 重开失败：$error');
+    }
+  }
+
+  /// 页面加载完之后取正文摘要与挑战标记，写进运行日志；页面疑似被跳成空白时
+  /// 才考虑把挑战页拉回来。
   ///
   /// 这是给「白屏」留的证据链：正文为空 → 网络/ATS/UA 有问题；正文有内容但没有
   /// 挑战 iframe → 站点没给挑战页；两者都在 → 是控件没画出来（浏览器环境问题）。
+  ///
+  /// **空白判两遍**（见 [_blankResampleDelay]）：挑战控件是脚本后画的，加载完那
+  /// 一刻正文为空完全是常态。第一遍就重开的话，会把还在下载的 `challenge-platform`
+  /// 脚本和 Turnstile 的 iframe 一起取消掉——勾选框从此再也画不出来（真机反馈）。
+  /// 第二遍仍空、且页面上没有挑战痕迹 / iframe、用户也没碰过页面，才允许重开。
   Future<void> _probePage(String url) async {
-    Map<String, Object?> probe = const <String, Object?>{};
-    try {
-      final raw = await _controller?.runJavaScriptReturningResult(
-        'JSON.stringify({'
-        't:(document.title||"").slice(0,80),'
-        'n:((document.body&&document.body.innerText)||"").replace(/\\s+/g," ").slice(0,160),'
-        'f:document.querySelectorAll("iframe").length,'
-        'c:/challenges\\.cloudflare\\.com|turnstile|cf-chl|challenge-platform|just a moment|请稍候/i'
-        '.test(document.documentElement.innerHTML+document.title)'
-        '})',
-      );
-      LumeLog.info('[waf] 网页视图正文摘要（$url）：$raw');
-      final decoded = jsonDecode('$raw');
-      if (decoded is Map) probe = decoded.cast<String, Object?>();
-    } catch (error) {
-      LumeLog.info('[waf] 读取网页视图正文失败：$error');
+    var probe = await _readProbe(url);
+    if (!mounted || probe == null) return;
+    if (probe.challenge) _challengeSeen = true;
+    if (!probe.blank) return;
+
+    await Future<void>.delayed(_blankResampleDelay);
+    if (!mounted || _collecting) return;
+    probe = await _readProbe(url);
+    if (!mounted || probe == null) return;
+    if (probe.challenge) _challengeSeen = true;
+    if (!shouldRestoreChallengePage(
+      probe: probe,
+      challengeSeen: _challengeSeen,
+      userTouched: _pageTouched,
+      restores: _challengeRestores,
+    )) {
       return;
     }
-    if (!mounted) return;
-    final body = '${probe['n'] ?? ''}'.trim();
-    if (probe['c'] == true) _challengeSeen = true;
-    // 挑战页被 CF 自己跳成空白页：把挑战页拉回来，让用户还有机会点勾选框。
-    if (_challengeSeen && body.isEmpty) {
-      await _restoreChallengeIfBlanked();
+    await _restoreChallengeIfBlanked();
+  }
+
+  /// 在页面里取一次探针；读不出来返回 null（**读不出来不当白屏**，宁可不动）。
+  Future<WafPageProbe?> _readProbe(String url) async {
+    try {
+      final raw =
+          await _controller?.runJavaScriptReturningResult(wafPageProbeScript);
+      LumeLog.info('[waf] 网页视图正文摘要（$url）：$raw');
+      return WafPageProbe.parse('$raw');
+    } catch (error) {
+      LumeLog.info('[waf] 读取网页视图正文失败：$error');
+      return null;
     }
   }
 
   /// 挑战页跳成空白时把它重新打开。
   ///
   /// 用户口径（真机反馈「勾选框一闪就跳空白页，还没点就没了」）：**别让用户面对
-  /// 白屏**——只要刚才这一页确实是挑战页、而当前页正文是空的，就把挑战页重新打开，
-  /// 给人足够时间完成手动验证。最多重开几次，免得 CF 一直跳走时我们跟着刷个没完。
+  /// 白屏**——只要刚才这一页确实是挑战页、而当前页正文是空的（而且是**稳定**空
+  /// 白，判定见 [shouldRestoreChallengePage]），就把挑战页重新打开，给人足够时间
+  /// 完成手动验证。最多重开几次，免得 CF 一直跳走时我们跟着刷个没完。
   ///
   /// 这里**只做重开**：不读 Cookie、不关窗、不重置控制器（用户没点 ✕ 之前，
   /// 验证流程就还没结束）。
   Future<void> _restoreChallengeIfBlanked() async {
     if (_collecting || !mounted) return;
-    if (_challengeRestores >= _maxChallengeRestores) {
+    if (_challengeRestores >= maxChallengeRestores) {
       LumeLog.warn('[waf] 挑战页已被跳走 $_challengeRestores 次，不再自动重开：'
           '多半是 UA / 网络环境被识别（换网络或更新 App 版本再试）');
       setState(() => _title = '验证页无法停留（可点右上角刷新重试）');
@@ -312,6 +424,9 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
   ///
   /// 之所以轮询而不是只等「用户点关闭」：用户口径 4 要求**大部分场景后台静默完成**
   /// ——校验本来就可能是无感的（IP 信誉 / 无需点选），那就自己关掉，别打扰人。
+  ///
+  /// 判定只看 [cookieJarLooksPassed]：`__cf_bm` 在挑战**之前**就写下来了，拿它当
+  /// 放行会让窗口开出 1~2 秒就自己关掉（用户看到的「一闪就没了」）。
   void _startAutoPoll() {
     _autoPoll ??= Timer.periodic(const Duration(milliseconds: 1200), (timer) async {
       if (!mounted || _collecting) {
@@ -325,9 +440,7 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
       } catch (_) {
         return;
       }
-      final passed = cookie.contains('cf_clearance') ||
-          cookie.contains('__cf_bm');
-      if (!passed) return;
+      if (!cookieJarLooksPassed(cookie, challengeSeen: _challengeSeen)) return;
       timer.cancel();
       _autoPoll = null;
       // 再等一拍：放行后站点往往还会写几枚别的 Cookie。
@@ -341,6 +454,8 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
   void dispose() {
     _autoPoll?.cancel();
     _autoPoll = null;
+    _loadErrorTimer?.cancel();
+    _loadErrorTimer = null;
     super.dispose();
   }
 
@@ -355,7 +470,7 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
       final raw = await _controller?.runJavaScriptReturningResult(
         'document.cookie',
       );
-      cookies.addAll(_parseJsCookie('$raw'));
+      cookies.addAll(parseJsCookie('$raw'));
     } catch (error) {
       LumeLog.info('[waf] 读取 document.cookie 失败：$error');
     }
@@ -410,28 +525,6 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
     }
     widget.onCollected(cookies);
     Navigator.of(context).pop();
-  }
-
-  /// 解析 `document.cookie` 的返回：可能是裸串，也可能被包成 JSON 字符串。
-  static Map<String, String> _parseJsCookie(String raw) {
-    var text = raw.trim();
-    if (text.isEmpty) return const <String, String>{};
-    if (text.startsWith('"') && text.endsWith('"') && text.length > 1) {
-      try {
-        text = jsonDecode(text) as String;
-      } catch (_) {
-        text = text.substring(1, text.length - 1);
-      }
-    }
-    final result = <String, String>{};
-    for (final part in text.split(';')) {
-      final index = part.indexOf('=');
-      if (index <= 0) continue;
-      final name = part.substring(0, index).trim();
-      final value = part.substring(index + 1).trim();
-      if (name.isNotEmpty && value.isNotEmpty) result[name] = value;
-    }
-    return result;
   }
 
   @override
@@ -508,8 +601,20 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
                   ? const Center(child: CircularProgressIndicator(strokeWidth: 2.5))
                   : Stack(
                       children: <Widget>[
-                        WebViewWidget(controller: controller),
-                        if (_loadError != null) _buildLoadError(controller),
+                        Listener(
+                          // 用户碰过页面：记一笔（据此不再自动重开挑战页——他多半
+                          // 正在点那个勾选框，重开等于把他做到一半的操作扔掉）。
+                          onPointerDown: (_) => _pageTouched = true,
+                          child: WebViewWidget(controller: controller),
+                        ),
+                        // **挑战页上永不压卡**：那一下失败多半就是挑战页自己引起的，
+                        // 盖一张不透明的白卡上去，用户看到的正好是「一片白、没有勾
+                        // 选框」（真机反馈那一类里最冤的一条）。
+                        if (shouldCoverWebViewWithError(
+                          error: _loadError,
+                          challengeSeen: _challengeSeen,
+                        ))
+                          _buildLoadError(controller),
                       ],
                     ),
             ),
@@ -606,6 +711,190 @@ String safariUserAgentFrom(String webViewUserAgent) {
     return '${ua.replaceFirst('Mobile/', 'Version/$version Mobile/')} Safari/604.1';
   }
   return '$ua Version/$version Mobile/15E148 Safari/604.1';
+}
+
+/// 读不到 WKWebView 默认 UA 时的兜底：一枚 iPhone Safari 形态的 UA。
+///
+/// **宁可写死一个 Safari 形态的 UA，也不能不放 UA**：不放就等于用 WKWebView 的
+/// 默认 UA（`… Mobile/15E148`，没有 `Safari/…` 段），CF 会把它当成非浏览器，
+/// 挑战页上一个控件都不画——真机上就是「白屏、看不到勾选框」。
+///
+/// 它只在「平台通道抛错 / 返回空」这条冷路径上被用到（常规路径永远用本机 UA，
+/// 见 [resolveWebViewUserAgent]），所以这里写死版本号可以接受。
+const String wafFallbackUserAgent =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
+    'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 '
+    'Safari/604.1';
+
+/// 定下网页视图最终使用的 UA（纯函数，便于单测）；**保证非空且是浏览器形态**。
+///
+/// 优先级：用户显式配置 > 本机 WebView 默认 UA（[safariUserAgentFrom] 补成 Safari
+/// 形态） > 内置兜底 [wafFallbackUserAgent]。
+///
+/// 为什么兜底也要有：真机反馈过「白屏、没有勾选框」，其中一条根因就是 UA 解析失败
+/// 后**没有设 UA**（旧实现直接跳过 `setUserAgent`），WebKit 用默认那份非 Safari
+/// 形态的 UA 去拿挑战页，CF 自然不给控件。返回空串在这条链路上没有任何意义。
+String resolveWebViewUserAgent({
+  String? configured,
+  String? webViewDefault,
+}) {
+  final override = (configured ?? '').trim();
+  if (override.isNotEmpty) return override;
+  final device = safariUserAgentFrom((webViewDefault ?? '').trim());
+  if (device.contains('Safari/')) return device;
+  return wafFallbackUserAgent;
+}
+
+/// 页面里读回来的 UA 是否「没生效」（不含 `Safari/`）——CF 会给这种 UA 一张没有
+/// 控件的空页，需要换兜底 UA 重开一次（见 [._WafWebViewPageState._repairUserAgent]）。
+///
+/// 用户显式配过 UA 时不判：那是他的选择（而且不少图源配的就是 App 自己的 UA）。
+/// 读不到 UA（空串）也不折腾——没有证据说它没生效。
+bool webViewUserAgentNeedsRepair({
+  required String liveUserAgent,
+  String? override,
+}) {
+  if ((override ?? '').trim().isNotEmpty) return false;
+  final live = liveUserAgent.trim();
+  if (live.isEmpty) return false;
+  return !live.contains('Safari/');
+}
+
+/// 挑战页最多自动重开几次（CF 一直跳走就停手，把白屏如实呈现）。
+const int maxChallengeRestores = 3;
+
+/// 在页面里跑的探针脚本：正文摘要 + iframe 数 + 挑战痕迹。
+const String wafPageProbeScript = 'JSON.stringify({'
+    't:(document.title||"").slice(0,80),'
+    'n:((document.body&&document.body.innerText)||"").replace(/\\s+/g," ").slice(0,160),'
+    'f:document.querySelectorAll("iframe").length,'
+    'c:/challenges\\.cloudflare\\.com|turnstile|cf-chl|challenge-platform|just a moment|请稍候/i'
+    '.test(document.documentElement.innerHTML+document.title)'
+    '})';
+
+/// 一次「页面探针」的结果。
+///
+/// 抽成纯数据是为了让「要不要把挑战页拉回来」这类判断能离开 WebView 单测：WebView
+/// 是平台视图，跑不进 `flutter test`（见 test/waf_webview_test.dart 的说明）。
+class WafPageProbe {
+  const WafPageProbe({
+    this.title = '',
+    this.bodyText = '',
+    this.iframeCount = 0,
+    this.challenge = false,
+  });
+
+  final String title;
+
+  /// `document.body.innerText` 的摘要（空白页 = 空串）。
+  final String bodyText;
+
+  /// 页面里的 iframe 个数（挑战控件通常是 `challenges.cloudflare.com` 的 iframe）。
+  final int iframeCount;
+
+  /// 页面上有没有 Cloudflare / Turnstile 的挑战痕迹（脚本、iframe、文案）。
+  final bool challenge;
+
+  /// 正文是不是空的（**注意**：这只是一次采样，不能单独作为「白屏」的结论）。
+  bool get blank => bodyText.trim().isEmpty;
+
+  /// 从探针脚本的返回值造一个；解析不出来 = 空探针（调用方据此什么都不做）。
+  static WafPageProbe parse(String? raw) {
+    var decoded = _decodeJson(raw ?? '');
+    // 平台可能把 JS 的字符串结果再包一层（返回的是字符串形式的 JSON）。
+    if (decoded is String) decoded = _decodeJson(decoded);
+    if (decoded is! Map) return const WafPageProbe();
+    return WafPageProbe(
+      title: '${decoded['t'] ?? ''}'.trim(),
+      bodyText: '${decoded['n'] ?? ''}'.trim(),
+      iframeCount: switch (decoded['f']) {
+        final int value => value,
+        final Object value => int.tryParse('$value') ?? 0,
+        _ => 0,
+      },
+      challenge: decoded['c'] == true,
+    );
+  }
+}
+
+/// JSON 解码（失败返回 null，不抛）。
+Object? _decodeJson(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return null;
+  try {
+    return jsonDecode(trimmed);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// 白屏时要不要把挑战页拉回来（纯函数，便于单测）。
+///
+/// 三个「不」——每条都对应一次真机反馈：
+/// - 这一页**从没见过挑战痕迹** → 不拉（本来就不是挑战页，拉回来只会打转）；
+/// - 页面**现在**还带着挑战痕迹 / 有 iframe → 不拉：控件是 JS 后画的，正文空不
+///   代表页面没东西；这时候重开会把正在跑的 `challenge-platform` 脚本和 Turnstile
+///   的 iframe 一起掐掉，勾选框就再也画不出来了（「勾选框一直不出现」的头号根因）；
+/// - 用户**已经在页面上操作过** → 不拉（他可能正点着勾选框，重开等于把操作扔掉）。
+bool shouldRestoreChallengePage({
+  required WafPageProbe probe,
+  required bool challengeSeen,
+  required bool userTouched,
+  required int restores,
+  int maxRestores = maxChallengeRestores,
+}) {
+  if (!challengeSeen) return false;
+  if (restores >= maxRestores) return false;
+  if (userTouched) return false;
+  if (probe.challenge || probe.iframeCount > 0) return false;
+  return probe.blank;
+}
+
+/// 解析 `document.cookie` 的返回（纯函数，便于单测）：可能是裸串，也可能被包成
+/// JSON 字符串（`runJavaScriptReturningResult` 的口径）。
+Map<String, String> parseJsCookie(String raw) {
+  var text = raw.trim();
+  if (text.isEmpty) return const <String, String>{};
+  if (text.startsWith('"') && text.endsWith('"') && text.length > 1) {
+    try {
+      text = jsonDecode(text) as String;
+    } catch (_) {
+      text = text.substring(1, text.length - 1);
+    }
+  }
+  final result = <String, String>{};
+  for (final part in text.split(';')) {
+    final index = part.indexOf('=');
+    if (index <= 0) continue;
+    final name = part.substring(0, index).trim();
+    final value = part.substring(index + 1).trim();
+    if (name.isNotEmpty && value.isNotEmpty) result[name] = value;
+  }
+  return result;
+}
+
+/// 这一份 `document.cookie` 是不是「已经被放行」了（纯函数，便于单测）。
+///
+/// - `cf_clearance` 是**唯一**可信的放行凭证（Cloudflare 过完校验才下发它）；
+/// - `__cf_bm` 在挑战**之前**就写下来了（它只是 bot 管理 cookie）。早先把它也算
+///   放行，自动小窗常常在开出 1~2 秒后就自己关掉——用户看到的正是「窗口一闪，
+///   勾选框还没出现就没了」。因此只有**这一页从没出现过挑战痕迹**时才认它。
+bool cookieJarLooksPassed(String rawCookie, {required bool challengeSeen}) {
+  final names = parseJsCookie(rawCookie);
+  if (names.containsKey('cf_clearance')) return true;
+  return !challengeSeen && names.containsKey('__cf_bm');
+}
+
+/// 主框架失败的白色卡片要不要压到 WebView 上（纯函数，便于单测）。
+///
+/// **挑战页上永远不压**：CF 的挑战页本身常常是 403/503，还伴随一次被取消的导航
+///（那些都会报主框架错误）。盖一张不透明的卡上去，就成了「一片白、看不到勾选框」。
+bool shouldCoverWebViewWithError({
+  required String? error,
+  required bool challengeSeen,
+}) {
+  if (error == null || error.trim().isEmpty) return false;
+  return !challengeSeen;
 }
 
 /// 打开网页视图并返回取到的 Cookie（宿主据此写进图源会话存储）。
@@ -906,10 +1195,15 @@ class _WafOriginDialogState extends State<_WafOriginDialog> {
 
 /// 自动静默校验（用户口径 2 / 3 / 4）：脚本抛 `NEED_WEBVIEW_VERIFY` 时由应用自己调起。
 ///
+/// **前提**：这一次尝试必须是**用户显式发起**的（页面上点了【重试】）。
+/// [WafAutoVerify] 里有一条一次性许可（`arm`）在把关：被动加载（切图源、切页签、
+/// 预热、首页/分类/筛选页自己拉的那一次）撞上标记时**不会**走到这里，界面上只出现
+/// 错误卡——所以这个函数只管「弹出来之后怎么办」，不需要再判用户意图。
+///
 /// - **小悬浮窗**：不做全屏页——一个 320×420 的圆角小窗浮在界面上，用户能继续看
 ///   当前页面；不需要交互的校验（IP 信誉 / 无感校验）会自己关掉，用户基本无感；
-/// - **拿到会话就收尾**：轮询到 `cf_clearance` / `__cf_bm` 就自动收集 Cookie 关窗
-///   （见 [_WafWebViewPageState._startAutoPoll]），不需要用户点任何按钮；
+/// - **拿到会话就收尾**：轮询到 `cf_clearance`（`__cf_bm` 只在没见过挑战页时算，
+///   见 [cookieJarLooksPassed]）就自动收集 Cookie 关窗，不需要用户点任何按钮；
 /// - **Cookie 与 UA 一起存**：验证用哪个 UA，后续 API 请求就得用哪个（CF 会绑定），
 ///   因此这里把网页视图的 UA 一并回传，由调用方写进该图源的会话存储。
 ///
@@ -949,7 +1243,6 @@ Future<bool> showWafAutoVerify({
                     url: url,
                     sourceName: sourceName,
                     auto: true,
-                    compact: true,
                     userAgentOverride: userAgentOverride,
                     onUserAgent: (value) => userAgent = value,
                     onCollected: (cookies) => collected = cookies,

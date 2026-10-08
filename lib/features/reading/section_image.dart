@@ -50,13 +50,20 @@ class _SectionImageState extends State<SectionImage> {
   int _retries = 0;
   Timer? _retryTimer;
 
-  /// 最多自动重试 2 次。
-  static const int _maxRetries = 2;
+  /// 最多自动重试 3 次：两次快退避 + 一次「慢补」。
+  static const int _maxRetries = 3;
 
-  /// 退避间隔：1.2s、3s（够短，看得见；够长，不给图床添乱）。
+  /// 退避间隔：1.2s、3s、**12s**。
+  ///
+  /// 第三次刻意拉长：首页一屏二三十张封面同时开抢，图床按 IP 限流（429）时一批图
+  /// 会在头两秒里集体失败——前两次重试还在同一波限流里，照样失败，封面就永久停在
+  /// 占位图上（真机口径：「首页很多封面显示不出来，点进详情页同一条资源又能出来」：
+  /// 详情页是**过一会儿**的单张请求，早就出了限流窗口）。等这一波过去再补一次，
+  /// 大半能自己好。间隔不是「越久越好」：再长用户已经离开列表了。
   static const List<Duration> _retryDelays = <Duration>[
     Duration(milliseconds: 1200),
     Duration(seconds: 3),
+    Duration(seconds: 12),
   ];
 
   @override

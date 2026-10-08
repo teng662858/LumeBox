@@ -581,7 +581,9 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
         _buildFilterBar(),
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+            // 尾部只留「页面节奏（24）+ 右下角 FAB 的净空（56）」：二级页底下没有
+            // Dock，96 那套会多出一截空白（用户口径：二级页底部不要多余留白）。
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
             children: <Widget>[
               for (final section in visible) ..._buildSectionChildren(section),
             ],

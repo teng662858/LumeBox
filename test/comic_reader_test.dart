@@ -251,6 +251,17 @@ void main() {
       isTrue,
       reason: '在阅读设置页改的开关同样立刻写回阅读器',
     );
+    // 用户口径（第十一次反馈）：背景 / 点击行为 / 翻页方向 / 跨页配对也在这里。
+    for (final title in <String>['背景', '点击行为', '翻页方向', '跨页配对']) {
+      expect(find.text(title), findsOneWidget, reason: '「$title」应已搬到阅读设置页');
+    }
+    await tester.tap(find.text('从右往左'));
+    await tester.pumpAndSettle();
+    expect(
+      ComicReaderSettings.load(library).direction,
+      ComicReadingDirection.rightToLeft,
+      reason: '在阅读设置页改的翻页方向同样立刻写回阅读器',
+    );
   });
 
   testWidgets('阅读背景：切到纯白后落库，页面底色立即跟着换', (tester) async {
@@ -261,7 +272,10 @@ void main() {
       reason: '默认纯黑，与改动前一致',
     );
 
+    // 用户口径（第十一次反馈）：背景从底部面板搬到【阅读设置】二级页。
     await openToolbar(tester);
+    await tester.tap(find.byTooltip('阅读设置'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('纯白'));
     await tester.pumpAndSettle();
 
@@ -270,6 +284,10 @@ void main() {
       ComicReaderBackground.white,
       reason: '背景要落库，重进阅读器仍然生效',
     );
+
+    // 回到阅读页：底色当场就该换成纯白（设置是即时写回的）。
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     expect(
       tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
       const Color(0xFFFFFFFF),
@@ -281,6 +299,9 @@ void main() {
     await openToolbar(tester);
     await tester.tap(find.text('单页左右翻页'));
     await tester.pumpAndSettle();
+    // 用户口径（第十一次反馈）：「点击行为」也搬到了【阅读设置】二级页。
+    await tester.tap(find.byTooltip('阅读设置'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('点击翻页'));
     await tester.pumpAndSettle();
     expect(
@@ -288,6 +309,8 @@ void main() {
       ComicTapAction.pageTurn,
       reason: '点击行为要落库',
     );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
 
     // 收起面板（分区模式下点中间 = 呼出 / 收起工具栏）。
     // 注意避开屏幕正中：加载失败的占位在那里画了「点击重试」按钮，
@@ -327,7 +350,7 @@ void main() {
   });
 
   testWidgets('小屏 / 横屏：设置面板超限时内部滚动，不溢出', (tester) async {
-    // 双页跨页是最坏情况（多一行「跨页配对」）。
+    // 双页跨页：面板那几行之外还有页码 / 换章那一行（「跨页配对」已搬到阅读设置页）。
     const ComicReaderSettings(mode: ComicReadingMode.doublePage).save(library);
     await pumpReader(tester, surface: const Size(640, 360));
     await tester.tapAt(const Offset(320, 180));
@@ -356,23 +379,33 @@ void main() {
     expect(progress.page, 0);
   });
 
-  testWidgets('目录面板有恒定的关闭出口（章节多时也滚不掉）', (tester) async {
+  testWidgets('目录面板：没有关闭叉号，左右侧滑都能回阅读页', (tester) async {
     await pumpReader(tester);
     await openToolbar(tester);
 
     await tester.tap(find.byIcon(Icons.list));
     await tester.pumpAndSettle();
+    expect(find.text('目录'), findsOneWidget);
+    // 用户口径（第十一次反馈）：右上角的关闭叉号删掉，出口改成手势。
+    expect(find.byIcon(Icons.close), findsNothing, reason: '目录面板不该再有叉号');
 
-    // 用户口径：不管滚到哪儿，目录面板都要有一个「关闭」能回阅读页。
-    expect(find.byTooltip('关闭'), findsOneWidget);
-    // 把列表滚一段，关闭按钮依旧在（它固定在列表之上，不随内容滚走）。
-    await tester.drag(find.byType(ListView).last, const Offset(0, -260));
+    // 竖直方向仍然是「滚目录」：横向手势不许把滚动吃掉。
+    await tester.drag(find.byType(ListView).last, const Offset(0, -120));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('关闭'), findsOneWidget);
+    expect(find.text('目录'), findsOneWidget, reason: '滚目录不该关掉面板');
 
-    await tester.tap(find.byTooltip('关闭'));
+    // 向左侧滑：过阈值即回阅读页。
+    await tester.drag(find.text('目录'), const Offset(-200, 0));
     await tester.pumpAndSettle();
-    expect(find.text('目录'), findsNothing, reason: '关闭后回到阅读页，面板消失');
+    expect(find.text('目录'), findsNothing, reason: '向左侧滑要关掉面板');
+
+    // 向右侧滑同样能关（两个方向都认）。
+    await tester.tap(find.byIcon(Icons.list));
+    await tester.pumpAndSettle();
+    expect(find.text('目录'), findsOneWidget);
+    await tester.drag(find.text('目录'), const Offset(200, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('目录'), findsNothing, reason: '向右侧滑也要关掉面板');
   });
 
   testWidgets('平台守卫：无图源运行时时只渲染骨架，不取章节、不落进度', (tester) async {

@@ -454,6 +454,8 @@ class _SnapshotHttp extends LumeHttp {
     String method = 'GET',
     Map<String, String>? headers,
     String? body,
+    // 宿主签名里的「读满上限就断开」（探测型请求用，见 network_queue 的 maxBytes）。
+    int? maxBytes,
     Duration? timeout,
   }) async {
     final table = method.toUpperCase() == 'POST' ? post : get;

@@ -149,6 +149,8 @@ class _StaticHttp implements LumeHttp {
     String method = 'GET',
     Map<String, String>? headers,
     String? body,
+    // 宿主签名里的「读满上限就断开」（探测型请求用，见 network_queue 的 maxBytes）。
+    int? maxBytes,
     Duration? timeout,
   }) async =>
       LumeHttpResponse(
@@ -231,8 +233,9 @@ Future<_AuditReport> _audit(File script, Section section) async {
   }
 
   // ② 沙箱里能不能载入（用到沙箱没有的能力会在这一步报错）。
+  final http = _ChallengeHttp();
   final host = LumeSourceHost(
-    _ChallengeHttp(),
+    http,
     timeout: const Duration(seconds: 3),
     section: section,
     sourceId: name.replaceAll('.js', ''),
@@ -261,6 +264,12 @@ Future<_AuditReport> _audit(File script, Section section) async {
   );
 
   // ③ 五个契约方法都实现，且被防护拦下时抛对标记。
+  // 这次审计的入参是**合成 id**（`probe`），站点侧的响应由 [_ChallengeHttp] 造假。
+  // 有的脚本会先校验 id 形状、认不出就直接抛自己的领域错误、**一次请求都不发**
+  // （例如 jm18：id 只可能来自 list()/detail()，校验能给出更好的报错）。这不是
+  // 契约问题——审计要守的是「真被防护拦下时抛对标记」，而那需要请求真的发出去。
+  // 因此：没发请求就失败的方法只记录、不计为问题（真实 id 的行为由各脚本自己的
+  // 快照用例守着，见 test/*_source_test.dart）。
   final outcomes = <String>[];
   for (final method in const <String>[
     'categories',
@@ -269,8 +278,15 @@ Future<_AuditReport> _audit(File script, Section section) async {
     'chapters',
     'content',
   ]) {
+    final requestsBefore = http.requests;
     final outcome = await _call(source, method);
-    outcomes.add('$method=${outcome.label}');
+    final reachedNetwork = http.requests > requestsBefore;
+    outcomes.add(
+      '$method=${outcome.kind == _OutcomeKind.other && !reachedNetwork ? '拒绝入参' : outcome.label}',
+    );
+    if (outcome.kind == _OutcomeKind.other && !reachedNetwork) {
+      continue;
+    }
     switch (outcome.kind) {
       case _OutcomeKind.ok:
       case _OutcomeKind.marker:
@@ -392,6 +408,10 @@ bool _isNetworkFailure(String message) =>
 
 /// 截图站的 403 挑战页：CF 拦下时真实响应就长这样（标题 + `cf-mitigated`）。
 class _ChallengeHttp implements LumeHttp {
+  /// 发过多少次请求。用来分辨「脚本先校验入参、根本没发请求」与「发了请求但
+  /// 抛出无法归类的结果」——前者用合成 id 探测时是正常的（见审计主体的说明）。
+  int requests = 0;
+
   /// 只有 [send] 会被脚本用到的桥走这一份；其余 getter 是 [LumeHttp] 的配置面，
   /// 审计不需要它们，给一份固定值即可。
   @override
@@ -422,8 +442,11 @@ class _ChallengeHttp implements LumeHttp {
     String method = 'GET',
     Map<String, String>? headers,
     String? body,
+    // 宿主签名里的「读满上限就断开」（探测型请求用，见 network_queue 的 maxBytes）。
+    int? maxBytes,
     Duration? timeout,
   }) async {
+    requests++;
     return LumeHttpResponse(
       statusCode: 403,
       body: Uint8List.fromList(utf8.encode(_body)),

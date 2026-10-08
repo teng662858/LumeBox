@@ -83,14 +83,40 @@ class _AppShellState extends State<AppShell> {
   /// 底座尺寸一律不动（48 仍容得下 20 + 3 + 15 = 38 的内容）。这是**内容那一条**
   /// 的高度，不含手势条避让。
   static const double _dockHeight = 48;
-  /// Dock 与屏幕左右的留白。
+  /// Dock 与屏幕左右的留白（**下限**：窄屏兜底用）。
   static const double _dockMargin = 12;
+
+  /// 悬浮胶囊的**最大宽度**（用户口径：左右两侧大幅收窄，缩短悬浮背景的总宽度）。
+  ///
+  /// 胶囊铺满整个屏宽会显得笨重，也和「悬浮」的观感不符：这里给宽度封顶、居中，
+  /// 两侧留白 =（屏幕宽 − 它）÷ 2 —— 440pt 的机器上是 60、393pt 的机器上是 36.5。
+  /// 之所以是 320 而不是更小：五个页签各分到约 61（`Expanded` 平分，再减掉胶囊内
+  /// 那 6pt 的横向内边距），比 44 的最小触达尺寸宽松一档——**收窄容器不等于
+  /// 收窄点击区域**（用户口径：不许出现点不到）。
+  static const double _dockMaxWidth = 320;
+
+  /// 胶囊里的横向内边距：让首尾项离胶囊圆角留一档，五项之间的净间距也更紧。
+  static const double _dockInnerPadding = 6;
+
+  /// 胶囊左右两侧的实际留白：宽屏按「居中 + 最大宽度」，窄屏退回 [_dockMargin]。
+  ///
+  /// 用**布局给的实际宽度**算，不要用 `MediaQuery.sizeOf`：正常手机上两者一致，
+  /// 但「父级给的宽度 ≠ 视图宽度」的场合（测试里的 `setSurfaceSize`、将来的分屏 /
+  /// 浮窗宿主）就会错位——实测错位时胶囊整体偏出屏幕右缘、五个页签挤成 0 宽。
+  static double dockMarginFor(double availableWidth) {
+    final margin = (availableWidth - _dockMaxWidth) / 2;
+    return margin > _dockMargin ? margin : _dockMargin;
+  }
 
   /// 胶囊外框与屏幕**底边**的距离：**保留一小段悬浮留白**。
   ///
   /// 用户口径（第八次反馈）：整套（胶囊 + 底部留白）一起收紧、往下收，但**仍然要
   /// 留一小段**空白，不许贴死（悬浮感要有）。8 → 6。
-  static const double _dockBottomMargin = 6;
+  ///
+  /// 用户口径（第十一次反馈）：整体**再往上抬一小段**，别贴死屏幕底边。6 → 12。
+  /// 抬的是胶囊外框：外框下沿离屏幕底边 12，内容那一条的位置由
+  /// [dockContentInset] 反向补偿，**内容离底边的总净空仍是 20**（手势条那块不变）。
+  static const double _dockBottomMargin = 12;
   static const double _dockSpacing = 8;
 
   /// 胶囊**内部**内容要让出的底部高度（手势条避让）。
@@ -328,36 +354,46 @@ class _AppShellState extends State<AppShell> {
   /// 左下角恰好是**亮度手势区**，一个浮在那里的齿轮按钮既挡画面又抢手势。
   Widget _buildSettingsEntry({required bool visible}) {
     return Positioned(
-      left: _dockMargin,
-      // 落在 Dock 上方一档：Dock 现在贴着屏幕底边，套 SafeArea 会与它叠在一起。
+      left: 0,
+      right: 0,
+      // 落在 Dock 上方一档。
       bottom: _dockBottomMargin +
           _dockHeight +
           dockContentInset(context) +
           _dockSpacing,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: 0, end: visible ? 0 : _entryHideTravel),
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        builder: (context, dy, child) =>
-            Transform.translate(offset: Offset(0, dy), child: child),
-        child: IgnorePointer(
-          ignoring: !visible,
-          child: Tooltip(
-            message: '设置（底部导航栏里已隐藏）',
-            child: Material(
-              key: AppShell.settingsEntryKey,
-              color: LumeTheme.surface,
-              shape: const CircleBorder(),
-              elevation: 3,
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: () => _select(ShellTab.settingsId),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Icon(
-                    Icons.settings_outlined,
-                    size: 22,
-                    color: LumeTheme.textSecondary,
+      // 与胶囊左沿对齐：留白同样按**布局宽度**算（见 [dockMarginFor]）。
+      child: LayoutBuilder(
+        builder: (context, constraints) => Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: EdgeInsets.only(left: dockMarginFor(constraints.maxWidth)),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: visible ? 0 : _entryHideTravel),
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              builder: (context, dy, child) =>
+                  Transform.translate(offset: Offset(0, dy), child: child),
+              child: IgnorePointer(
+                ignoring: !visible,
+                child: Tooltip(
+                  message: '设置（底部导航栏里已隐藏）',
+                  child: Material(
+                    key: AppShell.settingsEntryKey,
+                    color: LumeTheme.surface,
+                    shape: const CircleBorder(),
+                    elevation: 3,
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => _select(ShellTab.settingsId),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Icon(
+                          Icons.settings_outlined,
+                          size: 22,
+                          color: LumeTheme.textSecondary,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -398,7 +434,6 @@ class _AppShellState extends State<AppShell> {
           visible: _controller.visible,
           height: _dockHeight,
           contentInset: contentInset,
-          margin: _dockMargin,
           bottomMargin: _dockBottomMargin,
         ),
       ),
@@ -493,7 +528,6 @@ class _DockBar extends StatelessWidget {
     required this.visible,
     required this.height,
     required this.contentInset,
-    required this.margin,
     required this.bottomMargin,
   });
 
@@ -509,8 +543,6 @@ class _DockBar extends StatelessWidget {
   /// 图标与文字往上缩这一段（用户口径 6）。
   final double contentInset;
 
-  final double margin;
-
   /// 胶囊外框离屏幕底边的距离：0 = 外框直接画到屏幕底边（用户口径 6）。
   final double bottomMargin;
 
@@ -519,56 +551,69 @@ class _DockBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 隐藏时整块（含内边距）平移到屏幕下沿之外，不占视觉、不响应点击。
-    return AnimatedSlide(
-      offset: visible ? Offset.zero : const Offset(0, 1.2),
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOut,
-      // **不套 SafeArea**（用户口径 6）：胶囊外框直接画到屏幕底边，
-      // 给手势条让路的是**里面的内容**——见下面的 [contentInset]。
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(margin, 0, margin, bottomMargin),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            // 圆角椭圆（胶囊）：半径取容器高度的一半，容器越薄越像胶囊。
-            borderRadius: BorderRadius.circular(capsuleHeight / 2),
-            boxShadow: LumeTheme.floatShadow,
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(capsuleHeight / 2),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: LumeTheme.glass,
-                  borderRadius: BorderRadius.circular(capsuleHeight / 2),
-                  border: Border.all(color: LumeTheme.hairline),
-                ),
-                child: SizedBox(
-                  height: capsuleHeight,
-                  child: Padding(
-                    // 内容往上缩：底部这一段只留给手势条（这一段也不响应点击——
-                    // 手指从屏幕底边往上划是系统手势，不该先打到胶囊里的按钮）。
-                    padding: EdgeInsets.only(bottom: contentInset),
-                    child: Row(
-                      children: <Widget>[
-                        for (final tab in tabs)
-                          Expanded(
-                            child: _DockItem(
-                              tab: tab,
-                              selected: tab.id == activeId,
-                              onTap: () => onSelect(tab.id),
-                            ),
+    // 左右留白按**布局宽度**算（见 [_AppShellState.dockMarginFor]）：收窄 + 居中。
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final margin = _AppShellState.dockMarginFor(constraints.maxWidth);
+        // 隐藏时整块（含内边距）平移到屏幕下沿之外，不占视觉、不响应点击。
+        return AnimatedSlide(
+          offset: visible ? Offset.zero : const Offset(0, 1.2),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          // **不套 SafeArea**（用户口径 6）：胶囊外框直接画到屏幕底边，
+          // 给手势条让路的是**里面的内容**——见下面的 [contentInset]。
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(margin, 0, margin, bottomMargin),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                // 圆角椭圆（胶囊）：半径取容器高度的一半，容器越薄越像胶囊。
+                borderRadius: BorderRadius.circular(capsuleHeight / 2),
+                boxShadow: LumeTheme.floatShadow,
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(capsuleHeight / 2),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: LumeTheme.glass,
+                      borderRadius: BorderRadius.circular(capsuleHeight / 2),
+                      border: Border.all(color: LumeTheme.hairline),
+                    ),
+                    child: SizedBox(
+                      height: capsuleHeight,
+                      child: Padding(
+                        // 内容往上缩：底部这一段只留给手势条（这一段也不响应点击——
+                        // 手指从屏幕底边往上划是系统手势，不该先打到胶囊里的按钮）。
+                        padding: EdgeInsets.only(bottom: contentInset),
+                        // 胶囊收窄之后，首尾两项离圆角留一档内边距：五项之间的净间距
+                        // 跟着一起收紧（用户口径：内部 tab 间距同步收紧）。
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: _AppShellState._dockInnerPadding,
                           ),
-                      ],
+                          child: Row(
+                            children: <Widget>[
+                              for (final tab in tabs)
+                                Expanded(
+                                  child: _DockItem(
+                                    tab: tab,
+                                    selected: tab.id == activeId,
+                                    onTap: () => onSelect(tab.id),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

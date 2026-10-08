@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/reading/browse_layout.dart';
 import '../../core/reading/reading.dart';
 import '../../core/net/waf.dart';
+import '../../core/net/waf_auto_verify.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
@@ -82,10 +83,46 @@ class _SourceHomeViewState extends State<SourceHomeView> {
       final home = await (source as HomeCapable).home();
       if (!mounted || seq != _seq) return;
       setState(() => _home = home);
+      _preloadFirstScreen(home);
     } catch (error) {
       if (!mounted || seq != _seq) return;
       setState(() => _error = error);
     }
+  }
+
+  /// 用户显式发起的一次尝试（卡片上的【重试】）：**先武装，再重放**。
+  ///
+  /// 武装是给 [WafAutoVerify] 的一次性许可：这一次若仍被 WAF 拦下，自动验证小窗
+  /// 才允许弹出来；被动路径（切图源、切页签预热、下拉刷新）不武装，因此不弹窗
+  /// （用户抱怨的正是「首页还没进来就自己蹦出一个验证窗」）。收尾后立刻撤回许可。
+  Future<void> _retryWithWaf() async {
+    final source = widget.source;
+    WafAutoVerify.arm(section: source.section, sourceId: source.id);
+    try {
+      await _load();
+    } finally {
+      WafAutoVerify.disarm(section: source.section, sourceId: source.id);
+    }
+  }
+
+  /// 首屏封面的预取：第一块板块的前几张。
+  ///
+  /// 横向板块是懒构建的（只建可见卡片），后面的卡片进视口时自己会取；这里补的是
+  /// 「首屏那几张要立刻出现」。以前这里完全不预取、而且卡片按原图解（见
+  /// [_HomeCard]），首屏封面一边下载一边解码，看着就是「半天不出图」。
+  void _preloadFirstScreen(SourceHome home) {
+    final pipeline = widget.pipeline;
+    if (pipeline == null) return;
+    final items = home.isBoards
+        ? (home.boards.isEmpty ? const <SourceItem>[] : home.boards.first.items)
+        : home.items;
+    final urls = <String>[];
+    for (final item in items) {
+      if (urls.length >= 12) break;
+      final cover = (item.cover ?? '').trim();
+      if (cover.isNotEmpty) urls.add(cover);
+    }
+    pipeline.preload(urls, targetWidth: _HomeCard.coverWidth);
   }
 
   /// 被 WAF 拦下：网页视图过校验 → 存会话 → 重新拉首页（用户口径 2.1）。
@@ -149,7 +186,7 @@ class _SourceHomeViewState extends State<SourceHomeView> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  OutlinedButton(onPressed: _load, child: const Text('重试')),
+                  OutlinedButton(onPressed: _retryWithWaf, child: const Text('重试')),
                   if (kind == WafFailureKind.webView) ...<Widget>[
                     const SizedBox(width: 10),
                     // 与列表页同一个出口（用户口径 2.1）：内置网页视图过校验后自动重拉。
@@ -295,6 +332,13 @@ class _HomeCard extends StatelessWidget {
   final SectionImagePipeline? pipeline;
   final VoidCallback onTap;
 
+  /// 封面解码宽度：与探索页网格同一档（`CoverThumb(width: 300)`）。
+  ///
+  /// 卡片本身约 104 宽，以前**不给解码宽度**＝按原图解：一屏几十张原图直接冲爆
+  /// 缩略图预算（24MB），而且缓存键是裸 URL、与探索页那两档（160 / 300）都对不上，
+  /// 同一张封面在首页与列表里各存一份。统一到 300：清晰度够，键也统一。
+  static const int coverWidth = 300;
+
   @override
   Widget build(BuildContext context) {
     final style = BrowseLayoutSettings.instance.gridTitleStyle;
@@ -335,6 +379,7 @@ class _HomeCard extends StatelessWidget {
           : SectionImage(
               pipeline: pipeline!,
               url: item.cover ?? '',
+              targetWidth: coverWidth,
               fit: BoxFit.cover,
             ),
     );
@@ -396,6 +441,7 @@ class _SourceHomeMorePageState extends State<SourceHomeMorePage> {
         _items.addAll(result.items);
         _loading = false;
       });
+      _preload(result.items, more: page > 1);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -403,6 +449,35 @@ class _SourceHomeMorePageState extends State<SourceHomeMorePage> {
         _error = error;
       });
     }
+  }
+
+  /// 尾部「加载失败，点击重试」：用户显式发起的一次尝试——同样先武装再重放，
+  /// 这一次若被 WAF 拦下才允许弹自动验证小窗（滚动触底的被动加载不武装）。
+  Future<void> _retryWithWaf() async {
+    final source = widget.source;
+    WafAutoVerify.arm(section: source.section, sourceId: source.id);
+    try {
+      await _loadMore();
+    } finally {
+      WafAutoVerify.disarm(section: source.section, sourceId: source.id);
+    }
+  }
+
+  /// 预取封面（与探索页同一套口径：只取开头一小段、解码宽度与 tile 一致）。
+  ///
+  /// 排行榜这类「更多」页以前完全不预取：一屏十几张封面同时冷启，图床按 IP 限流时
+  /// 一批会集体空白（用户口径：首页/二级列表很多封面显示不出来）。
+  void _preload(List<SourceItem> items, {bool more = false}) {
+    final pipeline = widget.pipeline;
+    if (pipeline == null) return;
+    final limit = more ? 8 : 12;
+    final urls = <String>[];
+    for (final item in items) {
+      if (urls.length >= limit) break;
+      final cover = (item.cover ?? '').trim();
+      if (cover.isNotEmpty) urls.add(cover);
+    }
+    pipeline.preload(urls, targetWidth: _HomeCard.coverWidth);
   }
 
   @override
@@ -431,7 +506,7 @@ class _SourceHomeMorePageState extends State<SourceHomeMorePage> {
               if (_error != null) {
                 return Center(
                   child: TextButton(
-                    onPressed: _loadMore,
+                    onPressed: _retryWithWaf,
                     child: const Text('加载失败，点击重试'),
                   ),
                 );

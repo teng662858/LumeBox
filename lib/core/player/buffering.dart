@@ -42,6 +42,26 @@ class BufferingConfig {
   ///   又不会像默认那样先把大块数据拉满再开始。
   static const BufferingConfig defaults = BufferingConfig();
 
+  /// 由「前向缓冲」设置（模块设置里的秒数）派生一份参数。
+  ///
+  /// 为什么要有这条派生：那个滑杆此前只把值存进库，**没有任何内核消费它**
+  /// （真机上「调了没反应」）。用户口径是一个设置，因此这里映射到两套内核
+  /// **等价的那一项**：
+  /// - AVPlayer：`preferredForwardBufferDuration`（[forwardBuffer]）；
+  /// - MPV：`demuxer-readahead-secs`（[readAhead]）。
+  ///
+  /// [forwardBuffer] 为 0 / 负 = 交给内核自动决定，与 [defaults] 完全一致。
+  /// **[minimizeStalling] 永远保持 false**：它是「不为了填缓冲而推迟起播」的
+  /// 底线（见 [defaults] 的说明），前向缓冲只决定播放中预读多少，不许变成
+  /// 起播前的一次等待。
+  factory BufferingConfig.forForwardBuffer(Duration forwardBuffer) {
+    if (forwardBuffer <= Duration.zero) return defaults;
+    return BufferingConfig(
+      forwardBuffer: forwardBuffer,
+      readAhead: forwardBuffer,
+    );
+  }
+
   /// 前向缓冲时长；[Duration.zero] 表示交给内核自动决定。
   final Duration forwardBuffer;
 

@@ -137,3 +137,77 @@ class PlayerKernelLauncher {
     LumeLog.warn('[player] ${kernel.label} 初始化失败：本次运行内不再提供');
   }
 }
+
+/// 预启动的内核实例：**在还没拿到播放地址**的那段时间里先把内核建起来。
+///
+/// 为什么要有它：从点条目到起播之间还隔着两段沙箱往返（剧集列表 / 播放地址，
+/// 各 10 秒预算），而内核创建（MPV 首次装载原生库）是这条链上最贵的一步。
+/// 让两件事并行，起播就只等较慢的那一个，而不是两段时间相加。
+///
+/// 纪律与播放器页里那条链路**完全一致**：创建、8 秒预算、超时丢弃、失败回退
+/// AVPlayer、熔断全都发生在 [PlayerKernelLauncher] 里——本类只负责**交接**
+/// 结果，绝不绕过任何一条保护，也不自己 new 播放器。
+///
+/// 交接口径（两边都是一次性的，第二次调用是安全空操作）：
+/// - [take]：播放器页接手，拿走原生实例（此后实例归调用方管）；
+/// - [discard]：没人接手（地址没解析出来 / 页面没起来 / 内核不匹配）——
+///   等创建结束**就地释放**，绝不留下没人管的实例。
+class PlayerPrelaunch {
+  PlayerPrelaunch._(this.kernel, this._launch);
+
+  /// 发起一次预启动。
+  ///
+  /// [after] 非空时先等它完成再真正创建：浏览页用它让「正在解析播放地址」的
+  /// 忙态先上屏一帧——内核创建里的原生装载是同步阻塞的（见
+  /// [PlayerKernelLauncher] 的实现边界），不等这一帧，用户看到的就是一个
+  /// 卡住不动的列表。
+  factory PlayerPrelaunch.start(
+    PlayerKernel kernel, {
+    AbstractPlayer? Function(PlayerKernel kernel)? factory,
+    Duration timeout = PlayerFactory.mpvInitTimeout,
+    Future<void>? after,
+  }) {
+    final launcher = PlayerKernelLauncher(factory: factory, timeout: timeout);
+    Future<PlayerLaunch?> run() async {
+      if (after != null) await after;
+      return launcher.launch(kernel);
+    }
+
+    return PlayerPrelaunch._(kernel, run());
+  }
+
+  /// 预启动的那个内核（播放器页据此判断能不能接手）。
+  final PlayerKernel kernel;
+
+  final Future<PlayerLaunch?> _launch;
+
+  bool _consumed = false;
+
+  /// 接手预启动的实例；已被接手 / 已被放弃时返回 null（调用方按常规创建）。
+  Future<PlayerLaunch?> take() async {
+    if (_consumed) return null;
+    _consumed = true;
+    return _launch;
+  }
+
+  /// 放弃这次预启动：等创建结束再释放实例（释放失败只记日志）。
+  Future<void> discard() async {
+    if (_consumed) return;
+    _consumed = true;
+    final PlayerLaunch? launch;
+    try {
+      launch = await _launch;
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      return;
+    }
+    final player = launch?.player;
+    if (player == null) return;
+    try {
+      await player.dispose();
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      LumeLog.warn('[player] 释放预启动的 ${kernel.label} 实例失败');
+    }
+  }
+}

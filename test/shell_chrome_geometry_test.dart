@@ -186,19 +186,47 @@ void main() {
     }
   });
 
-  testWidgets('底部 Dock 贴在屏幕底边上方一档（对齐参考图的位置）', (tester) async {
+  testWidgets('底部 Dock 悬浮在屏幕底边之上 + 左右大幅收窄（用户口径第十一次）',
+      (tester) async {
     await pumpShell(tester);
 
     final capsule = tester.getRect(dockCapsule());
-    // 用户口径第七次：**保留一小段悬浮留白**——上一版怼死屏幕底边「改过头了」，
-    // 要的是「缩短空隙、不消除空隙」。
+    // 用户口径第七次：**保留一小段悬浮留白**——上一版怼死屏幕底边「改过头了」。
+    // 第十一次：整体**再往上抬一小段**（6 → 12），别贴死屏幕底边。
     final gap = height - capsule.bottom;
     expect(
       gap,
-      inInclusiveRange(4.0, 10.0),
-      reason: '胶囊要悬浮在屏幕底边之上（约 6pt），实测 $gap',
+      inInclusiveRange(10.0, 16.0),
+      reason: '胶囊要悬浮在屏幕底边之上（约 12pt），实测 $gap',
     );
-    expect(capsule.left, closeTo(12, 0.01), reason: '左右悬浮留白仍是 12');
+    // 用户口径第十一次：左右两侧**大幅收窄**，缩短悬浮背景的总宽度——胶囊按
+    // 「最大宽度 320、居中」摆放，440pt 的屏幕上两侧各留 (440-320)/2 = 60。
+    expect(capsule.width, closeTo(320, 0.01), reason: '胶囊总宽度要收到 320');
+    expect(
+      capsule.left,
+      closeTo((width - 320) / 2, 0.01),
+      reason: '胶囊居中：左侧留白 =（屏宽 − 最大宽度）÷ 2',
+    );
+
+    // 收窄容器**不许收窄点击区域**：五项平分之后每项仍要够手指点（≥44）。
+    final items = find
+        .descendant(of: find.byKey(AppShell.dockKey), matching: find.byType(InkWell))
+        .evaluate()
+        .toList();
+    expect(items, isNotEmpty);
+    for (final element in items) {
+      final rect = tester.getRect(find.byWidget(element.widget));
+      expect(
+        rect.width,
+        greaterThanOrEqualTo(44.0),
+        reason: '收窄胶囊后每项只剩 ${rect.width} 宽，点不到',
+      );
+      expect(
+        rect.height,
+        greaterThanOrEqualTo(44.0),
+        reason: '每项高度 ${rect.height} 太小，容易误触',
+      );
+    }
 
     // 而**里面的内容**要避开手势条：图标与文字整体上缩一档；
     // 「内容离屏幕底边」的总净空固定 20（外框留白 + 内部避让）。
@@ -256,6 +284,69 @@ void main() {
     expect(label.style?.fontSize, 11, reason: '底栏文字尺寸不许随容器收窄而变小');
   });
 
+  testWidgets('二级页（push 出来的）不留底部白条：内容一路铺到屏幕底边', (tester) async {
+    tester.view.physicalSize = const Size(width * 3, height * 3);
+    tester.view.devicePixelRatio = 3.0;
+    tester.view.padding = const FakeViewPadding(
+      top: statusInset * 3,
+      bottom: bottomInset * 3,
+    );
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const _SecondaryGlassPage(),
+                  ),
+                ),
+                child: const Text('打开二级页'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开二级页'));
+    await tester.pumpAndSettle();
+
+    // 用户口径：排行榜这类二级页底部不该多出一条浅色留白。
+    // 真因：GlassScaffold 无条件让出底部安全区——壳里那一段正好被悬浮 Dock 盖住
+    // （看不见，也是「最后一行不被 Dock 挡住」的实现），二级页底下没有 Dock，
+    // 同一段就成了白条。现在只在壳里让（见 shared/widgets/glass_card.dart）。
+    final list = tester.getRect(find.byKey(_SecondaryGlassPage.listKey));
+    expect(
+      list.bottom,
+      closeTo(height, 1),
+      reason: '二级页的内容要铺到屏幕底边，实测 ${list.bottom}（屏高 $height）',
+    );
+  });
+
+  testWidgets('壳里的底部安全区仍然让出：宽度正好是 Dock 的脚印（所以看不见）',
+      (tester) async {
+    await pumpShell(tester);
+
+    final capsule = tester.getRect(dockCapsule());
+    // 量**壳内容区**（页面骨架）拿到的底部内边距：它在壳 Scaffold 的 body 之内，
+    // 那里 Flutter 已经把 padding.bottom 换成了「底栏总高」。这一段必须正好等于
+    // 悬浮胶囊占的那一段——等于才是「被胶囊盖住、看不见」，不等于就会露白条，
+    // 或者让最后一行压到 Dock 底下。
+    final pageContext = tester.element(find.byType(GlassScaffold).first);
+    final reserved = MediaQuery.paddingOf(pageContext).bottom;
+    final dockBand = height - capsule.top;
+    expect(
+      reserved,
+      closeTo(dockBand, 0.01),
+      reason: '壳里让出的底部安全区（$reserved）必须等于 Dock 占的那一段'
+          '（胶囊上沿到屏幕底边 = $dockBand）',
+    );
+    expect(reserved, greaterThan(bottomInset), reason: '壳里让的是 Dock 脚印，不是系统手势条');
+  });
+
   testWidgets('顶栏容器下沿两个大圆角（贴屏幕顶端的那两个角保持直角）', (tester) async {
     await pumpBoard(tester);
 
@@ -285,8 +376,9 @@ void main() {
     expect(content.top, closeTo(0, 1), reason: '内容铺满整屏（顶栏浮在其上）');
     expect(
       content.bottom,
-      closeTo(height - bottomInset, 1),
-      reason: '内容一直铺到**底部安全区**（板块页没有 Dock 时就是安全区边界，实测 ${content.bottom}）',
+      closeTo(height, 1),
+      reason: '内容一路铺到屏幕底边（本用例把板块页单独挂载，树里没有 Dock 壳，'
+          '按二级页口径不让底部安全区，实测 ${content.bottom}）',
     );
     // 顶栏下沿到第一条内容（图源条）之间只隔一档常规间距，不是一整条空白。
     final firstRow = tester.getRect(find.text('示例源'));
@@ -304,6 +396,30 @@ void main() {
       reason: '顶栏与第一条内容之间只该留常规间距（实测 $gap）',
     );
   });
+}
+
+/// 一个最小的「二级页」：玻璃骨架 + 可量的滚动视图（量它铺到哪儿）。
+class _SecondaryGlassPage extends StatelessWidget {
+  const _SecondaryGlassPage();
+
+  static const Key listKey = Key('secondary-list');
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassScaffold(
+      behindBar: true,
+      title: '二级页',
+      child: ListView(
+        key: listKey,
+        padding: GlassScaffold.barInset(context).add(
+          const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        ),
+        children: const <Widget>[
+          SizedBox(height: 2000, child: Text('内容')),
+        ],
+      ),
+    );
+  }
 }
 
 /// 三套内核都不可用（本用例只看布局）。

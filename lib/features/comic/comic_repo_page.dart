@@ -222,7 +222,10 @@ class _ComicRepoPageState extends State<ComicRepoPage> {
       );
     }
     return ListView.separated(
-      padding: GlassScaffold.barInset(context).add(const EdgeInsets.fromLTRB(16, 16, 16, 96)),
+      // 尾部只留「页面节奏（24）+ 右下角 FAB 的净空（56）」：这里是 push 出来的
+      // 二级页，底下没有 Dock，96 那套（按 Dock 脚印留的）只会多出一截空白。
+      padding: GlassScaffold.barInset(context)
+          .add(const EdgeInsets.fromLTRB(16, 16, 16, 80)),
       itemCount: repos.length,
       separatorBuilder: (_, _) => const SizedBox(height: 12),
       itemBuilder: (context, index) => _RepoTile(

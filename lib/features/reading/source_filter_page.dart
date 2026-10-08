@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/net/waf.dart';
+import '../../core/net/waf_auto_verify.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
@@ -226,6 +227,21 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
     return id;
   }
 
+  /// 用户显式发起的一次尝试（卡片上的【重试】）：**先武装，再重放**。
+  ///
+  /// 武装是给 [WafAutoVerify] 的一次性许可：这一次若仍被 WAF 拦下，自动验证小窗
+  /// 才允许弹出来；进页面时自己拉的那一次是被动加载——不武装，因此不弹窗（用户
+  /// 抱怨的正是「一进筛选页就自己蹦出一个验证窗」）。收尾后立刻撤回许可。
+  Future<void> _retryWithWaf() async {
+    final source = widget.source;
+    WafAutoVerify.arm(section: source.section, sourceId: source.id);
+    try {
+      await _load(force: true);
+    } finally {
+      WafAutoVerify.disarm(section: source.section, sourceId: source.id);
+    }
+  }
+
   /// 被 WAF 拦下时：内置网页视图过校验 → 存会话 → 重新加载标签（用户要求）。
   ///
   /// 与首页 / 探索页共用同一份流程（[runWafWebViewFlow]）：地址四层兜底，全落空时
@@ -290,18 +306,33 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
                 if (_error != null) ...<Widget>[
                   NoticeCard(
                     title: '筛选标签没取到',
-                    subtitle: '${_error!}\n（筛选项来自源站；被防护拦下时可点下面的'
-                        '「网页视图」过一下人机校验）${_targetHint()}',
+                    subtitle: '${_error!}\n（筛选项来自源站；被防护拦下时点【重试】——'
+                        '仍被拦会弹出校验窗，也可以直接点「网页视图」自己过一下'
+                        '人机校验）${_targetHint()}',
                   ),
-                  if (looksLikeWafFailure('$_error'))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: OutlinedButton.icon(
-                        onPressed: _openWebViewForWaf,
-                        icon: const Icon(Icons.public, size: 18),
-                        label: const Text('网页视图'),
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: <Widget>[
+                        // 【重试】= 用户**显式发起**的一次尝试：先武装，这一次若仍被
+                        // WAF 拦下，自动验证小窗才允许弹出来（进页面时自己拉的那一次
+                        // 是被动加载，不弹窗，只给这张卡）。
+                        OutlinedButton(
+                          onPressed: _retryWithWaf,
+                          child: const Text('重试'),
+                        ),
+                        if (looksLikeWafFailure('$_error'))
+                          OutlinedButton.icon(
+                            onPressed: _openWebViewForWaf,
+                            icon: const Icon(Icons.public, size: 18),
+                            label: const Text('网页视图'),
+                          ),
+                      ],
                     ),
+                  ),
                 ]
                 else if (groups == null)
                   const Padding(

@@ -374,7 +374,38 @@ class SectionImagePipeline {
     }
   }
 
+  /// 一次图片请求要带的头（[withReferer] 为假时**不带 Referer**）。
+  ///
+  /// 抽成静态纯函数是为了能单独钉住这条口径：防盗链的第二次尝试必须真的去掉
+  /// Referer——以前这一步是空转（头照算），只认「无 Referer」的图床封面会一批批空白。
+  ///
+  /// Referer 取图片自己的 origin（与浏览器直接打开图片一致）；图床的防盗链门道：
+  /// 不少站点只认「Referer 是自己域名」。`Accept-Language` 也照浏览器补一份：
+  /// 个别图床按它做地区 / 防盗判断。
+  @visibleForTesting
+  static Map<String, String> imageRequestHeaders(
+    String url, {
+    bool withReferer = true,
+  }) {
+    final origin = Uri.tryParse(url);
+    final referer = origin == null || !origin.hasScheme
+        ? null
+        : '${origin.scheme}://${origin.host}/';
+    return <String, String>{
+      'User-Agent': LumeNet.settings.userAgent.trim().isEmpty
+          ? LumeHttp.defaultUserAgent
+          : LumeNet.settings.userAgent.trim(),
+      'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'Referer': ?(withReferer ? referer : null),
+    };
+  }
+
   /// 取一次图片字节，并回报「重试有没有意义」。
+  ///
+  /// [withReferer] 为假时**真的不发 Referer**：防盗链的第二种规矩是「只放行没有
+  /// Referer 的请求」，[_download] 专门为它安排了第二次尝试。这一步曾经是空转
+  /// ——头照算、两次请求字节相同，于是这类图床的封面一批批地空白。
   Future<({Uint8List? bytes, bool retryable, bool forbidden})> _fetchOnce(
     String url, {
     bool withReferer = true,
@@ -382,25 +413,10 @@ class SectionImagePipeline {
     try {
       // 图片同样走全局网络队列：单域名并发（2~3）保护图床，429/503 自动退避。
       // 队列管「什么时候发」，这里只管「拿到字节后怎么用」。
-      // 图床的防盗链门道：不少站点只认「Referer 是自己的域名」。
-      // 这里按图片自己的 origin 补一个 Referer（与浏览器直接打开图片时一致），
-      // 并带上正常的 Accept——真机反馈「封面很多加载不出来」，这是最常见的一条。
-      final origin = Uri.tryParse(url);
-      final referer = origin == null || !origin.hasScheme
-          ? null
-          : '${origin.scheme}://${origin.host}/';
       final response = await LumeNet.queue.send(
         NetworkRequest(
           url: url,
-          headers: <String, String>{
-            'User-Agent': LumeNet.settings.userAgent.trim().isEmpty
-                ? LumeHttp.defaultUserAgent
-                : LumeNet.settings.userAgent.trim(),
-            'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-            // 与浏览器一致的语言头：个别图床会按它做地区/防盗判断。
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Referer': ?referer,
-          },
+          headers: imageRequestHeaders(url, withReferer: withReferer),
           source: '图片缓存',
           proxy: LumeNet.settings.proxy,
         ),

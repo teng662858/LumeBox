@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/player/abstract_player.dart';
 import '../../core/player/brightness.dart';
+import '../../core/player/buffering.dart';
 import '../../core/player/playback_session.dart';
 import '../../core/player/player_capabilities.dart';
 import '../../core/player/pip.dart';
@@ -23,6 +24,7 @@ import '../../core/player/player_stats.dart';
 import '../../core/player/skip_marks.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
+import '../../core/session/section_module_settings.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
@@ -70,6 +72,7 @@ class VideoPlayerPage extends StatefulWidget {
     this.library,
     this.playbackBackend,
     this.speedMeter,
+    this.prelaunch,
   });
 
   /// 起播媒体（含防盗链请求头）。
@@ -115,6 +118,12 @@ class VideoPlayerPage extends StatefulWidget {
 
   /// 网速表（测试注入用）。为空时用真实现（向播放地址发 Range 探测）。
   final PlaybackSpeedMeter? speedMeter;
+
+  /// 浏览页在解析播放地址期间**预启动**的内核实例（见 [PlayerPrelaunch]）。
+  ///
+  /// 有它就省掉一次「进页面才开始建内核」的等待：第一次重建直接接手，内核不匹配
+  /// （用户在别处换了内核）或已被用掉时拒绝接手并就地释放。
+  final PlayerPrelaunch? prelaunch;
 
   /// 控制栏与上方画面之间的空白（用户要求：进度条整体下移、与画面之间拉开距离）。
   ///
@@ -190,6 +199,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   /// 本板块的阅读库：视频进度与「继续观看」落在它里面。
   ReadingLibrary? _library;
 
+  /// 起播缓冲参数（模块设置里的「前向缓冲」派生，见 [BufferingConfig.forForwardBuffer]）。
+  ///
+  /// 调库失败或还没读到时就是默认值——与历史行为一致（默认值 = 起播最快那套）。
+  BufferingConfig _buffering = BufferingConfig.defaults;
+
+  /// 浏览页预启动的内核实例：**只有第一次重建**能接手（见 [_rebuildPlayer]）。
+  PlayerPrelaunch? _prelaunch;
+
   /// 当前正在播的图源条目：有它才记进度。
   VideoPlayTarget? _target;
 
@@ -249,6 +266,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   /// 网速表：按播放地址实测（三套内核都适用，见 [PlaybackSpeedMeter]）。
   late final PlaybackSpeedMeter _speed = widget.speedMeter ?? PlaybackSpeedMeter();
+
+  /// 起播自动测速的排期（见 [_scheduleSpeedProbe]）；换媒体与退出页面都会取消。
+  Timer? _speedProbeTimer;
+
+  /// 当前这条媒体是否已经测过（同一地址不重复自动测；手动「测速」仍可强制重测）。
+  bool _speedProbeFired = false;
+
+  /// 首帧之后再等多久才测速。
+  static const Duration _speedProbeGrace = Duration(seconds: 3);
 
   /// 进度落盘节流：播放中每 5 秒写一次，暂停 / 切集 / 退出时立即写。
   Timer? _progressTimer;
@@ -336,6 +362,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     // 作品身份由 [_startPlayback] 在起播时落定：这里不预设，否则「换作品前先落盘
     // 上一部进度」那一步会在首次起播时写出一条位置为 0 的空记录。
     _media = media;
+    _prelaunch = widget.prelaunch;
     if (_anyKernelAvailable) _boot();
   }
 
@@ -347,6 +374,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     _progressTimer = null;
     _autoHideTimer?.cancel();
     _autoHideTimer = null;
+    // 起播测速的排期（见 [_scheduleSpeedProbe]）：页面走了就不再测。
+    _speedProbeTimer?.cancel();
+    _speedProbeTimer = null;
     _saveProgress(force: true);
 
     PlaybackOrientationController.instance
@@ -372,6 +402,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       await session?.dispose();
       await player?.dispose();
     }());
+    // 预启动的实例没人接手（页面没起播就退了 / 内核库打不开）：就地释放，
+    // 绝不留下一个还在后台活着、谁也拿不到的播放器。
+    final prelaunch = _prelaunch;
+    _prelaunch = null;
+    if (prelaunch != null) unawaited(prelaunch.discard());
     _store?.close();
     if (widget.library == null) ReadingLibrary.close(Section.video);
     _input.dispose();
@@ -397,6 +432,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     _wasPlaying = playing;
     if (snapshot != null) {
+      // 首帧到了（播放中且不在缓冲）才去排测速：起播抢带宽的事不做（见
+      // [_scheduleSpeedProbe]）。
+      if (playing && !snapshot.buffering) _scheduleSpeedProbe();
       // 片头片尾：每次快照变化判一次（判定本身是纯函数，跳过一次后不再重复）。
       _maybeSkip(_skipMarks, snapshot.position, snapshot.duration);
       // 锁屏播放条跟随播放状态（进度在会话内部节流，不必在这里省）。
@@ -467,6 +505,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       setState(() {
         _library = library;
         _danmakuSettings = DanmakuSettingsStore(library).load();
+        // 「前向缓冲」在**模块设置**里（与设置页同一份数据），派生成内核参数；
+        // 装载前经 setBuffering 交给内核（见 _rebuildPlayer）。
+        _buffering = BufferingConfig.forForwardBuffer(
+          SectionModuleSettings.load(library).buffer,
+        );
       });
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
@@ -495,7 +538,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       onEvent: _onPipEvent,
     );
     _commandSubscription = _playback.commands.listen(_onPlaybackCommand);
-    await _probeBrightness();
+    // 亮度探测**不挡在创建内核前面**：它是两次平台通道往返，与「建播放器」
+    // 毫无依赖（结果只服务亮度手势）。此前串行等待等于让起播白等两个往返。
+    unawaited(_probeBrightness());
     await _rebuildPlayer();
     // 内核就绪后再把媒体交出去（有媒体、且播放器真的在手上时）。
     //
@@ -509,14 +554,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   /// 探测系统亮度能力，并把当前值对齐到亮度手势的起点。
+  ///
+  /// 它是**发出去就不管**的（见 [_boot]）：拿不到结论时手势走「页面内遮罩」的
+  /// 降级路径，不该因此让起播失败——所以这里自己吞掉异常，只记日志。
   Future<void> _probeBrightness() async {
-    final supported = await _brightnessBackend.isSupported();
-    final current = supported ? await _brightnessBackend.currentBrightness() : null;
-    if (!mounted) return;
-    setState(() {
-      _systemBrightness = supported;
-      if (current != null) _brightness = current;
-    });
+    try {
+      final supported = await _brightnessBackend.isSupported();
+      final current =
+          supported ? await _brightnessBackend.currentBrightness() : null;
+      if (!mounted) return;
+      setState(() {
+        _systemBrightness = supported;
+        if (current != null) _brightness = current;
+      });
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      LumeLog.warn('[player] 亮度能力探测失败，本次手势走页面内遮罩');
+    }
   }
 
   /// 按当前设置创建播放器，并把媒体与播放位置接回去。
@@ -554,7 +608,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
     PlayerLaunch? launch;
     try {
-      launch = await _launcher.launch(kernel);
+      // 浏览页预启动的实例：**只有第一次重建**能接手（此后 _prelaunch 已清空）。
+      // 内核不匹配（用户在别处换了内核 / 目录已熔断）就拒绝接手并就地释放——
+      // 宁可少省一次等待，也不让两个内核实例同时活着。
+      final prelaunch = _prelaunch;
+      _prelaunch = null;
+      if (prelaunch != null) {
+        if (prelaunch.kernel == kernel) {
+          launch = await prelaunch.take();
+        } else {
+          unawaited(prelaunch.discard());
+        }
+      }
+      launch ??= await _launcher.launch(kernel);
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       launch = null;
@@ -613,6 +679,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     player.stats.addListener(_onStatsChanged);
 
     try {
+      // 缓冲参数要先于装载落定（见 [AbstractPlayer.setBuffering]）：模块设置里的
+      // 「前向缓冲」就是经这里真正生效的（0 = 交给内核自动决定）。
+      await player.setBuffering(_buffering);
       await player.applySettings(_settings);
       final media = _media;
       if (media != null) await _loadMedia(media);
@@ -671,12 +740,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     final player = _player;
     if (player == null) return;
     _media = media;
+    // 换媒体（换集 / 换线路）即作废上一条的测速排期：等这一集的**首帧**再重新排。
+    _speedProbeTimer?.cancel();
+    _speedProbeTimer = null;
+    _speedProbeFired = false;
     if (mounted) setState(() => _loaded = false);
     await player.load(media);
-    // 起播时实测一次网速（同一地址不重复测；点信息条上的「测速」可强制重测）。
-    if (media.isNetwork) {
-      unawaited(_speed.measure(media.uri, headers: media.headers));
-    }
+    // 测速**不在起播路径上**：等首帧（见 [_scheduleSpeedProbe]）。
+    // 起播那几秒里同一个 CDN 域名上多一条 256KB 探测，就是和首帧缓冲抢带宽。
     if (!mounted) return;
     setState(() => _loaded = player.snapshot.value.error == null);
   }
@@ -2436,6 +2507,28 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       return;
     }
     unawaited(_speed.measure(media.uri, headers: media.headers, force: true));
+  }
+
+  /// 排一次自动测速：**首帧之后**（[playing] 且不在缓冲）再等 [_speedProbeGrace]
+  /// 才真正发探测。
+  ///
+  /// 为什么不能跟着 `load` 一起发（此前的做法）：探测是对**同一个 CDN 域名**再开
+  /// 一条连接要 256KB，而此刻播放器正在为首帧抢带宽——谁慢谁背锅，真机上就是
+  /// 「起播越等越久」；测速本身也测不准（读数里混着播放器的下载）。首帧之后
+  /// 再等几秒，播放器那阵最凶的预取已经过去，读数才是「这条线路的带宽」。
+  ///
+  /// 每条媒体只自动测一次（同一地址 [PlaybackSpeedMeter] 内还会再挡一层）；
+  /// 想立刻要看读数，信息行上的「测速」按钮仍是强制重测的入口。
+  void _scheduleSpeedProbe() {
+    if (_speedProbeTimer != null || _speedProbeFired) return;
+    final media = _media;
+    if (media == null || !media.isNetwork) return;
+    _speedProbeTimer = Timer(_speedProbeGrace, () {
+      _speedProbeTimer = null;
+      if (!mounted) return;
+      _speedProbeFired = true;
+      unawaited(_speed.measure(media.uri, headers: media.headers));
+    });
   }
 
   /// 进度条：拖动中显示预览（松手才真 seek），两端是时间。

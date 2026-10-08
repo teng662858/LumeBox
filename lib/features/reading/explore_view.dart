@@ -7,6 +7,7 @@ import '../../core/reading/browse_layout.dart';
 import '../../core/js/source_registry.dart';
 import '../../core/session/section.dart';
 import '../../core/net/waf.dart';
+import '../../core/net/waf_auto_verify.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
@@ -289,7 +290,12 @@ class _ExploreViewState extends State<ExploreView> {
       // 首页探针**并行**跑：它是一次 JS 求值，串行会把列表加载整整推后一拍
       //（真机表现：进板块先闪两秒「暂无内容」才出数据）。
       unawaited(_probeHomeSupport());
-      await _loadCategories();
+      // 分类同样**并行**：它是第二次 JS 往返（`categories()`），而首屏要的是
+      // `list()`。串行等于让用户多等一整次往返（真机反馈：切板块 / 切图源整体偏慢）。
+      // 代价：万一刚选中的分类在新分类表里已经没了，这一屏会先按旧分类拉一次
+      // （拿不到就落空态 + 【重试】），分类表回来后 _categoryId 被清掉，
+      // 点重试即回到「全部」——可恢复，且比每次都多等一拍划算。
+      unawaited(_loadCategories());
       await _loadPage();
     } on SourceException catch (error) {
       LumeLog.warn('[${widget.section.id}] 探索页源状态异常: $error');
@@ -304,6 +310,35 @@ class _ExploreViewState extends State<ExploreView> {
       });
     }
   }
+
+  /// 用户显式发起的一次尝试：**先武装，再重放**（被动加载不武装，不会弹窗）。
+  ///
+  /// 武装是给 [WafAutoVerify] 的一次性许可：这一次尝试（含它里面的分类 / 列表
+  /// 调用）若仍被 WAF 拦下，自动验证小窗才允许弹出来；切图源、切页签、下拉刷新、
+  /// 板块预热都是被动加载——不武装，因此**不会**弹窗（那正是用户抱怨的「切个源
+  /// 自己蹦出个验证窗」）。尝试收尾后立刻撤回许可（不让它留在空气里）。
+  ///
+  /// 拿不到当前图源（从没解析出源）时不武装：宁可退回「错误卡 + 网页视图」那条
+  /// 手动出口，也不要弹一个不知道该验哪个站的窗。
+  Future<void> _withWafArmed(Future<void> Function() attempt) async {
+    final sourceId = _current?.id ?? _source?.id ?? '';
+    if (sourceId.isNotEmpty) {
+      WafAutoVerify.arm(section: widget.section, sourceId: sourceId);
+    }
+    try {
+      await attempt();
+    } finally {
+      if (sourceId.isNotEmpty) {
+        WafAutoVerify.disarm(section: widget.section, sourceId: sourceId);
+      }
+    }
+  }
+
+  /// 错误卡 / 空态卡上的【重试】。
+  Future<void> _retryWithWaf() => _withWafArmed(_bootstrap);
+
+  /// 列表尾部「加载失败，点击重试」：同样是用户显式发起的一次尝试。
+  Future<void> _retryMoreWithWaf() => _withWafArmed(() => _loadPage(more: true));
 
   /// 探测「本源有没有 home()」：老脚本没有就永远不进首页模式（照旧分类列表）。
   ///
@@ -434,7 +469,7 @@ class _ExploreViewState extends State<ExploreView> {
             ..addAll(result.items);
         }
       });
-      _preloadCovers(result.items);
+      _preloadCovers(result.items, more: more);
     } catch (error) {
       if (error is! SourceException) {
         LumeLog.error(error, StackTrace.current);
@@ -475,17 +510,32 @@ class _ExploreViewState extends State<ExploreView> {
     return fresh;
   }
 
+  /// 封面解码宽度：**与 tile 实际显示宽度一致**（网络解码到 300/160 两档）。
+  ///
+  /// 以前预取固定按 160 解，而网格 tile 按 300 解——内存缓存的键带宽度，
+  /// 等于同一张图白解一次；漫画板块没有磁盘缓存（见 `diskCacheFor`），
+  /// 预取的那次下载也帮不上 tile，滑到眼前还得再下一次。两处一致才是「预取」。
+  int get _coverWidth =>
+      widget.layout == ExploreLayout.grid ? 300 : 160;
+
   /// 预取这一页的封面：列表还在滑的时候图就已经在路上了。
-  void _preloadCovers(List<SourceItem> items) {
+  ///
+  /// 只预取**开头一小段**（首屏 + 半屏）：一屏二三十张一起开抢，图床会按 IP 限流
+  /// （429），反而把眼前这几张挤在后面——真机反馈「很多封面显示不出来」有一半
+  /// 是这种自己人打自己人。后面的条目靠 tile 自己进视口时再取（`GridView.builder`
+  /// 只建可见的那些）。
+  void _preloadCovers(List<SourceItem> items, {bool more = false}) {
     final pipeline = widget.pipeline;
     if (pipeline == null) return;
-    pipeline.preload(
-      <String>[
-        for (final item in items)
-          if ((item.cover ?? '').trim().isNotEmpty) item.cover!.trim(),
-      ],
-      targetWidth: 160,
-    );
+    // 翻页追加时，用户正停在列表末尾：接下来会看到的是新这批的开头几条。
+    final limit = more ? 8 : 12;
+    final urls = <String>[];
+    for (final item in items) {
+      if (urls.length >= limit) break;
+      final cover = (item.cover ?? '').trim();
+      if (cover.isNotEmpty) urls.add(cover);
+    }
+    pipeline.preload(urls, targetWidth: _coverWidth);
   }
 
   void _settle({
@@ -935,7 +985,7 @@ class _ExploreViewState extends State<ExploreView> {
         state: _state,
         title: _title,
         detail: _detail,
-        onRetry: _state == SourceStateKind.loading ? null : _bootstrap,
+        onRetry: _state == SourceStateKind.loading ? null : _retryWithWaf,
         action: _state == SourceStateKind.loading
             ? null
             : FilledButton(onPressed: _manageSources, child: const Text('源管理')),
@@ -968,7 +1018,7 @@ class _ExploreViewState extends State<ExploreView> {
         detail: kind == WafFailureKind.bridge
             ? '$detail\n\n$wafBridgeHint'
             : (hint == null ? detail : '$detail\n\n$hint'),
-        onRetry: _bootstrap,
+        onRetry: _retryWithWaf,
         action: kind == WafFailureKind.webView && _source != null
             ? OutlinedButton.icon(
                 onPressed: _openWebViewForWaf,
@@ -985,7 +1035,7 @@ class _ExploreViewState extends State<ExploreView> {
       return SourceStateView(
         state: SourceStateKind.empty,
         detail: '换个分类或关键词试试',
-        onRetry: _bootstrap,
+        onRetry: _retryWithWaf,
       );
     }
     if (_mode == BrowseLayoutMode.list) return _buildList();
@@ -1156,7 +1206,7 @@ class _ExploreViewState extends State<ExploreView> {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Center(
           child: TextButton(
-            onPressed: () => _loadPage(more: true),
+            onPressed: _retryMoreWithWaf,
             child: const Text('加载失败，点击重试'),
           ),
         ),

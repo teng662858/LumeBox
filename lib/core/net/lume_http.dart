@@ -161,6 +161,7 @@ class LumeHttp {
     Map<String, String>? headers,
     String? body,
     Duration? timeout,
+    int? maxBytes,
   }) async {
     final request = NetworkRequest(
       url: url,
@@ -173,6 +174,8 @@ class LumeHttp {
       proxy: _profile.mergedWith(_settings).proxy,
       // 证书过期站点的唯一出路（按源显式开启，默认关）。
       allowBadCertificate: _profile.mergedWith(_settings).allowBadCertificate,
+      // 读取上限：只有探测型请求会传（见 [readResponseBody]）。
+      maxBytes: maxBytes,
     );
 
     // 单次请求的超时兜底：队列内部含重试等待，这里按「重试次数 + 1」放宽，
@@ -217,7 +220,10 @@ class LumeHttp {
     outgoing.headers.addAll(request.headers);
     if (request.body != null) outgoing.body = request.body!;
     final streamed = await _client.send(outgoing).timeout(_settings.timeout);
-    final bytes = await streamed.stream.toBytes().timeout(_settings.timeout);
+    final bytes = await readResponseBody(
+      streamed.stream,
+      maxBytes: request.maxBytes,
+    ).timeout(_settings.timeout);
     return NetworkResponse(
       statusCode: streamed.statusCode,
       body: bytes,

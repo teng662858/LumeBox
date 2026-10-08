@@ -118,6 +118,36 @@ void main() {
     });
   });
 
+  group('图片防盗链：403 之后的「不带 Referer」第二次尝试真的不带', () {
+    test('第二次尝试的请求头里没有 Referer，第一次有', () {
+      // 背景（真机反馈：首页很多封面空白，点进详情页同一条资源又能出来）：
+      // 管线本来就安排了「先带 Referer、403 后再试一次不带 Referer」，
+      // 但这一步曾经是空转——头照算，两次请求一模一样，只认「无 Referer」的图床
+      // 封面会一批批地空白。这里直接钉住那两套头。
+      const url = 'https://img.example.com/a/cover.jpg';
+      final withReferer = SectionImagePipeline.imageRequestHeaders(url);
+      final withoutReferer =
+          SectionImagePipeline.imageRequestHeaders(url, withReferer: false);
+
+      expect(
+        withReferer['Referer'],
+        'https://img.example.com/',
+        reason: '第一次照旧带「图片自己域名的」Referer',
+      );
+      expect(
+        withoutReferer.containsKey('Referer'),
+        isFalse,
+        reason: '403 之后的第二次必须真的不带 Referer',
+      );
+      // 其余头两套一致（只差 Referer 这一个键）。
+      expect(
+        withoutReferer.keys.toSet(),
+        withReferer.keys.toSet().difference(<String>{'Referer'}),
+      );
+      expect(withoutReferer['Accept'], withReferer['Accept']);
+    });
+  });
+
   group('建连路径（回归：DNS 缓存那层曾把 https 变成明文）', () {
     test('生产代码不装 connectionFactory', () {
       // 背景：dart:io 一旦设置了 connectionFactory，工厂返回的 socket 会被**原样**

@@ -1214,139 +1214,9 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                           ),
                         ],
                       ),
-                      Row(
-                        children: <Widget>[
-                          Text(
-                            '背景',
-                            style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: SegmentedButton<ComicReaderBackground>(
-                              segments: <ButtonSegment<ComicReaderBackground>>[
-                                for (final background in ComicReaderBackground.values)
-                                  ButtonSegment<ComicReaderBackground>(
-                                    value: background,
-                                    label: Text(
-                                      background.label,
-                                      style: const TextStyle(fontSize: 11),
-                                    ),
-                                  ),
-                              ],
-                              selected: <ComicReaderBackground>{
-                                _settings.background,
-                              },
-                              showSelectedIcon: false,
-                              style: const ButtonStyle(
-                                visualDensity: VisualDensity.compact,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              onSelectionChanged: (selection) => _updateSettings(
-                                _settings.copyWith(background: selection.first),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        children: <Widget>[
-                          Text(
-                            '点击行为',
-                            style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: SegmentedButton<ComicTapAction>(
-                              segments: <ButtonSegment<ComicTapAction>>[
-                                for (final action in ComicTapAction.values)
-                                  ButtonSegment<ComicTapAction>(
-                                    value: action,
-                                    label: Text(
-                                      action.label,
-                                      style: const TextStyle(fontSize: 11),
-                                    ),
-                                  ),
-                              ],
-                              selected: <ComicTapAction>{_settings.tapAction},
-                              showSelectedIcon: false,
-                              style: const ButtonStyle(
-                                visualDensity: VisualDensity.compact,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              onSelectionChanged: (selection) => _updateSettings(
-                                _settings.copyWith(tapAction: selection.first),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        children: <Widget>[
-                          Text(
-                            '翻页方向',
-                            style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: SegmentedButton<ComicReadingDirection>(
-                              segments: <ButtonSegment<ComicReadingDirection>>[
-                                for (final direction
-                                    in ComicReadingDirection.values)
-                                  ButtonSegment<ComicReadingDirection>(
-                                    value: direction,
-                                    label: Text(
-                                      direction.label,
-                                      style: const TextStyle(fontSize: 11),
-                                    ),
-                                  ),
-                              ],
-                              selected: <ComicReadingDirection>{_settings.direction},
-                              showSelectedIcon: false,
-                              style: const ButtonStyle(
-                                visualDensity: VisualDensity.compact,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              onSelectionChanged: (selection) => _updateSettings(
-                                _settings.copyWith(direction: selection.first),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      // 跨页配对只在双页模式下有意义，其他模式不占版面。
-                      if (_settings.mode == ComicReadingMode.doublePage)
-                        Row(
-                          children: <Widget>[
-                            Text(
-                              '跨页配对',
-                              style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: SegmentedButton<ComicSpreadMode>(
-                                segments: <ButtonSegment<ComicSpreadMode>>[
-                                  for (final mode in ComicSpreadMode.values)
-                                    ButtonSegment<ComicSpreadMode>(
-                                      value: mode,
-                                      label: Text(
-                                        mode.label,
-                                        style: const TextStyle(fontSize: 11),
-                                      ),
-                                    ),
-                                ],
-                                selected: <ComicSpreadMode>{_settings.spreadMode},
-                                showSelectedIcon: false,
-                                style: const ButtonStyle(
-                                  visualDensity: VisualDensity.compact,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                                onSelectionChanged: (selection) => _updateSettings(
-                                  _settings.copyWith(spreadMode: selection.first),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                      // 「背景」「点击行为」「翻页方向」「跨页配对」也已搬到【阅读设置】
+                      //（用户口径：底部面板只留阅读时随手会改的三项——阅读模式、
+                      // 侧边距、页间距；其余是「设定一次就不动」的）。
                       Divider(height: 1, color: LumeTheme.divider),
                       Row(
                         children: <Widget>[
@@ -1594,81 +1464,125 @@ class _ComicImageTileState extends State<_ComicImageTile>
 }
 
 /// 章节目录面板：阅读器内直接跳章，不必退回详情页。
-class _ChapterSheet extends StatelessWidget {
+///
+/// 出口（用户口径：删掉右上角的关闭叉号，改成手势返回）：
+/// - **左右侧滑**：面板跟着手指平移，任一方向过阈值（或甩得够快）就关掉面板、
+///   回到阅读页——两个方向都认，不必记「该往哪边划」；
+/// - **下滑**：`showModalBottomSheet` 自带的面板拖拽；
+/// - **点面板外的空白**：模态遮罩的默认行为。
+///
+/// 面板本身是「一个会横向平移的整块」：拖动量用 [AnimatedContainer] 的 transform
+/// 表达，松手没到阈值就弹回原位（拖动中不加动画，否则跟手感变成拖影）。
+class _ChapterSheet extends StatefulWidget {
   const _ChapterSheet({required this.chapters, required this.currentIndex});
 
   final List<SourceChapter> chapters;
   final int currentIndex;
 
   @override
+  State<_ChapterSheet> createState() => _ChapterSheetState();
+}
+
+class _ChapterSheetState extends State<_ChapterSheet> {
+  /// 当前横向偏移（跟手）。
+  double _dx = 0;
+
+  /// 是否正在拖动：决定 transform 用不用补间（见类文档）。
+  bool _dragging = false;
+
+  /// 关闭阈值：屏宽的 22%（约 86pt）——太敏感会误关，太钝像没响应。
+  static const double _dismissFraction = 0.22;
+
+  /// 甩动关闭的速度阈值（逻辑像素 / 秒）。
+  static const double _dismissVelocity = 700;
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    setState(() {
+      _dragging = true;
+      _dx += details.delta.dx;
+    });
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final width = MediaQuery.sizeOf(context).width;
+    final flung = details.velocity.pixelsPerSecond.dx.abs() >= _dismissVelocity;
+    if (_dx.abs() >= width * _dismissFraction || flung) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() {
+      _dragging = false;
+      _dx = 0;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      // Material 承载面板背景：ListTile 的背景与墨水效果需要它。
-      child: Material(
-        color: LumeTheme.surface,
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              // 抬头**固定在列表之上**（不随滚动走）：章节多的时候也要一眼能看到出口
-              //（用户口径：滚到哪儿都能关掉目录回阅读页）。
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
-                child: Row(
-                  children: <Widget>[
-                    const SizedBox(width: 40),
-                    Expanded(
-                      child: Text(
-                        '目录',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: LumeTheme.textPrimary,
-                        ),
+    return AnimatedContainer(
+      duration: _dragging ? Duration.zero : const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      transform: Matrix4.translationValues(_dx, 0, 0),
+      child: GestureDetector(
+        // 横向拖动整块都认（竖直方向留给面板拖拽与列表滚动）。
+        onHorizontalDragUpdate: _onDragUpdate,
+        onHorizontalDragEnd: _onDragEnd,
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          // Material 承载面板背景：ListTile 的背景与墨水效果需要它。
+          child: Material(
+            color: LumeTheme.surface,
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  // 抬头仍然固定在列表之上（不随滚动走）：滚到哪儿都看得见「这是目录」。
+                  // 不再放关闭按钮——出口改成左右侧滑（见类文档）。
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                    child: Text(
+                      '目录',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: LumeTheme.textPrimary,
                       ),
                     ),
-                    IconButton(
-                      tooltip: '关闭',
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close, size: 20),
+                  ),
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: widget.chapters.length,
+                      itemBuilder: (context, index) {
+                        final chapter = widget.chapters[index];
+                        final current = index == widget.currentIndex;
+                        return ListTile(
+                          dense: true,
+                          title: Text(
+                            chapter.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: current
+                                  ? LumeTheme.textPrimary
+                                  : LumeTheme.textSecondary,
+                              fontWeight:
+                                  current ? FontWeight.w600 : FontWeight.w400,
+                            ),
+                          ),
+                          trailing: current
+                              ? const Icon(Icons.play_arrow, size: 18)
+                              : null,
+                          onTap: () => Navigator.of(context).pop(index),
+                        );
+                      },
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: chapters.length,
-                  itemBuilder: (context, index) {
-                    final chapter = chapters[index];
-                    final current = index == currentIndex;
-                    return ListTile(
-                      dense: true,
-                      title: Text(
-                        chapter.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: current
-                              ? LumeTheme.textPrimary
-                              : LumeTheme.textSecondary,
-                          fontWeight:
-                              current ? FontWeight.w600 : FontWeight.w400,
-                        ),
-                      ),
-                      trailing: current
-                          ? const Icon(Icons.play_arrow, size: 18)
-                          : null,
-                      onTap: () => Navigator.of(context).pop(index),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
+            ),
           ),
         ),
       ),

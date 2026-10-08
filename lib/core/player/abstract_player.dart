@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
+import 'buffering.dart';
 import 'player_capabilities.dart';
 import 'player_settings.dart';
 import 'player_stats.dart';
@@ -94,6 +95,14 @@ abstract class AbstractPlayer {
   /// 「某内核不支持某项」的分支；差异由 [capabilities] 表达，并由设置面板据它
   /// 给出「点了提示」还是「真的调下去」。可在加载前后任意时刻调用。
   Future<void> applySettings(PlayerSettings settings);
+
+  /// 应用起播缓冲参数（[BufferingConfig]，来自模块设置里的「前向缓冲」）。
+  ///
+  /// 与 [applySettings] 分开的理由是**时机**：缓冲属性必须在打开媒体**之前**
+  /// 落定（libmpv 是打开文件时读一次；AVPlayer 是建播放器时读一次），因此调用方
+  /// 一律在 [load] 之前调用它。内核没有缓冲参数写通道时安静忽略（默认实现）——
+  /// 与其余能力同一口径：不假装已生效，也不抛错打断起播。
+  Future<void> setBuffering(BufferingConfig config) async {}
 
   // ------------------------------------------------------------ 音频 / 字幕
 

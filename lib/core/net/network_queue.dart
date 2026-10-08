@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import '../util/debug_request_log.dart';
 import '../util/lume_log.dart';
@@ -17,6 +18,7 @@ class NetworkRequest {
     this.retryOn = true,
     this.proxy = '',
     this.allowBadCertificate = false,
+    this.maxBytes,
   });
 
   final String url;
@@ -39,6 +41,10 @@ class NetworkRequest {
 
   /// 本次请求的代理（图源覆盖或全局设置解析后的结果）；空串表示直连。
   final String proxy;
+
+  /// 响应体读取上限（字节）；null = 读完整。见 [readResponseBody] 的说明
+  /// （只有「探测型」请求该设它，正常业务请求一律读全）。
+  final int? maxBytes;
 }
 
 /// 一次请求的应答（与 `LumeHttpResponse` 同形，避免队列依赖上层模型）。
@@ -56,6 +62,61 @@ class NetworkResponse {
 
 /// 真正的发送动作。队列只负责「何时发、发几次」，发送实现由调用方给。
 typedef NetworkSender = Future<NetworkResponse> Function(NetworkRequest request);
+
+/// 读响应体；[maxBytes] 非空时读满上限就**取消订阅（连接随之断开）**，
+/// 不再把剩下的内容拉下来。
+///
+/// 为什么要有这个上限：网速表拿播放地址做过一次 256KB 的 `Range` 探测，
+/// 而 CDN 不支持 Range 时会回 200 并从头发整片——那样这条探测既与播放器首帧
+/// 在**同一个域名**上抢带宽，读数也会被整片下载的时间严重低估（真机反馈
+/// 「越测越卡」）。有了上限，探测多读一个块就收手。
+///
+/// 只有「探测型」请求该传 [maxBytes]；正常业务请求一律读全（null）。
+Future<Uint8List> readResponseBody(
+  Stream<List<int>> stream, {
+  int? maxBytes,
+}) {
+  if (maxBytes == null || maxBytes <= 0) return _readAll(stream);
+  final collected = BytesBuilder(copy: false);
+  final completer = Completer<Uint8List>();
+  var finished = false;
+  void finish() {
+    if (finished) return;
+    finished = true;
+    completer.complete(collected.takeBytes());
+  }
+
+  late final StreamSubscription<List<int>> subscription;
+  subscription = stream.listen(
+    (chunk) {
+      final room = maxBytes - collected.length;
+      collected.add(room >= chunk.length ? chunk : chunk.sublist(0, room));
+      if (collected.length >= maxBytes) {
+        // 读够了：取消订阅 = 断开这条响应（keep-alive 的那条连接随之作废），
+        // 剩余字节不会再进本机。
+        unawaited(subscription.cancel());
+        finish();
+      }
+    },
+    onDone: finish,
+    onError: (Object error, StackTrace stackTrace) {
+      if (finished) return;
+      finished = true;
+      completer.completeError(error, stackTrace);
+    },
+    cancelOnError: true,
+  );
+  return completer.future;
+}
+
+/// 读完整（没有上限时的路径）。
+Future<Uint8List> _readAll(Stream<List<int>> stream) async {
+  final collected = BytesBuilder(copy: false);
+  await for (final chunk in stream) {
+    collected.add(chunk);
+  }
+  return collected.takeBytes();
+}
 
 /// 网络队列：**所有 HTTP 请求的唯一出口**（文档第六条）。
 ///

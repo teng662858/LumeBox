@@ -20,6 +20,7 @@ class SourceDisplayNames {
     'p5mh_comic': 'P5韩漫',
     'seyoumanhua_comic': '色友漫画',
     'nnhanman_comic': '鸟鸟韩漫',
+    'jm18_comic': '18禁漫',
     // 小说
     '99xs_novel': 'CA小说',
     'xchina_novel': '小黄书小说',

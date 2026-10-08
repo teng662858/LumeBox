@@ -27,13 +27,16 @@ import 'player_stats.dart';
 /// 因此这里走原生通道（`lumebox/buffering`）先写一次，再由 vendored 的
 /// video_player_avfoundation 在建播放器时应用——详见 `third_party/
 /// video_player_avfoundation/PATCHES.md`。写入只做一次：原生侧的参数一旦落定就
-/// 对之后创建的每个播放器生效。
+/// 对之后创建的每个播放器生效（[setBuffering] 改了参数则重写一次）。
 class AvPlayer extends AbstractPlayer {
   AvPlayer({BufferingBackend? buffering})
       : _buffering = buffering ?? createPlatformBufferingBackend();
 
   /// 缓冲参数的原生写通道（测试可注入替身）。
   final BufferingBackend _buffering;
+
+  /// 待写入的缓冲参数（[setBuffering] 可在装载前改，见 [_applyBufferingOnce]）。
+  BufferingConfig _config = BufferingConfig.defaults;
 
   /// 是否已经把缓冲参数写进原生侧（只写一次，后续起播省掉通道往返）。
   bool _bufferingWritten = false;
@@ -161,12 +164,21 @@ class AvPlayer extends AbstractPlayer {
     }
   }
 
+  /// 起播缓冲参数（见 [BufferingConfig]）：值变了就把「已写入」标记清掉，
+  /// 下一次装载前重写一遍原生通道（原生侧只按最后一次写入建播放器）。
+  @override
+  Future<void> setBuffering(BufferingConfig config) async {
+    if (config == _config) return;
+    _config = config;
+    _bufferingWritten = false;
+  }
+
   /// 把缓冲参数写进原生侧（只写一次；失败只记日志，不打断起播）。
   Future<void> _applyBufferingOnce() async {
     if (_bufferingWritten) return;
     _bufferingWritten = true;
     try {
-      await _buffering.apply(BufferingConfig.defaults);
+      await _buffering.apply(_config);
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       LumeLog.warn('[avplayer] 写缓冲参数失败，本次按系统默认缓冲策略播放');

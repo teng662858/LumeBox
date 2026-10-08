@@ -17,11 +17,13 @@ import '../../core/util/lume_log.dart';
 ///
 /// 取 2 的理由：口径诚实（量的是 CDN 到本机的真实吞吐）、三套内核都适用、
 /// 与播放器同一条请求头（防盗链源不会给出假信号）。代价是要花一点流量，
-/// 因此：**只在起播时与用户主动点「测速」时各测一次**，不周期轮询。
+/// 因此：**只在起播首帧之后与用户主动点「测速」时各测一次**，不周期轮询；
+/// 首帧之前不测——那时播放器正在抢带宽，探测只会与首帧互相拖慢，读数也混着
+/// 播放器自己的下载（见播放器页的 `_scheduleSpeedProbe`）。
 ///
 /// 探测请求是 `Range: bytes=0-262143`（256KB）：多数 CDN 支持 Range，拿到 206 时
-/// 只下这 256KB；不支持 Range 的源会回 200 并开始在后台下载——此时按读到的
-/// 前若干字节计时（见 [_measure]），不把整片视频拉下来。
+/// 只下这 256KB；不支持 Range 的源会回 200——那就**读到 [probeBytes] 就断开**
+/// （读取上限见 `readResponseBody`），绝不把整片视频拉下来。
 class PlaybackSpeedMeter {
   PlaybackSpeedMeter({LumeHttp? http}) : _http = http ?? LumeHttp(source: '测速');
 
@@ -77,15 +79,15 @@ class PlaybackSpeedMeter {
         'Range': 'bytes=0-${probeBytes - 1}',
       },
       timeout: probeTimeout,
+      // 读取上限：服务端不支持 Range（回 200）时读满这 256KB 就断开，
+      // 既不与首帧抢带宽，也不会把整片下载的时间算进速率（那会严重低估）。
+      maxBytes: probeBytes,
     );
     stopwatch.stop();
 
     final bytes = response.body.length;
     final millis = stopwatch.elapsedMilliseconds;
     if (bytes <= 0 || millis <= 0) return null;
-    // 服务端不支持 Range 时也会回 200：这次请求按内容长度计费过重，因此
-    // 只在下完前 256KB 内计时（send 已经把响应读全，这里按实测体积算，
-    // 不把整片视频的下载时间算进速率——那会把读数严重低估）。
     if (bytes < 8 * 1024) return null; // 太小：多半是错误页 / 重定向壳
     final kbpsValue = (bytes * 8) / millis; // bytes*8 / ms = kbit/s
     return kbpsValue.round();

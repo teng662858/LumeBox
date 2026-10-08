@@ -242,6 +242,40 @@ void main() {
     expect(await pending, WafWebViewOutcome.emptySession);
   });
 
+  testWidgets('手动【网页视图】不要求武装：点了就开（自动路径的许可与它无关）', (tester) async {
+    SourceRequestLog.record('manual-source', 'https://guarded.example.com/list');
+    final opened = <String>[];
+
+    final pending = await start<WafWebViewOutcome>(
+      tester,
+      (context) => runWafWebViewFlow(
+        context: context,
+        section: Section.comic,
+        sourceId: 'manual-source',
+        sourceName: '带防护的源',
+        failureMessage: 'NEED_WEBVIEW_VERIFY（HTTP 403）',
+        opener: ({
+          required context,
+          required url,
+          required sourceName,
+          section,
+          sourceId,
+          userAgent,
+        }) async {
+          opened.add(url);
+          return <String, String>{'cf_clearance': 'x'};
+        },
+      ),
+    );
+
+    expect(await pending, WafWebViewOutcome.collected);
+    expect(
+      opened,
+      <String>['https://guarded.example.com/list'],
+      reason: '手动出口的语义一条都没变：点了就开、取到会话就报 collected',
+    );
+  });
+
   group('网页视图 UA：必须与设备自己的 Safari 一致', () {
     test('WKWebView 默认 UA → 补 Version/Safari 两段，其余原样', () {
       const webView = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
@@ -272,6 +306,273 @@ void main() {
         'SomeWeirdAgent/1.0 Version/17.0 Mobile/15E148 Safari/604.1',
       );
       expect(safariUserAgentFrom(''), '');
+    });
+  });
+
+  group('自动验证窗的几个判定（纯函数：WebView 跑不进 flutter test，见 waf_webview_test.dart）', () {
+    group('UA：一定给出一个 Safari 形态的（B3：静默失败会白屏）', () {
+      test('用户显式配过：照用（cf_clearance 绑 IP + UA，用户的选择优先）', () {
+        expect(
+          resolveWebViewUserAgent(
+            configured: 'MyClient/1.0',
+            webViewDefault: 'whatever',
+          ),
+          'MyClient/1.0',
+        );
+      });
+
+      test('读得到设备默认 UA：补成与本机 Safari 一致', () {
+        const device = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) '
+            'AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+        final ua = resolveWebViewUserAgent(webViewDefault: device);
+        expect(ua, contains('Safari/'));
+        expect(ua, contains('Version/18.5'));
+      });
+
+      test('读不到（通道抛错 / 返回空）：用内置兜底，绝不留空', () {
+        expect(resolveWebViewUserAgent(webViewDefault: ''), wafFallbackUserAgent);
+        expect(resolveWebViewUserAgent(webViewDefault: null), wafFallbackUserAgent);
+        expect(
+          resolveWebViewUserAgent(configured: '   ', webViewDefault: '  '),
+          wafFallbackUserAgent,
+          reason: '返回空串 = 不放 UA = WKWebView 默认那份（没有 Safari/ 段），CF 给一张没有勾选框的页',
+        );
+        expect(wafFallbackUserAgent, contains('Safari/'));
+        expect(wafFallbackUserAgent, contains('Version/'));
+      });
+
+      test('页面实际 UA 不含 Safari/：要求换兜底 UA 重开一次', () {
+        expect(
+          webViewUserAgentNeedsRepair(liveUserAgent: 'MyApp/1.0 (iPhone)'),
+          isTrue,
+        );
+        expect(
+          webViewUserAgentNeedsRepair(
+            liveUserAgent: resolveWebViewUserAgent(webViewDefault: 'x'),
+          ),
+          isFalse,
+        );
+        expect(
+          webViewUserAgentNeedsRepair(liveUserAgent: ''),
+          isFalse,
+          reason: '读不到 UA 不算「没生效」，没证据就不折腾',
+        );
+        expect(
+          webViewUserAgentNeedsRepair(
+            liveUserAgent: 'MyApp/1.0',
+            override: 'MyApp/1.0',
+          ),
+          isFalse,
+          reason: '用户自己配的 UA 不插手（不少图源配的就是 App 自己的 UA）',
+        );
+      });
+    });
+
+    group('放行判定：只有 cf_clearance 算（B2：__cf_bm 在挑战之前就有）', () {
+      test('cf_clearance 到了：放行（见过挑战页也算）', () {
+        expect(
+          cookieJarLooksPassed('cf_clearance=abc; other=1', challengeSeen: true),
+          isTrue,
+        );
+        expect(
+          cookieJarLooksPassed('cf_clearance=abc', challengeSeen: false),
+          isTrue,
+        );
+      });
+
+      test('只有 __cf_bm 且这一页见过挑战：**不算**放行', () {
+        expect(
+          cookieJarLooksPassed('__cf_bm=xyz', challengeSeen: true),
+          isFalse,
+          reason: '__cf_bm 在挑战前就写下了：拿它当放行，自动小窗会在开出来 '
+              '1~2 秒后就自己关掉——用户看到的正是「窗口一闪，勾选框还没出现就没了」',
+        );
+      });
+
+      test('只有 __cf_bm 且从没见过挑战页：算放行（无感校验那条路）', () {
+        expect(
+          cookieJarLooksPassed('__cf_bm=xyz', challengeSeen: false),
+          isTrue,
+        );
+      });
+
+      test('别的 Cookie / 空串 / 只有名字没有值：都不算', () {
+        expect(cookieJarLooksPassed('foo=1', challengeSeen: false), isFalse);
+        expect(cookieJarLooksPassed('', challengeSeen: false), isFalse);
+        expect(cookieJarLooksPassed('cf_clearance=', challengeSeen: true), isFalse);
+      });
+
+      test('document.cookie 被包成 JSON 字符串的那份也认', () {
+        expect(
+          cookieJarLooksPassed('"cf_clearance=abc; __cf_bm=x"', challengeSeen: true),
+          isTrue,
+        );
+      });
+    });
+
+    group('parseJsCookie：裸串 / JSON 串都认', () {
+      test('裸串', () {
+        expect(
+          parseJsCookie('a=1; b=2'),
+          <String, String>{'a': '1', 'b': '2'},
+        );
+      });
+
+      test('JSON 包着的串（runJavaScriptReturningResult 的口径）', () {
+        expect(
+          parseJsCookie('"a=1; b=2"'),
+          <String, String>{'a': '1', 'b': '2'},
+        );
+      });
+
+      test('转义过的 JSON 串', () {
+        expect(
+          parseJsCookie(r'"cf_clearance=abc; __cf_bm=x"'),
+          <String, String>{'cf_clearance': 'abc', '__cf_bm': 'x'},
+        );
+      });
+
+      test('空串 / 没有等号的片段：跳过，不抛', () {
+        expect(parseJsCookie(''), isEmpty);
+        expect(parseJsCookie('  '), isEmpty);
+        expect(parseJsCookie('nonsense'), isEmpty);
+      });
+    });
+
+    group('挑战页探针：读得懂、且「要不要重开」有据可依（B1）', () {
+      test('探针 JSON 解析成正文字段', () {
+        final probe = WafPageProbe.parse(
+          '"{\\"t\\":\\"Just a moment...\\",\\"n\\":\\"\\",\\"f\\":2,\\"c\\":true}"',
+        );
+        expect(probe.title, 'Just a moment...');
+        expect(probe.blank, isTrue);
+        expect(probe.iframeCount, 2);
+        expect(probe.challenge, isTrue);
+      });
+
+      test('解析不出来（null / 垃圾）：空探针，什么都不做', () {
+        for (final raw in <String?>[null, '', 'garbage', '[]']) {
+          final probe = WafPageProbe.parse(raw);
+          expect(probe.challenge, isFalse);
+          expect(probe.iframeCount, 0);
+          expect(probe.bodyText, '');
+        }
+      });
+
+      test('稳定空白 + 刚才确实是挑战页 + 没有挑战痕迹 → 允许重开', () {
+        expect(
+          shouldRestoreChallengePage(
+            probe: const WafPageProbe(title: '', bodyText: '', iframeCount: 0),
+            challengeSeen: true,
+            userTouched: false,
+            restores: 0,
+          ),
+          isTrue,
+        );
+      });
+
+      test('页面上**现在**还有挑战痕迹 → 绝不重开（重开会掐掉挑战脚本与 iframe）', () {
+        expect(
+          shouldRestoreChallengePage(
+            probe: const WafPageProbe(bodyText: '', challenge: true),
+            challengeSeen: true,
+            userTouched: false,
+            restores: 0,
+          ),
+          isFalse,
+          reason: '正文空只是**一次采样**：挑战控件是 JS 后画的，这时重开会把还在路上'
+              '的 challenge-platform 脚本和 Turnstile 的 iframe 一起取消掉——'
+              '勾选框从此再也画不出来（真机反馈的根因）',
+        );
+      });
+
+      test('页面里还有 iframe → 绝不重开', () {
+        expect(
+          shouldRestoreChallengePage(
+            probe: const WafPageProbe(bodyText: '', iframeCount: 1),
+            challengeSeen: true,
+            userTouched: false,
+            restores: 0,
+          ),
+          isFalse,
+        );
+      });
+
+      test('从没见过挑战痕迹 / 用户已经碰过页面 / 重开次数用完 → 都不重开', () {
+        const blankProbe = WafPageProbe(bodyText: '');
+        expect(
+          shouldRestoreChallengePage(
+            probe: blankProbe,
+            challengeSeen: false,
+            userTouched: false,
+            restores: 0,
+          ),
+          isFalse,
+        );
+        expect(
+          shouldRestoreChallengePage(
+            probe: blankProbe,
+            challengeSeen: true,
+            userTouched: true,
+            restores: 0,
+          ),
+          isFalse,
+          reason: '用户多半正在点勾选框：重开会把他做到一半的操作扔掉',
+        );
+        expect(
+          shouldRestoreChallengePage(
+            probe: blankProbe,
+            challengeSeen: true,
+            userTouched: false,
+            restores: maxChallengeRestores,
+          ),
+          isFalse,
+        );
+      });
+
+      test('正文有内容（页面看着正常）→ 不重开', () {
+        expect(
+          shouldRestoreChallengePage(
+            probe: const WafPageProbe(bodyText: '内容'),
+            challengeSeen: true,
+            userTouched: false,
+            restores: 0,
+          ),
+          isFalse,
+        );
+      });
+    });
+
+    group('失败卡不许盖在挑战页上（B4：白卡看起来就像「没有勾选框」）', () {
+      test('有错误且没见过挑战页：压卡（给可读原因 + 出口）', () {
+        expect(
+          shouldCoverWebViewWithError(
+            error: '连接被拒',
+            challengeSeen: false,
+          ),
+          isTrue,
+        );
+      });
+
+      test('见过挑战页 / 没有错误：都不压卡', () {
+        expect(
+          shouldCoverWebViewWithError(
+            error: '连接被拒',
+            challengeSeen: true,
+          ),
+          isFalse,
+          reason: '那一下失败多半就是挑战页自己引起的（403/503 + 取消导航），'
+              '盖上白卡等于把勾选框藏起来',
+        );
+        expect(
+          shouldCoverWebViewWithError(error: null, challengeSeen: false),
+          isFalse,
+        );
+        expect(
+          shouldCoverWebViewWithError(error: '  ', challengeSeen: false),
+          isFalse,
+        );
+      });
     });
   });
 

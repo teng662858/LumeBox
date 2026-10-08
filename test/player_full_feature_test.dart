@@ -574,10 +574,20 @@ void main() {
         http: LumeHttp(client: client, source: '测速'),
       );
       addTearDown(meter.dispose);
-      await pump(tester, speedMeter: meter);
+      final players = await pump(tester, speedMeter: meter);
 
-      // 起播自动测一次（同一地址不重复测）。
-      expect(client.urls, hasLength(1), reason: '起播自动测一次');
+      // 测速**不在起播关键路径上**（用户口径：别与首帧抢带宽，也别把播放器自己的
+      // 下载算进读数）：起播那一刻不测。
+      expect(client.urls, isEmpty, reason: '首帧之前不测速');
+
+      // 第一帧画出来（playing 且不在缓冲）之后，还要过一档宽限才测。
+      players.single.emit(playing: true);
+      await tester.pump();
+      expect(client.urls, isEmpty, reason: '刚出首帧也不立刻测，先让画面稳下来');
+
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(client.urls, hasLength(1), reason: '首帧之后自动测一次（同一地址不重复测）');
       expect(
         client.headers.first['Range'],
         startsWith('bytes=0-'),

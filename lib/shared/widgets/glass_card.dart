@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/lume_theme.dart';
+import '../../features/shell/shell_dock.dart';
 
 /// 磨砂玻璃层：半透明白底 + 背景模糊 + 极浅描边。
 ///
@@ -266,6 +267,10 @@ const double kLumeToolbarHeight = 36;
 ///   穿过——玻璃感来自这里。此时页面自己的滚动视图要让出顶栏高度：
 ///   用 [GlassScaffold.barInset]（滚动视图的 padding）或
 ///   [GlassScaffold.barHeight]（不是滚动视图的整块头部）。
+///
+/// **底部安全区只在导航壳里让**（见 [_reservesBottom]）：壳里的页面底部被悬浮
+/// Dock 占着，让出来的那一段正好是 Dock 的脚印；push 出来的二级页面底下什么都没有，
+/// 再让就变成「内容铺不到底、底部空一截」。
 class GlassScaffold extends StatelessWidget {
   const GlassScaffold({
     super.key,
@@ -345,12 +350,20 @@ class GlassScaffold extends StatelessWidget {
       body: DecoratedBox(
         decoration: LumeTheme.background,
         // 穿栏时顶部不设安全区（顶栏由内容自己用 barInset 让出）；
-        // 左右与底部照常让开，底部安全区与悬浮 Dock 的高度都不会被内容压到。
+        // 左右照常让开；**底部只在壳里让**（Dock 的脚印），二级页让内容铺到底
+        // ——见 [_reservesBottom]。
         child: _GlassBarHeight(
           height: height,
           child: behindBar
-              ? SafeArea(top: false, child: child)
-              : SafeArea(child: child),
+              ? SafeArea(
+                  top: false,
+                  bottom: _reservesBottom(context),
+                  child: child,
+                )
+              : SafeArea(
+                  bottom: _reservesBottom(context),
+                  child: child,
+                ),
         ),
       ),
     );
@@ -367,6 +380,24 @@ class GlassScaffold extends StatelessWidget {
         leading: leading,
       );
 }
+
+/// 底部安全区是否让出：**只在导航壳里让**。
+///
+/// 壳里的页面底部被悬浮 Dock 占着，而且 Flutter 在 `extendBody` 时已经把
+/// `MediaQuery.padding.bottom` 换成了「Dock 的总高」——`SafeArea` 让出的那一段
+/// 正好等于 Dock 的脚印：肉眼看不出（被胶囊盖住），也正是「最后一行不会被 Dock
+/// 挡住」的实现，所以壳里必须继续让。
+///
+/// push 出来的二级页面（排行榜等「更多」页、各种设置页）**不在壳的子树里**，
+/// 底部没有任何东西：同一段 `SafeArea` 就变成「内容铺不到底、底部空一截浅色条」
+/// （用户口径：二级页底部的多余留白）。这些页面一律不让——内容一路铺到屏幕底边，
+/// 最后一行由页面自己的尾部内边距兜住；需要固定底栏的页面（如筛选页）自己套
+/// `SafeArea`。
+///
+/// 用 [BuildContext.getInheritedWidgetOfExactType] 而不是 `maybeOf`：这里只问
+/// 「在不在壳里」，不需要跟着 Dock 的显隐重新构建整页。
+bool _reservesBottom(BuildContext context) =>
+    context.getInheritedWidgetOfExactType<ShellDockScope>() != null;
 
 /// 把顶栏整体上移一档，同时保持 `PreferredSizeWidget` 契约。
 ///

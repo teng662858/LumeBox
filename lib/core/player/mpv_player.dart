@@ -37,8 +37,9 @@ class MpvPlayer extends AbstractPlayer {
 
   final MpvEngine _engine;
 
-  /// 起播缓冲参数（见 [BufferingConfig]）。
-  final BufferingConfig buffering;
+  /// 起播缓冲参数（见 [BufferingConfig]）。可在装载前经 [setBuffering] 改
+  /// （页面把模块设置里的「前向缓冲」传下来）；装载时写一次引擎。
+  BufferingConfig buffering;
 
   /// 引擎访问点：画中画帧转发需要直接向引擎取帧（拉取式接口）。
   /// 上层据此判断「当前内核有没有帧导出能力」，而不是猜类型。
@@ -66,6 +67,14 @@ class MpvPlayer extends AbstractPlayer {
   @override
   PlayerCapabilities get capabilities =>
       PlayerCapabilities.of(PlayerKernel.mpv);
+
+  /// 起播缓冲参数（见 [BufferingConfig]）：**下次装载**生效（libmpv 的
+  /// cache / 预读时长是打开文件时读一次的属性，见 [load]）。
+  @override
+  Future<void> setBuffering(BufferingConfig config) async {
+    if (_disposed) return;
+    buffering = config;
+  }
 
   @override
   Future<void> load(PlayerMedia media) async {

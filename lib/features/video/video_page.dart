@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/player/abstract_player.dart';
 import '../../core/player/brightness.dart';
 import '../../core/player/pip.dart';
 import '../../core/player/player_factory.dart';
+import '../../core/player/player_kernel_launcher.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
@@ -20,6 +23,7 @@ import 'source_playback.dart';
 import '../reading/source_filter_page.dart';
 import 'video_play_target.dart';
 import 'video_player_page.dart';
+import 'video_player_settings.dart';
 
 /// 视频板块：**只保留【浏览】**（真机反馈：播放子页签移除）。
 ///
@@ -86,6 +90,16 @@ class _VideoPageState extends State<VideoPage> {
 
   /// 阅读库打不开：浏览照常，但进度与播放记录不可用。
   bool _libraryFailed = false;
+
+  /// 起播忙态文案（非空 = 点按已被吃下，正在为起播做准备）。
+  ///
+  /// 为什么必须有它：从点条目到播放器页出现之间有**两段沙箱往返**（剧集列表 /
+  /// 播放地址，各 10 秒预算），这期间列表此前毫无反应——真机反馈的「点了没
+  /// 动静」就是这么来的。忙态同时把列表挡住，同一次起播不会被连点两下。
+  String? _busyLabel;
+
+  /// 有起播请求在飞（点条目到播放器页出现之间忽略新的点按）。
+  bool get _busy => _busyLabel != null;
 
   /// 是否有播放器页正压在栈上（由 [_openPlayer] 维护）。
   ///
@@ -154,12 +168,61 @@ class _VideoPageState extends State<VideoPage> {
 
   // ------------------------------------------------------ 图源条目 → 独立播放器
 
+  /// 进入忙态：列表上盖一张说明卡（文案说明在等什么），并把列表挡住。
+  void _beginBusy(String label) {
+    if (!mounted || _busyLabel == label) return;
+    setState(() => _busyLabel = label);
+  }
+
+  /// 退出忙态。播放器页有自己的「正在准备」卡，push 之前收掉即可。
+  void _endBusy() {
+    if (!mounted || _busyLabel == null) return;
+    setState(() => _busyLabel = null);
+  }
+
+  /// 预启动一次内核：**在等播放地址的这几秒里先把内核建起来**（见 [PlayerPrelaunch]）。
+  ///
+  /// 按**本板块设置里存的那个内核**预启动（正式链路同样按它创建）；它在目录里
+  /// 不可用时按目录回退（与播放器页的「生效内核」同一口径），免得预启动的实例
+  /// 与页面要的内核不匹配而白建。设置库拿不到就不预启动——正式链路自己会建。
+  PlayerPrelaunch? _startPrelaunch() {
+    final library = _library;
+    if (library == null) return null;
+    final stored = VideoPlayerSettingsStore(library).load().kernel;
+    final catalog = widget.catalog ?? const PlatformPlayerKernelCatalog();
+    var kernel = stored;
+    if (!catalog.isAvailable(kernel)) {
+      for (final candidate in PlayerKernel.values) {
+        if (catalog.isAvailable(candidate)) {
+          kernel = candidate;
+          break;
+        }
+      }
+    }
+    return PlayerPrelaunch.start(
+      kernel,
+      factory: widget.playerFactory,
+      // 等一帧再开始：内核创建里的原生装载是同步阻塞的
+      // （见 [PlayerKernelLauncher]），先让忙态上屏，用户看到的才是
+      // 「正在解析地址」而不是一个卡住不动的列表。
+      after: WidgetsBinding.instance.endOfFrame,
+    );
+  }
+
+  /// 放弃一次预启动（拿不到设置库时本来就没预启动）。
+  void _discardPrelaunch(PlayerPrelaunch? prelaunch) {
+    final pre = prelaunch;
+    if (pre != null) unawaited(pre.discard());
+  }
+
   /// 图源列表里点一个条目：**能直接播就直接播**，否则走剧集链路。
   ///
   /// 直接播的判据是条目自带可播放地址（列表里的 `url` 会落到条目 id 上）——
   /// 视频类图源最常见的形状就是 `{title, url}`。条目只有 id 时按
   /// 「作品 → 剧集 → 内容」取地址。取到地址后**唤起独立播放器页**。
   Future<void> _playFromSource(DataSource source, SourceItem item) async {
+    // 已经有一条起播在解析：不加第二次（忙态已经把列表挡住了）。
+    if (_busy) return;
     final direct = SourcePlayback.directAddress(item.id);
     if (direct != null) {
       await _openPlayer(
@@ -178,11 +241,14 @@ class _VideoPageState extends State<VideoPage> {
     }
 
     final List<SourceChapter> chapters;
+    _beginBusy('正在获取剧集：${item.title}');
     try {
       chapters = await source.chapters(item.id);
     } on SourceException catch (error) {
       _toast('${error.message}；条目自带播放地址（url）时可直接起播');
       return;
+    } finally {
+      _endBusy();
     }
     if (!mounted) return;
     if (chapters.isEmpty) {
@@ -196,7 +262,12 @@ class _VideoPageState extends State<VideoPage> {
         : await _pickChapter(item, chapters);
     if (chapter == null || !mounted) return;
 
+    // 取地址与「内核预启动」并行：两件事互不依赖，谁慢等谁。
+    final prelaunch = _startPrelaunch();
+    PlayerMedia? media;
+    var qualities = const <VideoQuality>[];
     try {
+      _beginBusy('正在解析播放地址：${item.title}');
       final content = await source.content(
         itemId: item.id,
         chapterId: chapter.id,
@@ -204,39 +275,61 @@ class _VideoPageState extends State<VideoPage> {
       final address = SourcePlayback.contentAddress(content);
       if (address == null) {
         _toast('「${chapter.title}」不是视频内容');
-        return;
-      }
-      final chapterIndex = chapters.indexWhere(
-        (candidate) => candidate.id == chapter.id,
-      );
-      await _openPlayer(
-        PlayerMedia(
+      } else {
+        media = PlayerMedia(
           uri: address,
           title: '${item.title} · ${chapter.title}',
           // 图源给的防盗链头必须原样交给内核（丢 = CDN 403 + 退避重试）。
           headers: SourcePlayback.contentHeaders(content),
-        ),
-        target: VideoPlayTarget(
-          sourceId: source.id,
-          itemId: item.id,
-          title: item.title,
-          cover: item.cover,
-          chapterIndex: chapterIndex < 0 ? 0 : chapterIndex,
-          chapterId: chapter.id,
-          chapterTitle: chapter.title,
-        ),
+        );
         // 图源给了多条清晰度线路就一起带进播放器（单条 / 空表时按钮弹提示）。
-        qualities: SourcePlayback.contentQualities(content),
-      );
+        qualities = SourcePlayback.contentQualities(content);
+      }
     } on SourceException catch (error) {
       _toast(error.message);
+    } finally {
+      // 地址拿到就收忙态：接着 push 播放器页，它自己的「正在准备」卡接手反馈。
+      _endBusy();
     }
+
+    if (media == null || !mounted) {
+      // 没走到起播（不是视频内容 / 脚本报错 / 页面已退出）：预启动的实例
+      // 就地释放，绝不让它成为没人管的孤儿。
+      _discardPrelaunch(prelaunch);
+      return;
+    }
+    final chapterIndex = chapters.indexWhere(
+      (candidate) => candidate.id == chapter.id,
+    );
+    await _openPlayer(
+      media,
+      target: VideoPlayTarget(
+        sourceId: source.id,
+        itemId: item.id,
+        title: item.title,
+        cover: item.cover,
+        chapterIndex: chapterIndex < 0 ? 0 : chapterIndex,
+        chapterId: chapter.id,
+        chapterTitle: chapter.title,
+      ),
+      qualities: qualities,
+      prelaunch: prelaunch,
+    );
   }
 
   /// 探索列表里点一个条目：先按 id 打开它所属的图源，再走既有的起播链路。
   Future<void> _playFromSelection(ExploreSelection selection) async {
+    if (_busy) return;
     final manager = widget.sourceManager ?? LumeSources.manager(Section.video);
-    final source = await manager.open(selection.sourceId);
+    final DataSource? source;
+    try {
+      // 图源引擎可能是冷的（首次打开要装载脚本）：这一段也算忙态——真机上
+      // 「点了没反应」最早就是出现在这里。
+      _beginBusy('正在打开图源：${selection.item.title}');
+      source = await manager.open(selection.sourceId);
+    } finally {
+      _endBusy();
+    }
     if (!mounted) return;
     if (source == null) {
       _toast('「${selection.item.title}」的源不可用（未启用或脚本载入失败）');
@@ -249,12 +342,19 @@ class _VideoPageState extends State<VideoPage> {
   ///
   /// 返回后**不必刷新任何列表**：首页不再有「继续观看」区块（用户要求删除），
   /// 播放记录只在右上角 ⏱️ 的抽屉里看，抽屉每次打开都会重读库。
+  ///
+  /// [prelaunch] 是浏览页在解析地址时预启动的内核，交给播放器页接手
+  /// （见 [PlayerPrelaunch]）；页面已经不在时由这里负责释放。
   Future<void> _openPlayer(
     PlayerMedia media, {
     VideoPlayTarget? target,
     List<VideoQuality> qualities = const <VideoQuality>[],
+    PlayerPrelaunch? prelaunch,
   }) async {
-    if (!mounted) return;
+    if (!mounted) {
+      _discardPrelaunch(prelaunch);
+      return;
+    }
     _playerRouteOpen = true;
     try {
       await Navigator.of(context).push(
@@ -271,6 +371,7 @@ class _VideoPageState extends State<VideoPage> {
             sourceManager: widget.sourceManager,
             library: _library,
             qualities: qualities,
+            prelaunch: prelaunch,
           ),
         ),
       );
@@ -327,8 +428,15 @@ class _VideoPageState extends State<VideoPage> {
     LibraryItem item,
     VideoProgress progress,
   ) async {
+    if (_busy) return;
     final manager = widget.sourceManager ?? LumeSources.manager(Section.video);
-    final source = await manager.open(item.sourceId);
+    final DataSource? source;
+    try {
+      _beginBusy('正在打开图源：${item.title}');
+      source = await manager.open(item.sourceId);
+    } finally {
+      _endBusy();
+    }
     if (!mounted) return;
     if (source == null) {
       _toast('「${item.title}」的源不可用（未启用或脚本载入失败）');
@@ -336,11 +444,14 @@ class _VideoPageState extends State<VideoPage> {
     }
 
     final List<SourceChapter> chapters;
+    _beginBusy('正在获取剧集：${item.title}');
     try {
       chapters = await source.chapters(item.itemId);
     } on SourceException catch (error) {
       _toast(error.message);
       return;
+    } finally {
+      _endBusy();
     }
     if (!mounted) return;
     if (chapters.isEmpty) {
@@ -356,7 +467,12 @@ class _VideoPageState extends State<VideoPage> {
     if (index < 0) index = 0;
     final chapter = chapters[index];
 
+    // 与条目起播同一条思路：取地址与内核预启动并行（见 [PlayerPrelaunch]）。
+    final prelaunch = _startPrelaunch();
+    PlayerMedia? media;
+    var qualities = const <VideoQuality>[];
     try {
+      _beginBusy('正在解析播放地址：${item.title}');
       final content = await source.content(
         itemId: item.itemId,
         chapterId: chapter.id,
@@ -364,28 +480,38 @@ class _VideoPageState extends State<VideoPage> {
       final address = SourcePlayback.contentAddress(content);
       if (address == null) {
         _toast('「${chapter.title}」不是视频内容');
-        return;
-      }
-      await _openPlayer(
-        PlayerMedia(
+      } else {
+        media = PlayerMedia(
           uri: address,
           title: '${item.title} · ${chapter.title}',
           headers: SourcePlayback.contentHeaders(content),
-        ),
-        target: VideoPlayTarget(
-          sourceId: item.sourceId,
-          itemId: item.itemId,
-          title: item.title,
-          cover: item.cover,
-          chapterIndex: index,
-          chapterId: chapter.id,
-          chapterTitle: chapter.title,
-        ),
-        qualities: SourcePlayback.contentQualities(content),
-      );
+        );
+        qualities = SourcePlayback.contentQualities(content);
+      }
     } on SourceException catch (error) {
       _toast(error.message);
+    } finally {
+      _endBusy();
     }
+
+    if (media == null || !mounted) {
+      _discardPrelaunch(prelaunch);
+      return;
+    }
+    await _openPlayer(
+      media,
+      target: VideoPlayTarget(
+        sourceId: item.sourceId,
+        itemId: item.itemId,
+        title: item.title,
+        cover: item.cover,
+        chapterIndex: index,
+        chapterId: chapter.id,
+        chapterTitle: chapter.title,
+      ),
+      qualities: qualities,
+      prelaunch: prelaunch,
+    );
   }
 
   // ------------------------------------------------------------------ 历史
@@ -465,38 +591,85 @@ class _VideoPageState extends State<VideoPage> {
   ///
   /// 底部原先挂着一块「继续观看」（最近 3 条 + 「全部」），**已按用户要求删除**：
   /// 首页只当浏览用，播放记录统一从右上角 ⏱️ 的抽屉进（不再有两处入口）。
+  ///
+  /// 起播期间（[busyLabel] 非空）在上面盖一层忙态：列表被挡住、在等什么写在
+  /// 卡片上——点按有反馈，也不会被连点两次。
   Widget _buildBrowseTab() {
-    if (_libraryFailed) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
+    // library 打不开时的说明卡（浏览照常，只是进度与记录不可用）。
+    final content = _libraryFailed
+        ? const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: GlassCard(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  '视频板块的阅读库打不开，播放进度与记录暂不可用；浏览与播放不受影响。',
+                  style: TextStyle(fontSize: 13, height: 1.5),
+                ),
+              ),
+            ),
+          )
+        // 与小说 / 漫画**同一个浏览组件**：同款工具栏（源下拉 → 排序 → 布局 →
+        // 搜索 → 筛选）、同款搜索（聚合 / 当前源）与分页 / 预热。视频板块因此
+        // 不再有一套自己的浏览实现——三块的肌肉记忆真正一致。
+        : ExploreView(
+            section: Section.video,
+            // 管线可能还在准备：为空时封面先出占位（不挂转圈等它，见 ExploreView）。
+            pipeline: _pipeline,
+            manager: widget.sourceManager,
+            layout: ExploreLayout.list,
+            // 顶栏已经有「源管理」，图源条里不再重复放一个。
+            showSourceManage: false,
+            // 导入 / 删除图源后原地重解析（不重挂：重挂会与旧实例的 dispose
+            // 抢同一份板块注册表，真机上会报「图源存储不可用」）。
+            revision: _browseRevision,
+            onOpenItem: _playFromSelection,
+            // 视频筛选：一级分类（底部弹窗）→ 独立筛选子页（分页跳转模式，用户口径）。
+            onOpenFacetFilter: _openFacetFilter,
+          );
+    final label = _busyLabel;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        AbsorbPointer(absorbing: label != null, child: content),
+        if (label != null) _buildBusyOverlay(label),
+      ],
+    );
+  }
+
+  /// 起播忙态浮层：**为什么必须有**——从点条目到播放器页出现之间要过两段沙箱
+  /// 往返（剧集列表 / 播放地址，各 10 秒预算），此前这期间列表上毫无反应，
+  /// 真机反馈就是「点了没动静」。卡片写明在等什么，点按至少有个交代。
+  Widget _buildBusyOverlay(String label) {
+    return Positioned.fill(
+      child: ColoredBox(
+        color: Colors.black.withValues(alpha: 0.18),
+        child: Center(
           child: GlassCard(
-            padding: EdgeInsets.all(20),
-            child: Text(
-              '视频板块的阅读库打不开，播放进度与记录暂不可用；浏览与播放不受影响。',
-              style: TextStyle(fontSize: 13, height: 1.5),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2.2),
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: LumeTheme.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-      );
-    }
-    // 与小说 / 漫画**同一个浏览组件**：同款工具栏（源下拉 → 排序 → 布局 →
-    // 搜索 → 筛选）、同款搜索（聚合 / 当前源）与分页 / 预热。视频板块因此
-    // 不再有一套自己的浏览实现——三块的肌肉记忆真正一致。
-    return ExploreView(
-      section: Section.video,
-      // 管线可能还在准备：为空时封面先出占位（不挂转圈等它，见 ExploreView）。
-      pipeline: _pipeline,
-      manager: widget.sourceManager,
-      layout: ExploreLayout.list,
-      // 顶栏已经有「源管理」，图源条里不再重复放一个。
-      showSourceManage: false,
-      // 导入 / 删除图源后原地重解析（不重挂：重挂会与旧实例的 dispose
-      // 抢同一份板块注册表，真机上会报「图源存储不可用」）。
-      revision: _browseRevision,
-      onOpenItem: _playFromSelection,
-      // 视频筛选：一级分类（底部弹窗）→ 独立筛选子页（分页跳转模式，用户口径）。
-      onOpenFacetFilter: _openFacetFilter,
+      ),
     );
   }
 }
