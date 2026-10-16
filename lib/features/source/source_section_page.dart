@@ -15,7 +15,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../core/js/cat_engines.dart';
-import '../../core/net/network_settings.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
@@ -331,16 +330,19 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     );
   }
 
-  /// 网络配置：单图源的 UA / Cookie / 代理，覆盖全局设置（留空即继承）。
+  /// 源设置：单图源的网络覆盖（UA / Cookie / 代理）、换网址（镜像 / 自定义域名）
+  /// 与账号登入。网络覆盖留空即继承全局设置。
   ///
   /// 保存后丢弃该图源已建好的 HTTP 客户端与运行时——下次请求用新配置，
-  /// 不会出现「改了配置还在用旧 Cookie」的错觉。
+  /// 不会出现「改了配置还在用旧 Cookie」的错觉。换网址 / 账号登入只落库：
+  /// 它在**每次调用前**注入脚本（`LumeSource.config`），因此下一次浏览就用新值。
   Future<void> _editNetwork(SourceDescriptor source) async {
-    final profile = await showDialog<NetworkProfile>(
+    final result = await showDialog<SourceSettingsResult>(
       context: context,
       builder: (_) => SourceNetworkDialog(source: source),
     );
-    if (profile == null || !mounted) return;
+    if (result == null || !mounted) return;
+    final profile = result.network;
     await _manager.setNetwork(
       source.id,
       userAgent: profile.userAgent,
@@ -349,6 +351,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
       bridge: profile.bridge,
       allowBadCertificate: profile.allowBadCertificate,
     );
+    await _manager.setSiteConfig(source.id, result.site);
     // 运行时重建：旧客户端带着旧 UA / Cookie，必须释放。
     await _manager.setEnabled(source.id, source.enabled);
     await _reload();
@@ -356,7 +359,9 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          profile.isEmpty
+          result.site.hasCustomDomain || result.site.safeMirrorIndex > 0
+              ? '已保存「${source.name}」的源设置（换网址已生效）'
+              : profile.isEmpty
               ? '已恢复「${source.name}」为全局网络设置'
               : '已保存「${source.name}」的网络配置',
         ),
@@ -1184,6 +1189,18 @@ class _SourceTile extends StatelessWidget {
                     if (source.hasNetworkOverride) ...<Widget>[
                       Text(
                         '网络已自定义',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: _accentColor,
+                        ),
+                      ),
+                    ],
+                    // 换过网址（选了非主站镜像 / 填了自定义域名）：列表上标一句，
+                    // 否则「列表为空」时用户不会想到自己去过另一个域名。
+                    if (source.hasMirrorOverride) ...<Widget>[
+                      Text(
+                        '换网址',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 13,

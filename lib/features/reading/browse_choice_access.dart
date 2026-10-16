@@ -31,7 +31,7 @@ class BrowseChoiceAccess extends StatelessWidget {
   final ValueChanged<String?> onSelected;
 
   Future<void> _open(BuildContext context) async {
-    final value = await showModalBottomSheet<_Choice>(
+    final value = await showLumeBottomSheet<_Choice>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
@@ -109,7 +109,7 @@ class _ChoiceSheetState extends State<_ChoiceSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
       child: SizedBox(
-        height: math.min(580, media.size.height * .72),
+        height: DrawerGeometry.height(context),
         child: Column(
           children: [
             Padding(
@@ -215,7 +215,7 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
   var chosenCategory = category;
   var chosenFilters = Map<String, String>.of(filters);
   var query = '';
-  return showModalBottomSheet<
+  return showLumeBottomSheet<
     ({String? category, Map<String, String> filters})
   >(
     context: context,

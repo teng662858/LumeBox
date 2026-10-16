@@ -89,16 +89,16 @@ class LumePalette {
   static const LumePalette light = LumePalette(
     brightness: Brightness.light,
     accent: Color(0xFF7C5CFF),
-    base: Color(0xFFDEE5EF),
+    base: Color(0xFFFFFFFF),
     surface: Color(0xFFFFFFFF),
-    surfaceAlt: Color(0xFFE7EDF7),
-    glass: Color(0xF2FFFFFF),
-    glassStrong: Color(0xFAFFFFFF),
+    surfaceAlt: Color(0xFFF5F5F7),
+    glass: Color(0xB8FFFFFF),
+    glassStrong: Color(0xD9FFFFFF),
     textPrimary: Color(0xFF1A1A1A),
     textSecondary: Color(0xFF263449),
     textHint: Color(0xFF334158),
-    divider: Color(0xFFACB8CA),
-    hairline: Color(0xFF98A6BA),
+    divider: Color(0x00000000),
+    hairline: Color(0x00000000),
     fill: Color(0x0A000000),
     fillStrong: Color(0x14000000),
     success: Color(0xFF2E7D4F),
@@ -106,13 +106,13 @@ class LumePalette {
     warning: Color(0xFFB26A00),
     info: Color(0xFF2F6FB5),
     cardShadow: <BoxShadow>[
-      BoxShadow(color: Color(0x2415253D), blurRadius: 16, offset: Offset(0, 4)),
+      BoxShadow(color: Color(0x10000000), blurRadius: 24, offset: Offset(0, 6)),
     ],
     floatShadow: <BoxShadow>[
-      BoxShadow(color: Color(0x3315253D), blurRadius: 24, offset: Offset(0, 8)),
+      BoxShadow(color: Color(0x18000000), blurRadius: 24, offset: Offset(0, 8)),
       BoxShadow(color: Color(0x0A1A1A1A), blurRadius: 6, offset: Offset(0, 2)),
     ],
-    backgroundGradient: <Color>[Color(0xFFE4EAF3), Color(0xFFD9E2EE)],
+    backgroundGradient: <Color>[Colors.white, Colors.white],
     overlayStyle: Brightness.dark,
     snackBar: Color(0xF21A1A22),
     onAccent: Colors.white,
@@ -126,16 +126,16 @@ class LumePalette {
   static const LumePalette dark = LumePalette(
     brightness: Brightness.dark,
     accent: Color(0xFF9B84FF),
-    base: Color(0xFF0B1019),
-    surface: Color(0xFF27364B),
-    surfaceAlt: Color(0xFF36485F),
-    glass: Color(0xF227364B),
-    glassStrong: Color(0xFA27364B),
+    base: Color(0xFF121214),
+    surface: Color(0xFF242427),
+    surfaceAlt: Color(0xFF303034),
+    glass: Color(0xB8242427),
+    glassStrong: Color(0xD9242427),
     textPrimary: Color(0xFFF2F2F4),
     textSecondary: Color(0xFFE4EBF5),
     textHint: Color(0xFFD6E0EE),
-    divider: Color(0xFF6D809B),
-    hairline: Color(0xFF8293AA),
+    divider: Color(0x00000000),
+    hairline: Color(0x00000000),
     fill: Color(0x0FFFFFFF),
     fillStrong: Color(0x1FFFFFFF),
     success: Color(0xFF5FBF85),
@@ -143,13 +143,13 @@ class LumePalette {
     warning: Color(0xFFE0A24C),
     info: Color(0xFF6FA8E8),
     cardShadow: <BoxShadow>[
-      BoxShadow(color: Color(0x40000000), blurRadius: 16, offset: Offset(0, 4)),
+      BoxShadow(color: Color(0x40000000), blurRadius: 24, offset: Offset(0, 6)),
     ],
     floatShadow: <BoxShadow>[
       BoxShadow(color: Color(0x59000000), blurRadius: 24, offset: Offset(0, 8)),
       BoxShadow(color: Color(0x33000000), blurRadius: 6, offset: Offset(0, 2)),
     ],
-    backgroundGradient: <Color>[Color(0xFF101824), Color(0xFF090E17)],
+    backgroundGradient: <Color>[Color(0xFF121214), Color(0xFF121214)],
     overlayStyle: Brightness.light,
     snackBar: Color(0xF22E2E36),
     onAccent: Color(0xFF1A1030),
@@ -327,21 +327,14 @@ class LumeTheme {
     return BoxDecoration(
       color: surface,
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: hairline),
       boxShadow: cardShadow,
     );
   }
 
   // ------------------------------------------------------------------ 背景
 
-  /// 页面统一背景：带一层几乎看不见的渐变（避免大色块死板）。
-  static BoxDecoration get background => BoxDecoration(
-    gradient: LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: palette.backgroundGradient,
-    ),
-  );
+  /// 页面统一纯色背景：亮色纯白，暗色深灰。
+  static BoxDecoration get background => BoxDecoration(color: base);
 
   // ------------------------------------------------------------------ 主题
 
@@ -363,7 +356,7 @@ class LumeTheme {
   }
 
   static Color readableGlass(Color color) =>
-      color.withValues(alpha: .86 + .14 * color.a);
+      color.withValues(alpha: color.a.clamp(.60, .88));
 
   /// Shared UI typography. Keep OS accessibility scaling unchanged.
   static TextTheme readableTextTheme(Brightness brightness) {
@@ -484,7 +477,7 @@ class LumeTheme {
         iconColor: textPrimary,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: hairline),
+          side: BorderSide.none,
         ),
       ),
       textTheme: readableTextTheme(brightness),
@@ -497,7 +490,7 @@ class LumeTheme {
         shadowColor: palette.cardShadow.first.color,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: hairline),
+          side: BorderSide.none,
         ),
       ),
       iconTheme: IconThemeData(color: textPrimary),
@@ -538,13 +531,13 @@ class LumeTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: accentColor,
           disabledForegroundColor: textPrimary,
-          side: BorderSide(color: hairline),
+          side: BorderSide.none,
         ),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: surfaceAlt,
         selectedColor: accentColor,
-        side: BorderSide(color: hairline),
+        side: BorderSide.none,
         labelStyle: WidgetStateTextStyle.resolveWith(
           (states) => TextStyle(
             fontSize: 13,
@@ -579,11 +572,11 @@ class LumeTheme {
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: hairline),
+          borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: hairline),
+          borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),

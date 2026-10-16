@@ -8,6 +8,7 @@ import 'package:lume_box/core/db/section_database.dart';
 import 'package:lume_box/core/js/source_registry.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
+import 'package:lume_box/core/source/source_site_config.dart';
 
 /// 板块库与注册表的归属校验。
 ///
@@ -277,6 +278,153 @@ CREATE TABLE section_setting (
       registry.setEnabled('b', true);
       expect(registry.currentSource()!.id, 'b', reason: '重新启用后重新可用');
       SourceRegistry.close(Section.novel);
+    });
+  });
+
+  group('板块库：换网址 / 账号登入', () {
+    Future<SourceRegistry> seeded(Section section, List<String> mirrors) async {
+      final scope = await SectionScope.open(section);
+      final database = await SectionDatabase.open(scope);
+      database.upsertSource(
+        id: 'mirror',
+        name: '镜像源',
+        version: '1.0.0',
+        section: section.id,
+        script: 'var LumeSource = {};',
+        mirrors: mirrors,
+      );
+      return SourceRegistry.open(section);
+    }
+
+    test('脚本声明的镜像随导入落库', () async {
+      final registry = await seeded(Section.novel, <String>[
+        'https://main.example',
+        'https://m1.example',
+      ]);
+      expect(registry.source('mirror')!.siteConfig.mirrors, <String>[
+        'https://main.example',
+        'https://m1.example',
+      ]);
+      SourceRegistry.close(Section.novel);
+    });
+
+    test('保存后的配置读得回来，且只影响本源', () async {
+      final registry = await seeded(
+        Section.novel,
+        <String>['https://main.example'],
+      );
+      registry.setSourceSiteConfig(
+        'mirror',
+        const SourceSiteConfig(
+          mirrors: <String>['https://main.example'],
+          domainOverride: 'custom.example',
+          account: 'reader',
+          password: 'secret',
+        ),
+      );
+      final record = registry.source('mirror')!;
+      expect(record.siteConfig.resolvedDomain, 'https://custom.example');
+      expect(record.siteConfig.account, 'reader');
+      expect(record.siteConfig.password, 'secret');
+
+      // 跨板块的同名源看不到这份配置（配置按源存在各自的板块库里）。
+      final other = await seeded(
+        Section.comic,
+        <String>['https://comic.example'],
+      );
+      expect(other.source('mirror')!.siteConfig.domainOverride, '');
+      expect(
+        other.source('mirror')!.siteConfig.mirrors,
+        <String>['https://comic.example'],
+      );
+      SourceRegistry.close(Section.comic);
+      SourceRegistry.close(Section.novel);
+    });
+
+    test('重新导入：镜像整体替换，用户自己的选择与账号保留', () async {
+      final registry = await seeded(Section.novel, <String>[
+        'https://main.example',
+        'https://m1.example',
+      ]);
+      registry.setSourceSiteConfig(
+        'mirror',
+        const SourceSiteConfig(
+          mirrors: <String>['https://main.example', 'https://m1.example'],
+          mirrorIndex: 1,
+          account: 'reader',
+          password: 'secret',
+        ),
+      );
+
+      // 覆盖导入一份把镜像换成别的站的脚本。
+      final scope = await SectionScope.open(Section.novel);
+      final database = await SectionDatabase.open(scope);
+      database.upsertSource(
+        id: 'mirror',
+        name: '镜像源',
+        version: '2.0.0',
+        section: Section.novel.id,
+        script: 'var LumeSource = {version: "2.0.0"};',
+        mirrors: <String>['https://new.example'],
+      );
+
+      final record = registry.source('mirror')!;
+      expect(record.version, '2.0.0');
+      expect(
+        record.siteConfig.mirrors,
+        <String>['https://new.example'],
+        reason: '镜像由脚本声明，整体替换',
+      );
+      expect(
+        record.siteConfig.mirrorIndex,
+        0,
+        reason: '旧下标 1 越界，收敛到新列表的主站',
+      );
+      expect(record.siteConfig.account, 'reader', reason: '账号属于用户配置，不动');
+      expect(record.siteConfig.password, 'secret');
+      SourceRegistry.close(Section.novel);
+    });
+
+    test('老库（没有 site_config 列）打开后读默认值，写入也正常', () async {
+      final scope = await SectionScope.open(Section.video);
+      final legacy = sqlite3.open(scope.dbPath);
+      legacy.execute('''
+CREATE TABLE source (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  version    TEXT NOT NULL DEFAULT '',
+  script     TEXT NOT NULL,
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE section_setting (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+''');
+      legacy.execute(
+        'INSERT INTO source (id, name, version, script, enabled, updated_at) '
+        'VALUES (?, ?, ?, ?, 1, ?)',
+        ['old', '老图源', '0.9.0', 'var LumeSource = {};', 1],
+      );
+      legacy.execute('PRAGMA user_version = 1');
+      legacy.close();
+
+      final database = await SectionDatabase.open(scope);
+      expect(database.source('old')!.siteConfig.mirrors, isEmpty);
+      expect(database.source('old')!.siteConfig.resolvedDomain, '');
+
+      database.setSourceSiteConfig(
+        'old',
+        const SourceSiteConfig(
+          mirrors: <String>['https://main.example'],
+          account: 'reader',
+        ),
+      );
+      final updated = database.source('old')!;
+      expect(updated.siteConfig.mirrors, <String>['https://main.example']);
+      expect(updated.siteConfig.resolvedDomain, 'https://main.example');
+      expect(updated.siteConfig.account, 'reader');
     });
   });
 }

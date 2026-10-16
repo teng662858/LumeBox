@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -20,7 +21,7 @@ class _DiagnosticExportTileState extends State<DiagnosticExportTile> {
   Future<void> export() async {
     var action = 'export';
     if (widget.save == null && Platform.isIOS) {
-      final chosen = await showModalBottomSheet<String>(
+      final chosen = await showLumeBottomSheet<String>(
         context: context,
         builder: (context) => SafeArea(
           child: Column(

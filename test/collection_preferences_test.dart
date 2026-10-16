@@ -1,3 +1,5 @@
+import 'package:lume_box/features/reading/collection_panel.dart';
+import 'package:lume_box/shared/widgets/column_list.dart';
 import 'package:flutter/material.dart';
 import 'package:lume_box/features/reading/history_privacy.dart';
 
@@ -32,6 +34,47 @@ void main() {
     await SectionScope.closeAll();
     root.deleteSync(recursive: true);
   });
+  testWidgets(
+    'saved double grid becomes a double list with row actions intact',
+    (tester) async {
+      final library = (await tester.runAsync(
+        () => ReadingLibrary.open(Section.novel),
+      ))!;
+      library.setSetting('collection.history.layout', 'grid2');
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 667);
+      addTearDown(tester.view.reset);
+      var tapped = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CollectionPanel(
+              title: '历史',
+              ids: const ['a', 'b'],
+              library: library,
+              storageKey: 'collection.history.layout',
+              onDelete: (_) async {},
+              itemBuilder: (index) => ListTile(
+                title: Text('row $index'),
+                onTap: () => tapped = true,
+              ),
+              gridBuilder: (_) => const Text('poster grid'),
+            ),
+          ),
+        ),
+      );
+      expect(find.byType(ColumnList), findsOneWidget);
+      expect(find.byType(GridView), findsNothing);
+      expect(find.text('poster grid'), findsNothing);
+      await tester.tap(find.text('row 1'));
+      expect(tapped, isTrue);
+      await tester.tap(find.byTooltip('显示模式'));
+      await tester.pumpAndSettle();
+      expect(find.text('双列列表'), findsWidgets);
+      expect(find.text('双列网格'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
   test(
     'dragging a filtered subset preserves hidden sources and section isolation',
     () async {

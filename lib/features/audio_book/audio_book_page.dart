@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import '../../shared/widgets/module_glass_surface.dart';
 
 import 'dart:async';
@@ -338,13 +339,13 @@ class _AudioBookPageState extends State<AudioBookPage> {
       ),
     ),
   );
-  Future<void> _episodes(BuildContext context) => showModalBottomSheet<void>(
+  Future<void> _episodes(BuildContext context) => showLumeBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
     builder: (context) => SafeArea(
       child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * .65,
+        height: DrawerGeometry.height(context),
         child: ListView.builder(
           padding: EdgeInsets.zero,
           itemCount: widget.resource.episodes.length,

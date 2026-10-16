@@ -1,4 +1,5 @@
 import '../source/source_preferences.dart';
+import '../source/source_site_config.dart';
 import '../cache/section_memory_cache.dart';
 import '../db/section_database.dart';
 import '../db/source_record.dart';
@@ -256,6 +257,9 @@ class SourceRegistry {
         version: metadata.version,
         section: section.id,
         script: text,
+        // 站点镜像**由脚本声明**（身份声明的 `mirrors`），导入 / 更新时整体替换；
+        // 同一份配置里的用户字段（选中下标 / 自定义域名 / 账号密码）由库层保留。
+        mirrors: metadata.mirrors,
       );
       // 订阅来源：记在库里供「更新订阅源」重新拉取；本地导入留空。
       // 覆盖导入（更新）时也照写——来源地址属于用户配置，不随脚本内容丢失。
@@ -415,7 +419,30 @@ class SourceRegistry {
       version: record.version,
       section: section.id,
       script: record.script,
+      // 重命名不是「脚本变了」：镜像表原样带回去，不重新读脚本声明
+      // （否则运行期才声明 mirrors 的源会在重命名时把镜像丢掉）。
+      mirrors: record.siteConfig.mirrors,
     );
+  }
+
+  /// 保存单图源的「换网址 / 账号登入」（镜像选择、自定义域名、登录账号）。
+  ///
+  /// **不释放运行时**：这份配置是宿主在每次调用前注入脚本的快照
+  /// （见 [_EngineRuntime.call]），下一次调用自然读到新值——用户改完设置立刻
+  /// 生效，且不必重新载入脚本（脚本里的会话缓存由脚本经 `LumeSource.fs` 自己管）。
+  void setSourceSiteConfig(String sourceId, SourceSiteConfig config) {
+    if (!_owns(sourceId)) return;
+    _database.setSourceSiteConfig(sourceId, config);
+  }
+
+  /// 本源当前解析后的脚本配置快照（脚本读到的 `LumeSource.config`）。
+  ///
+  /// Cookie 取自单图源网络覆盖：它是脚本索要的凭据之一，与「网络配置」里那份
+  /// 是同一份数据（不存在第二份 Cookie）。
+  Map<String, Object?> scriptConfigFor(String sourceId) {
+    final record = source(sourceId);
+    final site = record?.siteConfig ?? SourceSiteConfig.none;
+    return site.toScriptJson(cookie: record?.network.cookie ?? '');
   }
 
   /// 导出脚本原文：图源不存在或跨板块时返回 null。

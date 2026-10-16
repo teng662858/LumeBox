@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/reading/reading.dart';
@@ -258,7 +259,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
     final options = _sources
         .where((source) => source.enabled)
         .toList(growable: false);
-    final selected = await showModalBottomSheet<String>(
+    final selected = await showLumeBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) =>

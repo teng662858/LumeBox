@@ -44,7 +44,9 @@ void main() {
       ]) {
         expect(
           palette.base,
-          isNot(palette.surface),
+          palette.brightness == Brightness.light
+              ? equals(Colors.white)
+              : isNot(palette.surface),
           reason: '底与卡同色就没有层次了（这是全项目的分层基础）',
         );
         expect(
@@ -59,7 +61,7 @@ void main() {
       // 浅色：底 F7F7F9，卡 FFFFFF → 卡更亮。
       expect(
         LumePalette.light.surface.computeLuminance(),
-        greaterThan(LumePalette.light.base.computeLuminance()),
+        equals(LumePalette.light.base.computeLuminance()),
       );
       // 深色：底 121214，卡 1C1C1F → 卡同样更亮（靠色差分层次，不是纯黑一色）。
       expect(

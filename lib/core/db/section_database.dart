@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:sqlite3/sqlite3.dart';
 
 import '../session/section_scope.dart';
+import '../source/source_site_config.dart';
 import '../util/lume_log.dart';
 import 'source_record.dart';
 
@@ -12,7 +15,7 @@ import 'source_record.dart';
 class SectionDatabase {
   SectionDatabase._(this._db, this._sectionId);
 
-  static const int _schemaVersion = 7;
+  static const int _schemaVersion = 8;
 
   /// 库内自证键：本库属于哪个板块。
   static const String _ownerKey = 'owner_section';
@@ -134,6 +137,18 @@ CREATE TABLE IF NOT EXISTS section_setting (
       // 「忽略证书错误」按源存（'1' 开 / '' 关）：证书过期站点的唯一出路。
       _db.execute("ALTER TABLE source ADD COLUMN allow_bad_cert TEXT NOT NULL DEFAULT ''");
     }
+    if (version < 8) {
+      // 换网址 / 账号登入按源存一列 JSON（镜像表、选中下标、自定义域名、账号密码）。
+      // 一列而不是五列：这几个字段是一份整体配置，读写都当整体走，
+      // 将来加字段（比如登录态过期时间）也不必再动表结构。
+      try {
+        _db.execute(
+            "ALTER TABLE source ADD COLUMN site_config TEXT NOT NULL DEFAULT ''");
+      } catch (error) {
+        // 列已存在（重复迁移）：忽略。
+        LumeLog.warn('迁移 source.site_config 跳过: $error');
+      }
+    }
     if (version < _schemaVersion) {
       _db.execute('PRAGMA user_version = $_schemaVersion');
     }
@@ -170,19 +185,26 @@ CREATE TABLE IF NOT EXISTS section_setting (
     required String version,
     required String section,
     required String script,
+    List<String> mirrors = const <String>[],
   }) {
     if (section != _sectionId) {
       throw ArgumentError(
         '拒绝跨板块写入：记录归属「$section」，本库属于「$_sectionId」',
       );
     }
+    // 镜像表**整体替换**（脚本改了地址，库里就该跟着变），但同一份配置里的
+    // 用户字段（选中下标 / 自定义域名 / 账号密码）必须原样保留——覆盖导入一份
+    // 新脚本不该把用户配好的登录账号抹掉。
+    final previous = source(id)?.siteConfig ?? SourceSiteConfig.none;
+    final site = previous.copyWith(mirrors: mirrors).normalized();
     _db.execute(
       'INSERT INTO source (id, name, version, section, script, enabled, '
-      'updated_at) VALUES (?, ?, ?, ?, ?, 1, ?) '
+      'updated_at, site_config) VALUES (?, ?, ?, ?, ?, 1, ?, ?) '
       'ON CONFLICT(id) DO UPDATE SET name = excluded.name, '
       'version = excluded.version, section = excluded.section, '
       'script = excluded.script, '
-      'updated_at = excluded.updated_at',
+      'updated_at = excluded.updated_at, '
+      'site_config = excluded.site_config',
       [
         id,
         name,
@@ -190,8 +212,30 @@ CREATE TABLE IF NOT EXISTS section_setting (
         section,
         script,
         DateTime.now().millisecondsSinceEpoch,
+        _encodeSite(site),
       ],
     );
+  }
+
+  /// 写入单图源的「换网址 / 账号登入」配置（整体覆盖；镜像表也由它写，
+  /// 因此用户在设置里改完就落库，不需要重新导入脚本）。
+  void setSourceSiteConfig(String id, SourceSiteConfig config) {
+    _db.execute(
+      'UPDATE source SET site_config = ? WHERE id = ?',
+      [_encodeSite(config.normalized()), id],
+    );
+  }
+
+  /// 配置 → 落库文本；整份都是默认值时存空串（与「从未配置过」同一形态）。
+  static String _encodeSite(SourceSiteConfig config) {
+    if (config.mirrors.isEmpty &&
+        config.mirrorIndex == 0 &&
+        config.domainOverride.trim().isEmpty &&
+        config.account.isEmpty &&
+        config.password.isEmpty) {
+      return '';
+    }
+    return jsonEncode(config.toJson());
   }
 
   /// 记录图源的订阅来源地址（从订阅链接导入时调用）。

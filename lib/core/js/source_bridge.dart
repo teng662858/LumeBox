@@ -34,7 +34,10 @@ import 'sandbox/sandbox_polyfill.dart';
 ///   （与全局 `fetch` 同一形状，最终都走宿主的 `http.fetch` 代理）；
 /// - `LumeSource.fs.readText(path)` / `.writeText(path, text)` / `.exists(path)` /
 ///   `.remove(path)` / `.list()` → 按图源隔离的进程内存储（见 `SandboxStore`），
-///   不落盘、有上限，随引擎释放。
+///   不落盘、有上限，随引擎释放；
+/// - `LumeSource.config` → **按源配置快照**（换网址 / 账号登入）：域名、镜像表、
+///   账号密码与 Cookie。由宿主在每次调用前注入（见 `LumeJsEngine.applySourceConfig`），
+///   对象已冻结，脚本只读。
 ///
 /// 纪律：本垫片不引入任何新的系统能力——HTTP 与文件 IO 都只是宿主代理
 /// （`LumeBridge.invoke`）的语法糖，与 `fetch`、猫源 `http` 模块走同一条路。
@@ -150,13 +153,66 @@ class LumeSourceBridgePolyfill implements SandboxPolyfill {
     }
   };
 
+  // ------------------------------------------------- 宿主能力：按源配置快照
+  // 换网址 / 账号登入（`LumeSource.config`）：宿主在**每次调用前**把「本源当
+  // 前解析后的配置」写进来（见 LumeJsEngine.applySourceConfig），脚本只读它。
+  // 快照是冻结的：脚本改不动用户的选择，也不会因为脚本给 LumeSource 赋值而被
+  // 覆盖掉（config 在 reserved 里）。
+  var configKeys = ['domain', 'mirrors', 'mirrorIndex', 'customDomain',
+                    'account', 'password', 'cookie'];
+
+  // 只吸收白名单字段并归一到脚本可直接用的形态：
+  // - 字符串字段缺失即空串（domain 因此**永远是字符串**，脚本可安全地做真值判断）；
+  // - mirrors 只在确为数组时复制一份（草稿数据不该让脚本拿到半个数组）；
+  // - mirrorIndex 只在是有限数字时采用，否则 0。
+  function freezeConfig(value) {
+    var next = {};
+    for (var i = 0; i < configKeys.length; i++) {
+      var key = configKeys[i];
+      var item = value == null ? undefined : value[key];
+      if (key === 'mirrors') {
+        next.mirrors = Object.freeze(Array.isArray(item) ? item.slice() : []);
+      } else if (key === 'mirrorIndex') {
+        next.mirrorIndex =
+          (typeof item === 'number' && isFinite(item)) ? item : 0;
+      } else {
+        next[key] = item == null ? '' : String(item);
+      }
+    }
+    return Object.freeze(next);
+  }
+
+  var emptyConfig = freezeConfig(null);
+
   // ---------------------------------------------------------------- 桥接对象
   // `bridge` 字段就是「桥接服务地址」（空串 = 不用桥接），脚本读
   // `LumeSource.bridge` 即可；其余图源不受影响（读到空串）。
-  var bridge = { http: http, fs: fs, bridge: __LUME_BRIDGE__ };
+  var bridge = {
+    http: http,
+    fs: fs,
+    bridge: __LUME_BRIDGE__
+  };
+
+  // 配置用**访问器属性**：`LumeSource.config = {…}` 是「取到桥接对象再写它的
+  // 属性」，不经过全局 LumeSource 的 setter——普通数据属性会被脚本这样盖掉。
+  // 只读快照只有「访问器 + 冻结对象」这一种写法能真正拦住脚本。
+  var configValue = emptyConfig;
+  Object.defineProperty(bridge, 'config', {
+    enumerable: true,
+    configurable: false,
+    get: function () { return configValue; },
+    set: function () { /* 只读：脚本对 config 的赋值一律忽略 */ }
+  });
+
+  globalThis.__lumeApplyConfig = function (json) {
+    var value = null;
+    try { value = JSON.parse(json); } catch (error) { value = null; }
+    configValue = freezeConfig(value);
+    return true;
+  };
 
   // 宿主能力不被脚本对象覆盖（脚本自己的实现可以占用其余任何名字）。
-  var reserved = { http: true, fs: true };
+  var reserved = { http: true, fs: true, config: true };
 
   function namesOf(name) { return aliases[name] || [name]; }
 

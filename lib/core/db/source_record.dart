@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:sqlite3/sqlite3.dart';
 
 import '../net/network_settings.dart';
+import '../source/source_site_config.dart';
 
 /// 图源的持久化模型。每个板块的库中各自保存，图源不跨板块共享。
 class SourceRecord {
@@ -12,6 +15,7 @@ class SourceRecord {
     required this.script,
     required this.enabled,
     this.network = NetworkProfile.none,
+    this.siteConfig = SourceSiteConfig.none,
     this.originUrl = '',
     this.group = '',
     this.failureCount = 0,
@@ -30,6 +34,10 @@ class SourceRecord {
 
   /// 单图源网络覆盖（UA / Cookie / 代理）；空项继承全局设置。
   final NetworkProfile network;
+
+  /// 单图源「换网址 / 账号登入」：站点镜像、选中下标、自定义域名与登录账号。
+  /// 与 [network] 一样按源存，落在本板块库里（跨板块不共享）。
+  final SourceSiteConfig siteConfig;
 
   /// 订阅来源地址；本地导入的图源为空（没有可更新的来源）。
   final String originUrl;
@@ -72,9 +80,24 @@ class SourceRecord {
           // 缺列（老库还没来得及迁移）时按「关闭」读：宁可连不上，也不悄悄放宽校验。
           allowBadCertificate: '${row['allow_bad_cert'] ?? ''}' == '1',
         ),
+        // 换网址 / 账号登入：整份配置以 JSON 存在一列里（老库 / 老行缺列时
+        // 读出来是空串 → 落到默认值，既有数据库照常可用）。
+        siteConfig: SourceSiteConfig.fromJson(_siteJson(row['site_config'])),
         originUrl: '${row['origin_url'] ?? ''}',
         group: '${row['source_group'] ?? ''}',
         failureCount: (row['failure_count'] as int?) ?? 0,
         brokenAt: (row['broken_at'] as int?) ?? 0,
       );
+
+  /// 落库的配置列 → JSON 值；空串 / 坏 JSON 一律按「没有配置」处理
+  /// （坏数据只该让这一项回到默认，不该让整个源读不出来）。
+  static Object? _siteJson(Object? raw) {
+    final text = '${raw ?? ''}'.trim();
+    if (text.isEmpty) return null;
+    try {
+      return jsonDecode(text);
+    } catch (_) {
+      return null;
+    }
+  }
 }

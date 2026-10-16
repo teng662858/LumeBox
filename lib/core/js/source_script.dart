@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../session/section.dart';
+import '../source/source_site_config.dart';
 
 /// 去掉脚本文本开头的 UTF-8 BOM（`\uFEFF`）。
 ///
@@ -32,6 +33,7 @@ class SourceMetadata {
     required this.name,
     required this.version,
     this.category = '',
+    this.mirrors = const <String>[],
   });
 
   final String id;
@@ -45,6 +47,15 @@ class SourceMetadata {
   /// 一旦自报，就必须与导入目标板块一致，否则在解析阶段被拒绝（见
   /// [sectionMismatch]）：跨板块混用图源是被严格禁止的。
   final String category;
+
+  /// 脚本声明的站点镜像（最多 3 个，下标 0 视为主站）。
+  ///
+  /// 与 id / name 同源的两种写法：头部注释 JSON 里的 `mirrors` 数组，
+  /// 或运行时 `LumeSource.mirrors` 数组。**只认 JSON 数组**——头部注释的
+  /// `key=value` 简写表达不了一个列表，硬塞进来只会得到半份数据。
+  /// 落库时会**整体替换**脚本上次声明的镜像（见 `SourceRegistry.import`），
+  /// 用户自己选的下标与手填域名不受影响。
+  final List<String> mirrors;
 
   /// 头部声明注释的匹配式：`//` 行注释与 `/* */` 块注释，分隔符 `:` / `=`，
   /// 前缀允许 `@`。第三个式子是 `key=value` 列表写法（`{` 开头的不走这条）。
@@ -191,6 +202,7 @@ class SourceMetadata {
       name: name,
       version: '${json['version'] ?? ''}'.trim(),
       category: '${json['category'] ?? ''}'.trim(),
+      mirrors: SourceSiteConfig.normalizeMirrors(json['mirrors']),
     );
   }
 
@@ -199,7 +211,7 @@ class SourceMetadata {
   /// 为什么需要合并：`category` 允许只写在运行时 `LumeSource.category` 上，
   /// 而头部注释通常只声明 id / name / version。若直接「头部命中就整体采用」，
   /// 头部里没写 category 的脚本会绕过板块校验——脚本自报的板块必须无论写在
-  /// 哪一处都被看见。
+  /// 哪一处都被看见。镜像表同理：两处声明合并后整体替换库里的旧值。
   static SourceMetadata? merge(SourceMetadata? header, SourceMetadata? runtime) {
     if (header == null) return runtime;
     if (runtime == null) return header;
@@ -208,6 +220,7 @@ class SourceMetadata {
       name: header.name,
       version: header.version.isEmpty ? runtime.version : header.version,
       category: header.category.isEmpty ? runtime.category : header.category,
+      mirrors: header.mirrors.isEmpty ? runtime.mirrors : header.mirrors,
     );
   }
 
@@ -264,5 +277,6 @@ class SourceMetadata {
         'name': name,
         'version': version,
         'category': category,
+        if (mirrors.isNotEmpty) 'mirrors': mirrors,
       });
 }

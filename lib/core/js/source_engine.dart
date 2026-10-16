@@ -83,6 +83,17 @@ typedef SourceEngineFactory = Future<SourceEngine?> Function({
   required Section section,
 });
 
+/// 可选能力：引擎支持把「按源配置快照」注入脚本上下文（脚本读 `LumeSource.config`）。
+///
+/// 做成可选能力而不是加进 [SourceEngine]：只有支持任意求值的引擎才可能实现它
+/// （QuickJS 可以），平台通道型引擎（Node-Mobile）目前没有注入通路——那种引擎
+/// 上脚本读到的 `LumeSource.config` 是空对象（各字段空串 / 空数组），与
+/// 「用户什么都没配」的表现一致，因此调用方可以无条件跳过。
+abstract interface class ScriptConfigCapable {
+  /// 用一份配置快照覆盖脚本上下文里的 `LumeSource.config`。
+  Future<void> applyScriptConfig(Map<String, Object?> config);
+}
+
 /// 引擎提供方登记表（Phase3 扩展点）。
 ///
 /// 内置登记 QuickJS-NG；Android 构建额外登记 Node-Mobile（原生探测失败时
@@ -198,7 +209,7 @@ class SourceEngineRegistry {
 }
 
 /// QuickJS-NG 引擎的端口适配：调用全部直通既有引擎，无行为改动。
-class QuickJsSourceEngine implements SourceEngine {
+class QuickJsSourceEngine implements SourceEngine, ScriptConfigCapable {
   QuickJsSourceEngine(this.engine);
 
   final LumeJsEngine engine;
@@ -217,6 +228,10 @@ class QuickJsSourceEngine implements SourceEngine {
 
   @override
   Future<Map<String, Object?>?> metadata() => engine.metadata();
+
+  @override
+  Future<void> applyScriptConfig(Map<String, Object?> config) =>
+      engine.applySourceConfig(config);
 
   @override
   Future<SandboxResult> callResult(String method, [Object? argument]) =>

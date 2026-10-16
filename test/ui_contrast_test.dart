@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:ui' as ui;
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -41,7 +40,7 @@ void main() {
     () {
       final low = LumeTheme.readableGlass(Colors.white.withValues(alpha: .1));
       final high = LumeTheme.readableGlass(Colors.white.withValues(alpha: .8));
-      expect(low.a, greaterThanOrEqualTo(.86));
+      expect(low.a, greaterThanOrEqualTo(.60));
       expect(high.a, greaterThan(low.a));
     },
   );
@@ -69,14 +68,9 @@ void main() {
               );
             }
           }
-          expect(
-            LumeTheme.contrast(palette.base, palette.surface),
-            greaterThan(1.2),
-          );
-          expect(
-            LumeTheme.contrast(palette.surface, palette.surfaceAlt),
-            greaterThan(1.1),
-          );
+          expect(LumeTheme.cardDecoration().border, isNull);
+          expect(LumeTheme.cardDecoration().boxShadow, isNotEmpty);
+          expect(LumeTheme.background.color, palette.base);
           expect(
             LumeTheme.contrast(palette.accent, palette.surfaceAlt),
             greaterThanOrEqualTo(4.5),

@@ -228,7 +228,7 @@ class CatService extends ChangeNotifier {
   String? selectedSiteId;
   int siteColumns = 1;
   Future<void> setSiteColumns(int value) async {
-    siteColumns = value.clamp(1, 3);
+    siteColumns = value.clamp(1, 2);
     await save();
   }
 
@@ -261,7 +261,7 @@ class CatService extends ChangeNotifier {
           _bookmarks['${entry['site']}|${entry['id']}'] = entry;
         }
         selectedSiteId = raw['selectedSiteId'] as String?;
-        siteColumns = ((raw['siteColumns'] as num?)?.toInt() ?? 1).clamp(1, 3);
+        siteColumns = ((raw['siteColumns'] as num?)?.toInt() ?? 1).clamp(1, 2);
         final unfinished = (raw['pendingSources'] as List? ?? [])
             .map(catText)
             .toSet();

@@ -60,7 +60,6 @@ class PosterCard extends StatelessWidget {
                         DecoratedBox(
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: LumeTheme.hairline),
                             boxShadow: LumeTheme.cardShadow,
                           ),
                         ),
@@ -84,7 +83,6 @@ class PosterCard extends StatelessWidget {
                   DecoratedBox(
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: LumeTheme.hairline),
                       boxShadow: LumeTheme.cardShadow,
                     ),
                   ),

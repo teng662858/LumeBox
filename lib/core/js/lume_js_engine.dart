@@ -198,20 +198,67 @@ class LumeJsEngine {
     return const <String>{};
   }
 
-  /// 读取脚本声明的元信息（id / name / version / category），失败返回 null。
+  /// 读取脚本声明的元信息（id / name / version / category / mirrors），
+  /// 失败返回 null。
   ///
   /// `category` 是脚本自报的归属板块（可选）：导入路径据此拒绝跨板块图源。
   /// 脚本没声明时该字段为空串，归属仍由导入入口决定。
+  /// `mirrors` 同理是可选声明：站点镜像列表，导入时整体写进库（见
+  /// `SourceRegistry.import`）。
   Future<Map<String, Object?>?> metadata() async {
     final result = await _sandbox.eval(
       'JSON.stringify({id: LumeSource.id, name: LumeSource.name, '
-      'version: LumeSource.version, category: LumeSource.category})',
+      'version: LumeSource.version, category: LumeSource.category, '
+      'mirrors: LumeSource.mirrors})',
       fileName: 'metadata.js',
     );
     if (!result.isOk) return null;
     final value = result.value;
     return value is Map ? Map<String, Object?>.from(value) : null;
   }
+
+  /// 把「本源当前解析后的换网址 / 账号登入快照」注入脚本上下文
+  /// （脚本读 `LumeSource.config`）。
+  ///
+  /// **每次调用前都注入**（由组合根在派发前调用，见 `_EngineRuntime.call`）：
+  /// 用户在设置里改了域名 / 账号，下一次调用就该看到新值——不重新导入脚本、
+  /// 也不重建引擎。注入是一次普通沙箱求值，上下文里配置没变就跳过。
+  Future<void> applySourceConfig(Map<String, Object?> config) async {
+    final json = jsonEncode(config);
+    if (_configJson == json &&
+        _configGeneration == _sandbox.generation &&
+        _sandbox.hasLiveContext) {
+      return;
+    }
+    final applied = await _sandbox.eval(
+      '__lumeApplyConfig(${_jsStringLiteral(json)})',
+      fileName: 'config.js',
+    );
+    if (!applied.isOk) {
+      // 注入失败不改变调用语义：脚本读到的 config 仍是上一次的快照
+      // （首次注入失败就是空对象），域名解析链与从前一致。
+      LumeLog.warn('[$sourceId] 源配置注入失败: ${applied.error?.message ?? '未知原因'}');
+      return;
+    }
+    _configJson = json;
+    _configGeneration = _sandbox.generation;
+  }
+
+  /// 最近一次注入脚本的配置（JSON 文本）与它所在上下文的代数。
+  ///
+  /// 同一个上下文里配置没变就不重复注入；上下文重建（代数变化，或上下文
+  /// 已被污染释放）后必须重注入——重建是全新 JSContext，脚本全局变量都会丢。
+  String? _configJson;
+  int _configGeneration = -1;
+
+  /// JSON 文本 → JS 字符串字面量。
+  ///
+  /// `jsonEncode` 已转义引号 / 反斜杠 / 控制字符，只剩行分隔符
+  /// （U+2028 / U+2029）在 JS 字符串字面量里不合法——用户手填的域名或密码
+  /// 带上它会把整句求值拆成两行，这里补一道转义。
+  static String _jsStringLiteral(String text) => jsonEncode(text)
+      .replaceAll('\u2028', r'\u2028')
+      .replaceAll('\u2029', r'\u2029');
 
   /// 调用图源方法并解析其 JSON 结果。失败返回 null。
   Future<Object?> call(String method, [Object? argument]) async {

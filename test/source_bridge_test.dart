@@ -120,4 +120,26 @@ void main() {
     expect(custom.source.contains("'getSearch'"), isTrue,
         reason: '搜索别名是固定的一路分支');
   });
+
+  test('按源配置快照（换网址 / 账号登入）：注入钩子、白名单、冻结与保留位', () {
+    final source = const LumeSourceBridgePolyfill().source;
+
+    // 宿主注入的唯一入口；配置从空对象起步，因此「什么都没配」的源读到的
+    // domain 也是空串（脚本据此回落自己的默认地址）。
+    expect(source.contains('__lumeApplyConfig'), isTrue);
+    expect(source.contains('domain'), isTrue);
+    expect(source.contains('mirrors'), isTrue);
+    expect(source.contains('customDomain'), isTrue);
+    expect(source.contains('account'), isTrue);
+    expect(source.contains('password'), isTrue);
+    expect(source.contains('cookie'), isTrue);
+    expect(source.contains('Object.freeze'), isTrue, reason: '快照只读');
+
+    // config 是**访问器属性**（只读）：脚本 `LumeSource.config = {…}` 直接写桥接
+    // 对象的属性，不经过全局 setter，只有访问器 + 冻结对象才拦得住。
+    expect(source.contains("Object.defineProperty(bridge, 'config'"), isTrue);
+    expect(source.contains('set: function () { /* 只读'), isTrue);
+    // 同时也在保留位里：脚本对象（`var LumeSource = { config: … }`）合并不进桥接。
+    expect(source.contains('config: true'), isTrue);
+  });
 }

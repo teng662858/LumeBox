@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import '../../core/source/source_preferences.dart';
 
 import 'package:flutter/material.dart';
@@ -271,7 +272,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
       return;
     }
     final readChapterIndex = _progress?.chapterIndex;
-    final scope = await showModalBottomSheet<ComicDownloadScope>(
+    final scope = await showLumeBottomSheet<ComicDownloadScope>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _DownloadScopeSheet(

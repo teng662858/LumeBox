@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import '../../core/source/source_picker_groups.dart';
 import '../source/waf_webview_page.dart';
 
@@ -764,7 +765,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
 
   /// 书签列表：点一条跳到对应章节的对应页，右侧可删。
   Future<void> _showBookmarkSheet() async {
-    final selected = await showModalBottomSheet<ComicBookmark>(
+    final selected = await showLumeBottomSheet<ComicBookmark>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -798,7 +799,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   }
 
   Future<void> _showChapterSheet() async {
-    final selected = await showModalBottomSheet<int>(
+    final selected = await showLumeBottomSheet<int>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -819,7 +820,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   /// 用户粘到任意 App 都能用。
   Future<void> _onImageLongPress(int index) async {
     if (index < 0 || index >= _images.length) return;
-    final action = await showModalBottomSheet<_ImageAction>(
+    final action = await showLumeBottomSheet<_ImageAction>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => const _ImageActionSheet(),

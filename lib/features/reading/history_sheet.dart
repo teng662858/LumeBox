@@ -31,7 +31,7 @@ Future<void> showReadingHistorySheet({
     return;
   }
   if (!context.mounted) return;
-  return showModalBottomSheet<void>(
+  return showLumeBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
@@ -716,111 +716,127 @@ class HistoryEntryTile extends StatelessWidget {
     final saved = progress;
     final ratio = saved == null ? null : ratioOf(saved);
     final finished = saved != null && isFinished(saved);
-    return GlassCard(
-      radius: 14,
-      padding: EdgeInsets.fromLTRB(14, 12, onRemove == null ? 14 : 6, 12),
-      onTap: onResume,
-      child: Row(
-        children: <Widget>[
-          SizedBox(
-            width: 54,
-            height: 76,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: CoverThumb(
-                pipeline: pipeline,
-                url: item.cover,
-                title: item.title,
-                width: 108,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    if (updated)
-                      const Padding(
-                        padding: EdgeInsets.only(right: 6),
-                        child: Icon(Icons.fiber_new, size: 18),
-                      ),
-                    Expanded(
-                      child: Text(
-                        item.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: LumeTheme.textPrimary,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      relativeTime(now, progress?.updatedAt ?? item.addedAt),
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                        color: LumeTheme.muted,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        progress?.describe() ?? '还没开始读',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: LumeTheme.muted,
-                        ),
-                      ),
-                    ),
-                    if (finished)
-                      Text(
-                        '已看完',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                          color: LumeTheme.muted,
-                        ),
-                      ),
-                  ],
-                ),
-                if (ratio != null) ...<Widget>[
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(2),
-                    child: LinearProgressIndicator(
-                      value: ratio,
-                      minHeight: 3,
-                      backgroundColor: LumeTheme.fillStrong,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        finished ? LumeTheme.muted : LumeTheme.textPrimary,
-                      ),
-                    ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 260;
+        return GlassCard(
+          radius: 14,
+          padding: EdgeInsets.all(compact ? 8 : 12),
+          onTap: onResume,
+          child: Row(
+            children: <Widget>[
+              SizedBox(
+                width: compact ? 34 : 54,
+                height: compact ? 50 : 76,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: CoverThumb(
+                    pipeline: pipeline,
+                    url: item.cover,
+                    title: item.title,
+                    width: 108,
                   ),
-                ],
-              ],
-            ),
+                ),
+              ),
+              SizedBox(width: compact ? 6 : 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        if (updated)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 6),
+                            child: Icon(Icons.fiber_new, size: 18),
+                          ),
+                        Expanded(
+                          child: Text(
+                            item.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: LumeTheme.textPrimary,
+                            ),
+                          ),
+                        ),
+                        if (!compact)
+                          Text(
+                            relativeTime(
+                              now,
+                              progress?.updatedAt ?? item.addedAt,
+                            ),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                              color: LumeTheme.muted,
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (compact)
+                      Text(
+                        relativeTime(now, progress?.updatedAt ?? item.addedAt),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+                      ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            progress?.describe() ?? '还没开始读',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: LumeTheme.muted,
+                            ),
+                          ),
+                        ),
+                        if (finished)
+                          Text(
+                            '已看完',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                              color: LumeTheme.muted,
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (ratio != null) ...<Widget>[
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          value: ratio,
+                          minHeight: 3,
+                          backgroundColor: LumeTheme.fillStrong,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            finished ? LumeTheme.muted : LumeTheme.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (onRemove != null)
+                IconButton(
+                  tooltip: '删除记录',
+                  icon: Icon(Icons.close, size: 18, color: LumeTheme.muted),
+                  onPressed: onRemove,
+                ),
+            ],
           ),
-          if (onRemove != null)
-            IconButton(
-              tooltip: '删除记录',
-              icon: Icon(Icons.close, size: 18, color: LumeTheme.muted),
-              onPressed: onRemove,
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 

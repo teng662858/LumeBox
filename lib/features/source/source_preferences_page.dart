@@ -163,7 +163,9 @@ class _SourcePreferencesPageState extends State<SourcePreferencesPage> {
           ListTile(
             leading: const Icon(Icons.tune),
             title: Text(
-              widget.section == Section.cat ? '站点设置与账号配置' : 'UA、Cookie 与网络配置',
+              widget.section == Section.cat
+                  ? '站点设置与账号配置'
+                  : '源设置（网络 / 换网址 / 账号）',
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: widget.onNetwork,

@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import 'diagnostic_export_tile.dart';
 import '../audio_book/audio_book_page.dart';
 import 'configuration_settings_page.dart';
@@ -358,7 +359,7 @@ class GridTitleStyleRow extends StatelessWidget {
             : '遮罩内置标题：标题压在封面底部的深色渐变上',
         trailingValue: settings.gridTitleStyle.label,
         onTap: () async {
-          final picked = await showModalBottomSheet<GridTitleStyle>(
+          final picked = await showLumeBottomSheet<GridTitleStyle>(
             context: context,
             backgroundColor: Colors.transparent,
             builder: (_) => OptionSheet<GridTitleStyle>(

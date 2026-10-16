@@ -218,13 +218,6 @@ class _LiquidSurfaceState extends State<_LiquidSurface>
             ),
             child: DecoratedBox(
               decoration: BoxDecoration(
-                border: options.border
-                    ? Border.all(
-                        color: Colors.white.withValues(
-                          alpha: .24 * options.highlight,
-                        ),
-                      )
-                    : null,
                 borderRadius: BorderRadius.circular(options.radius),
                 color: LumeTheme.readableGlass(
                   Theme.of(context).colorScheme.surface

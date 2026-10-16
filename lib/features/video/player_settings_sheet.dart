@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import '../../shared/widgets/player_popup_glass.dart';
 import '../../core/theme/glass_effects_settings.dart';
 import '../settings/glass_effects_page.dart';
@@ -37,7 +38,7 @@ Future<void> showPlayerSettingsSheet({
   Widget? extraControls,
 }) {
   final glass = ValueNotifier(settings.playbackGlass);
-  return showModalBottomSheet<void>(
+  return showLumeBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,

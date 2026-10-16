@@ -1,6 +1,7 @@
 import '../session/section.dart';
 import '../net/network_settings.dart';
 import 'source_models.dart';
+import 'source_site_config.dart';
 
 abstract interface class RefreshingImageCapable {
   Future<String?> refreshImage(String url, String page);
@@ -120,6 +121,7 @@ class SourceDescriptor {
     required this.version,
     required this.enabled,
     this.network = NetworkProfile.none,
+    this.siteConfig = SourceSiteConfig.none,
     this.originUrl = '',
     this.siteUrl = '',
     this.iconUrl = '',
@@ -137,8 +139,16 @@ class SourceDescriptor {
   /// 单图源网络覆盖（UA / Cookie / 代理）；空项继承全局设置。
   final NetworkProfile network;
 
+  /// 单图源「换网址 / 账号登入」（镜像表、选中下标、自定义域名、登录账号）。
+  /// 界面据此渲染设置弹窗的当前值；空值时按默认（无镜像、无自定义域名）。
+  final SourceSiteConfig siteConfig;
+
   /// 是否配置了任意网络覆盖（管理页据此标「已自定义网络」）。
   bool get hasNetworkOverride => !network.isEmpty;
+
+  /// 是否配置过换网址（选了非主站镜像 / 填了自定义域名）。
+  bool get hasMirrorOverride =>
+      siteConfig.safeMirrorIndex > 0 || siteConfig.hasCustomDomain;
 
   /// 订阅来源地址；本地导入为空。
   final String originUrl;

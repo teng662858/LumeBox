@@ -320,7 +320,38 @@ void main() {
       ),
     );
     expect((box.decoration as BoxDecoration).border, null);
-    expect((box.decoration as BoxDecoration).color!.a, closeTo(.944, .005));
+    expect((box.decoration as BoxDecoration).boxShadow, isNotEmpty);
+    final tint = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.byType(FrostedGlassWidget),
+        matching: find.byType(ColoredBox),
+      ),
+    );
+    expect(tint.color.a, closeTo(.6, .005));
+    await tester.runAsync(
+      () => GlassEffectsSettings.instance.setFrostedEnabled(false),
+    );
+    await tester.pump();
+    expect(find.byType(BackdropFilter), findsNothing);
+    final solid = tester.widget<ColoredBox>(
+      find.descendant(
+        of: find.byType(FrostedGlassWidget),
+        matching: find.byType(ColoredBox),
+      ),
+    );
+    expect(solid.color.a, 1);
+    final shadow =
+        tester
+                .widget<DecoratedBox>(
+                  find.descendant(
+                    of: find.byType(FrostedGlassWidget),
+                    matching: find.byType(DecoratedBox),
+                  ),
+                )
+                .decoration
+            as BoxDecoration;
+    expect(shadow.border, isNull);
+    expect(shadow.boxShadow, isNotEmpty);
     FloatingModules.instance.reset(FloatingModule.overlay);
   });
 

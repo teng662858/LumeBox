@@ -1,4 +1,5 @@
 import '../../core/theme/lume_theme.dart';
+import '../../core/theme/glass_effects_settings.dart';
 
 import 'dart:ui' as ui;
 
@@ -12,6 +13,7 @@ class FrostedGlassWidget extends StatelessWidget {
     this.opacity = .72,
     this.radius = 20,
     this.border = true,
+    this.color,
     required this.child,
   }) : assert(blur >= 0 && blur < double.infinity),
        assert(opacity >= 0 && opacity <= 1),
@@ -19,26 +21,36 @@ class FrostedGlassWidget extends StatelessWidget {
 
   final double blur, opacity, radius;
   final bool border;
+  final Color? color;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(radius),
-    child: BackdropFilter(
-      filter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: LumeTheme.readableGlass(
-            Theme.of(context).colorScheme.surface.withValues(alpha: opacity),
-          ),
-          boxShadow: LumeTheme.cardShadow,
-          borderRadius: BorderRadius.circular(radius),
-          border: border
-              ? Border.all(color: Theme.of(context).colorScheme.outline)
-              : null,
-        ),
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: GlassEffectsSettings.instance,
+    builder: (context, _) {
+      final enabled = GlassEffectsSettings.instance.frostedEnabled;
+      final corners = BorderRadius.circular(radius);
+      Widget content = ColoredBox(
+        color: enabled
+            ? LumeTheme.readableGlass(
+                (color ?? LumeTheme.surface).withValues(alpha: opacity),
+              )
+            : (color ?? LumeTheme.surface).withValues(alpha: 1),
         child: child,
-      ),
-    ),
+      );
+      if (enabled && blur > 0) {
+        content = BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: content,
+        );
+      }
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: corners,
+          boxShadow: LumeTheme.cardShadow,
+        ),
+        child: ClipRRect(borderRadius: corners, child: content),
+      );
+    },
   );
 }

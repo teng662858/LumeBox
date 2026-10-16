@@ -7,7 +7,9 @@ import '../js/cat_engines.dart';
 import '../js/lume_js_engine.dart';
 import '../js/sandbox/sandbox.dart';
 import '../js/source_registry.dart';
+import '../js/source_engine.dart';
 import 'source_display_names.dart';
+import 'source_site_config.dart';
 import '../js/source_script.dart';
 import '../util/lume_log.dart';
 import '../session/section.dart';
@@ -147,6 +149,20 @@ class LumeSources {
       bridge: bridge,
       allowBadCertificate: allowBadCertificate,
     );
+  }
+
+  /// 保存单图源的「换网址 / 账号登入」（镜像选择、自定义域名、登录账号。
+  ///
+  /// 落本板块库；不释放运行时——这份配置在每次调用前注入脚本（见 `_EngineRuntime`），
+  /// 用户改完设置下一次浏览就用新域名，不必重新导入脚本。
+  static Future<void> setSiteConfig(
+    Section section,
+    String sourceId,
+    SourceSiteConfig config,
+  ) async {
+    if (!runtimeAvailableFor(section)) return;
+    final registry = await SourceRegistry.open(section);
+    registry.setSourceSiteConfig(sourceId, config);
   }
 
   /// 重命名图源：只改本板块库里的展示名（脚本与运行时保持原样）。
@@ -414,6 +430,7 @@ class LumeSources {
     version: record.version,
     enabled: record.enabled,
     network: record.network,
+    siteConfig: record.siteConfig,
     originUrl: record.originUrl,
     siteUrl: _siteUrl(record.script),
     iconUrl: _iconUrl(record.script),
@@ -506,6 +523,10 @@ class _LumeSourceManager implements SourceManager, SubscriptionImportManager {
     bridge: bridge,
     allowBadCertificate: allowBadCertificate,
   );
+
+  @override
+  Future<void> setSiteConfig(String sourceId, SourceSiteConfig config) =>
+      LumeSources.setSiteConfig(_section, sourceId, config);
 
   @override
   Future<void> rename(String sourceId, String name) =>
@@ -602,6 +623,10 @@ class _EngineRuntime implements JsSourceRuntime {
     if (engine == null) {
       throw const SourceException(SourceErrorKind.notFound, '源不可用（未启用或脚本载入失败）');
     }
+    // 换网址 / 账号登入：调用前把**当下**的配置快照注入脚本上下文
+    // （`LumeSource.config`）。放在这里而不是引擎创建时，是为了让用户在设置里
+    // 改完域名 / 账号后，下一次调用就用新值——不必重新导入脚本、也不必重建引擎。
+    await _applyScriptConfig(registry, engine);
     var result = await engine.callResult(method, argument);
     if (!result.isOk &&
         result.error?.kind == SandboxErrorKind.disposed &&
@@ -610,10 +635,22 @@ class _EngineRuntime implements JsSourceRuntime {
       final fresh = await SourceRegistry.open(_section);
       final replacement = await fresh.engineFor(_sourceId);
       if (replacement != null) {
+        await _applyScriptConfig(fresh, replacement);
         result = await replacement.callResult(method, argument);
       }
     }
     if (result.isOk) return result.value;
     throw mapSandboxFailure(result.error!);
+  }
+
+  /// 把配置快照交给支持注入的引擎；不支持的引擎直接跳过
+  /// （见 [ScriptConfigCapable]）。注入失败不影响这次调用本身。
+  Future<void> _applyScriptConfig(
+    SourceRegistry registry,
+    SourceEngine engine,
+  ) async {
+    if (engine is! ScriptConfigCapable) return;
+    await (engine as ScriptConfigCapable)
+        .applyScriptConfig(registry.scriptConfigFor(_sourceId));
   }
 }

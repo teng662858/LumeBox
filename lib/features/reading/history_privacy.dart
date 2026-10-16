@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:async';
@@ -145,7 +146,7 @@ class _HistoryPrivacyGuardState extends State<HistoryPrivacyGuard>
       ? Material(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           child: SizedBox(
-            height: MediaQuery.sizeOf(context).height * .7,
+            height: DrawerGeometry.height(context),
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,

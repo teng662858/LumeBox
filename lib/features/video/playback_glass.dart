@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import 'package:flutter/material.dart';
 
 // Compatibility wrapper for existing routes; playback effects have been removed.
@@ -21,7 +22,7 @@ Future<T?> showPlaybackMenu<T>({
   Color? backgroundColor,
   bool isScrollControlled = false,
   bool useSafeArea = false,
-}) => showModalBottomSheet<T>(
+}) => showLumeBottomSheet<T>(
   context: context,
   backgroundColor: backgroundColor,
   isScrollControlled: isScrollControlled,

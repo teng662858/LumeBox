@@ -1,3 +1,5 @@
+import '../../shared/widgets/column_list.dart';
+import '../../shared/widgets/drawer_geometry.dart';
 import '../../shared/widgets/source_update_badge.dart';
 import '../../core/reading/browse_layout.dart';
 import '../../core/session/privacy_settings.dart';
@@ -391,43 +393,7 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
       );
       if (mounted) changed();
     },
-    child: service.siteColumns == 1
-        ? child
-        : Material(
-            color: child.selected
-                ? Color.alphaBlend(
-                    LumeTheme.accent.withValues(alpha: .18),
-                    LumeTheme.surfaceAlt,
-                  )
-                : LumeTheme.surfaceAlt,
-            elevation: 2,
-            shadowColor: LumeTheme.cardShadow.first.color,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: LumeTheme.hairline),
-            ),
-            child: InkWell(
-              onTap: child.onTap,
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        child.leading!,
-                        const Spacer(),
-                        child.trailing!,
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(child: child.title!),
-                  ],
-                ),
-              ),
-            ),
-          ),
+    child: child,
   );
 
   Future<void> sitePicker() async {
@@ -463,7 +429,7 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
       return rows;
     }
 
-    final selected = await showModalBottomSheet<Object>(
+    final selected = await showLumeBottomSheet<Object>(
       context: context,
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
@@ -471,20 +437,20 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
           listenable: service,
           builder: (context, _) => SafeArea(
             child: SizedBox(
-              height: MediaQuery.sizeOf(context).height * .7,
+              height: DrawerGeometry.height(context),
               child: ListView(
                 children: [
                   ListTile(
                     title: const Text('选择站点'),
                     trailing: SegmentedButton<int>(
                       segments: [
-                        for (final count in [1, 2, 3])
+                        for (final count in [1, 2])
                           ButtonSegment(
                             value: count,
-                            label: Text(count == 1 ? '排列' : '$count列网格'),
+                            label: Text(count == 1 ? '单列列表' : '双列列表'),
                           ),
                       ],
-                      selected: {service.siteColumns},
+                      selected: {service.siteColumns.clamp(1, 2)},
                       showSelectedIcon: false,
                       onSelectionChanged: (values) =>
                           unawaited(service.setSiteColumns(values.first)),
@@ -535,12 +501,11 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                       trailing: const Icon(Icons.refresh),
                       onTap: () => Navigator.pop(context, record),
                     ),
-                    GridView.count(
-                      crossAxisCount: service.siteColumns,
+                    _CatSourceList(
+                      columns: service.siteColumns.clamp(1, 2),
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       padding: const EdgeInsets.symmetric(horizontal: 12),
-                      mainAxisExtent: service.siteColumns == 1 ? 68 : 140,
                       children: [
                         for (final site in choices(record))
                           _reorderSite(
@@ -753,7 +718,7 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
     List<Map<String, dynamic>> records() => favorites
         ? service.favoriteItems
         : service.history.where(service.collectionAllowed).toList();
-    final chosen = await showModalBottomSheet<Map<String, dynamic>>(
+    final chosen = await showLumeBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
@@ -839,7 +804,7 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
             enabled: !favorites,
             child: SafeArea(
               child: SizedBox(
-                height: MediaQuery.sizeOf(context).height * .7,
+                height: DrawerGeometry.height(context),
                 child: Column(
                   children: [
                     ListTile(
@@ -1504,5 +1469,29 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
         ),
       ),
     ),
+  );
+}
+
+class _CatSourceList extends StatelessWidget {
+  const _CatSourceList({
+    required this.columns,
+    required this.children,
+    required this.shrinkWrap,
+    required this.physics,
+    required this.padding,
+  });
+  final int columns;
+  final List<Widget> children;
+  final bool shrinkWrap;
+  final ScrollPhysics physics;
+  final EdgeInsetsGeometry padding;
+  @override
+  Widget build(BuildContext context) => ColumnList(
+    columns: columns,
+    itemCount: children.length,
+    itemBuilder: (_, index) => children[index],
+    padding: padding,
+    shrinkWrap: shrinkWrap,
+    physics: physics,
   );
 }

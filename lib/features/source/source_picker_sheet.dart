@@ -1,3 +1,5 @@
+import '../../shared/widgets/column_list.dart';
+import '../../shared/widgets/drawer_geometry.dart';
 import '../../shared/widgets/module_glass_surface.dart';
 import '../../core/source/source_subscription_sync.dart';
 import '../../shared/widgets/source_update_badge.dart';
@@ -6,7 +8,6 @@ import '../../core/source/source_content_rating.dart';
 import '../../shared/widgets/source_rating_badge.dart';
 import '../../core/source/source_order.dart';
 import '../../core/source/source_content_visibility.dart';
-import '../../core/net/network_settings.dart';
 
 import 'dart:ui' as ui;
 
@@ -31,7 +32,7 @@ Future<String?> showSourcePicker({
   required String? currentId,
   SourceManager? manager,
   VoidCallback? onChanged,
-}) => showModalBottomSheet<String>(
+}) => showLumeBottomSheet<String>(
   context: context,
   isScrollControlled: true,
   useSafeArea: true,
@@ -70,9 +71,6 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
   late bool columns =
       ReadingLibrary.find(widget.section)?.setting('source.picker.columns') !=
       'false';
-  late bool grid =
-      ReadingLibrary.find(widget.section)?.setting('source.picker.grid') ==
-      'true';
   String query = '';
   final busy = <String>{};
   final results = <String, SourceTestResult>{};
@@ -114,11 +112,12 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
   }
 
   Future<void> network(SourceDescriptor source) async {
-    final profile = await showDialog<NetworkProfile>(
+    final result = await showDialog<SourceSettingsResult>(
       context: context,
       builder: (_) => SourceNetworkDialog(source: source),
     );
-    if (profile == null || !mounted) return;
+    if (result == null || !mounted) return;
+    final profile = result.network;
     await manager.setNetwork(
       source.id,
       userAgent: profile.userAgent,
@@ -127,6 +126,9 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
       bridge: profile.bridge,
       allowBadCertificate: profile.allowBadCertificate,
     );
+    // 换网址 / 账号登入：只落库，不释放运行时——下一次调用前宿主会把新快照
+    // 注入脚本（见 SourceRegistry.scriptConfigFor）。
+    await manager.setSiteConfig(source.id, result.site);
     await manager.setEnabled(source.id, source.enabled);
     widget.onChanged?.call();
     await reload();
@@ -254,73 +256,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
   Widget sourceTile(SourceDescriptor source) {
     final prefs = SourcePreferences.read(widget.section, source.id);
     final selected = source.id == widget.currentId;
-    if (grid) {
-      return Material(
-        color: selected
-            ? Color.alphaBlend(
-                LumeTheme.accent.withValues(alpha: .18),
-                LumeTheme.surfaceAlt,
-              )
-            : LumeTheme.surfaceAlt,
-        elevation: 2,
-        shadowColor: LumeTheme.cardShadow.first.color,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          key: ValueKey('picker-source-${source.id}'),
-          onTap: busy.contains(source.id)
-              ? null
-              : () => Navigator.pop(context, source.id),
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    SourceIcon(
-                      name: source.name,
-                      siteUrl: source.siteUrl,
-                      siteIcon: source.iconUrl,
-                      iconUrl: prefs.iconUrl,
-                      section: widget.section,
-                      sourceId: source.id,
-                      size: 28,
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      key: ValueKey('picker-more-${source.id}'),
-                      tooltip: '源操作',
-                      constraints: const BoxConstraints.tightFor(
-                        width: 28,
-                        height: 32,
-                      ),
-                      padding: EdgeInsets.zero,
-                      onPressed: () => action(source),
-                      icon: const Icon(Icons.more_vert, size: 18),
-                    ),
-                  ],
-                ),
-                Text(
-                  source.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                SourceUpdateBadge(section: widget.section, sourceId: source.id),
-                if (SourceContentRating.isAdult(source.id, source.name))
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: SourceRatingBadge(),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
+
     return Material(
       color: selected
           ? Color.alphaBlend(
@@ -463,17 +399,11 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
       if (entries.isEmpty) {
         return Center(child: Text(query.isEmpty ? '暂无源' : '没有匹配的源'));
       }
-      return grid
-          ? GridView.builder(
-              padding: const EdgeInsets.all(6),
+      return columns && groups.length != 2
+          ? ColumnList(
               itemCount: entries.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisExtent: 140,
-                mainAxisSpacing: 6,
-                crossAxisSpacing: 6,
-              ),
               itemBuilder: tile,
+              padding: const EdgeInsets.fromLTRB(6, 4, 6, 16),
             )
           : ListView.builder(
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 16),
@@ -492,7 +422,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
           child: SafeArea(
             top: false,
             child: SizedBox(
-              height: MediaQuery.sizeOf(context).height * .76,
+              height: DrawerGeometry.height(context),
               child: Padding(
                 padding: EdgeInsets.only(
                   bottom: MediaQuery.viewInsetsOf(context).bottom,
@@ -514,43 +444,25 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                               ),
                             ),
                           ),
+
                           IconButton(
-                            tooltip: grid ? '切换为排列' : '切换为网格',
+                            tooltip: columns ? '切换为单列' : '切换为双列',
                             icon: Icon(
-                              grid
-                                  ? Icons.view_list_outlined
-                                  : Icons.grid_view_outlined,
+                              columns
+                                  ? Icons.view_agenda_outlined
+                                  : Icons.view_column_outlined,
                             ),
                             onPressed: () async {
+                              setState(() => columns = !columns);
                               final library = await ReadingLibrary.open(
                                 widget.section,
                               );
                               library.setSetting(
-                                'source.picker.grid',
-                                '${!grid}',
+                                'source.picker.columns',
+                                '$columns',
                               );
-                              if (mounted) setState(() => grid = !grid);
                             },
                           ),
-                          if (groups.length == 2 && !grid)
-                            IconButton(
-                              tooltip: columns ? '切换为单列' : '切换为两列',
-                              icon: Icon(
-                                columns
-                                    ? Icons.view_agenda_outlined
-                                    : Icons.view_column_outlined,
-                              ),
-                              onPressed: () async {
-                                setState(() => columns = !columns);
-                                final library = await ReadingLibrary.open(
-                                  widget.section,
-                                );
-                                library.setSetting(
-                                  'source.picker.columns',
-                                  '$columns',
-                                );
-                              },
-                            ),
                           IconButton(
                             tooltip: '关闭',
                             onPressed: () => Navigator.pop(context),
@@ -569,7 +481,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                     ),
                     const SizedBox(height: 8),
                     Expanded(
-                      child: !grid && columns && groups.length == 2
+                      child: columns && groups.length == 2
                           ? Row(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
@@ -615,7 +527,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
         child: SafeArea(
           top: false,
           child: SizedBox(
-            height: MediaQuery.sizeOf(context).height * .76,
+            height: DrawerGeometry.height(context),
             child: Padding(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.viewInsetsOf(context).bottom,
@@ -637,43 +549,25 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                             ),
                           ),
                         ),
+
                         IconButton(
-                          tooltip: grid ? '切换为排列' : '切换为网格',
+                          tooltip: columns ? '切换为单列' : '切换为双列',
                           icon: Icon(
-                            grid
-                                ? Icons.view_list_outlined
-                                : Icons.grid_view_outlined,
+                            columns
+                                ? Icons.view_agenda_outlined
+                                : Icons.view_column_outlined,
                           ),
                           onPressed: () async {
+                            setState(() => columns = !columns);
                             final library = await ReadingLibrary.open(
                               widget.section,
                             );
                             library.setSetting(
-                              'source.picker.grid',
-                              '${!grid}',
+                              'source.picker.columns',
+                              '$columns',
                             );
-                            if (mounted) setState(() => grid = !grid);
                           },
                         ),
-                        if (groups.length == 2 && !grid)
-                          IconButton(
-                            tooltip: columns ? '切换为单列' : '切换为两列',
-                            icon: Icon(
-                              columns
-                                  ? Icons.view_agenda_outlined
-                                  : Icons.view_column_outlined,
-                            ),
-                            onPressed: () async {
-                              setState(() => columns = !columns);
-                              final library = await ReadingLibrary.open(
-                                widget.section,
-                              );
-                              library.setSetting(
-                                'source.picker.columns',
-                                '$columns',
-                              );
-                            },
-                          ),
                         IconButton(
                           tooltip: '关闭',
                           onPressed: () => Navigator.pop(context),
@@ -692,7 +586,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                   ),
                   const SizedBox(height: 8),
                   Expanded(
-                    child: !grid && columns && groups.length == 2
+                    child: columns && groups.length == 2
                         ? Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [

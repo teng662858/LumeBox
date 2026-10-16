@@ -219,6 +219,29 @@ class FakeSourceManager implements SourceManager {
     );
   }
 
+  /// 记录换网址 / 账号登入设置：(sourceId, config)。
+  final List<(String, SourceSiteConfig)> siteConfigs =
+      <(String, SourceSiteConfig)>[];
+
+  @override
+  Future<void> setSiteConfig(String sourceId, SourceSiteConfig config) async {
+    siteConfigs.add((sourceId, config));
+    _replace(
+      sourceId,
+      (source) => SourceDescriptor(
+        id: source.id,
+        name: source.name,
+        version: source.version,
+        enabled: source.enabled,
+        network: source.network,
+        siteConfig: config,
+        group: source.group,
+        failureCount: source.failureCount,
+        broken: source.broken,
+      ),
+    );
+  }
+
   @override
   Future<String?> exportScript(String sourceId) async {
     exportedIds.add(sourceId);

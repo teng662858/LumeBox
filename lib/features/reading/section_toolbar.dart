@@ -1,3 +1,5 @@
+import '../../shared/widgets/drawer_geometry.dart';
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -417,11 +419,13 @@ class SectionToolbar extends StatelessWidget {
                 navigation!,
                 Align(
                   alignment: Alignment.centerRight,
-                  child: _ToolbarAction(
-                    floating: true,
-                    icon: Icons.search,
-                    tooltip: '搜索',
-                    onTap: onSearch,
+                  child: DrawerSearchAnchor(
+                    child: _ToolbarAction(
+                      floating: true,
+                      icon: Icons.search,
+                      tooltip: '搜索',
+                      onTap: onSearch,
+                    ),
                   ),
                 ),
               ],
@@ -479,7 +483,13 @@ class SectionToolbar extends StatelessWidget {
           onTap: () => _pickLayout(context),
         ),
         // 4) 搜索
-        _ToolbarAction(icon: Icons.search, tooltip: '搜索', onTap: onSearch),
+        DrawerSearchAnchor(
+          child: _ToolbarAction(
+            icon: Icons.search,
+            tooltip: '搜索',
+            onTap: onSearch,
+          ),
+        ),
         // 5) 筛选
         if (onFilter != null)
           _ToolbarAction(
@@ -494,7 +504,7 @@ class SectionToolbar extends StatelessWidget {
   }
 
   Future<void> _pickSort(BuildContext context) async {
-    final picked = await showModalBottomSheet<BrowseSort>(
+    final picked = await showLumeBottomSheet<BrowseSort>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _ToolbarSheet<BrowseSort>(
@@ -509,7 +519,7 @@ class SectionToolbar extends StatelessWidget {
   }
 
   Future<void> _pickLayout(BuildContext context) async {
-    final picked = await showModalBottomSheet<BrowseLayoutMode>(
+    final picked = await showLumeBottomSheet<BrowseLayoutMode>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _ToolbarSheet<BrowseLayoutMode>(
@@ -708,7 +718,7 @@ Future<SearchScopeSelection?> showSearchModeMenu(
   Set<String>? sourceIds,
   bool sitesOnly = false,
 }) {
-  return showModalBottomSheet<SearchScopeSelection>(
+  return showLumeBottomSheet<SearchScopeSelection>(
     context: context,
     backgroundColor: Colors.transparent,
     // **不受默认高度限制**：默认弹窗最高只有屏幕的 9/16，键盘弹起时（这个面板

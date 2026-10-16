@@ -124,7 +124,7 @@ void main() {
 
     /// 某段文字所在的（最近的）GlassCard 的实际底色。
     Color? cardColorOf(String text) {
-      final box = tester.widget<DecoratedBox>(
+      final box = tester.widget<ColoredBox>(
         find
             .descendant(
               of: find
@@ -133,11 +133,12 @@ void main() {
                     matching: find.byType(GlassCard),
                   )
                   .first,
-              matching: find.byType(DecoratedBox),
+              matching: find.byType(ColoredBox),
             )
             .first,
       );
-      return (box.decoration as BoxDecoration).color;
+      expect(box.color.a, lessThan(1));
+      return box.color.withValues(alpha: 1);
     }
 
     await tester.binding.setSurfaceSize(const Size(900, 1600));

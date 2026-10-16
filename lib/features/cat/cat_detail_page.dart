@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import '../video/tmdb_artwork.dart';
 import '../../shared/widgets/missing_cover.dart';
 
@@ -232,7 +233,7 @@ class _CatDetailPageState extends State<CatDetailPage> {
   }
 
   Future<void> pickEpisode() async {
-    final selected = await showModalBottomSheet<SourceChapter>(
+    final selected = await showLumeBottomSheet<SourceChapter>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -798,7 +799,7 @@ class _CatEpisodePickerState extends State<CatEpisodePicker> {
   Widget build(BuildContext context) => SafeArea(
     top: false,
     child: SizedBox(
-      height: MediaQuery.sizeOf(context).height * .75,
+      height: DrawerGeometry.height(context),
       child: Column(
         children: [
           Padding(

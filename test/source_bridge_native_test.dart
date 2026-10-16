@@ -216,6 +216,109 @@ void main() {
       );
     });
   }, skip: skipReason);
+
+  /// 换网址 / 账号登入：宿主在**每次调用前**把解析后的配置写进脚本上下文
+  /// （`LumeJsEngine.applySourceConfig` → `LumeSource.config`）。这一组走的是
+  /// 生产路径（真实引擎 + 真实注入），断言脚本里读到的 domain 就是模型解析出来的值。
+  group('真实引擎 · LumeSource.config（换网址 / 账号登入）', () {
+    setUp(() => LumeJsEngine.debugSupportedOverride = true);
+    tearDown(() => LumeJsEngine.debugSupportedOverride = null);
+
+    Future<LumeJsEngine> bootEngine(String script) async {
+      final engine = await LumeJsEngine.create(
+        sourceId: 'mirror-source',
+        http: _RecordingHttp(),
+        section: Section.novel,
+      );
+      addTearDown(engine.dispose);
+      final loaded = await engine.loadScript(script);
+      expect(loaded, isTrue, reason: '脚本必须能载入: ${engine.lastLoadFailure}');
+      return engine;
+    }
+
+    /// 调一次脚本的 list，取回脚本读到的 `domain` 与一段自述摘要。
+    Future<(String, String)> readOnScript(LumeJsEngine engine) async {
+      final result = await engine.callResult('list', <String, Object?>{'page': 1});
+      expect(result.isOk, isTrue, reason: 'list 必须成功: ${result.error}');
+      final value = result.value;
+      expect(value, isA<Map>(), reason: '收到的原始值: $value');
+      final items = (value as Map)['list'];
+      expect(items, isA<List>());
+      final item = (items as List).first as Map;
+      return ('${item['id']}', '${item['title']}');
+    }
+
+    test('注入的 domain 就是模型解析出的值（选中镜像优先于主站）', () async {
+      final engine = await bootEngine(_configScript);
+
+      const site = SourceSiteConfig(
+        mirrors: <String>['https://main.example', 'https://m1.example'],
+        mirrorIndex: 1,
+      );
+      expect(site.resolvedDomain, 'https://m1.example');
+      await engine.applySourceConfig(site.toScriptJson(cookie: 'sid=1'));
+
+      final (domain, summary) = await readOnScript(engine);
+      expect(domain, 'https://m1.example');
+      // account / customDomain / cookie / mirrors 都到了脚本里。
+      expect(summary, <String>['', '', 'sid=1', '2'].join('|'));
+    });
+
+    test('自定义域名压过选中镜像；脚本改不动快照', () async {
+      final engine = await bootEngine(_configScript);
+
+      const site = SourceSiteConfig(
+        mirrors: <String>['https://main.example', 'https://m1.example'],
+        mirrorIndex: 1,
+        domainOverride: 'custom.example',
+        account: 'reader',
+      );
+      await engine.applySourceConfig(site.toScriptJson(cookie: ''));
+
+      final (domain, summary) = await readOnScript(engine);
+      expect(domain, 'https://custom.example', reason: '自定义域名优先，且补上了 scheme');
+      expect(
+        summary.startsWith('reader|https://custom.example|'),
+        isTrue,
+        reason: '脚本对 config 的赋值 / 改字段都被忽略（冻结 + 保留位）：$summary',
+      );
+    });
+
+    test('设置改了就生效：同一份脚本再注入一次即读到新域名', () async {
+      final engine = await bootEngine(_configScript);
+
+      await engine.applySourceConfig(
+        const SourceSiteConfig(mirrors: <String>['https://main.example'])
+            .toScriptJson(cookie: ''),
+      );
+      expect((await readOnScript(engine)).$1, 'https://main.example');
+
+      // 用户在图源设置里把镜像换成了另一个站：下一次调用就是新值。
+      await engine.applySourceConfig(
+        const SourceSiteConfig(
+          mirrors: <String>['https://main.example', 'https://m2.example'],
+          mirrorIndex: 1,
+        ).toScriptJson(cookie: ''),
+      );
+      expect((await readOnScript(engine)).$1, 'https://m2.example');
+    });
+
+    test('脚本没声明镜像、用户也没填：domain 是空串（脚本回落自己的默认地址）', () async {
+      final engine = await bootEngine(_configScript);
+      await engine.applySourceConfig(SourceSiteConfig.none.toScriptJson(cookie: ''));
+
+      final (domain, summary) = await readOnScript(engine);
+      expect(domain, '');
+      expect(summary, '|||0');
+    });
+
+    test('未注入时 config 是空快照：domain 也是空串', () async {
+      final engine = await bootEngine(_configScript);
+      final (domain, summary) = await readOnScript(engine);
+      expect(domain, '');
+      expect(summary, '|||0');
+    });
+  }, skip: skipReason);
 }
 
 /// 用户给的验证脚本（头部元信息是导入所必需的，其余保持原样）。
@@ -345,6 +448,25 @@ function getList(page) { return { list: [] }; }
 const String _metadataOnlyScript = '''
 // LumeSource: {"id":"demo-empty","name":"空实现源","version":"1.0.0"}
 var LumeSource = { id: 'demo-empty', name: '空实现源' };
+''';
+
+/// 换网址 / 账号登入：脚本读 `LumeSource.config`，并顺手试图篡改它（两种写法都
+/// 必须无效）。返回的条目里 id 就是脚本读到的 domain，title 是自述摘要
+/// （account|customDomain|cookie|mirrors 长度）。
+const String _configScript = '''
+// LumeSource: {"id":"mirror-src","name":"镜像源","version":"1.0.0"}
+async function getList(page) {
+  try { LumeSource.config = { domain: 'https://evil.example' }; } catch (error) {}
+  try { LumeSource.config.domain = 'https://evil.example'; } catch (error) {}
+  var config = LumeSource.config;
+  return {
+    list: [{
+      id: config.domain,
+      title: [config.account, config.customDomain, config.cookie,
+              config.mirrors.length].join('|')
+    }]
+  };
+}
 ''';
 
 /// 记录请求的假网络层（桥接的 http.* 最终打到它上面）。

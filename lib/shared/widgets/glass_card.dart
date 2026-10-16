@@ -2,7 +2,7 @@ import 'module_glass_surface.dart';
 export 'module_glass_surface.dart'
     show GlassModule, GlassPart, ModuleGlassScope, ModuleGlassSurface;
 
-import 'dart:ui';
+import 'frosted_glass_widget.dart';
 
 import 'package:flutter/material.dart';
 
@@ -33,7 +33,7 @@ class GlassPanel extends StatelessWidget {
   /// 圆角；0 表示直角（整条顶栏 / 底栏）。
   final double radius;
 
-  /// 保留旧构造参数以兼容调用；清透模式不再应用模糊。
+  /// 背景模糊强度，由全局毛玻璃开关控制。
   final double blur;
 
   /// 玻璃底色（默认半透明白）。
@@ -58,51 +58,31 @@ class GlassPanel extends StatelessWidget {
     child: padding == null ? child : Padding(padding: padding!, child: child),
   );
   Widget _legacyBuild(BuildContext context) {
-    final borderRadius = BorderRadius.circular(radius);
     return ListenableBuilder(
       listenable: FloatingModules.instance,
       builder: (context, _) => Transform.translate(
         offset: module != null
             ? FloatingModules.instance.style(module!).offset
             : Offset.zero,
-        child: ClipRRect(
-          borderRadius: borderRadius,
-          child: BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: module == null
-                  ? blur
-                  : FloatingModules.instance.style(module!).blur,
-              sigmaY: module == null
-                  ? blur
-                  : FloatingModules.instance.style(module!).blur,
-            ),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: LumeTheme.readableGlass(
-                  module == null
-                      ? (color ?? LumeTheme.glass)
-                      : (color ?? LumeTheme.glass).withValues(
-                          alpha: FloatingModules.instance
-                              .style(module!)
-                              .opacity,
-                        ),
-                ),
-                boxShadow: LumeTheme.floatShadow,
-                borderRadius: borderRadius,
-                border: border ?? Border.all(color: LumeTheme.hairline),
-              ),
-              child: padding == null
-                  ? child
-                  : Padding(padding: padding!, child: child),
-            ),
-          ),
+        child: FrostedGlassWidget(
+          radius: radius,
+          blur: module == null
+              ? blur
+              : FloatingModules.instance.style(module!).blur,
+          color: color,
+          opacity: module == null
+              ? (color ?? LumeTheme.glass).a
+              : FloatingModules.instance.style(module!).opacity,
+          child: padding == null
+              ? child
+              : Padding(padding: padding!, child: child),
         ),
       ),
     );
   }
 }
 
-/// 清透卡片：低透明底色、细描边与轻阴影，背景保持清晰。
+/// 统一卡片：微磨砂半透明底色与弥散阴影，无硬描边。
 class GlassCard extends StatelessWidget {
   const GlassCard({
     super.key,
@@ -119,7 +99,7 @@ class GlassCard extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
   final double radius;
 
-  /// 保留旧构造参数以兼容调用；所有卡片均不模糊背景。
+  /// 保留旧参数兼容调用，卡片统一跟随全局毛玻璃开关。
   final bool frosted;
 
   /// 自定义底色；为空时用纯白。
@@ -143,16 +123,11 @@ class GlassCard extends StatelessWidget {
   );
   Widget _legacyBuild(BuildContext context) {
     final border = BorderRadius.circular(radius);
-    final decoration = color == null
-        ? LumeTheme.cardDecoration(radius: radius)
-        : BoxDecoration(
-            color: color,
-            borderRadius: border,
-            border: Border.all(color: LumeTheme.hairline),
-            boxShadow: LumeTheme.cardShadow,
-          );
-    final surface = DecoratedBox(
-      decoration: decoration,
+    final surface = FrostedGlassWidget(
+      radius: radius,
+      blur: 6,
+      color: color,
+      opacity: (color ?? LumeTheme.glass).a,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -165,7 +140,7 @@ class GlassCard extends StatelessWidget {
         ),
       ),
     );
-    return ClipRRect(borderRadius: border, child: surface);
+    return surface;
   }
 }
 
@@ -298,9 +273,6 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
                     blur: FloatingModules.instance
                         .style(FloatingModule.navigation)
                         .blur,
-                    border: Border(
-                      bottom: BorderSide(color: LumeTheme.hairline),
-                    ),
                     child: const SizedBox.expand(),
                   ),
                 ),
@@ -457,8 +429,8 @@ class GlassScaffold extends StatelessWidget {
                   ? _buildBar()
                   : _ShiftedAppBar(dy: unusedInset, child: _buildBar())),
         floatingActionButton: floatingActionButton,
-        body: DecoratedBox(
-          decoration: LumeTheme.background,
+        body: Material(
+          color: LumeTheme.base,
           child: _GlassBarHeight(
             height: merge ? trimmedTopInset(statusInset) : height,
             child: HomeHeaderScope(

@@ -118,16 +118,22 @@ async function getList(page) {
 
 ```js
 // 写法一：头部注释（函数式脚本**必须**用它，因为没有对象可读）
-// LumeSource: {"id":"my-source","name":"我的源","version":"1.0.0","category":"novel"}
+// LumeSource: {"id":"my-source","name":"我的源","version":"1.0.0","category":"novel","mirrors":["https://main.example","https://m1.example"]}
 
 // 写法二：运行时对象（对象式脚本可用）
 var LumeSource = {
   id: 'my-source',
   name: '我的源',
   version: '1.0.0',
-  category: 'novel'
+  category: 'novel',
+  mirrors: ['https://main.example', 'https://m1.example']
 };
 ```
+
+`mirrors` 是**可选**的站点镜像表（最多 3 个，下标 0 视为主站）：站点换域名时
+用户可以在「源设置 → 换网址」里一键切过去，不用等脚本更新。写法两处都认，
+头部优先；**只认 JSON 数组**（`key=value` 简写表达不了列表）。导入 / 更新时
+整体替换，用户自己选的下标与手填的域名不受影响。详见「换网址 / 账号登入」。
 
 **id 规则**（硬约束）：只允许英文字母、数字、短横 `-`、下划线 `_`，最长 64 字符。
 长破折号（—）与全角符号**会被拒绝**——它们肉眼几乎看不出区别，却会让 id 静默失效
@@ -244,6 +250,53 @@ var keys = await LumeSource.fs.list();
 
 用来做「目录缓存」这类跨调用复用。**按图源隔离**：同名路径在两个源之间互不可见；
 **进程内**：重启应用即清空，不要拿它存需要持久化的东西。
+
+### 换网址 / 账号登入：`LumeSource.config`（每次调用前刷新）
+
+用户在每源的「源设置」里能配两件事，宿主在**每次调用前**把结果写成只读快照
+`LumeSource.config`：
+
+```js
+LumeSource.config
+// {
+//   domain: 'https://m1.example',   // 已解析好的站点地址，**优先用这个拼 URL**
+//   mirrors: ['https://main.example', 'https://m1.example'],  // 脚本声明的镜像表
+//   mirrorIndex: 1,                 // 用户选中的镜像下标（0 = 主站）
+//   customDomain: '',               // 用户手填的自定义域名（空串 = 没填）
+//   account: '',                    // 用户填的账号（空串 = 没填）
+//   password: '',
+//   cookie: ''                      // 该源的 Cookie（与「网络配置」里那份是同一份）
+// }
+```
+
+- **`domain` 的优先级（唯一口径）**：自定义域名 > 选中的镜像 > 第一个镜像；
+  脚本没声明 `mirrors`、用户也没填域名时是**空串**——此时脚本回落到自己写的默认地址
+  （`var BASE = LumeSource.config.domain || 'https://默认地址';` 就是这个意思）；
+- 快照对象是**冻结的**，脚本改不动；用户改完设置，**下一次调用**就是新值
+  （不用重新导入脚本）；
+- **登录是脚本的事**：很多站点根本没有登录功能，宿主不替脚本登录、也不碰
+  `account` / `password` 的用法。要登入就把账号 POST 给站点自己的登录接口，把拿到的
+  会话（token / Set-Cookie）用 `LumeSource.fs` 存下来复用：
+
+```js
+async function __session() {
+  var cached = await LumeSource.fs.readText('session.json');
+  if (cached) return JSON.parse(cached);
+  var config = LumeSource.config;
+  if (!config.account) throw new Error('这个源需要登录：请在「源设置 → 账号登入」里填账号');
+  var reply = await LumeSource.http.post(
+    config.domain + '/api/login',
+    JSON.stringify({ username: config.account, password: config.password }),
+    { headers: { 'Content-Type': 'application/json' } }
+  );
+  var session = reply.json();
+  await LumeSource.fs.writeText('session.json', JSON.stringify(session));
+  return session;
+}
+```
+
+账号密码只存在**本板块**这份源记录里（与单源 Cookie 同处），不写日志、不随
+「导出图源」带走；脚本也**不要**把它们写进 `fs` 或任何会落盘的东西里。
 
 ### 抓 HTML（沙箱里没有 DOM）
 

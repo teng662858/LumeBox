@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import '../../shared/widgets/liquid_glass_widget.dart';
 import '../../core/theme/glass_effects_settings.dart';
 import 'playback_glass.dart';
@@ -1871,7 +1872,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         isScrollControlled: true,
         builder: (context) => SafeArea(
           child: SizedBox(
-            height: MediaQuery.sizeOf(context).height * .65,
+            height: DrawerGeometry.height(context),
             child: ListView(
               children: [
                 const ListTile(title: Text('选择对应作品和集数')),

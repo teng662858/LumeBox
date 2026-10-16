@@ -1,3 +1,4 @@
+import '../../shared/widgets/drawer_geometry.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/appearance.dart';
@@ -148,7 +149,7 @@ class _AppearanceRow extends StatelessWidget {
         title: '外观',
         value: labelOf(controller.mode),
         onTap: () async {
-          final picked = await showModalBottomSheet<ThemeMode>(
+          final picked = await showLumeBottomSheet<ThemeMode>(
             context: context,
             backgroundColor: Colors.transparent,
             builder: (_) => OptionSheet<ThemeMode>(
@@ -188,7 +189,7 @@ class _AccentRow extends StatelessWidget {
           value: controller.accent.label,
           swatch: AccentDot(color: controller.accent.colorFor(brightness)),
           onTap: () async {
-            final picked = await showModalBottomSheet<ThemeAccent>(
+            final picked = await showLumeBottomSheet<ThemeAccent>(
               context: context,
               backgroundColor: Colors.transparent,
               builder: (_) => OptionSheet<ThemeAccent>(
@@ -223,7 +224,7 @@ class AccentDot extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
-        border: Border.all(color: LumeTheme.hairline),
+        boxShadow: LumeTheme.cardShadow,
       ),
     );
   }
