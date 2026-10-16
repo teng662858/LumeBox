@@ -102,6 +102,15 @@ void main() {
       expect(find.text(groups.first.$2), findsOneWidget);
       expect(find.text(groups.last.$2), findsOneWidget);
       expect(find.text('停用源'), findsNothing);
+      final grid = tester.widget<GridView>(find.byType(GridView));
+      final delegate =
+          grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+      expect(delegate.crossAxisCount, 2);
+      expect(delegate.crossAxisSpacing, 10);
+      expect(delegate.mainAxisSpacing, 10);
+      expect(grid.padding, const EdgeInsets.symmetric(horizontal: 16));
+      expect(find.byType(CircleAvatar), findsNWidgets(2));
+
       final a = find.byKey(const ValueKey('picker-source-a'));
       final b = find.byKey(const ValueKey('picker-source-b'));
       expect(tester.getTopLeft(a).dx, lessThan(tester.getTopLeft(b).dx));
@@ -142,6 +151,17 @@ void main() {
     );
     await tester.tap(find.byTooltip('切换为单列'));
     await tester.pumpAndSettle();
+    expect(find.byType(GridView), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Divider &&
+            widget.color == const Color(0xFFE5E5EA) &&
+            widget.height == 1,
+      ),
+      findsOneWidget,
+    );
+
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('picker-source-b'))).dx,
       tester.getTopLeft(find.byKey(const ValueKey('picker-source-a'))).dx,

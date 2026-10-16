@@ -1,5 +1,4 @@
 import '../../core/theme/lume_theme.dart';
-import '../../shared/widgets/module_glass_surface.dart';
 import '../../core/media/media_library.dart';
 import '../../core/media/media_resource_service.dart';
 import '../reading/search_results_page.dart';
@@ -328,12 +327,7 @@ class _VideoDetailPageState extends State<VideoDetailPage> {
           backgroundColor: _pageColor,
           extendBodyBehindAppBar: true,
           appBar: AppBar(
-            flexibleSpace: const ModuleGlassSurface(
-              module: GlassModule.video,
-              part: GlassPart.navigation,
-              legacy: SizedBox.expand(),
-              child: SizedBox.expand(),
-            ),
+            flexibleSpace: const SizedBox.expand(),
             backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
             elevation: 0,

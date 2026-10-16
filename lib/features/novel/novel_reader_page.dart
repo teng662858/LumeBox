@@ -1,4 +1,4 @@
-import '../../shared/widgets/module_glass_surface.dart';
+import '../../shared/widgets/module_glass_scope.dart';
 
 import 'dart:async';
 
@@ -1224,103 +1224,8 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       right: 0,
       // 用 Material 而不是 DecoratedBox：面板里有 ListTile，
       // 它的背景与墨水效果需要最近的 Material 祖先承载。
-      child: ModuleGlassSurface(
-        module: GlassModule.novel,
-        part: GlassPart.navigation,
-        legacy: Material(
-          color: _theme.chromeSurface,
-          child: SafeArea(
-            bottom: false,
-            child: Row(
-              children: <Widget>[
-                IconButton(
-                  icon: Icon(Icons.arrow_back, color: _theme.chromeText),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(
-                        widget.target.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: _theme.chromeText,
-                        ),
-                      ),
-                      Text(
-                        _chapterTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: _theme.secondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // 听书：一键开始 / 暂停朗读（设置在同名面板页签里）。
-                ValueListenableBuilder<SpeechState>(
-                  valueListenable: _speechState,
-                  builder: (context, state, _) {
-                    final active =
-                        state == SpeechState.speaking ||
-                        state == SpeechState.pausing;
-                    final paused = state == SpeechState.paused;
-                    return IconButton(
-                      tooltip: !(_speech?.isSupported ?? false)
-                          ? '当前平台不支持语音朗读'
-                          : active
-                          ? '暂停朗读'
-                          : paused
-                          ? '继续朗读'
-                          : '开始朗读',
-                      icon: Icon(
-                        active
-                            ? Icons.pause_circle_outline
-                            : paused
-                            ? Icons.play_circle_outline
-                            : Icons.headphones_outlined,
-                        color: _theme.chromeText,
-                      ),
-                      onPressed: (_speech?.isSupported ?? false)
-                          ? _toggleSpeech
-                          : () => _showSpeechToast(
-                              _speechUnavailableReason() ?? '当前平台不支持语音朗读',
-                            ),
-                    );
-                  },
-                ),
-                IconButton(
-                  tooltip: _bookmarkHere != null ? '移除书签' : '添加书签',
-                  icon: Icon(
-                    _bookmarkHere != null
-                        ? Icons.bookmark
-                        : Icons.bookmark_border,
-                    color: _theme.chromeText,
-                  ),
-                  onPressed: _toggleBookmark,
-                ),
-                IconButton(
-                  tooltip: '上一章',
-                  icon: Icon(Icons.skip_previous, color: _theme.chromeText),
-                  onPressed: () => _openChapter(_chapterIndex - 1),
-                ),
-                IconButton(
-                  tooltip: '下一章',
-                  icon: Icon(Icons.skip_next, color: _theme.chromeText),
-                  onPressed: () => _openChapter(_chapterIndex + 1),
-                ),
-              ],
-            ),
-          ),
-        ),
+      child: Material(
+        color: _theme.chromeSurface,
         child: SafeArea(
           bottom: false,
           child: Row(
@@ -1421,52 +1326,8 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       left: 0,
       right: 0,
       bottom: 0,
-      child: ModuleGlassSurface(
-        module: GlassModule.novel,
-        part: GlassPart.panels,
-        legacy: Material(
-          color: _theme.chromeSurface,
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: <Widget>[
-                    for (final tab in _PanelTab.values)
-                      TextButton(
-                        onPressed: () => setState(() => _panel = tab),
-                        child: Text(
-                          tab.label,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: _panel == tab
-                                ? FontWeight.w700
-                                : FontWeight.w600,
-                            color: _panel == tab
-                                ? _theme.chromeText
-                                : _theme.secondary,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                SizedBox(
-                  height: 260,
-                  child: switch (_panel) {
-                    _PanelTab.catalog => _buildCatalog(),
-                    _PanelTab.bookmarks => _buildBookmarks(),
-                    _PanelTab.speech => _buildSpeechPanel(),
-                    _PanelTab.typesetting => _buildTypesetting(),
-                    _PanelTab.theme => _buildThemePanel(),
-                    _PanelTab.turn => _buildTurnPanel(),
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
+      child: Material(
+        color: _theme.chromeSurface,
         child: SafeArea(
           top: false,
           child: Column(

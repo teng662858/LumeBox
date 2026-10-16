@@ -1,3 +1,5 @@
+export '../../core/theme/glass_modules.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/glass_modules.dart';

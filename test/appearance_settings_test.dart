@@ -49,6 +49,65 @@ void main() {
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
 
+  test(
+    'page background persists with backward compatible defaults and dark mode',
+    () async {
+      expect(
+        AppearanceSettings.fromJson({'accent': 'mint'}).background,
+        ThemeBackground.white,
+      );
+      final store = await AppearanceSettingsStore.open();
+      for (final background in ThemeBackground.values) {
+        final settings = AppearanceSettings.defaults.copyWith(
+          background: background,
+        );
+        store.save(settings);
+        expect(store.load(), settings);
+        expect(AppearanceSettings.fromJson(settings.toJson()), settings);
+        final light = LumeTheme.build(background: background);
+        expect(light.scaffoldBackgroundColor, background.color);
+        expect(LumeTheme.background.color, background.color);
+        final lightKey = LumeTheme.themeId;
+        final dark = LumeTheme.build(
+          brightness: Brightness.dark,
+          background: background,
+        );
+        expect(dark.scaffoldBackgroundColor, LumePalette.dark.base);
+        expect(LumeTheme.themeId, isNot(lightKey));
+      }
+      LumeTheme.build();
+    },
+  );
+
+  testWidgets('global settings offers all three page backgrounds', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        home: const Scaffold(body: DisplaySettingsGroup()),
+      ),
+    );
+    await tester.tap(find.text('页面底色'));
+    await tester.pumpAndSettle();
+    expect(find.text('#FFFFFF'), findsWidgets);
+    await tester.tap(find.text('#F2F2F7'));
+    await tester.pumpAndSettle();
+    expect(
+      AppearanceController.instance.settings.background,
+      ThemeBackground.grouped,
+    );
+    await tester.tap(find.text('页面底色'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('#F5F5F5'));
+    await tester.pumpAndSettle();
+    expect(
+      AppearanceController.instance.settings.background,
+      ThemeBackground.neutral,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   group('主题色档位', () {
     test('11 种颜色，id 与展示名都在（用户点名的那一份）', () {
       expect(
@@ -279,6 +338,17 @@ void main() {
 
       expect(find.byType(OptionSheet<ThemeAccent>), findsOneWidget);
       for (final accent in ThemeAccent.values) {
+        await tester.scrollUntilVisible(
+          find.descendant(
+            of: find.byType(OptionSheet<ThemeAccent>),
+            matching: find.text(accent.label),
+          ),
+          80,
+          scrollable: find.descendant(
+            of: find.byType(OptionSheet<ThemeAccent>),
+            matching: find.byType(Scrollable),
+          ),
+        );
         expect(
           find.text(accent.label),
           findsWidgets,

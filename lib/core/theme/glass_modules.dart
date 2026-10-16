@@ -30,5 +30,4 @@ enum GlassPart {
 
   const GlassPart(this.label);
   final String label;
-  bool get allowsLiquid => true;
 }

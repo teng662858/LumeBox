@@ -20,7 +20,7 @@ class ConfigurationBackup {
     'source_content_visibility.json',
     'search_settings.json',
     'floating_modules.json',
-    'glass_effects_settings.json',
+    'frosted_settings.json',
     'comic_image_tools.json',
     'speech_cloud.json',
     'audio_book_settings.json',

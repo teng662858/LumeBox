@@ -1,6 +1,5 @@
-import 'module_glass_surface.dart';
-export 'module_glass_surface.dart'
-    show GlassModule, GlassPart, ModuleGlassScope, ModuleGlassSurface;
+import 'module_glass_scope.dart';
+export 'module_glass_scope.dart' show GlassModule, GlassPart, ModuleGlassScope;
 
 import 'frosted_glass_widget.dart';
 
@@ -48,15 +47,7 @@ class GlassPanel extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
 
   @override
-  Widget build(BuildContext context) => ModuleGlassSurface(
-    part: module == FloatingModule.home
-        ? GlassPart.home
-        : module == FloatingModule.dock
-        ? GlassPart.dock
-        : ModuleGlassScope.partOf(context) ?? GlassPart.panels,
-    legacy: _legacyBuild(context),
-    child: padding == null ? child : Padding(padding: padding!, child: child),
-  );
+  Widget build(BuildContext context) => _legacyBuild(context);
   Widget _legacyBuild(BuildContext context) {
     return ListenableBuilder(
       listenable: FloatingModules.instance,
@@ -106,21 +97,7 @@ class GlassCard extends StatelessWidget {
   final Color? color;
 
   @override
-  Widget build(BuildContext context) => ModuleGlassSurface(
-    part: GlassPart.cards,
-    legacy: _legacyBuild(context),
-    child: Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(radius),
-        child: Padding(
-          padding: padding ?? const EdgeInsets.all(16),
-          child: child,
-        ),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) => _legacyBuild(context);
   Widget _legacyBuild(BuildContext context) {
     final border = BorderRadius.circular(radius);
     final surface = FrostedGlassWidget(
@@ -184,15 +161,7 @@ class GlassAppBar extends StatelessWidget implements PreferredSizeWidget {
     child: _legacyBuild(context),
   );
   Widget _legacyBuild(BuildContext context) {
-    final actions = this.actions
-        ?.map(
-          (button) => ModuleGlassSurface(
-            part: GlassPart.buttons,
-            legacy: button,
-            child: button,
-          ),
-        )
-        .toList();
+    final actions = this.actions?.map((button) => button).toList();
     return ListenableBuilder(
       listenable: FloatingModules.instance,
       builder: (context, _) => Transform.translate(

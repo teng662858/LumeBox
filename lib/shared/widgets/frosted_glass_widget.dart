@@ -1,5 +1,5 @@
 import '../../core/theme/lume_theme.dart';
-import '../../core/theme/glass_effects_settings.dart';
+import '../../core/theme/frosted_settings.dart';
 
 import 'dart:ui' as ui;
 
@@ -26,9 +26,9 @@ class FrostedGlassWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: GlassEffectsSettings.instance,
+    listenable: FrostedSettings.instance,
     builder: (context, _) {
-      final enabled = GlassEffectsSettings.instance.frostedEnabled;
+      final enabled = FrostedSettings.instance.frostedEnabled;
       final corners = BorderRadius.circular(radius);
       Widget content = ColoredBox(
         color: enabled

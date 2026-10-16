@@ -58,12 +58,26 @@ enum ThemeAccent {
   }
 }
 
+/// 亮色模式的全局页面底色；卡片和阅读器主题保持独立。
+enum ThemeBackground {
+  white('white', '#FFFFFF', Color(0xFFFFFFFF)),
+  grouped('f2f2f7', '#F2F2F7', Color(0xFFF2F2F7)),
+  neutral('f5f5f5', '#F5F5F5', Color(0xFFF5F5F5));
+
+  const ThemeBackground(this.id, this.label, this.color);
+  final String id, label;
+  final Color color;
+  static ThemeBackground fromId(String? id) =>
+      values.firstWhere((value) => value.id == id, orElse: () => white);
+}
+
 /// 外观设置：亮暗模式 + 主题色。
 @immutable
 class AppearanceSettings {
   const AppearanceSettings({
     this.mode = ThemeMode.system,
     this.accent = ThemeAccent.fallback,
+    this.background = ThemeBackground.white,
   });
 
   /// 亮暗模式：跟随系统 / 浅色 / 深色。
@@ -71,19 +85,25 @@ class AppearanceSettings {
 
   /// 主题色。
   final ThemeAccent accent;
+  final ThemeBackground background;
 
   static const AppearanceSettings defaults = AppearanceSettings();
 
-  AppearanceSettings copyWith({ThemeMode? mode, ThemeAccent? accent}) =>
-      AppearanceSettings(
-        mode: mode ?? this.mode,
-        accent: accent ?? this.accent,
-      );
+  AppearanceSettings copyWith({
+    ThemeMode? mode,
+    ThemeAccent? accent,
+    ThemeBackground? background,
+  }) => AppearanceSettings(
+    mode: mode ?? this.mode,
+    accent: accent ?? this.accent,
+    background: background ?? this.background,
+  );
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'mode': mode.name,
-        'accent': accent.id,
-      };
+    'mode': mode.name,
+    'accent': accent.id,
+    'background': background.id,
+  };
 
   /// 读取落库值；坏值只影响那一项（回落默认），不让设置整块失效。
   static AppearanceSettings fromJson(Object? json) {
@@ -94,15 +114,22 @@ class AppearanceSettings {
       'system' => ThemeMode.system,
       _ => defaults.mode,
     };
-    return AppearanceSettings(mode: mode, accent: ThemeAccent.fromId('${json['accent']}'));
+    return AppearanceSettings(
+      mode: mode,
+      accent: ThemeAccent.fromId('${json['accent']}'),
+      background: ThemeBackground.fromId('${json['background']}'),
+    );
   }
 
   @override
   bool operator ==(Object other) =>
-      other is AppearanceSettings && other.mode == mode && other.accent == accent;
+      other is AppearanceSettings &&
+      other.mode == mode &&
+      other.accent == accent &&
+      other.background == background;
 
   @override
-  int get hashCode => Object.hash(mode, accent);
+  int get hashCode => Object.hash(mode, accent, background);
 }
 
 /// 外观设置的持久化（应用级，与板块无关）。

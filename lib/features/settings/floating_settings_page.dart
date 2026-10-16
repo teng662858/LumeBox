@@ -1,13 +1,15 @@
+import '../../core/theme/frosted_settings.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/floating_modules.dart';
 import '../../shared/widgets/glass_card.dart';
-import 'glass_effects_tiles.dart';
 
 class FloatingSettingsPage extends StatelessWidget {
   const FloatingSettingsPage({super.key});
   @override
-  Widget build(BuildContext context) => GlassScaffold(effectModule: GlassModule.settings,
+  Widget build(BuildContext context) => GlassScaffold(
+    effectModule: GlassModule.settings,
     title: '悬浮模块',
     child: ListenableBuilder(
       listenable: FloatingModules.instance,
@@ -15,8 +17,16 @@ class FloatingSettingsPage extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           const Text('默认采用浅色磨砂，优先保证文字清楚。透明度、磨砂强度和位置可自行调整，返回后自动保留。'),
+          ListenableBuilder(
+            listenable: FrostedSettings.instance,
+            builder: (context, _) => SwitchListTile.adaptive(
+              title: const Text('毛玻璃'),
+              subtitle: const Text('关闭时使用实色底，保留柔和阴影'),
+              value: FrostedSettings.instance.frostedEnabled,
+              onChanged: FrostedSettings.instance.setFrostedEnabled,
+            ),
+          ),
           for (final module in FloatingModule.values) _module(context, module),
-          const PlayerFrostedSettingsTile(),
         ],
       ),
     ),

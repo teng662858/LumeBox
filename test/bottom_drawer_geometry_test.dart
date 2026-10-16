@@ -86,7 +86,7 @@ void main() {
           ),
         ),
       );
-      expect(find.byType(GridView), findsNothing);
+      expect(find.byType(GridView), findsOneWidget);
       expect(
         tester.getTopLeft(find.byKey(const ValueKey(0))).dy,
         tester.getTopLeft(find.byKey(const ValueKey(1))).dy,

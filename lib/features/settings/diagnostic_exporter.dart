@@ -108,7 +108,7 @@ class DiagnosticExporter {
         'tmdb_settings.json',
         'network_settings.json',
         'floating_modules.json',
-        'glass_effects_settings.json',
+        'frosted_settings.json',
       ]) {
         final file = File('${directory.path}/$name');
         if (file.existsSync() && file.lengthSync() <= 256 * 1024) {

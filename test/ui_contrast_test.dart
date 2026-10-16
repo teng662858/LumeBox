@@ -84,7 +84,12 @@ void main() {
             {WidgetState.selected},
           );
           expect(
-            LumeTheme.contrast(chip.color!, theme.chipTheme.selectedColor!),
+            LumeTheme.contrast(
+              WidgetStateProperty.resolveAs<Color>(chip.color!, {
+                WidgetState.selected,
+              }),
+              theme.chipTheme.selectedColor!,
+            ),
             greaterThanOrEqualTo(4.5),
           );
           final disabled = theme.filledButtonTheme.style!.foregroundColor!
@@ -189,7 +194,12 @@ void main() {
                 )
                 .first,
           );
-          expect(unselected.color, LumeTheme.surfaceAlt);
+          expect(
+            unselected.color,
+            brightness == Brightness.dark
+                ? LumeTheme.surfaceAlt
+                : const Color(0xFFF7F8FA),
+          );
           expect(unselected.elevation, greaterThan(0));
           expect(tester.takeException(), isNull);
           final boundary = tester.renderObject<RenderRepaintBoundary>(

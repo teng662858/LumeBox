@@ -23,7 +23,7 @@ class ICloudSync extends ChangeNotifier with WidgetsBindingObserver {
     'browse_layout.json',
     'shell_settings.json',
     'floating_modules.json',
-    'glass_effects_settings.json',
+    'frosted_settings.json',
     'comic_image_tools.json',
   };
   bool automatic = false,

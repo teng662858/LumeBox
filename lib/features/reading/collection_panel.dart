@@ -194,24 +194,18 @@ class _CollectionPanelState extends State<CollectionPanel> {
                     padding: EdgeInsets.all(24),
                     child: Text('暂无内容'),
                   )
-                : mode == BrowseLayoutMode.list
-                ? ListView.separated(
+                : (mode == BrowseLayoutMode.list ||
+                      mode == BrowseLayoutMode.list2)
+                ? ColumnList(
+                    columns: mode == BrowseLayoutMode.list ? 1 : 2,
                     shrinkWrap: true,
-                    padding: const EdgeInsets.all(16),
                     itemCount: widget.ids.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (_, index) => SizedBox(
-                      height: selecting ? 104 : null,
+                      height: selecting && mode == BrowseLayoutMode.list
+                          ? 104
+                          : null,
                       child: tile(index),
                     ),
-                  )
-                : mode == BrowseLayoutMode.list2
-                ? ColumnList(
-                    itemCount: widget.ids.length,
-                    padding: const EdgeInsets.all(16),
-                    spacing: 10,
-                    shrinkWrap: true,
-                    itemBuilder: (_, index) => tile(index),
                   )
                 : GridView.builder(
                     shrinkWrap: true,

@@ -1,4 +1,5 @@
 import '../../shared/widgets/drawer_geometry.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/appearance.dart';
@@ -51,6 +52,7 @@ class DisplaySettingsGroup extends StatelessWidget {
                 ),
               ),
               const _AccentRow(),
+              const _BackgroundRow(),
               _DisplayRow(
                 icon: Icons.tune,
                 title: '悬浮模块',
@@ -209,6 +211,39 @@ class _AccentRow extends StatelessWidget {
   }
 }
 
+class _BackgroundRow extends StatelessWidget {
+  const _BackgroundRow();
+  @override
+  Widget build(BuildContext context) {
+    final controller = AppearanceController.instance;
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => _DisplayRow(
+        icon: Icons.format_color_fill_outlined,
+        title: '页面底色',
+        value: controller.settings.background.label,
+        swatch: AccentDot(color: controller.settings.background.color),
+        onTap: () async {
+          final picked = await showLumeBottomSheet<ThemeBackground>(
+            context: context,
+            backgroundColor: Colors.transparent,
+            builder: (_) => OptionSheet<ThemeBackground>(
+              title: '页面底色（亮色模式）',
+              current: controller.settings.background,
+              options: ThemeBackground.values,
+              labelOf: (value) => value.label,
+              swatchOf: (value) => value.color,
+            ),
+          );
+          if (picked != null) {
+            controller.apply(controller.settings.copyWith(background: picked));
+          }
+        },
+      ),
+    );
+  }
+}
+
 /// 主题色小圆点。
 class AccentDot extends StatelessWidget {
   const AccentDot({super.key, required this.color, this.size = 14});
@@ -255,8 +290,8 @@ class OptionSheet<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      child: DecoratedBox(
-        decoration: LumeTheme.background,
+      child: Material(
+        color: LumeTheme.base,
         child: SafeArea(
           top: false,
           child: Column(

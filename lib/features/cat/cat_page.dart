@@ -501,11 +501,11 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                       trailing: const Icon(Icons.refresh),
                       onTap: () => Navigator.pop(context, record),
                     ),
-                    _CatSourceList(
+                    CatSourceList(
                       columns: service.siteColumns.clamp(1, 2),
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       children: [
                         for (final site in choices(record))
                           _reorderSite(
@@ -1322,6 +1322,8 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
     final item = items[index];
     if (_layout == BrowseLayoutMode.list || _layout == BrowseLayoutMode.list2) {
       return CompactSourceItemTile(
+        uniformList: true,
+        columns: _layout.columns,
         item: item,
         pipeline: pipeline,
         onTap: () => openItem(item),
@@ -1443,14 +1445,29 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                     ? SliverList.separated(
                         itemCount: items.length,
                         itemBuilder: browseItem,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        separatorBuilder: (_, _) => const Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: Color(0xFFE5E5EA),
+                        ),
                       )
                     : SliverGrid(
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: _layout.columns,
                           childAspectRatio: _layout.tileAspectRatio,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
+                          mainAxisExtent: _layout == BrowseLayoutMode.list2
+                              ? 152 *
+                                    (MediaQuery.textScalerOf(context)
+                                                .scale(14) /
+                                            14)
+                                        .clamp(1.0, 3.0)
+                              : null,
+                          crossAxisSpacing: _layout == BrowseLayoutMode.list2
+                              ? 10
+                              : 12,
+                          mainAxisSpacing: _layout == BrowseLayoutMode.list2
+                              ? 10
+                              : 12,
                         ),
                         delegate: SliverChildBuilderDelegate(
                           browseItem,
@@ -1472,8 +1489,9 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
   );
 }
 
-class _CatSourceList extends StatelessWidget {
-  const _CatSourceList({
+class CatSourceList extends StatelessWidget {
+  const CatSourceList({
+    super.key,
     required this.columns,
     required this.children,
     required this.shrinkWrap,

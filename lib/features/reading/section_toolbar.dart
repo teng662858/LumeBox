@@ -379,12 +379,7 @@ class SectionToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final old = _legacyBuild(context);
-    return ModuleGlassSurface(
-      module: GlassModule.fromId(section?.id ?? ''),
-      part: GlassPart.home,
-      legacy: old,
-      child: old,
-    );
+    return old;
   }
 
   Widget _legacyBuild(BuildContext context) {

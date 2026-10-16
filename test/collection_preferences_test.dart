@@ -64,7 +64,7 @@ void main() {
         ),
       );
       expect(find.byType(ColumnList), findsOneWidget);
-      expect(find.byType(GridView), findsNothing);
+      expect(find.byType(GridView), findsOneWidget);
       expect(find.text('poster grid'), findsNothing);
       await tester.tap(find.text('row 1'));
       expect(tapped, isTrue);

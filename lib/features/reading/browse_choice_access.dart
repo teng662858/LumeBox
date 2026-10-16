@@ -1,12 +1,36 @@
-import '../../shared/widgets/module_glass_surface.dart';
 import '../../shared/widgets/drawer_geometry.dart';
-
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
+
+const _filterIdleBackground = Color(0xFFF2F2F7);
+const _filterIdleForeground = Color(0xFF333333);
+const _filterSelectedBackground = Color(0xFF6C5CE7);
+
+ChoiceChip _filterChip({
+  required String label,
+  required bool selected,
+  required ValueChanged<bool> onSelected,
+}) => ChoiceChip(
+  label: Text(
+    label,
+    style: TextStyle(color: selected ? Colors.white : _filterIdleForeground),
+  ),
+  labelStyle: TextStyle(color: selected ? Colors.white : _filterIdleForeground),
+  backgroundColor: _filterIdleBackground,
+  selectedColor: _filterSelectedBackground,
+  color: WidgetStateProperty.resolveWith(
+    (states) => states.contains(WidgetState.selected)
+        ? _filterSelectedBackground
+        : _filterIdleBackground,
+  ),
+  checkmarkColor: Colors.white,
+  showCheckmark: true,
+  selected: selected,
+  onSelected: onSelected,
+);
 
 /// Long horizontal choices keep a fixed, searchable access point.
 class BrowseChoiceAccess extends StatelessWidget {
@@ -172,11 +196,11 @@ class _ChoiceSheetState extends State<_ChoiceSheet> {
                         return TextButton(
                           style: TextButton.styleFrom(
                             foregroundColor: selected
-                                ? LumeTheme.accent
-                                : LumeTheme.textPrimary,
+                                ? Colors.white
+                                : _filterIdleForeground,
                             backgroundColor: selected
-                                ? LumeTheme.accent.withValues(alpha: .15)
-                                : LumeTheme.accent.withValues(alpha: .04),
+                                ? _filterSelectedBackground
+                                : _filterIdleBackground,
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -188,6 +212,11 @@ class _ChoiceSheetState extends State<_ChoiceSheet> {
                           ),
                           child: Text(
                             option.title,
+                            style: TextStyle(
+                              color: selected
+                                  ? Colors.white
+                                  : _filterIdleForeground,
+                            ),
                             textAlign: TextAlign.center,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -211,13 +240,10 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
   required String? category,
   required Map<String, String> filters,
 }) {
-  final effectModule = ModuleGlassScope.moduleOf(context);
   var chosenCategory = category;
   var chosenFilters = Map<String, String>.of(filters);
   var query = '';
-  return showLumeBottomSheet<
-    ({String? category, Map<String, String> filters})
-  >(
+  return showLumeBottomSheet<({String? category, Map<String, String> filters})>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
@@ -246,16 +272,16 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
               runSpacing: 6,
               children: [
                 if (!options.any((o) => o.title == '全部'))
-                  ChoiceChip(
-                    label: const Text('全部'),
+                  _filterChip(
+                    label: '全部',
                     selected: selected == null,
                     onSelected: (_) => setPanelState(() => choose(null)),
                   ),
                 for (final option in options.where(
                   (o) => o.title.toLowerCase().contains(query.toLowerCase()),
                 ))
-                  ChoiceChip(
-                    label: Text(option.title),
+                  _filterChip(
+                    label: option.title,
                     selected: selected == option.id,
                     onSelected: (_) => setPanelState(() => choose(option.id)),
                   ),
@@ -274,41 +300,26 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
               children: [
                 Positioned.fill(
                   bottom: 0,
-                  child: ModuleGlassSurface(
-                    module: effectModule,
-                    part: GlassPart.home,
-                    legacy: Material(
-                      key: const Key('filter-content-background'),
-                      color:
-                          Theme.of(context)
-                              .bottomSheetTheme
-                              .modalBackgroundColor ??
-                          Theme.of(context).bottomSheetTheme.backgroundColor ??
-                          Theme.of(context).colorScheme.surface,
-                      shape:
-                          Theme.of(context).bottomSheetTheme.shape ??
-                          const RoundedRectangleBorder(
-                            borderRadius: BorderRadius.vertical(
-                              top: Radius.circular(28),
-                            ),
+                  child: Material(
+                    key: const Key('filter-content-background'),
+                    color:
+                        Theme.of(context)
+                            .bottomSheetTheme
+                            .modalBackgroundColor ??
+                        Theme.of(context).bottomSheetTheme.backgroundColor ??
+                        Theme.of(context).colorScheme.surface,
+                    shape:
+                        Theme.of(context).bottomSheetTheme.shape ??
+                        const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(28),
                           ),
-                      clipBehavior: Clip.antiAlias,
-                    ),
-                    child: const SizedBox.expand(),
+                        ),
+                    clipBehavior: Clip.antiAlias,
                   ),
                 ),
                 Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    8,
-                    16,
-                    (keyboard > 0
-                        ? 0
-                        : math.max(
-                            media.viewPadding.bottom,
-                            media.padding.bottom,
-                          )),
-                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                   child: Column(
                     children: [
                       Row(
@@ -377,32 +388,48 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                           ],
                         ),
                       ),
-                      SizedBox(
-                        key: const Key('filter-footer'),
-                        height: 60,
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: Row(
-                              key: const Key('filter-actions'),
-                              children: [
-                                TextButton(
-                                  onPressed: () => setPanelState(() {
-                                    chosenCategory = null;
-                                    chosenFilters.clear();
-                                  }),
-                                  child: const Text('重置'),
-                                ),
-                                const Spacer(),
-                                FilledButton(
-                                  onPressed: () => Navigator.pop(context, (
-                                    category: chosenCategory,
-                                    filters: chosenFilters,
-                                  )),
-                                  child: const Text('应用筛选'),
-                                ),
-                              ],
+                      ColoredBox(
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? LumeTheme.surfaceAlt
+                            : const Color(0xFFF2F2F7),
+                        child: SafeArea(
+                          top: false,
+                          left: false,
+                          right: false,
+                          child: SizedBox(
+                            key: const Key('filter-footer'),
+                            height: 80,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              child: Row(
+                                key: const Key('filter-actions'),
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  TextButton(
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: _filterIdleForeground,
+                                    ),
+                                    onPressed: () => setPanelState(() {
+                                      chosenCategory = null;
+                                      chosenFilters.clear();
+                                    }),
+                                    child: const Text('重置'),
+                                  ),
+                                  const Spacer(),
+                                  FilledButton(
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor:
+                                          _filterSelectedBackground,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    onPressed: () => Navigator.pop(context, (
+                                      category: chosenCategory,
+                                      filters: chosenFilters,
+                                    )),
+                                    child: const Text('应用筛选'),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),

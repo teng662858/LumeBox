@@ -165,13 +165,16 @@ class LumePalette {
   /// 为什么不做「按主色重新推导整套色板」：对比度与分层规则是逐值调过的，
   /// 由主色算法推导出来的底色/文字色在 11 种颜色下未必都够读。锁住结构、
   /// 只换主色，是「换主题色不牺牲可读性」的稳妥做法。
-  LumePalette withAccent(ThemeAccent accent) => LumePalette(
+  LumePalette withAccent(
+    ThemeAccent accent, {
+    ThemeBackground background = ThemeBackground.white,
+  }) => LumePalette(
     brightness: brightness,
     accent: LumeTheme.readableForeground(
       accent.colorFor(brightness),
       surfaceAlt,
     ),
-    base: base,
+    base: brightness == Brightness.light ? background.color : base,
     surface: surface,
     surfaceAlt: surfaceAlt,
     glass: glass,
@@ -220,6 +223,21 @@ class LumePalette {
 class LumeTheme {
   LumeTheme._();
 
+  static const chipIdleBackground = Color(0xFFF2F2F7);
+  static const chipIdleForeground = Color(0xFF333333);
+  static const chipSelectedBackground = Color(0xFF6C5CE7);
+
+  /// RawChip resolves stateful Color after merging TextStyle, not TextStyle itself.
+  static TextStyle get chipLabelStyle => TextStyle(
+    fontSize: 13,
+    fontWeight: FontWeight.w600,
+    color: WidgetStateColor.resolveWith(
+      (states) => states.contains(WidgetState.selected)
+          ? Colors.white
+          : chipIdleForeground,
+    ),
+  );
+
   /// App 内所有标题与页面文字统一使用项目名称。
   static const String appName = 'Lume Box';
 
@@ -228,10 +246,12 @@ class LumeTheme {
 
   /// 当前生效主题色（设置页「显示 → 主题色」写入，见 `appearance.dart`）。
   static ThemeAccent _accent = ThemeAccent.fallback;
+  static ThemeBackground _background = ThemeBackground.white;
+  static void applyBackground(ThemeBackground value) => _background = value;
 
   /// 当前生效色板：亮度定结构、主题色定主色。
   static LumePalette get palette =>
-      LumePalette.of(_brightness).withAccent(_accent);
+      LumePalette.of(_brightness).withAccent(_accent, background: _background);
 
   /// 按亮度取色板（供需要显式区分的场合，如阅读页的工具栏）。
   static LumePalette paletteOf(Brightness brightness) =>
@@ -256,7 +276,8 @@ class LumeTheme {
   /// 静态色名的部件不会。而给 `MaterialApp.builder` 里那层 `KeyedSubtree`
   /// 换 key **重建不了子树**：`child` 是带 GlobalKey 的 Navigator，换 key 只会
   /// 把它换个位置、子树原样复用（实测，见 settings_page_test 的深色用例）。
-  static String get themeId => '${_brightness.name}-${_accent.id}';
+  static String get themeId =>
+      '${_brightness.name}-${_accent.id}-${_background.id}';
 
   // ------------------------------------------------------------------ 色板
 
@@ -396,9 +417,11 @@ class LumeTheme {
   static ThemeData build({
     Brightness brightness = Brightness.light,
     ThemeAccent accent = ThemeAccent.fallback,
+    ThemeBackground background = ThemeBackground.white,
   }) {
     applyBrightness(brightness);
     applyAccent(accent);
+    applyBackground(background);
     // 局部别名：下面所有裸 `accent` 要的都是**颜色**，而参数是档位。
     final accentColor = palette.accent;
     final isDark = brightness == Brightness.dark;
@@ -535,23 +558,17 @@ class LumeTheme {
         ),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: surfaceAlt,
-        selectedColor: accentColor,
+        backgroundColor: chipIdleBackground,
+        selectedColor: chipSelectedBackground,
+        color: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? chipSelectedBackground
+              : chipIdleBackground,
+        ),
         side: BorderSide.none,
-        labelStyle: WidgetStateTextStyle.resolveWith(
-          (states) => TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: states.contains(WidgetState.selected)
-                ? onAccent
-                : textPrimary,
-          ),
-        ),
-        secondaryLabelStyle: TextStyle(
-          fontWeight: FontWeight.w600,
-          color: onAccent,
-          fontSize: 13,
-        ),
+        labelStyle: chipLabelStyle,
+        secondaryLabelStyle: chipLabelStyle,
+        checkmarkColor: Colors.white,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,

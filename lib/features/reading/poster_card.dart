@@ -393,20 +393,32 @@ class CompactSourceItemTile extends StatelessWidget {
     this.pipeline,
     required this.onTap,
     this.meta,
+    this.uniformList = false,
+    this.columns = 1,
   });
   final SourceItem item;
   final SectionImagePipeline? pipeline;
   final VoidCallback onTap;
   final String? meta;
+  final bool uniformList;
+  final int columns;
   @override
   Widget build(BuildContext context) => Material(
-    color: LumeTheme.surface,
-    borderRadius: BorderRadius.circular(12),
+    color: uniformList
+        ? columns == 1
+              ? Colors.transparent
+              : Theme.of(context).brightness == Brightness.dark
+              ? LumeTheme.surfaceAlt
+              : const Color(0xFFF7F8FA)
+        : LumeTheme.surface,
+    borderRadius: BorderRadius.circular(uniformList ? 8 : 12),
     clipBehavior: Clip.antiAlias,
     child: InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: uniformList
+            ? const EdgeInsets.symmetric(horizontal: 8, vertical: 12)
+            : const EdgeInsets.all(8),
         child: Row(
           children: [
             SizedBox(

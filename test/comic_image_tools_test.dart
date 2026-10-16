@@ -54,6 +54,56 @@ void main() {
   );
 
   test(
+    'model picker supplies an iOS UTI as well as desktop extension filters',
+    () {
+      final type = ComicImageToolsSettingsPage.modelFileTypes.single;
+      expect(type.extensions, contains('mlmodel'));
+      expect(type.uniformTypeIdentifiers, contains('public.data'));
+    },
+  );
+  testWidgets(
+    'model picker failure is visible and the import button can retry',
+    (tester) async {
+      var attempts = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ComicImageToolsSettingsPage(
+            pickModelFile: () async {
+              attempts++;
+              throw PlatformException(code: 'picker_failed');
+            },
+          ),
+        ),
+      );
+      final button = find.byKey(const Key('import-super-resolution-model'));
+      await tester.scrollUntilVisible(button, 250);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(find.text('无法打开文件选择器或安装模型，请重试'), findsOneWidget);
+      expect(tester.widget<TextButton>(button).onPressed, isNotNull);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(attempts, 2);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets('cancelling model selection clears the busy state', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ComicImageToolsSettingsPage(pickModelFile: () async => null),
+      ),
+    );
+    final button = find.byKey(const Key('import-super-resolution-model'));
+    await tester.scrollUntilVisible(button, 250);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('已取消选择模型'), findsOneWidget);
+    expect(tester.widget<TextButton>(button).onPressed, isNotNull);
+    expect(tester.takeException(), isNull);
+  });
+  test(
     'AI photo and manga model types reach the native backend independently',
     () async {
       final calls = <Map>[];

@@ -102,8 +102,6 @@ dependency_overrides:
 
 flutter:
   uses-material-design: true
-  shaders:
-    - assets/shaders/liquid_glass.frag
   assets:
     - assets/speech/vits_aishell3/manifest.json
     - assets/models/waifu2x/ORIGIN.json

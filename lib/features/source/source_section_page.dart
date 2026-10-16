@@ -66,7 +66,6 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
   String _sourceQuery = '';
   String? _group;
   bool _compact = false;
-  bool _grid = false;
   int _sourceFilter = 0;
   bool _selecting = false;
   bool _maintaining = false;
@@ -105,9 +104,6 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     try {
       if (widget.manager == null) await ReadingLibrary.open(widget.section);
       final sources = await _manager.list();
-      _grid =
-          ReadingLibrary.find(widget.section)?.setting('source.manager.grid') ==
-          'true';
       if (!mounted) return;
       setState(() {
         _sources = sources;
@@ -675,7 +671,18 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
               children: [
                 for (final (value, label) in [(0, '全部'), (1, '已启用'), (2, '异常')])
                   ChoiceChip(
-                    label: Text(label),
+                    label: Text(
+                      label,
+                      style: TextStyle(
+                        color: _sourceFilter == value
+                            ? Colors.white
+                            : LumeTheme.chipIdleForeground,
+                      ),
+                    ),
+                    labelStyle: LumeTheme.chipLabelStyle,
+                    backgroundColor: LumeTheme.chipIdleBackground,
+                    selectedColor: LumeTheme.chipSelectedBackground,
+                    checkmarkColor: Colors.white,
                     selected: _sourceFilter == value,
                     onSelected: (_) => setState(() => _sourceFilter = value),
                   ),
@@ -706,33 +713,21 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                   ),
                 ),
                 IconButton(
-                  tooltip: _grid ? '切换为排列' : '切换为网格',
+                  tooltip: _compact ? '详细排列' : '紧凑排列',
                   icon: Icon(
-                    _grid ? Icons.view_list_outlined : Icons.grid_view_outlined,
+                    _compact
+                        ? Icons.view_agenda_outlined
+                        : Icons.view_list_outlined,
                   ),
                   onPressed: () async {
                     final library = await ReadingLibrary.open(widget.section);
-                    library.setSetting('source.manager.grid', '${!_grid}');
-                    if (mounted) setState(() => _grid = !_grid);
+                    library.setSetting(
+                      'source.manager.compact',
+                      '${!_compact}',
+                    );
+                    if (mounted) setState(() => _compact = !_compact);
                   },
                 ),
-                if (!_grid)
-                  IconButton(
-                    tooltip: _compact ? '详细排列' : '紧凑排列',
-                    icon: Icon(
-                      _compact
-                          ? Icons.view_agenda_outlined
-                          : Icons.view_list_outlined,
-                    ),
-                    onPressed: () async {
-                      final library = await ReadingLibrary.open(widget.section);
-                      library.setSetting(
-                        'source.manager.compact',
-                        '${!_compact}',
-                      );
-                      if (mounted) setState(() => _compact = !_compact);
-                    },
-                  ),
               ],
             ),
             Text('${visible.length} 个源 · 长按源条目拖动排序'),
@@ -813,7 +808,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                 }),
               ),
             Expanded(
-              child: _compact && !_grid
+              child: _compact
                   ? ListTile(
                       title: Text(
                         source.name,
@@ -849,7 +844,6 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                       onTap: () => _rename(source),
                     )
                   : _SourceTile(
-                      grid: _grid,
                       source: source,
                       section: widget.section,
                       pinned: SourcePreferences.read(
@@ -899,24 +893,11 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
             16,
             16 + ShellDockScope.bottomInset(context),
           ),
-          sliver: _grid
-              ? SliverGrid(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) => entry(context, i + 1),
-                    childCount: visible.length,
-                  ),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisExtent: 190,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                  ),
-                )
-              : SliverList.separated(
-                  itemCount: visible.length,
-                  itemBuilder: (context, i) => entry(context, i + 1),
-                  separatorBuilder: (_, _) => const SizedBox(height: 12),
-                ),
+          sliver: SliverList.separated(
+            itemCount: visible.length,
+            itemBuilder: (context, i) => entry(context, i + 1),
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+          ),
         ),
       ],
     );
@@ -940,7 +921,6 @@ class _SourceTile extends StatelessWidget {
     required this.source,
     required this.section,
     this.pinned = false,
-    this.grid = false,
     this.customIcon = '',
     this.testing = false,
     this.testResult,
@@ -959,7 +939,6 @@ class _SourceTile extends StatelessWidget {
   final Section section;
 
   final bool pinned;
-  final bool grid;
   final String customIcon;
 
   /// 正在测试（按钮转圈）。
@@ -1034,62 +1013,6 @@ class _SourceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (grid) {
-      return GlassCard(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                SourceIcon(
-                  name: source.name,
-                  siteUrl: source.siteUrl,
-                  iconUrl: customIcon.isEmpty ? source.iconUrl : customIcon,
-                  section: section,
-                  sourceId: source.id,
-                  size: 32,
-                ),
-                const Spacer(),
-                _menu(),
-              ],
-            ),
-            Text(
-              source.name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            SourceUpdateBadge(section: section, sourceId: source.id),
-            const Spacer(),
-            Row(
-              children: [
-                if (SourceContentRating.isAdult(source.id, source.name))
-                  const SourceRatingBadge(),
-                Expanded(
-                  child: Text(
-                    source.hasGroup ? source.group : source.version,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(
-              height: 36,
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Switch(value: source.enabled, onChanged: onToggle),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
     return GlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(

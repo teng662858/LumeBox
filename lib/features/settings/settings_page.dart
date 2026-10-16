@@ -2,7 +2,6 @@ import '../../shared/widgets/drawer_geometry.dart';
 import 'diagnostic_export_tile.dart';
 import '../audio_book/audio_book_page.dart';
 import 'configuration_settings_page.dart';
-import 'glass_effects_tiles.dart';
 import 'privacy_settings_page.dart';
 import '../comic/comic_image_tools_page.dart';
 import 'total_subscription_page.dart';
@@ -157,8 +156,6 @@ class SettingsPage extends StatelessWidget {
             subtitle: '海报样式 / API Key / 接口与图片代理',
             onTap: () => _push(context, const TmdbSettingsPage()),
           ),
-          const SizedBox(height: 20),
-          const LiquidGlassSettingsTile(),
           const SizedBox(height: 20),
           const _GroupTitle('源与网络'),
           _SettingsEntry(

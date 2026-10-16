@@ -37,7 +37,7 @@ void main() {
   });
   for (final section in Section.values) {
     for (final grid in [false, true]) {
-      testWidgets('${section.label} ${grid ? '网格' : '排列'}长按名称拖动，保存位置', (
+      testWidgets('${section.label} ${grid ? '旧网格偏好回退列表' : '排列'}长按名称拖动，保存位置', (
         tester,
       ) async {
         tester.view.physicalSize = const Size(390, 844);
@@ -58,6 +58,9 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byIcon(Icons.drag_handle), findsNothing);
+        expect(find.byTooltip('切换为网格'), findsNothing);
+        expect(find.byType(SliverGrid), findsNothing);
+
         final start = tester.getCenter(find.text('甲源'));
         final target = tester.getCenter(find.text('乙源'));
         final gesture = await tester.startGesture(start);
@@ -78,7 +81,7 @@ void main() {
         await tester.pumpAndSettle();
         final a = tester.getTopLeft(find.text('甲源'));
         final b = tester.getTopLeft(find.text('乙源'));
-        expect(grid ? b.dx < a.dx : b.dy < a.dy, isTrue);
+        expect(b.dy < a.dy, isTrue);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
       });

@@ -1,5 +1,3 @@
-import 'liquid_glass_widget.dart';
-import '../../core/theme/glass_effects_settings.dart';
 
 import 'package:flutter/material.dart';
 
@@ -14,10 +12,7 @@ class SubscriptionStatusIcon extends StatelessWidget {
     valueListenable: SourceSubscriptionSync.changeCount(section),
     builder: (_, count, _) => Badge(
       isLabelVisible: count > 0,
-      label: LiquidGlassWidget(
-        area: GlassArea.subscriptionBadges,
-        child: Text(count > 99 ? '99+' : '$count'),
-      ),
+      label: Text(count > 99 ? '99+' : '$count'),
       child: const Icon(Icons.rss_feed),
     ),
   );

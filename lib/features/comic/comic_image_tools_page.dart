@@ -12,7 +12,20 @@ import '../../core/reading/comic_image_tools.dart';
 import '../../shared/widgets/glass_card.dart';
 
 class ComicImageToolsSettingsPage extends StatefulWidget {
-  const ComicImageToolsSettingsPage({super.key, this.translation = false});
+  const ComicImageToolsSettingsPage({
+    super.key,
+    this.translation = false,
+    this.pickModelFile,
+  });
+  final Future<XFile?> Function()? pickModelFile;
+  static const modelFileTypes = [
+    XTypeGroup(
+      label: 'waifu2x CoreML',
+      extensions: ['mlmodel'],
+      // iOS cannot filter by extension alone. Imported data is SHA-256 checked below.
+      uniformTypeIdentifiers: ['public.data'],
+    ),
+  ];
   final bool translation;
   @override
   State<ComicImageToolsSettingsPage> createState() => _SettingsState();
@@ -65,14 +78,22 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
 
   Future<void> importModel() async {
     if (busy) return;
-    final picked = await openFile(
-      acceptedTypeGroups: const [
-        XTypeGroup(label: 'waifu2x CoreML', extensions: ['mlmodel']),
-      ],
-    );
-    if (picked == null || !mounted) return;
-    setState(() => busy = true);
+    setState(() {
+      busy = true;
+      status = '正在打开文件选择器…';
+    });
     try {
+      final picked =
+          await (widget.pickModelFile?.call() ??
+              openFile(
+                acceptedTypeGroups: ComicImageToolsSettingsPage.modelFileTypes,
+              ));
+      if (!mounted) return;
+      if (picked == null) {
+        setState(() => status = '已取消选择模型');
+        return;
+      }
+      setState(() => status = '正在校验并安装模型…');
       if (await picked.length() > 3 * 1024 * 1024) {
         throw const FormatException('模型文件过大');
       }
@@ -94,8 +115,9 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
     } catch (error) {
       if (mounted) {
         setState(
-          () =>
-              status = error is FormatException ? error.message : '模型安装失败，请重试',
+          () => status = error is FormatException
+              ? error.message
+              : '无法打开文件选择器或安装模型，请重试',
         );
       }
     } finally {
@@ -309,6 +331,7 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
                 child: const Text('加载当前已安装模型'),
               ),
               TextButton.icon(
+                key: const Key('import-super-resolution-model'),
                 onPressed: busy ? null : importModel,
                 icon: const Icon(Icons.file_open_outlined),
                 label: const Text('从本地安装超分模型'),

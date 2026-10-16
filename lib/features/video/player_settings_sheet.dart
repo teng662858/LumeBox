@@ -1,7 +1,4 @@
 import '../../shared/widgets/drawer_geometry.dart';
-import '../../shared/widgets/player_popup_glass.dart';
-import '../../core/theme/glass_effects_settings.dart';
-import '../settings/glass_effects_page.dart';
 import 'playback_glass.dart';
 
 import 'package:flutter/material.dart';
@@ -47,7 +44,6 @@ Future<void> showPlayerSettingsSheet({
       builder: (context, enabled, _) => PlaybackGlass(
         enabled: enabled,
         child: PlayerSettingsSheet(
-          useFrostedSurface: true,
           showDanmakuPanel: false,
           settings: settings,
           capabilities: capabilities,
@@ -103,7 +99,6 @@ class PlayerSettingsSheet extends StatefulWidget {
     this.danmakuCount,
     this.showDanmakuPanel = true,
     this.embedded = false,
-    this.useFrostedSurface = false,
     this.extraControls,
   });
 
@@ -156,7 +151,6 @@ class PlayerSettingsSheet extends StatefulWidget {
   /// 是否作为**内嵌内容**使用（全局设置页）：不画拖拽把手与关闭按钮，
   /// 也不限高（由外层滚动容器负责）。
   final bool embedded;
-  final bool useFrostedSurface;
   final Widget? extraControls;
 
   @override
@@ -224,14 +218,6 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
         },
       ),
       const SizedBox(height: 20),
-      ListTile(
-        title: const Text('玻璃效果作用部位与强度'),
-        leading: const Icon(Icons.blur_on),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute<void>(builder: (_) => const GlassEffectsPage()),
-        ),
-      ),
       _section('手势', 'AVPlayer / MPV / MDK 共用，横竖屏立即生效；锁屏时停用'),
       SwitchListTile.adaptive(
         title: const Text('启用播放器手势'),
@@ -447,12 +433,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       child: DecoratedBox(decoration: LumeTheme.background, child: content),
     );
-    if (!widget.useFrostedSurface) return legacy;
-    return PlayerPopupGlass(
-      area: GlassArea.videoSettings,
-      legacy: legacy,
-      child: content,
-    );
+    return legacy;
   }
 
   Widget _handle(BuildContext context) {

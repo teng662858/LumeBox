@@ -1,6 +1,5 @@
 import '../../shared/widgets/column_list.dart';
 import '../../shared/widgets/drawer_geometry.dart';
-import '../../shared/widgets/module_glass_surface.dart';
 import '../../core/source/source_subscription_sync.dart';
 import '../../shared/widgets/source_update_badge.dart';
 import '../../shared/widgets/source_drag_tile.dart';
@@ -19,7 +18,6 @@ import '../../core/source/source.dart';
 import '../../core/source/source_picker_groups.dart';
 import '../../core/source/source_preferences.dart';
 import '../../core/theme/lume_theme.dart';
-import '../../shared/widgets/source_icon.dart';
 import 'source_action_dialogs.dart';
 import 'source_preferences_page.dart';
 
@@ -257,90 +255,122 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
     final prefs = SourcePreferences.read(widget.section, source.id);
     final selected = source.id == widget.currentId;
 
+    final groups = SourcePickerGroups.forSection(widget.section);
+    final groupId = SourcePickerGroups.groupFor(widget.section, source);
+    final groupLabel = groups.firstWhere((group) => group.$1 == groupId).$2;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final radius = BorderRadius.circular(8);
     return Material(
-      color: selected
-          ? Color.alphaBlend(
-              LumeTheme.accent.withValues(alpha: .18),
-              LumeTheme.surfaceAlt,
-            )
-          : LumeTheme.surfaceAlt,
-      elevation: 2,
+      elevation: columns ? 1 : 0,
       shadowColor: LumeTheme.cardShadow.first.color,
-      borderRadius: BorderRadius.circular(14),
+      color: columns
+          ? (dark ? LumeTheme.surfaceAlt : const Color(0xFFF7F8FA))
+          : Colors.transparent,
+      borderRadius: radius,
       child: InkWell(
         key: ValueKey('picker-source-${source.id}'),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: radius,
         onTap: busy.contains(source.id)
             ? null
             : () => Navigator.pop(context, source.id),
-
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          padding: EdgeInsets.symmetric(
+            horizontal: columns ? 6 : 0,
+            vertical: 12,
+          ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              SourceIcon(
-                name: source.name,
-                siteUrl: source.siteUrl,
-                siteIcon: source.iconUrl,
-                iconUrl: prefs.iconUrl,
-                section: widget.section,
-                sourceId: source.id,
-                size: 30,
+              CircleAvatar(
+                radius: 12,
+                backgroundColor: LumeTheme.fillStrong,
+                foregroundColor: LumeTheme.textPrimary,
+                child: busy.contains(source.id)
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        source.name.isEmpty
+                            ? '?'
+                            : source.name.characters.first.toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
               Expanded(
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       source.name,
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
                       ),
                     ),
-                    SourceUpdateBadge(
-                      section: widget.section,
-                      sourceId: source.id,
+                    Text(
+                      groupLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                     ),
                     Text(
                       results[source.id]?.status.label ?? source.version,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                        color: LumeTheme.muted,
-                      ),
+                      style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                     ),
+                    SourceUpdateBadge(
+                      section: widget.section,
+                      sourceId: source.id,
+                    ),
+                    if (prefs.pinned ||
+                        selected ||
+                        SourceContentRating.isAdult(source.id, source.name))
+                      Wrap(
+                        spacing: 4,
+                        children: [
+                          if (SourceContentRating.isAdult(
+                            source.id,
+                            source.name,
+                          ))
+                            const SourceRatingBadge(),
+                          if (prefs.pinned)
+                            Icon(
+                              Icons.push_pin,
+                              size: 13,
+                              color: LumeTheme.accent,
+                            ),
+                          if (selected)
+                            Icon(
+                              Icons.check,
+                              size: 15,
+                              color: LumeTheme.accent,
+                            ),
+                        ],
+                      ),
                   ],
                 ),
               ),
-              if (SourceContentRating.isAdult(source.id, source.name))
-                const SourceRatingBadge(),
               IconButton(
                 key: ValueKey('picker-more-${source.id}'),
                 tooltip: '源操作',
                 constraints: const BoxConstraints.tightFor(
-                  width: 28,
-                  height: 32,
+                  width: 24,
+                  height: 40,
                 ),
                 padding: EdgeInsets.zero,
                 onPressed: () => action(source),
                 icon: const Icon(Icons.more_vert, size: 18),
               ),
-              if (busy.contains(source.id))
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else if (prefs.pinned)
-                Icon(Icons.push_pin, size: 13, color: LumeTheme.accent)
-              else if (selected)
-                Icon(Icons.check, size: 15, color: LumeTheme.accent),
             ],
           ),
         ),
@@ -350,7 +380,6 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final groups = SourceContentVisibility.instance.groups(widget.section);
     final visible = sources
         .where(
           (source) =>
@@ -399,236 +428,100 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
       if (entries.isEmpty) {
         return Center(child: Text(query.isEmpty ? '暂无源' : '没有匹配的源'));
       }
-      return columns && groups.length != 2
-          ? ColumnList(
-              itemCount: entries.length,
-              itemBuilder: tile,
-              padding: const EdgeInsets.fromLTRB(6, 4, 6, 16),
+      return columns
+          ? LayoutBuilder(
+              builder: (context, constraints) {
+                final width = (constraints.maxWidth - 32 - 10) / 2;
+                final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+                return ColumnList(
+                  columns: 2,
+                  decorateItems: false,
+                  itemPadding: EdgeInsets.zero,
+                  spacing: 10,
+                  childAspectRatio: width / (128 * scale.clamp(1.0, 3.0)),
+                  itemCount: entries.length,
+                  itemBuilder: tile,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                );
+              },
             )
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(6, 4, 6, 16),
+          : ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: entries.length,
+              separatorBuilder: (_, _) => const Divider(
+                height: 1,
+                thickness: 1,
+                color: Color(0xFFE5E5EA),
+              ),
               itemBuilder: tile,
             );
     }
 
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      child: ModuleGlassSurface(
-        module: GlassModule.sources,
-        part: GlassPart.panels,
-        legacy: Material(
-          color: LumeTheme.surface,
-          child: SafeArea(
-            top: false,
-            child: SizedBox(
-              height: DrawerGeometry.height(context),
-              child: Padding(
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.viewInsetsOf(context).bottom,
-                ),
-                child: Column(
+    final content = SafeArea(
+      top: false,
+      child: SizedBox(
+        height: DrawerGeometry.height(context),
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 8, 8),
+                child: Row(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 8, 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              onChanged: (value) => setState(
-                                () => query = value.trim().toLowerCase(),
-                              ),
-                              decoration: const InputDecoration(
-                                hintText: '搜索源',
-                                prefixIcon: Icon(Icons.search),
-                              ),
-                            ),
-                          ),
-
-                          IconButton(
-                            tooltip: columns ? '切换为单列' : '切换为双列',
-                            icon: Icon(
-                              columns
-                                  ? Icons.view_agenda_outlined
-                                  : Icons.view_column_outlined,
-                            ),
-                            onPressed: () async {
-                              setState(() => columns = !columns);
-                              final library = await ReadingLibrary.open(
-                                widget.section,
-                              );
-                              library.setSetting(
-                                'source.picker.columns',
-                                '$columns',
-                              );
-                            },
-                          ),
-                          IconButton(
-                            tooltip: '关闭',
-                            onPressed: () => Navigator.pop(context),
-                            icon: const Icon(Icons.close),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '长按源条目拖动排序，点击更多打开操作菜单',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                        color: LumeTheme.muted,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
                     Expanded(
-                      child: columns && groups.length == 2
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                for (final group in groups)
-                                  Expanded(
-                                    child: Column(
-                                      children: [
-                                        Text(
-                                          group.$2,
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w600,
-                                            color: LumeTheme.accent,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Expanded(
-                                          child: list(
-                                            visible
-                                                .where(
-                                                  (source) =>
-                                                      SourcePickerGroups.groupFor(
-                                                        widget.section,
-                                                        source,
-                                                      ) ==
-                                                      group.$1,
-                                                )
-                                                .toList(),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            )
-                          : list(visible),
+                      child: TextField(
+                        onChanged: (value) =>
+                            setState(() => query = value.trim().toLowerCase()),
+                        decoration: const InputDecoration(
+                          hintText: '搜索源',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: columns ? '切换为单列' : '切换为双列',
+                      icon: Icon(
+                        columns
+                            ? Icons.view_agenda_outlined
+                            : Icons.view_column_outlined,
+                      ),
+                      onPressed: () async {
+                        setState(() => columns = !columns);
+                        final library = await ReadingLibrary.open(
+                          widget.section,
+                        );
+                        library.setSetting('source.picker.columns', '$columns');
+                      },
+                    ),
+                    IconButton(
+                      tooltip: '关闭',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
                     ),
                   ],
                 ),
               ),
-            ),
-          ),
-        ),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: DrawerGeometry.height(context),
-            child: Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.viewInsetsOf(context).bottom,
+              Text(
+                '长按源条目拖动排序，点击更多打开操作菜单',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  color: LumeTheme.muted,
+                ),
               ),
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 8, 8),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            onChanged: (value) => setState(
-                              () => query = value.trim().toLowerCase(),
-                            ),
-                            decoration: const InputDecoration(
-                              hintText: '搜索源',
-                              prefixIcon: Icon(Icons.search),
-                            ),
-                          ),
-                        ),
-
-                        IconButton(
-                          tooltip: columns ? '切换为单列' : '切换为双列',
-                          icon: Icon(
-                            columns
-                                ? Icons.view_agenda_outlined
-                                : Icons.view_column_outlined,
-                          ),
-                          onPressed: () async {
-                            setState(() => columns = !columns);
-                            final library = await ReadingLibrary.open(
-                              widget.section,
-                            );
-                            library.setSetting(
-                              'source.picker.columns',
-                              '$columns',
-                            );
-                          },
-                        ),
-                        IconButton(
-                          tooltip: '关闭',
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    '长按源条目拖动排序，点击更多打开操作菜单',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                      color: LumeTheme.muted,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: columns && groups.length == 2
-                        ? Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              for (final group in groups)
-                                Expanded(
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        group.$2,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          color: LumeTheme.accent,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Expanded(
-                                        child: list(
-                                          visible
-                                              .where(
-                                                (source) =>
-                                                    SourcePickerGroups.groupFor(
-                                                      widget.section,
-                                                      source,
-                                                    ) ==
-                                                    group.$1,
-                                              )
-                                              .toList(),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          )
-                        : list(visible),
-                  ),
-                ],
-              ),
-            ),
+              const SizedBox(height: 8),
+              Expanded(child: list(visible)),
+            ],
           ),
         ),
       ),
+    );
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      child: Material(color: LumeTheme.surface, child: content),
     );
   }
 }

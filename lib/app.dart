@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'core/session/privacy_settings.dart';
 import 'shared/widgets/app_privacy_guard.dart';
 
@@ -55,21 +56,24 @@ class _LumeBoxAppState extends State<LumeBoxApp> {
           theme: LumeTheme.build(
             brightness: Brightness.light,
             accent: appearance.accent,
+            background: appearance.background,
           ),
           darkTheme: LumeTheme.build(
             brightness: Brightness.dark,
             accent: appearance.accent,
+            background: appearance.background,
           ),
           themeMode: appearance.mode,
-      // 页面里的静态色名（`LumeTheme.textPrimary` 等）按进程级亮度取色，
-      // 而 Flutter 选亮色还是暗色由 ThemeMode.system 决定。这里把**实际生效
-      // 的亮度**回写给静态色名，并按亮度给整棵子树换 key：
-      // 系统外观一变，子树整体重建，所有静态色名重新取值——
-      // 否则只换 ThemeData、不重建的页面会留着旧主题的颜色。
+          // 页面里的静态色名（`LumeTheme.textPrimary` 等）按进程级亮度取色，
+          // 而 Flutter 选亮色还是暗色由 ThemeMode.system 决定。这里把**实际生效
+          // 的亮度**回写给静态色名，并按亮度给整棵子树换 key：
+          // 系统外观一变，子树整体重建，所有静态色名重新取值——
+          // 否则只换 ThemeData、不重建的页面会留着旧主题的颜色。
           builder: (context, child) {
             final brightness = Theme.of(context).brightness;
             LumeTheme.applyBrightness(brightness);
             LumeTheme.applyAccent(appearance.accent);
+            LumeTheme.applyBackground(appearance.background);
             return KeyedSubtree(
               key: ValueKey<String>(LumeTheme.themeId),
               // 注意：**这一层 key 换不动子树里的页面**。child 是带 GlobalKey 的
