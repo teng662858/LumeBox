@@ -1,5 +1,4 @@
 import '../../shared/widgets/column_list.dart';
-import '../../shared/widgets/source_category_columns.dart';
 import '../../shared/widgets/drawer_geometry.dart';
 import '../../shared/widgets/source_update_badge.dart';
 import '../../core/reading/browse_layout.dart';
@@ -1529,24 +1528,6 @@ class CatGroupedSourceList extends StatelessWidget {
         child: itemBuilder(context, site),
       ),
     );
-    if (columns == 2) {
-      return SizedBox(
-        height: MediaQuery.sizeOf(context).height * .65,
-        child: SourceCategoryColumns(
-          keyPrefix: 'cat-picker',
-          sections: [
-            for (final group in grouped.entries)
-              SourceColumnSection(
-                id: group.key,
-                title:
-                    labels[group.key] ??
-                    (group.key.isEmpty ? '未分类' : group.key),
-                children: [for (final site in group.value) card(site)],
-              ),
-          ],
-        ),
-      );
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1562,18 +1543,34 @@ class CatGroupedSourceList extends StatelessWidget {
               ),
             ),
           ),
-          CatSourceList(
-            columns: columns,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
-            children: [
-              for (final site in group.value)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: card(site),
-                ),
-            ],
+            child: Column(
+              children: [
+                for (
+                  var i = 0;
+                  i < group.value.length;
+                  i += columns.clamp(1, 2)
+                )
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: card(group.value[i])),
+                        if (columns > 1) ...[
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: i + 1 < group.value.length
+                                ? card(group.value[i + 1])
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: 8),
         ],

@@ -83,10 +83,15 @@ class _SourceGroupsPreviewState extends State<SourceGroupsPreview> {
                     ),
                 ],
               ),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: Text(
-                  '左右分类独立滚动 · GitHub / YouTube 真实网络 Logo',
+                  section == Section.cat
+                      ? '猫源整块统一滚动 · 真实网络 Logo'
+                      : '左右分类独立滚动 · GitHub / YouTube 真实网络 Logo',
                   textAlign: TextAlign.center,
                 ),
               ),

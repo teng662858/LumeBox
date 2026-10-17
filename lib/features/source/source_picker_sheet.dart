@@ -473,7 +473,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
             ],
           );
 
-    final groupedList = columns
+    final groupedList = columns && widget.section != Section.cat
         ? SourceCategoryColumns(
             key: ValueKey('picker-columns-${widget.section.id}'),
             sections: [

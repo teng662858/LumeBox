@@ -72,14 +72,20 @@ void main() {
       final first = tester.getRect(find.byKey(const ValueKey('v1')));
       final second = tester.getRect(find.byKey(const ValueKey('v2')));
       final comic = tester.getRect(find.byKey(const ValueKey('c1')));
-      expect(first.left, second.left);
-      expect(second.top, greaterThan(first.bottom));
+      // Cat categories share the outer scroll view; no per-column scrollables.
+      expect(find.byType(Scrollable), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('cat-picker-category-columns')),
+        findsNothing,
+      );
       if (columns == 2) {
-        expect(comic.top, first.top);
-        expect(comic.left - first.right, 10);
+        expect(second.top, first.top);
+        expect(second.left - first.right, 10);
       } else {
-        expect(comic.top, greaterThan(second.bottom));
+        expect(first.left, second.left);
+        expect(second.top, greaterThan(first.bottom));
       }
+      expect(comic.top, greaterThan(second.bottom));
       expect(tester.takeException(), isNull);
     });
   }
