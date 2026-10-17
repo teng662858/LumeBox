@@ -182,8 +182,9 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
           '合计缓存 ${_formatBytes(totalCache)}'
           '${totalSaved > 0 ? ' · 已保存图片 ${_formatBytes(totalSaved)}' : ''}',
           style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
+            fontWeight: FontWeight.w400,
+            fontSize: LumeTypography.bodySize,
+            height: 1.5,
             color: LumeTheme.muted,
           ),
         ),
@@ -203,9 +204,10 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
           '清理只删除可再生缓存；用户保存的图片、书架信息与阅读进度都不在清理范围。\n'
           '内存缓存只在本次运行有效，退出应用即消失，不落盘。',
           style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 13,
-            color: LumeTheme.muted,
+            fontWeight: FontWeight.w400,
+            fontSize: LumeTypography.descriptionSize,
+            height: 1.5,
+            color: LumeTheme.descriptionColor,
           ),
         ),
       ],
@@ -256,19 +258,20 @@ class _CacheTile extends StatelessWidget {
                 Text(
                   stats.section.label,
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: LumeTypography.titleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
                   '缓存 ${_CacheSettingsPageState._formatBytes(stats.cacheBytes)}'
                   '（${stats.cacheFiles} 个文件）',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
                 if (!SectionImagePipeline.diskCacheFor(stats.section))
@@ -277,9 +280,10 @@ class _CacheTile extends StatelessWidget {
                     //（漫画板块的图片缓存已关闭，见 image_pipeline 的说明）。
                     '图片缓存已关闭：封面与阅读页不再落盘',
                     style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: LumeTheme.muted,
+                      fontWeight: FontWeight.w400,
+                      fontSize: LumeTypography.descriptionSize,
+                      height: 1.5,
+                      color: LumeTheme.descriptionColor,
                     ),
                   ),
                 if (stats.savedBytes > 0)
@@ -288,9 +292,10 @@ class _CacheTile extends StatelessWidget {
                     '${_CacheSettingsPageState._formatBytes(stats.savedBytes)}'
                     '（不参与清理）',
                     style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: LumeTheme.muted,
+                      fontWeight: FontWeight.w400,
+                      fontSize: LumeTypography.descriptionSize,
+                      height: 1.5,
+                      color: LumeTheme.descriptionColor,
                     ),
                   ),
                 const SizedBox(height: 4),
@@ -305,9 +310,10 @@ class _CacheTile extends StatelessWidget {
                       Text(
                         policy.describe(),
                         style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: LumeTheme.muted,
+                          fontWeight: FontWeight.w400,
+                          fontSize: LumeTypography.descriptionSize,
+                          height: 1.5,
+                          color: LumeTheme.descriptionColor,
                         ),
                       ),
                     ],
@@ -321,9 +327,10 @@ class _CacheTile extends StatelessWidget {
                       child: Text(
                         '内存缓存 ${memory.describe()}',
                         style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: LumeTheme.muted,
+                          fontWeight: FontWeight.w400,
+                          fontSize: LumeTypography.descriptionSize,
+                          height: 1.5,
+                          color: LumeTheme.descriptionColor,
                         ),
                       ),
                     ),
@@ -393,9 +400,10 @@ class _CachePolicyDialogState extends State<_CachePolicyDialog> {
                 '超过上限或过期的缓存会在保存策略时立刻清理一次，之后每次进本页'
                 '也会按策略修剪。用户保存的图片、书架与进度不受影响。',
                 style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.muted,
+                  fontWeight: FontWeight.w400,
+                  fontSize: LumeTypography.descriptionSize,
+                  height: 1.5,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
               const SizedBox(height: 16),
@@ -403,7 +411,7 @@ class _CachePolicyDialogState extends State<_CachePolicyDialog> {
                 '容量上限',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 15,
+                  fontSize: LumeTypography.titleSize,
                   color: LumeTheme.textPrimary,
                 ),
               ),
@@ -425,7 +433,7 @@ class _CachePolicyDialogState extends State<_CachePolicyDialog> {
                 '过期天数',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 15,
+                  fontSize: LumeTypography.titleSize,
                   color: LumeTheme.textPrimary,
                 ),
               ),

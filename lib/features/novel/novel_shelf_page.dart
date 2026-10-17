@@ -245,7 +245,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
+                  fontSize: LumeTypography.descriptionSize,
                   height: 1.25,
                   color: LumeTheme.textPrimary,
                 ),
@@ -257,7 +257,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 11,
+                  fontSize: LumeTypography.captionSize,
                   color: LumeTheme.muted,
                 ),
               ),
@@ -319,7 +319,7 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: LumeTypography.titleSize,
                           fontWeight: FontWeight.w600,
                           color: LumeTheme.textPrimary,
                         ),
@@ -331,8 +331,8 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: LumeTheme.muted,
+                          fontSize: LumeTypography.descriptionSize,
+                          color: LumeTheme.descriptionColor,
                         ),
                       ),
                     ],

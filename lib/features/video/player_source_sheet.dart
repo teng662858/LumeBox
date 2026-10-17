@@ -180,7 +180,7 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
                           child: Text(
                             '选集与线路',
                             style: TextStyle(
-                              fontSize: 16,
+                              fontSize: LumeTypography.titleSize,
                               fontWeight: FontWeight.w600,
                               color: LumeTheme.textPrimary,
                             ),
@@ -245,7 +245,7 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         fontWeight: FontWeight.w600,
-                                        fontSize: 12,
+                                        fontSize: LumeTypography.captionSize,
                                         color: LumeTheme.muted,
                                       ),
                                     ),
@@ -276,8 +276,8 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
     text,
     style: TextStyle(
       fontWeight: FontWeight.w600,
-      fontSize: 13,
-      color: LumeTheme.textSecondary,
+      fontSize: LumeTypography.descriptionSize,
+      color: LumeTheme.descriptionColor,
     ),
   );
 }

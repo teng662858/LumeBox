@@ -76,10 +76,10 @@ class ModuleSettingsHubPage extends StatelessWidget {
               '阅读页 / 播放页里的就地设置保留着，和这里改的是同一份数值——'
               '哪边改，另一边立刻就是新值。',
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.descriptionSize,
+                color: LumeTheme.descriptionColor,
                 height: 1.5,
-                color: LumeTheme.muted,
               ),
             ),
           ),
@@ -114,18 +114,19 @@ class _ModuleEntry extends StatelessWidget {
                 Text(
                   '${section.label}设置',
                   style: TextStyle(
-                    fontSize: 15.5,
+                    fontSize: LumeTypography.titleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
                   _subtitleFor(section),
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
               ],
@@ -268,8 +269,9 @@ class _SectionModuleSettingsPageState extends State<SectionModuleSettingsPage> {
               label: Text(
                 preset.label,
                 style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  fontSize: LumeTypography.captionSize,
+                  height: 1.5,
                 ),
               ),
             ),
@@ -439,8 +441,9 @@ class _SectionModuleSettingsPageState extends State<SectionModuleSettingsPage> {
                   label: Text(
                     mode.label,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      fontSize: LumeTypography.captionSize,
+                      height: 1.5,
                     ),
                   ),
                 ),
@@ -485,8 +488,9 @@ class _SectionModuleSettingsPageState extends State<SectionModuleSettingsPage> {
                   label: Text(
                     background.label,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      fontSize: LumeTypography.captionSize,
+                      height: 1.5,
                     ),
                   ),
                 ),
@@ -530,8 +534,9 @@ class _SectionModuleSettingsPageState extends State<SectionModuleSettingsPage> {
                   label: Text(
                     action.label,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      fontSize: LumeTypography.captionSize,
+                      height: 1.5,
                     ),
                   ),
                 ),
@@ -556,8 +561,9 @@ class _SectionModuleSettingsPageState extends State<SectionModuleSettingsPage> {
                   label: Text(
                     direction.label,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      fontSize: LumeTypography.captionSize,
+                      height: 1.5,
                     ),
                   ),
                 ),
@@ -699,7 +705,7 @@ class _Group extends StatelessWidget {
             title: Text(
               title,
               style: TextStyle(
-                fontSize: 15.5,
+                fontSize: LumeTypography.titleSize,
                 fontWeight: FontWeight.w600,
                 color: LumeTheme.textPrimary,
               ),
@@ -707,9 +713,10 @@ class _Group extends StatelessWidget {
             subtitle: Text(
               subtitle,
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: LumeTheme.muted,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.descriptionSize,
+                height: 1.5,
+                color: LumeTheme.descriptionColor,
               ),
             ),
             children: children,
@@ -741,8 +748,9 @@ class _Row extends StatelessWidget {
                 child: Text(
                   label,
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.bodySize,
+                    height: 1.5,
                     color: LumeTheme.textSecondary,
                   ),
                 ),
@@ -751,12 +759,13 @@ class _Row extends StatelessWidget {
             ],
           ),
           if (hint != null) ...<Widget>[
-            const SizedBox(height: 2),
+            const SizedBox(height: 4),
             Text(
               hint!,
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.captionSize,
+                height: 1.5,
                 color: LumeTheme.muted,
               ),
             ),
@@ -800,9 +809,10 @@ class _Slider extends StatelessWidget {
               child: Text(
                 label,
                 style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.textSecondary,
+                  fontWeight: FontWeight.w400,
+                  fontSize: LumeTypography.descriptionSize,
+                  height: 1.5,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
             ),
@@ -822,9 +832,10 @@ class _Slider extends StatelessWidget {
                 display,
                 textAlign: TextAlign.end,
                 style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.textSecondary,
+                  fontWeight: FontWeight.w400,
+                  fontSize: LumeTypography.descriptionSize,
+                  height: 1.5,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
             ),
@@ -836,8 +847,9 @@ class _Slider extends StatelessWidget {
             child: Text(
               hint!,
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.captionSize,
+                height: 1.5,
                 color: LumeTheme.muted,
               ),
             ),
@@ -881,10 +893,10 @@ class _Note extends StatelessWidget {
     child: Text(
       text,
       style: TextStyle(
-        fontWeight: FontWeight.w600,
-        fontSize: 13,
+        fontWeight: FontWeight.w400,
+        fontSize: LumeTypography.descriptionSize,
+        color: LumeTheme.descriptionColor,
         height: 1.5,
-        color: LumeTheme.muted,
       ),
     ),
   );

@@ -1,3 +1,4 @@
+import 'package:lume_box/core/theme/lume_typography.dart';
 import 'package:flutter/material.dart';
 
 import 'dandanplay_client.dart';
@@ -76,7 +77,10 @@ class _DanmakuServiceSheetState extends State<DanmakuServiceSheet> {
           children: [
             const Text(
               '弹幕服务',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: LumeTypography.pageTitleSize,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 12),
             const Text('源弹幕与公共服务弹幕同时加载。服务地址可使用兼容弹弹play的 danmu_api 部署，路径前缀会保留。'),

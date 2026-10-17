@@ -462,7 +462,7 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
             child: Text(
               '分类',
               style: TextStyle(
-                fontSize: 14,
+                fontSize: LumeTypography.bodySize,
                 fontWeight: FontWeight.w600,
                 color: LumeTheme.textSecondary,
               ),
@@ -536,7 +536,7 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
             style: const TextStyle(
               fontWeight: FontWeight.w600,
               color: Colors.white,
-              fontSize: 13,
+              fontSize: LumeTypography.descriptionSize,
             ),
           ),
           child: PosterCover(
@@ -562,7 +562,7 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
             child: Text(
               group.title,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: LumeTypography.bodySize,
                 fontWeight: FontWeight.w600,
                 color: LumeTheme.textSecondary,
               ),

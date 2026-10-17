@@ -299,8 +299,8 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
                   '备份只含源脚本与配置，不含 Cookie、缓存与阅读记录。',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontSize: LumeTypography.descriptionSize,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -308,7 +308,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
                   text,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                    fontSize: LumeTypography.captionSize,
                   ),
                   maxLines: 20,
                 ),
@@ -553,7 +553,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
                   summary,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 14,
+                    fontSize: LumeTypography.bodySize,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -564,7 +564,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
                       failure,
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 13,
+                        fontSize: LumeTypography.descriptionSize,
                         height: 1.4,
                       ),
                     ),
@@ -846,7 +846,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
               child: Text(
                 section.label,
                 style: TextStyle(
-                  fontSize: 17,
+                  fontSize: LumeTypography.sectionTitleSize,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
                 ),
@@ -856,8 +856,8 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
               '启用 ${_enabledCount(section)} / 共 ${sources.length}',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: LumeTheme.muted,
+                fontSize: LumeTypography.descriptionSize,
+                color: LumeTheme.descriptionColor,
               ),
             ),
             IconButton(
@@ -927,7 +927,7 @@ class _SectionNote extends StatelessWidget {
       text,
       style: TextStyle(
         fontWeight: FontWeight.w600,
-        fontSize: 14,
+        fontSize: LumeTypography.bodySize,
         color: LumeTheme.muted,
       ),
     ),
@@ -976,7 +976,7 @@ class _SourceTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 17,
+                    fontSize: LumeTypography.sectionTitleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
@@ -995,8 +995,8 @@ class _SourceTile extends StatelessWidget {
                           : source.version,
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: LumeTheme.muted,
+                        fontSize: LumeTypography.descriptionSize,
+                        color: LumeTheme.descriptionColor,
                       ),
                     ),
                     if (!source.enabled)
@@ -1004,7 +1004,7 @@ class _SourceTile extends StatelessWidget {
                         '已停用',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: _disabledColor,
                         ),
                       ),
@@ -1013,7 +1013,7 @@ class _SourceTile extends StatelessWidget {
                         '已失效（连错 ${source.failureCount} 次）',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: _disabledColor,
                         ),
                       ),
@@ -1022,7 +1022,7 @@ class _SourceTile extends StatelessWidget {
                         source.group,
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: _accentColor,
                         ),
                       ),
@@ -1031,7 +1031,7 @@ class _SourceTile extends StatelessWidget {
                         testResult!.status.label,
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: testResult!.isOk
                               ? LumeTheme.success
                               : _disabledColor,
@@ -1106,8 +1106,8 @@ class _RestoreDialogState extends State<_RestoreDialog> {
               '粘贴之前导出的备份内容。同 id 的源会被覆盖。',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: LumeTheme.muted,
+                fontSize: LumeTypography.descriptionSize,
+                color: LumeTheme.descriptionColor,
               ),
             ),
             const SizedBox(height: 8),

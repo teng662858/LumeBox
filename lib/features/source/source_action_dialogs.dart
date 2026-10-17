@@ -86,7 +86,7 @@ class _InfoRow extends StatelessWidget {
               label,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontSize: LumeTypography.bodySize,
                 color: LumeTheme.muted,
               ),
             ),
@@ -96,7 +96,7 @@ class _InfoRow extends StatelessWidget {
               value,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontSize: LumeTypography.bodySize,
                 height: 1.4,
                 color: valueColor ?? LumeTheme.textPrimary,
               ),
@@ -400,7 +400,7 @@ class _SourceNetworkDialogState extends State<SourceNetworkDialog> {
             title,
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 15,
+              fontSize: LumeTypography.titleSize,
               color: LumeTheme.textPrimary,
             ),
           ),
@@ -411,7 +411,7 @@ class _SourceNetworkDialogState extends State<SourceNetworkDialog> {
                 hint,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 12,
+                  fontSize: LumeTypography.captionSize,
                   height: 1.4,
                   color: LumeTheme.muted,
                 ),
@@ -463,7 +463,7 @@ class _MirrorTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontSize: LumeTypography.bodySize,
                 color: LumeTheme.textPrimary,
               ),
             ),
@@ -475,7 +475,7 @@ class _MirrorTile extends StatelessWidget {
                 '主站',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 12,
+                  fontSize: LumeTypography.captionSize,
                   color: LumeTheme.muted,
                 ),
               ),
@@ -487,7 +487,10 @@ class _MirrorTile extends StatelessWidget {
           : Text(
               subtitle!,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+              style: TextStyle(
+                fontSize: LumeTypography.captionSize,
+                color: LumeTheme.muted,
+              ),
             ),
     );
   }

@@ -34,7 +34,7 @@ class NoticeCard extends StatelessWidget {
               Text(
                 title,
                 style: TextStyle(
-                  fontSize: 17,
+                  fontSize: LumeTypography.sectionTitleSize,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
                 ),
@@ -45,7 +45,7 @@ class NoticeCard extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 14,
+                  fontSize: LumeTypography.bodySize,
                   color: LumeTheme.muted,
                 ),
               ),

@@ -414,7 +414,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 19,
+                            fontSize: LumeTypography.pageTitleSize,
                             fontWeight: FontWeight.w700,
                             color: LumeTheme.textPrimary,
                           ),
@@ -429,8 +429,8 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                                color: LumeTheme.muted,
+                                fontSize: LumeTypography.descriptionSize,
+                                color: LumeTheme.descriptionColor,
                               ),
                             ),
                           ),
@@ -439,8 +439,8 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                           '共 ${_chapters.length} 章',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                            color: LumeTheme.muted,
+                            fontSize: LumeTypography.descriptionSize,
+                            color: LumeTheme.descriptionColor,
                           ),
                         ),
                         if (progress != null)
@@ -450,7 +450,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                               '读至 ${progress.describe()}',
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 13,
+                                fontSize: LumeTypography.descriptionSize,
                                 color: LumeTheme.textPrimary,
                               ),
                             ),
@@ -533,7 +533,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
           description,
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 14,
+            fontSize: LumeTypography.bodySize,
             height: 1.6,
             color: LumeTheme.textSecondary,
           ),
@@ -552,7 +552,7 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
           Text(
             '章节（${_chapters.length}）',
             style: TextStyle(
-              fontSize: 15,
+              fontSize: LumeTypography.titleSize,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
             ),
@@ -655,7 +655,7 @@ class _DownloadScopeSheet extends StatelessWidget {
                 Text(
                   '批量下载',
                   style: TextStyle(
-                    fontSize: 17,
+                    fontSize: LumeTypography.sectionTitleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
@@ -666,9 +666,9 @@ class _DownloadScopeSheet extends StatelessWidget {
                   '已下过的图会自动跳过，可随时取消。',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontSize: LumeTypography.descriptionSize,
                     height: 1.5,
-                    color: LumeTheme.muted,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -684,7 +684,7 @@ class _DownloadScopeSheet extends StatelessWidget {
                       scope.label,
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 15,
+                        fontSize: LumeTypography.titleSize,
                         color: LumeTheme.textPrimary,
                       ),
                     ),
@@ -700,8 +700,8 @@ class _DownloadScopeSheet extends StatelessWidget {
                       },
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: LumeTheme.muted,
+                        fontSize: LumeTypography.descriptionSize,
+                        color: LumeTheme.descriptionColor,
                       ),
                     ),
                     trailing: count > 0
@@ -756,7 +756,7 @@ class _DownloadCard extends StatelessWidget {
                 child: Text(
                   _title(),
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: LumeTypography.titleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
@@ -784,8 +784,8 @@ class _DownloadCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: LumeTheme.muted,
+                fontSize: LumeTypography.descriptionSize,
+                color: LumeTheme.descriptionColor,
               ),
             ),
           ] else ...<Widget>[
@@ -794,8 +794,8 @@ class _DownloadCard extends StatelessWidget {
               _summary(),
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: LumeTheme.muted,
+                fontSize: LumeTypography.descriptionSize,
+                color: LumeTheme.descriptionColor,
               ),
             ),
             for (final failure in progress.failures.take(3))
@@ -807,7 +807,7 @@ class _DownloadCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontSize: LumeTypography.descriptionSize,
                     color: LumeTheme.danger,
                   ),
                 ),
@@ -819,8 +819,8 @@ class _DownloadCard extends StatelessWidget {
                   '…另有 ${progress.failures.length - 3} 章失败',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontSize: LumeTypography.descriptionSize,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
               ),
@@ -834,7 +834,7 @@ class _DownloadCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                      fontSize: LumeTypography.captionSize,
                       color: LumeTheme.muted,
                     ),
                   ),
@@ -844,7 +844,10 @@ class _DownloadCard extends StatelessWidget {
                   icon: const Icon(Icons.copy, size: 15),
                   label: const Text(
                     '复制路径',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: LumeTypography.descriptionSize,
+                    ),
                   ),
                 ),
               ],

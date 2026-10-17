@@ -568,7 +568,7 @@ class _ExploreViewState extends State<ExploreView> {
                 group.title,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 12,
+                  fontSize: LumeTypography.captionSize,
                   color: LumeTheme.muted,
                 ),
               ),
@@ -675,7 +675,7 @@ class _ExploreViewState extends State<ExploreView> {
       child: Text(
         title,
         style: TextStyle(
-          fontSize: 14,
+          fontSize: LumeTypography.bodySize,
           fontWeight: selected ? FontWeight.w600 : FontWeight.w600,
         ),
       ),
@@ -1262,7 +1262,7 @@ class _ExploreViewState extends State<ExploreView> {
                         _searchMode.label,
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                         ),
                       ),
                     ),
@@ -1335,7 +1335,7 @@ class _ExploreViewState extends State<ExploreView> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            fontSize: 15,
+                            fontSize: LumeTypography.titleSize,
                             color: LumeTheme.textPrimary,
                           ),
                         ),
@@ -1616,7 +1616,7 @@ class _ExploreViewState extends State<ExploreView> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: LumeTypography.titleSize,
                             fontWeight: FontWeight.w600,
                             color: LumeTheme.textPrimary,
                           ),
@@ -1629,8 +1629,8 @@ class _ExploreViewState extends State<ExploreView> {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: LumeTheme.muted,
+                              fontSize: LumeTypography.descriptionSize,
+                              color: LumeTheme.descriptionColor,
                             ),
                           ),
                         ],
@@ -1694,8 +1694,8 @@ class _ExploreViewState extends State<ExploreView> {
             '没有更多了',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
             ),
           ),
         ),

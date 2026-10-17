@@ -20,7 +20,8 @@ class _ICloudSettingsPageState extends State<ICloudSettingsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => GlassScaffold(effectModule: GlassModule.settings,
+  Widget build(BuildContext context) => GlassScaffold(
+    effectModule: GlassModule.settings,
     title: 'iCloud 同步',
     child: ListenableBuilder(
       listenable: cloud,

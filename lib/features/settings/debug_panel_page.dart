@@ -91,7 +91,7 @@ class _DebugPanelPageState extends State<DebugPanelPage> {
           Text(
             '开关',
             style: TextStyle(
-              fontSize: 17,
+              fontSize: LumeTypography.sectionTitleSize,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
             ),
@@ -100,10 +100,10 @@ class _DebugPanelPageState extends State<DebugPanelPage> {
           Text(
             '抓包只留内存、不落盘、不导出；关闭开关会立即清空已记录的内容。',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
               height: 1.5,
-              color: LumeTheme.muted,
             ),
           ),
           const SizedBox(height: 8),
@@ -113,16 +113,17 @@ class _DebugPanelPageState extends State<DebugPanelPage> {
               '开发者模式',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 15,
+                fontSize: LumeTypography.titleSize,
                 color: LumeTheme.textPrimary,
               ),
             ),
             subtitle: Text(
               '打开后才可开启请求抓包',
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: LumeTheme.muted,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.descriptionSize,
+                height: 1.5,
+                color: LumeTheme.descriptionColor,
               ),
             ),
             value: _settings.enabled,
@@ -140,16 +141,17 @@ class _DebugPanelPageState extends State<DebugPanelPage> {
               '请求抓包',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 15,
+                fontSize: LumeTypography.titleSize,
                 color: LumeTheme.textPrimary,
               ),
             ),
             subtitle: Text(
               '记录每个请求的方法 / 状态 / 耗时 / 来源（凭据类请求头自动隐藏）',
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: LumeTheme.muted,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.descriptionSize,
+                height: 1.5,
+                color: LumeTheme.descriptionColor,
               ),
             ),
             value: _settings.requestCapture,
@@ -173,7 +175,7 @@ class _DebugPanelPageState extends State<DebugPanelPage> {
                 child: Text(
                   '请求抓包',
                   style: TextStyle(
-                    fontSize: 17,
+                    fontSize: LumeTypography.sectionTitleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
@@ -182,9 +184,10 @@ class _DebugPanelPageState extends State<DebugPanelPage> {
               Text(
                 records.isEmpty ? '无记录' : '${records.length} 条',
                 style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.muted,
+                  fontWeight: FontWeight.w400,
+                  fontSize: LumeTypography.descriptionSize,
+                  height: 1.5,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
             ],
@@ -195,9 +198,10 @@ class _DebugPanelPageState extends State<DebugPanelPage> {
                 ? '最近 ${DebugRequestLog.limit} 条请求（新 → 旧）'
                 : '抓包未开启：打开上面的开关后，这里会显示请求明细',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontWeight: FontWeight.w400,
+              fontSize: LumeTypography.descriptionSize,
+              height: 1.5,
+              color: LumeTheme.descriptionColor,
             ),
           ),
           if (records.isNotEmpty) ...<Widget>[
@@ -210,9 +214,10 @@ class _DebugPanelPageState extends State<DebugPanelPage> {
                 child: Text(
                   '只显示最近 50 条（共 ${records.length} 条）',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
               ),
@@ -242,8 +247,9 @@ class _RequestTile extends StatelessWidget {
             child: Text(
               record.describe(),
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.bodySize,
+                height: 1.5,
                 color: color,
               ),
             ),
@@ -251,8 +257,9 @@ class _RequestTile extends StatelessWidget {
           Text(
             '${record.source} · ${_clock(record.time)}',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
+              fontWeight: FontWeight.w400,
+              fontSize: LumeTypography.captionSize,
+              height: 1.5,
               color: LumeTheme.muted,
             ),
           ),
@@ -265,8 +272,9 @@ class _RequestTile extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 12,
+            fontWeight: FontWeight.w400,
+            fontSize: LumeTypography.captionSize,
+            height: 1.5,
             color: LumeTheme.muted,
           ),
         ),
@@ -281,8 +289,9 @@ class _RequestTile extends StatelessWidget {
                 Text(
                   '失败原因：${record.error}',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
                     color: LumeTheme.danger,
                   ),
                 ),
@@ -290,25 +299,28 @@ class _RequestTile extends StatelessWidget {
                 Text(
                   record.note,
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
               Text(
                 '响应体：${record.responseBytes} 字节',
                 style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.muted,
+                  fontWeight: FontWeight.w400,
+                  fontSize: LumeTypography.descriptionSize,
+                  height: 1.5,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
               const SizedBox(height: 6),
               Text(
                 '请求头',
                 style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  fontSize: LumeTypography.descriptionSize,
+                  fontWeight: FontWeight.w400,
+                  height: 1.5,
                   color: LumeTheme.textPrimary,
                 ),
               ),
@@ -316,17 +328,19 @@ class _RequestTile extends StatelessWidget {
                 Text(
                   '（无）',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
               for (final entry in record.requestHeaders.entries)
                 Text(
                   '${entry.key}: ${entry.value}',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.captionSize,
+                    height: 1.5,
                     color: LumeTheme.muted,
                   ),
                 ),
@@ -342,7 +356,10 @@ class _RequestTile extends StatelessWidget {
                 icon: const Icon(Icons.copy, size: 16),
                 label: const Text(
                   '复制地址',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: LumeTypography.descriptionSize,
+                  ),
                 ),
               ),
             ],
@@ -372,7 +389,7 @@ class _RuntimeStatsCard extends StatelessWidget {
           Text(
             '运行环境',
             style: TextStyle(
-              fontSize: 17,
+              fontSize: LumeTypography.sectionTitleSize,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
             ),
@@ -406,9 +423,10 @@ class _RuntimeStatsCard extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: LumeTheme.muted,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.descriptionSize,
+                height: 1.5,
+                color: LumeTheme.descriptionColor,
               ),
             ),
           ),
@@ -416,8 +434,9 @@ class _RuntimeStatsCard extends StatelessWidget {
             child: Text(
               value,
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.descriptionSize,
+                height: 1.5,
                 color: LumeTheme.textPrimary,
               ),
             ),

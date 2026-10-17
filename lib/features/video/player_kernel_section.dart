@@ -115,7 +115,7 @@ class _PlayerKernelSectionState extends State<PlayerKernelSection> {
               Text(
                 '播放器内核 · 故障逃生入口',
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: LumeTypography.titleSize,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
                 ),
@@ -126,8 +126,8 @@ class _PlayerKernelSectionState extends State<PlayerKernelSection> {
                 '内核初始化失败会自动回退并提示，失败的内核不会写进配置反复复现。',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.muted,
+                  fontSize: LumeTypography.descriptionSize,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
             ],

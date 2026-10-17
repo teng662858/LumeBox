@@ -1,3 +1,4 @@
+import 'package:lume_box/core/theme/lume_typography.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/session/privacy_settings.dart';
@@ -130,7 +131,7 @@ class _AppPrivacyGuardState extends State<AppPrivacyGuard>
                         'LumeBox 已锁定',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 23,
+                          fontSize: LumeTypography.displaySmallSize,
                         ),
                       ),
                       const SizedBox(height: 20),

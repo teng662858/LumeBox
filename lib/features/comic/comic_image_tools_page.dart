@@ -1,3 +1,5 @@
+import 'package:lume_box/core/theme/lume_typography.dart';
+
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
@@ -559,7 +561,8 @@ class _ImageToolsState extends State<ComicImageToolsPage> {
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w600,
                                               color: Colors.black,
-                                              fontSize: 16,
+                                              fontSize:
+                                                  LumeTypography.titleSize,
                                             ),
                                           ),
                                         ),

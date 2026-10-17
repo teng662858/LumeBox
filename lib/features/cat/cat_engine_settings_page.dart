@@ -102,8 +102,8 @@ class _CatEngineSettingsPageState extends State<CatEngineSettingsPage> {
           '每个源仍然独占一个独立引擎实例。',
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 13,
-            color: LumeTheme.muted,
+            fontSize: LumeTypography.descriptionSize,
+            color: LumeTheme.descriptionColor,
           ),
         ),
         const SizedBox(height: 12),
@@ -155,7 +155,7 @@ class _EngineTile extends StatelessWidget {
                 Text(
                   kind.label,
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: LumeTypography.titleSize,
                     fontWeight: FontWeight.w600,
                     color: available ? LumeTheme.textPrimary : LumeTheme.muted,
                   ),
@@ -165,8 +165,8 @@ class _EngineTile extends StatelessWidget {
                   _description,
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontSize: LumeTypography.descriptionSize,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
                 if (!available) ...<Widget>[
@@ -175,7 +175,7 @@ class _EngineTile extends StatelessWidget {
                     '本机不可用',
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 13,
+                      fontSize: LumeTypography.descriptionSize,
                       color: LumeTheme.danger,
                     ),
                   ),

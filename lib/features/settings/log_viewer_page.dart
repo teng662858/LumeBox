@@ -103,8 +103,9 @@ class _LogViewerPageState extends State<LogViewerPage> {
                   child: Text(
                     '该级别暂无日志',
                     style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                      fontSize: LumeTypography.bodySize,
+                      height: 1.5,
                       color: LumeTheme.muted,
                     ),
                   ),
@@ -179,17 +180,19 @@ class _LogTile extends StatelessWidget {
               Text(
                 LogExporter.formatTime(entry.time).substring(11),
                 style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.muted,
+                  fontWeight: FontWeight.w400,
+                  fontSize: LumeTypography.descriptionSize,
+                  height: 1.5,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
               const SizedBox(width: 8),
               Text(
                 entry.level.label,
                 style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  fontSize: LumeTypography.descriptionSize,
+                  fontWeight: FontWeight.w400,
+                  height: 1.5,
                   color: _color,
                 ),
               ),
@@ -199,8 +202,9 @@ class _LogTile extends StatelessWidget {
           Text(
             entry.message,
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              fontSize: LumeTypography.bodySize,
+              height: 1.5,
               color: LumeTheme.textPrimary,
             ),
           ),
@@ -211,8 +215,9 @@ class _LogTile extends StatelessWidget {
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.captionSize,
+                height: 1.5,
                 color: LumeTheme.muted,
               ),
             ),

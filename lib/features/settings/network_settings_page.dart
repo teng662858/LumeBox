@@ -153,7 +153,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
-                  fontSize: 14,
+                  fontSize: LumeTypography.bodySize,
                 ),
                 decoration: const InputDecoration(
                   labelText: '全局 User-Agent',
@@ -168,7 +168,7 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
-                  fontSize: 14,
+                  fontSize: LumeTypography.bodySize,
                 ),
                 decoration: const InputDecoration(
                   labelText: '全局代理',
@@ -181,9 +181,10 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
               Text(
                 '支持 http / https 代理；SOCKS 暂不支持，会如实降级为直连并记入运行日志。',
                 style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.muted,
+                  fontWeight: FontWeight.w400,
+                  fontSize: LumeTypography.descriptionSize,
+                  height: 1.5,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
             ],
@@ -217,7 +218,7 @@ class _SectionCard extends StatelessWidget {
           Text(
             title,
             style: TextStyle(
-              fontSize: 17,
+              fontSize: LumeTypography.sectionTitleSize,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
             ),
@@ -226,9 +227,10 @@ class _SectionCard extends StatelessWidget {
           Text(
             subtitle,
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontWeight: FontWeight.w400,
+              fontSize: LumeTypography.descriptionSize,
+              height: 1.5,
+              color: LumeTheme.descriptionColor,
             ),
           ),
           const SizedBox(height: 12),
@@ -271,7 +273,7 @@ class _IntSlider extends StatelessWidget {
                 label,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 15,
+                  fontSize: LumeTypography.titleSize,
                   color: LumeTheme.textPrimary,
                 ),
               ),
@@ -279,7 +281,7 @@ class _IntSlider extends StatelessWidget {
             Text(
               '$value${unit ?? ''}',
               style: TextStyle(
-                fontSize: 15,
+                fontSize: LumeTypography.titleSize,
                 fontWeight: FontWeight.w600,
                 color: LumeTheme.textPrimary,
               ),
@@ -297,9 +299,10 @@ class _IntSlider extends StatelessWidget {
           Text(
             hint!,
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontWeight: FontWeight.w400,
+              fontSize: LumeTypography.descriptionSize,
+              height: 1.5,
+              color: LumeTheme.descriptionColor,
             ),
           ),
       ],

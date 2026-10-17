@@ -237,7 +237,7 @@ class _ExtensionTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: LumeTypography.titleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
@@ -259,8 +259,8 @@ class _ExtensionTile extends StatelessWidget {
             ].join(' · '),
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
             ),
           ),
           if (extension.sourceNames.isNotEmpty) ...<Widget>[
@@ -271,8 +271,8 @@ class _ExtensionTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: LumeTheme.muted,
+                fontSize: LumeTypography.descriptionSize,
+                color: LumeTheme.descriptionColor,
               ),
             ),
           ],
@@ -282,7 +282,7 @@ class _ExtensionTile extends StatelessWidget {
               'APK 载体需要 Android 运行时，本平台不能运行——只能浏览',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 13,
+                fontSize: LumeTypography.descriptionSize,
                 color: _disabledColor,
               ),
             ),
@@ -334,7 +334,7 @@ class _Chip extends StatelessWidget {
         text,
         style: TextStyle(
           fontWeight: FontWeight.w600,
-          fontSize: 12,
+          fontSize: LumeTypography.captionSize,
           color: danger ? _disabledColor : LumeTheme.textPrimary,
         ),
       ),

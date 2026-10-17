@@ -186,7 +186,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
                 _error!,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
+                  fontSize: LumeTypography.descriptionSize,
                   color: LumeTheme.danger,
                 ),
               ),
@@ -222,8 +222,8 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
             _formMode ? '改表单即时生成脚本' : '直接编辑脚本',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
             ),
           ),
         ],
@@ -319,7 +319,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
                 '列表来源',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 14,
+                  fontSize: LumeTypography.bodySize,
                   color: LumeTheme.textPrimary,
                 ),
               ),
@@ -372,8 +372,8 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
                   '生成后可在高级模式里按站点结构调整。',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontSize: LumeTypography.descriptionSize,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
               const SizedBox(height: 12),
@@ -401,7 +401,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
                     _script.text,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                      fontSize: LumeTypography.captionSize,
                       height: 1.4,
                     ),
                   ),
@@ -429,15 +429,15 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
         style: TextStyle(
           fontWeight: FontWeight.w600,
           color: LumeTheme.textPrimary,
-          fontSize: 15,
+          fontSize: LumeTypography.titleSize,
         ),
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
           hintStyle: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 13,
-            color: LumeTheme.muted,
+            fontSize: LumeTypography.descriptionSize,
+            color: LumeTheme.descriptionColor,
           ),
           border: const OutlineInputBorder(),
         ),
@@ -458,7 +458,7 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
         textAlignVertical: TextAlignVertical.top,
         style: const TextStyle(
           fontWeight: FontWeight.w600,
-          fontSize: 13,
+          fontSize: LumeTypography.descriptionSize,
           height: 1.4,
           fontFamily: 'monospace',
         ),
@@ -485,7 +485,7 @@ class _Label extends StatelessWidget {
     child: Text(
       text,
       style: TextStyle(
-        fontSize: 15,
+        fontSize: LumeTypography.titleSize,
         fontWeight: FontWeight.w600,
         color: LumeTheme.textPrimary,
       ),

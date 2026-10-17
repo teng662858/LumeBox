@@ -182,7 +182,10 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
         contentPadding: EdgeInsets.zero,
         title: Text(
           title,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: LumeTypography.titleSize,
+          ),
         ),
         value: value,
         onChanged: onChanged,
@@ -209,7 +212,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                   child: Text(
                     '弹幕设置',
                     style: TextStyle(
-                      fontSize: 17,
+                      fontSize: LumeTypography.sectionTitleSize,
                       fontWeight: FontWeight.w600,
                       color: LumeTheme.textPrimary,
                     ),
@@ -220,8 +223,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                     '本集 ${widget.danmakuCount} 条',
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: LumeTheme.muted,
+                      fontSize: LumeTypography.descriptionSize,
+                      color: LumeTheme.descriptionColor,
                     ),
                   ),
               ],
@@ -232,8 +235,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
               '本集 ${widget.danmakuCount} 条',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: LumeTheme.muted,
+                fontSize: LumeTypography.descriptionSize,
+                color: LumeTheme.descriptionColor,
               ),
             ),
             const SizedBox(height: 4),
@@ -244,7 +247,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
               '显示弹幕',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 15,
+                fontSize: LumeTypography.titleSize,
                 color: LumeTheme.textPrimary,
               ),
             ),
@@ -270,7 +273,10 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
           ),
           const Text(
             '显示范围',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: LumeTypography.titleSize,
+            ),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -321,7 +327,10 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
             tilePadding: EdgeInsets.zero,
             title: const Text(
               '高级设置',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: LumeTypography.titleSize,
+              ),
             ),
             children: [
               _switch(
@@ -392,7 +401,10 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
               ),
               const Text(
                 '正值延后，负值提前',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: LumeTypography.descriptionSize,
+                ),
               ),
               _slider(
                 label: '描边',
@@ -448,7 +460,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                 label,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 15,
+                  fontSize: LumeTypography.titleSize,
                   color: LumeTheme.textPrimary,
                 ),
               ),
@@ -457,7 +469,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
               display,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontSize: LumeTypography.bodySize,
                 color: LumeTheme.muted,
               ),
             ),

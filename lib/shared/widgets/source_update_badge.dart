@@ -1,3 +1,4 @@
+import 'package:lume_box/core/theme/lume_typography.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/session/section.dart';
@@ -25,7 +26,7 @@ class SourceUpdateBadge extends StatelessWidget {
         entry['status'] ?? '已更新',
         key: ValueKey('source-update-$sourceId'),
         style: TextStyle(
-          fontSize: 13,
+          fontSize: LumeTypography.descriptionSize,
           fontWeight: FontWeight.w600,
           color: Theme.of(context).colorScheme.primary,
         ),

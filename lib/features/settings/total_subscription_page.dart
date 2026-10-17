@@ -116,7 +116,8 @@ class _TotalSubscriptionPageState extends State<TotalSubscriptionPage> {
   }
 
   @override
-  Widget build(BuildContext context) => GlassScaffold(effectModule: GlassModule.settings,
+  Widget build(BuildContext context) => GlassScaffold(
+    effectModule: GlassModule.settings,
     title: '总订阅导入导出',
     child: ListView(
       padding: const EdgeInsets.all(16),

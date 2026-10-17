@@ -631,7 +631,7 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            fontSize: 15,
+                            fontSize: LumeTypography.titleSize,
                             fontWeight: FontWeight.w600,
                             color: LumeTheme.textPrimary,
                           ),
@@ -646,7 +646,7 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            fontSize: 12,
+                            fontSize: LumeTypography.captionSize,
                             color: LumeTheme.muted,
                           ),
                         ),
@@ -723,7 +723,10 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
               const SizedBox(height: 10),
               const Text(
                 '这个地址没打开',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: LumeTypography.titleSize,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 6),
               Text(
@@ -731,7 +734,7 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13.5,
+                  fontSize: LumeTypography.bodySize,
                   color: LumeTheme.muted,
                 ),
               ),

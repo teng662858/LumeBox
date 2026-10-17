@@ -159,7 +159,7 @@ class _ComicShelfPageState extends State<ComicShelfPage> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontSize: LumeTypography.descriptionSize,
                     height: 1.25,
                     color: LumeTheme.textPrimary,
                   ),
@@ -171,7 +171,7 @@ class _ComicShelfPageState extends State<ComicShelfPage> {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 11,
+                    fontSize: LumeTypography.captionSize,
                     color: LumeTheme.muted,
                   ),
                 ),

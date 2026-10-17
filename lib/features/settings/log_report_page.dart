@@ -89,7 +89,7 @@ class _LogReportPageState extends State<LogReportPage> {
                     ? '发现 ${summary.errors} 个错误、${summary.warnings} 个警告'
                     : '本次运行没有错误与警告',
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: LumeTypography.titleSize,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
                 ),
@@ -99,9 +99,10 @@ class _LogReportPageState extends State<LogReportPage> {
                 '日志条数：共 ${summary.total} 条'
                 '（信息 ${summary.total - summary.errors - summary.warnings}）',
                 style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.muted,
+                  fontWeight: FontWeight.w400,
+                  fontSize: LumeTypography.descriptionSize,
+                  height: 1.5,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
               if (!summary.isEmpty)
@@ -109,9 +110,10 @@ class _LogReportPageState extends State<LogReportPage> {
                   '时间范围：${LogExporter.formatTime(summary.first!)} ~ '
                   '${LogExporter.formatTime(summary.last!)}',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
               const SizedBox(height: 8),
@@ -119,9 +121,10 @@ class _LogReportPageState extends State<LogReportPage> {
                 '报告只包含本次运行的日志（重启后清空），导出为应用目录下的 '
                 'logs/ 文本文件。',
                 style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.muted,
+                  fontWeight: FontWeight.w400,
+                  fontSize: LumeTypography.descriptionSize,
+                  height: 1.5,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
             ],
@@ -158,8 +161,9 @@ class _LogReportPageState extends State<LogReportPage> {
                 Text(
                   '最近一次导出',
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                    fontSize: LumeTypography.bodySize,
+                    fontWeight: FontWeight.w400,
+                    height: 1.5,
                     color: LumeTheme.textPrimary,
                   ),
                 ),
@@ -167,18 +171,20 @@ class _LogReportPageState extends State<LogReportPage> {
                 Text(
                   result.file.path,
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
                   '${result.entries} 条日志 · ${_formatBytes(result.bytes)}',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
               ],

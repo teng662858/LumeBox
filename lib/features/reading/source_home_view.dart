@@ -455,13 +455,13 @@ class _HomeCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: style == GridTitleStyle.below
                 ? TextStyle(
-                    fontSize: 13.5,
+                    fontSize: LumeTypography.bodySize,
                     height: 1.25,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   )
                 : const TextStyle(
-                    fontSize: 13.5,
+                    fontSize: LumeTypography.bodySize,
                     height: 1.25,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,

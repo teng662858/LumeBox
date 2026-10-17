@@ -144,7 +144,7 @@ class _ChoiceSheetState extends State<_ChoiceSheet> {
                     child: Text(
                       '全部${widget.title}',
                       style: const TextStyle(
-                        fontSize: 19,
+                        fontSize: LumeTypography.pageTitleSize,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -328,7 +328,7 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                             child: Text(
                               '分类与筛选',
                               style: TextStyle(
-                                fontSize: 19,
+                                fontSize: LumeTypography.pageTitleSize,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),

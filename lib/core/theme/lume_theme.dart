@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'appearance.dart';
+import 'lume_typography.dart';
+export 'lume_typography.dart';
 
 /// 全局主题色板：**浅色与深色两套值**，由 [LumeTheme.of] 按当前亮度取用。
 ///
@@ -229,7 +231,7 @@ class LumeTheme {
 
   /// RawChip resolves stateful Color after merging TextStyle, not TextStyle itself.
   static TextStyle get chipLabelStyle => TextStyle(
-    fontSize: 13,
+    fontSize: LumeTypography.descriptionSize,
     fontWeight: FontWeight.w600,
     color: WidgetStateColor.resolveWith(
       (states) => states.contains(WidgetState.selected)
@@ -304,6 +306,14 @@ class LumeTheme {
 
   /// 辅助说明。
   static Color get textSecondary => palette.textSecondary;
+
+  /// Supporting copy recedes behind list titles without changing icon colors.
+  static Color descriptionColorOf(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? const Color(0xFFAEAEB2)
+      : const Color(0xFF8E8E93);
+
+  static Color get descriptionColor => descriptionColorOf(_brightness);
 
   /// 占位提示。
   static Color get textHint => palette.textHint;
@@ -381,35 +391,10 @@ class LumeTheme {
 
   /// Shared UI typography. Keep OS accessibility scaling unchanged.
   static TextTheme readableTextTheme(Brightness brightness) {
-    final base = ThemeData(
-      useMaterial3: true,
-      brightness: brightness,
-    ).textTheme;
     final palette = LumePalette.of(brightness);
-    final expanded = base.apply(
-      bodyColor: palette.textPrimary,
-      displayColor: palette.textPrimary,
-    );
-    TextStyle? strong(TextStyle? style) => style?.copyWith(
-      fontSize: (style.fontSize ?? 14) + 1,
-      fontWeight: FontWeight.w600,
-    );
-    return expanded.copyWith(
-      displayLarge: strong(expanded.displayLarge),
-      displayMedium: strong(expanded.displayMedium),
-      displaySmall: strong(expanded.displaySmall),
-      headlineLarge: strong(expanded.headlineLarge),
-      headlineMedium: strong(expanded.headlineMedium),
-      headlineSmall: strong(expanded.headlineSmall),
-      titleLarge: strong(expanded.titleLarge),
-      titleMedium: strong(expanded.titleMedium),
-      titleSmall: strong(expanded.titleSmall),
-      bodyLarge: strong(expanded.bodyLarge),
-      bodyMedium: strong(expanded.bodyMedium),
-      bodySmall: strong(expanded.bodySmall),
-      labelLarge: strong(expanded.labelLarge),
-      labelMedium: strong(expanded.labelMedium),
-      labelSmall: strong(expanded.labelSmall),
+    return LumeTypography.textTheme(
+      palette.textPrimary,
+      descriptionColorOf(brightness),
     );
   }
 
@@ -461,7 +446,7 @@ class LumeTheme {
             ? SystemUiOverlayStyle.light
             : SystemUiOverlayStyle.dark,
         titleTextStyle: TextStyle(
-          fontSize: 18,
+          fontSize: LumeTypography.sectionTitleSize,
           fontWeight: FontWeight.w600,
           color: textPrimary,
           letterSpacing: 0.2,
@@ -475,13 +460,14 @@ class LumeTheme {
         shadowColor: palette.floatShadow.first.color,
         surfaceTintColor: Colors.transparent,
         titleTextStyle: TextStyle(
-          fontSize: 18,
+          fontSize: LumeTypography.sectionTitleSize,
           fontWeight: FontWeight.w600,
           color: textPrimary,
         ),
         contentTextStyle: TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 15,
+          fontWeight: FontWeight.w400,
+          height: 1.5,
+          fontSize: LumeTypography.bodySize,
           color: textSecondary,
         ),
       ),
@@ -496,7 +482,19 @@ class LumeTheme {
             : const Color(0x33101018),
       ),
       listTileTheme: ListTileThemeData(
-        textColor: textPrimary,
+        // A shared textColor overrides both title and subtitle style colors.
+        // Keep their colors on the separate semantic text styles instead.
+        titleTextStyle: LumeTypography.title.copyWith(color: textPrimary),
+        subtitleTextStyle: LumeTypography.description.copyWith(
+          color: descriptionColor,
+        ),
+        leadingAndTrailingTextStyle: LumeTypography.body.copyWith(
+          color: textSecondary,
+        ),
+        minVerticalPadding: 12,
+        minTileHeight: 56,
+        horizontalTitleGap: 12,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         iconColor: textPrimary,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
@@ -524,16 +522,25 @@ class LumeTheme {
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
-          (states) =>
-              states.contains(WidgetState.selected) ? onAccent : surface,
+          (states) => states.contains(WidgetState.disabled)
+              ? (isDark ? const Color(0xFFB8B8C0) : Colors.white)
+              : states.contains(WidgetState.selected)
+              ? onAccent
+              : Colors.white,
         ),
         trackColor: WidgetStateProperty.resolveWith(
-          (states) =>
-              states.contains(WidgetState.selected) ? accentColor : fillStrong,
+          (states) => states.contains(WidgetState.disabled)
+              ? (isDark ? const Color(0xFF494952) : const Color(0xFFC7C7CF))
+              : states.contains(WidgetState.selected)
+              ? accentColor
+              : (isDark ? const Color(0xFF63636D) : const Color(0xFF90909A)),
         ),
         trackOutlineColor: WidgetStateProperty.resolveWith(
-          (states) =>
-              states.contains(WidgetState.selected) ? accentColor : hairline,
+          (states) => states.contains(WidgetState.disabled)
+              ? (isDark ? const Color(0xFF777781) : const Color(0xFF9999A3))
+              : states.contains(WidgetState.selected)
+              ? accentColor
+              : const Color(0xFF90909A),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
@@ -576,12 +583,12 @@ class LumeTheme {
         hintStyle: TextStyle(
           fontWeight: FontWeight.w600,
           color: textHint,
-          fontSize: 15,
+          fontSize: LumeTypography.titleSize,
         ),
         labelStyle: TextStyle(
           fontWeight: FontWeight.w600,
           color: textSecondary,
-          fontSize: 15,
+          fontSize: LumeTypography.titleSize,
         ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
@@ -605,7 +612,7 @@ class LumeTheme {
         contentTextStyle: const TextStyle(
           fontWeight: FontWeight.w600,
           color: Colors.white,
-          fontSize: 14,
+          fontSize: LumeTypography.bodySize,
         ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -616,7 +623,7 @@ class LumeTheme {
         textStyle: TextStyle(
           fontWeight: FontWeight.w600,
           color: textPrimary,
-          fontSize: 15,
+          fontSize: LumeTypography.titleSize,
         ),
       ),
       segmentedButtonTheme: SegmentedButtonThemeData(

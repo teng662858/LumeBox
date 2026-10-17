@@ -2076,7 +2076,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         child: Text(
           _skipQuickLabel(snapshot),
           style: TextStyle(
-            fontSize: 14,
+            fontSize: LumeTypography.bodySize,
             fontWeight: FontWeight.w600,
             shadows: _fullscreen ? _controlShadows : null,
           ),
@@ -2596,7 +2596,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           children: [
             const Text(
               '播放与连接',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: LumeTypography.sectionTitleSize,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 8),
             Text('音量 ${(_gesture.volume * 100).round()}%'),
@@ -3091,7 +3094,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: LumeTypography.titleSize,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFFF8F8F8),
                             shadows: _controlShadows,
@@ -3105,7 +3108,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 11,
+                              fontSize: LumeTypography.captionSize,
                               fontWeight: FontWeight.w600,
                               color: Color(0xFFF8F8F8),
                               shadows: _controlShadows,
@@ -3169,7 +3172,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                       '播放内核',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 19,
+                        fontSize: LumeTypography.pageTitleSize,
                       ),
                     ),
                   ),
@@ -3262,7 +3265,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             children: [
               const Text(
                 '播放速度',
-                style: TextStyle(fontSize: 19, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: LumeTypography.pageTitleSize,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 16),
               Wrap(
@@ -3495,7 +3501,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 14,
+          fontSize: LumeTypography.bodySize,
           fontWeight: FontWeight.w600,
           shadows: _fullscreen ? _controlShadows : null,
         ),
@@ -3988,7 +3994,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               style: const TextStyle(
                 fontWeight: FontWeight.w600,
                 color: Color(0xFFF8F8F8),
-                fontSize: 13,
+                fontSize: LumeTypography.descriptionSize,
                 shadows: _controlShadows,
               ),
             ),
@@ -3999,7 +4005,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   color: Color(0xFFF8F8F8),
-                  fontSize: 13,
+                  fontSize: LumeTypography.descriptionSize,
                   shadows: _controlShadows,
                 ),
               ),
@@ -4011,7 +4017,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   color: Color(0xFFF8F8F8),
-                  fontSize: 13,
+                  fontSize: LumeTypography.descriptionSize,
                   shadows: _controlShadows,
                 ),
               ),
@@ -4032,7 +4038,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 _format(shown),
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
+                  fontSize: LumeTypography.descriptionSize,
                   shadows: _fullscreen ? _controlShadows : null,
                   // 拖动预览用高亮色：一眼能看出「这不是当前位置」。
                   color: _fullscreen
@@ -4047,7 +4053,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   '拖动到 ${_format(preview)}',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontSize: LumeTypography.descriptionSize,
                     color: LumeTheme.textPrimary,
                   ),
                 ),
@@ -4055,7 +4061,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 _format(snapshot.duration),
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
+                  fontSize: LumeTypography.descriptionSize,
                   shadows: _fullscreen ? _controlShadows : null,
                   color: _fullscreen ? Colors.white : LumeTheme.muted,
                 ),
@@ -4359,7 +4365,7 @@ class _PlayerClockState extends State<_PlayerClock> {
               '${_batteryPercent ?? '--'}%',
               style: const TextStyle(
                 color: Color(0xFFF8F8F8),
-                fontSize: 10,
+                fontSize: LumeTypography.captionSize,
                 fontWeight: FontWeight.w600,
                 shadows: _VideoPlayerPageState._controlShadows,
               ),
@@ -4370,7 +4376,7 @@ class _PlayerClockState extends State<_PlayerClock> {
           '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}',
           style: const TextStyle(
             color: Color(0xFFF8F8F8),
-            fontSize: 11,
+            fontSize: LumeTypography.captionSize,
             fontWeight: FontWeight.w600,
             shadows: _VideoPlayerPageState._controlShadows,
           ),
@@ -4474,7 +4480,7 @@ class _PlayerStageNotice extends StatelessWidget {
                 title,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: LumeTypography.titleSize,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
                 ),
@@ -4485,9 +4491,9 @@ class _PlayerStageNotice extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
+                  fontSize: LumeTypography.descriptionSize,
                   height: 1.5,
-                  color: LumeTheme.muted,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
               if (actions.isNotEmpty) ...<Widget>[
@@ -4524,7 +4530,7 @@ class _VideoSkeleton extends StatelessWidget {
               Text(
                 LumeTheme.appName,
                 style: TextStyle(
-                  fontSize: 17,
+                  fontSize: LumeTypography.sectionTitleSize,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
                 ),
@@ -4535,7 +4541,7 @@ class _VideoSkeleton extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 14,
+                  fontSize: LumeTypography.bodySize,
                   color: LumeTheme.muted,
                 ),
               ),
@@ -4545,7 +4551,7 @@ class _VideoSkeleton extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 14,
+                  fontSize: LumeTypography.bodySize,
                   color: LumeTheme.muted,
                 ),
               ),
@@ -4597,7 +4603,7 @@ class _GestureHint extends StatelessWidget {
                     Text(
                       _label(),
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: LumeTypography.titleSize,
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
                       ),
@@ -4686,7 +4692,7 @@ class _TrackSheet extends StatelessWidget {
                   child: Text(
                     title,
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: LumeTypography.titleSize,
                       fontWeight: FontWeight.w600,
                       color: LumeTheme.textPrimary,
                     ),
@@ -4737,8 +4743,8 @@ class _TrackSheet extends StatelessWidget {
                                 track.language!,
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                  color: LumeTheme.muted,
+                                  fontSize: LumeTypography.descriptionSize,
+                                  color: LumeTheme.descriptionColor,
                                 ),
                               ),
                         onTap: () => Navigator.of(context).pop(track.id),
@@ -4783,7 +4789,7 @@ class _QualitySheet extends StatelessWidget {
                   child: Text(
                     '清晰度',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: LumeTypography.titleSize,
                       fontWeight: FontWeight.w600,
                       color: LumeTheme.textPrimary,
                     ),
@@ -4798,8 +4804,8 @@ class _QualitySheet extends StatelessWidget {
                     '切换会保留当前位置继续播放',
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: LumeTheme.muted,
+                      fontSize: LumeTypography.descriptionSize,
+                      color: LumeTheme.descriptionColor,
                     ),
                   ),
                 ),
@@ -4894,7 +4900,7 @@ class _DanmakuMatchSheetState extends State<_DanmakuMatchSheet> {
                 Text(
                   '匹配公共弹幕',
                   style: TextStyle(
-                    fontSize: 17,
+                    fontSize: LumeTypography.sectionTitleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),

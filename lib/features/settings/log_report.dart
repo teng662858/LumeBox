@@ -118,7 +118,6 @@ class LogExporter {
     final dir = Directory(p.join(support.path, dirName));
     if (!dir.existsSync()) dir.createSync(recursive: true);
 
-
     final content = build(entries, generatedAt: generatedAt);
     final stamp = _stamp(generatedAt);
     var file = File(p.join(dir.path, 'log_report_$stamp.txt'));

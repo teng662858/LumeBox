@@ -103,7 +103,7 @@ class TabBarSettingsPage extends StatelessWidget {
           Text(
             '当前显示 $visibleCount 个页签',
             style: TextStyle(
-              fontSize: 16,
+              fontSize: LumeTypography.titleSize,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
             ),
@@ -113,10 +113,10 @@ class TabBarSettingsPage extends StatelessWidget {
             '拖动手柄调整顺序，开关控制显示与隐藏。改动立即生效，不用重启 App。'
             '至少要保留 1 个页签，否则底部导航就空了。',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
               height: 1.5,
-              color: LumeTheme.muted,
             ),
           ),
         ],
@@ -134,8 +134,9 @@ class TabBarSettingsPage extends StatelessWidget {
           Text(
             '说明',
             style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+              fontSize: LumeTypography.bodySize,
+              fontWeight: FontWeight.w400,
+              height: 1.5,
               color: LumeTheme.textPrimary,
             ),
           ),
@@ -146,10 +147,10 @@ class TabBarSettingsPage extends StatelessWidget {
             '· 桌面端（Windows / macOS）用的是左侧栏，顺序跟随这里的设置；\n'
             '· 隐藏「设置」后，左下角会出现一个小的设置按钮，点它回来改回这里。',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              height: 1.6,
-              color: LumeTheme.muted,
+              fontWeight: FontWeight.w400,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
+              height: 1.5,
             ),
           ),
           const SizedBox(height: 12),
@@ -218,18 +219,19 @@ class _TabTile extends StatelessWidget {
                   Text(
                     label,
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: LumeTypography.titleSize,
                       fontWeight: FontWeight.w600,
                       color: LumeTheme.textPrimary,
                     ),
                   ),
                   if (isLastVisible) ...<Widget>[
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
                       '最后一个显示的页签，不能关掉',
                       style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                        fontSize: LumeTypography.descriptionSize,
+                        height: 1.5,
                         color: LumeTheme.warning,
                       ),
                     ),
@@ -270,10 +272,10 @@ class _SettingsHiddenNotice extends StatelessWidget {
               '为了避免再也进不来本页，屏幕左下角会出现一个小的设置按钮，'
               '点它就能回到设置（以及本页）。',
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.descriptionSize,
+                color: LumeTheme.descriptionColor,
                 height: 1.5,
-                color: LumeTheme.muted,
               ),
             ),
           ),

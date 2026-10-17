@@ -187,8 +187,8 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
                 _hasSectionPicker ? '源只写入所选板块，不会跨板块共用。' : '源只写入当前板块，不会跨板块共用。',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.muted,
+                  fontSize: LumeTypography.descriptionSize,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
               const SizedBox(height: 12),
@@ -231,8 +231,8 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
                       _progress!,
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: LumeTheme.muted,
+                        fontSize: LumeTypography.descriptionSize,
+                        color: LumeTheme.descriptionColor,
                       ),
                     ),
                   ],
@@ -244,7 +244,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
                   _hint!,
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontSize: LumeTypography.descriptionSize,
                     color: LumeTheme.success,
                   ),
                 ),
@@ -255,7 +255,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
                   _error!,
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontSize: LumeTypography.descriptionSize,
                     color: LumeTheme.danger,
                   ),
                 ),
@@ -329,8 +329,8 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
             '已选 ${_files.length} 个文件',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
             ),
           ),
           const Spacer(),
@@ -361,8 +361,8 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
       '会按订阅逐个拉取并记下来源地址。',
       style: TextStyle(
         fontWeight: FontWeight.w600,
-        fontSize: 13,
-        color: LumeTheme.muted,
+        fontSize: LumeTypography.descriptionSize,
+        color: LumeTheme.descriptionColor,
       ),
     ),
   ];
@@ -386,7 +386,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 13,
+                fontSize: LumeTypography.descriptionSize,
                 color: LumeTheme.textPrimary,
               ),
             ),
@@ -396,7 +396,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
             detail,
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
+              fontSize: LumeTypography.descriptionSize,
               color: importable ? LumeTheme.success : LumeTheme.danger,
             ),
           ),
@@ -429,8 +429,8 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
       '返回 MD5 校验值（.js.md5）时，去掉 .md5 后缀取脚本并校验后再导入。',
       style: TextStyle(
         fontWeight: FontWeight.w600,
-        fontSize: 13,
-        color: LumeTheme.muted,
+        fontSize: LumeTypography.descriptionSize,
+        color: LumeTheme.descriptionColor,
       ),
     ),
   ];

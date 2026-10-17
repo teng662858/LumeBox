@@ -96,7 +96,7 @@ class _KernelTile extends StatelessWidget {
                   Text(
                     kernel.label,
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: LumeTypography.titleSize,
                       fontWeight: FontWeight.w600,
                       color: available
                           ? LumeTheme.textPrimary
@@ -109,8 +109,8 @@ class _KernelTile extends StatelessWidget {
                       reason!,
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: LumeTheme.muted,
+                        fontSize: LumeTypography.descriptionSize,
+                        color: LumeTheme.descriptionColor,
                       ),
                     ),
                   ],
@@ -122,7 +122,10 @@ class _KernelTile extends StatelessWidget {
                 onPressed: onRetry,
                 child: const Text(
                   '重试',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: LumeTypography.bodySize,
+                  ),
                 ),
               )
             else if (selected)

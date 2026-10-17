@@ -422,7 +422,8 @@ class GlassScaffold extends StatelessWidget {
                                       Text(
                                         title ?? LumeTheme.appName,
                                         style: const TextStyle(
-                                          fontSize: 17,
+                                          fontSize:
+                                              LumeTypography.pageTitleSize,
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),

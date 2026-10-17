@@ -31,8 +31,9 @@ class DisplaySettingsGroup extends StatelessWidget {
             child: Text(
               '显示',
               style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+                fontSize: LumeTypography.bodySize,
+                fontWeight: FontWeight.w400,
+                height: 1.5,
                 color: LumeTheme.textSecondary,
               ),
             ),
@@ -106,7 +107,7 @@ class _DisplayRow extends StatelessWidget {
               child: Text(
                 title,
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: LumeTypography.titleSize,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
                 ),
@@ -116,8 +117,9 @@ class _DisplayRow extends StatelessWidget {
             Text(
               value,
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.bodySize,
+                height: 1.5,
                 color: LumeTheme.textSecondary,
               ),
             ),
@@ -304,7 +306,7 @@ class OptionSheet<T> extends StatelessWidget {
                   child: Text(
                     title,
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: LumeTypography.titleSize,
                       fontWeight: FontWeight.w600,
                       color: LumeTheme.textPrimary,
                     ),

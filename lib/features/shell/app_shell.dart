@@ -853,7 +853,7 @@ class _DockItem extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: LumeTypography.captionSize,
               fontWeight: selected ? FontWeight.w600 : FontWeight.w600,
               color: color,
             ),

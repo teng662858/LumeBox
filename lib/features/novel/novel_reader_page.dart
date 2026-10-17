@@ -1,3 +1,5 @@
+import 'package:lume_box/core/theme/lume_typography.dart';
+
 import '../../shared/widgets/module_glass_scope.dart';
 
 import 'dart:async';
@@ -1244,7 +1246,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: LumeTypography.titleSize,
                         fontWeight: FontWeight.w600,
                         color: _theme.chromeText,
                       ),
@@ -1255,7 +1257,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 13,
+                        fontSize: LumeTypography.descriptionSize,
                         color: _theme.secondary,
                       ),
                     ),
@@ -1342,7 +1344,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                       child: Text(
                         tab.label,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: LumeTypography.bodySize,
                           fontWeight: _panel == tab
                               ? FontWeight.w700
                               : FontWeight.w600,
@@ -1387,7 +1389,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 '共 ${_chapters.length} 章',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
+                  fontSize: LumeTypography.descriptionSize,
                   color: _theme.secondary,
                 ),
               ),
@@ -1397,7 +1399,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 '${pagination?.pageCount ?? 1} 页',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
+                  fontSize: LumeTypography.descriptionSize,
                   color: _theme.secondary,
                 ),
               ),
@@ -1432,7 +1434,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: LumeTypography.titleSize,
                       fontWeight: current ? FontWeight.w700 : FontWeight.w600,
                       color: current ? _theme.chromeText : _theme.secondary,
                     ),
@@ -1497,14 +1499,14 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
           style: TextStyle(
             fontWeight: FontWeight.w600,
             color: _theme.chromeText,
-            fontSize: 15,
+            fontSize: LumeTypography.titleSize,
           ),
           decoration: InputDecoration(
             hintText: '在本章内查找',
             hintStyle: TextStyle(
               fontWeight: FontWeight.w600,
               color: _theme.secondary,
-              fontSize: 15,
+              fontSize: LumeTypography.titleSize,
             ),
             prefixIcon: Icon(Icons.search, color: _theme.secondary, size: 20),
             suffixIcon: _searchKeyword.isEmpty
@@ -1518,7 +1520,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                             : '${_searchHitIndex + 1}/${_searchHits.length}',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: _theme.secondary,
                         ),
                       ),
@@ -1554,7 +1556,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 '自动翻页',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 15,
+                  fontSize: LumeTypography.titleSize,
                   color: _theme.chromeText,
                 ),
               ),
@@ -1569,7 +1571,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
               dropdownColor: _theme.chromeSurface,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontSize: LumeTypography.bodySize,
                 color: _theme.chromeText,
               ),
               items: <DropdownMenuItem<int>>[
@@ -1599,7 +1601,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontSize: LumeTypography.bodySize,
                 color: _theme.secondary,
               ),
             ),
@@ -1615,7 +1617,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 14,
+                  fontSize: LumeTypography.bodySize,
                   color: _theme.chromeText,
                 ),
               ),
@@ -1702,7 +1704,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
             label,
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
+              fontSize: LumeTypography.descriptionSize,
               color: _theme.secondary,
             ),
           ),
@@ -1722,7 +1724,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
             textAlign: TextAlign.end,
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
+              fontSize: LumeTypography.descriptionSize,
               color: _theme.secondary,
             ),
           ),
@@ -1748,7 +1750,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
           '阅读主题独立于 App 全局主题：这里换的只是阅读页的背景与文字色。',
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 13,
+            fontSize: LumeTypography.descriptionSize,
             height: 1.5,
             color: _theme.secondary,
           ),
@@ -1780,7 +1782,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 '文',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 19,
+                  fontSize: LumeTypography.pageTitleSize,
                   color: preset.textColor,
                 ),
               ),
@@ -1791,7 +1793,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
             preset.label,
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 12,
+              fontSize: LumeTypography.captionSize,
               color: selected ? _theme.chromeText : _theme.secondary,
             ),
           ),
@@ -1829,7 +1831,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
             '自定义',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 12,
+              fontSize: LumeTypography.captionSize,
               color: selected ? _theme.chromeText : _theme.secondary,
             ),
           ),
@@ -1849,7 +1851,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
             title: Text(
               mode.label,
               style: TextStyle(
-                fontSize: 15,
+                fontSize: LumeTypography.titleSize,
                 color: _turnMode == mode ? _theme.chromeText : _theme.secondary,
                 fontWeight: _turnMode == mode
                     ? FontWeight.w700
@@ -1926,7 +1928,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                 '正文预览',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 16,
+                  fontSize: LumeTypography.titleSize,
                   color: theme.textColor,
                 ),
               ),
@@ -1935,7 +1937,10 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
           const SizedBox(height: 12),
           const Text(
             '色相',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: LumeTypography.descriptionSize,
+            ),
           ),
           Slider(
             value: _hue,
@@ -1945,7 +1950,10 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
           ),
           const Text(
             '明度',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: LumeTypography.descriptionSize,
+            ),
           ),
           Slider(
             value: _lightness,

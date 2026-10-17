@@ -628,7 +628,7 @@ class _ToolbarSheet<T> extends StatelessWidget {
                       child: Text(
                         title,
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: LumeTypography.titleSize,
                           fontWeight: FontWeight.w600,
                           color: LumeTheme.textPrimary,
                         ),
@@ -664,8 +664,8 @@ class _ToolbarSheet<T> extends StatelessWidget {
                                     detailOf!(option),
                                     style: TextStyle(
                                       fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                      color: LumeTheme.muted,
+                                      fontSize: LumeTypography.descriptionSize,
+                                      color: LumeTheme.descriptionColor,
                                     ),
                                   ),
                             onTap: () => Navigator.of(context).pop(option),
@@ -680,7 +680,7 @@ class _ToolbarSheet<T> extends StatelessWidget {
                         note!,
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 12,
+                          fontSize: LumeTypography.captionSize,
                           color: LumeTheme.muted,
                         ),
                       ),
@@ -790,7 +790,7 @@ class _SearchModeSheetState extends State<_SearchModeSheet> {
                       child: Text(
                         widget.sitesOnly ? '搜索站点' : '搜索范围',
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: LumeTypography.titleSize,
                           fontWeight: FontWeight.w600,
                           color: LumeTheme.textPrimary,
                         ),
@@ -826,8 +826,8 @@ class _SearchModeSheetState extends State<_SearchModeSheet> {
                                 mode.detail,
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                  color: LumeTheme.muted,
+                                  fontSize: LumeTypography.descriptionSize,
+                                  color: LumeTheme.descriptionColor,
                                 ),
                               ),
                               // 点行只改选中态（圆点当场移动），不关面板。

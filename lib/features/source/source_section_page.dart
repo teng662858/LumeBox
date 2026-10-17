@@ -9,6 +9,7 @@ import 'source_maintenance.dart';
 import 'source_action_dialogs.dart';
 import '../../core/reading/reading_library.dart';
 import '../../core/source/source_preferences.dart';
+import '../../core/source/source_picker_groups.dart';
 import '../../shared/widgets/source_icon.dart';
 
 import 'package:flutter/material.dart';
@@ -384,7 +385,10 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
           child: SingleChildScrollView(
             child: SelectableText(
               script,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: LumeTypography.descriptionSize,
+              ),
             ),
           ),
         ),
@@ -834,6 +838,16 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                       leading: SourceIcon(
                         name: source.name,
                         siteUrl: source.siteUrl,
+                        iconUrl:
+                            SourcePreferences.read(
+                              widget.section,
+                              source.id,
+                            ).iconUrl.trim().isEmpty
+                            ? source.iconUrl
+                            : SourcePreferences.read(
+                                widget.section,
+                                source.id,
+                              ).iconUrl,
                         section: widget.section,
                         sourceId: source.id,
                       ),
@@ -880,25 +894,53 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
           ),
         )
         .resolve(Directionality.of(context));
+    final grouped = <String, List<int>>{};
+    for (var i = 0; i < visible.length; i++) {
+      final source = visible[i];
+      final label = source.group.trim().isNotEmpty
+          ? source.group.trim()
+          : SourcePickerGroups.forSection(widget.section)
+                .firstWhere(
+                  (group) =>
+                      group.$1 ==
+                      SourcePickerGroups.groupFor(widget.section, source),
+                )
+                .$2;
+      grouped.putIfAbsent(label, () => []).add(i);
+    }
     return CustomScrollView(
       slivers: [
         SliverPadding(
           padding: inset.copyWith(bottom: 12),
           sliver: SliverToBoxAdapter(child: entry(context, 0)),
         ),
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            0,
-            16,
-            16 + ShellDockScope.bottomInset(context),
+        for (final group in grouped.entries) ...[
+          SliverToBoxAdapter(
+            child: Semantics(
+              header: true,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                child: Text(
+                  group.key,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+              ),
+            ),
           ),
-          sliver: SliverList.separated(
-            itemCount: visible.length,
-            itemBuilder: (context, i) => entry(context, i + 1),
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              0,
+              16,
+              16 + ShellDockScope.bottomInset(context),
+            ),
+            sliver: SliverList.separated(
+              itemCount: group.value.length,
+              itemBuilder: (context, i) => entry(context, group.value[i] + 1),
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -1041,7 +1083,7 @@ class _SourceTile extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 17,
+                    fontSize: LumeTypography.sectionTitleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
@@ -1063,8 +1105,8 @@ class _SourceTile extends StatelessWidget {
                           : source.version,
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: LumeTheme.muted,
+                        fontSize: LumeTypography.descriptionSize,
+                        color: LumeTheme.descriptionColor,
                       ),
                     ),
                     if (SourceContentRating.isAdult(source.id, source.name))
@@ -1074,7 +1116,7 @@ class _SourceTile extends StatelessWidget {
                         '已停用',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: _disabledColor,
                         ),
                       ),
@@ -1084,7 +1126,7 @@ class _SourceTile extends StatelessWidget {
                         '已失效（连错 ${source.failureCount} 次）',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: _disabledColor,
                         ),
                       ),
@@ -1094,7 +1136,7 @@ class _SourceTile extends StatelessWidget {
                         source.group,
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: _accentColor,
                         ),
                       ),
@@ -1104,7 +1146,7 @@ class _SourceTile extends StatelessWidget {
                         '订阅',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: _accentColor,
                         ),
                       ),
@@ -1114,7 +1156,7 @@ class _SourceTile extends StatelessWidget {
                         '网络已自定义',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: _accentColor,
                         ),
                       ),
@@ -1126,7 +1168,7 @@ class _SourceTile extends StatelessWidget {
                         '换网址',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: _accentColor,
                         ),
                       ),
@@ -1136,7 +1178,7 @@ class _SourceTile extends StatelessWidget {
                         testResult!.status.label,
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontSize: LumeTypography.descriptionSize,
                           color: switch (testResult!.status) {
                             SourceTestStatus.ok => _okColor,
                             SourceTestStatus.empty => _disabledColor,
@@ -1270,8 +1312,8 @@ class _GroupDialogState extends State<_GroupDialog> {
             '留空保存即取消分组。',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
             ),
           ),
           const SizedBox(height: 10),
@@ -1291,8 +1333,8 @@ class _GroupDialogState extends State<_GroupDialog> {
               '已有分组',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 13,
-                color: LumeTheme.muted,
+                fontSize: LumeTypography.descriptionSize,
+                color: LumeTheme.descriptionColor,
               ),
             ),
             const SizedBox(height: 6),

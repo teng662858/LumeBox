@@ -198,7 +198,10 @@ class _NovelCatalogPageState extends State<NovelCatalogPage> {
       child: TextField(
         controller: _searchController,
         autofocus: true,
-        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: LumeTypography.titleSize,
+        ),
         decoration: InputDecoration(
           isDense: true,
           hintText: '搜索章节标题',
@@ -241,8 +244,8 @@ class NovelChapterSummary extends StatelessWidget {
           : '共 $chapterCount 章 · 读至 ${saved.describe()}',
       style: TextStyle(
         fontWeight: FontWeight.w600,
-        fontSize: 13,
-        color: LumeTheme.muted,
+        fontSize: LumeTypography.descriptionSize,
+        color: LumeTheme.descriptionColor,
       ),
     );
   }

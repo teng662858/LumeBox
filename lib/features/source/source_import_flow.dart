@@ -159,7 +159,7 @@ Future<bool> confirmOverwrite(
                     '${_versionArrow(hit.old.version, hit.next.version)}',
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                      fontSize: LumeTypography.bodySize,
                       height: 1.4,
                     ),
                   ),
@@ -169,8 +169,8 @@ Future<bool> confirmOverwrite(
                 '脚本、名称与版本会换成新的；启停状态与网络配置（UA / Cookie / 代理）保留。',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.muted,
+                  fontSize: LumeTypography.descriptionSize,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
             ],
@@ -367,7 +367,7 @@ class _ImportResultDialog extends StatelessWidget {
                 '共 ${outcomes.length} 条：新增 $added · 覆盖 $overwritten · 失败 $failed',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 14,
+                  fontSize: LumeTypography.bodySize,
                   color: LumeTheme.textPrimary,
                 ),
               ),
@@ -377,8 +377,8 @@ class _ImportResultDialog extends StatelessWidget {
                   note,
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontSize: LumeTypography.descriptionSize,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
               ],
@@ -406,7 +406,7 @@ class _ImportResultDialog extends StatelessWidget {
                           outcome.describe(),
                           style: const TextStyle(
                             fontWeight: FontWeight.w600,
-                            fontSize: 14,
+                            fontSize: LumeTypography.bodySize,
                             height: 1.4,
                           ),
                         ),

@@ -306,7 +306,7 @@ class _FailedCover extends StatelessWidget {
                 verifyLabel!,
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 12,
+                  fontSize: LumeTypography.captionSize,
                 ),
               ),
             ),

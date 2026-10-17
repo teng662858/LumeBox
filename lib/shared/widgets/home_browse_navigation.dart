@@ -1,3 +1,4 @@
+import 'package:lume_box/core/theme/lume_typography.dart';
 import 'package:flutter/material.dart';
 
 class HomeBrowseNavigation extends StatelessWidget {
@@ -25,7 +26,7 @@ class HomeBrowseNavigation extends StatelessWidget {
                 ? null
                 : Theme.of(context).colorScheme.onSurface,
             textStyle: const TextStyle(
-              fontSize: 16,
+              fontSize: LumeTypography.titleSize,
               fontWeight: FontWeight.w600,
             ),
           ),

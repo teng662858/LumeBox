@@ -41,6 +41,7 @@ class SourceIcon extends StatefulWidget {
 
 class _SourceIconState extends State<SourceIcon> {
   Uint8List? _bytes;
+  int _loadGeneration = 0;
 
   SourceFavicon get _resolver => widget.favicon ?? SourceFavicon.instance;
 
@@ -56,6 +57,7 @@ class _SourceIconState extends State<SourceIcon> {
     if (oldWidget.siteUrl != widget.siteUrl ||
         oldWidget.iconUrl != widget.iconUrl ||
         oldWidget.siteIcon != widget.siteIcon ||
+        oldWidget.section != widget.section ||
         oldWidget.sourceId != widget.sourceId ||
         oldWidget.favicon != widget.favicon) {
       _bytes = null;
@@ -64,6 +66,7 @@ class _SourceIconState extends State<SourceIcon> {
   }
 
   void _load() {
+    final generation = ++_loadGeneration;
     final explicit = <String>[
       if (widget.iconUrl.trim().isNotEmpty) widget.iconUrl.trim(),
       if (widget.siteIcon.trim().isNotEmpty) widget.siteIcon.trim(),
@@ -78,12 +81,14 @@ class _SourceIconState extends State<SourceIcon> {
           sourceId: widget.sourceId,
         )
         .then((bytes) {
-          if (!mounted) return;
+          if (!mounted || generation != _loadGeneration) return;
           setState(() => _bytes = bytes);
         })
         .catchError((Object _) {
           // 解析器自己已经吞掉了「取不到」；这里只防意外异常把列表带崩。
-          if (mounted) setState(() => _bytes = null);
+          if (mounted && generation == _loadGeneration) {
+            setState(() => _bytes = null);
+          }
         });
   }
 

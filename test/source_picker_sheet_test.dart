@@ -17,6 +17,8 @@ import 'package:lume_box/features/settings/content_visibility_page.dart';
 
 import 'support/fake_source_manager.dart';
 
+import 'package:lume_box/shared/widgets/source_icon.dart';
+
 void main() {
   late Directory root;
   setUp(() async {
@@ -77,6 +79,8 @@ void main() {
 
   for (final section in [Section.novel, Section.comic, Section.video]) {
     testWidgets('${section.label} 抽屉两列、独立操作菜单，浏览只选择目标源', (tester) async {
+      ReadingLibrary.find(section)!
+          .setSetting('source.picker.columns', 'false');
       final groups = SourcePickerGroups.forSection(section);
       await SourcePreferences(pickerGroup: groups.last.$1).save(section, 'b');
       final manager = FakeSourceManager(
@@ -99,21 +103,37 @@ void main() {
       );
       String? selected;
       await showBar(tester, section, manager, (value) => selected = value);
-      expect(find.text(groups.first.$2), findsOneWidget);
-      expect(find.text(groups.last.$2), findsOneWidget);
+      expect(
+        find.byKey(ValueKey('picker-group-${groups.first.$1}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey('picker-group-${groups.last.$1}')),
+        findsOneWidget,
+      );
       expect(find.text('停用源'), findsNothing);
-      final grid = tester.widget<GridView>(find.byType(GridView));
-      final delegate =
-          grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
-      expect(delegate.crossAxisCount, 2);
-      expect(delegate.crossAxisSpacing, 10);
-      expect(delegate.mainAxisSpacing, 10);
-      expect(grid.padding, const EdgeInsets.symmetric(horizontal: 16));
-      expect(find.byType(CircleAvatar), findsNWidgets(2));
+      expect(find.byTooltip('切换为单列'), findsNothing);
+      expect(find.byTooltip('切换为双列'), findsNothing);
+      expect(find.byType(Scrollbar), findsNothing);
+      expect(find.byType(GridView), findsNothing);
+      expect(
+        find.byKey(const ValueKey('picker-category-columns')),
+        findsOneWidget,
+      );
+      expect(find.byType(SourceIcon), findsNWidgets(2));
+      for (final icon in tester.widgetList<SourceIcon>(
+        find.byType(SourceIcon),
+      )) {
+        expect(icon.size, 24);
+        expect(icon.section, section);
+        expect(icon.sourceId, isNotEmpty);
+      }
 
       final a = find.byKey(const ValueKey('picker-source-a'));
       final b = find.byKey(const ValueKey('picker-source-b'));
+      expect(tester.getSize(b).height, lessThanOrEqualTo(48));
       expect(tester.getTopLeft(a).dx, lessThan(tester.getTopLeft(b).dx));
+      expect(tester.getTopLeft(a).dy, tester.getTopLeft(b).dy);
       await tester.tap(find.byKey(const ValueKey('picker-more-b')));
       await tester.pumpAndSettle();
       for (final label in ['置顶此源', '源设置', '浏览', '测试连通性', '更新订阅源']) {
@@ -127,7 +147,7 @@ void main() {
       expect(find.byType(SourcePickerSheet), findsNothing);
     });
   }
-  testWidgets('长按源可设置分类并保存；单列与搜索可用', (tester) async {
+  testWidgets('长按源可设置分类并保存；固定双栏与搜索可用', (tester) async {
     final manager = FakeSourceManager(
       sources: const [
         SourceDescriptor(id: 'a', name: '甲源', version: '1', enabled: true),
@@ -146,34 +166,59 @@ void main() {
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('picker-source-b'))).dx,
       greaterThan(
-        tester.getTopLeft(find.byKey(const ValueKey('picker-source-a'))).dx,
+        tester.getBottomLeft(find.byKey(const ValueKey('picker-source-a'))).dx,
       ),
     );
-    await tester.tap(find.byTooltip('切换为单列'));
-    await tester.pumpAndSettle();
-    expect(find.byType(GridView), findsNothing);
-    expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is Divider &&
-            widget.color == const Color(0xFFE5E5EA) &&
-            widget.height == 1,
-      ),
-      findsOneWidget,
-    );
-
-    expect(
-      tester.getTopLeft(find.byKey(const ValueKey('picker-source-b'))).dx,
-      tester.getTopLeft(find.byKey(const ValueKey('picker-source-a'))).dx,
-    );
+    expect(find.byTooltip('切换为单列'), findsNothing);
+    expect(find.byTooltip('切换为双列'), findsNothing);
     await tester.enterText(find.byType(TextField), '乙');
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('picker-source-a')), findsNothing);
     expect(find.byKey(const ValueKey('picker-source-b')), findsOneWidget);
-    expect(
-      ReadingLibrary.find(Section.novel)!.setting('source.picker.columns'),
-      'false',
+  });
+  testWidgets('分类左右独立：组内纵向排列，搜索保留分类位置', (tester) async {
+    final manager = FakeSourceManager(
+      sources: const [
+        SourceDescriptor(
+          id: 'v1',
+          name: '视频甲',
+          version: '1',
+          enabled: true,
+          group: '视频',
+        ),
+        SourceDescriptor(
+          id: 'm1',
+          name: '影视甲',
+          version: '1',
+          enabled: true,
+          group: '影视',
+        ),
+        SourceDescriptor(
+          id: 'v2',
+          name: '视频乙',
+          version: '1',
+          enabled: true,
+          group: '视频',
+        ),
+      ],
     );
+    await showBar(tester, Section.video, manager, (_) {});
+    final first = find.byKey(const ValueKey('picker-source-v1'));
+    final second = find.byKey(const ValueKey('picker-source-v2'));
+    final movie = find.byKey(const ValueKey('picker-source-m1'));
+    expect(tester.getTopLeft(first).dx, tester.getTopLeft(second).dx);
+    expect(
+      tester.getTopLeft(second).dy,
+      greaterThan(tester.getBottomLeft(first).dy),
+    );
+    expect(tester.getTopLeft(movie).dx - tester.getTopRight(first).dx, 10);
+    expect(tester.getTopLeft(movie).dy, tester.getTopLeft(first).dy);
+    await tester.enterText(find.byType(TextField), '影视甲');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('picker-group-video')), findsOneWidget);
+    expect(find.text('暂无匹配的源'), findsOneWidget);
+    expect(find.byKey(const ValueKey('picker-group-movie')), findsOneWidget);
+    expect(find.byType(SourceIcon), findsOneWidget);
   });
   testWidgets('隐藏仅影响抽屉，聚合搜索保留全部站点', (tester) async {
     final manager = FakeSourceManager(

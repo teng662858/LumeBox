@@ -1,3 +1,4 @@
+import 'package:lume_box/core/theme/lume_typography.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/session/section.dart';
@@ -196,7 +197,7 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
                         record.url,
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 14,
+                          fontSize: LumeTypography.bodySize,
                         ),
                       ),
                       subtitle: Text(

@@ -269,7 +269,7 @@ class _RepoTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 17,
+                    fontSize: LumeTypography.sectionTitleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
@@ -285,7 +285,7 @@ class _RepoTile extends StatelessWidget {
                   repo.kind.label,
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                    fontSize: LumeTypography.captionSize,
                     color: LumeTheme.textPrimary,
                   ),
                 ),
@@ -299,8 +299,8 @@ class _RepoTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
             ),
           ),
           const SizedBox(height: 2),
@@ -311,8 +311,8 @@ class _RepoTile extends StatelessWidget {
                       '${_formatTime(repo.refreshedAt!)}',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
             ),
           ),
           Row(
@@ -391,8 +391,8 @@ class _AddRepoDialogState extends State<_AddRepoDialog> {
                 '填根地址会自动探测索引文件；也可以直接粘贴 index.pb / index.min.json 的完整地址。',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  color: LumeTheme.muted,
+                  fontSize: LumeTypography.descriptionSize,
+                  color: LumeTheme.descriptionColor,
                 ),
               ),
               const SizedBox(height: 10),

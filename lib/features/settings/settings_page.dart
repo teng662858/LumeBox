@@ -280,18 +280,19 @@ class _SettingsEntry extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: LumeTypography.titleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Text(
                   subtitle,
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
               ],
@@ -301,8 +302,9 @@ class _SettingsEntry extends StatelessWidget {
             Text(
               trailingValue!,
               style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                fontSize: LumeTypography.bodySize,
+                height: 1.5,
                 color: LumeTheme.textSecondary,
               ),
             ),
@@ -328,9 +330,10 @@ class _GroupTitle extends StatelessWidget {
       child: Text(
         text,
         style: TextStyle(
-          fontSize: 14,
+          fontSize: LumeTypography.sectionTitleSize,
           fontWeight: FontWeight.w600,
-          color: LumeTheme.textSecondary,
+          height: 1.5,
+          color: LumeTheme.textPrimary,
         ),
       ),
     );

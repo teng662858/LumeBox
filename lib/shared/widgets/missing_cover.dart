@@ -111,7 +111,7 @@ class _CoverPainter extends CustomPainter {
         canvas,
         title.isEmpty ? 'LumeBox' : title,
         TextStyle(
-          fontSize: 16,
+          fontSize: LumeTypography.titleSize,
           height: 1.5,
           fontWeight: FontWeight.w600,
           color: ink,
@@ -125,7 +125,7 @@ class _CoverPainter extends CustomPainter {
         'LUME BOX',
         TextStyle(
           fontWeight: FontWeight.w600,
-          fontSize: 10,
+          fontSize: LumeTypography.captionSize,
           letterSpacing: 3,
           color: accent.withValues(alpha: .5),
         ),

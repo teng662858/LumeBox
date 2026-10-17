@@ -1,3 +1,4 @@
+import 'package:lume_box/core/theme/lume_typography.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/speech/speech.dart';
@@ -67,7 +68,7 @@ class NovelSpeechPanel extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontSize: LumeTypography.bodySize,
                 color: secondary,
               ),
             ),
@@ -126,7 +127,7 @@ class NovelSpeechPanel extends StatelessWidget {
             '跟读翻页',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 14,
+              fontSize: LumeTypography.bodySize,
               color: chromeText,
             ),
           ),
@@ -134,7 +135,7 @@ class NovelSpeechPanel extends StatelessWidget {
             '朗读时自动翻到正在读的那一页',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 12,
+              fontSize: LumeTypography.captionSize,
               color: secondary,
             ),
           ),
@@ -149,7 +150,7 @@ class NovelSpeechPanel extends StatelessWidget {
             '后台播放',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 14,
+              fontSize: LumeTypography.bodySize,
               color: chromeText,
             ),
           ),
@@ -157,7 +158,7 @@ class NovelSpeechPanel extends StatelessWidget {
             '离开 App 后继续朗读，锁屏可控制播放',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 12,
+              fontSize: LumeTypography.captionSize,
               color: secondary,
             ),
           ),
@@ -210,7 +211,7 @@ class NovelSpeechPanel extends StatelessWidget {
           state.label,
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 13,
+            fontSize: LumeTypography.descriptionSize,
             color: secondary,
           ),
         ),
@@ -227,7 +228,7 @@ class NovelSpeechPanel extends StatelessWidget {
           '进度',
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 13,
+            fontSize: LumeTypography.descriptionSize,
             color: secondary,
           ),
         ),
@@ -246,7 +247,7 @@ class NovelSpeechPanel extends StatelessWidget {
           '${segmentIndex + 1}/$segmentCount',
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 13,
+            fontSize: LumeTypography.descriptionSize,
             color: secondary,
           ),
         ),
@@ -287,7 +288,7 @@ class _SliderRow extends StatelessWidget {
             label,
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
+              fontSize: LumeTypography.descriptionSize,
               color: chromeText,
             ),
           ),
@@ -307,7 +308,7 @@ class _SliderRow extends StatelessWidget {
             textAlign: TextAlign.right,
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
+              fontSize: LumeTypography.descriptionSize,
               color: secondary,
             ),
           ),
@@ -376,7 +377,7 @@ class NovelSpeechIndicator extends StatelessWidget {
                       : '朗读中 ${segmentIndex + 1}/$segmentCount',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontSize: LumeTypography.descriptionSize,
                     color: chromeText,
                   ),
                 ),

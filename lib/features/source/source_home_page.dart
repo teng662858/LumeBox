@@ -1,4 +1,5 @@
 import '../../shared/widgets/drawer_geometry.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../core/reading/reading.dart';
@@ -350,7 +351,7 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 15,
+                  fontSize: LumeTypography.titleSize,
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.textPrimary,
                 ),
@@ -396,7 +397,7 @@ class _SourceSwitchSheet extends StatelessWidget {
                 child: Text(
                   '切换源',
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: LumeTypography.titleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
@@ -415,8 +416,8 @@ class _SourceSwitchSheet extends StatelessWidget {
                     source.version.isEmpty ? LumeTheme.appName : source.version,
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                      color: LumeTheme.muted,
+                      fontSize: LumeTypography.descriptionSize,
+                      color: LumeTheme.descriptionColor,
                     ),
                   ),
                   trailing: source.id == currentId

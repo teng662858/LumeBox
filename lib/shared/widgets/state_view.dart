@@ -53,7 +53,7 @@ class SourceStateView extends StatelessWidget {
               state.label,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontSize: LumeTypography.bodySize,
                 color: LumeTheme.muted,
               ),
             ),

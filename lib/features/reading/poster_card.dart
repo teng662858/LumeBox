@@ -147,7 +147,7 @@ class UnreadBadge extends StatelessWidget {
         child: Text(
           count > 99 ? '99+' : '$count',
           style: const TextStyle(
-            fontSize: 12,
+            fontSize: LumeTypography.captionSize,
             fontWeight: FontWeight.w700,
             color: Colors.white,
             height: 1.2,
@@ -219,7 +219,7 @@ class ShelfEmptyHint extends StatelessWidget {
             Text(
               title,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: LumeTypography.titleSize,
                 fontWeight: FontWeight.w600,
                 color: LumeTheme.textPrimary,
               ),
@@ -230,7 +230,7 @@ class ShelfEmptyHint extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontSize: LumeTypography.bodySize,
                 color: LumeTheme.muted,
               ),
             ),
@@ -298,13 +298,13 @@ class PosterTile extends StatelessWidget {
             //  真机反馈「标题看着很淡」）；外置：封面外的浅色底 → 主题主文字色。
             style: style == GridTitleStyle.below
                 ? TextStyle(
-                    fontSize: 13.5,
+                    fontSize: LumeTypography.bodySize,
                     height: 1.25,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   )
                 : const TextStyle(
-                    fontSize: 13.5,
+                    fontSize: LumeTypography.bodySize,
                     height: 1.25,
                     fontWeight: FontWeight.w700,
                     color: Colors.white,
@@ -323,12 +323,12 @@ class PosterTile extends StatelessWidget {
               style: style == GridTitleStyle.below
                   ? TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 11,
+                      fontSize: LumeTypography.captionSize,
                       color: LumeTheme.muted,
                     )
                   : TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 11,
+                      fontSize: LumeTypography.captionSize,
                       color: Colors.white,
                     ),
             ),
@@ -443,7 +443,7 @@ class CompactSourceItemTile extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 14,
+                      fontSize: LumeTypography.bodySize,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -455,7 +455,7 @@ class CompactSourceItemTile extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 12,
+                        fontSize: LumeTypography.captionSize,
                         color: LumeTheme.muted,
                       ),
                     ),

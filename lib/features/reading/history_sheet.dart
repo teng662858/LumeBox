@@ -414,7 +414,7 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w600,
-                                      fontSize: 13,
+                                      fontSize: LumeTypography.descriptionSize,
                                     ),
                                   ),
                                   Text(
@@ -426,7 +426,7 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w600,
-                                      fontSize: 12,
+                                      fontSize: LumeTypography.captionSize,
                                     ),
                                   ),
                                 ],
@@ -550,7 +550,7 @@ class HistoryEntryTile extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 16,
+                              fontSize: LumeTypography.titleSize,
                               fontWeight: FontWeight.w600,
                               color: LumeTheme.textPrimary,
                             ),
@@ -564,7 +564,7 @@ class HistoryEntryTile extends StatelessWidget {
                             ),
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              fontSize: 12,
+                              fontSize: LumeTypography.captionSize,
                               color: LumeTheme.muted,
                             ),
                           ),
@@ -575,7 +575,10 @@ class HistoryEntryTile extends StatelessWidget {
                         relativeTime(now, progress?.updatedAt ?? item.addedAt),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+                        style: TextStyle(
+                          fontSize: LumeTypography.captionSize,
+                          color: LumeTheme.muted,
+                        ),
                       ),
                     const SizedBox(height: 4),
                     Row(
@@ -587,8 +590,8 @@ class HistoryEntryTile extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: LumeTheme.muted,
+                              fontSize: LumeTypography.descriptionSize,
+                              color: LumeTheme.descriptionColor,
                             ),
                           ),
                         ),
@@ -597,7 +600,7 @@ class HistoryEntryTile extends StatelessWidget {
                             '已看完',
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              fontSize: 12,
+                              fontSize: LumeTypography.captionSize,
                               color: LumeTheme.muted,
                             ),
                           ),

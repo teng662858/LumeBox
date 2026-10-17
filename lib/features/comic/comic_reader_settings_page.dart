@@ -132,7 +132,7 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
                       Text(
                         '双击放大',
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: LumeTypography.titleSize,
                           fontWeight: FontWeight.w600,
                           color: LumeTheme.textPrimary,
                         ),
@@ -143,8 +143,8 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
                         '（与「点击行为」无关：开着才会响应双击。）',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: LumeTheme.muted,
+                          fontSize: LumeTypography.descriptionSize,
+                          color: LumeTheme.descriptionColor,
                         ),
                       ),
                     ],
@@ -170,7 +170,7 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
                       Text(
                         '保存本页',
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: LumeTypography.titleSize,
                           fontWeight: FontWeight.w600,
                           color: LumeTheme.textPrimary,
                         ),
@@ -181,8 +181,8 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
                         '阅读时也可以直接长按图片保存。',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: LumeTheme.muted,
+                          fontSize: LumeTypography.descriptionSize,
+                          color: LumeTheme.descriptionColor,
                         ),
                       ),
                     ],
@@ -211,7 +211,7 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
                       Text(
                         '书签列表',
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: LumeTypography.titleSize,
                           fontWeight: FontWeight.w600,
                           color: LumeTheme.textPrimary,
                         ),
@@ -223,8 +223,8 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
                             : '共 ${widget.bookmarkCount} 个书签，点进去可跳页或删除。',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: LumeTheme.muted,
+                          fontSize: LumeTypography.descriptionSize,
+                          color: LumeTheme.descriptionColor,
                         ),
                       ),
                     ],
@@ -278,9 +278,9 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
               '那三项是边看边调的；这一页装的都是「设定一次就不动」的项。',
               style: TextStyle(
                 fontWeight: FontWeight.w600,
-                fontSize: 13,
+                fontSize: LumeTypography.descriptionSize,
                 height: 1.5,
-                color: LumeTheme.muted,
+                color: LumeTheme.descriptionColor,
               ),
             ),
           ),
@@ -321,7 +321,7 @@ class _OptionCard<T> extends StatelessWidget {
           Text(
             title,
             style: TextStyle(
-              fontSize: 15,
+              fontSize: LumeTypography.titleSize,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
             ),
@@ -331,8 +331,8 @@ class _OptionCard<T> extends StatelessWidget {
             hint,
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
             ),
           ),
           const SizedBox(height: 8),
@@ -347,7 +347,7 @@ class _OptionCard<T> extends StatelessWidget {
                       labelOf(option),
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 12,
+                        fontSize: LumeTypography.captionSize,
                       ),
                     ),
                   ),

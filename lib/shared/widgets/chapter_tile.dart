@@ -62,7 +62,7 @@ class ChapterTile extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 15,
+                  fontSize: LumeTypography.titleSize,
                   height: 1.3,
                   color: read && !current
                       ? LumeTheme.textSecondary
@@ -78,7 +78,7 @@ class ChapterTile extends StatelessWidget {
                   '在读',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                    fontSize: LumeTypography.captionSize,
                     color: LumeTheme.accent,
                   ),
                 ),

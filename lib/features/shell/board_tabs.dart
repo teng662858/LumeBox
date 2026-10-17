@@ -22,9 +22,12 @@ class BoardTabBar extends StatelessWidget {
       indicatorWeight: 2,
       labelColor: LumeTheme.accent,
       unselectedLabelColor: LumeTheme.textSecondary,
-      labelStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      labelStyle: const TextStyle(
+        fontSize: LumeTypography.titleSize,
+        fontWeight: FontWeight.w600,
+      ),
       unselectedLabelStyle: const TextStyle(
-        fontSize: 16,
+        fontSize: LumeTypography.titleSize,
         fontWeight: FontWeight.w600,
       ),
       tabs: <Widget>[

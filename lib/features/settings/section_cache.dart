@@ -66,8 +66,10 @@ class SectionCachePolicy {
         maxAgeDays: maxAgeDays ?? this.maxAgeDays,
       );
 
-  Map<String, Object?> toJson() =>
-      <String, Object?>{'maxBytes': maxBytes, 'maxAgeDays': maxAgeDays};
+  Map<String, Object?> toJson() => <String, Object?>{
+    'maxBytes': maxBytes,
+    'maxAgeDays': maxAgeDays,
+  };
 
   static SectionCachePolicy fromJson(Object? json) {
     if (json is! Map) return unlimited;
@@ -107,7 +109,10 @@ class SectionCachePolicy {
 
 /// 一次策略执行的结论。
 class CachePruneResult {
-  const CachePruneResult({required this.removedFiles, required this.freedBytes});
+  const CachePruneResult({
+    required this.removedFiles,
+    required this.freedBytes,
+  });
 
   final int removedFiles;
   final int freedBytes;
@@ -225,7 +230,9 @@ class SectionCacheService {
 
     // 1) 过期：超过 maxAgeDays 未访问的一律删。
     if (policy.maxAgeDays > 0) {
-      final deadline = DateTime.now().subtract(Duration(days: policy.maxAgeDays));
+      final deadline = DateTime.now().subtract(
+        Duration(days: policy.maxAgeDays),
+      );
       for (final item in files.toList(growable: false)) {
         if (item.accessed.isAfter(deadline)) continue;
         if (_delete(item.file)) {
@@ -270,11 +277,11 @@ class SectionCacheService {
 
   /// 一个板块可清理的目录（都已通过板块作用域校验）。
   List<String> _clearableDirs(SectionScope scope) => <String>[
-        // 板块缓存目录（SectionScope 为每个板块准备的标准缓存位）。
-        scope.resolve('cache'),
-        // 阅读图片缓存（四板块共用同一套阅读底座，但目录各在各的板块下）。
-        scope.resolve(p.join(readingCacheRoot, 'images')),
-      ];
+    // 板块缓存目录（SectionScope 为每个板块准备的标准缓存位）。
+    scope.resolve('cache'),
+    // 阅读图片缓存（四板块共用同一套阅读底座，但目录各在各的板块下）。
+    scope.resolve(p.join(readingCacheRoot, 'images')),
+  ];
 
   /// 用户保存的图片目录（只统计不清理）。
   String _exportDir(SectionScope scope) =>
@@ -289,8 +296,9 @@ class SectionCacheService {
     }
     var bytes = 0;
     var files = 0;
-    for (final entity in Directory(path)
-        .listSync(recursive: true, followLinks: false)) {
+    for (final entity in Directory(
+      path,
+    ).listSync(recursive: true, followLinks: false)) {
       if (entity is File) {
         bytes += entity.lengthSync();
         files += 1;

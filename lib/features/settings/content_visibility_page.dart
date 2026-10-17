@@ -9,7 +9,8 @@ class ContentVisibilityPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = controller ?? SourceContentVisibility.instance;
-    return GlassScaffold(effectModule: GlassModule.settings,
+    return GlassScaffold(
+      effectModule: GlassModule.settings,
       title: '内容分类显示',
       child: ListenableBuilder(
         listenable: settings,

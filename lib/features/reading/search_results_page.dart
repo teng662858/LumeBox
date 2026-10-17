@@ -372,7 +372,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 17,
+                          fontSize: LumeTypography.sectionTitleSize,
                           fontWeight: FontWeight.w600,
                           color: LumeTheme.textPrimary,
                         ),
@@ -381,8 +381,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                         _loading ? '正在搜索…' : '${widget.mode.label} · $_count 条',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: LumeTheme.muted,
+                          fontSize: LumeTypography.descriptionSize,
+                          color: LumeTheme.descriptionColor,
                         ),
                       ),
                     ],
@@ -508,7 +508,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: LumeTypography.titleSize,
                           fontWeight: FontWeight.w600,
                           color: LumeTheme.textPrimary,
                         ),
@@ -520,8 +520,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                             _metaOf(row.item, row.sourceName)!,
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: LumeTheme.muted,
+                              fontSize: LumeTypography.descriptionSize,
+                              color: LumeTheme.descriptionColor,
                             ),
                           ),
                         ),
@@ -553,8 +553,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
           text,
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 13,
-            color: LumeTheme.muted,
+            fontSize: LumeTypography.descriptionSize,
+            color: LumeTheme.descriptionColor,
           ),
         ),
       ),

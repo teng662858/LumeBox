@@ -1,3 +1,5 @@
+import 'package:lume_box/core/theme/lume_typography.dart';
+
 import '../../core/media/playback_focus.dart';
 import '../../shared/widgets/subscription_status_icon.dart';
 import 'video_detail_page.dart';
@@ -436,7 +438,7 @@ class _VideoPageState extends State<VideoPage> {
                   '视频板块的阅读库打不开，播放进度与记录暂不可用；浏览与播放不受影响。',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 14,
+                    fontSize: LumeTypography.bodySize,
                     height: 1.5,
                   ),
                 ),

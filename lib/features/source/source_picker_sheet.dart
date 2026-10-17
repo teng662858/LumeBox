@@ -1,8 +1,9 @@
-import '../../shared/widgets/column_list.dart';
+import '../../shared/widgets/source_category_columns.dart';
 import '../../shared/widgets/drawer_geometry.dart';
 import '../../core/source/source_subscription_sync.dart';
 import '../../shared/widgets/source_update_badge.dart';
 import '../../shared/widgets/source_drag_tile.dart';
+import '../../shared/widgets/source_icon.dart';
 import '../../core/source/source_content_rating.dart';
 import '../../shared/widgets/source_rating_badge.dart';
 import '../../core/source/source_order.dart';
@@ -67,8 +68,9 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
       widget.manager ?? LumeSources.manager(widget.section);
   late List<SourceDescriptor> sources = List.of(widget.sources);
   late bool columns =
+      widget.section != Section.cat ||
       ReadingLibrary.find(widget.section)?.setting('source.picker.columns') !=
-      'false';
+          'false';
   String query = '';
   final busy = <String>{};
   final results = <String, SourceTestResult>{};
@@ -255,17 +257,12 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
     final prefs = SourcePreferences.read(widget.section, source.id);
     final selected = source.id == widget.currentId;
 
-    final groups = SourcePickerGroups.forSection(widget.section);
-    final groupId = SourcePickerGroups.groupFor(widget.section, source);
-    final groupLabel = groups.firstWhere((group) => group.$1 == groupId).$2;
     final dark = Theme.of(context).brightness == Brightness.dark;
     final radius = BorderRadius.circular(8);
     return Material(
-      elevation: columns ? 1 : 0,
+      elevation: 0,
       shadowColor: LumeTheme.cardShadow.first.color,
-      color: columns
-          ? (dark ? LumeTheme.surfaceAlt : const Color(0xFFF7F8FA))
-          : Colors.transparent,
+      color: dark ? LumeTheme.surfaceAlt : const Color(0xFFF7F8FA),
       borderRadius: radius,
       child: InkWell(
         key: ValueKey('picker-source-${source.id}'),
@@ -276,29 +273,32 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
         child: Padding(
           padding: EdgeInsets.symmetric(
             horizontal: columns ? 6 : 0,
-            vertical: 12,
+            vertical: 3,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              CircleAvatar(
-                radius: 12,
-                backgroundColor: LumeTheme.fillStrong,
-                foregroundColor: LumeTheme.textPrimary,
+              SizedBox(
+                width: 24,
+                height: 24,
                 child: busy.contains(source.id)
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(
-                        source.name.isEmpty
-                            ? '?'
-                            : source.name.characters.first.toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                    ? const Center(
+                        child: SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
+                      )
+                    : SourceIcon(
+                        key: ValueKey('picker-icon-${source.id}'),
+                        name: source.name,
+                        siteUrl: source.siteUrl,
+                        iconUrl: prefs.iconUrl.trim().isEmpty
+                            ? source.iconUrl
+                            : prefs.iconUrl,
+                        size: 24,
+                        section: widget.section,
+                        sourceId: source.id,
                       ),
               ),
               const SizedBox(width: 4),
@@ -313,20 +313,17 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: 14,
+                        fontSize: LumeTypography.bodySize,
                       ),
-                    ),
-                    Text(
-                      groupLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: LumeTheme.muted),
                     ),
                     Text(
                       results[source.id]?.status.label ?? source.version,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+                      style: TextStyle(
+                        fontSize: LumeTypography.captionSize,
+                        color: LumeTheme.muted,
+                      ),
                     ),
                     SourceUpdateBadge(
                       section: widget.section,
@@ -363,6 +360,9 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
               IconButton(
                 key: ValueKey('picker-more-${source.id}'),
                 tooltip: '源操作',
+                style: IconButton.styleFrom(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 constraints: const BoxConstraints.tightFor(
                   width: 24,
                   height: 40,
@@ -428,34 +428,76 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
       if (entries.isEmpty) {
         return Center(child: Text(query.isEmpty ? '暂无源' : '没有匹配的源'));
       }
-      return columns
-          ? LayoutBuilder(
-              builder: (context, constraints) {
-                final width = (constraints.maxWidth - 32 - 10) / 2;
-                final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
-                return ColumnList(
-                  columns: 2,
-                  decorateItems: false,
-                  itemPadding: EdgeInsets.zero,
-                  spacing: 10,
-                  childAspectRatio: width / (128 * scale.clamp(1.0, 3.0)),
-                  itemCount: entries.length,
-                  itemBuilder: tile,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                );
-              },
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: entries.length,
-              separatorBuilder: (_, _) => const Divider(
-                height: 1,
-                thickness: 1,
-                color: Color(0xFFE5E5EA),
-              ),
-              itemBuilder: tile,
-            );
+      return ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: entries.length,
+        separatorBuilder: (_, _) =>
+            const Divider(height: 1, thickness: 1, color: Color(0xFFE5E5EA)),
+        itemBuilder: tile,
+      );
     }
+
+    final grouped = {
+      for (final group in SourcePickerGroups.forSection(widget.section))
+        group.$1: <SourceDescriptor>[],
+    };
+    for (final source in visible) {
+      grouped[SourcePickerGroups.groupFor(widget.section, source)]!.add(source);
+    }
+    final groupDefinitions = SourcePickerGroups.forSection(widget.section);
+    final singleList = visible.isEmpty
+        ? Center(child: Text(query.isEmpty ? '暂无源' : '没有匹配的源'))
+        : ListView(
+            key: const ValueKey('picker-grouped-list'),
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 16),
+            children: [
+              for (final group in groupDefinitions)
+                if (grouped[group.$1]!.isNotEmpty) ...[
+                  Semantics(
+                    header: true,
+                    child: Padding(
+                      key: ValueKey('picker-group-${group.$1}'),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                      child: Text(
+                        group.$2,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                    ),
+                  ),
+                  list(grouped[group.$1]!),
+                  const SizedBox(height: 8),
+                ],
+            ],
+          );
+
+    final groupedList = columns
+        ? SourceCategoryColumns(
+            key: ValueKey('picker-columns-${widget.section.id}'),
+            sections: [
+              for (final group in groupDefinitions)
+                SourceColumnSection(
+                  id: group.$1,
+                  title: group.$2,
+                  children: [
+                    for (final source in grouped[group.$1]!)
+                      SourceDragTile(
+                        key: ValueKey('picker-drag-${source.id}'),
+                        id: source.id,
+                        name: source.name,
+                        accepts: (id) =>
+                            grouped[group.$1]!.any((entry) => entry.id == id),
+                        onMove: (from, to) =>
+                            move(grouped[group.$1]!, from, to),
+                        child: sourceTile(source),
+                      ),
+                  ],
+                ),
+            ],
+          )
+        : singleList;
 
     final content = SafeArea(
       top: false,
@@ -481,21 +523,25 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                         ),
                       ),
                     ),
-                    IconButton(
-                      tooltip: columns ? '切换为单列' : '切换为双列',
-                      icon: Icon(
-                        columns
-                            ? Icons.view_agenda_outlined
-                            : Icons.view_column_outlined,
+                    if (widget.section == Section.cat)
+                      IconButton(
+                        tooltip: columns ? '切换为单列' : '切换为双列',
+                        icon: Icon(
+                          columns
+                              ? Icons.view_agenda_outlined
+                              : Icons.view_column_outlined,
+                        ),
+                        onPressed: () async {
+                          setState(() => columns = !columns);
+                          final library = await ReadingLibrary.open(
+                            widget.section,
+                          );
+                          library.setSetting(
+                            'source.picker.columns',
+                            '$columns',
+                          );
+                        },
                       ),
-                      onPressed: () async {
-                        setState(() => columns = !columns);
-                        final library = await ReadingLibrary.open(
-                          widget.section,
-                        );
-                        library.setSetting('source.picker.columns', '$columns');
-                      },
-                    ),
                     IconButton(
                       tooltip: '关闭',
                       onPressed: () => Navigator.pop(context),
@@ -508,12 +554,12 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                 '长按源条目拖动排序，点击更多打开操作菜单',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: 12,
+                  fontSize: LumeTypography.captionSize,
                   color: LumeTheme.muted,
                 ),
               ),
               const SizedBox(height: 8),
-              Expanded(child: list(visible)),
+              Expanded(child: groupedList),
             ],
           ),
         ),
@@ -521,7 +567,13 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
     );
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      child: Material(color: LumeTheme.surface, child: content),
+      child: Material(
+        color: LumeTheme.surface,
+        child: ScrollConfiguration(
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: content,
+        ),
+      ),
     );
   }
 }

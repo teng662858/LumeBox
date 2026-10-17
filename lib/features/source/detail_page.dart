@@ -92,7 +92,7 @@ class _DetailPageState extends State<DetailPage> {
                 Text(
                   detail?.title ?? widget.item.title,
                   style: TextStyle(
-                    fontSize: 19,
+                    fontSize: LumeTypography.pageTitleSize,
                     fontWeight: FontWeight.w700,
                     color: LumeTheme.textPrimary,
                   ),
@@ -103,7 +103,7 @@ class _DetailPageState extends State<DetailPage> {
                     detail!.subtitle!,
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                      fontSize: LumeTypography.bodySize,
                       color: LumeTheme.muted,
                     ),
                   ),
@@ -114,7 +114,7 @@ class _DetailPageState extends State<DetailPage> {
                     detail!.description!,
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                      fontSize: LumeTypography.bodySize,
                       height: 1.5,
                       color: LumeTheme.textSecondary,
                     ),
@@ -127,7 +127,7 @@ class _DetailPageState extends State<DetailPage> {
           Text(
             '章节（${_chapters.length}）',
             style: TextStyle(
-              fontSize: 15,
+              fontSize: LumeTypography.titleSize,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
             ),

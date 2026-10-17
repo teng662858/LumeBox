@@ -415,7 +415,7 @@ class _BrowseViewState extends State<BrowseView> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: LumeTypography.titleSize,
                             fontWeight: FontWeight.w600,
                             color: LumeTheme.textPrimary,
                           ),
@@ -428,8 +428,8 @@ class _BrowseViewState extends State<BrowseView> {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: LumeTheme.muted,
+                              fontSize: LumeTypography.descriptionSize,
+                              color: LumeTheme.descriptionColor,
                             ),
                           ),
                         ],
@@ -479,8 +479,8 @@ class _BrowseViewState extends State<BrowseView> {
             '没有更多了',
             style: TextStyle(
               fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: LumeTheme.muted,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
             ),
           ),
         ),
@@ -512,7 +512,7 @@ class _CategoryChip extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 14,
+            fontSize: LumeTypography.bodySize,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w600,
             color: selected ? LumeTheme.textPrimary : LumeTheme.muted,
           ),

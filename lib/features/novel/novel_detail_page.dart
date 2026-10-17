@@ -365,7 +365,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 19,
+                            fontSize: LumeTypography.pageTitleSize,
                             fontWeight: FontWeight.w700,
                             color: LumeTheme.textPrimary,
                           ),
@@ -380,8 +380,8 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 13,
-                                color: LumeTheme.muted,
+                                fontSize: LumeTypography.descriptionSize,
+                                color: LumeTheme.descriptionColor,
                               ),
                             ),
                           ),
@@ -464,7 +464,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
           description,
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 14,
+            fontSize: LumeTypography.bodySize,
             height: 1.6,
             color: LumeTheme.textSecondary,
           ),
@@ -481,7 +481,7 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
           Text(
             '章节（${_chapters.length}）',
             style: TextStyle(
-              fontSize: 15,
+              fontSize: LumeTypography.titleSize,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
             ),

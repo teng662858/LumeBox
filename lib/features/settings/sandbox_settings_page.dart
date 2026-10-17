@@ -77,7 +77,7 @@ class _SandboxSettingsPageState extends State<SandboxSettingsPage> {
                 Text(
                   'JS 执行超时',
                   style: TextStyle(
-                    fontSize: 17,
+                    fontSize: LumeTypography.sectionTitleSize,
                     fontWeight: FontWeight.w600,
                     color: LumeTheme.textPrimary,
                   ),
@@ -87,9 +87,10 @@ class _SandboxSettingsPageState extends State<SandboxSettingsPage> {
                   '单个源脚本一次调用最多跑多久。超时即判定失控、销毁该源的上下文'
                   '并重建——App 不会因此卡死，但那个源的那次调用会失败。',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                    color: LumeTheme.muted,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
+                    color: LumeTheme.descriptionColor,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -116,10 +117,10 @@ class _SandboxSettingsPageState extends State<SandboxSettingsPage> {
                   '调大能给慢站点更多余量，但一个卡住的脚本也会占住更久；'
                   '默认 ${SandboxSettings.defaultTimeout.inSeconds} 秒。',
                   style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.descriptionSize,
+                    color: LumeTheme.descriptionColor,
                     height: 1.5,
-                    color: LumeTheme.muted,
                   ),
                 ),
               ],
@@ -151,7 +152,7 @@ class _FixedLimitsCard extends StatelessWidget {
           Text(
             '固定安全上限（不可调）',
             style: TextStyle(
-              fontSize: 17,
+              fontSize: LumeTypography.sectionTitleSize,
               fontWeight: FontWeight.w600,
               color: LumeTheme.textPrimary,
             ),
@@ -162,10 +163,10 @@ class _FixedLimitsCard extends StatelessWidget {
             '兜底，调大等于把保护关掉，因此不开放配置。超时是唯一例外——它只影响'
             '「等多久算失控」，不削弱任何防护。',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              fontSize: LumeTypography.descriptionSize,
+              color: LumeTheme.descriptionColor,
               height: 1.5,
-              color: LumeTheme.muted,
             ),
           ),
         ],

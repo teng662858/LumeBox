@@ -1,4 +1,5 @@
 import '../../shared/widgets/column_list.dart';
+import '../../shared/widgets/source_category_columns.dart';
 import '../../shared/widgets/drawer_geometry.dart';
 import '../../shared/widgets/source_update_badge.dart';
 import '../../core/reading/browse_layout.dart';
@@ -438,182 +439,185 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
           builder: (context, _) => SafeArea(
             child: SizedBox(
               height: DrawerGeometry.height(context),
-              child: ListView(
-                children: [
-                  ListTile(
-                    title: const Text('选择站点'),
-                    trailing: SegmentedButton<int>(
-                      segments: [
-                        for (final count in [1, 2])
-                          ButtonSegment(
-                            value: count,
-                            label: Text(count == 1 ? '单列列表' : '双列列表'),
-                          ),
-                      ],
-                      selected: {service.siteColumns.clamp(1, 2)},
-                      showSelectedIcon: false,
-                      onSelectionChanged: (values) =>
-                          unawaited(service.setSiteColumns(values.first)),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: TextField(
-                      onChanged: (value) =>
-                          pickerSetState(() => pickerQuery = value),
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.search),
-                        hintText: '搜索站点或订阅',
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: DropdownButton<String>(
-                      isExpanded: true,
-                      value: sourceGroup ?? '__all__',
-                      items: [
-                        const DropdownMenuItem(
-                          value: '__all__',
-                          child: Text('总分组（全部）'),
-                        ),
-                        for (final record in service.subscriptions.where(
-                          (record) => record.enabled,
-                        ))
-                          DropdownMenuItem(
-                            value: record.id,
-                            child: Text(record.name),
-                          ),
-                      ],
-                      onChanged: (value) => pickerSetState(
-                        () => sourceGroup = value == '__all__' ? null : value,
-                      ),
-                    ),
-                  ),
-                  for (final record in service.subscriptions.where(
-                    (s) =>
-                        s.enabled &&
-                        (sourceGroup == null || sourceGroup == s.id),
-                  )) ...[
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context)
+                    .copyWith(scrollbars: false),
+                child: ListView(
+                  physics: const BouncingScrollPhysics(),
+                  children: [
                     ListTile(
-                      title: Text(record.name),
-                      subtitle: const Text('加载或刷新包内站点'),
-                      trailing: const Icon(Icons.refresh),
-                      onTap: () => Navigator.pop(context, record),
-                    ),
-                    CatSourceList(
-                      columns: service.siteColumns.clamp(1, 2),
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      children: [
-                        for (final site in choices(record))
-                          _reorderSite(
-                            record,
-                            site,
-                            () => pickerSetState(() {}),
-                            ListTile(
-                              dense: true,
-                              minLeadingWidth: 24,
-                              horizontalTitleGap: 8,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                              ),
-                              leading: SourceIcon(
-                                name: site.name,
-                                siteUrl: site.siteUrl,
-                                siteIcon: site.iconUrl,
-                                iconUrl: SourcePreferences.read(
-                                  Section.cat,
-                                  site.id,
-                                ).iconUrl,
-                                size: 28,
-                                section: Section.cat,
-                                sourceId: site.id,
-                              ),
-                              trailing: IconButton(
-                                tooltip: '站点设置',
-                                icon: const Icon(Icons.more_vert, size: 18),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 28,
-                                  height: 32,
-                                ),
-                                onPressed: () async {
-                                  await Navigator.push(
-                                    context,
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => SourcePreferencesPage(
-                                        section: Section.cat,
-                                        sourceId: site.id,
-                                        name: site.name,
-                                        siteUrl: site.siteUrl,
-                                        showChapterOrder:
-                                            site.kind == 'novel' ||
-                                            site.kind == 'comic',
-                                        onNetwork: () async {
-                                          final url = await service
-                                              .configurationUrl(record);
-                                          if (!context.mounted) return;
-                                          await Navigator.push(
-                                            context,
-                                            MaterialPageRoute<void>(
-                                              builder: (_) =>
-                                                  CatWebPage(url: url),
-                                            ),
-                                          );
-                                          await service.refreshSites(record);
-                                        },
-                                      ),
-                                    ),
-                                  );
-                                  if (context.mounted) pickerSetState(() {});
-                                },
-                              ),
-                              title: Text.rich(
-                                TextSpan(
-                                  children: [
-                                    TextSpan(text: site.name),
-                                    if (SourceContentRating.isAdult(
-                                          site.key,
-                                          site.name,
-                                        ) ||
-                                        SourceContentRating.isAdult(
-                                          record.id,
-                                          record.name,
-                                        ))
-                                      const WidgetSpan(
-                                        alignment: PlaceholderAlignment.middle,
-                                        child: SourceRatingBadge(),
-                                      ),
-                                  ],
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              subtitle: SourceUpdateBadge(
-                                section: Section.cat,
-                                sourceId: site.id,
-                              ),
-                              selected:
-                                  site.id ==
-                                  (source?.site.id ?? service.selectedSiteId),
-                              selectedTileColor: Theme.of(context)
-                                  .colorScheme
-                                  .primary
-                                  .withValues(alpha: .1),
-                              onTap: () => Navigator.pop(context, site),
+                      title: const Text('选择站点'),
+                      trailing: SegmentedButton<int>(
+                        segments: [
+                          for (final count in [1, 2])
+                            ButtonSegment(
+                              value: count,
+                              label: Text(count == 1 ? '单列列表' : '双列列表'),
                             ),
+                        ],
+                        selected: {service.siteColumns.clamp(1, 2)},
+                        showSelectedIcon: false,
+                        onSelectionChanged: (values) =>
+                            unawaited(service.setSiteColumns(values.first)),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        onChanged: (value) =>
+                            pickerSetState(() => pickerQuery = value),
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          hintText: '搜索站点或订阅',
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: sourceGroup ?? '__all__',
+                        items: [
+                          const DropdownMenuItem(
+                            value: '__all__',
+                            child: Text('总分组（全部）'),
                           ),
-                      ],
+                          for (final record in service.subscriptions.where(
+                            (record) => record.enabled,
+                          ))
+                            DropdownMenuItem(
+                              value: record.id,
+                              child: Text(record.name),
+                            ),
+                        ],
+                        onChanged: (value) => pickerSetState(
+                          () => sourceGroup = value == '__all__' ? null : value,
+                        ),
+                      ),
+                    ),
+                    for (final record in service.subscriptions.where(
+                      (s) =>
+                          s.enabled &&
+                          (sourceGroup == null || sourceGroup == s.id),
+                    )) ...[
+                      ListTile(
+                        title: Text(
+                          record.name,
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        subtitle: const Text('加载或刷新包内站点'),
+                        trailing: const Icon(Icons.refresh),
+                        onTap: () => Navigator.pop(context, record),
+                      ),
+                      CatGroupedSourceList(
+                        columns: service.siteColumns.clamp(1, 2),
+                        sites: choices(record),
+                        itemBuilder: (context, site) => _reorderSite(
+                          record,
+                          site,
+                          () => pickerSetState(() {}),
+                          ListTile(
+                            dense: true,
+                            minLeadingWidth: 24,
+                            horizontalTitleGap: 8,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                            ),
+                            leading: SourceIcon(
+                              name: site.name,
+                              siteUrl: site.siteUrl,
+                              siteIcon: site.iconUrl,
+                              iconUrl: SourcePreferences.read(
+                                Section.cat,
+                                site.id,
+                              ).iconUrl,
+                              size: 28,
+                              section: Section.cat,
+                              sourceId: site.id,
+                            ),
+                            trailing: IconButton(
+                              tooltip: '站点设置',
+                              icon: const Icon(Icons.more_vert, size: 18),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 28,
+                                height: 32,
+                              ),
+                              onPressed: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => SourcePreferencesPage(
+                                      section: Section.cat,
+                                      sourceId: site.id,
+                                      name: site.name,
+                                      siteUrl: site.siteUrl,
+                                      showChapterOrder:
+                                          site.kind == 'novel' ||
+                                          site.kind == 'comic',
+                                      onNetwork: () async {
+                                        final url = await service
+                                            .configurationUrl(record);
+                                        if (!context.mounted) return;
+                                        await Navigator.push(
+                                          context,
+                                          MaterialPageRoute<void>(
+                                            builder: (_) =>
+                                                CatWebPage(url: url),
+                                          ),
+                                        );
+                                        await service.refreshSites(record);
+                                      },
+                                    ),
+                                  ),
+                                );
+                                if (context.mounted) pickerSetState(() {});
+                              },
+                            ),
+                            title: Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(text: site.name),
+                                  if (SourceContentRating.isAdult(
+                                        site.key,
+                                        site.name,
+                                      ) ||
+                                      SourceContentRating.isAdult(
+                                        record.id,
+                                        record.name,
+                                      ))
+                                    const WidgetSpan(
+                                      alignment: PlaceholderAlignment.middle,
+                                      child: SourceRatingBadge(),
+                                    ),
+                                ],
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: SourceUpdateBadge(
+                              section: Section.cat,
+                              sourceId: site.id,
+                            ),
+                            selected:
+                                site.id ==
+                                (source?.site.id ?? service.selectedSiteId),
+                            selectedTileColor: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: .1),
+                            onTap: () => Navigator.pop(context, site),
+                          ),
+                        ),
+                      ),
+                    ],
+                    ListTile(
+                      leading: const Icon(Icons.add),
+                      title: const Text('猫源配置中心'),
+                      onTap: () => Navigator.pop(context, 'subscriptions'),
                     ),
                   ],
-                  ListTile(
-                    leading: const Icon(Icons.add),
-                    title: const Text('猫源配置中心'),
-                    onTap: () => Navigator.pop(context, 'subscriptions'),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -1021,7 +1025,7 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w600,
-                                      fontSize: 13,
+                                      fontSize: LumeTypography.descriptionSize,
                                     ),
                                   ),
                                 ],
@@ -1083,7 +1087,7 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
       child: Text(
         text,
         style: TextStyle(
-          fontSize: 14,
+          fontSize: LumeTypography.bodySize,
           fontWeight: selected ? FontWeight.w600 : FontWeight.w600,
         ),
       ),
@@ -1146,7 +1150,7 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                                 Text(
                                   '猫源',
                                   style: TextStyle(
-                                    fontSize: 17,
+                                    fontSize: LumeTypography.sectionTitleSize,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -1207,7 +1211,7 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                                         '选择站点'),
                           textAlign: TextAlign.left,
                           style: TextStyle(
-                            fontSize: 15,
+                            fontSize: LumeTypography.titleSize,
                             fontWeight: FontWeight.w600,
                             color: LumeTheme.textPrimary,
                           ),
@@ -1338,7 +1342,7 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: LumeTheme.textPrimary,
-          fontSize: 13,
+          fontSize: LumeTypography.descriptionSize,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -1487,6 +1491,95 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
       ),
     ),
   );
+}
+
+/// Subscription boundaries are retained by the caller; site kinds form sections
+/// inside each subscription instead of sharing one flat grid.
+class CatGroupedSourceList extends StatelessWidget {
+  const CatGroupedSourceList({
+    super.key,
+    required this.columns,
+    required this.sites,
+    required this.itemBuilder,
+  });
+  final int columns;
+  final List<CatSite> sites;
+  final Widget Function(BuildContext, CatSite) itemBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    final grouped = <String, List<CatSite>>{};
+    for (final site in sites) {
+      grouped.putIfAbsent(site.kind, () => []).add(site);
+    }
+    const labels = {'video': '视频', 'comic': '漫画', 'novel': '小说', 'live': '直播'};
+    Widget card(CatSite site) => Material(
+      color: Theme.of(context).brightness == Brightness.dark
+          ? const Color(0xFF303034)
+          : const Color(0xFFF7F8FA),
+      borderRadius: BorderRadius.circular(8),
+      child: ListTileTheme.merge(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 6),
+        horizontalTitleGap: 6,
+        minLeadingWidth: 24,
+        minVerticalPadding: 2,
+        minTileHeight: 44,
+        visualDensity: const VisualDensity(vertical: -2),
+        child: itemBuilder(context, site),
+      ),
+    );
+    if (columns == 2) {
+      return SizedBox(
+        height: MediaQuery.sizeOf(context).height * .65,
+        child: SourceCategoryColumns(
+          keyPrefix: 'cat-picker',
+          sections: [
+            for (final group in grouped.entries)
+              SourceColumnSection(
+                id: group.key,
+                title:
+                    labels[group.key] ??
+                    (group.key.isEmpty ? '未分类' : group.key),
+                children: [for (final site in group.value) card(site)],
+              ),
+          ],
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final group in grouped.entries) ...[
+          Semantics(
+            header: true,
+            child: Padding(
+              key: ValueKey('cat-picker-group-${group.key}'),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+              child: Text(
+                labels[group.key] ?? (group.key.isEmpty ? '未分类' : group.key),
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+            ),
+          ),
+          CatSourceList(
+            columns: columns,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            children: [
+              for (final site in group.value)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: card(site),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
 }
 
 class CatSourceList extends StatelessWidget {

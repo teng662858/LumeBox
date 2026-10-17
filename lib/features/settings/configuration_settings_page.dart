@@ -10,7 +10,10 @@ import '../../core/session/configuration_backup.dart';
 import '../../shared/widgets/glass_card.dart';
 
 class ConfigurationSettingsPage extends StatefulWidget {
-  const ConfigurationSettingsPage({super.key});
+  const ConfigurationSettingsPage({super.key, this.previewIcons = false});
+
+  /// Show the mobile icon section in the standalone desktop layout preview.
+  final bool previewIcons;
   @override
   State<ConfigurationSettingsPage> createState() =>
       _ConfigurationSettingsPageState();
@@ -132,13 +135,20 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => GlassScaffold(effectModule: GlassModule.settings,
+  Widget build(BuildContext context) => GlassScaffold(
+    effectModule: GlassModule.settings,
     title: '配置与体验',
     child: ListView(
-      padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
+      padding: const EdgeInsets.all(16),
       children: [
-        if (Platform.isIOS || Platform.isAndroid) ...[
-          const ListTile(title: Text('App 图标')),
+        if (widget.previewIcons || Platform.isIOS || Platform.isAndroid) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Text(
+              'App 图标',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+          ),
           Wrap(
             spacing: 12,
             runSpacing: 12,
@@ -153,7 +163,7 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
                 ('Spark', '电光青'),
               ])
                 InkWell(
-                  onTap: busy
+                  onTap: busy || widget.previewIcons
                       ? null
                       : () => run(() async {
                           await const MethodChannel('lumebox/app_icon')
@@ -175,15 +185,23 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Text('${selectedIcon == name ? '✓ ' : ''}$label'),
+                        Text(
+                          '${selectedIcon == name ? '✓ ' : ''}$label',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
                       ],
                     ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 28),
         ],
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Text('配置备份', style: Theme.of(context).textTheme.headlineSmall),
+        ),
         ListTile(
           title: const Text('导出配置备份'),
           subtitle: const Text('全局设置、各版块偏好与源配置'),
@@ -228,6 +246,11 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
           enabled: !busy,
           onTap: () => run(restoreAutomatic),
         ),
+        const SizedBox(height: 24),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Text('使用体验', style: Theme.of(context).textTheme.headlineSmall),
+        ),
         SwitchListTile(
           title: const Text('触感反馈'),
           value: preferences.haptics,
@@ -267,7 +290,10 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
         ),
         if (busy) const LinearProgressIndicator(),
         if (status != null)
-          Padding(padding: const EdgeInsets.all(16), child: Text(status!)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Text(status!, style: Theme.of(context).textTheme.labelSmall),
+          ),
       ],
     ),
   );

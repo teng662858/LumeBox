@@ -30,8 +30,9 @@ class PlaybackSettingsGroup extends StatelessWidget {
             child: Text(
               '播放',
               style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+                fontSize: LumeTypography.bodySize,
+                fontWeight: FontWeight.w400,
+                height: 1.5,
                 color: LumeTheme.textSecondary,
               ),
             ),
@@ -59,22 +60,22 @@ class PlaybackSettingsGroup extends StatelessWidget {
                         Text(
                           '横屏播放',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: LumeTypography.titleSize,
                             fontWeight: FontWeight.w600,
                             color: LumeTheme.textPrimary,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 4),
                         Text(
                           controller.orientation.isLandscape
                               ? '已开启：全屏播放一律横屏'
                               : '关闭时按视频比例自动判断：竖屏短剧竖屏全屏、'
                                     '普通横片横屏全屏；播放器里还能强制竖屏',
                           style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                            height: 1.4,
-                            color: LumeTheme.muted,
+                            fontWeight: FontWeight.w400,
+                            fontSize: LumeTypography.descriptionSize,
+                            color: LumeTheme.descriptionColor,
+                            height: 1.5,
                           ),
                         ),
                       ],
