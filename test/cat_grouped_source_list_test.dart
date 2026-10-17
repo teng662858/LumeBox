@@ -7,7 +7,7 @@ import 'package:lume_box/shared/widgets/source_icon.dart';
 
 void main() {
   for (final columns in [1, 2]) {
-    testWidgets('cat site kinds keep separate sections, columns=$columns', (
+    testWidgets('cat all kinds share one continuous panel, columns=$columns', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -55,37 +55,28 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('cat-picker-group-video')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('cat-picker-group-comic')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('cat-picker-group-novel')),
-        findsNothing,
-      );
+      for (final kind in ['video', 'comic', 'novel', 'live']) {
+        expect(find.byKey(ValueKey('cat-picker-group-$kind')), findsNothing);
+      }
+      for (final title in ['视频', '漫画', '小说', '直播']) {
+        expect(find.text(title), findsNothing);
+      }
       expect(find.byType(SourceIcon), findsNWidgets(3));
       expect(find.byType(GridView), findsNothing);
+      expect(find.byType(Scrollable), findsOneWidget);
       final first = tester.getRect(find.byKey(const ValueKey('v1')));
       final second = tester.getRect(find.byKey(const ValueKey('v2')));
       final comic = tester.getRect(find.byKey(const ValueKey('c1')));
-      // Cat categories share the outer scroll view; no per-column scrollables.
-      expect(find.byType(Scrollable), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('cat-picker-category-columns')),
-        findsNothing,
-      );
       if (columns == 2) {
-        expect(second.top, first.top);
-        expect(second.left - first.right, 10);
-      } else {
-        expect(first.left, second.left);
+        expect(comic.top, first.top);
+        expect(comic.left - first.right, 10);
+        expect(second.left, first.left);
         expect(second.top, greaterThan(first.bottom));
+      } else {
+        expect(first.left, comic.left);
+        expect(comic.top, greaterThan(first.bottom));
+        expect(second.top, greaterThan(comic.bottom));
       }
-      expect(comic.top, greaterThan(second.bottom));
       expect(tester.takeException(), isNull);
     });
   }

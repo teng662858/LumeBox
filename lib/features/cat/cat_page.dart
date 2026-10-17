@@ -1492,8 +1492,8 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
   );
 }
 
-/// Subscription boundaries are retained by the caller; site kinds form sections
-/// inside each subscription instead of sharing one flat grid.
+/// One continuous cat-site panel. Kinds do not create headings or scroll lanes.
+/// The caller retains subscription controls and owns the only scroll view.
 class CatGroupedSourceList extends StatelessWidget {
   const CatGroupedSourceList({
     super.key,
@@ -1507,11 +1507,6 @@ class CatGroupedSourceList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final grouped = <String, List<CatSite>>{};
-    for (final site in sites) {
-      grouped.putIfAbsent(site.kind, () => []).add(site);
-    }
-    const labels = {'video': '视频', 'comic': '漫画', 'novel': '小说', 'live': '直播'};
     Widget card(CatSite site) => Material(
       color: Theme.of(context).brightness == Brightness.dark
           ? const Color(0xFF303034)
@@ -1528,53 +1523,31 @@ class CatGroupedSourceList extends StatelessWidget {
         child: itemBuilder(context, site),
       ),
     );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final group in grouped.entries) ...[
-          Semantics(
-            header: true,
-            child: Padding(
-              key: ValueKey('cat-picker-group-${group.key}'),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-              child: Text(
-                labels[group.key] ?? (group.key.isEmpty ? '未分类' : group.key),
-                style: Theme.of(context).textTheme.headlineSmall,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < sites.length; i += columns.clamp(1, 2))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: card(sites[i])),
+                  if (columns > 1) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: i + 1 < sites.length
+                          ? card(sites[i + 1])
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                ],
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
-            child: Column(
-              children: [
-                for (
-                  var i = 0;
-                  i < group.value.length;
-                  i += columns.clamp(1, 2)
-                )
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: card(group.value[i])),
-                        if (columns > 1) ...[
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: i + 1 < group.value.length
-                                ? card(group.value[i + 1])
-                                : const SizedBox.shrink(),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
         ],
-      ],
+      ),
     );
   }
 }

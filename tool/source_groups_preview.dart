@@ -33,7 +33,7 @@ class SourceGroupsPreview extends StatefulWidget {
 }
 
 class _SourceGroupsPreviewState extends State<SourceGroupsPreview> {
-  Section section = Section.video;
+  Section section = Section.cat;
   bool dark = false;
   int columns = 2;
 
@@ -58,7 +58,7 @@ class _SourceGroupsPreviewState extends State<SourceGroupsPreview> {
     ),
     home: Scaffold(
       appBar: AppBar(
-        title: const Text('源列表 · 左右独立分栏'),
+        title: Text(section == Section.cat ? '猫源 · 一体列表' : '源列表 · 左右独立分栏'),
         actions: [
           IconButton(
             tooltip: '切换亮暗模式',
@@ -140,7 +140,8 @@ class _SourceGroupsPreviewState extends State<SourceGroupsPreview> {
                                         CatSite(
                                           subscriptionId: 'preview',
                                           key: '$kind-$i',
-                                          name: '站点 ${i + 1}',
+                                          name:
+                                              '站点 ${['video', 'comic', 'novel', 'live'].indexOf(kind) * 14 + i + 1}',
                                           api: '/preview',
                                           kind: kind,
                                           iconUrl: i == 13
