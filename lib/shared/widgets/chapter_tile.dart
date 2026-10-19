@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/lume_theme.dart';
@@ -99,8 +100,9 @@ class ChapterTile extends StatelessWidget {
             else if (read)
               Padding(
                 padding: const EdgeInsets.only(left: 8),
-                child: Icon(
+                child: LumeIcon(
                   Icons.done,
+                  slot: 'chapter_tile.1',
                   size: 14,
                   color: LumeTheme.textSecondary,
                 ),
@@ -108,8 +110,9 @@ class ChapterTile extends StatelessWidget {
             ?trailing,
             Padding(
               padding: const EdgeInsets.only(left: 4),
-              child: Icon(
+              child: LumeIcon(
                 Icons.chevron_right,
+                slot: 'chapter_tile.2',
                 size: 20,
                 color: LumeTheme.textSecondary,
               ),

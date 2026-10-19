@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/intro/intro_store.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/player_stats.dart';
@@ -54,6 +55,7 @@ void main() {
     // 视频板块的设置库在真实时钟里先打开：testWidgets 的 fake-async 里等不到真实异步。
     await MediaLibrary.instance.boot();
     await PlayerChoice.instance.boot();
+    await IntroStore.open();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
           const MethodChannel('lumebox/mediaTracks'),
@@ -75,6 +77,7 @@ void main() {
   });
 
   tearDown(() async {
+    await IntroStore.resetForTesting();
     ReadingLibrary.disposeAll();
     ReadingStore.disposeAll();
     await SectionScope.closeAll();

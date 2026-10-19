@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/subscription_status_icon.dart';
 
 import 'package:flutter/material.dart';
@@ -66,7 +68,10 @@ class ReadingHubPage extends StatelessWidget {
           const SizedBox(width: 2),
           IconButton(
             tooltip: '收藏',
-            icon: const Icon(Icons.bookmark_outline),
+            icon: const LumeIcon(
+              Icons.bookmark_outline,
+              slot: 'reading_hub_page.1',
+            ),
             onPressed:
                 onFavorites ??
                 () => Navigator.push(
@@ -86,7 +91,10 @@ class ReadingHubPage extends StatelessWidget {
           const SizedBox(width: 2),
           IconButton(
             tooltip: '源管理',
-            icon: const Icon(Icons.dns_outlined),
+            icon: const LumeIcon(
+              Icons.dns_outlined,
+              slot: 'reading_hub_page.2',
+            ),
             onPressed: () async {
               await Navigator.push(
                 context,

@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/player/player_factory.dart';
@@ -129,10 +130,16 @@ class _KernelTile extends StatelessWidget {
                 ),
               )
             else if (selected)
-              Icon(Icons.check_circle, size: 20, color: LumeTheme.textPrimary)
+              LumeIcon(
+                Icons.check_circle,
+                slot: 'player_kernel_picker.1',
+                size: 20,
+                color: LumeTheme.textPrimary,
+              )
             else if (available)
-              Icon(
+              LumeIcon(
                 Icons.radio_button_unchecked,
+                slot: 'player_kernel_picker.2',
                 size: 20,
                 color: LumeTheme.muted,
               ),

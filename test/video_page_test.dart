@@ -1,3 +1,4 @@
+import 'package:lume_box/core/intro/intro_store.dart';
 import 'package:lume_box/features/video/player_settings_sheet.dart';
 
 import 'dart:async';
@@ -46,9 +47,11 @@ void main() {
         );
     // 库必须在真实时钟里先打开：testWidgets 的 fake-async 里等不到真实异步。
     await ReadingLibrary.open(Section.video);
+    await IntroStore.open();
   });
 
   tearDown(() async {
+    await IntroStore.resetForTesting();
     ReadingLibrary.disposeAll();
     ReadingStore.disposeAll();
     await SectionScope.closeAll();

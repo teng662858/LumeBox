@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -146,8 +148,9 @@ class _AppIconGridState extends State<AppIconGrid> {
                               color: Colors.white,
                               shape: BoxShape.circle,
                             ),
-                            child: Icon(
+                            child: LumeIcon(
                               Icons.check_circle_rounded,
+                              slot: 'app_icon_settings_page.1',
                               size: 18,
                               color: LumeTheme.accent,
                             ),

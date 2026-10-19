@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
@@ -166,7 +167,10 @@ class _SourceEditorPageState extends State<SourceEditorPage> {
       actions: <Widget>[
         IconButton(
           tooltip: '复制脚本',
-          icon: const Icon(Icons.copy_all_outlined),
+          icon: const LumeIcon(
+            Icons.copy_all_outlined,
+            slot: 'source_editor_page.1',
+          ),
           onPressed: () => _copyScript(context),
         ),
         TextButton(

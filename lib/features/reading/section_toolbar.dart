@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 
 import 'dart:async';
@@ -15,6 +17,7 @@ import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import 'source_bar.dart';
+import 'browse_layout_button.dart';
 
 /// 排序方式（三个板块共用一套）。默认「默认」= 图源给的顺序，不改动。
 ///
@@ -463,20 +466,7 @@ class SectionToolbar extends StatelessWidget {
         // 悬浮顶栏也要有（真机反馈「每个版块的显示模式找不到了」）：早先这里跟着
         // `!floating` 一起藏了，而探索页现在正是悬浮顶栏——于是三个板块的布局入口
         // 全都没了，用户只能一直用默认那一档。源下拉框是 Expanded，会自动让位。
-        _ToolbarAction(
-          floating: floating,
-          icon: switch (layoutMode) {
-            BrowseLayoutMode.list => Icons.view_list_outlined,
-            BrowseLayoutMode.list2 => Icons.view_column_outlined,
-            BrowseLayoutMode.grid2 => Icons.grid_view_outlined,
-            BrowseLayoutMode.grid3 => Icons.apps_outlined,
-            BrowseLayoutMode.grid4 => Icons.grid_on_outlined,
-            BrowseLayoutMode.grid5 => Icons.density_small_outlined,
-          },
-          tooltip: '布局',
-          highlighted: layoutMode != BrowseLayoutMode.grid3,
-          onTap: () => _pickLayout(context),
-        ),
+        BrowseLayoutButton(mode: layoutMode, onChanged: onLayoutChanged),
         // 4) 搜索
         DrawerSearchAnchor(
           child: _ToolbarAction(
@@ -512,28 +502,6 @@ class SectionToolbar extends StatelessWidget {
     );
     if (picked != null) onSortChanged(picked);
   }
-
-  Future<void> _pickLayout(BuildContext context) async {
-    final picked = await showLumeBottomSheet<BrowseLayoutMode>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _ToolbarSheet<BrowseLayoutMode>(
-        title: '布局',
-        current: layoutMode,
-        // 手机上四列 / 五列字全断行（用户口径：直接删掉这两个入口）。
-        options: const <BrowseLayoutMode>[
-          BrowseLayoutMode.list,
-          BrowseLayoutMode.list2,
-          BrowseLayoutMode.grid2,
-          BrowseLayoutMode.grid3,
-        ],
-        labelOf: (value) => value.label,
-        // 副标题说清这一档长什么样（旧版探索页的读法，保持一致）。
-        detailOf: (value) => value.hint,
-      ),
-    );
-    if (picked != null) onLayoutChanged(picked);
-  }
 }
 
 /// 工具栏上的圆角小按钮。
@@ -556,8 +524,10 @@ class _ToolbarAction extends StatelessWidget {
       child: SizedBox(
         width: 42,
         height: 42,
-        child: Icon(
+        child: LumeIcon(
           icon,
+          slot: 'section_toolbar.1',
+          variant: true,
           size: 20,
           color: highlighted ? LumeTheme.accent : LumeTheme.textSecondary,
         ),
@@ -650,10 +620,12 @@ class _ToolbarSheet<T> extends StatelessWidget {
                           for (final option in options)
                             ListTile(
                               dense: true,
-                              leading: Icon(
+                              leading: LumeIcon(
                                 option == current
                                     ? Icons.check_circle
                                     : Icons.circle_outlined,
+                                slot: 'section_toolbar.2',
+                                variant: true,
                                 size: 20,
                                 color: option == current
                                     ? LumeTheme.accent
@@ -816,10 +788,12 @@ class _SearchModeSheetState extends State<_SearchModeSheet> {
                             ListTile(
                               dense: true,
                               selected: mode == _picked,
-                              leading: Icon(
+                              leading: LumeIcon(
                                 mode == _picked
                                     ? Icons.check_circle
                                     : Icons.circle_outlined,
+                                slot: 'section_toolbar.3',
+                                variant: true,
                                 size: 20,
                                 color: mode == _picked
                                     ? LumeTheme.accent

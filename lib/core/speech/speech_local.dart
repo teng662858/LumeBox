@@ -12,20 +12,33 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 class SpeechLocalModel extends ChangeNotifier {
+  SpeechLocalModel({Future<XFile?> Function()? pickArchive})
+    : _pickArchive = pickArchive ?? _selectArchive;
+
+  final Future<XFile?> Function() _pickArchive;
+  static Future<XFile?> _selectArchive() =>
+      openFile(acceptedTypeGroups: const [archiveType]);
   static final instance = SpeechLocalModel();
   static const assets = 'assets/speech/vits_aishell3';
   bool ready = false, preparing = false;
   String? error;
   Directory? directory;
+  Future<bool>? _checking;
   Future<Map<String, dynamic>> get _manifest async =>
       jsonDecode(await rootBundle.loadString('$assets/manifest.json'))
           as Map<String, dynamic>;
-  Future<bool> check() async {
+  Future<bool> check() {
+    if (preparing) return Future.value(ready);
+    return _checking ??= _check().whenComplete(() => _checking = null);
+  }
+
+  Future<bool> _check() async {
     final support = await getApplicationSupportDirectory();
     directory = Directory('${support.path}/speech/vits_aishell3');
     final manifest = await _manifest;
     final path = directory!.path;
-    ready = await Isolate.run(() => _valid(path, manifest));
+    final valid = await Isolate.run(() => _valid(path, manifest));
+    if (!preparing) ready = valid;
     notifyListeners();
     return ready;
   }
@@ -46,30 +59,62 @@ class SpeechLocalModel extends ChangeNotifier {
     return true;
   }
 
-  Future<void> prepare({XFile? archiveFile}) async {
-    if (preparing) return;
-    final picked =
-        archiveFile ??
-        await openFile(
-          acceptedTypeGroups: const [
-            XTypeGroup(label: 'VITS 音色包', extensions: ['bz2']),
-          ],
-        );
-    if (picked == null) return;
+  static const archiveType = XTypeGroup(
+    label: '离线音色包',
+    extensions: ['bz2'],
+    mimeTypes: ['application/x-bzip2'],
+    // iOS ignores extensions and requires UTIs. File providers can classify a
+    // tar.bz2 as generic data; the archive hash still enforces the exact pack.
+    uniformTypeIdentifiers: ['public.data'],
+  );
+
+  Future<bool> prepare({XFile? archiveFile, bool fromFile = false}) async {
+    if (preparing) return false;
     preparing = true;
-    ready = false;
     error = null;
     notifyListeners();
     Directory? staging;
+    var choosingFile = fromFile && archiveFile == null;
     try {
+      final picked = archiveFile ?? (fromFile ? await _pickArchive() : null);
+      choosingFile = false;
+      if (fromFile && picked == null) return false;
       final support = await getApplicationSupportDirectory();
       directory = Directory('${support.path}/speech/vits_aishell3');
       final parent = Directory('${support.path}/speech');
       await parent.create(recursive: true);
       staging = await parent.createTemp('prepare-');
       final archive = File('${staging.path}/pack.tar.bz2');
-      await picked.saveTo(archive.path);
       final manifest = await _manifest;
+      if (picked != null) {
+        await picked.saveTo(archive.path);
+      } else {
+        // The shipped pack is split into bounded assets. Assemble it on demand
+        // rather than opening a file picker or downloading it again.
+        final sink = archive.openWrite();
+        try {
+          for (final part in manifest['parts'] as List) {
+            final ByteData bytes;
+            try {
+              bytes = await rootBundle.load('$assets/${part['name']}');
+            } catch (_) {
+              throw const FormatException('内置音色资源缺失，请选择从文件安装');
+            }
+            if (bytes.lengthInBytes != part['bytes']) {
+              throw const FormatException('内置音色资源不完整，请选择从文件安装');
+            }
+            sink.add(
+              bytes.buffer.asUint8List(
+                bytes.offsetInBytes,
+                bytes.lengthInBytes,
+              ),
+            );
+            await sink.flush();
+          }
+        } finally {
+          await sink.close();
+        }
+      }
       final path = staging.path;
       await Isolate.run(() async {
         if ((await sha256.bind(File('$path/pack.tar.bz2').openRead()).first)
@@ -118,8 +163,14 @@ class SpeechLocalModel extends ChangeNotifier {
       if (await directory!.exists()) await directory!.delete(recursive: true);
       await Directory('${staging.path}/model').rename(directory!.path);
       ready = true;
-    } catch (_) {
-      error = '模型安装失败，请确认选择官方完整 tar.bz2 包并检查剩余空间';
+      return true;
+    } catch (failure) {
+      error = choosingFile
+          ? '无法打开文件选择器，请重试或启用内置音色包'
+          : failure is FormatException
+          ? '${failure.message}；请重试或选择官方完整音色包'
+          : '音色包安装失败，请检查剩余空间后重试';
+      return false;
     } finally {
       if (staging != null && await staging.exists()) {
         await staging.delete(recursive: true);

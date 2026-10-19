@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/session/section.dart';
@@ -199,7 +200,7 @@ class _ComicRepoPageState extends State<ComicRepoPage> {
           : FloatingActionButton(
               tooltip: '添加仓库',
               onPressed: _add,
-              child: const Icon(Icons.add),
+              child: const LumeIcon(Icons.add, slot: 'comic_repo_page.1'),
             ),
       child: _buildBody(repos),
     );
@@ -320,12 +321,20 @@ class _RepoTile extends StatelessWidget {
             children: <Widget>[
               IconButton(
                 tooltip: '刷新',
-                icon: const Icon(Icons.refresh, size: 20),
+                icon: const LumeIcon(
+                  Icons.refresh,
+                  slot: 'comic_repo_page.2',
+                  size: 20,
+                ),
                 onPressed: onRefresh,
               ),
               IconButton(
                 tooltip: '删除',
-                icon: const Icon(Icons.delete_outline, size: 20),
+                icon: const LumeIcon(
+                  Icons.delete_outline,
+                  slot: 'comic_repo_page.3',
+                  size: 20,
+                ),
                 onPressed: onDelete,
               ),
             ],

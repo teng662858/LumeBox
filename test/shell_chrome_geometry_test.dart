@@ -483,7 +483,7 @@ void main() {
     final gesture = await tester.startGesture(before.center);
     // 先推一帧让按压 Ticker 启动，再推进到按满。
     await tester.pump();
-    // 按压进度由当前动效时长推导（默认 250ms → 500ms 到顶）。
+    // 按压反馈快于松手回弹；两者都从当前动效时长推导。
     await tester.pump(const Duration(milliseconds: 700));
     final pressed = tester.getRect(pillFinder);
     expect(
@@ -491,6 +491,10 @@ void main() {
       greaterThan(before.width + 1),
       reason: '按到底后水滴边缘应按当前宽度比例膨胀',
     );
+    final capsule = tester.getRect(dockCapsule());
+    expect(pressed.top, lessThan(capsule.top), reason: '水滴必须能鼓出长胶囊上沿');
+    expect(pressed.bottom, greaterThan(capsule.bottom), reason: '下沿也不能被胶囊裁平');
+    expect(capsule.width, greaterThan(width - 48), reason: '长胶囊随按压轻微伸展');
 
     await gesture.up();
     await tester.pumpAndSettle();
@@ -499,6 +503,8 @@ void main() {
       closeTo(before.width, .5),
       reason: '松手后水球应弹回基准宽度',
     );
+    expect(tester.getRect(pillFinder).height, closeTo(before.height, .1));
+    expect(tester.getRect(dockCapsule()).width, closeTo(width - 48, .1));
   });
 
   testWidgets('按压清晰度基于当前磨砂强度动态降低，松手回到设置值', (tester) async {
@@ -524,7 +530,18 @@ void main() {
       );
     }
 
+    double capsuleSigma() {
+      final text = tester
+          .widget<BackdropFilter>(find.byKey(ShellDockBar.capsuleFilterKey))
+          .filter
+          .toString();
+      return double.parse(
+        RegExp(r'ImageFilter\.blur\(([0-9.]+)').firstMatch(text)!.group(1)!,
+      );
+    }
+
     expect(sigma(), closeTo(3, .01), reason: '静止时读取当前磨砂强度 3');
+    expect(capsuleSigma(), closeTo(3, .01));
 
     final gesture = await tester.startGesture(tester.getCenter(pillFinder));
     await tester.pump();
@@ -534,10 +551,12 @@ void main() {
       closeTo(3 * .34, .05),
       reason: '按到底后在当前 blur=3 的基础上动态降低（约 1.02）',
     );
+    expect(capsuleSigma(), lessThan(2), reason: '底层胶囊也要减弱模糊，不能只改叠在上面的水滴');
 
     await gesture.up();
     await tester.pumpAndSettle();
     expect(sigma(), closeTo(3, .05), reason: '松手后弹回当前设置值 3');
+    expect(capsuleSigma(), closeTo(3, .05));
   });
 
   testWidgets('慢速拖拽：按离落点的距离拉伸，而不是只看速度', (tester) async {
@@ -722,7 +741,7 @@ void main() {
       find
           .descendant(
             of: find.byKey(AppShell.dockKey),
-            matching: find.byType(Icon),
+            matching: find.byWidgetPredicate((w) => w is Icon),
           )
           .first,
     );

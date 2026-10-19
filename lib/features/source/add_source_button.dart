@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/net/source_subscription.dart';
@@ -53,7 +54,7 @@ class AddSourceButton extends StatelessWidget {
     if (!target.runtimeAvailable) return const SizedBox.shrink();
     return IconButton(
       tooltip: '添加源',
-      icon: const Icon(Icons.add),
+      icon: const LumeIcon(Icons.add, slot: 'add_source_button.1'),
       onPressed: () => _open(context, target),
     );
   }

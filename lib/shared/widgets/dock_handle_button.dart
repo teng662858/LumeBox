@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -42,13 +44,30 @@ class DockHandleButton extends StatelessWidget {
           : Colors.white.withValues(alpha: .82),
     );
     final content = switch (style) {
-      DockHandleStyle.arrow => Icon(
+      DockHandleStyle.arrow => LumeIcon(
         Icons.chevron_right_rounded,
+        slot: 'dock_handle_button.1',
         size: size * .58,
         color: LumeTheme.onAccent,
       ),
-      DockHandleStyle.grid => _DotGrid(color: accent),
-      DockHandleStyle.lines => _RoundedLines(color: accent),
+      DockHandleStyle.grid => LumeIcon(
+        Icons.grid_view,
+        slot: 'dock.handle.grid',
+        label: '收起后的导航把手 · 网格',
+        group: '底部导航',
+        color: accent,
+        size: size * .58,
+        fallback: _DotGrid(color: accent),
+      ),
+      DockHandleStyle.lines => LumeIcon(
+        Icons.menu,
+        slot: 'dock.handle.lines',
+        label: '收起后的导航把手 · 横线',
+        group: '底部导航',
+        color: accent,
+        size: size * .58,
+        fallback: _RoundedLines(color: accent),
+      ),
     };
     final fill = switch (style) {
       DockHandleStyle.arrow => BoxDecoration(

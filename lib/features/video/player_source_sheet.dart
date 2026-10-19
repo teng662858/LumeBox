@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -89,7 +90,10 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
               return TextButton.icon(
                 onPressed: () =>
                     setState(() => _episodes = widget.loadEpisodes!()),
-                icon: const Icon(Icons.refresh),
+                icon: const LumeIcon(
+                  Icons.refresh,
+                  slot: 'player_source_sheet.1',
+                ),
                 label: const Text('剧集加载失败，点击重试'),
               );
             }
@@ -188,7 +192,10 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
                         ),
                         IconButton(
                           tooltip: '关闭',
-                          icon: const Icon(Icons.close),
+                          icon: const LumeIcon(
+                            Icons.close,
+                            slot: 'player_source_sheet.2',
+                          ),
                           onPressed: () => Navigator.of(context).pop(),
                         ),
                       ],
@@ -205,7 +212,10 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
                           child: IconButton(
                             tooltip: '复制地址',
                             iconSize: 22,
-                            icon: const Icon(Icons.copy_outlined),
+                            icon: const LumeIcon(
+                              Icons.copy_outlined,
+                              slot: 'player_source_sheet.3',
+                            ),
                             onPressed: address.isEmpty ? null : _copy,
                           ),
                         ),
@@ -223,10 +233,12 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
                                   ListTile(
                                     dense: true,
                                     contentPadding: EdgeInsets.zero,
-                                    leading: Icon(
+                                    leading: LumeIcon(
                                       i == widget.currentIndex
                                           ? Icons.check_circle
                                           : Icons.circle_outlined,
+                                      slot: 'player_source_sheet.4',
+                                      variant: true,
                                       size: 20,
                                       color: i == widget.currentIndex
                                           ? LumeTheme.accent

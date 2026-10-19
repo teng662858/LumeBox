@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -195,7 +197,10 @@ class _IntroSettingsPageState extends State<IntroSettingsPage> {
             actions: [
               IconButton(
                 tooltip: '使用说明',
-                icon: const Icon(Icons.help_outline),
+                icon: const LumeIcon(
+                  Icons.help_outline,
+                  slot: 'intro_settings_page.1',
+                ),
                 onPressed: () => Navigator.push<void>(
                   context,
                   MaterialPageRoute(
@@ -235,7 +240,10 @@ class _IntroSettingsPageState extends State<IntroSettingsPage> {
                 itemBuilder: (context, i) => ListTile(
                   key: ValueKey(order[i]),
                   title: Text('${i + 1}. ${order[i].label}'),
-                  trailing: const Icon(Icons.drag_handle),
+                  trailing: const LumeIcon(
+                    Icons.drag_handle,
+                    slot: 'intro_settings_page.2',
+                  ),
                 ),
               ),
               for (final group in <String, List<String>>{
@@ -261,8 +269,8 @@ class _IntroSettingsPageState extends State<IntroSettingsPage> {
               ],
               toggle(
                 'reuseManualSeason',
-                '同季复用手动标记',
-                subtitle: '只复用总时长相差不超过 2 秒的版本；每集可单独覆盖',
+                '同剧记忆：记一次，后续各集沿用',
+                subtitle: '无需作品 ID。片头记结束点，片尾按剩余时长适配后续集；可重新记忆或清除。',
               ),
               toggle('skiprecap', '允许跳过前情回顾'),
               toggle('skippreview', '允许跳过下集预告'),
@@ -276,7 +284,10 @@ class _IntroSettingsPageState extends State<IntroSettingsPage> {
                 title: Text(_installing ? '正在准备模型…' : '准备／恢复内置模型'),
                 trailing: _installing
                     ? const CircularProgressIndicator()
-                    : const Icon(Icons.download),
+                    : const LumeIcon(
+                        Icons.download,
+                        slot: 'intro_settings_page.3',
+                      ),
                 onTap: _installing ? null : _models,
               ),
               ListTile(
@@ -341,7 +352,10 @@ class _IntroSettingsPageState extends State<IntroSettingsPage> {
               toggle('logs', '记录来源、结果与置信度', value: options.logs),
               ListTile(
                 title: const Text('查看识别日志'),
-                trailing: const Icon(Icons.chevron_right),
+                trailing: const LumeIcon(
+                  Icons.chevron_right,
+                  slot: 'intro_settings_page.4',
+                ),
                 onTap: () => Navigator.push<void>(
                   context,
                   MaterialPageRoute(builder: (_) => IntroLogPage(store: store)),

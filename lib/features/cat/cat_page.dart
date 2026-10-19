@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/column_list.dart';
 import '../../shared/widgets/cat_site_tile.dart';
 import '../../shared/widgets/drawer_geometry.dart';
@@ -17,6 +19,7 @@ import '../../core/search/search_settings.dart';
 import '../reading/collection_panel.dart';
 import '../../core/source/source_preferences.dart';
 import '../source/source_preferences_page.dart';
+import '../source/video_source_scope.dart';
 import '../../shared/widgets/missing_cover.dart';
 import '../../core/source/home_browse_mode.dart';
 
@@ -32,7 +35,9 @@ import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/theme/floating_modules.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/source_switch_button.dart';
 import '../reading/poster_card.dart';
+import '../reading/browse_layout_button.dart';
 import '../reading/section_image.dart';
 import '../reading/browse_choice_access.dart';
 import '../comic/comic_detail_page.dart';
@@ -44,7 +49,8 @@ import 'cat_web_page.dart';
 import 'cat_preloader.dart';
 
 class CatPage extends StatefulWidget {
-  const CatPage({super.key});
+  const CatPage({super.key, this.requestedSite});
+  final CatSite? requestedSite;
   @override
   State<CatPage> createState() => _CatPageState();
 }
@@ -78,6 +84,17 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
 
   void changed() {
     if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(CatPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final site = widget.requestedSite;
+    if (site != null &&
+        site.id != oldWidget.requestedSite?.id &&
+        library != null) {
+      unawaited(selectSite(site));
+    }
   }
 
   @override
@@ -115,7 +132,12 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
             automaticUpscale(bytes, UpscaleSurface.cover),
       );
       await service.checkUpdates();
-      await restoreSite();
+      final requested = widget.requestedSite;
+      if (requested == null) {
+        await restoreSite();
+      } else {
+        await selectSite(requested);
+      }
     } catch (failure) {
       if (mounted) {
         setState(() {
@@ -432,6 +454,11 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
   }
 
   Future<void> sitePicker() async {
+    final videoScope = VideoSourceScope.maybeOf(context);
+    if (videoScope != null) {
+      await videoScope.openPicker(context);
+      return;
+    }
     await ReadingLibrary.open(Section.cat);
     if (!mounted) return;
     String pickerQuery = '';
@@ -501,7 +528,10 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                         onChanged: (value) =>
                             pickerSetState(() => pickerQuery = value),
                         decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search),
+                          prefixIcon: LumeIcon(
+                            Icons.search,
+                            slot: 'cat_page.1',
+                          ),
                           hintText: '搜索站点或订阅',
                         ),
                       ),
@@ -540,7 +570,10 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                           style: Theme.of(context).textTheme.headlineSmall,
                         ),
                         subtitle: const Text('加载或刷新包内站点'),
-                        trailing: const Icon(Icons.refresh),
+                        trailing: const LumeIcon(
+                          Icons.refresh,
+                          slot: 'cat_page.2',
+                        ),
                         onTap: () => Navigator.pop(context, record),
                       ),
                       CatGroupedSourceList(
@@ -586,7 +619,7 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                       ),
                     ],
                     ListTile(
-                      leading: const Icon(Icons.add),
+                      leading: const LumeIcon(Icons.add, slot: 'cat_page.3'),
                       title: const Text('猫源配置中心'),
                       onTap: () => Navigator.pop(context, 'subscriptions'),
                     ),
@@ -893,7 +926,10 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                               subtitle: Text('${entries.length} 条 · 最近在前'),
                               trailing: IconButton(
                                 tooltip: '关闭',
-                                icon: const Icon(Icons.close),
+                                icon: const LumeIcon(
+                                  Icons.close,
+                                  slot: 'cat_page.4',
+                                ),
                                 onPressed: () => Navigator.pop(context),
                               ),
                             ),
@@ -903,8 +939,9 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                                 if (favorites)
                                   IconButton(
                                     tooltip: '管理收藏夹',
-                                    icon: const Icon(
+                                    icon: const LumeIcon(
                                       Icons.create_new_folder_outlined,
+                                      slot: 'cat_page.5',
                                     ),
                                     onPressed: () async {
                                       await showFavoriteFolderManager(
@@ -941,8 +978,9 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                                                   ) ==
                                                   'true',
                                             ),
-                                            child: const Icon(
+                                            child: const LumeIcon(
                                               Icons.notifications_outlined,
+                                              slot: 'cat_page.6',
                                             ),
                                           ),
                                     onPressed: checking
@@ -951,19 +989,24 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                                   ),
                                 IconButton(
                                   tooltip: '搜索记录',
-                                  icon: const Icon(Icons.search),
+                                  icon: const LumeIcon(
+                                    Icons.search,
+                                    slot: 'cat_page.7',
+                                  ),
                                   onPressed: () =>
                                       update(() => showSearch = !showSearch),
                                 ),
                                 if (!favorites) ...[
                                   IconButton(
                                     tooltip: '历史记录锁',
-                                    icon: Icon(
+                                    icon: LumeIcon(
                                       (lib.setting(HistoryPrivacy.lockKey) ??
                                                   '')
                                               .isEmpty
                                           ? Icons.lock_open
                                           : Icons.lock,
+                                      slot: 'cat_page.8',
+                                      variant: true,
                                     ),
                                     onPressed: () async {
                                       await HistoryPrivacy.toggleLock(
@@ -978,11 +1021,13 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                                     isSelected:
                                         lib.setting('history.incognito') ==
                                         'true',
-                                    icon: const Icon(
+                                    icon: const LumeIcon(
                                       Icons.visibility_off_outlined,
+                                      slot: 'cat_page.9',
                                     ),
-                                    selectedIcon: const Icon(
+                                    selectedIcon: const LumeIcon(
                                       Icons.visibility_off,
+                                      slot: 'cat_page.10',
                                     ),
                                     onPressed: () {
                                       lib.setSetting(
@@ -1191,8 +1236,8 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
 
   Widget header() => GlassPanel(
     module: FloatingModule.home,
-    radius: 28,
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    radius: HomePanelLayout.radius,
+    padding: HomePanelLayout.padding,
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1218,21 +1263,32 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         InkWell(
-                          onTap: service.busy ? null : sitePicker,
+                          onTap: VideoSourceScope.maybeOf(context) != null
+                              ? null
+                              : service.busy
+                              ? null
+                              : sitePicker,
                           borderRadius: BorderRadius.circular(12),
-                          child: const Padding(
+                          child: Padding(
                             padding: EdgeInsets.symmetric(vertical: 6),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  '猫源',
+                                  VideoSourceScope.maybeOf(context) != null
+                                      ? '视频'
+                                      : '猫源',
                                   style: TextStyle(
                                     fontSize: LumeTypography.sectionTitleSize,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                Icon(Icons.expand_more, size: 16),
+                                if (VideoSourceScope.maybeOf(context) == null)
+                                  const LumeIcon(
+                                    Icons.expand_more,
+                                    slot: 'cat_page.11',
+                                    size: 16,
+                                  ),
                               ],
                             ),
                           ),
@@ -1245,19 +1301,22 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                 IconButton(
                   tooltip: '历史',
                   onPressed: () => collection(false),
-                  icon: const Icon(Icons.history),
+                  icon: const LumeIcon(Icons.history, slot: 'cat_page.12'),
                 ),
                 const SizedBox(width: 2),
                 IconButton(
                   tooltip: '收藏',
                   onPressed: () => collection(true),
-                  icon: const Icon(Icons.bookmark_outline),
+                  icon: const LumeIcon(
+                    Icons.bookmark_outline,
+                    slot: 'cat_page.13',
+                  ),
                 ),
                 const SizedBox(width: 2),
                 IconButton(
                   tooltip: '源管理',
                   onPressed: sitePicker,
-                  icon: const Icon(Icons.dns_outlined),
+                  icon: const LumeIcon(Icons.dns_outlined, slot: 'cat_page.14'),
                 ),
                 const SizedBox(width: 2),
                 Tooltip(
@@ -1274,64 +1333,30 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
         Row(
           children: [
             Expanded(
-              child: TextButton(
-                onPressed: service.busy ? null : sitePicker,
-                child: Tooltip(
-                  message: '切换站点（记住上次选择）',
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          source?.name ??
-                              (service.needsSiteSelection
-                                  ? '选择站点'
-                                  : CatPreloader.selectedSite(service)?.name ??
-                                        '选择站点'),
-                          textAlign: TextAlign.left,
-                          style: TextStyle(
-                            fontSize: LumeTypography.titleSize,
-                            fontWeight: FontWeight.w600,
-                            color: LumeTheme.textPrimary,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const Icon(Icons.expand_more),
-                    ],
-                  ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
+                child: SourceSwitchButton(
+                  key: const ValueKey('open-cat-source-picker'),
+                  onPressed: service.busy ? null : sitePicker,
+                  iconSlot: 'cat_page.15',
+                  name:
+                      source?.name ??
+                      (service.needsSiteSelection
+                          ? '选择站点'
+                          : CatPreloader.selectedSite(service)?.name ?? '选择站点'),
                 ),
               ),
             ),
-            PopupMenuButton<BrowseLayoutMode>(
-              tooltip: '布局',
-              icon: Icon(
-                _layout == BrowseLayoutMode.list2
-                    ? Icons.view_column_outlined
-                    : Icons.grid_view_outlined,
-              ),
-              onSelected: (mode) => unawaited(
+            BrowseLayoutButton(
+              mode: _layout,
+              onChanged: (mode) => unawaited(
                 BrowseLayoutSettings.instance.setMode(Section.cat, mode),
               ),
-              itemBuilder: (_) => [
-                // 四列 / 五列在手机上放不下（用户口径：删掉）。
-                for (final mode in const <BrowseLayoutMode>[
-                  BrowseLayoutMode.list,
-                  BrowseLayoutMode.list2,
-                  BrowseLayoutMode.grid2,
-                  BrowseLayoutMode.grid3,
-                ])
-                  CheckedPopupMenuItem(
-                    value: mode,
-                    checked: mode == _layout,
-                    child: Text(mode.label),
-                  ),
-              ],
             ),
             IconButton(
               tooltip: '搜索',
               onPressed: source == null ? null : search,
-              icon: const Icon(Icons.search),
+              icon: const LumeIcon(Icons.search, slot: 'cat_page.17'),
             ),
           ],
         ),
@@ -1409,14 +1434,15 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
   Widget browseItem(BuildContext context, int index) {
     final item = items[index];
     if (_layout == BrowseLayoutMode.list || _layout == BrowseLayoutMode.list2) {
-      final single = _layout == BrowseLayoutMode.list;
-      return CompactSourceItemTile(
-        uniformList: true,
-        columns: single ? 1 : 2,
-        coverWidth: single ? 80 : 60,
-        coverHeight: single ? 100 : 80,
-        flat: single,
-        showMenu: single,
+      return TwoColumnSourceItemTile(
+        item: item,
+        pipeline: pipeline,
+        onTap: () => openItem(item),
+      );
+    }
+    if (_layout == BrowseLayoutMode.grid3) {
+      return PosterTile(
+        compactGrid: true,
         item: item,
         pipeline: pipeline,
         onTap: () => openItem(item),
@@ -1471,10 +1497,10 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
           slivers: [
             SliverPadding(
               padding: EdgeInsets.fromLTRB(
-                16,
+                HomePanelLayout.sidePadding,
                 trimmedTopInset(MediaQuery.paddingOf(context).top),
-                16,
-                12,
+                HomePanelLayout.sidePadding,
+                HomePanelLayout.contentGap,
               ),
               sliver: SliverToBoxAdapter(child: header()),
             ),
@@ -1539,7 +1565,11 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: EdgeInsets.symmetric(
+                  horizontal: _layout == BrowseLayoutMode.grid3
+                      ? ThreeColumnPosterLayout.sidePadding
+                      : TwoColumnSourceLayout.sidePadding,
+                ),
                 sliver: _layout == BrowseLayoutMode.list
                     ? SliverList.separated(
                         itemCount: items.length,
@@ -1550,27 +1580,38 @@ class _CatPageState extends State<CatPage> with WidgetsBindingObserver {
                           color: Color(0xFFE5E5EA),
                         ),
                       )
-                    : SliverGrid(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: _layout.columns,
-                          childAspectRatio: _layout.tileAspectRatio,
-                          mainAxisExtent: _layout == BrowseLayoutMode.list2
-                              ? 96 *
-                                    (MediaQuery.textScalerOf(context)
-                                                .scale(14) /
-                                            14)
-                                        .clamp(1.0, 3.0)
-                              : null,
-                          crossAxisSpacing: _layout == BrowseLayoutMode.list2
-                              ? 10
-                              : 12,
-                          mainAxisSpacing: _layout == BrowseLayoutMode.list2
-                              ? 10
-                              : 12,
-                        ),
-                        delegate: SliverChildBuilderDelegate(
-                          browseItem,
-                          childCount: items.length,
+                    : SliverLayoutBuilder(
+                        builder: (context, constraints) => SliverGrid(
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: _layout.columns,
+                                childAspectRatio: _layout.tileAspectRatio,
+                                mainAxisExtent:
+                                    _layout == BrowseLayoutMode.list2
+                                    ? TwoColumnSourceLayout.itemExtent(
+                                        context,
+                                        (constraints.crossAxisExtent -
+                                                TwoColumnSourceLayout.spacing) /
+                                            2,
+                                      )
+                                    : null,
+                                crossAxisSpacing:
+                                    _layout == BrowseLayoutMode.grid3
+                                    ? ThreeColumnPosterLayout.spacing
+                                    : _layout == BrowseLayoutMode.list2
+                                    ? TwoColumnSourceLayout.spacing
+                                    : 12,
+                                mainAxisSpacing:
+                                    _layout == BrowseLayoutMode.grid3
+                                    ? ThreeColumnPosterLayout.rowSpacing
+                                    : _layout == BrowseLayoutMode.list2
+                                    ? TwoColumnSourceLayout.rowSpacing
+                                    : 12,
+                              ),
+                          delegate: SliverChildBuilderDelegate(
+                            browseItem,
+                            childCount: items.length,
+                          ),
                         ),
                       ),
               ),

@@ -1,8 +1,8 @@
 enum SpeechMode {
-  system('系统自带 TTS'),
-  local('本地离线 VITS · sherpa-onnx'),
-  cloud('在线云端 TTS · 简易（正则）'),
-  cloudAi('在线云端 TTS · AI 增强');
+  system('系统朗读'),
+  local('本地离线朗读'),
+  cloud('在线朗读 · 标准'),
+  cloudAi('在线朗读 · 智能');
 
   const SpeechMode(this.label);
   final String label;

@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:lume_box/core/theme/lume_typography.dart';
 import 'package:flutter/material.dart';
 
@@ -125,7 +126,11 @@ class _AppPrivacyGuardState extends State<AppPrivacyGuard>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.lock_outline, size: 48),
+                      const LumeIcon(
+                        Icons.lock_outline,
+                        slot: 'app_privacy_guard.1',
+                        size: 48,
+                      ),
                       const SizedBox(height: 20),
                       const Text(
                         'LumeBox 已锁定',

@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../core/media/media_library.dart';
 
 import 'dart:async';
@@ -254,7 +256,11 @@ class _SourceHomeViewState extends State<SourceHomeView> {
                     // 与列表页同一个出口（用户口径 2.1）：内置网页视图过校验后自动重拉。
                     OutlinedButton.icon(
                       onPressed: _openWebViewForWaf,
-                      icon: const Icon(Icons.public, size: 18),
+                      icon: const LumeIcon(
+                        Icons.public,
+                        slot: 'source_home_view.1',
+                        size: 18,
+                      ),
                       label: const Text('网页视图'),
                     ),
                   ],
@@ -302,7 +308,11 @@ class _SourceHomeViewState extends State<SourceHomeView> {
               const SizedBox(height: 12),
               FilledButton.tonalIcon(
                 onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.grid_view_outlined, size: 18),
+                icon: const LumeIcon(
+                  Icons.grid_view_outlined,
+                  slot: 'source_home_view.2',
+                  size: 18,
+                ),
                 label: const Text('去分类浏览'),
               ),
             ],
@@ -378,41 +388,54 @@ class _SourceHomeViewState extends State<SourceHomeView> {
         },
       );
     }
-    return GridView.builder(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(
-        16,
-        widget.topInset,
-        16,
-        16 + widget.bottomInset,
+    final compactGrid = mode == BrowseLayoutMode.grid3;
+    final sidePadding = compactGrid
+        ? ThreeColumnPosterLayout.sidePadding
+        : TwoColumnSourceLayout.sidePadding;
+    final spacing = compactGrid
+        ? ThreeColumnPosterLayout.spacing
+        : TwoColumnSourceLayout.spacing;
+    return LayoutBuilder(
+      builder: (context, constraints) => GridView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          sidePadding,
+          widget.topInset,
+          sidePadding,
+          16 + widget.bottomInset,
+        ),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: mode.columns,
+          mainAxisSpacing: compactGrid
+              ? ThreeColumnPosterLayout.rowSpacing
+              : TwoColumnSourceLayout.rowSpacing,
+          crossAxisSpacing: spacing,
+          // 双列行高同时适配实际列宽和系统字号。
+          mainAxisExtent: mode == BrowseLayoutMode.list2
+              ? TwoColumnSourceLayout.itemExtent(
+                  context,
+                  TwoColumnSourceLayout.cellWidth(constraints.maxWidth),
+                )
+              : null,
+          // mainAxisExtent 非空时这个值会被忽略，给它默认 1 即可。
+          childAspectRatio: mode == BrowseLayoutMode.list2
+              ? 1
+              : mode.tileAspectRatio,
+        ),
+        itemCount: items.length,
+        itemBuilder: (context, index) => mode == BrowseLayoutMode.list2
+            ? TwoColumnSourceItemTile(
+                item: items[index],
+                pipeline: widget.pipeline,
+                onTap: () => widget.onOpenItem(items[index]),
+              )
+            : _HomeCard(
+                compactGrid: compactGrid,
+                item: items[index],
+                pipeline: widget.pipeline,
+                onTap: () => widget.onOpenItem(items[index]),
+              ),
       ),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: mode.columns,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        // 双列列表是紧凑横向卡片：80 高封面 + 上下 8，别再留 1.35 比例的大白块。
-        mainAxisExtent: mode == BrowseLayoutMode.list2 ? 96 : null,
-        // mainAxisExtent 非空时这个值会被忽略，给它默认 1 即可。
-        childAspectRatio: mode == BrowseLayoutMode.list2
-            ? 1
-            : mode.tileAspectRatio,
-      ),
-      itemCount: items.length,
-      itemBuilder: (context, index) => mode == BrowseLayoutMode.list2
-          ? CompactSourceItemTile(
-              item: items[index],
-              pipeline: widget.pipeline,
-              onTap: () => widget.onOpenItem(items[index]),
-              columns: 2,
-              coverWidth: 60,
-              coverHeight: 80,
-              showMenu: false,
-            )
-          : _HomeCard(
-              item: items[index],
-              pipeline: widget.pipeline,
-              onTap: () => widget.onOpenItem(items[index]),
-            ),
     );
   }
 }
@@ -423,11 +446,13 @@ class _HomeCard extends StatelessWidget {
     required this.item,
     required this.pipeline,
     required this.onTap,
+    this.compactGrid = false,
   });
 
   final SourceItem item;
   final SectionImagePipeline? pipeline;
   final VoidCallback onTap;
+  final bool compactGrid;
 
   /// 封面解码宽度：与探索页网格同一档（`CoverThumb(width: 300)`）。
   ///
@@ -439,25 +464,35 @@ class _HomeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = BrowseLayoutSettings.instance.gridTitleStyle;
+    final singleLine = compactGrid && style == GridTitleStyle.below;
+    final titleSize = singleLine
+        ? ThreeColumnPosterLayout.titleSize
+        : LumeTypography.bodySize;
     return PosterCard(
       onTap: onTap,
       footnoteBelow: style == GridTitleStyle.below,
+      footnoteGap: singleLine ? ThreeColumnPosterLayout.titleGap : 6,
+      footnotePadding: singleLine
+          ? const EdgeInsets.symmetric(horizontal: 2)
+          : const EdgeInsets.fromLTRB(2, 0, 2, 2),
       // 与探索页同一套标题呈现（遮罩内置白字 / 外置独立黑字）。
       footnote: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           SizedBox(
-            height: LumeTypography.bodySize * 1.25 * 2,
+            height: singleLine
+                ? MediaQuery.textScalerOf(context).scale(titleSize) * 1.25
+                : LumeTypography.bodySize * 1.25 * 2,
             child: Align(
               alignment: Alignment.topLeft,
               child: Text(
                 item.title,
-                maxLines: 2,
+                maxLines: singleLine ? 1 : 2,
                 overflow: TextOverflow.ellipsis,
                 style: style == GridTitleStyle.below
                     ? TextStyle(
-                        fontSize: LumeTypography.bodySize,
+                        fontSize: titleSize,
                         height: 1.25,
                         fontWeight: FontWeight.w600,
                         color: LumeTheme.textPrimary,
@@ -596,11 +631,11 @@ class _SourceHomeMorePageState extends State<SourceHomeMorePage> {
         },
         child: GridView.builder(
           padding: GlassScaffold.barInset(context)
-              .add(const EdgeInsets.fromLTRB(16, 8, 16, 16)),
+              .add(const EdgeInsets.fromLTRB(10, 8, 10, 16)),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
+            mainAxisSpacing: ThreeColumnPosterLayout.rowSpacing,
+            crossAxisSpacing: ThreeColumnPosterLayout.spacing,
             childAspectRatio: 0.62,
           ),
           itemCount: _items.length + (_hasMore || _error != null ? 1 : 0),
@@ -624,6 +659,7 @@ class _SourceHomeMorePageState extends State<SourceHomeMorePage> {
             }
             final item = _items[index];
             return _HomeCard(
+              compactGrid: true,
               item: item,
               pipeline: widget.pipeline,
               onTap: () => widget.onOpenItem(item),

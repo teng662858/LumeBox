@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../video/player_settings_host.dart';
 import 'playback_settings_group.dart';
 
@@ -659,7 +661,13 @@ class _Group extends StatelessWidget {
             tilePadding: const EdgeInsets.fromLTRB(16, 4, 12, 4),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             // 统一线条风格的灰色小图标，不要彩色大图标抢内容。
-            leading: Icon(icon, size: 20, color: LumeTheme.textSecondary),
+            leading: LumeIcon(
+              icon,
+              slot: 'module_settings_pages.1',
+              variant: true,
+              size: 20,
+              color: LumeTheme.textSecondary,
+            ),
             title: Text(
               title,
               style: TextStyle(

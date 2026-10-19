@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/column_list.dart';
 import '../../shared/widgets/drawer_geometry.dart';
 import 'favorite_folder_dialogs.dart';
@@ -246,7 +248,10 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
                       subtitle: Text('${items.length} 条 · 最近在前'),
                       trailing: IconButton(
                         tooltip: '关闭',
-                        icon: const Icon(Icons.close),
+                        icon: const LumeIcon(
+                          Icons.close,
+                          slot: 'history_sheet.1',
+                        ),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ),
@@ -256,7 +261,10 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
                         if (favorites) ...[
                           IconButton(
                             tooltip: '管理收藏夹',
-                            icon: const Icon(Icons.create_new_folder_outlined),
+                            icon: const LumeIcon(
+                              Icons.create_new_folder_outlined,
+                              slot: 'history_sheet.2',
+                            ),
                             onPressed: manageFolders,
                           ),
                           IconButton(
@@ -277,8 +285,9 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
                                           ) ==
                                           'true',
                                     ),
-                                    child: const Icon(
+                                    child: const LumeIcon(
                                       Icons.notifications_outlined,
+                                      slot: 'history_sheet.3',
                                     ),
                                   ),
                             onPressed: checkingUpdates ? null : checkUpdates,
@@ -286,19 +295,24 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
                         ],
                         IconButton(
                           tooltip: '搜索记录',
-                          icon: const Icon(Icons.search),
+                          icon: const LumeIcon(
+                            Icons.search,
+                            slot: 'history_sheet.4',
+                          ),
                           onPressed: () =>
                               setState(() => showSearch = !showSearch),
                         ),
                         if (!favorites) ...[
                           IconButton(
                             tooltip: '历史记录锁',
-                            icon: Icon(
+                            icon: LumeIcon(
                               (widget.library.setting(HistoryPrivacy.lockKey) ??
                                           '')
                                       .isEmpty
                                   ? Icons.lock_open
                                   : Icons.lock,
+                              slot: 'history_sheet.5',
+                              variant: true,
                             ),
                             onPressed: () async {
                               await HistoryPrivacy.toggleLock(
@@ -313,8 +327,14 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
                             isSelected:
                                 widget.library.setting('history.incognito') ==
                                 'true',
-                            icon: const Icon(Icons.visibility_off_outlined),
-                            selectedIcon: const Icon(Icons.visibility_off),
+                            icon: const LumeIcon(
+                              Icons.visibility_off_outlined,
+                              slot: 'history_sheet.6',
+                            ),
+                            selectedIcon: const LumeIcon(
+                              Icons.visibility_off,
+                              slot: 'history_sheet.7',
+                            ),
                             onPressed: () {
                               widget.library.setSetting(
                                 'history.incognito',
@@ -534,7 +554,11 @@ class HistoryEntryTile extends StatelessWidget {
                         if (updated)
                           const Padding(
                             padding: EdgeInsets.only(right: 4),
-                            child: Icon(Icons.fiber_new, size: 16),
+                            child: LumeIcon(
+                              Icons.fiber_new,
+                              slot: 'history_sheet.8',
+                              size: 16,
+                            ),
                           ),
                         Expanded(
                           child: Text(
@@ -613,8 +637,9 @@ class HistoryEntryTile extends StatelessWidget {
                     tooltip: '更多',
                     padding: EdgeInsets.zero,
                     iconSize: 18,
-                    icon: Icon(
+                    icon: LumeIcon(
                       Icons.more_vert,
+                      slot: 'history_sheet.9',
                       size: 18,
                       color: LumeTheme.muted,
                     ),

@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -618,7 +620,10 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
                 children: <Widget>[
                   IconButton(
                     tooltip: '关闭',
-                    icon: const Icon(Icons.close),
+                    icon: const LumeIcon(
+                      Icons.close,
+                      slot: 'waf_webview_page.1',
+                    ),
                     onPressed: _collecting ? null : _closeAndCollect,
                   ),
                   Expanded(
@@ -655,7 +660,10 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
                   ),
                   IconButton(
                     tooltip: '刷新',
-                    icon: const Icon(Icons.refresh),
+                    icon: const LumeIcon(
+                      Icons.refresh,
+                      slot: 'waf_webview_page.2',
+                    ),
                     onPressed: () => controller?.reload(),
                   ),
                 ],
@@ -719,7 +727,11 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const Icon(Icons.cloud_off_outlined, size: 34),
+              const LumeIcon(
+                Icons.cloud_off_outlined,
+                slot: 'waf_webview_page.3',
+                size: 34,
+              ),
               const SizedBox(height: 10),
               const Text(
                 '这个地址没打开',
@@ -744,7 +756,11 @@ class _WafWebViewPageState extends State<WafWebViewPage> {
                   setState(() => _loadError = null);
                   unawaited(controller.reload());
                 },
-                icon: const Icon(Icons.refresh, size: 18),
+                icon: const LumeIcon(
+                  Icons.refresh,
+                  slot: 'waf_webview_page.4',
+                  size: 18,
+                ),
                 label: const Text('重试'),
               ),
             ],

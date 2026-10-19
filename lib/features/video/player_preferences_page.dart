@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -662,8 +664,9 @@ class PlayerButtonLayoutPage extends StatelessWidget {
                     final id = group.value[index];
                     final tile = ListTile(
                       title: Text(PlayerButtonLayout.labels[id]!),
-                      leading: Icon(
+                      leading: LumeIcon(
                         CupertinoIcons.circle_grid_3x3,
+                        slot: 'player_preferences_page.1',
                         color: Theme.of(context).colorScheme.primary,
                       ),
                       trailing: Row(
@@ -688,8 +691,9 @@ class PlayerButtonLayoutPage extends StatelessWidget {
                             index: index,
                             child: const Padding(
                               padding: EdgeInsets.all(12),
-                              child: Icon(
+                              child: LumeIcon(
                                 CupertinoIcons.line_horizontal_3,
+                                slot: 'player_preferences_page.2',
                                 color: Colors.grey,
                               ),
                             ),
@@ -826,7 +830,13 @@ class _SettingRow extends StatelessWidget {
       height: 34,
       alignment: Alignment.center,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: Icon(icon, color: Colors.white, size: 20),
+      child: LumeIcon(
+        icon,
+        slot: 'player_preferences_page.3',
+        variant: true,
+        color: Colors.white,
+        size: 20,
+      ),
     ),
     title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
     subtitle: subtitle == null
@@ -864,8 +874,9 @@ class _SettingRow extends StatelessWidget {
               if (onTap != null)
                 const Padding(
                   padding: EdgeInsets.only(left: 5),
-                  child: Icon(
+                  child: LumeIcon(
                     CupertinoIcons.chevron_right,
+                    slot: 'player_preferences_page.4',
                     size: 15,
                     color: Colors.grey,
                   ),
@@ -915,8 +926,9 @@ Future<void> _modal(BuildContext context, String title, Widget child) =>
                         IconButton(
                           tooltip: '关闭',
                           onPressed: () => Navigator.pop(context),
-                          icon: const Icon(
+                          icon: const LumeIcon(
                             CupertinoIcons.xmark_circle_fill,
+                            slot: 'player_preferences_page.5',
                             color: Colors.grey,
                           ),
                         ),
@@ -948,8 +960,9 @@ Future<void> _options(
         ListTile(
           title: Text(entry.value),
           trailing: entry.key == selected
-              ? Icon(
+              ? LumeIcon(
                   CupertinoIcons.check_mark,
+                  slot: 'player_preferences_page.6',
                   color: Theme.of(context).colorScheme.primary,
                 )
               : null,

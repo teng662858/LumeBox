@@ -208,15 +208,23 @@ class _ReaderMenuLayerState extends State<_ReaderMenuLayer> {
             padding: const EdgeInsets.fromLTRB(20, 12, 10, 12),
             child: Row(
               children: [
-                Icon(switch (widget.route) {
-                  'flags' => Icons.flag_outlined,
-                  'bookmarks' => Icons.bookmark_border,
-                  'voices' => Icons.record_voice_over_outlined,
-                  'translation' => Icons.translate,
-                  'reading' => Icons.vertical_align_bottom,
-                  'zones' => Icons.touch_app_outlined,
-                  _ => Icons.tune,
-                }, size: 23),
+                LumeIcon(
+                  switch (widget.route) {
+                    'flags' => Icons.flag_outlined,
+                    'bookmarks' => Icons.bookmark_border,
+                    'voices' => Icons.record_voice_over_outlined,
+                    'translation' => Icons.translate,
+                    'reading' => Icons.vertical_align_bottom,
+                    'zones' => Icons.touch_app_outlined,
+                    _ => Icons.tune,
+                  },
+                  slot: 'comic_reader_menu.1',
+                  variant: true,
+                  size: 23,
+                  fallback: widget.route == 'reading'
+                      ? const ComicReaderVerticalFlowGlyph()
+                      : null,
+                ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
@@ -237,7 +245,11 @@ class _ReaderMenuLayerState extends State<_ReaderMenuLayer> {
                 IconButton(
                   tooltip: widget.isRoot ? '关闭' : '返回',
                   onPressed: widget.back,
-                  icon: const Icon(Icons.expand_more, size: 21),
+                  icon: const LumeIcon(
+                    Icons.expand_more,
+                    slot: 'comic_reader_menu.2',
+                    size: 21,
+                  ),
                 ),
               ],
             ),

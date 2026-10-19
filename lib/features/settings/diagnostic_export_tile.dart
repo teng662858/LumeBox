@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 
 import 'dart:io';
@@ -31,12 +33,18 @@ class _DiagnosticExportTileState extends State<DiagnosticExportTile> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.ios_share),
+                leading: const LumeIcon(
+                  Icons.ios_share,
+                  slot: 'diagnostic_export_tile.1',
+                ),
                 title: const Text('发送 / 分享诊断包'),
                 onTap: () => Navigator.pop(context, 'share'),
               ),
               ListTile(
-                leading: const Icon(Icons.save_alt),
+                leading: const LumeIcon(
+                  Icons.save_alt,
+                  slot: 'diagnostic_export_tile.2',
+                ),
                 title: const Text('保存到本地文件'),
                 onTap: () => Navigator.pop(context, 'export'),
               ),
@@ -102,7 +110,12 @@ class _DiagnosticExportTileState extends State<DiagnosticExportTile> {
             height: 20,
             child: CircularProgressIndicator(strokeWidth: 2),
           )
-        : Icon(Icons.file_upload_outlined, size: 20, color: LumeTheme.muted),
+        : LumeIcon(
+            Icons.file_upload_outlined,
+            slot: 'diagnostic_export_tile.3',
+            size: 20,
+            color: LumeTheme.muted,
+          ),
     onTap: busy ? null : export,
   );
 }

@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/lume_theme.dart';
@@ -85,7 +86,14 @@ class SettingsEntryCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: <Widget>[
-            Icon(icon, size: 22, color: iconColor ?? LumeTheme.textSecondary),
+            LumeIcon(
+              icon,
+              slot: 'settings.entry.$title',
+              label: title,
+              group: '设置',
+              size: 22,
+              color: iconColor ?? LumeTheme.textSecondary,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -131,7 +139,12 @@ class SettingsEntryCard extends StatelessWidget {
                 ),
               if (showChevron) ...<Widget>[
                 const SizedBox(width: 4),
-                Icon(Icons.chevron_right, size: 20, color: LumeTheme.muted),
+                LumeIcon(
+                  Icons.chevron_right,
+                  slot: 'settings_ui.2',
+                  size: 20,
+                  color: LumeTheme.muted,
+                ),
               ],
             ],
           ],

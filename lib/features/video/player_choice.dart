@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -157,10 +159,12 @@ class _PlayerChoiceSettingsPageState extends State<PlayerChoiceSettingsPage> {
                           ? '沿用当前布局与全部原有设置'
                           : '按参考视频与截图制作；设置、布局和内核偏好独立',
                     ),
-                    trailing: Icon(
+                    trailing: LumeIcon(
                       selected == choice
                           ? Icons.radio_button_checked
                           : Icons.radio_button_off,
+                      slot: 'player_choice.1',
+                      variant: true,
                     ),
                     onTap: () async {
                       try {
@@ -177,7 +181,10 @@ class _PlayerChoiceSettingsPageState extends State<PlayerChoiceSettingsPage> {
                 ),
               const SizedBox(height: 18),
               ListTile(
-                leading: const Icon(Icons.settings),
+                leading: const LumeIcon(
+                  Icons.settings,
+                  slot: 'player_choice.2',
+                ),
                 title: const Text('现有播放器设置'),
                 onTap: () => Navigator.push(
                   context,
@@ -185,7 +192,10 @@ class _PlayerChoiceSettingsPageState extends State<PlayerChoiceSettingsPage> {
                 ),
               ),
               ListTile(
-                leading: const Icon(Icons.auto_awesome),
+                leading: const LumeIcon(
+                  Icons.auto_awesome,
+                  slot: 'player_choice.3',
+                ),
                 title: const Text('参考播放器设置'),
                 onTap: () => Navigator.push(
                   context,

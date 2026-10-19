@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -186,7 +188,10 @@ class _DanmakuSourcesPageState extends State<DanmakuSourcesPage> {
                       ),
                       IconButton(
                         onPressed: () => Navigator.pop(context),
-                        icon: const Icon(CupertinoIcons.xmark_circle_fill),
+                        icon: const LumeIcon(
+                          CupertinoIcons.xmark_circle_fill,
+                          slot: 'danmaku_sources_page.1',
+                        ),
                       ),
                     ],
                   ),
@@ -316,7 +321,10 @@ class _DanmakuSourcesPageState extends State<DanmakuSourcesPage> {
         IconButton(
           tooltip: '添加弹幕源',
           onPressed: _chooseType,
-          icon: const Icon(CupertinoIcons.add),
+          icon: const LumeIcon(
+            CupertinoIcons.add,
+            slot: 'danmaku_sources_page.2',
+          ),
         ),
       ],
     ),
@@ -331,8 +339,9 @@ class _DanmakuSourcesPageState extends State<DanmakuSourcesPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
+                  const LumeIcon(
                     CupertinoIcons.chat_bubble_text,
+                    slot: 'danmaku_sources_page.3',
                     size: 46,
                     color: Colors.grey,
                   ),
@@ -366,10 +375,12 @@ class _DanmakuSourcesPageState extends State<DanmakuSourcesPage> {
                     ),
                     leading: IconButton(
                       tooltip: '设为当前弹幕源',
-                      icon: Icon(
+                      icon: LumeIcon(
                         _active == source['id']
                             ? CupertinoIcons.check_mark_circled_solid
                             : CupertinoIcons.circle,
+                        slot: 'danmaku_sources_page.4',
+                        variant: true,
                       ),
                       onPressed: () async {
                         final old = _active;
@@ -384,7 +395,10 @@ class _DanmakuSourcesPageState extends State<DanmakuSourcesPage> {
                     onTap: () => _edit(existing: source),
                     trailing: IconButton(
                       tooltip: '删除弹幕源',
-                      icon: const Icon(CupertinoIcons.trash),
+                      icon: const LumeIcon(
+                        CupertinoIcons.trash,
+                        slot: 'danmaku_sources_page.5',
+                      ),
                       onPressed: () async {
                         final old = List<Map<String, String>>.of(_sources);
                         final oldActive = _active;

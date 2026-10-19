@@ -23,6 +23,8 @@ class IntroController extends ChangeNotifier {
   int secondsLeft = 0;
   String status = '等待媒体';
   bool scanning = false, _disposed = false, _foreground = true;
+  bool _canSkip = true;
+  bool _queriesReady = true, _lightQueried = false;
   bool _heavy = false, _completedHeavy = false, _seekPending = false;
   int _generation = 0;
   IntroCancellation? _token;
@@ -32,24 +34,55 @@ class IntroController extends ChangeNotifier {
   PlayerSnapshot _snapshot = const PlayerSnapshot();
   final Set<String> _dismissed = {};
   Future<void> Function(Duration)? seek;
-  void bind(IntroRequest next, Future<void> Function(Duration) onSeek) {
+  void bind(
+    IntroRequest next,
+    Future<void> Function(Duration) onSeek, {
+    bool deferQueries = false,
+  }) {
     cancel();
     request = next;
     seek = onSeek;
     _dismissed.clear();
     prompt = null;
     _completedHeavy = false;
-    segments = [];
-    unawaited(_run(false));
+    _queriesReady = !deferQueries;
+    _lightQueried = false;
+    segments = store.value.active
+        ? store.seriesMemory(next.episode, next.durationMs)
+        : [];
+    if (segments.isEmpty &&
+        store.value.active &&
+        store.value.enabled('manual')) {
+      segments = store.manual(next.episode, next.durationMs);
+    }
+    if (segments.isNotEmpty) {
+      store.record(
+        RecognitionRecord(
+          next.episode.key,
+          RecognitionStage.manual,
+          'series-memory-hit',
+          0,
+          segments,
+        ),
+      );
+      status = '已沿用此剧跳过记忆，无需作品 ID';
+      _notify();
+      return;
+    }
+    if (_queriesReady) unawaited(_run(false));
   }
 
   void _settingsChanged() {
     final current = request;
     if (current == null) return;
     cancel();
-    segments = [];
-    _completedHeavy = false;
-    if (store.value.active) unawaited(_run(false));
+    segments = store.value.active
+        ? store.seriesMemory(current.episode, current.durationMs)
+        : [];
+    _completedHeavy = segments.isNotEmpty;
+    if (store.value.active && segments.isEmpty && _queriesReady) {
+      unawaited(_run(false));
+    }
     _notify();
   }
 
@@ -63,6 +96,7 @@ class IntroController extends ChangeNotifier {
       backend: _backend(),
     );
     scanning = true;
+    if (!heavy) _lightQueried = true;
     _heavy = heavy;
     _notify();
     try {
@@ -70,6 +104,7 @@ class IntroController extends ChangeNotifier {
         current,
         token,
         allowHeavy: heavy,
+        confirmedSegments: segments.isEmpty ? null : segments,
         onStatus: (value) {
           if (generation != _generation || _disposed) return;
           status = value;
@@ -115,9 +150,32 @@ class IntroController extends ChangeNotifier {
     }
   }
 
-  void update(PlayerSnapshot snapshot, {required bool foreground}) {
+  void update(
+    PlayerSnapshot snapshot, {
+    required bool foreground,
+    bool pictureInPicture = false,
+  }) {
     _snapshot = snapshot;
     _foreground = foreground;
+    // A background PiP session still plays and can seek. Only heavy scanning
+    // requires the foreground; layout, control lock and orientation do not.
+    _canSkip = foreground || pictureInPicture;
+    if (!_queriesReady &&
+        snapshot.playing &&
+        !snapshot.buffering &&
+        snapshot.error == null &&
+        snapshot.position > Duration.zero) {
+      _queriesReady = true;
+    }
+    if (_queriesReady &&
+        !_lightQueried &&
+        request != null &&
+        foreground &&
+        segments.isEmpty &&
+        !scanning &&
+        store.value.active) {
+      unawaited(_run(false));
+    }
     if (_disposed) return;
     if ((!foreground || (snapshot.playing && store.value.idleOnly)) &&
         scanning &&
@@ -130,6 +188,7 @@ class IntroController extends ChangeNotifier {
         (!snapshot.playing || !store.value.idleOnly) &&
         !snapshot.buffering &&
         !scanning &&
+        _queriesReady &&
         !_completedHeavy &&
         !(_idleRetry?.isActive ?? false) &&
         store.value.active) {
@@ -140,7 +199,7 @@ class IntroController extends ChangeNotifier {
         (position < prompt!.startMs || position >= prompt!.endMs)) {
       _clearPrompt();
     }
-    if (!foreground ||
+    if (!_canSkip ||
         !snapshot.playing ||
         snapshot.buffering ||
         snapshot.error != null ||
@@ -165,14 +224,14 @@ class IntroController extends ChangeNotifier {
     _notify();
     if (!store.value.autoSkip) return;
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!_foreground ||
+      if (!_canSkip ||
           !_snapshot.playing ||
           _snapshot.buffering ||
           _snapshot.error != null) {
         return;
       }
       if (--secondsLeft <= 0) {
-        unawaited(skipNow());
+        unawaited(skipNow(remember: false));
       } else {
         _notify();
       }
@@ -200,8 +259,10 @@ class IntroController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> skipNow() async {
+  Future<void> skipNow({bool remember = true}) async {
     final candidate = prompt;
+    final current = request;
+    final performSeek = seek;
     if (_seekPending || candidate == null || seek == null) return;
     final position = _snapshot.position.inMilliseconds;
     if (position < candidate.startMs ||
@@ -216,9 +277,13 @@ class IntroController extends ChangeNotifier {
     _clearPrompt();
     _notify();
     try {
-      await seek!(Duration(milliseconds: candidate.endMs));
-      final current = request;
-      if (current != null) {
+      await performSeek!(Duration(milliseconds: candidate.endMs));
+      if (!_disposed && identical(request, current) && current != null) {
+        if (remember) {
+          store.rememberSeries(current.episode, current.durationMs, [
+            candidate,
+          ]);
+        }
         store.record(
           RecognitionRecord(
             current.episode.key,
@@ -237,9 +302,34 @@ class IntroController extends ChangeNotifier {
     }
   }
 
+  Future<void> skipSegment(SkipSegment segment) async {
+    prompt = segment;
+    await skipNow();
+  }
+
+  /// Refresh after either player records a quick point. Do not immediately
+  /// skip the segment the user is currently marking.
+  void refreshSeriesMemory({SegmentKind? justMarked}) {
+    final current = request;
+    if (current == null || _disposed) return;
+    cancel();
+    segments = store.value.active
+        ? store.seriesMemory(current.episode, current.durationMs)
+        : [];
+    if (justMarked != null) {
+      _dismissed.addAll(
+        segments.where((s) => s.kind == justMarked).map((s) => s.id),
+      );
+    }
+    _completedHeavy = segments.isNotEmpty;
+    status = segments.isEmpty ? '已清除同剧跳过记忆' : '已记住此剧，后续各集自动沿用';
+    _notify();
+  }
+
   void saveManual(List<SkipSegment> marks) {
     final current = request;
     if (current == null) throw StateError('No media');
+    if (marks.isEmpty) store.clearSeriesMemory(current.episode);
     store.saveSegments(
       current.episode,
       current.durationMs,
@@ -247,7 +337,7 @@ class IntroController extends ChangeNotifier {
       manual: true,
     );
     cancel();
-    segments = marks;
+    segments = store.value.active && store.value.enabled('manual') ? marks : [];
     _completedHeavy = false;
     _clearPrompt();
     // Marking at the current location must not unexpectedly seek immediately.
@@ -257,6 +347,7 @@ class IntroController extends ChangeNotifier {
   }
 
   void retryIdle() {
+    _queriesReady = true;
     _completedHeavy = false;
     if (!_snapshot.playing && _foreground) unawaited(_run(true));
   }

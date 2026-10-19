@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -58,10 +59,11 @@ class _CatWebPageState extends State<CatWebPage> {
     )
     ..loadRequest(widget.url);
   @override
-  Widget build(BuildContext context) => GlassScaffold(effectModule: GlassModule.cat,
+  Widget build(BuildContext context) => GlassScaffold(
+    effectModule: GlassModule.cat,
     title: '网盘登录与配置',
     leading: IconButton(
-      icon: const Icon(Icons.arrow_back),
+      icon: const LumeIcon(Icons.arrow_back, slot: 'cat_web_page.1'),
       onPressed: () async {
         if (await controller.canGoBack()) {
           await controller.goBack();
@@ -73,7 +75,7 @@ class _CatWebPageState extends State<CatWebPage> {
     actions: [
       IconButton(
         tooltip: '刷新',
-        icon: const Icon(Icons.refresh),
+        icon: const LumeIcon(Icons.refresh, slot: 'cat_web_page.2'),
         onPressed: () => controller.reload(),
       ),
       TextButton(

@@ -100,11 +100,22 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     await tester.pumpAndSettle();
+    final layoutIcon = tester.widget<Icon>(
+      find
+          .descendant(
+            of: find.byTooltip('布局'),
+            matching: find.byWidgetPredicate((widget) => widget is Icon),
+          )
+          .first,
+    );
+    expect(layoutIcon.icon, Icons.apps_outlined);
+    expect(layoutIcon.size, 20);
     await tester.tap(find.byTooltip('布局'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.widgetWithText(CheckedPopupMenuItem<BrowseLayoutMode>, '双列列表'),
-    );
+    expect(find.text('单列列表'), findsNothing);
+    expect(find.text('双列网格'), findsNothing);
+    expect(find.text('三列网格'), findsOneWidget);
+    await tester.tap(find.text('双列列表'));
     await tester.pumpAndSettle();
     expect(
       BrowseLayoutSettings.instance.modeFor(Section.cat),

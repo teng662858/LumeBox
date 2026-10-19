@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:lume_box/core/theme/lume_typography.dart';
 
 import 'dart:convert';
@@ -398,7 +399,10 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
                 'photo': '美图 / 照片 · 2 倍',
               }, (v) => settings.imageStyle = v),
               ListTile(
-                leading: const Icon(Icons.auto_awesome),
+                leading: const LumeIcon(
+                  Icons.auto_awesome,
+                  slot: 'comic_image_tools_page.1',
+                ),
                 title: const Text('选择本地图片进行 AI 超分'),
                 subtitle: const Text('支持漫画与美图；仅本机处理，可对比原图'),
                 onTap: () async {
@@ -478,7 +482,10 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
               if (busy) const Center(child: CircularProgressIndicator()),
               FilledButton.icon(
                 onPressed: busy ? null : installBundled,
-                icon: const Icon(Icons.download_done),
+                icon: const LumeIcon(
+                  Icons.download_done,
+                  slot: 'comic_image_tools_page.2',
+                ),
                 label: const Text('安装内置模型（8 个）'),
               ),
               const SettingsFooterNote(
@@ -487,13 +494,19 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
               ),
               OutlinedButton.icon(
                 onPressed: busy ? null : () => manage('prepareModel'),
-                icon: const Icon(Icons.play_circle_outline),
+                icon: const LumeIcon(
+                  Icons.play_circle_outline,
+                  slot: 'comic_image_tools_page.3',
+                ),
                 label: const Text('加载当前已安装模型'),
               ),
               TextButton.icon(
                 key: const Key('import-super-resolution-model'),
                 onPressed: busy ? null : importModel,
-                icon: const Icon(Icons.file_open_outlined),
+                icon: const LumeIcon(
+                  Icons.file_open_outlined,
+                  slot: 'comic_image_tools_page.4',
+                ),
                 label: const Text('从本地安装超分模型'),
               ),
               TextButton(
@@ -764,7 +777,11 @@ class _ImageToolsState extends State<ComicImageToolsPage> {
               onPressed: (colorized != null || enhanced != null) && !busy
                   ? exportResult
                   : null,
-              icon: const Icon(Icons.ios_share, size: 18),
+              icon: const LumeIcon(
+                Icons.ios_share,
+                slot: 'comic_image_tools_page.5',
+                size: 18,
+              ),
               label: const Text('保存 / 分享结果'),
             ),
             if (widget.allowApply)
@@ -772,7 +789,11 @@ class _ImageToolsState extends State<ComicImageToolsPage> {
                 onPressed: (colorized != null || enhanced != null) && !busy
                     ? () => Navigator.of(context).pop(colorized ?? enhanced)
                     : null,
-                icon: const Icon(Icons.check_circle_outline, size: 18),
+                icon: const LumeIcon(
+                  Icons.check_circle_outline,
+                  slot: 'comic_image_tools_page.6',
+                  size: 18,
+                ),
                 label: const Text('应用到当前页'),
               ),
             FilledButton(
@@ -781,7 +802,10 @@ class _ImageToolsState extends State<ComicImageToolsPage> {
             ),
             IconButton(
               tooltip: '图片处理设置',
-              icon: const Icon(Icons.settings_outlined),
+              icon: const LumeIcon(
+                Icons.settings_outlined,
+                slot: 'comic_image_tools_page.7',
+              ),
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute<void>(

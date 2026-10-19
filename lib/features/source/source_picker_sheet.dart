@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/source_category_columns.dart';
 import '../../shared/widgets/drawer_geometry.dart';
 import '../../core/source/source_subscription_sync.dart';
@@ -236,7 +238,12 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                         (SourceQuickAction.update, Icons.refresh, '更新订阅源'),
                       ])
                         ListTile(
-                          leading: Icon(entry.$2, color: LumeTheme.accent),
+                          leading: LumeIcon(
+                            entry.$2,
+                            slot: 'source_picker_sheet.1',
+                            variant: true,
+                            color: LumeTheme.accent,
+                          ),
                           title: Text(entry.$3),
                           enabled:
                               entry.$1 != SourceQuickAction.update ||
@@ -433,8 +440,9 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                             if (prefs.pinned)
                               Padding(
                                 padding: const EdgeInsets.only(left: 4),
-                                child: Icon(
+                                child: LumeIcon(
                                   Icons.push_pin,
+                                  slot: 'source_picker_sheet.2',
                                   size: 11,
                                   color: accent,
                                 ),
@@ -457,7 +465,11 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                     ),
                     padding: EdgeInsets.zero,
                     onPressed: () => action(source),
-                    icon: const Icon(Icons.more_vert, size: 18),
+                    icon: const LumeIcon(
+                      Icons.more_vert,
+                      slot: 'source_picker_sheet.3',
+                      size: 18,
+                    ),
                   ),
                 ],
               ),
@@ -665,17 +677,22 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                             setState(() => query = value.trim().toLowerCase()),
                         decoration: const InputDecoration(
                           hintText: '搜索源',
-                          prefixIcon: Icon(Icons.search),
+                          prefixIcon: LumeIcon(
+                            Icons.search,
+                            slot: 'source_picker_sheet.4',
+                          ),
                         ),
                       ),
                     ),
                     if (widget.section == Section.cat)
                       IconButton(
                         tooltip: columns ? '切换为单列' : '切换为双列',
-                        icon: Icon(
+                        icon: LumeIcon(
                           columns
                               ? Icons.view_agenda_outlined
                               : Icons.view_column_outlined,
+                          slot: 'source_picker_sheet.5',
+                          variant: true,
                         ),
                         onPressed: () async {
                           setState(() => columns = !columns);
@@ -691,7 +708,10 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                     IconButton(
                       tooltip: '关闭',
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
+                      icon: const LumeIcon(
+                        Icons.close,
+                        slot: 'source_picker_sheet.6',
+                      ),
                     ),
                   ],
                 ),

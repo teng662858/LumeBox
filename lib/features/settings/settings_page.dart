@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 import 'diagnostic_export_tile.dart';
 import '../audio_book/audio_book_page.dart';
@@ -11,6 +13,8 @@ import 'search_settings_page.dart';
 import 'content_visibility_page.dart';
 
 import 'dart:async';
+
+import 'icon_library_page.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -100,6 +104,12 @@ class SettingsPage extends StatelessWidget {
             title: 'App 图标',
             subtitle: '更换主屏幕图标（7 种配色）',
             onTap: () => _push(context, const AppIconSettingsPage()),
+          ),
+          SettingsEntryCard(
+            icon: Icons.interests_outlined,
+            title: '应用图标库',
+            subtitle: '逐项换图标 · 长按编辑 · 导入自己的图片和图标包',
+            onTap: () => _push(context, const IconLibraryPage()),
           ),
           const GridTitleStyleRow(),
           SettingsEntryCard(
@@ -343,7 +353,12 @@ class _BuildInfoRowState extends State<_BuildInfoRow> {
       subtitle: _line,
       showChevron: false,
       marginBottom: 0,
-      trailing: Icon(Icons.copy_rounded, size: 18, color: LumeTheme.muted),
+      trailing: LumeIcon(
+        Icons.copy_rounded,
+        slot: 'settings_page.1',
+        size: 18,
+        color: LumeTheme.muted,
+      ),
       // 这一行不需要「进入下一页」：点一下复制版本信息。
       onTap: () async {
         await Clipboard.setData(

@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:lume_box/core/theme/lume_typography.dart';
 import 'package:flutter/material.dart';
 
@@ -131,7 +132,10 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
             builder: (_, count, _) => count == 0
                 ? const SizedBox.shrink()
                 : ListTile(
-                    leading: const Icon(Icons.notifications_active_outlined),
+                    leading: const LumeIcon(
+                      Icons.notifications_active_outlined,
+                      slot: 'source_subscription_page.1',
+                    ),
                     title: Text('订阅源已变动 $count 条'),
                     subtitle: Text(
                       SourceSubscriptionSync.notices(widget.section)
@@ -156,7 +160,10 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
             ),
           FilledButton.icon(
             onPressed: _busy ? null : _sync,
-            icon: const Icon(Icons.system_update_alt),
+            icon: const LumeIcon(
+              Icons.system_update_alt,
+              slot: 'source_subscription_page.2',
+            ),
             label: const Text('一键更新全部订阅'),
           ),
           const Text(
@@ -207,7 +214,10 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
                             ? '已保存 · ${record.enabled ? '自动更新开启' : '自动更新关闭'} · 尚未同步'
                             : '上次同步：${record.checkedAt!.toLocal().toString().split('.').first}',
                       ),
-                      secondary: const Icon(Icons.rss_feed),
+                      secondary: const LumeIcon(
+                        Icons.rss_feed,
+                        slot: 'source_subscription_page.3',
+                      ),
                       value: record.enabled,
                       onChanged: _busy
                           ? null

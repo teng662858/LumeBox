@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/shell/shell_settings.dart';
@@ -176,6 +177,24 @@ class TabBarSettingsPage extends StatelessWidget {
                 appearance: appearance,
                 entries: visibleEntries,
               ),
+              ListTile(
+                key: const ValueKey('dock-liquid-open'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('液态玻璃细调'),
+                subtitle: const Text('水滴、胶囊、清透度、折射与回弹，分别调节'),
+                trailing: const LumeIcon(
+                  Icons.chevron_right,
+                  slot: 'tab_bar_settings_page.1',
+                ),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => _LiquidDockSettingsPage(
+                      controller: _controller,
+                      entries: visibleEntries,
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 14),
               _appearanceSlider(
                 key: const ValueKey('dock-appearance-opacity'),
@@ -339,7 +358,11 @@ class TabBarSettingsPage extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
                   onPressed: _resetAppearance,
-                  icon: const Icon(Icons.restart_alt, size: 18),
+                  icon: const LumeIcon(
+                    Icons.restart_alt,
+                    slot: 'tab_bar_settings_page.2',
+                    size: 18,
+                  ),
                   label: const Text('恢复材质默认'),
                 ),
               ),
@@ -500,7 +523,11 @@ class TabBarSettingsPage extends StatelessWidget {
           const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: () => _controller.restoreDefaults(),
-            icon: const Icon(Icons.restart_alt, size: 18),
+            icon: const LumeIcon(
+              Icons.restart_alt,
+              slot: 'tab_bar_settings_page.3',
+              size: 18,
+            ),
             label: const Text('恢复默认（全部显示）'),
           ),
         ],
@@ -548,8 +575,9 @@ class _TabTile extends StatelessWidget {
                   horizontal: 8,
                   vertical: 12,
                 ),
-                child: Icon(
+                child: LumeIcon(
                   Icons.drag_handle,
+                  slot: 'tab_bar_settings_page.4',
                   size: 20,
                   color: LumeTheme.textHint,
                 ),
@@ -608,7 +636,12 @@ class _SettingsHiddenNotice extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(Icons.info_outline, size: 20, color: LumeTheme.info),
+          LumeIcon(
+            Icons.info_outline,
+            slot: 'tab_bar_settings_page.5',
+            size: 20,
+            color: LumeTheme.info,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -699,8 +732,10 @@ class _HandleStyleOption extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(
+              LumeIcon(
                 selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                slot: 'tab_bar_settings_page.6',
+                variant: true,
                 size: 20,
                 color: selected ? accent : LumeTheme.hairline,
               ),
@@ -718,6 +753,139 @@ class _HandleStyleOption extends StatelessWidget {
 /// 彩色海报墙上：玻璃白度 / 磨砂强度 / 选中胶囊 / 动效时长全部走同一份设置，
 /// 拖动滑块时背后的海报会被真实模糊。预览条本身也可以直接点，切换页签会播放
 /// 与壳层完全相同的滑动动画。
+/// The production dock stays visible while the long list of controls scrolls.
+class _LiquidDockSettingsPage extends StatelessWidget {
+  const _LiquidDockSettingsPage({
+    required this.controller,
+    required this.entries,
+  });
+  final ShellSettingsController controller;
+  final List<ShellDockEntry> entries;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: controller,
+    builder: (context, _) {
+      final appearance = controller.appearance;
+      final liquid = appearance.liquid;
+      Widget slider(DockLiquidParameter p) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text(p.label)),
+                Text(p.display(liquid.value(p))),
+              ],
+            ),
+            Slider(
+              key: ValueKey('dock-liquid-${p.name}'),
+              value: liquid.value(p),
+              min: p.min,
+              max: p.max,
+              divisions: p.milliseconds ? 350 : 100,
+              onChanged: (value) => controller.setAppearance(
+                controller.appearance.copyWith(
+                  liquid: controller.appearance.liquid.withValue(p, value),
+                ),
+                persist: false,
+              ),
+              onChangeEnd: (_) =>
+                  controller.setAppearance(controller.appearance),
+            ),
+            Text(
+              p.description,
+              style: TextStyle(
+                fontSize: LumeTypography.descriptionSize,
+                color: LumeTheme.descriptionColor,
+              ),
+            ),
+          ],
+        ),
+      );
+      return Scaffold(
+        appBar: AppBar(title: const Text('液态玻璃细调')),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _DockAppearancePreview(
+                  appearance: appearance,
+                  entries: entries,
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Text('在上方按住或拖动体验。调节立即生效，并自动保存。'),
+              ),
+              Expanded(
+                child: ListView(
+                  children: [
+                    SwitchListTile.adaptive(
+                      title: const Text('液态动效总开关'),
+                      subtitle: const Text('与上一页的“点击弹跳动效”使用同一个开关'),
+                      value: appearance.animateSelection,
+                      onChanged: (value) => controller.setAppearance(
+                        controller.appearance.copyWith(animateSelection: value),
+                      ),
+                    ),
+                    for (final p in DockLiquidParameter.values.where(
+                      (p) => p.effect == null,
+                    ))
+                      slider(p),
+                    for (final effect in DockLiquidEffect.values) ...[
+                      const Divider(),
+                      SwitchListTile.adaptive(
+                        key: ValueKey('dock-liquid-effect-${effect.name}'),
+                        title: Text(effect.label),
+                        subtitle: Text(effect.description),
+                        value: liquid.enabled(effect),
+                        onChanged: (value) => controller.setAppearance(
+                          controller.appearance.copyWith(
+                            liquid: controller.appearance.liquid.withEnabled(
+                              effect,
+                              value,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (liquid.enabled(effect))
+                        for (final p in DockLiquidParameter.values.where(
+                          (p) => p.effect == effect,
+                        ))
+                          slider(p),
+                    ],
+                    TextButton.icon(
+                      key: const ValueKey('dock-liquid-reset'),
+                      onPressed: () => controller.setAppearance(
+                        controller.appearance.copyWith(
+                          liquid: const DockLiquidSettings(),
+                        ),
+                      ),
+                      icon: const LumeIcon(
+                        Icons.restore,
+                        slot: 'tab_bar_settings_page.7',
+                      ),
+                      label: const Text('恢复液态参数默认值'),
+                    ),
+                    const SettingsFooterNote(
+                      '只恢复本页的液态参数；白度、磨砂、尺寸、动效时长及页签顺序保留。'
+                      '系统开启减少动态效果时，按压和拖动形变自动停止。',
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class _DockAppearancePreview extends StatefulWidget {
   const _DockAppearancePreview({
     required this.appearance,

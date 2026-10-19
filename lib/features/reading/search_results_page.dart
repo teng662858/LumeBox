@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../core/search/search_settings.dart';
 
 import 'dart:async';
@@ -359,7 +361,10 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
               children: <Widget>[
                 IconButton(
                   tooltip: '返回',
-                  icon: const Icon(Icons.arrow_back),
+                  icon: const LumeIcon(
+                    Icons.arrow_back,
+                    slot: 'search_results_page.1',
+                  ),
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),
                 Expanded(
@@ -391,7 +396,11 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                 if (widget.mode == SearchMode.aggregate)
                   TextButton.icon(
                     onPressed: _chooseSources,
-                    icon: const Icon(Icons.checklist, size: 18),
+                    icon: const LumeIcon(
+                      Icons.checklist,
+                      slot: 'search_results_page.2',
+                      size: 18,
+                    ),
                     label: Text(
                       _sourceIds == null ? '搜索站点' : '站点 ${_sourceIds!.length}',
                     ),
@@ -433,37 +442,56 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   /// 布局档：与探索页同一套偏好（用户选过的按板块记住）。
   BrowseLayoutMode get _mode =>
       BrowseLayoutSettings.instance.modeFor(widget.section) ??
-      (widget.section == Section.novel
-          ? BrowseLayoutMode.list
-          : BrowseLayoutMode.grid3);
+      BrowseLayoutMode.grid3;
 
   Widget _buildGrid() {
     final rows = _rows;
-    return NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification.metrics.extentAfter < 600) unawaited(_loadMore());
-        return false;
-      },
-      child: GridView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: _mode.columns,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: _mode.tileAspectRatio,
-        ),
-        itemCount: rows.length,
-        itemBuilder: (context, index) {
-          final row = rows[index];
-          return PosterTile(
-            horizontal: _mode == BrowseLayoutMode.list2,
-            item: row.item,
-            pipeline: widget.pipeline,
-            meta: _metaOf(row.item, row.sourceName),
-            onTap: () => _open(row.item, row.sourceName),
-          );
-        },
-      ),
+    final horizontal = _mode == BrowseLayoutMode.list2;
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+            if (notification.metrics.extentAfter < 600) {
+                unawaited(_loadMore());
+            }
+              return false;
+            },
+            child: GridView.builder(
+              padding: EdgeInsets.fromLTRB(
+                horizontal ? TwoColumnSourceLayout.sidePadding : 16,
+                12,
+                horizontal ? TwoColumnSourceLayout.sidePadding : 16,
+                24,
+              ),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: _mode.columns,
+                mainAxisSpacing: horizontal
+                    ? TwoColumnSourceLayout.rowSpacing
+                    : 12,
+                crossAxisSpacing: horizontal
+                    ? TwoColumnSourceLayout.spacing
+                    : 12,
+                mainAxisExtent: horizontal
+                    ? TwoColumnSourceLayout.itemExtent(
+                        context,
+                        TwoColumnSourceLayout.cellWidth(constraints.maxWidth),
+                      )
+                    : null,
+                childAspectRatio: _mode.tileAspectRatio,
+              ),
+              itemCount: rows.length,
+              itemBuilder: (context, index) {
+                final row = rows[index];
+                return PosterTile(
+                  horizontal: _mode == BrowseLayoutMode.list2,
+                  item: row.item,
+                  pipeline: widget.pipeline,
+                  meta: _metaOf(row.item, row.sourceName),
+                  onTap: () => _open(row.item, row.sourceName),
+                );
+              },
+            ),
+          ),
     );
   }
 
@@ -528,7 +556,11 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right, size: 20),
+                const LumeIcon(
+                  Icons.chevron_right,
+                  slot: 'search_results_page.3',
+                  size: 20,
+                ),
               ],
             ),
           );

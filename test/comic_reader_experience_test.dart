@@ -20,6 +20,7 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/comic/comic_page_filters.dart';
 import 'package:lume_box/features/comic/comic_reader_page.dart';
+import 'package:lume_box/features/comic/comic_reader_glyphs.dart';
 import 'package:lume_box/features/comic/comic_reader_preferences.dart';
 import 'package:lume_box/features/comic/comic_settings.dart';
 
@@ -249,6 +250,8 @@ void main() {
     String title = '山间来信',
     String chapterTitle = '第一章 · 午后的风',
     double textScale = 1,
+    EdgeInsets safeInsets = EdgeInsets.zero,
+    bool runtimeAvailable = true,
     int imageCount = 8,
     List<SourceChapter>? chapterList,
     int initialChapterIndex = 0,
@@ -267,6 +270,8 @@ void main() {
               size: size,
               devicePixelRatio: 1,
               textScaler: TextScaler.linear(textScale),
+              padding: safeInsets,
+              viewPadding: safeInsets,
             ),
             child: child!,
           ),
@@ -295,7 +300,7 @@ void main() {
                   const SourceChapter(id: 'item-1-c2', title: '第二章 · 远方的信'),
                 ],
             initialChapterIndex: initialChapterIndex,
-            runtimeAvailable: true,
+            runtimeAvailable: runtimeAvailable,
             pageBytes: pageLoader ?? (_) async => page,
             imageExporter: exporter,
             imageTools: tools,
@@ -375,6 +380,99 @@ void main() {
       File('${directory.path}/$name.png')
           .writeAsBytesSync(data!.buffer.asUint8List());
       image.dispose();
+    });
+  }
+
+  testWidgets('进入阅读隐藏系统栏，后台恢复重申全屏，退出恢复系统栏', (tester) async {
+    final calls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    await pumpReader(tester);
+    List<Object?> uiModes() => calls
+        .where((call) => call.method == 'SystemChrome.setEnabledSystemUIMode')
+        .map((call) => call.arguments)
+        .toList();
+    expect(uiModes(), ['SystemUiMode.immersiveSticky']);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(uiModes().last, 'SystemUiMode.immersiveSticky');
+    expect(uiModes().length, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(uiModes().last, 'SystemUiMode.edgeToEdge');
+    calls.clear();
+    await pumpReader(tester, runtimeAvailable: false);
+    expect(uiModes(), isEmpty);
+  });
+
+  for (final spec in [
+    (
+      size: const Size(390, 844),
+      safe: const EdgeInsets.only(top: 59, bottom: 34),
+      scale: 1.0,
+    ),
+    (
+      size: const Size(320, 640),
+      safe: const EdgeInsets.only(top: 20),
+      scale: 1.4,
+    ),
+    (
+      size: const Size(844, 390),
+      safe: const EdgeInsets.fromLTRB(59, 0, 59, 21),
+      scale: 1.0,
+    ),
+  ]) {
+    testWidgets('顶部状态区不重复留白且标题收紧 ${spec.size} ${spec.scale}', (tester) async {
+      await pumpReader(
+        tester,
+        size: spec.size,
+        safeInsets: spec.safe,
+        textScale: spec.scale,
+        title: '与乡村表妹间的恋爱喜剧～',
+        chapterTitle: '01卷番外',
+      );
+      final time = tester.getRect(find.byKey(const Key('comic.status.time')));
+      final battery = tester.getRect(
+        find.byKey(const Key('comic.status.battery')),
+      );
+      final controls = tester.getRect(
+        find.byKey(const Key('comic.top.controls')),
+      );
+      final title = tester.getRect(find.byKey(const Key('comic.top.title')));
+      final exit = tester.getRect(find.byTooltip('退出阅读'));
+      final direction = tester.getRect(find.byTooltip('阅读方向'));
+      final more = tester.getRect(find.byTooltip('更多'));
+      final statusHeight = spec.safe.top > 44 ? spec.safe.top : 44.0;
+      expect(time.bottom, lessThanOrEqualTo(statusHeight));
+      expect(battery.bottom, lessThanOrEqualTo(statusHeight));
+      expect(controls.top, statusHeight + 6);
+      expect(title.width, lessThanOrEqualTo(180));
+      expect(title.height, greaterThanOrEqualTo(44));
+      expect(exit.right, lessThan(title.left));
+      expect(title.right, lessThan(direction.left));
+      expect(more.right, lessThanOrEqualTo(spec.size.width - spec.safe.right));
+      expect(find.byType(ComicReaderVerticalFlowGlyph), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await capture(
+        tester,
+        spec.size.width == 390
+            ? 'reader-notched-fixed'
+            : spec.size.width == 320
+            ? 'reader-narrow-fixed'
+            : 'reader-landscape-fixed',
+      );
+      await tester.tap(find.byTooltip('阅读方向'));
+      await settle(tester);
+      expect(activeText('从右到左（日漫）'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   }
 
@@ -919,7 +1017,7 @@ void main() {
           const MethodChannel('lumebox/speech'),
           (call) async => call.method == 'speechVoices'
               ? [
-                  {'id': 'voice-a', 'name': '示例声音', 'language': 'zh-CN'},
+                  {'id': 'voice-a', 'name': 'Tingting', 'language': 'zh-CN'},
                 ]
               : null,
         );
@@ -950,7 +1048,8 @@ void main() {
       closeTo(voiceButton.top - 8, 1),
     );
     await capture(tester, 'speech-voices');
-    await tester.tap(find.text('示例声音 · zh-CN'));
+    expect(find.text('Tingting · zh-CN'), findsNothing);
+    await tester.tap(find.text('婷婷 · 普通话'));
     await settle(tester);
     expect(speech.spoken.last.voice, 'voice-a');
     expect(
@@ -1426,7 +1525,7 @@ void main() {
       expect(panel.left, greaterThanOrEqualTo(0));
       expect(panel.right, lessThanOrEqualTo(size.width));
       await tester.scrollUntilVisible(
-        find.text('设备声音 39 · zh-CN'),
+        find.text('设备声音 39 · 普通话'),
         100,
         scrollable: find.descendant(
           of: find.byKey(const ValueKey('comic.menu.scroll.voices')),
@@ -1438,7 +1537,7 @@ void main() {
         tester,
         size.width > size.height ? 'voices-landscape' : 'voices-small',
       );
-      await tester.tap(find.text('设备声音 39 · zh-CN'));
+      await tester.tap(find.text('设备声音 39 · 普通话'));
       await settle(tester);
       expect(speech.applied.narratorVoice, 'voice-39');
       await tester.pumpWidget(const SizedBox.shrink());

@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 
 import 'package:flutter/material.dart';
@@ -343,7 +345,12 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
         onTap: _switchSource,
         child: Row(
           children: <Widget>[
-            Icon(Icons.source_outlined, size: 18, color: LumeTheme.muted),
+            LumeIcon(
+              Icons.source_outlined,
+              slot: 'source_home_page.1',
+              size: 18,
+              color: LumeTheme.muted,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -360,11 +367,20 @@ class _SourceBrowsePaneState extends State<SourceBrowsePane> {
             if (widget.showSourceActions)
               IconButton(
                 tooltip: '源管理',
-                icon: const Icon(Icons.tune, size: 20),
+                icon: const LumeIcon(
+                  Icons.tune,
+                  slot: 'source_home_page.2',
+                  size: 20,
+                ),
                 onPressed: _manage,
               )
             else
-              Icon(Icons.expand_more, size: 18, color: LumeTheme.muted),
+              LumeIcon(
+                Icons.expand_more,
+                slot: 'source_home_page.3',
+                size: 18,
+                color: LumeTheme.muted,
+              ),
           ],
         ),
       ),
@@ -421,7 +437,11 @@ class _SourceSwitchSheet extends StatelessWidget {
                     ),
                   ),
                   trailing: source.id == currentId
-                      ? Icon(Icons.check, color: LumeTheme.textPrimary)
+                      ? LumeIcon(
+                          Icons.check,
+                          slot: 'source_home_page.4',
+                          color: LumeTheme.textPrimary,
+                        )
                       : null,
                   onTap: () => Navigator.of(context).pop(source.id),
                 ),

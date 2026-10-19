@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:lume_box/core/theme/lume_typography.dart';
 import 'package:flutter/material.dart';
 
@@ -61,7 +62,12 @@ class NovelSpeechPanel extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.record_voice_over_outlined, size: 30, color: secondary),
+            LumeIcon(
+              Icons.record_voice_over_outlined,
+              slot: 'novel_speech_panel.1',
+              size: 30,
+              color: secondary,
+            ),
             const SizedBox(height: 10),
             Text(
               unavailableReason ?? '当前平台不支持语音朗读',
@@ -196,14 +202,23 @@ class NovelSpeechPanel extends StatelessWidget {
       children: <Widget>[
         FilledButton.icon(
           onPressed: onToggle,
-          icon: Icon(icon, size: 20),
+          icon: LumeIcon(
+            icon,
+            slot: 'novel_speech_panel.2',
+            variant: true,
+            size: 20,
+          ),
           label: Text(label),
         ),
         const SizedBox(width: 10),
         if (active || paused)
           OutlinedButton.icon(
             onPressed: onStop,
-            icon: const Icon(Icons.stop_circle_outlined, size: 18),
+            icon: const LumeIcon(
+              Icons.stop_circle_outlined,
+              slot: 'novel_speech_panel.3',
+              size: 18,
+            ),
             label: const Text('停止'),
           ),
         const Spacer(),
@@ -363,10 +378,12 @@ class NovelSpeechIndicator extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Icon(
+                LumeIcon(
                   state == SpeechState.paused
                       ? Icons.pause_circle_outline
                       : Icons.graphic_eq,
+                  slot: 'novel_speech_panel.4',
+                  variant: true,
                   size: 16,
                   color: secondary,
                 ),
@@ -385,7 +402,12 @@ class NovelSpeechIndicator extends StatelessWidget {
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   tooltip: '停止朗读',
-                  icon: Icon(Icons.close, size: 16, color: chromeText),
+                  icon: LumeIcon(
+                    Icons.close,
+                    slot: 'novel_speech_panel.5',
+                    size: 16,
+                    color: chromeText,
+                  ),
                   onPressed: onStop,
                 ),
               ],

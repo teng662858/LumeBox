@@ -1,7 +1,11 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import 'comic_reader_glyphs.dart';
 
 /// Reader-owned status capsules. The existing iOS channel supplies real battery
 /// levels; unsupported devices show an unknown value rather than a fake level.
@@ -131,13 +135,22 @@ class _ComicReaderStatusState extends State<ComicReaderStatus>
                 children: [
                   Text(battery),
                   const SizedBox(width: 4),
-                  Icon(
+                  LumeIcon(
                     _level == null
                         ? Icons.battery_unknown_outlined
                         : _level! <= 20
                         ? Icons.battery_alert_outlined
                         : Icons.battery_full,
-                    size: 17,
+                    slot: 'comic_reader_status.1',
+                    variant: true,
+                    size: 22,
+                    fallback: ComicReaderBatteryGlyph(
+                      key: const Key('comic.status.batteryGlyph'),
+                      level: _level,
+                      color: _level != null && _level! <= 20
+                          ? const Color(0xFFD82D47)
+                          : const Color(0xFF16171B),
+                    ),
                     color: _level != null && _level! <= 20
                         ? const Color(0xFFD82D47)
                         : const Color(0xFF16171B),

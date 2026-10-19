@@ -103,7 +103,8 @@ void main() {
       );
     service.siteColumns = 1;
 
-    await tester.tap(find.byTooltip('源管理'));
+    expect(find.text('切换'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('open-cat-source-picker')));
     await tester.pumpAndSettle();
   }
 

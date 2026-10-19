@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 import '../video/tmdb_artwork.dart';
 import '../../shared/widgets/missing_cover.dart';
@@ -457,7 +459,10 @@ class _CatDetailPageState extends State<CatDetailPage> {
             const SizedBox(width: 12),
             TextButton.icon(
               onPressed: playing ? null : pickEpisode,
-              icon: const Icon(Icons.playlist_play),
+              icon: const LumeIcon(
+                Icons.playlist_play,
+                slot: 'cat_detail_page.1',
+              ),
               label: Text('全部 ${current.length} 集'),
             ),
           ],
@@ -515,8 +520,9 @@ class _CatDetailPageState extends State<CatDetailPage> {
                               radius: BorderRadius.circular(14),
                             ),
                             Center(
-                              child: Icon(
+                              child: LumeIcon(
                                 Icons.play_circle_fill,
+                                slot: 'cat_detail_page.2',
                                 color: Colors.white.withValues(alpha: .9),
                                 size: 32,
                               ),
@@ -683,7 +689,10 @@ class _CatDetailPageState extends State<CatDetailPage> {
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : const Icon(Icons.play_arrow),
+                                    : const LumeIcon(
+                                        Icons.play_arrow,
+                                        slot: 'cat_detail_page.3',
+                                      ),
                                 label: Text(
                                   playing
                                       ? '正在获取播放地址'
@@ -728,7 +737,10 @@ class _CatDetailPageState extends State<CatDetailPage> {
                         child: IconButton(
                           tooltip: '返回',
                           onPressed: () => Navigator.maybePop(context),
-                          icon: const Icon(Icons.arrow_back),
+                          icon: const LumeIcon(
+                            Icons.arrow_back,
+                            slot: 'cat_detail_page.4',
+                          ),
                         ),
                       ),
                       const Spacer(),
@@ -741,15 +753,20 @@ class _CatDetailPageState extends State<CatDetailPage> {
                             IconButton(
                               tooltip: '收藏',
                               onPressed: toggleFavorite,
-                              icon: Icon(
+                              icon: LumeIcon(
                                 favorited
                                     ? Icons.favorite
                                     : Icons.favorite_border,
+                                slot: 'cat_detail_page.5',
+                                variant: true,
                               ),
                             ),
                             PopupMenuButton<String>(
                               tooltip: '更多',
-                              icon: const Icon(Icons.more_horiz),
+                              icon: const LumeIcon(
+                                Icons.more_horiz,
+                                slot: 'cat_detail_page.6',
+                              ),
                               onSelected: (value) {
                                 if (value == 'tmdb') {
                                   tmdb.rematch();
@@ -873,14 +890,16 @@ class _CatEpisodePickerState extends State<CatEpisodePicker> {
                 ),
                 IconButton(
                   tooltip: '倒序',
-                  icon: Icon(
+                  icon: LumeIcon(
                     reversed ? Icons.arrow_upward : Icons.arrow_downward,
+                    slot: 'cat_detail_page.7',
+                    variant: true,
                   ),
                   onPressed: () => setState(() => reversed = !reversed),
                 ),
                 IconButton(
                   tooltip: '关闭',
-                  icon: const Icon(Icons.close),
+                  icon: const LumeIcon(Icons.close, slot: 'cat_detail_page.8'),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -891,7 +910,10 @@ class _CatEpisodePickerState extends State<CatEpisodePicker> {
             child: TextField(
               decoration: InputDecoration(
                 hintText: '搜索集数或文件名 · ${items.length} 集',
-                prefixIcon: const Icon(Icons.search),
+                prefixIcon: const LumeIcon(
+                  Icons.search,
+                  slot: 'cat_detail_page.9',
+                ),
                 border: const OutlineInputBorder(),
               ),
               onChanged: (value) => setState(() => query = value),
@@ -916,7 +938,10 @@ class _CatEpisodePickerState extends State<CatEpisodePicker> {
                       fontSize: LumeTypography.titleSize,
                     ),
                   ),
-                  trailing: const Icon(Icons.play_circle_outline),
+                  trailing: const LumeIcon(
+                    Icons.play_circle_outline,
+                    slot: 'cat_detail_page.10',
+                  ),
                   onTap: () => Navigator.pop(context, chapter),
                 );
               },

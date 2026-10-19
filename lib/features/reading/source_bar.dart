@@ -1,10 +1,12 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
-import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/source_switch_button.dart';
 import '../source/source_picker_sheet.dart';
+import '../source/video_source_scope.dart';
 
 /// A source button opens the searchable, section-scoped source drawer.
 class ReadingSourceBar extends StatelessWidget {
@@ -37,17 +39,19 @@ class ReadingSourceBar extends StatelessWidget {
         .firstOrNull;
     final content = Row(
       children: [
-        if (!floating) ...[
-          Icon(Icons.source_outlined, size: 18, color: LumeTheme.muted),
-          const SizedBox(width: 8),
-        ],
         Expanded(
-          child: InkWell(
+          child: SourceSwitchButton(
             key: const ValueKey('open-source-picker'),
-            borderRadius: BorderRadius.circular(14),
-            onTap: busy
+            name: current?.name ?? '未选择源',
+            iconSlot: 'source_bar.2',
+            onPressed: busy
                 ? null
                 : () async {
+                    final videoScope = VideoSourceScope.maybeOf(context);
+                    if (section == Section.video && videoScope != null) {
+                      await videoScope.openPicker(context);
+                      return;
+                    }
                     final board =
                         section ??
                         current?.section ??
@@ -69,32 +73,12 @@ class ReadingSourceBar extends StatelessWidget {
                       await onSourcesChanged?.call();
                     }
                   },
-            child: SizedBox(
-              height: 44,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      current?.name ?? '未选择源',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: LumeTypography.titleSize,
-                        fontWeight: FontWeight.w600,
-                        color: LumeTheme.textPrimary,
-                      ),
-                    ),
-                  ),
-                  Icon(Icons.expand_more, size: 18, color: LumeTheme.muted),
-                ],
-              ),
-            ),
           ),
         ),
         if (showManage)
           IconButton(
             tooltip: '源管理',
-            icon: const Icon(Icons.tune, size: 20),
+            icon: const LumeIcon(Icons.tune, slot: 'source_bar.3', size: 20),
             onPressed: onManage,
           ),
       ],

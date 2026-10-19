@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
@@ -124,7 +125,7 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
           IconButton(
             tooltip: '导入字体文件',
             onPressed: _busy ? null : _import,
-            icon: const Icon(Icons.add),
+            icon: const LumeIcon(Icons.add, slot: 'font_settings_page.1'),
           ),
         ],
         child: ListView(
@@ -137,7 +138,7 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    '山间来信 · A quiet afternoon.\n预览文字与按钮的显示大小',
+                    '山间来信 · A quiet afternoon.\n预览字体大小',
                     key: Key('fonts.preview'),
                     style: TextStyle(fontSize: 16, height: 1.6),
                   ),
@@ -182,7 +183,7 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
             const Padding(
               padding: EdgeInsets.fromLTRB(6, 10, 6, 20),
               child: Text(
-                '在系统字号基础上整体缩放，播放器等界面也会生效。',
+                '仅调整文字大小，播放器等页面的文字也会生效。图标、按钮尺寸和页面留白不随此滑杆缩放。',
                 style: TextStyle(fontSize: 12, color: settingsNoteColor),
               ),
             ),
@@ -194,7 +195,10 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
                   ListTile(
                     title: const Text('普通'),
                     trailing: !settings.fontBold
-                        ? const Icon(Icons.check)
+                        ? const LumeIcon(
+                            Icons.check,
+                            slot: 'font_settings_page.2',
+                          )
                         : null,
                     onTap: () => apply(settings.copyWith(fontBold: false)),
                   ),
@@ -203,7 +207,10 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
                     title: const Text('粗体'),
                     subtitle: const Text('默认'),
                     trailing: settings.fontBold
-                        ? const Icon(Icons.check)
+                        ? const LumeIcon(
+                            Icons.check,
+                            slot: 'font_settings_page.3',
+                          )
                         : null,
                     onTap: () => apply(settings.copyWith(fontBold: true)),
                   ),
@@ -231,7 +238,12 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
                 children: [
                   ListTile(
                     title: const Text('系统默认'),
-                    trailing: selected.isEmpty ? const Icon(Icons.check) : null,
+                    trailing: selected.isEmpty
+                        ? const LumeIcon(
+                            Icons.check,
+                            slot: 'font_settings_page.4',
+                          )
+                        : null,
                     onTap: () => apply(settings.copyWith(fontId: '')),
                   ),
                   for (final font in _fonts.fonts)
@@ -240,7 +252,10 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
                       title: Text(font.name),
                       subtitle: const Text('长按删除'),
                       trailing: selected == font.id
-                          ? const Icon(Icons.check)
+                          ? const LumeIcon(
+                              Icons.check,
+                              slot: 'font_settings_page.5',
+                            )
                           : null,
                       onTap: _busy ? null : () => _choose(font),
                       onLongPress: _busy ? null : () => _remove(font),
@@ -252,7 +267,10 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.add_circle_outline),
+                        : const LumeIcon(
+                            Icons.add_circle_outline,
+                            slot: 'font_settings_page.6',
+                          ),
                     title: const Text('导入字体文件'),
                     onTap: _busy ? null : _import,
                   ),

@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/session/privacy_settings.dart';
@@ -681,7 +682,10 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
                 if (_runtimeAvailable && !_loading)
                   IconButton(
                     tooltip: '恢复源',
-                    icon: const Icon(Icons.settings_backup_restore),
+                    icon: const LumeIcon(
+                      Icons.settings_backup_restore,
+                      slot: 'global_source_page.1',
+                    ),
                     onPressed: _restoreBackup,
                   ),
                 if (_runtimeAvailable &&
@@ -689,19 +693,28 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
                     _totalCount > 0) ...<Widget>[
                   IconButton(
                     tooltip: '备份源',
-                    icon: const Icon(Icons.save_alt),
+                    icon: const LumeIcon(
+                      Icons.save_alt,
+                      slot: 'global_source_page.2',
+                    ),
                     onPressed: _exportBackup,
                   ),
                   IconButton(
                     tooltip: '批量刷新订阅源',
-                    icon: const Icon(Icons.sync),
+                    icon: const LumeIcon(
+                      Icons.sync,
+                      slot: 'global_source_page.3',
+                    ),
                     onPressed: _testing.isEmpty && _refreshing.isEmpty
                         ? _refreshSubscriptions
                         : null,
                   ),
                   IconButton(
                     tooltip: '批量测试连通性',
-                    icon: const Icon(Icons.network_check),
+                    icon: const LumeIcon(
+                      Icons.network_check,
+                      slot: 'global_source_page.4',
+                    ),
                     onPressed: _testing.isEmpty && _refreshing.isEmpty
                         ? _testAll
                         : null,
@@ -717,7 +730,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
           ? FloatingActionButton(
               tooltip: '导入源',
               onPressed: _maintaining ? null : () => _import(),
-              child: const Icon(Icons.add),
+              child: const LumeIcon(Icons.add, slot: 'global_source_page.5'),
             )
           : null,
       child: AbsorbPointer(absorbing: _maintaining, child: _buildBody()),
@@ -862,7 +875,7 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
             ),
             IconButton(
               tooltip: '导入到${section.label}',
-              icon: const Icon(Icons.add),
+              icon: const LumeIcon(Icons.add, slot: 'global_source_page.6'),
               onPressed: () => _import(target: section),
             ),
           ],
@@ -1054,12 +1067,18 @@ class _SourceTile extends StatelessWidget {
           Switch(value: source.enabled, onChanged: onToggle),
           IconButton(
             tooltip: '浏览',
-            icon: const Icon(Icons.chevron_right),
+            icon: const LumeIcon(
+              Icons.chevron_right,
+              slot: 'global_source_page.7',
+            ),
             onPressed: onBrowse,
           ),
           IconButton(
             tooltip: '删除',
-            icon: const Icon(Icons.delete_outline),
+            icon: const LumeIcon(
+              Icons.delete_outline,
+              slot: 'global_source_page.8',
+            ),
             onPressed: onDelete,
           ),
         ],

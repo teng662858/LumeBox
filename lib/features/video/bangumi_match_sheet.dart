@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -339,7 +341,7 @@ class _BangumiMatchSheetState extends State<BangumiMatchSheet> {
             const SizedBox(height: 10),
             FilledButton.icon(
               onPressed: busy ? null : _search,
-              icon: const Icon(Icons.search),
+              icon: const LumeIcon(Icons.search, slot: 'bangumi_match_sheet.1'),
               label: Text(busy ? '搜索中…' : '搜索 Bangumi'),
             ),
             const SizedBox(height: 8),

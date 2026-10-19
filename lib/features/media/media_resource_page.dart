@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/media/media_library.dart';
@@ -34,10 +35,12 @@ class MediaResourcePage extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  Icon(
+                  LumeIcon(
                     entry.kind == ResourceKind.audioBook
                         ? Icons.headphones_rounded
                         : Icons.library_books_outlined,
+                    slot: 'media_resource_page.1',
+                    variant: true,
                     size: 64,
                   ),
                   const SizedBox(height: 12),
@@ -54,7 +57,10 @@ class MediaResourcePage extends StatelessWidget {
                     onPressed: entry.episodes.isEmpty
                         ? null
                         : () => _open(context, entry, 0),
-                    icon: const Icon(Icons.play_arrow),
+                    icon: const LumeIcon(
+                      Icons.play_arrow,
+                      slot: 'media_resource_page.2',
+                    ),
                     label: Text(
                       entry.kind == ResourceKind.novel ? '开始阅读' : '播放',
                     ),

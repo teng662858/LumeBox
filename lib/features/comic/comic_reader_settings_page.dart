@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/lume_theme.dart';
@@ -193,7 +194,11 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
                   onPressed: widget.canSavePage && widget.onSavePage != null
                       ? () => widget.onSavePage!()
                       : null,
-                  icon: const Icon(Icons.download, size: 18),
+                  icon: const LumeIcon(
+                    Icons.download,
+                    slot: 'comic_reader_settings_page.1',
+                    size: 18,
+                  ),
                   label: const Text('保存'),
                 ),
               ],
@@ -234,7 +239,11 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
                   onPressed: widget.onOpenBookmarks == null
                       ? null
                       : () => widget.onOpenBookmarks!(),
-                  icon: const Icon(Icons.bookmarks_outlined, size: 18),
+                  icon: const LumeIcon(
+                    Icons.bookmarks_outlined,
+                    slot: 'comic_reader_settings_page.2',
+                    size: 18,
+                  ),
                   label: const Text('查看'),
                 ),
               ],
@@ -245,13 +254,19 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
             ChapterAutoOrderSwitch(order: widget.chapterOrder!),
           // 说明面板与这里的分工，避免用户回到面板找不到刚改过的东西。
           ListTile(
-            leading: const Icon(Icons.auto_fix_high_outlined),
+            leading: const LumeIcon(
+              Icons.auto_fix_high_outlined,
+              slot: 'comic_reader_settings_page.3',
+            ),
             title: const Text('当前页 AI 超分 / 上色 / 翻译'),
             subtitle: const Text('处理当前页，保留原图对照；结果可保存 / 分享'),
             onTap: widget.onImageTools,
           ),
           ListTile(
-            leading: const Icon(Icons.hd_outlined),
+            leading: const LumeIcon(
+              Icons.hd_outlined,
+              slot: 'comic_reader_settings_page.4',
+            ),
             title: const Text('AI 图片超分与上色'),
             onTap: () => Navigator.push(
               context,
@@ -261,7 +276,10 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.translate),
+            leading: const LumeIcon(
+              Icons.translate,
+              slot: 'comic_reader_settings_page.5',
+            ),
             title: const Text('漫画翻译'),
             onTap: () => Navigator.push(
               context,

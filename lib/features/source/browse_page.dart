@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -304,7 +306,11 @@ class _BrowseViewState extends State<BrowseView> {
                   fontWeight: FontWeight.w600,
                   color: LumeTheme.muted,
                 ),
-                icon: Icon(Icons.search, color: LumeTheme.muted),
+                icon: LumeIcon(
+                  Icons.search,
+                  slot: 'browse_page.1',
+                  color: LumeTheme.muted,
+                ),
               ),
               onSubmitted: (value) {
                 _keyword = value.trim();
@@ -436,7 +442,11 @@ class _BrowseViewState extends State<BrowseView> {
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right, color: LumeTheme.muted),
+                  LumeIcon(
+                    Icons.chevron_right,
+                    slot: 'browse_page.2',
+                    color: LumeTheme.muted,
+                  ),
                 ],
               ),
             );

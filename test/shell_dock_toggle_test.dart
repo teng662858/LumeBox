@@ -873,6 +873,47 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('液态细调从管理页进入、实时改变预览，并在重新加载后保留', (tester) async {
+      await pumpPage(tester);
+      final entry = find.byKey(const ValueKey('dock-liquid-open'));
+      await Scrollable.ensureVisible(tester.element(entry), alignment: .5);
+      await tester.pumpAndSettle();
+      await tester.tap(entry);
+      await tester.pumpAndSettle();
+      expect(find.text('液态玻璃细调'), findsWidgets);
+      final response = find.byKey(const ValueKey('dock-liquid-pressMs'));
+      await Scrollable.ensureVisible(tester.element(response), alignment: .5);
+      await tester.pumpAndSettle();
+      final rect = tester.getRect(response);
+      await tester.tapAt(Offset(rect.right - 24, rect.center.dy));
+      await tester.pumpAndSettle();
+      final controller = ShellSettingsController.instance;
+      expect(
+        controller.appearance.liquid.value(DockLiquidParameter.pressMs),
+        greaterThan(300),
+      );
+      final effect = find.byKey(const ValueKey('dock-liquid-effect-lift'));
+      await tester.scrollUntilVisible(
+        effect,
+        200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(
+        find.descendant(of: effect, matching: find.byType(Switch)),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        controller.appearance.liquid.enabled(DockLiquidEffect.lift),
+        isFalse,
+      );
+      final dock = tester.widget<ShellDockBar>(find.byType(ShellDockBar).last);
+      expect(dock.appearance.liquid, controller.appearance.liquid);
+      final saved = controller.appearance;
+      await controller.boot();
+      expect(controller.appearance, saved);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('外观滑块范围：白度/高光/阴影 0–100%，磨砂 0–30，间距 -50–100', (tester) async {
       await pumpPage(tester);
       await tester.scrollUntilVisible(

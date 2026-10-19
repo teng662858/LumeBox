@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+
+import '../../shared/widgets/lume_icon.dart';
+
 import 'package:flutter/services.dart';
 
 import 'appearance.dart';
@@ -690,7 +693,18 @@ class LumeTheme {
       ),
     );
     return interfaceTypography(
-      theme,
+      theme.copyWith(
+        actionIconTheme: ActionIconThemeData(
+          backButtonIconBuilder: (_) =>
+              const LumeIcon(Icons.arrow_back_ios_new, slot: 'app.back'),
+          closeButtonIconBuilder: (_) =>
+              const LumeIcon(Icons.close, slot: 'app.close'),
+          drawerButtonIconBuilder: (_) =>
+              const LumeIcon(Icons.menu, slot: 'app.drawer'),
+          endDrawerButtonIconBuilder: (_) =>
+              const LumeIcon(Icons.menu, slot: 'app.end-drawer'),
+        ),
+      ),
       family: fontFamily,
       bold: fontBold,
       italic: fontItalic,

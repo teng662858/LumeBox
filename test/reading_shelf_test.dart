@@ -380,7 +380,7 @@ void main() {
       expect(find.text('测试作品 1'), findsOneWidget);
       expect(manager.openedIds, contains('a'));
 
-      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.tap(find.byKey(const ValueKey('open-source-picker')));
       await tester.pumpAndSettle();
       expect(find.text('停用源'), findsNothing);
     });

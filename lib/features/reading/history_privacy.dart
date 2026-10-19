@@ -1,4 +1,7 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
+
 import 'dart:convert';
 import 'dart:math';
 import 'dart:async';
@@ -151,7 +154,11 @@ class _HistoryPrivacyGuardState extends State<HistoryPrivacyGuard>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.lock_outline, size: 40),
+                  const LumeIcon(
+                    Icons.lock_outline,
+                    slot: 'history_privacy.1',
+                    size: 40,
+                  ),
                   const SizedBox(height: 16),
                   const Text('历史记录已锁定'),
                   const SizedBox(height: 16),

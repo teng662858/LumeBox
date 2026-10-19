@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 import 'playback_glass.dart';
 import '../../core/session/app_preferences.dart';
@@ -60,8 +62,18 @@ import 'player_source_sheet.dart';
 import 'player_speed_meter.dart';
 import 'source_playback.dart';
 import 'video_play_target.dart';
+import 'player_intro_memory.dart';
 import 'video_player_settings.dart';
 import '../source/waf_webview_page.dart';
+import '../../core/intro/intro_controller.dart';
+import '../../core/intro/intro_models.dart';
+import '../../core/intro/intro_service.dart';
+import '../../core/intro/intro_store.dart';
+import '../../core/intro/playback_metadata.dart';
+import '../../core/player/playback_logs.dart';
+import 'intro_episode_sheet.dart';
+
+part 'video_player_intro.dart';
 
 /// 独立播放器页：视频**唯一的**播放入口。
 ///
@@ -252,6 +264,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
   /// 当前正在播的图源条目：有它才记进度。
   VideoPlayTarget? _target;
+  IntroController? _intro;
+  PlayerMedia? _introMedia;
+  bool _introOpening = false;
+  int _introGeneration = 0;
+
+  void _refresh(VoidCallback change) {
+    if (mounted) setState(change);
+  }
 
   /// 改「自动连播」并落库（与模块设置页双向同步）。
   Future<void> _setAutoNext(bool value) async {
@@ -360,6 +380,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final previous = _lifecycle;
     _lifecycle = state;
+    final introSnapshot = _player?.snapshot.value;
+    if (introSnapshot != null) _syncOriginalIntro(introSnapshot);
     if (state != AppLifecycleState.resumed) _nextEpisodeBuffer.discard();
     _framePump?.setBackground(state != AppLifecycleState.resumed);
     if (state == AppLifecycleState.paused ||
@@ -684,6 +706,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   @override
   void dispose() {
     _rebuildSeq++;
+    _introGeneration++;
+    _intro?.dispose();
     _nextEpisodeBuffer.discard();
     WidgetsBinding.instance.removeObserver(this);
     _danmakuLoadSeq++;
@@ -814,6 +838,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   void _onSnapshotChanged() {
     _syncPipPlaybackState();
     final snapshot = _player?.snapshot.value;
+    if (snapshot != null) _syncOriginalIntro(snapshot);
     final playing = snapshot?.playing ?? false;
     if (snapshot != null &&
         snapshot.error == null &&
@@ -908,7 +933,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           ),
         );
       }
-      _maybeSkip(_skipMarks, snapshot.position, snapshot.duration);
+      // Once the unified controller is available it owns skip decisions,
+      // including the cancelable countdown and duration-relative ending.
       // 锁屏播放条跟随播放状态（进度在会话内部节流，不必在这里省）。
       unawaited(
         _playback.update(
@@ -1516,6 +1542,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _introHandled = false;
     _outroHandled = false;
     _loadSkipMarks(target);
+    _introGeneration++;
+    _introOpening = false;
+    _intro?.cancel();
+    _introMedia = null;
     _healthyPosition = Duration.zero;
     _target = target;
     _syncQualityIndex(media);
@@ -1998,6 +2028,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         ? _skipMarks.copyWith(intro: position)
         : _skipMarks.copyWith(outro: position);
     SkipMarksStore(library).save(target.itemId, next);
+    unawaited(
+      rememberPlayerSkip(
+        target,
+        next,
+        snapshot.duration,
+        intro: intro,
+        controller: _intro,
+      ).catchError((Object error) => LumeLog.warn('同剧跳过记忆保存失败：$error')),
+    );
     setState(() => _skipMarks = next);
     _introHandled = !intro && _introducedAlready;
     // 「记片尾」记的就是**当前位置**：当场算作已处理，这一集不会被立刻跳走
@@ -2016,6 +2055,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final library = _library;
     if (target == null || library == null) return;
     SkipMarksStore(library).clear(target.itemId);
+    unawaited(
+      rememberPlayerSkip(
+        target,
+        SkipMarks.none,
+        _player?.snapshot.value.duration ?? Duration.zero,
+      ).catchError((Object error) => LumeLog.warn('同剧跳过记忆清除失败：$error')),
+    );
     setState(() => _skipMarks = SkipMarks.none);
     _showToast('已清除片头片尾标记');
   }
@@ -2065,7 +2111,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     builder: (context, snapshot, _) => Tooltip(
       message: _skipQuickTooltip(snapshot),
       child: TextButton(
-        onPressed: () => _markSkipFromQuick(snapshot),
+        onPressed: () => _intro?.prompt != null
+            ? _originalSkipNow()
+            : _markSkipFromQuick(snapshot),
         onLongPress: _clearSkipMarksFromQuick,
         style: TextButton.styleFrom(
           minimumSize: const Size(56, 40),
@@ -2307,6 +2355,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       case PipEventKind.restored:
         unawaited(_restoreInlinePlayback());
     }
+    final snapshot = _player?.snapshot.value;
+    if (snapshot != null) _syncOriginalIntro(snapshot);
   }
 
   /// 开始帧转发（仅 MPV 内核需要：AVPlayer 走原生 `AVPlayerLayer` 通路）。
@@ -2605,6 +2655,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               ),
             ),
             const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const LumeIcon(
+                Icons.skip_next,
+                slot: 'video_player_page.1',
+              ),
+              title: const Text('片头片尾与同剧记忆'),
+              subtitle: const Text('记一次，后续各集自动沿用；无需作品 ID'),
+              onTap: () async {
+                Navigator.of(context).pop();
+                await _openOriginalIntro();
+              },
+            ),
             Text('音量 ${(_gesture.volume * 100).round()}%'),
             Slider(
               value: _gesture.volume,
@@ -3191,7 +3254,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   IconButton(
                     tooltip: '关闭',
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
+                    icon: const LumeIcon(
+                      Icons.close,
+                      slot: 'video_player_page.2',
+                    ),
                   ),
                 ],
               ),
@@ -3252,7 +3318,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       tooltip: tooltip,
       icon: _fullscreen
           ? PlayerControlGlyph(icon, size: _iconSize)
-          : Icon(icon),
+          : LumeIcon(icon, slot: 'video_player_page.3', variant: true),
       onPressed: onPressed,
     );
   }
@@ -3424,7 +3490,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             _skipQuickLabel(snapshot),
             _skipQuickTooltip(snapshot),
             Icons.bookmark_add_outlined,
-            () => _markSkipFromQuick(snapshot),
+            () => _intro?.prompt != null
+                ? _originalSkipNow()
+                : _markSkipFromQuick(snapshot),
             longPress: _clearSkipMarksFromQuick,
           ),
           const Spacer(),
@@ -3475,6 +3543,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       highlighted: _danmakuSettings.enabled,
     ),
     _skipQuickButton(),
+    _actionLabel('片头尾', '片头片尾设置', _openOriginalIntro),
     _buildPipButton(),
     // 播放内核：与全屏那颗同一图标（用户口径：换个好看的图标）。
     _compactIcon(
@@ -3533,7 +3602,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         actions: <Widget>[
           FilledButton.icon(
             onPressed: _retryBoot,
-            icon: const Icon(Icons.refresh, size: 18),
+            icon: const LumeIcon(
+              Icons.refresh,
+              slot: 'video_player_page.4',
+              size: 18,
+            ),
             label: const Text('重试'),
           ),
         ],
@@ -3549,7 +3622,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         actions: <Widget>[
           FilledButton.icon(
             onPressed: _retryFailedKernel,
-            icon: const Icon(Icons.refresh, size: 18),
+            icon: const LumeIcon(
+              Icons.refresh,
+              slot: 'video_player_page.5',
+              size: 18,
+            ),
             label: const Text('重试'),
           ),
           OutlinedButton(
@@ -3598,7 +3675,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       actions: <Widget>[
         FilledButton.icon(
           onPressed: () => _restoreInlinePlayback(retry: true),
-          icon: const Icon(Icons.refresh),
+          icon: const LumeIcon(Icons.refresh, slot: 'video_player_page.6'),
           label: const Text('重试播放'),
         ),
         if (_target != null &&
@@ -3745,8 +3822,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                     padding: const EdgeInsets.all(4),
                     child: IconButton(
                       tooltip: _locked ? '解除锁定' : '锁定（防误触）',
-                      icon: Icon(
+                      icon: LumeIcon(
                         _locked ? Icons.lock : Icons.lock_open,
+                        slot: 'video_player_page.7',
+                        variant: true,
                         color: Colors.white,
                         shadows: const <Shadow>[
                           Shadow(color: Colors.black54, blurRadius: 6),
@@ -3766,6 +3845,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                       _scheduleAutoHide();
                     },
                   ),
+                ),
+              if (!_locked)
+                Positioned(
+                  right: 12,
+                  bottom: _fullscreen ? 116 : 58,
+                  child: _originalSkipPrompt(),
                 ),
             ],
           );
@@ -4110,8 +4195,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         padding: EdgeInsets.zero,
         color: _fullscreen ? Colors.white : LumeTheme.textPrimary,
         tooltip: '后退 10 秒',
-        icon: Icon(
+        icon: LumeIcon(
           Icons.replay_10,
+          slot: 'video_player_page.8',
           shadows: _fullscreen ? _controlShadows : null,
         ),
         onPressed: player == null
@@ -4126,8 +4212,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         padding: EdgeInsets.zero,
         color: _fullscreen ? Colors.white : LumeTheme.textPrimary,
         tooltip: playing ? '暂停' : '播放',
-        icon: Icon(
+        icon: LumeIcon(
           playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
+          slot: 'video_player_page.9',
+          variant: true,
           shadows: _fullscreen ? _controlShadows : null,
         ),
         onPressed: player == null
@@ -4143,8 +4231,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         padding: EdgeInsets.zero,
         color: _fullscreen ? Colors.white : LumeTheme.textPrimary,
         tooltip: '停止',
-        icon: Icon(
+        icon: LumeIcon(
           Icons.stop_circle,
+          slot: 'video_player_page.10',
           shadows: _fullscreen ? _controlShadows : null,
         ),
         onPressed: player?.stop,
@@ -4155,7 +4244,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         visualDensity: VisualDensity.compact,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         padding: EdgeInsets.zero,
-        icon: Icon(Icons.speed, shadows: _fullscreen ? _controlShadows : null),
+        icon: LumeIcon(
+          Icons.speed,
+          slot: 'video_player_page.11',
+          shadows: _fullscreen ? _controlShadows : null,
+        ),
         color: _fullscreen ? Colors.white : LumeTheme.textPrimary,
         onPressed: _showSpeedPicker,
       ),
@@ -4166,8 +4259,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         padding: EdgeInsets.zero,
         color: _fullscreen ? Colors.white : LumeTheme.textPrimary,
         tooltip: '前进 10 秒',
-        icon: Icon(
+        icon: LumeIcon(
           Icons.forward_10,
+          slot: 'video_player_page.12',
           shadows: _fullscreen ? _controlShadows : null,
         ),
         onPressed: player == null
@@ -4246,7 +4340,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       tooltip: tooltip,
       icon: _fullscreen
           ? PlayerControlGlyph(icon, size: _iconSize)
-          : Icon(icon),
+          : LumeIcon(icon, slot: 'video_player_page.13', variant: true),
       onPressed: onPressed,
     );
   }
@@ -4486,7 +4580,13 @@ class _PlayerStageNotice extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2.5),
                 )
               else
-                Icon(icon, size: 26, color: LumeTheme.textSecondary),
+                LumeIcon(
+                  icon,
+                  slot: 'video_player_page.14',
+                  variant: true,
+                  size: 26,
+                  color: LumeTheme.textSecondary,
+                ),
               const SizedBox(height: 12),
               Text(
                 title,
@@ -4600,7 +4700,7 @@ class _GestureHint extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Icon(
+                    LumeIcon(
                       switch (state.intent) {
                         PlayerGestureIntent.brightness => Icons.brightness_6,
                         PlayerGestureIntent.volume => Icons.volume_up,
@@ -4608,6 +4708,8 @@ class _GestureHint extends StatelessWidget {
                         PlayerGestureIntent.boost => Icons.speed,
                         PlayerGestureIntent.none => Icons.touch_app,
                       },
+                      slot: 'video_player_page.15',
+                      variant: true,
                       size: 18,
                       color: Colors.white,
                     ),
@@ -4718,7 +4820,11 @@ class _TrackSheet extends StatelessWidget {
                     if (allowOff)
                       ListTile(
                         dense: true,
-                        leading: const Icon(Icons.block, size: 20),
+                        leading: const LumeIcon(
+                          Icons.block,
+                          slot: 'video_player_page.16',
+                          size: 20,
+                        ),
                         title: Text(
                           '关闭字幕',
                           style: TextStyle(
@@ -4731,10 +4837,12 @@ class _TrackSheet extends StatelessWidget {
                     for (final track in tracks)
                       ListTile(
                         dense: true,
-                        leading: Icon(
+                        leading: LumeIcon(
                           track.selected
                               ? Icons.check_circle
                               : Icons.circle_outlined,
+                          slot: 'video_player_page.17',
+                          variant: true,
                           size: 20,
                           color: track.selected
                               ? LumeTheme.textPrimary
@@ -4831,8 +4939,10 @@ class _QualitySheet extends StatelessWidget {
                     final selected = index == currentIndex;
                     return ListTile(
                       dense: true,
-                      leading: Icon(
+                      leading: LumeIcon(
                         selected ? Icons.check_circle : Icons.circle_outlined,
+                        slot: 'video_player_page.18',
+                        variant: true,
                         size: 20,
                         color: selected
                             ? LumeTheme.textPrimary

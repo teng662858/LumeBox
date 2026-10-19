@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../core/media/media_library.dart';
 import '../../core/media/media_resource_service.dart';
 import '../media/media_resource_page.dart';
@@ -415,7 +417,11 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: _chapters.isEmpty ? null : _continueReading,
-                      icon: const Icon(Icons.menu_book, size: 18),
+                      icon: const LumeIcon(
+                        Icons.menu_book,
+                        slot: 'novel_detail_page.1',
+                        size: 18,
+                      ),
                       label: Text(_progress == null ? '开始阅读' : '继续阅读'),
                     ),
                   ),
@@ -504,7 +510,11 @@ class _NovelDetailPageState extends State<NovelDetailPage> {
           if (_chapters.isNotEmpty)
             TextButton.icon(
               onPressed: _openCatalog,
-              icon: const Icon(Icons.list, size: 16),
+              icon: const LumeIcon(
+                Icons.list,
+                slot: 'novel_detail_page.2',
+                size: 16,
+              ),
               label: const Text('完整目录'),
             ),
         ],

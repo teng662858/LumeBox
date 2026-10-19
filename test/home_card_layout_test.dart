@@ -85,6 +85,63 @@ void main() {
     expect(find.text('评分 8.4 · 蓝光'), findsOneWidget);
   });
 
+  for (final width in [320.0, 390.0, 430.0, 768.0, 1024.0]) {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets('双列列表适配 $width 宽、$textScale 字号，保持两列和封面比例', (tester) async {
+        tester.view.physicalSize = Size(width, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        var taps = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: LumeTheme.build(),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: TextScaler.linear(textScale)),
+              child: child!,
+            ),
+            home: Scaffold(
+              body: LayoutBuilder(
+                builder: (context, constraints) => GridView.builder(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: TwoColumnSourceLayout.sidePadding,
+                  ),
+                  itemCount: 6,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: TwoColumnSourceLayout.spacing,
+                    mainAxisSpacing: TwoColumnSourceLayout.rowSpacing,
+                    mainAxisExtent: TwoColumnSourceLayout.itemExtent(
+                      context,
+                      TwoColumnSourceLayout.cellWidth(constraints.maxWidth),
+                    ),
+                  ),
+                  itemBuilder: (_, _) =>
+                      TwoColumnSourceItemTile(item: item, onTap: () => taps++),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final cells = find.byType(TwoColumnSourceItemTile);
+        final first = tester.getRect(cells.at(0)),
+            second = tester.getRect(cells.at(1));
+        expect(first.left, TwoColumnSourceLayout.sidePadding);
+        expect(second.top, first.top);
+        expect(second.left - first.right, TwoColumnSourceLayout.spacing);
+        final cover = tester.getSize(
+          find.byKey(const ValueKey('source-tile-cover')).first,
+        );
+        expect(cover.width / cover.height, closeTo(.75, .001));
+        expect(cover.width, inInclusiveRange(44, 80));
+        expect(tester.takeException(), isNull);
+        await tester.tap(cells.first);
+        expect(taps, 1);
+      });
+    }
+  }
+
   testWidgets('首页三列：标题外置卡片不再铺白色底板', (tester) async {
     await pump(
       tester,

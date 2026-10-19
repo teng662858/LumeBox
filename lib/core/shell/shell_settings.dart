@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../session/section.dart';
 import '../util/lume_log.dart';
+import 'dock_liquid_settings.dart';
+export 'dock_liquid_settings.dart';
 
 /// 底部导航栏里的一个页签（稳定标识 + 展示名）。
 ///
@@ -119,6 +121,7 @@ class DockAppearance {
     this.shadowOpacity = .05,
     this.animateSelection = true,
     this.animationMs = 250,
+    this.liquid = const DockLiquidSettings(),
   });
 
   /// 与上一轮精修后的实际取值一致：默认即「当前这版外观」。
@@ -155,6 +158,7 @@ class DockAppearance {
   /// 不是固定补间时长：壳层用它换算 [SpringSimulation] 的刚度与阻尼——数值越大
   /// 弹簧越软，吸附与回弹越慢。
   final int animationMs;
+  final DockLiquidSettings liquid;
 
   DockAppearance copyWith({
     double? horizontalMargin,
@@ -164,6 +168,7 @@ class DockAppearance {
     double? shadowOpacity,
     bool? animateSelection,
     int? animationMs,
+    DockLiquidSettings? liquid,
   }) => DockAppearance(
     horizontalMargin: horizontalMargin ?? this.horizontalMargin,
     height: height ?? this.height,
@@ -172,6 +177,7 @@ class DockAppearance {
     shadowOpacity: shadowOpacity ?? this.shadowOpacity,
     animateSelection: animateSelection ?? this.animateSelection,
     animationMs: animationMs ?? this.animationMs,
+    liquid: liquid ?? this.liquid,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -182,6 +188,7 @@ class DockAppearance {
     'shadowOpacity': shadowOpacity,
     'animateSelection': animateSelection,
     'animationMs': animationMs,
+    'liquid': liquid.toJson(),
   };
 
   static DockAppearance fromJson(Object? json) {
@@ -195,6 +202,7 @@ class DockAppearance {
 
     final rawMs = json['animationMs'];
     return DockAppearance(
+      liquid: DockLiquidSettings.fromJson(json['liquid']),
       horizontalMargin: read('horizontalMargin', 24, 0, 100),
       height: read('height', 54, 40, 150),
       safeGap: read('safeGap', 4, -50, 100),
@@ -216,7 +224,8 @@ class DockAppearance {
         other.borderOpacity == borderOpacity &&
         other.shadowOpacity == shadowOpacity &&
         other.animateSelection == animateSelection &&
-        other.animationMs == animationMs;
+        other.animationMs == animationMs &&
+        other.liquid == liquid;
   }
 
   @override
@@ -228,6 +237,7 @@ class DockAppearance {
     shadowOpacity,
     animateSelection,
     animationMs,
+    liquid,
   );
 }
 

@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 import '../../core/source/source_picker_groups.dart';
 import '../source/waf_webview_page.dart';
@@ -16,6 +18,7 @@ import 'package:flutter/services.dart'
         Clipboard,
         ClipboardData,
         SystemChrome,
+        SystemUiMode,
         DeviceOrientation,
         MethodChannel;
 import 'package:path/path.dart' as p;
@@ -26,6 +29,7 @@ import '../../core/speech/speech_channel.dart';
 import '../../core/speech/speech_segments.dart';
 import '../../core/speech/speech_session.dart';
 import '../../core/speech/speech_settings.dart';
+import '../../core/speech/speech_voice_labels.dart';
 import '../novel/novel_speech_modes.dart';
 import '../../shared/widgets/chapter_order_controls.dart';
 import '../../core/session/section.dart';
@@ -44,6 +48,7 @@ import 'comic_reader_preferences.dart';
 import 'comic_page_filters.dart';
 import 'comic_speech_text.dart';
 import 'comic_reader_status.dart';
+import 'comic_reader_glyphs.dart';
 import 'comic_page_composition.dart';
 import 'comic_shader_artwork.dart';
 import 'comic_glass_backdrop.dart';
@@ -123,7 +128,8 @@ class ComicReaderPage extends StatefulWidget {
   State<ComicReaderPage> createState() => _ComicReaderPageState();
 }
 
-class _ComicReaderPageState extends State<ComicReaderPage> {
+class _ComicReaderPageState extends State<ComicReaderPage>
+    with WidgetsBindingObserver {
   late final SectionImagePipeline _pipeline;
   late final ComicImageTools _imageTools;
   late final Future<void> _imageModelReady;
@@ -242,6 +248,12 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   @override
   void initState() {
     super.initState();
+    if (_runtimeAvailable) {
+      WidgetsBinding.instance.addObserver(this);
+      unawaited(
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
+      );
+    }
     _imageTools = widget.imageTools ?? ComicImageTools();
     _imageModelReady = _chooseSourceImageModel();
     _pipeline = SectionImagePipeline(
@@ -335,6 +347,15 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_runtimeAvailable && state == AppLifecycleState.resumed) {
+      unawaited(
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
+      );
+    }
+  }
+
+  @override
   void dispose() {
     _autoTimer?.cancel();
     _sleepTimer?.cancel();
@@ -343,6 +364,8 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
     _translationGeneration++;
     _speechGeneration++;
     if (_runtimeAvailable) {
+      WidgetsBinding.instance.removeObserver(this);
+      unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
       unawaited(
         SystemChrome.setPreferredOrientations(DeviceOrientation.values),
       );
@@ -1107,7 +1130,7 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
         onRetry: () => _loadChapter(resume: false),
         action: (_failureDetail?.contains('NEED_WEBVIEW_VERIFY') ?? false)
             ? OutlinedButton.icon(
-                icon: const Icon(Icons.public),
+                icon: const LumeIcon(Icons.public, slot: 'comic_reader_page.1'),
                 label: const Text('章节网页验证'),
                 onPressed: () async {
                   final outcome = await runWafWebViewFlow(
@@ -1533,12 +1556,14 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                                       }
                                       if (context.mounted) setSheetState(() {});
                                     },
-                              icon: Icon(
+                              icon: LumeIcon(
                                 active
                                     ? Icons.pause
                                     : paused
                                     ? Icons.play_arrow
                                     : Icons.headphones_outlined,
+                                slot: 'comic_reader_page.2',
+                                variant: true,
                               ),
                               label: Text(
                                 active
@@ -1581,7 +1606,10 @@ class _ComicReaderPageState extends State<ComicReaderPage> {
                           await _stopComicSpeech();
                           if (context.mounted) setSheetState(() {});
                         },
-                        icon: const Icon(Icons.stop_circle_outlined),
+                        icon: const LumeIcon(
+                          Icons.stop_circle_outlined,
+                          slot: 'comic_reader_page.3',
+                        ),
                         label: const Text('停止'),
                       ),
                     ],
@@ -1994,7 +2022,11 @@ class _ComicImageTileState extends State<_ComicImageTile>
   Widget _buildFailure() => Center(
     child: TextButton.icon(
       onPressed: _resolve,
-      icon: const Icon(Icons.refresh, size: 18),
+      icon: const LumeIcon(
+        Icons.refresh,
+        slot: 'comic_reader_page.4',
+        size: 18,
+      ),
       label: const Text('加载失败，点击重试'),
     ),
   );
@@ -2186,7 +2218,11 @@ class _ChapterSheetState extends State<_ChapterSheet> {
                           visualDensity: VisualDensity.compact,
                           onPressed: () =>
                               setState(() => _showOrder = !_showOrder),
-                          icon: const Icon(Icons.sort, size: 20),
+                          icon: const LumeIcon(
+                            Icons.sort,
+                            slot: 'comic_reader_page.5',
+                            size: 20,
+                          ),
                         ),
                         DecoratedBox(
                           decoration: BoxDecoration(
@@ -2206,7 +2242,10 @@ class _ChapterSheetState extends State<_ChapterSheet> {
                                         widget.currentIndex - 1,
                                       )
                                     : null,
-                                icon: const Icon(Icons.chevron_left),
+                                icon: const LumeIcon(
+                                  Icons.chevron_left,
+                                  slot: 'comic_reader_page.6',
+                                ),
                               ),
                               IconButton(
                                 tooltip: '下一章',
@@ -2219,8 +2258,9 @@ class _ChapterSheetState extends State<_ChapterSheet> {
                                         widget.currentIndex + 1,
                                       )
                                     : null,
-                                icon: Icon(
+                                icon: LumeIcon(
                                   Icons.chevron_right,
+                                  slot: 'comic_reader_page.7',
                                   color:
                                       widget.currentIndex + 1 <
                                           widget.chapters.length
@@ -2307,8 +2347,9 @@ class _ChapterSheetState extends State<_ChapterSheet> {
                                           ),
                                       minLeadingWidth: 20,
                                       horizontalTitleGap: 12,
-                                      leading: const Icon(
+                                      leading: const LumeIcon(
                                         Icons.circle,
+                                        slot: 'comic_reader_page.8',
                                         size: 18,
                                         color: _readerAccent,
                                       ),
@@ -2334,8 +2375,9 @@ class _ChapterSheetState extends State<_ChapterSheet> {
                                             )
                                           : null,
                                       trailing: current
-                                          ? const Icon(
+                                          ? const LumeIcon(
                                               Icons.check,
+                                              slot: 'comic_reader_page.9',
                                               size: 20,
                                               color: _readerAccent,
                                             )
@@ -2388,7 +2430,11 @@ class _ImageActionSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               ListTile(
-                leading: Icon(Icons.download, color: LumeTheme.textSecondary),
+                leading: LumeIcon(
+                  Icons.download,
+                  slot: 'comic_reader_page.10',
+                  color: LumeTheme.textSecondary,
+                ),
                 title: Text(
                   '保存图片',
                   style: TextStyle(
@@ -2407,7 +2453,11 @@ class _ImageActionSheet extends StatelessWidget {
                 onTap: () => Navigator.of(context).pop(_ImageAction.save),
               ),
               ListTile(
-                leading: Icon(Icons.link, color: LumeTheme.textSecondary),
+                leading: LumeIcon(
+                  Icons.link,
+                  slot: 'comic_reader_page.11',
+                  color: LumeTheme.textSecondary,
+                ),
                 title: Text(
                   '复制图片地址',
                   style: TextStyle(
@@ -2529,7 +2579,11 @@ class _BookmarkSheetState extends State<_BookmarkSheet> {
                           children: [
                             IconButton(
                               tooltip: '编辑书签备注',
-                              icon: const Icon(Icons.edit_note, size: 20),
+                              icon: const LumeIcon(
+                                Icons.edit_note,
+                                slot: 'comic_reader_page.12',
+                                size: 20,
+                              ),
                               onPressed: _editing
                                   ? null
                                   : () async {
@@ -2552,8 +2606,9 @@ class _BookmarkSheetState extends State<_BookmarkSheet> {
                             ),
                             IconButton(
                               tooltip: '删除书签',
-                              icon: Icon(
+                              icon: LumeIcon(
                                 Icons.delete_outline,
+                                slot: 'comic_reader_page.13',
                                 size: 18,
                                 color: LumeTheme.muted,
                               ),

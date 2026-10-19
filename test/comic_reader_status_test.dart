@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/features/comic/comic_reader_status.dart';
+import 'package:lume_box/features/comic/comic_reader_glyphs.dart';
 
 void main() {
   const channel = MethodChannel('lumebox/battery');
@@ -29,13 +30,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('19:07'), findsOneWidget);
     expect(find.text('76%'), findsOneWidget);
+    final glyph = find.byKey(const Key('comic.status.batteryGlyph'));
+    expect(
+      tester.getSize(glyph).width,
+      greaterThan(tester.getSize(glyph).height),
+    );
+    expect(tester.widget<ComicReaderBatteryGlyph>(glyph).level, 76);
     level = 19;
     now = now.add(const Duration(minutes: 1));
     await tester.pump(const Duration(seconds: 30));
     await tester.pumpAndSettle();
     expect(find.text('19:08'), findsOneWidget);
     expect(find.text('19%'), findsOneWidget);
-    expect(find.byIcon(Icons.battery_alert_outlined), findsOneWidget);
+    final lowBattery = tester.widget<ComicReaderBatteryGlyph>(glyph);
+    expect(lowBattery.level, 19);
+    expect(lowBattery.color, const Color(0xFFD82D47));
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     final pausedReads = reads;
     await tester.pump(const Duration(minutes: 2));

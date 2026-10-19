@@ -1,3 +1,9 @@
+import 'support/fake_source_manager.dart';
+
+import 'package:lume_box/core/intro/intro_models.dart';
+import 'package:lume_box/features/video/reference_player_page.dart';
+import 'package:lume_box/core/intro/intro_store.dart';
+
 import 'dart:async';
 
 import 'package:lume_box/core/player/pip.dart';
@@ -49,9 +55,11 @@ void main() {
         );
     await SectionScope.open(Section.video);
     await ReadingLibrary.open(Section.video);
+    await IntroStore.open();
   });
 
   tearDown(() async {
+    await IntroStore.resetForTesting();
     ReadingLibrary.disposeAll();
     ReadingStore.disposeAll();
     await SectionScope.closeAll();
@@ -263,6 +271,7 @@ void main() {
       SourceManager? sourceManager,
       PipBackend? pipBackend,
       PlaybackSourceValidator? validator,
+      bool reference = false,
     }) async {
       final created = <_FakePlayer>[];
       await tester.binding.setSurfaceSize(const Size(900, 1600));
@@ -270,22 +279,43 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: LumeTheme.build(),
-          home: VideoPlayerPage(
-            fullscreenOnly: false,
-            media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
-            qualities: qualities,
-            catalog: catalog ?? const _AllKernelsCatalog(),
-            speedMeter: speedMeter,
-            pipBackend: pipBackend,
-            sourceValidator: validator,
-            target: target,
-            sourceManager: sourceManager,
-            playerFactory: (kernel) {
-              final created_ = player ?? _FakePlayer(kernel: kernel);
-              created.add(created_);
-              return created_;
-            },
-          ),
+          home: reference
+              ? ReferencePlayerPage(
+                  fullscreenOnly: false,
+                  media: PlayerMedia(
+                    uri: Uri.parse('https://example.com/a.mp4'),
+                  ),
+                  qualities: qualities,
+                  catalog: catalog ?? const _AllKernelsCatalog(),
+                  speedMeter: speedMeter,
+                  pipBackend: pipBackend,
+                  sourceValidator: validator,
+                  target: target,
+                  sourceManager: sourceManager,
+                  playerFactory: (kernel) {
+                    final created_ = player ?? _FakePlayer(kernel: kernel);
+                    created.add(created_);
+                    return created_;
+                  },
+                )
+              : VideoPlayerPage(
+                  fullscreenOnly: false,
+                  media: PlayerMedia(
+                    uri: Uri.parse('https://example.com/a.mp4'),
+                  ),
+                  qualities: qualities,
+                  catalog: catalog ?? const _AllKernelsCatalog(),
+                  speedMeter: speedMeter,
+                  pipBackend: pipBackend,
+                  sourceValidator: validator,
+                  target: target,
+                  sourceManager: sourceManager,
+                  playerFactory: (kernel) {
+                    final created_ = player ?? _FakePlayer(kernel: kernel);
+                    created.add(created_);
+                    return created_;
+                  },
+                ),
         ),
       );
       await tester.pumpAndSettle();
@@ -1466,6 +1496,103 @@ void main() {
       await tester.pumpAndSettle();
       expect(backend.stopped, 1);
     });
+    for (final reference in [false, true]) {
+      for (final mode in ['portrait', 'landscape', 'pip']) {
+        testWidgets('同剧第二集自动跳过贯穿布局与画中画：reference=$reference mode=$mode', (
+          tester,
+        ) async {
+          final store = (await tester.runAsync(IntroStore.open))!;
+          store.update({
+            'active': true,
+            'manual': true,
+            'reuseManualSeason': true,
+            'countdown': 3,
+          });
+          const first = EpisodeIdentity(series: 'fixture:series', episode: 1);
+          store.rememberSeries(first, 600000, [
+            const SkipSegment(
+              kind: SegmentKind.opening,
+              startMs: 0,
+              endMs: 60000,
+              confidence: 1,
+              source: 'manual',
+            ),
+            const SkipSegment(
+              kind: SegmentKind.ending,
+              startMs: 540000,
+              endMs: 600000,
+              confidence: 1,
+              source: 'manual',
+            ),
+          ]);
+          final backend = _TestPipBackend();
+          addTearDown(backend.close);
+          final players = await pump(
+            tester,
+            reference: reference,
+            pipBackend: backend,
+            sourceManager: FakeSourceManager(),
+            target: const VideoPlayTarget(
+              sourceId: 'fixture',
+              itemId: 'series',
+              title: '测试剧',
+              chapterIndex: 1,
+              chapterId: 'ep2',
+              chapterTitle: '第2集',
+            ),
+          );
+          final player = players.single;
+          player.emit(
+            playing: true,
+            position: Duration.zero,
+            duration: const Duration(seconds: 620),
+          );
+          await tester.pump();
+          await tester.runAsync(() async {
+            await Future<void>.delayed(const Duration(milliseconds: 40));
+          });
+          await tester.pump(const Duration(milliseconds: 100));
+          if (mode == 'landscape') {
+            await tester.tap(find.byTooltip('全屏').first);
+            await tester.pumpAndSettle();
+          } else if (mode == 'pip') {
+            await tester.tap(find.byIcon(Icons.picture_in_picture_alt).first);
+            await tester.pumpAndSettle();
+            tester.binding.handleAppLifecycleStateChanged(
+              AppLifecycleState.paused,
+            );
+            await tester.pump();
+          }
+          player.emit(
+            playing: true,
+            position: const Duration(seconds: 5),
+            duration: const Duration(seconds: 620),
+          );
+          await tester.pump(const Duration(seconds: 4));
+          expect(player.seeks, contains(const Duration(seconds: 60)));
+          player.emit(
+            playing: true,
+            position: const Duration(seconds: 565),
+            duration: const Duration(seconds: 620),
+          );
+          await tester.pump(const Duration(seconds: 4));
+          expect(
+            player.seeks,
+            contains(const Duration(seconds: 620)),
+            reason: '片尾按剩余60秒适配新集',
+          );
+          if (mode == 'pip') {
+            tester.binding.handleAppLifecycleStateChanged(
+              AppLifecycleState.resumed,
+            );
+            await tester.pump();
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+        });
+      }
+    }
+
     testWidgets('退出播放页立即暂停并停止，画中画退出失败也释放播放器', (tester) async {
       final backend = _TestPipBackend()..stopFailure = true;
       addTearDown(backend.close);

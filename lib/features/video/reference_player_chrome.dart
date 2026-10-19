@@ -40,10 +40,13 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
   void _onReferenceIntroChanged() => _refresh(() {});
 
   void _syncReferenceIntro(PlayerSnapshot snapshot) {
-    _intro?.update(
-      snapshot,
-      foreground: _lifecycle == AppLifecycleState.resumed && !_locked,
-    );
+    if (identical(_introMedia, _media)) {
+      _intro?.update(
+        snapshot,
+        foreground: _lifecycle == AppLifecycleState.resumed,
+        pictureInPicture: _session?.state == PipState.active,
+      );
+    }
     final media = _media;
     if (media == null ||
         snapshot.duration <= Duration.zero ||
@@ -67,12 +70,37 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
             ? PlaybackLogs.safeUri(media.uri)
             : '${target.sourceId}:${target.itemId}';
         final identity = store.identity(series);
+        if (target != null &&
+            !_skipMarks.isEmpty &&
+            store
+                .seriesMemory(
+                  EpisodeIdentity(
+                    series: series,
+                    episode: target.chapterIndex + 1,
+                    season: (identity['season'] as num?)?.toInt() ?? 1,
+                    movie: identity['movie'] == true,
+                  ),
+                  snapshot.duration.inMilliseconds,
+                )
+                .isEmpty &&
+            !store.hasSeriesMemory(
+              EpisodeIdentity(
+                series: series,
+                episode: target.chapterIndex + 1,
+                season: (identity['season'] as num?)?.toInt() ?? 1,
+                movie: identity['movie'] == true,
+              ),
+            )) {
+          await rememberPlayerSkip(target, _skipMarks, snapshot.duration);
+          if (!mounted ||
+              generation != _introGeneration ||
+              !identical(_media, media)) {
+            return;
+          }
+        }
         final controller = _intro ??= IntroController(store)
           ..addListener(_onReferenceIntroChanged);
-        controller.update(
-          _player?.snapshot.value ?? snapshot,
-          foreground: _lifecycle == AppLifecycleState.resumed,
-        );
+
         _introMedia = media;
         controller.bind(
           IntroRequest(
@@ -92,13 +120,22 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
                 : null,
           ),
           (position) async {
-            if (mounted && identical(_media, media)) {
-              await _player?.seek(position);
+            final active = _player;
+            if (!mounted || !identical(_media, media) || active == null) {
+              throw StateError('Playback changed before skip');
             }
+            await active.seek(position);
           },
+          deferQueries: true,
+        );
+        controller.update(
+          _player?.snapshot.value ?? snapshot,
+          foreground: _lifecycle == AppLifecycleState.resumed,
+          pictureInPicture: _session?.state == PipState.active,
         );
         _refresh(() {});
-      } catch (_) {
+      } catch (error) {
+        LumeLog.warn('片头片尾初始化失败：${error.runtimeType}');
         if (mounted) _showToast('片头片尾识别暂不可用，仍可手动跳过');
       } finally {
         if (generation == _introGeneration) {
@@ -173,7 +210,11 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
                   tooltip: '取消本段跳过',
                   onPressed: controller.dismiss,
                   color: Colors.white,
-                  icon: const Icon(Icons.close, size: 20),
+                  icon: const LumeIcon(
+                    Icons.close,
+                    slot: 'reference_player_chrome.1',
+                    size: 20,
+                  ),
                 ),
               ],
             ),
@@ -196,15 +237,14 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
         .where((s) => position >= s.startMs && position < s.endMs)
         .firstOrNull;
     if (segment != null) {
-      unawaited(_player?.seek(Duration(milliseconds: segment.endMs)));
+      unawaited(controller!.skipSegment(segment));
       return;
     }
-    // Compatibility marks are used only when this explicit button is pressed.
-    if (!_skipMarks.isEmpty) {
+    if (controller == null && !_skipMarks.isEmpty) {
       _maybeSkip(_skipMarks, snapshot.position, snapshot.duration);
       return;
     }
-    _showToast('当前位置没有可靠的可跳过片段，可在「片头片尾」里手动打点');
+    _markSkipFromQuick(snapshot);
   }
 
   void _restoreReferenceBrightness(VideoPlayTarget? target) {
@@ -332,7 +372,15 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
               label,
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             )
-          : Tooltip(message: label, child: Icon(icon, size: 22)),
+          : Tooltip(
+              message: label,
+              child: LumeIcon(
+                icon,
+                slot: 'reference_player_chrome.2',
+                variant: true,
+                size: 22,
+              ),
+            ),
     );
   }
 
@@ -343,7 +391,7 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
         IconButton(
           tooltip: '关闭播放器',
           color: Colors.white,
-          icon: const Icon(Icons.close),
+          icon: const LumeIcon(Icons.close, slot: 'reference_player_chrome.3'),
           onPressed: () => Navigator.maybePop(context),
         ),
         Expanded(
@@ -385,7 +433,10 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
         IconButton(
           tooltip: '播放设置',
           color: Colors.white,
-          icon: const Icon(Icons.more_horiz),
+          icon: const LumeIcon(
+            Icons.more_horiz,
+            slot: 'reference_player_chrome.4',
+          ),
           onPressed: _openSettings,
         ),
       ],
@@ -433,7 +484,11 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
                 IconButton(
                   tooltip: action.$2,
                   color: Colors.white,
-                  icon: Icon(action.$1),
+                  icon: LumeIcon(
+                    action.$1,
+                    slot: 'reference_player_chrome.5',
+                    variant: true,
+                  ),
                   onPressed: _player == null ? null : action.$3,
                 ),
               Expanded(
@@ -538,7 +593,11 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
                   child: IconButton(
                     tooltip: _locked ? '解除锁定' : '锁定',
                     color: Colors.white,
-                    icon: Icon(_locked ? Icons.lock : Icons.lock_open),
+                    icon: LumeIcon(
+                      _locked ? Icons.lock : Icons.lock_open,
+                      slot: 'reference_player_chrome.6',
+                      variant: true,
+                    ),
                     onPressed: () => _refresh(() => _locked = !_locked),
                   ),
                 ),
@@ -554,8 +613,10 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
                           IconButton(
                             color: Colors.white,
                             tooltip: '播放／暂停',
-                            icon: Icon(
+                            icon: LumeIcon(
                               snapshot.playing ? Icons.pause : Icons.play_arrow,
+                              slot: 'reference_player_chrome.7',
+                              variant: true,
                             ),
                             onPressed: () => unawaited(
                               snapshot.playing
@@ -567,7 +628,10 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
                           IconButton(
                             color: Colors.white,
                             tooltip: '全屏',
-                            icon: const Icon(Icons.fullscreen),
+                            icon: const LumeIcon(
+                              Icons.fullscreen,
+                              slot: 'reference_player_chrome.8',
+                            ),
                             onPressed: () => _setFullscreen(true),
                           ),
                         ],
@@ -635,12 +699,18 @@ extension _ReferenceChrome on _ReferencePlayerPageState {
                   children: [
                     TextButton.icon(
                       onPressed: _openReferenceIntro,
-                      icon: const Icon(Icons.skip_next),
+                      icon: const LumeIcon(
+                        Icons.skip_next,
+                        slot: 'reference_player_chrome.9',
+                      ),
                       label: const Text('片头片尾'),
                     ),
                     TextButton.icon(
                       onPressed: _openSettings,
-                      icon: const Icon(Icons.tune),
+                      icon: const LumeIcon(
+                        Icons.tune,
+                        slot: 'reference_player_chrome.10',
+                      ),
                       label: const Text('播放设置'),
                     ),
                   ],

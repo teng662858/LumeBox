@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -6,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../core/speech/speech_cloud.dart';
 import '../../core/speech/speech_local.dart';
 import '../../core/speech/speech_settings.dart';
+import '../../core/speech/speech_voice_labels.dart';
 
 class NovelSpeechModes extends StatefulWidget {
   const NovelSpeechModes({
@@ -15,6 +18,7 @@ class NovelSpeechModes extends StatefulWidget {
     this.selectorOnly = false,
     this.optionsOnly = false,
     this.singleSpeaker = false,
+    this.localModel,
   });
   final bool selectorOnly, optionsOnly;
 
@@ -23,17 +27,134 @@ class NovelSpeechModes extends StatefulWidget {
   final bool singleSpeaker;
   final SpeechSettings settings;
   final ValueChanged<SpeechSettings> onChanged;
+  final SpeechLocalModel? localModel;
   @override
   State<NovelSpeechModes> createState() => _NovelSpeechModesState();
 }
 
 class _NovelSpeechModesState extends State<NovelSpeechModes> {
-  final model = SpeechLocalModel.instance;
+  late final model = widget.localModel ?? SpeechLocalModel.instance;
+  var _selectionGeneration = 0;
+  final _systemVoiceLabels = <String, String>{};
+  Timer? _voiceTimeout;
+  Completer<List<dynamic>?>? _voiceRequest;
   @override
   void initState() {
     super.initState();
     // Tests/unsupported devices may have no platform path provider.
     if (!widget.optionsOnly) unawaited(model.check().catchError((_) => false));
+    if (widget.settings.mode == SpeechMode.system) {
+      unawaited(_loadVoiceLabels());
+    }
+  }
+
+  @override
+  void didUpdateWidget(NovelSpeechModes oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.settings.mode == SpeechMode.system &&
+        oldWidget.settings.mode != SpeechMode.system) {
+      unawaited(_loadVoiceLabels());
+    }
+  }
+
+  Future<void> _loadVoiceLabels() async {
+    if (widget.selectorOnly) return;
+    _cancelVoiceLookup();
+    final request = _voiceRequest = Completer<List<dynamic>?>();
+    void complete(List<dynamic>? value) {
+      if (!request.isCompleted) request.complete(value);
+    }
+
+    _voiceTimeout = Timer(const Duration(seconds: 5), () => complete(null));
+    unawaited(
+      const MethodChannel('lumebox/speech')
+          .invokeListMethod<dynamic>('speechVoices')
+          .then(complete, onError: (Object _) => complete(null)),
+    );
+    final data = await request.future;
+    if (!mounted || !identical(request, _voiceRequest)) return;
+    _cancelVoiceLookup();
+    setState(() {
+      for (final voice in data ?? []) {
+        if (voice is Map && voice['id'] is String) {
+          _systemVoiceLabels[voice['id'] as String] = SpeechVoiceLabels.label(
+            voice,
+          );
+        }
+      }
+    });
+  }
+
+  void _cancelVoiceLookup() {
+    _voiceTimeout?.cancel();
+    final request = _voiceRequest;
+    _voiceRequest = null;
+    if (request != null && !request.isCompleted) request.complete(null);
+  }
+
+  @override
+  void dispose() {
+    _cancelVoiceLookup();
+    super.dispose();
+  }
+
+  void _selectMode(SpeechMode value) {
+    if (value == SpeechMode.local && !model.ready) {
+      // The form field otherwise displays its just-picked value while the
+      // installation dialog is cancelled, despite retaining the system engine.
+      setState(() => _selectionGeneration++);
+      unawaited(_installOffline(selectWhenReady: true));
+      return;
+    }
+    widget.onChanged(
+      widget.settings.copyWith(
+        mode: value,
+        autoDialogue: widget.singleSpeaker ? false : null,
+      ),
+    );
+  }
+
+  Future<void> _installOffline({bool selectWhenReady = false}) async {
+    if (model.preparing) return;
+    final fromFile = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('启用本地离线朗读'),
+        content: const SingleChildScrollView(
+          child: Text(
+            '这是普通话离线音色包，压缩资源约 147 MB，支持 174 种音色。'
+            '优先使用安装包内置资源，无需重复下载；首次使用需要解压、校验并占用额外存储空间。\n\n'
+            '也可从“文件”选择完整的 vits-zh-aishell3.tar.bz2 包。'
+            '安装完成后即可选择本地模式；系统朗读无需安装这个包。',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('从文件安装'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('启用内置包'),
+          ),
+        ],
+      ),
+    );
+    if (fromFile == null || !mounted) return;
+    final installed = await model.prepare(fromFile: fromFile);
+    if (!mounted) return;
+    if (installed) {
+      if (selectWhenReady) _selectMode(SpeechMode.local);
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(const SnackBar(content: Text('离线音色包已就绪，可使用本地朗读')));
+    } else if (model.error != null) {
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(model.error!)));
+    }
   }
 
   @override
@@ -43,7 +164,7 @@ class _NovelSpeechModesState extends State<NovelSpeechModes> {
       children: [
         if (!widget.optionsOnly)
           DropdownButtonFormField<SpeechMode>(
-            key: ValueKey(widget.settings.mode),
+            key: ValueKey('${widget.settings.mode.name}:$_selectionGeneration'),
             initialValue: widget.settings.mode,
             isExpanded: true,
             decoration: const InputDecoration(labelText: '听书模式'),
@@ -51,28 +172,15 @@ class _NovelSpeechModesState extends State<NovelSpeechModes> {
               for (final mode in SpeechMode.values)
                 DropdownMenuItem(
                   value: mode,
-                  enabled: mode != SpeechMode.local || model.ready,
+                  enabled: !model.preparing || mode != SpeechMode.local,
                   child: Text(
-                    '${mode.label}${mode == SpeechMode.local && !model.ready ? '（模型未就绪）' : ''}',
+                    '${mode.label}${mode == SpeechMode.local && !model.ready ? '（先启用音色包）' : ''}',
                     overflow: TextOverflow.ellipsis,
-                    style: mode == SpeechMode.local && !model.ready
-                        ? TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).disabledColor,
-                          )
-                        : null,
                   ),
                 ),
             ],
             onChanged: (value) {
-              if (value != null) {
-                widget.onChanged(
-                  widget.settings.copyWith(
-                    mode: value,
-                    autoDialogue: widget.singleSpeaker ? false : null,
-                  ),
-                );
-              }
+              if (value != null) _selectMode(value);
             },
           ),
         if (!widget.selectorOnly) ...[
@@ -89,17 +197,35 @@ class _NovelSpeechModesState extends State<NovelSpeechModes> {
             ),
           if (!model.ready)
             TextButton.icon(
-              onPressed: model.preparing ? null : model.prepare,
+              onPressed: model.preparing ? null : _installOffline,
               icon: model.preparing
                   ? const SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.download_for_offline_outlined),
+                  : const LumeIcon(
+                      Icons.download_for_offline_outlined,
+                      slot: 'novel_speech_modes.1',
+                    ),
               label: Text(
-                model.preparing ? '正在校验安装音色包…' : '从本地安装离线音色包（约147 MB）',
+                model.preparing ? '正在解压并校验音色包…' : '启用内置离线音色包（约 147 MB）',
               ),
+            ),
+          if (!model.ready)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                '用于普通话离线朗读，首次使用需安装；系统朗读可直接使用。',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+          if (model.ready)
+            const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text('离线音色包已就绪'),
+              subtitle: Text('可选择本地离线朗读，使用时无需联网'),
             ),
           if (model.error != null)
             Text(
@@ -116,14 +242,21 @@ class _NovelSpeechModesState extends State<NovelSpeechModes> {
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 title: Text('$role音色'),
-                subtitle: Text(_voice(role).isEmpty ? '系统默认' : _voice(role)),
-                trailing: const Icon(Icons.edit_outlined, size: 18),
+                subtitle: Text(_voiceLabel(role)),
+                trailing: const LumeIcon(
+                  Icons.edit_outlined,
+                  slot: 'novel_speech_modes.2',
+                  size: 18,
+                ),
                 onTap: () => _editVoice(role),
               ),
           if (widget.settings.mode == SpeechMode.cloud ||
               widget.settings.mode == SpeechMode.cloudAi)
             TextButton.icon(
-              icon: const Icon(Icons.settings_ethernet),
+              icon: const LumeIcon(
+                Icons.settings_ethernet,
+                slot: 'novel_speech_modes.3',
+              ),
               label: const Text('配置在线接口与密钥'),
               onPressed: () => showDialog<void>(
                 context: context,
@@ -139,6 +272,15 @@ class _NovelSpeechModesState extends State<NovelSpeechModes> {
       : role == '男声'
       ? widget.settings.maleVoice
       : widget.settings.femaleVoice;
+  String _voiceLabel(String role) {
+    final value = _voice(role);
+    if (value.isEmpty) return '系统默认';
+    if (widget.settings.mode == SpeechMode.system) {
+      return _systemVoiceLabels[value] ?? '已选系统音色';
+    }
+    return widget.settings.mode == SpeechMode.local ? '音色 $value' : value;
+  }
+
   Future<void> _editVoice(String role) async {
     final value = await showDialog<String>(
       context: context,
@@ -532,10 +674,7 @@ class _SpeechVoiceDialogState extends State<_SpeechVoiceDialog> {
           ('', '系统默认'),
           for (final voice in data ?? [])
             if (voice is Map && voice['id'] is String)
-              (
-                voice['id'] as String,
-                '${voice['name']} · ${voice['language']}',
-              ),
+              (voice['id'] as String, SpeechVoiceLabels.label(voice)),
         ],
       );
     } catch (_) {

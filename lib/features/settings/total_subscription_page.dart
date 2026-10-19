@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -141,7 +143,10 @@ class _TotalSubscriptionPageState extends State<TotalSubscriptionPage> {
         const SizedBox(height: 12),
         FilledButton.icon(
           onPressed: busy ? null : () => run(import),
-          icon: const Icon(Icons.download),
+          icon: const LumeIcon(
+            Icons.download,
+            slot: 'total_subscription_page.1',
+          ),
           label: const Text('导入总订阅'),
         ),
         Wrap(
@@ -177,7 +182,10 @@ class _TotalSubscriptionPageState extends State<TotalSubscriptionPage> {
                   final text = (await service.export()).encode();
                   if (mounted) setState(() => exported = text);
                 }),
-          icon: const Icon(Icons.upload_file),
+          icon: const LumeIcon(
+            Icons.upload_file,
+            slot: 'total_subscription_page.2',
+          ),
           label: const Text('生成总订阅导出'),
         ),
         if (exported != null) ...[

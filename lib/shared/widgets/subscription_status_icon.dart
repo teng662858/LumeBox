@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/session/section.dart';
@@ -20,7 +21,7 @@ class SubscriptionStatusIcon extends StatelessWidget {
       textStyle: Theme.of(context).textTheme.labelSmall
           ?.copyWith(fontSize: 10, height: 1.1, fontWeight: FontWeight.w600),
       label: Text(count > 99 ? '99+' : '$count'),
-      child: const Icon(Icons.rss_feed),
+      child: const LumeIcon(Icons.rss_feed, slot: 'subscription_status_icon.1'),
     ),
   );
 }

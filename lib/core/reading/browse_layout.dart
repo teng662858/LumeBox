@@ -8,13 +8,13 @@ import 'package:path_provider/path_provider.dart';
 import '../session/section.dart';
 import '../util/lume_log.dart';
 
-/// 浏览页的布局档位（单/双列列表及两至五列网格）。
+/// 首页提供双列列表与三列网格；其他枚举值保留用于旧配置和独立收藏面板。
 ///
 /// 为什么是「档位」而不是「列数」：用户点的是「单列 / 双列 / …」这几种
 /// **观感**，列表与网格的卡片内部排版本来就不一样（列表是横排大字、网格是竖排
 /// 封面 + 标题），把列数当唯一参数会逼展示层到处写 if。
 enum BrowseLayoutMode {
-  /// 单列列表：现有样式，也是三个板块的默认。
+  /// 旧版单列列表。
   list('list', '单列列表', '一行一条，标题为主'),
 
   list2('list2', '双列列表', '一行两条，封面在左、文字在右'),
@@ -99,7 +99,7 @@ enum GridTitleStyle {
 
 /// 浏览页布局偏好：**按板块分别记住**（小说习惯列表、漫画习惯网格，不该互相覆盖）。
 ///
-/// 存成 `<应用支持目录>/browse_layout.json`，形如 `{"novel":"list","comic":"grid3"}`。
+/// 存成 `<应用支持目录>/browse_layout.json`，形如 `{"novel":"list2","comic":"grid3"}`。
 /// 与壳层设置同一套做法：读失败回退默认、写失败不影响本次运行——一个布局偏好
 /// 写不进去，不该让用户觉得「点了没反应」。
 class BrowseLayoutSettings extends ChangeNotifier {
@@ -130,14 +130,12 @@ class BrowseLayoutSettings extends ChangeNotifier {
     await _persist();
   }
 
-  /// 手机端只保留四档：单列、双列、双列网格、三列网格。
-  ///
-  /// 旧配置里的四列 / 五列仍在枚举里（兼容落盘 id），但读出来一律并到三列，
-  /// 不让页面继续以手机上放不下的密度渲染。
-  static BrowseLayoutMode normalize(BrowseLayoutMode mode) =>
-      mode == BrowseLayoutMode.grid4 || mode == BrowseLayoutMode.grid5
-      ? BrowseLayoutMode.grid3
-      : mode;
+  /// Homepage choices; legacy lists migrate to list2 and legacy grids to grid3.
+  static const homeModes = [BrowseLayoutMode.list2, BrowseLayoutMode.grid3];
+  static BrowseLayoutMode normalize(BrowseLayoutMode mode) => switch (mode) {
+    BrowseLayoutMode.list || BrowseLayoutMode.list2 => BrowseLayoutMode.list2,
+    _ => BrowseLayoutMode.grid3,
+  };
 
   /// 用户为某板块选过的布局；没选过返回 null（由调用方决定默认档）。
   BrowseLayoutMode? modeFor(Section section) {

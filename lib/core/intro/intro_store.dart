@@ -7,7 +7,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'intro_models.dart';
 
-/// A private database: reference player never overwrites original skip marks.
+/// Shared recognition and series memory; legacy player marks remain readable.
 class IntroStore extends ValueNotifier<IntroOptions> {
   IntroStore(this.db) : super(IntroOptions()) {
     db.execute(
@@ -44,6 +44,20 @@ class IntroStore extends ValueNotifier<IntroOptions> {
   final Database db;
   static Future<IntroStore>? _opening;
   static Future<IntroStore> open() => _opening ??= _open();
+  @visibleForTesting
+  static Future<void> resetForTesting() async {
+    final pending = _opening;
+    _opening = null;
+    if (pending == null) return;
+    try {
+      final store = await pending;
+      store.dispose();
+      store.db.close();
+    } catch (_) {
+      // A failed open owns no database connection.
+    }
+  }
+
   static Future<IntroStore> _open() async {
     try {
       final dir = await getApplicationSupportDirectory();
@@ -114,6 +128,112 @@ class IntroStore extends ValueNotifier<IntroOptions> {
     }
   }
 
+  /// Remember explicit user choices across episodes, without any community ID.
+  bool hasSeriesMemory(EpisodeIdentity episode) => db.select(
+    'SELECT 1 FROM preferences WHERE id=?',
+    ['series-skip:${episode.seasonKey}'],
+  ).isNotEmpty;
+
+  /// Openings use an absolute end point; endings use distance from the end.
+  void rememberSeries(
+    EpisodeIdentity episode,
+    int duration,
+    List<SkipSegment> segments, {
+    bool replace = false,
+  }) {
+    if (duration <= 0) return;
+    final key = 'series-skip:${episode.seasonKey}';
+    final rows = db.select('SELECT value FROM preferences WHERE id=?', [key]);
+    final parts = <String, Object?>{};
+    if (!replace && rows.isNotEmpty) {
+      try {
+        final old = jsonDecode(rows.first['value'] as String);
+        if (old is Map) parts.addAll(Map<String, Object?>.from(old));
+      } catch (_) {
+        /* Rebuild a damaged profile from the current user choice. */
+      }
+    }
+    for (final s in segments) {
+      if (!s.validFor(duration) ||
+          (s.kind != SegmentKind.opening && s.kind != SegmentKind.ending)) {
+        continue;
+      }
+      parts[s.kind.name] = {
+        'start': s.kind == SegmentKind.ending
+            ? duration - s.startMs
+            : s.startMs,
+        'end': s.kind == SegmentKind.ending ? duration - s.endMs : s.endMs,
+        'duration': duration,
+        'episode': episode.episode,
+      };
+    }
+    db.execute('INSERT OR REPLACE INTO preferences VALUES (?, ?)', [
+      key,
+      jsonEncode(parts),
+    ]);
+  }
+
+  List<SkipSegment> seriesMemory(EpisodeIdentity episode, int duration) {
+    if (!value.enabled('reuseManualSeason') ||
+        !value.enabled('manual') ||
+        duration <= 0) {
+      return [];
+    }
+    final rows = db.select('SELECT value FROM preferences WHERE id=?', [
+      'series-skip:${episode.seasonKey}',
+    ]);
+    if (rows.isEmpty) return [];
+    try {
+      final data = jsonDecode(rows.first['value'] as String);
+      if (data is! Map) return [];
+      final result = <SkipSegment>[];
+      for (final kind in [SegmentKind.opening, SegmentKind.ending]) {
+        final part = data[kind.name];
+        if (part is! Map) continue;
+        final oldDuration = (part['duration'] as num).toInt();
+        // Reject another edit of the same episode, trailers and merged episodes.
+        if (oldDuration <= 0 ||
+            duration / oldDuration < .65 ||
+            duration / oldDuration > 1.5 ||
+            (part['episode'] == episode.episode &&
+                (duration - oldDuration).abs() > 2000)) {
+          continue;
+        }
+        final start = (part['start'] as num).toInt(),
+            end = (part['end'] as num).toInt();
+        final segment = SkipSegment(
+          kind: kind,
+          startMs: kind == SegmentKind.ending ? duration - start : start,
+          endMs: kind == SegmentKind.ending ? duration - end : end,
+          confidence: 1,
+          source: 'series-memory',
+          evidence: 'User confirmed this series skip point',
+        );
+        if (segment.validFor(duration) &&
+            (kind != SegmentKind.opening || segment.endMs < duration * .5) &&
+            (kind != SegmentKind.ending || segment.startMs > duration * .5)) {
+          result.add(segment);
+        }
+      }
+      if (result.length == 2 && result.first.endMs > result.last.startMs) {
+        return [];
+      }
+      return result;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void clearSeriesMemory(EpisodeIdentity episode) {
+    // Keep an empty profile so legacy player marks are not imported again.
+    db.execute("INSERT OR REPLACE INTO preferences VALUES (?, '{}')", [
+      'series-skip:${episode.seasonKey}',
+    ]);
+    db.execute('DELETE FROM segments WHERE season=? AND manual=1', [
+      episode.seasonKey,
+    ]);
+  }
+
   void saveSegments(
     EpisodeIdentity episode,
     int duration,
@@ -122,6 +242,9 @@ class IntroStore extends ValueNotifier<IntroOptions> {
   }) {
     if (segments.any((s) => !s.validFor(duration))) {
       throw ArgumentError('Invalid segment bounds');
+    }
+    if (manual && segments.isNotEmpty) {
+      rememberSeries(episode, duration, segments, replace: true);
     }
     // Manual and machine results have separate keys, including an empty manual set.
     final key = manual ? 'manual:${episode.key}' : episode.key;

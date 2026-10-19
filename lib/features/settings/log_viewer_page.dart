@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/lume_theme.dart';
@@ -63,12 +64,18 @@ class _LogViewerPageState extends State<LogViewerPage> {
       actions: <Widget>[
         IconButton(
           tooltip: '错误报告',
-          icon: const Icon(Icons.file_upload_outlined),
+          icon: const LumeIcon(
+            Icons.file_upload_outlined,
+            slot: 'log_viewer_page.1',
+          ),
           onPressed: _export,
         ),
         IconButton(
           tooltip: '清空日志',
-          icon: const Icon(Icons.delete_sweep_outlined),
+          icon: const LumeIcon(
+            Icons.delete_sweep_outlined,
+            slot: 'log_viewer_page.2',
+          ),
           onPressed: _clear,
         ),
       ],

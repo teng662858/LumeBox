@@ -144,8 +144,7 @@ extension _ComicReaderChrome on _ComicReaderPageState {
         if (voice is Map &&
             voice['id'] is String &&
             (voice['id'] as String).isNotEmpty) {
-          voices[voice['id'] as String] =
-              '${voice['name'] ?? voice['id']} · ${voice['language'] ?? ''}';
+          voices[voice['id'] as String] = SpeechVoiceLabels.label(voice);
         }
       }
       return voices.entries.map((entry) => (entry.key, entry.value)).toList();
@@ -288,93 +287,123 @@ extension _ComicReaderChrome on _ComicReaderPageState {
     IconButton(
       tooltip: label,
       onPressed: action,
-      icon: Icon(_readerIcon(icon), color: selected ? _readerAccent : null),
+      icon: LumeIcon(
+        _readerIcon(icon),
+        slot: 'comic_reader_chrome.1',
+        variant: true,
+        color: selected ? _readerAccent : null,
+        fallback: icon == Icons.vertical_align_bottom
+            ? ComicReaderVerticalFlowGlyph(
+                color: selected ? _readerAccent : null,
+              )
+            : null,
+      ),
       constraints: const BoxConstraints.tightFor(width: 44, height: 44),
     ),
   );
 
-  Widget _readerTopBar() => Positioned(
-    top: 0,
-    left: 12,
-    right: 12,
-    child: SafeArea(
-      bottom: false,
-      child: Padding(
-        padding: const EdgeInsets.only(top: 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
+  Widget _readerTopBar() {
+    final safe = MediaQuery.viewPaddingOf(context);
+    // The custom status capsules occupy the system status band. Applying a
+    // SafeArea above them would reserve that band twice on notched iPhones.
+    return Positioned(
+      top: 0,
+      left: 12 + safe.left,
+      right: 12 + safe.right,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: math.max(44, safe.top),
+            child: const Padding(
               padding: EdgeInsets.symmetric(horizontal: 20),
-              child: ComicReaderStatus(),
+              child: Center(child: ComicReaderStatus()),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                _roundButton(
-                  Icons.close,
-                  '退出阅读',
-                  () => Navigator.of(context).maybePop(),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _glass(
-                    InkWell(
-                      onTap: _showChapterSheet,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _chapters.isEmpty
-                                  ? '漫画阅读'
-                                  : _chapters[_chapterIndex].title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            key: const Key('comic.top.controls'),
+            children: [
+              _roundButton(
+                Icons.close,
+                '退出阅读',
+                () => Navigator.of(context).maybePop(),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minWidth: math.min(136, constraints.maxWidth),
+                        maxWidth: math.min(180, constraints.maxWidth),
+                        minHeight: 44,
+                      ),
+                      child: IntrinsicWidth(
+                        child: _glass(
+                          InkWell(
+                            key: const Key('comic.top.title'),
+                            onTap: _showChapterSheet,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 6,
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    _chapters.isEmpty
+                                        ? '漫画阅读'
+                                        : _chapters[_chapterIndex].title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      height: 1.15,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    widget.target.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      height: 1.15,
+                                      color: Color(0xFF85858D),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              widget.target.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFF85858D),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                _roundButton(
-                  _flowIcon,
-                  '阅读方向',
-                  () => _showReaderMenu('direction'),
-                ),
-                const SizedBox(width: 8),
-                _roundButton(
-                  Icons.more_horiz,
-                  '更多',
-                  () => _showReaderMenu('main'),
-                ),
-              ],
-            ),
-          ],
-        ),
+              ),
+              const SizedBox(width: 10),
+              _roundButton(
+                _flowIcon,
+                '阅读方向',
+                () => _showReaderMenu('direction'),
+              ),
+              const SizedBox(width: 8),
+              _roundButton(
+                Icons.more_horiz,
+                '更多',
+                () => _showReaderMenu('main'),
+              ),
+            ],
+          ),
+        ],
       ),
-    ),
-  );
+    );
+  }
 
   IconData get _flowIcon => switch (_preferences.flow) {
     'rtl' => Icons.keyboard_double_arrow_left,
@@ -442,7 +471,11 @@ extension _ComicReaderChrome on _ComicReaderPageState {
           IconButton(
             tooltip: '上一章',
             visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.keyboard_double_arrow_left, size: 21),
+            icon: const LumeIcon(
+              Icons.keyboard_double_arrow_left,
+              slot: 'comic_reader_chrome.2',
+              size: 21,
+            ),
             onPressed: _chapterIndex > 0
                 ? () => _openChapter(_chapterIndex - 1)
                 : null,
@@ -479,7 +512,11 @@ extension _ComicReaderChrome on _ComicReaderPageState {
           IconButton(
             tooltip: '下一章',
             visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.keyboard_double_arrow_right, size: 21),
+            icon: const LumeIcon(
+              Icons.keyboard_double_arrow_right,
+              slot: 'comic_reader_chrome.3',
+              size: 21,
+            ),
             onPressed: _chapterIndex + 1 < _chapters.length
                 ? () => _openChapter(_chapterIndex + 1)
                 : null,
@@ -565,28 +602,45 @@ extension _ComicReaderChrome on _ComicReaderPageState {
   }) => ListTile(
     minLeadingWidth: 24,
     contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 1),
-    leading: Icon(
+    leading: LumeIcon(
       _readerIcon(icon),
+      slot: 'comic_reader_chrome.4',
+      variant: true,
       color: color ?? (selected ? _readerAccent : const Color(0xFF17181D)),
+      fallback: icon == Icons.vertical_align_bottom
+          ? ComicReaderVerticalFlowGlyph(
+              color:
+                  color ?? (selected ? _readerAccent : const Color(0xFF17181D)),
+            )
+          : null,
     ),
     title: Text(
       title,
       style: TextStyle(
         fontSize: 16,
         color: const Color(0xFF17181D),
-        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
       ),
     ),
     subtitle: detail == null
         ? null
         : Text(
             detail,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF81818F)),
+            style: const TextStyle(fontSize: 12, color: Color(0xFF5F6069)),
           ),
     trailing: selected
-        ? const Icon(Icons.check, color: _readerAccent, size: 20)
+        ? const LumeIcon(
+            Icons.check,
+            slot: 'comic_reader_chrome.5',
+            color: _readerAccent,
+            size: 20,
+          )
         : arrow
-        ? const Icon(Icons.chevron_right, size: 19)
+        ? const LumeIcon(
+            Icons.chevron_right,
+            slot: 'comic_reader_chrome.6',
+            size: 19,
+          )
         : null,
     onTap: action,
   );
@@ -653,7 +707,7 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                         surface: (child) => GestureDetector(
                           excludeFromSemantics: true,
                           onTap: () {},
-                          child: _glass(child, radius: 30),
+                          child: _glass(child, radius: 30, opacity: .86),
                         ),
                         close: () => Navigator.pop(dialogContext),
                         entries: (route, open, refresh) => _menuEntries(
@@ -1331,7 +1385,12 @@ extension _ComicReaderChrome on _ComicReaderPageState {
       children: [
         Row(
           children: [
-            Icon(icon, size: 22),
+            LumeIcon(
+              icon,
+              slot: 'comic_reader_chrome.7',
+              variant: true,
+              size: 22,
+            ),
             const SizedBox(width: 10),
             Text(label),
             const Spacer(),
@@ -1403,7 +1462,10 @@ extension _ComicReaderChrome on _ComicReaderPageState {
         SwitchListTile(
           activeThumbColor: _readerAccent,
           title: const Text('降噪'),
-          secondary: const Icon(Icons.auto_fix_high_outlined),
+          secondary: const LumeIcon(
+            Icons.auto_fix_high_outlined,
+            slot: 'comic_reader_chrome.8',
+          ),
           value: _preferences.denoise,
           onChanged: (v) {
             _refresh(() => _preferences.denoise = v);
@@ -1414,7 +1476,10 @@ extension _ComicReaderChrome on _ComicReaderPageState {
         SwitchListTile(
           activeThumbColor: _readerAccent,
           title: const Text('灰度'),
-          secondary: const Icon(Icons.filter_b_and_w),
+          secondary: const LumeIcon(
+            Icons.filter_b_and_w,
+            slot: 'comic_reader_chrome.9',
+          ),
           value: _preferences.grayscale,
           onChanged: (v) {
             _refresh(() => _preferences.grayscale = v);
@@ -1425,7 +1490,10 @@ extension _ComicReaderChrome on _ComicReaderPageState {
         SwitchListTile(
           activeThumbColor: _readerAccent,
           title: const Text('反转颜色'),
-          secondary: const Icon(Icons.invert_colors),
+          secondary: const LumeIcon(
+            Icons.invert_colors,
+            slot: 'comic_reader_chrome.10',
+          ),
           value: _preferences.inverted,
           onChanged: (v) {
             _refresh(() => _preferences.inverted = v);
@@ -1463,7 +1531,10 @@ extension _ComicReaderChrome on _ComicReaderPageState {
     ),
     leading: (_) => IconButton(
       tooltip: '图片处理模型',
-      icon: const Icon(Icons.auto_fix_high_outlined),
+      icon: const LumeIcon(
+        Icons.auto_fix_high_outlined,
+        slot: 'comic_reader_chrome.11',
+      ),
       onPressed: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => const ComicImageToolsSettingsPage(),
@@ -1715,8 +1786,9 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                         color: _readerAccent,
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: const Icon(
+                      child: const LumeIcon(
                         Icons.visibility_off_outlined,
+                        slot: 'comic_reader_chrome.12',
                         color: Colors.white,
                       ),
                     ),
@@ -1728,7 +1800,11 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           ListTile(
-                            leading: Icon(icons[id]),
+                            leading: LumeIcon(
+                              icons[id],
+                              slot: 'comic_reader_chrome.13',
+                              variant: true,
+                            ),
                             title: Text(labels[id]!),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -1744,8 +1820,9 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                                 else if (editing)
                                   IconButton(
                                     tooltip: '隐藏',
-                                    icon: const Icon(
+                                    icon: const LumeIcon(
                                       Icons.remove_circle_outline,
+                                      slot: 'comic_reader_chrome.14',
                                       color: _readerAccent,
                                     ),
                                     onPressed: () => hide(id),
@@ -1755,7 +1832,10 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                                     index: index,
                                     child: const Padding(
                                       padding: EdgeInsets.only(left: 12),
-                                      child: Icon(Icons.drag_handle),
+                                      child: LumeIcon(
+                                        Icons.drag_handle,
+                                        slot: 'comic_reader_chrome.15',
+                                      ),
                                     ),
                                   ),
                               ],
@@ -1789,9 +1869,16 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                   ))
                     ListTile(
                       key: ValueKey('comic.toolbar.restore.$id'),
-                      leading: Icon(icons[id]),
+                      leading: LumeIcon(
+                        icons[id],
+                        slot: 'comic_reader_chrome.16',
+                        variant: true,
+                      ),
                       title: Text(labels[id]!),
-                      trailing: const Icon(Icons.add_circle),
+                      trailing: const LumeIcon(
+                        Icons.add_circle,
+                        slot: 'comic_reader_chrome.17',
+                      ),
                       onTap: () {
                         _preferences.toolbar.add(id);
                         save();
@@ -1814,7 +1901,11 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                 alignment: Alignment.centerLeft,
                 padding: const EdgeInsets.all(18),
               ),
-              icon: const Icon(Icons.restart_alt, color: _readerAccent),
+              icon: const LumeIcon(
+                Icons.restart_alt,
+                slot: 'comic_reader_chrome.18',
+                color: _readerAccent,
+              ),
               onPressed: () {
                 _preferences.toolbar = ['auto', 'slider', 'thumbnails'];
                 save();
@@ -1866,7 +1957,10 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                     IconButton(
                       tooltip: '关闭',
                       onPressed: () => Navigator.pop(sheetContext),
-                      icon: const Icon(Icons.close),
+                      icon: const LumeIcon(
+                        Icons.close,
+                        slot: 'comic_reader_chrome.19',
+                      ),
                     ),
                   ],
                 ),
@@ -2200,7 +2294,11 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                         onPressed: () {
                           unawaited(_stopComicSpeech(closePanel: true));
                         },
-                        icon: const Icon(Icons.close, size: 20),
+                        icon: const LumeIcon(
+                          Icons.close,
+                          slot: 'comic_reader_chrome.20',
+                          size: 20,
+                        ),
                       ),
                       IconButton(
                         tooltip: '朗读上一页',
@@ -2210,7 +2308,11 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                                 _startComicSpeech(continuous: false);
                               }
                             : null,
-                        icon: const Icon(Icons.fast_rewind, size: 22),
+                        icon: const LumeIcon(
+                          Icons.fast_rewind,
+                          slot: 'comic_reader_chrome.21',
+                          size: 22,
+                        ),
                       ),
                       IconButton(
                         tooltip: state == SpeechState.speaking
@@ -2225,10 +2327,12 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                             await _startComicSpeech(continuous: true);
                           }
                         },
-                        icon: Icon(
+                        icon: LumeIcon(
                           state == SpeechState.speaking
                               ? Icons.pause
                               : Icons.play_arrow,
+                          slot: 'comic_reader_chrome.22',
+                          variant: true,
                         ),
                       ),
                       IconButton(
@@ -2239,7 +2343,11 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                                 _startComicSpeech(continuous: false);
                               }
                             : null,
-                        icon: const Icon(Icons.fast_forward, size: 22),
+                        icon: const LumeIcon(
+                          Icons.fast_forward,
+                          slot: 'comic_reader_chrome.23',
+                          size: 22,
+                        ),
                       ),
                       TextButton(
                         key: const Key('comic.speech.speed'),
@@ -2256,16 +2364,18 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                         key: _comicVoiceAnchor,
                         tooltip: '声音与朗读设置',
                         onPressed: _showComicVoices,
-                        icon: const Icon(
+                        icon: const LumeIcon(
                           Icons.record_voice_over_outlined,
+                          slot: 'comic_reader_chrome.24',
                           size: 21,
                         ),
                       ),
                       IconButton(
                         tooltip: '隐藏朗读栏',
                         onPressed: () => _refresh(() => _speechMini = false),
-                        icon: const Icon(
+                        icon: const LumeIcon(
                           Icons.visibility_off_outlined,
+                          slot: 'comic_reader_chrome.25',
                           size: 21,
                         ),
                       ),

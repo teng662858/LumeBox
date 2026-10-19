@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
@@ -139,12 +140,20 @@ class _LogReportPageState extends State<LogReportPage> {
           children: <Widget>[
             FilledButton.icon(
               onPressed: _busy ? null : _export,
-              icon: const Icon(Icons.file_download_outlined, size: 18),
+              icon: const LumeIcon(
+                Icons.file_download_outlined,
+                slot: 'log_report_page.1',
+                size: 18,
+              ),
               label: Text(_busy ? '导出中…' : '导出报告文件'),
             ),
             TextButton.icon(
               onPressed: _copy,
-              icon: const Icon(Icons.copy_all_outlined, size: 18),
+              icon: const LumeIcon(
+                Icons.copy_all_outlined,
+                slot: 'log_report_page.2',
+                size: 18,
+              ),
               label: const Text('复制报告全文'),
             ),
           ],

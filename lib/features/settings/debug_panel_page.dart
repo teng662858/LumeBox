@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
@@ -61,7 +62,10 @@ class _DebugPanelPageState extends State<DebugPanelPage> {
       actions: <Widget>[
         IconButton(
           tooltip: '清空抓包',
-          icon: const Icon(Icons.delete_sweep_outlined),
+          icon: const LumeIcon(
+            Icons.delete_sweep_outlined,
+            slot: 'debug_panel_page.1',
+          ),
           onPressed: records.isEmpty
               ? null
               : () {
@@ -353,7 +357,11 @@ class _RequestTile extends StatelessWidget {
                         .showSnackBar(const SnackBar(content: Text('已复制请求地址')));
                   }
                 },
-                icon: const Icon(Icons.copy, size: 16),
+                icon: const LumeIcon(
+                  Icons.copy,
+                  slot: 'debug_panel_page.2',
+                  size: 16,
+                ),
                 label: const Text(
                   '复制地址',
                   style: TextStyle(

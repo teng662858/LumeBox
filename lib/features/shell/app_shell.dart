@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/module_glass_scope.dart';
 
 import 'package:flutter/rendering.dart' show ScrollDirection;
@@ -26,7 +28,7 @@ import '../comic/comic_page.dart';
 import '../novel/novel_page.dart';
 import '../settings/settings_page.dart';
 import '../source/waf_webview_page.dart';
-import '../video/video_page.dart';
+import '../video/video_source_hub.dart';
 import 'section_preloader.dart';
 import 'shell_dock.dart';
 import 'shell_dock_bar.dart';
@@ -160,7 +162,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       label: Section.video.label,
       icon: Icons.play_circle_outline_rounded,
       selectedIcon: Icons.play_circle_fill_rounded,
-      builder: () => const VideoPage(),
+      builder: () => const VideoSourceHub(),
     ),
     _ShellTab(
       id: ShellTab.all[3].id,
@@ -516,8 +518,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                       onTap: () => _select(ShellTab.settingsId),
                       child: Padding(
                         padding: const EdgeInsets.all(12),
-                        child: Icon(
+                        child: LumeIcon(
                           Icons.settings_outlined,
+                          slot: 'app_shell.1',
                           size: 22,
                           color: LumeTheme.textSecondary,
                         ),
@@ -667,8 +670,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             destinations: <NavigationRailDestination>[
               for (final tab in tabs)
                 NavigationRailDestination(
-                  icon: Icon(tab.icon),
-                  selectedIcon: Icon(tab.selectedIcon),
+                  icon: LumeIcon(tab.icon, slot: 'app_shell.2', variant: true),
+                  selectedIcon: LumeIcon(
+                    tab.selectedIcon,
+                    slot: 'app_shell.3',
+                    variant: true,
+                  ),
                   label: Text(tab.label),
                 ),
             ],

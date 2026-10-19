@@ -29,9 +29,71 @@ abstract interface class IntroScanBackend {
 }
 
 class NativeIntroBackend implements IntroScanBackend {
+  NativeIntroBackend({bool? platformSupported})
+    : _platformSupported =
+          platformSupported ?? (Platform.isIOS || Platform.isAndroid);
+  final bool _platformSupported;
   static const channel = MethodChannel('lumebox/reference_intro');
   final String session = '${DateTime.now().microsecondsSinceEpoch}';
   bool _closed = false;
+  bool _cancelled = false;
+  bool _hasNativeSession = false;
+  final Set<void Function()> _pending = {};
+
+  Future<Map<String, Object?>?> _sessionCall(
+    String method,
+    Map<String, Object?> arguments,
+    Duration timeout,
+  ) async {
+    if (_closed || _cancelled) throw const IntroCancelled();
+    if (!_platformSupported) {
+      throw MissingPluginException(
+        'Native intro scanner requires iOS or Android',
+      );
+    }
+    // A timed-out native request may still own a decoder and must be released.
+    _hasNativeSession = true;
+    try {
+      return await _bounded(
+        channel.invokeMapMethod<String, Object?>(method, arguments),
+        timeout,
+      );
+    } on MissingPluginException {
+      // Unsupported hosts never allocated native resources.
+      _hasNativeSession = false;
+      rethrow;
+    }
+  }
+
+  Future<T> _bounded<T>(Future<T> work, Duration timeout) {
+    final result = Completer<T>();
+    late Timer timer;
+    late void Function() stop;
+    void finish(void Function() complete) {
+      timer.cancel();
+      _pending.remove(stop);
+      if (!result.isCompleted) complete();
+    }
+
+    stop = () => finish(() => result.completeError(const IntroCancelled()));
+    timer = Timer(
+      timeout,
+      () => finish(
+        () => result.completeError(
+          TimeoutException('Intro scanner timeout', timeout),
+        ),
+      ),
+    );
+    _pending.add(stop);
+    work.then(
+      (value) => finish(() => result.complete(value)),
+      onError: (Object error, StackTrace stack) =>
+          finish(() => result.completeError(error, stack)),
+    );
+    if (_closed || _cancelled) stop();
+    return result.future;
+  }
+
   Interpreter? _audio;
   IsolateInterpreter? _audioIsolate;
   Map<String, Object?>? _modelConfig;
@@ -108,7 +170,10 @@ class NativeIntroBackend implements IntroScanBackend {
 
   @override
   Future<Map<String, Object?>> resources() async {
-    if (_closed) throw const IntroCancelled();
+    if (_closed || _cancelled) throw const IntroCancelled();
+    if (!_platformSupported) {
+      return const {'allowed': false, 'reason': 'Native scanner not available'};
+    }
     final value = await channel.invokeMapMethod<String, Object?>('resources');
     return value ??
         const {'allowed': false, 'reason': 'Native scanner not available'};
@@ -119,13 +184,11 @@ class NativeIntroBackend implements IntroScanBackend {
     Uri uri,
     Map<String, String> headers,
   ) async =>
-      await channel
-          .invokeMapMethod<String, Object?>('metadata', {
-            'url': uri.toString(),
-            'headers': headers,
-            'session': session,
-          })
-          .timeout(const Duration(seconds: 10)) ??
+      await _sessionCall('metadata', {
+        'url': uri.toString(),
+        'headers': headers,
+        'session': session,
+      }, const Duration(seconds: 10)) ??
       {};
   @override
   Future<IntroSample?> sample(
@@ -136,21 +199,19 @@ class NativeIntroBackend implements IntroScanBackend {
     IntroCancellation token,
   ) async {
     token.check();
-    final value = await channel
-        .invokeMapMethod<String, Object?>('sample', {
-          'url': uri.toString(),
-          'headers': headers,
-          'atMs': atMs,
-          'session': session,
-          'ocr': options.enabled('ocr'),
-          'audio':
-              options.enabled('mfcc') ||
-              options.enabled('joint') ||
-              options.enabled('silence') ||
-              options.enabled('audioAI'),
-          'jpeg': options.enabled('videoAI'),
-        })
-        .timeout(const Duration(seconds: 8));
+    final value = await _sessionCall('sample', {
+      'url': uri.toString(),
+      'headers': headers,
+      'atMs': atMs,
+      'session': session,
+      'ocr': options.enabled('ocr'),
+      'audio':
+          options.enabled('mfcc') ||
+          options.enabled('joint') ||
+          options.enabled('silence') ||
+          options.enabled('audioAI'),
+      'jpeg': options.enabled('videoAI'),
+    }, const Duration(seconds: 8));
     token.check();
     if (value == null) return null;
     final audio = value['pcm'];
@@ -187,19 +248,18 @@ class NativeIntroBackend implements IntroScanBackend {
 
   @override
   Future<IntroSample> infer(IntroSample sample, IntroOptions options) async {
-    if (_closed) throw const IntroCancelled();
+    if (_closed || _cancelled) throw const IntroCancelled();
     final scores = <String, double>{};
     final warnings = [...sample.warnings];
     if (Platform.isIOS && options.enabled('videoAI') && sample.jpeg != null) {
       try {
         final config = await _config(options);
-        final result = await channel
-            .invokeMapMethod<String, Object?>('classify', {
-              ...config,
-              'jpeg': sample.jpeg,
-              'session': session,
-            })
-            .timeout(const Duration(seconds: 20));
+        if (_closed || _cancelled) throw const IntroCancelled();
+        final result = await _sessionCall('classify', {
+          ...config,
+          'jpeg': sample.jpeg,
+          'session': session,
+        }, const Duration(seconds: 20));
         if (result != null) {
           for (final entry in result.entries) {
             if (entry.value is num) {
@@ -207,10 +267,13 @@ class NativeIntroBackend implements IntroScanBackend {
             }
           }
         }
+      } on IntroCancelled {
+        rethrow;
       } catch (_) {
         warnings.add('videoAI-unavailable');
       }
     }
+    if (_closed || _cancelled) throw const IntroCancelled();
     if (options.enabled('audioAI') && sample.pcm.isNotEmpty) {
       try {
         if (_audio == null) {
@@ -288,6 +351,11 @@ class NativeIntroBackend implements IntroScanBackend {
 
   @override
   Future<void> cancel() async {
+    _cancelled = true;
+    for (final stop in _pending.toList()) {
+      stop();
+    }
+    if (!_hasNativeSession) return;
     try {
       await channel.invokeMethod<void>('cancel', {'session': session});
     } catch (_) {
@@ -303,6 +371,7 @@ class NativeIntroBackend implements IntroScanBackend {
     await _audioIsolate?.close();
     _audio?.close();
     _audio = null;
+    if (!_hasNativeSession) return;
     try {
       await channel
           .invokeMethod<void>('release', {'session': session})

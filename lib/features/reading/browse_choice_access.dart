@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 
 import 'package:flutter/material.dart';
@@ -84,7 +86,11 @@ class BrowseChoiceAccess extends StatelessWidget {
               color: LumeTheme.accent,
               visualDensity: VisualDensity.compact,
               onPressed: onOpen ?? () => _open(context),
-              icon: const Icon(Icons.tune, size: 20),
+              icon: const LumeIcon(
+                Icons.tune,
+                slot: 'browse_choice_access.1',
+                size: 20,
+              ),
             ),
           ),
         ),
@@ -152,7 +158,10 @@ class _ChoiceSheetState extends State<_ChoiceSheet> {
                   IconButton(
                     tooltip: '关闭',
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
+                    icon: const LumeIcon(
+                      Icons.close,
+                      slot: 'browse_choice_access.2',
+                    ),
                   ),
                 ],
               ),
@@ -163,7 +172,10 @@ class _ChoiceSheetState extends State<_ChoiceSheet> {
                 onChanged: (value) => setState(() => query = value),
                 decoration: InputDecoration(
                   hintText: '搜索${widget.title}',
-                  prefixIcon: const Icon(Icons.search),
+                  prefixIcon: const LumeIcon(
+                    Icons.search,
+                    slot: 'browse_choice_access.3',
+                  ),
                   isDense: true,
                   border: const OutlineInputBorder(),
                 ),
@@ -336,7 +348,10 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                           IconButton(
                             tooltip: '关闭',
                             onPressed: () => Navigator.pop(context),
-                            icon: const Icon(Icons.close),
+                            icon: const LumeIcon(
+                              Icons.close,
+                              slot: 'browse_choice_access.4',
+                            ),
                           ),
                         ],
                       ),
@@ -344,7 +359,10 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                         onChanged: (s) => setPanelState(() => query = s.trim()),
                         decoration: const InputDecoration(
                           hintText: '搜索分类或筛选项',
-                          prefixIcon: Icon(Icons.search),
+                          prefixIcon: LumeIcon(
+                            Icons.search,
+                            slot: 'browse_choice_access.5',
+                          ),
                         ),
                       ),
                       Expanded(

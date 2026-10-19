@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../core/source/source_picker_groups.dart';
 import '../../core/cache/section_memory_cache.dart';
 
@@ -72,7 +74,8 @@ class _SourcePreferencesPageState extends State<SourcePreferencesPage> {
   }
 
   @override
-  Widget build(BuildContext context) => GlassScaffold(effectModule: GlassModule.sources,
+  Widget build(BuildContext context) => GlassScaffold(
+    effectModule: GlassModule.sources,
     title: '${widget.name} · 源设置',
     actions: [TextButton(onPressed: save, child: const Text('保存'))],
     child: ListView(
@@ -161,17 +164,26 @@ class _SourcePreferencesPageState extends State<SourcePreferencesPage> {
         ),
         if (widget.onNetwork != null)
           ListTile(
-            leading: const Icon(Icons.tune),
+            leading: const LumeIcon(
+              Icons.tune,
+              slot: 'source_preferences_page.1',
+            ),
             title: Text(
               widget.section == Section.cat
                   ? '站点设置与账号配置'
                   : '源设置（网络 / 换网址 / 账号）',
             ),
-            trailing: const Icon(Icons.chevron_right),
+            trailing: const LumeIcon(
+              Icons.chevron_right,
+              slot: 'source_preferences_page.2',
+            ),
             onTap: widget.onNetwork,
           ),
         ListTile(
-          leading: const Icon(Icons.cleaning_services_outlined),
+          leading: const LumeIcon(
+            Icons.cleaning_services_outlined,
+            slot: 'source_preferences_page.3',
+          ),
           title: const Text('清理此源的浏览缓存'),
           subtitle: const Text('保留下载内容、书架与阅读进度'),
           onTap: () {
@@ -185,7 +197,10 @@ class _SourcePreferencesPageState extends State<SourcePreferencesPage> {
         ),
         if (widget.siteUrl.isNotEmpty)
           ListTile(
-            leading: const Icon(Icons.copy_outlined),
+            leading: const LumeIcon(
+              Icons.copy_outlined,
+              slot: 'source_preferences_page.4',
+            ),
             title: const Text('复制站点地址'),
             onTap: () async {
               await Clipboard.setData(
@@ -202,7 +217,10 @@ class _SourcePreferencesPageState extends State<SourcePreferencesPage> {
             },
           ),
         ListTile(
-          leading: const Icon(Icons.restart_alt),
+          leading: const LumeIcon(
+            Icons.restart_alt,
+            slot: 'source_preferences_page.5',
+          ),
           title: const Text('恢复默认源设置'),
           onTap: () {
             setState(() {

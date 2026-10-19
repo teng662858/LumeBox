@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
@@ -389,12 +390,14 @@ class _ImportResultDialog extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Icon(
+                      LumeIcon(
                         outcome.isFailure
                             ? Icons.error_outline
                             : outcome.status == SourceImportStatus.added
                             ? Icons.add_circle_outline
                             : Icons.sync_problem,
+                        slot: 'source_import_flow.1',
+                        variant: true,
                         size: 16,
                         color: outcome.isFailure
                             ? LumeTheme.danger

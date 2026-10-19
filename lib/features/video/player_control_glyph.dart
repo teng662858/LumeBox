@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/widgets/lume_icon.dart';
+
 /// Fullscreen controls share a rounded, two logical pixel outline.
 class PlayerControlGlyph extends StatelessWidget {
   const PlayerControlGlyph(
@@ -12,9 +14,17 @@ class PlayerControlGlyph extends StatelessWidget {
   final double size;
   final Color color;
   @override
-  Widget build(BuildContext context) => CustomPaint(
-    size: Size.square(size),
-    painter: _ControlPainter(icon, color),
+  Widget build(BuildContext context) => LumeIcon(
+    icon,
+    slot: 'player.stroke',
+    variant: true,
+    group: '视频播放器',
+    size: size,
+    color: color,
+    fallback: CustomPaint(
+      size: Size.square(size),
+      painter: _ControlPainter(icon, color),
+    ),
   );
 }
 

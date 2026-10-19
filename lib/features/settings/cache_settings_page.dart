@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/cache/section_memory_cache.dart';
@@ -157,7 +158,7 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
       actions: <Widget>[
         IconButton(
           tooltip: '刷新',
-          icon: const Icon(Icons.refresh),
+          icon: const LumeIcon(Icons.refresh, slot: 'cache_settings_page.1'),
           onPressed: _reload,
         ),
       ],
@@ -305,7 +306,12 @@ class _CacheTile extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      Icon(Icons.tune, size: 14, color: LumeTheme.muted),
+                      LumeIcon(
+                        Icons.tune,
+                        slot: 'cache_settings_page.2',
+                        size: 14,
+                        color: LumeTheme.muted,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         policy.describe(),

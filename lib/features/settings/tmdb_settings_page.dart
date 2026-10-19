@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -161,7 +163,10 @@ class _TmdbSettingsPageState extends State<TmdbSettingsPage> {
               labelText: 'API Key',
               suffixIcon: IconButton(
                 tooltip: '清除 API Key',
-                icon: const Icon(Icons.cancel),
+                icon: const LumeIcon(
+                  Icons.cancel,
+                  slot: 'tmdb_settings_page.1',
+                ),
                 onPressed: () {
                   keyText.clear();
                   save();

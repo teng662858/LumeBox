@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 import '../../core/source/source_preferences.dart';
 
@@ -480,7 +482,11 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: _chapters.isEmpty ? null : _continueReading,
-                      icon: const Icon(Icons.menu_book, size: 18),
+                      icon: const LumeIcon(
+                        Icons.menu_book,
+                        slot: 'comic_detail_page.1',
+                        size: 18,
+                      ),
                       label: Text(progress == null ? '开始阅读' : '继续阅读'),
                     ),
                   ),
@@ -582,12 +588,18 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.download_for_offline_outlined, size: 20),
+                : const LumeIcon(
+                    Icons.download_for_offline_outlined,
+                    slot: 'comic_detail_page.2',
+                    size: 20,
+                  ),
           ),
           TextButton.icon(
             onPressed: () => setState(() => _descending = !_descending),
-            icon: Icon(
+            icon: LumeIcon(
               _descending ? Icons.arrow_downward : Icons.arrow_upward,
+              slot: 'comic_detail_page.3',
+              variant: true,
               size: 16,
             ),
             label: Text(_descending ? '倒序' : '正序'),
@@ -719,7 +731,11 @@ class _DownloadScopeSheet extends StatelessWidget {
                       ),
                     ),
                     trailing: count > 0
-                        ? Icon(Icons.chevron_right, color: LumeTheme.muted)
+                        ? LumeIcon(
+                            Icons.chevron_right,
+                            slot: 'comic_detail_page.4',
+                            color: LumeTheme.muted,
+                          )
                         : null,
                   ),
               ],
@@ -756,12 +772,14 @@ class _DownloadCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(
+              LumeIcon(
                 running
                     ? Icons.downloading
                     : (progress.status == ComicDownloadStatus.done
                           ? Icons.check_circle_outline
                           : Icons.cancel_outlined),
+                slot: 'comic_detail_page.5',
+                variant: true,
                 size: 18,
                 color: LumeTheme.muted,
               ),
@@ -855,7 +873,11 @@ class _DownloadCard extends StatelessWidget {
                 ),
                 TextButton.icon(
                   onPressed: onCopy,
-                  icon: const Icon(Icons.copy, size: 15),
+                  icon: const LumeIcon(
+                    Icons.copy,
+                    slot: 'comic_detail_page.6',
+                    size: 15,
+                  ),
                   label: const Text(
                     '复制路径',
                     style: TextStyle(

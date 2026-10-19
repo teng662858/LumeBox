@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/net/network_settings.dart';
@@ -318,7 +319,10 @@ class _SourceNetworkDialogState extends State<SourceNetworkDialog> {
                         ? null
                         : IconButton(
                             tooltip: '清除',
-                            icon: const Icon(Icons.clear),
+                            icon: const LumeIcon(
+                              Icons.clear,
+                              slot: 'source_action_dialogs.1',
+                            ),
                             onPressed: () => setState(() {
                               _domain.clear();
                               _domainError = null;
@@ -358,10 +362,12 @@ class _SourceNetworkDialogState extends State<SourceNetworkDialog> {
                       border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         tooltip: _showPassword ? '隐藏' : '显示',
-                        icon: Icon(
+                        icon: LumeIcon(
                           _showPassword
                               ? Icons.visibility_off_outlined
                               : Icons.visibility_outlined,
+                          slot: 'source_action_dialogs.2',
+                          variant: true,
                         ),
                         onPressed: () =>
                             setState(() => _showPassword = !_showPassword),
@@ -450,8 +456,10 @@ class _MirrorTile extends StatelessWidget {
       dense: true,
       contentPadding: EdgeInsets.zero,
       onTap: onTap,
-      leading: Icon(
+      leading: LumeIcon(
         selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+        slot: 'source_action_dialogs.3',
+        variant: true,
         size: 20,
         color: selected ? LumeTheme.accent : LumeTheme.muted,
       ),

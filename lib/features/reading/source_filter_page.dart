@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -403,7 +405,11 @@ class _SourceFilterPageState extends State<SourceFilterPage> {
                         if (looksLikeWafFailure('$_error'))
                           OutlinedButton.icon(
                             onPressed: _openWebViewForWaf,
-                            icon: const Icon(Icons.public, size: 18),
+                            icon: const LumeIcon(
+                              Icons.public,
+                              slot: 'source_filter_page.1',
+                              size: 18,
+                            ),
                             label: const Text('网页视图'),
                           ),
                       ],

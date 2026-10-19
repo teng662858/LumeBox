@@ -7,6 +7,9 @@ import 'core/theme/appearance.dart';
 import 'core/theme/lume_theme.dart';
 import 'core/theme/user_fonts.dart';
 import 'core/theme/interface_typography.dart';
+import 'core/theme/icon_customization.dart';
+import 'shared/widgets/lume_icon.dart';
+import 'features/settings/icon_library_page.dart';
 import 'features/settings/cache_pruner.dart';
 import 'features/shell/app_shell.dart';
 import 'features/shell/shell_dock.dart';
@@ -33,6 +36,7 @@ class _LumeBoxAppState extends State<LumeBoxApp> {
   void initState() {
     super.initState();
     _cachePruner.start();
+    IconCustomization.instance.boot();
   }
 
   @override
@@ -107,7 +111,12 @@ class _LumeBoxAppState extends State<LumeBoxApp> {
                           appearance.textScale,
                         ),
                 ),
-                child: AppPrivacyGuard(child: child ?? const SizedBox.shrink()),
+                child: AppIconEditingScope(
+                  onEdit: editAppIcon,
+                  child: AppPrivacyGuard(
+                    child: child ?? const SizedBox.shrink(),
+                  ),
+                ),
               ),
             );
           },

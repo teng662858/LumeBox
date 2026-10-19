@@ -15,6 +15,7 @@ import 'package:lume_box/features/reading/search_results_page.dart';
 import 'package:lume_box/features/reading/section_toolbar.dart';
 import 'package:lume_box/features/reading/source_bar.dart';
 import 'package:lume_box/shared/widgets/home_browse_navigation.dart';
+import 'package:lume_box/shared/widgets/source_switch_button.dart';
 
 import 'support/fake_source_manager.dart';
 
@@ -121,6 +122,8 @@ void main() {
 
         final toolbar = find.byType(SectionToolbar);
         expect(toolbar, findsOneWidget);
+        expect(find.byType(SourceSwitchButton), findsOneWidget);
+        expect(find.text('切换'), findsOneWidget);
 
         expect(
           find.descendant(of: toolbar, matching: find.byTooltip('搜索')),
@@ -176,7 +179,7 @@ void main() {
       });
     }
 
-    testWidgets('显示模式：顶栏保留四档，四列五列已移除（真机「找不到了」回归）', (tester) async {
+    testWidgets('显示模式：只保留双列列表和三列网格', (tester) async {
       await pumpExplore(
         tester,
         section: Section.comic,
@@ -184,9 +187,11 @@ void main() {
       );
       await tester.tap(find.byTooltip('布局'));
       await tester.pumpAndSettle();
-      for (final label in <String>['单列列表', '双列列表', '双列网格', '三列网格']) {
-        expect(find.text(label), findsOneWidget, reason: '四档都在菜单里');
+      for (final label in <String>['双列列表', '三列网格']) {
+        expect(find.text(label), findsOneWidget);
       }
+      expect(find.text('单列列表'), findsNothing);
+      expect(find.text('双列网格'), findsNothing);
       expect(find.text('四列网格'), findsNothing);
       expect(find.text('五列网格'), findsNothing);
       await tester.tap(find.text('三列网格'));

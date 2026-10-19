@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -82,7 +84,10 @@ class _CustomAccentPickerState extends State<CustomAccentPicker> {
                     IconButton(
                       tooltip: '取消自定义颜色',
                       onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
+                      icon: const LumeIcon(
+                        Icons.close,
+                        slot: 'custom_accent_picker.1',
+                      ),
                     ),
                   ],
                 ),
@@ -184,7 +189,10 @@ class _CustomAccentPickerState extends State<CustomAccentPicker> {
                           errorText: _error,
                           suffixIcon: IconButton(
                             tooltip: '清空颜色值',
-                            icon: const Icon(Icons.cancel_outlined),
+                            icon: const LumeIcon(
+                              Icons.cancel_outlined,
+                              slot: 'custom_accent_picker.2',
+                            ),
                             onPressed: () {
                               _hex.clear();
                               setState(() => _error = '请输入 6 位颜色值');

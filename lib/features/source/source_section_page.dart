@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../core/source/source_subscription_sync.dart';
 import '../../shared/widgets/source_update_badge.dart';
 import '../../shared/widgets/source_drag_tile.dart';
@@ -549,19 +551,28 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                 ),
                 IconButton(
                   tooltip: '可视化编辑器',
-                  icon: const Icon(Icons.edit_note),
+                  icon: const LumeIcon(
+                    Icons.edit_note,
+                    slot: 'source_section_page.1',
+                  ),
                   onPressed: _openEditor,
                 ),
                 if (_sources != null && _sources!.isNotEmpty)
                   IconButton(
                     tooltip: '批量测试连通性',
-                    icon: const Icon(Icons.network_check),
+                    icon: const LumeIcon(
+                      Icons.network_check,
+                      slot: 'source_section_page.2',
+                    ),
                     onPressed: _testing.isEmpty ? _testAll : null,
                   ),
                 if (CatEngines.showsEngineSwitch(widget.section))
                   IconButton(
                     tooltip: '猫源引擎',
-                    icon: const Icon(Icons.memory_outlined),
+                    icon: const LumeIcon(
+                      Icons.memory_outlined,
+                      slot: 'source_section_page.3',
+                    ),
                     onPressed: _manageEngine,
                   ),
                 // 右上角统一的「+」添加源：本地文件 / 订阅链接 / 剪贴板，只写本板块。
@@ -600,7 +611,11 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
             subtitle: '导入后即可在本板块浏览内容',
             action: FilledButton.icon(
               onPressed: _import,
-              icon: const Icon(Icons.add, size: 18),
+              icon: const LumeIcon(
+                Icons.add,
+                slot: 'source_section_page.4',
+                size: 18,
+              ),
               label: const Text('导入源'),
             ),
           ),
@@ -665,7 +680,10 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
             TextField(
               onChanged: (value) => setState(() => _sourceQuery = value),
               decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
+                prefixIcon: LumeIcon(
+                  Icons.search,
+                  slot: 'source_section_page.5',
+                ),
                 hintText: '搜索源名称、ID 或分组',
               ),
             ),
@@ -718,10 +736,12 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                 ),
                 IconButton(
                   tooltip: _compact ? '详细排列' : '紧凑排列',
-                  icon: Icon(
+                  icon: LumeIcon(
                     _compact
                         ? Icons.view_agenda_outlined
                         : Icons.view_list_outlined,
+                    slot: 'source_section_page.6',
+                    variant: true,
                   ),
                   onPressed: () async {
                     final library = await ReadingLibrary.open(widget.section);
@@ -1071,7 +1091,12 @@ class _SourceTile extends StatelessWidget {
           if (pinned)
             Padding(
               padding: const EdgeInsets.only(right: 4),
-              child: Icon(Icons.push_pin, size: 14, color: LumeTheme.accent),
+              child: LumeIcon(
+                Icons.push_pin,
+                slot: 'source_section_page.7',
+                size: 14,
+                color: LumeTheme.accent,
+              ),
             ),
           Expanded(
             child: Column(

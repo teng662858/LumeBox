@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:async';
 import 'dart:io';
 
@@ -17,16 +19,21 @@ class MediaLibraryStrip extends StatelessWidget {
     listenable: MediaLibrary.instance,
     builder: (context, _) => ListTile(
       dense: true,
-      leading: Icon(
+      leading: LumeIcon(
         section == Section.novel
             ? Icons.headphones
             : Icons.library_add_outlined,
+        slot: 'media_library_page.1',
+        variant: true,
       ),
       title: Text(section == Section.novel ? '有声小说与导入资源' : '导入资源'),
       subtitle: MediaLibrary.instance.entries(section).isEmpty
           ? null
           : Text('${MediaLibrary.instance.entries(section).length} 个条目'),
-      trailing: const Icon(Icons.chevron_right),
+      trailing: const LumeIcon(
+        Icons.chevron_right,
+        slot: 'media_library_page.2',
+      ),
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute<void>(
@@ -165,7 +172,7 @@ class _MediaLibraryPageState extends State<MediaLibraryPage> {
             PopupMenuItem(value: 'file', child: Text('导入本地文件（可多选）')),
             PopupMenuItem(value: 'link', child: Text('导入媒体链接')),
           ],
-          icon: const Icon(Icons.add),
+          icon: const LumeIcon(Icons.add, slot: 'media_library_page.3'),
         ),
       ],
     ),
@@ -189,11 +196,15 @@ class _MediaLibraryPageState extends State<MediaLibraryPage> {
                       itemBuilder: (context, index) {
                         final item = entries[index];
                         return ListTile(
-                          leading: Icon(switch (item.kind) {
-                            ResourceKind.audioBook => Icons.headphones,
-                            ResourceKind.novel => Icons.menu_book,
-                            ResourceKind.video => Icons.movie_outlined,
-                          }),
+                          leading: LumeIcon(
+                            switch (item.kind) {
+                              ResourceKind.audioBook => Icons.headphones,
+                              ResourceKind.novel => Icons.menu_book,
+                              ResourceKind.video => Icons.movie_outlined,
+                            },
+                            slot: 'media_library_page.4',
+                            variant: true,
+                          ),
                           title: Text(item.title),
                           subtitle: Text(
                             '${item.kind.label} · ${item.episodes.length} 集',

@@ -413,6 +413,11 @@ void main() {
     final id = fonts.fonts.single.id;
     expect(controller.settings.fontId, id);
     await tester.scrollUntilVisible(find.byKey(ValueKey('fonts.$id')), 180);
+    await Scrollable.ensureVisible(
+      tester.element(find.byKey(ValueKey('fonts.$id'))),
+      alignment: .5,
+    );
+    await tester.pumpAndSettle();
     await tester.longPress(find.byKey(ValueKey('fonts.$id')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('删除'));
@@ -435,6 +440,57 @@ void main() {
     });
     await tester.pumpWidget(const LumeBoxApp());
     await tester.pumpAndSettle();
+    final navigator = tester.state<NavigatorState>(
+      find.byType(Navigator).first,
+    );
+    navigator.push<void>(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '字号示例',
+                    key: Key('font-only.text'),
+                    style: TextStyle(fontSize: 16),
+                  ),
+                  IconButton(
+                    key: const Key('font-only.icon'),
+                    onPressed: () {},
+                    icon: const Icon(Icons.settings),
+                  ),
+                  SizedBox(
+                    width: 140,
+                    height: 48,
+                    child: FilledButton(
+                      key: const Key('font-only.button'),
+                      onPressed: () {},
+                      child: const Text('按钮文字'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final iconBefore = tester.getRect(find.byKey(const Key('font-only.icon')));
+    final buttonBefore = tester.getSize(
+      find.byKey(const Key('font-only.button')),
+    );
+    final textBefore = tester.getSize(find.byKey(const Key('font-only.text')));
+    final leftBefore = tester
+        .getTopLeft(find.byKey(const Key('font-only.text')))
+        .dx;
+    final screenBefore = MediaQuery.sizeOf(
+      tester.element(find.byKey(const Key('font-only.text'))),
+    );
     final font = (await tester.runAsync(
       () => UserFonts.instance.importFile(XFile(realFont.path)),
     ))!;
@@ -460,6 +516,28 @@ void main() {
     expect(
       app.theme!.colorScheme.primary,
       isNot(ThemeAccent.fallback.colorFor(Brightness.light)),
+    );
+    expect(
+      tester.getSize(find.byKey(const Key('font-only.text'))).height,
+      greaterThan(textBefore.height),
+    );
+    expect(
+      tester.getRect(find.byKey(const Key('font-only.icon'))).size,
+      iconBefore.size,
+    );
+    expect(
+      tester.getSize(find.byKey(const Key('font-only.button'))),
+      buttonBefore,
+    );
+    expect(
+      tester.getTopLeft(find.byKey(const Key('font-only.text'))).dx,
+      leftBefore,
+    );
+    expect(
+      MediaQuery.sizeOf(
+        tester.element(find.byKey(const Key('font-only.text'))),
+      ),
+      screenBefore,
     );
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();

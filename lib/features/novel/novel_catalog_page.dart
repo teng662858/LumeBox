@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../core/source/source_preferences.dart';
 
 import 'package:flutter/material.dart';
@@ -134,17 +136,28 @@ class _NovelCatalogPageState extends State<NovelCatalogPage> {
           IconButton(
             tooltip: '关闭',
             onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.close, size: 20),
+            icon: const LumeIcon(
+              Icons.close,
+              slot: 'novel_catalog_page.1',
+              size: 20,
+            ),
           ),
           IconButton(
             tooltip: _searching ? '收起搜索' : '搜索章节',
-            icon: Icon(_searching ? Icons.search_off : Icons.search, size: 20),
+            icon: LumeIcon(
+              _searching ? Icons.search_off : Icons.search,
+              slot: 'novel_catalog_page.2',
+              variant: true,
+              size: 20,
+            ),
             onPressed: _toggleSearch,
           ),
           TextButton.icon(
             onPressed: () => setState(() => _descending = !_descending),
-            icon: Icon(
+            icon: LumeIcon(
               _descending ? Icons.arrow_downward : Icons.arrow_upward,
+              slot: 'novel_catalog_page.3',
+              variant: true,
               size: 16,
             ),
             label: Text(_descending ? '倒序' : '正序'),
@@ -205,12 +218,20 @@ class _NovelCatalogPageState extends State<NovelCatalogPage> {
         decoration: InputDecoration(
           isDense: true,
           hintText: '搜索章节标题',
-          prefixIcon: const Icon(Icons.search, size: 18),
+          prefixIcon: const LumeIcon(
+            Icons.search,
+            slot: 'novel_catalog_page.4',
+            size: 18,
+          ),
           suffixIcon: _keyword.isEmpty
               ? null
               : IconButton(
                   tooltip: '清空',
-                  icon: const Icon(Icons.clear, size: 18),
+                  icon: const LumeIcon(
+                    Icons.clear,
+                    slot: 'novel_catalog_page.5',
+                    size: 18,
+                  ),
                   onPressed: () {
                     _searchController.clear();
                     setState(() => _keyword = '');

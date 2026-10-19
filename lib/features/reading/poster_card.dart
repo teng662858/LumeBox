@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/missing_cover.dart';
 
 import 'package:flutter/material.dart';
@@ -15,6 +17,65 @@ import 'section_image.dart';
 /// 两角会露出卡片底色，看起来仍然是直角。
 const BorderRadius kPosterCoverRadius = BorderRadius.all(Radius.circular(10));
 
+/// 首页三列网格共用的尺寸，避免首页与分类页出现两套间距。
+abstract final class ThreeColumnPosterLayout {
+  static const double sidePadding = 10;
+  static const double spacing = 8;
+  static const double rowSpacing = 10;
+  static const double titleGap = 4;
+  static const double titleSize = 13;
+}
+
+/// Shares the current poster margins; cover and row height follow cell width.
+abstract final class TwoColumnSourceLayout {
+  static const sidePadding = ThreeColumnPosterLayout.sidePadding;
+  static const spacing = ThreeColumnPosterLayout.spacing;
+  static const rowSpacing = ThreeColumnPosterLayout.rowSpacing;
+  static double cellWidth(double width) =>
+      (width - sidePadding * 2 - spacing) / 2;
+  static double coverWidth(double cellWidth) =>
+      (cellWidth * .32).clamp(44.0, 80.0);
+  static double coverHeight(double cellWidth) => coverWidth(cellWidth) * 4 / 3;
+  static double itemExtent(BuildContext context, double cellWidth) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final textHeight =
+        scaler.scale(LumeTypography.bodySize) * 1.25 * 2 +
+        scaler.scale(LumeTypography.captionSize) * 1.25 * 2 +
+        6;
+    final cover = coverHeight(cellWidth);
+    return (cover > textHeight ? cover : textHeight) + 16;
+  }
+}
+
+class TwoColumnSourceItemTile extends StatelessWidget {
+  const TwoColumnSourceItemTile({
+    super.key,
+    required this.item,
+    required this.onTap,
+    this.pipeline,
+    this.meta,
+  });
+  final SourceItem item;
+  final VoidCallback onTap;
+  final SectionImagePipeline? pipeline;
+  final String? meta;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => CompactSourceItemTile(
+      item: item,
+      pipeline: pipeline,
+      onTap: onTap,
+      meta: meta,
+      uniformList: true,
+      columns: 2,
+      coverWidth: TwoColumnSourceLayout.coverWidth(constraints.maxWidth),
+      coverHeight: TwoColumnSourceLayout.coverHeight(constraints.maxWidth),
+      showMenu: false,
+    ),
+  );
+}
+
 /// 海报卡：封面 + 标题，书架与探索的网格单元。
 ///
 /// 刻意不用 [GlassCard]：磨砂模糊逐格算在几十张卡的网格里会明显掉帧，
@@ -28,6 +89,8 @@ class PosterCard extends StatelessWidget {
     this.badge,
     this.footnote,
     this.footnoteBelow = false,
+    this.footnoteGap = 6,
+    this.footnotePadding = const EdgeInsets.fromLTRB(2, 0, 2, 2),
   });
 
   /// 卡片主体（通常是封面图）。
@@ -46,6 +109,8 @@ class PosterCard extends StatelessWidget {
   /// 封面不再画任何渐变遮罩，标题落在浅色底的卡片上（黑字）。默认 false =
   /// 原有的「遮罩内置」样式。
   final bool footnoteBelow;
+  final double footnoteGap;
+  final EdgeInsets footnotePadding;
 
   @override
   Widget build(BuildContext context) {
@@ -86,11 +151,8 @@ class PosterCard extends StatelessWidget {
                     ),
                   ),
                   // 图片与文字之间留一小段空白（用户要求）。
-                  const SizedBox(height: 6),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(2, 0, 2, 2),
-                    child: footnote,
-                  ),
+                  SizedBox(height: footnoteGap),
+                  Padding(padding: footnotePadding, child: footnote),
                 ],
               )
             : Stack(
@@ -233,8 +295,9 @@ class ShelfEmptyHint extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
+            LumeIcon(
               Icons.collections_bookmark_outlined,
+              slot: 'poster_card.1',
               size: 34,
               color: LumeTheme.muted,
             ),
@@ -280,6 +343,7 @@ class PosterTile extends StatelessWidget {
     required this.onTap,
     this.meta,
     this.horizontal = false,
+    this.compactGrid = false,
   });
 
   final SourceItem item;
@@ -289,49 +353,55 @@ class PosterTile extends StatelessWidget {
   /// 额外的元信息行（搜索结果页用它显示时长 / 来源 / 更新时间）。
   final String? meta;
   final bool horizontal;
+  final bool compactGrid;
 
   @override
   Widget build(BuildContext context) {
     if (horizontal) {
-      return CompactSourceItemTile(
+      return TwoColumnSourceItemTile(
         item: item,
         pipeline: pipeline,
         onTap: onTap,
         meta: this.meta,
-        columns: 2,
-        coverWidth: 60,
-        coverHeight: 80,
-        showMenu: false,
       );
     }
     final meta = this.meta;
     // 标题风格是全局偏好（设置页可切），这里按当前值渲染。
     final style = BrowseLayoutSettings.instance.gridTitleStyle;
+    final singleLine = compactGrid && style == GridTitleStyle.below;
+    final titleSize = singleLine
+        ? ThreeColumnPosterLayout.titleSize
+        : LumeTypography.bodySize;
     return PosterCard(
       onTap: onTap,
       // 标题风格：遮罩内置（白字压在封面上）/ 外置独立（黑字在封面下方）。
       // 外置时封面不画任何遮罩，文字落在卡片浅色底上，因此用主题主文字色。
       footnoteBelow: style == GridTitleStyle.below,
+      footnoteGap: singleLine ? ThreeColumnPosterLayout.titleGap : 6,
+      footnotePadding: singleLine
+          ? const EdgeInsets.symmetric(horizontal: 2)
+          : const EdgeInsets.fromLTRB(2, 0, 2, 2),
       footnote: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          // 固定预留两行标题：同一行里一张卡两行、另一张一行时，封面高度
-          // 不会一高一低（用户口径：图片统一裁切）。多出的那半行留白在文字区。
+          // 三列外置标题仅占一行；其他布局保留原有的两行标题。
           SizedBox(
-            height: LumeTypography.bodySize * 1.25 * 2,
+            height: singleLine
+                ? MediaQuery.textScalerOf(context).scale(titleSize) * 1.25
+                : LumeTypography.bodySize * 1.25 * 2,
             child: Align(
               alignment: Alignment.topLeft,
               child: Text(
                 item.title,
-                maxLines: 2,
+                maxLines: singleLine ? 1 : 2,
                 overflow: TextOverflow.ellipsis,
                 // 内置：压在封面底部的深色遮罩上 → **一律白字 + 加粗 + 浅描边**
                 //（原来用 LumeTheme.textPrimary，浅色主题下深色字压深色遮罩，
                 //  真机反馈「标题看着很淡」）；外置：封面外的浅色底 → 主题主文字色。
                 style: style == GridTitleStyle.below
                     ? TextStyle(
-                        fontSize: LumeTypography.bodySize,
+                        fontSize: titleSize,
                         height: 1.25,
                         fontWeight: FontWeight.w600,
                         color: LumeTheme.textPrimary,
@@ -407,7 +477,12 @@ class CoverThumb extends StatelessWidget {
           color: LumeTheme.fillStrong,
           borderRadius: kPosterCoverRadius,
         ),
-        child: Icon(Icons.image_outlined, size: 18, color: LumeTheme.muted),
+        child: LumeIcon(
+          Icons.image_outlined,
+          slot: 'poster_card.2',
+          size: 18,
+          color: LumeTheme.muted,
+        ),
       );
     }
     return PosterCover(
@@ -552,8 +627,9 @@ class CompactSourceItemTile extends StatelessWidget {
                     tooltip: '更多',
                     padding: EdgeInsets.zero,
                     iconSize: 18,
-                    icon: Icon(
+                    icon: LumeIcon(
                       Icons.more_vert,
+                      slot: 'poster_card.3',
                       size: 18,
                       color: LumeTheme.muted,
                     ),

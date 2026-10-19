@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 import '../../shared/widgets/module_glass_scope.dart';
 
@@ -67,7 +69,10 @@ class _AudioBookPageState extends State<AudioBookPage> {
       actions: [
         IconButton(
           tooltip: '音频播放器设置',
-          icon: const Icon(Icons.settings_outlined),
+          icon: const LumeIcon(
+            Icons.settings_outlined,
+            slot: 'audio_book_page.1',
+          ),
           onPressed: () => Navigator.push(
             context,
             MaterialPageRoute<void>(
@@ -100,14 +105,21 @@ class _AudioBookPageState extends State<AudioBookPage> {
                     borderRadius: BorderRadius.circular(24),
                   ),
                   child: widget.resource.cover == null
-                      ? const Icon(Icons.headphones_rounded, size: 88)
+                      ? const LumeIcon(
+                          Icons.headphones_rounded,
+                          slot: 'audio_book_page.2',
+                          size: 88,
+                        )
                       : ClipRRect(
                           borderRadius: BorderRadius.circular(24),
                           child: Image.network(
                             widget.resource.cover!,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, error, stack) =>
-                                const Icon(Icons.headphones_rounded, size: 88),
+                            errorBuilder: (_, error, stack) => const LumeIcon(
+                              Icons.headphones_rounded,
+                              slot: 'audio_book_page.3',
+                              size: 88,
+                            ),
                           ),
                         ),
                 ),
@@ -178,7 +190,10 @@ class _AudioBookPageState extends State<AudioBookPage> {
                   IconButton(
                     tooltip: '上一集',
                     onPressed: session.current > 0 ? session.previous : null,
-                    icon: const Icon(Icons.skip_previous_rounded),
+                    icon: const LumeIcon(
+                      Icons.skip_previous_rounded,
+                      slot: 'audio_book_page.4',
+                    ),
                     iconSize: 38,
                   ),
                   const SizedBox(width: 20),
@@ -189,10 +204,12 @@ class _AudioBookPageState extends State<AudioBookPage> {
                         : () => session.playing
                               ? session.pause()
                               : session.play(),
-                    icon: Icon(
+                    icon: LumeIcon(
                       session.playing
                           ? Icons.pause_rounded
                           : Icons.play_arrow_rounded,
+                      slot: 'audio_book_page.5',
+                      variant: true,
                     ),
                     iconSize: 48,
                   ),
@@ -203,7 +220,10 @@ class _AudioBookPageState extends State<AudioBookPage> {
                         session.current + 1 < widget.resource.episodes.length
                         ? session.next
                         : null,
-                    icon: const Icon(Icons.skip_next_rounded),
+                    icon: const LumeIcon(
+                      Icons.skip_next_rounded,
+                      slot: 'audio_book_page.6',
+                    ),
                     iconSize: 38,
                   ),
                 ],
@@ -259,7 +279,10 @@ class _AudioBookPageState extends State<AudioBookPage> {
                     ),
                   ),
                   TextButton.icon(
-                    icon: const Icon(Icons.queue_music),
+                    icon: const LumeIcon(
+                      Icons.queue_music,
+                      slot: 'audio_book_page.7',
+                    ),
                     label: const Text('选集'),
                     onPressed: () => _episodes(context),
                   ),

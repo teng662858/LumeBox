@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:lume_box/core/theme/lume_typography.dart';
 
 import '../../shared/widgets/module_glass_scope.dart';
@@ -1241,7 +1242,11 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
           child: Row(
             children: <Widget>[
               IconButton(
-                icon: Icon(Icons.arrow_back, color: _theme.chromeText),
+                icon: LumeIcon(
+                  Icons.arrow_back,
+                  slot: 'novel_reader_page.1',
+                  color: _theme.chromeText,
+                ),
                 onPressed: () => Navigator.of(context).maybePop(),
               ),
               Expanded(
@@ -1288,12 +1293,14 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                         : paused
                         ? '继续朗读'
                         : '开始朗读',
-                    icon: Icon(
+                    icon: LumeIcon(
                       active
                           ? Icons.pause_circle_outline
                           : paused
                           ? Icons.play_circle_outline
                           : Icons.headphones_outlined,
+                      slot: 'novel_reader_page.2',
+                      variant: true,
                       color: _theme.chromeText,
                     ),
                     onPressed: (_speech?.isSupported ?? false)
@@ -1306,22 +1313,32 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
               ),
               IconButton(
                 tooltip: _bookmarkHere != null ? '移除书签' : '添加书签',
-                icon: Icon(
+                icon: LumeIcon(
                   _bookmarkHere != null
                       ? Icons.bookmark
                       : Icons.bookmark_border,
+                  slot: 'novel_reader_page.3',
+                  variant: true,
                   color: _theme.chromeText,
                 ),
                 onPressed: _toggleBookmark,
               ),
               IconButton(
                 tooltip: '上一章',
-                icon: Icon(Icons.skip_previous, color: _theme.chromeText),
+                icon: LumeIcon(
+                  Icons.skip_previous,
+                  slot: 'novel_reader_page.4',
+                  color: _theme.chromeText,
+                ),
                 onPressed: () => _openChapter(_chapterIndex - 1),
               ),
               IconButton(
                 tooltip: '下一章',
-                icon: Icon(Icons.skip_next, color: _theme.chromeText),
+                icon: LumeIcon(
+                  Icons.skip_next,
+                  slot: 'novel_reader_page.5',
+                  color: _theme.chromeText,
+                ),
                 onPressed: () => _openChapter(_chapterIndex + 1),
               ),
             ],
@@ -1458,8 +1475,9 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                       ),
                     ),
                     trailing: current
-                        ? Icon(
+                        ? LumeIcon(
                             Icons.bookmark,
+                            slot: 'novel_reader_page.6',
                             size: 16,
                             color: _theme.chromeText,
                           )
@@ -1531,7 +1549,12 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
               color: _theme.secondary,
               fontSize: LumeTypography.titleSize,
             ),
-            prefixIcon: Icon(Icons.search, color: _theme.secondary, size: 20),
+            prefixIcon: LumeIcon(
+              Icons.search,
+              slot: 'novel_reader_page.7',
+              color: _theme.secondary,
+              size: 20,
+            ),
             suffixIcon: _searchKeyword.isEmpty
                 ? null
                 : Row(
@@ -1549,8 +1572,9 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                       ),
                       IconButton(
                         tooltip: '上一个',
-                        icon: Icon(
+                        icon: LumeIcon(
                           Icons.keyboard_arrow_up,
+                          slot: 'novel_reader_page.8',
                           color: _theme.chromeText,
                           size: 20,
                         ),
@@ -1558,8 +1582,9 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                       ),
                       IconButton(
                         tooltip: '下一个',
-                        icon: Icon(
+                        icon: LumeIcon(
                           Icons.keyboard_arrow_down,
+                          slot: 'novel_reader_page.9',
                           color: _theme.chromeText,
                           size: 20,
                         ),
@@ -1633,7 +1658,12 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
           for (final bookmark in _bookmarks)
             ListTile(
               dense: true,
-              leading: Icon(Icons.bookmark, size: 18, color: _theme.secondary),
+              leading: LumeIcon(
+                Icons.bookmark,
+                slot: 'novel_reader_page.10',
+                size: 18,
+                color: _theme.secondary,
+              ),
               title: Text(
                 bookmark.describe(),
                 maxLines: 2,
@@ -1646,7 +1676,12 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
               ),
               trailing: IconButton(
                 tooltip: '移除',
-                icon: Icon(Icons.close, size: 18, color: _theme.secondary),
+                icon: LumeIcon(
+                  Icons.close,
+                  slot: 'novel_reader_page.11',
+                  size: 18,
+                  color: _theme.secondary,
+                ),
                 onPressed: () {
                   final next = NovelBookmarks.remove(_bookmarks, bookmark);
                   setState(() => _bookmarks = next);
@@ -1843,8 +1878,9 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
                 width: selected ? 2 : 1,
               ),
             ),
-            child: Icon(
+            child: LumeIcon(
               Icons.palette_outlined,
+              slot: 'novel_reader_page.12',
               size: 20,
               color: selected ? _theme.textColor : _theme.secondary,
             ),
@@ -1882,7 +1918,12 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
               ),
             ),
             trailing: _turnMode == mode
-                ? Icon(Icons.check, size: 18, color: _theme.chromeText)
+                ? LumeIcon(
+                    Icons.check,
+                    slot: 'novel_reader_page.13',
+                    size: 18,
+                    color: _theme.chromeText,
+                  )
                 : null,
             onTap: () => _updateTurnMode(mode),
           ),

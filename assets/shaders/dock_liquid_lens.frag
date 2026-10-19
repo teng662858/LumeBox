@@ -8,6 +8,8 @@ uniform float u_dispersion;
 uniform float u_highlight;
 // Capsule bounds in the input canvas, updated with layout and pixel density.
 uniform vec4 u_lens;
+// Directional stretch, vertical grip and pressure, sampled from the gesture.
+uniform vec3 u_motion;
 uniform sampler2D u_backdrop;
 
 out vec4 fragColor;
@@ -15,9 +17,8 @@ out vec4 fragColor;
 vec2 textureUV(vec2 uv) {
   vec2 halfPixel = vec2(0.5) / u_size;
   uv = clamp(uv, halfPixel, vec2(1.0) - halfPixel);
-#ifdef IMPELLER_TARGET_OPENGLES
-  uv.y = 1.0 - uv.y;
-#endif
+  // BackdropFilter already supplies an oriented backdrop on the GLES path.
+  // Flipping again samples the page header instead of the dock's live glyphs.
   return uv;
 }
 
@@ -38,6 +39,10 @@ void main() {
   float zoom = 1.0 + u_strength * (1.0 - 0.38 * radius * radius);
   vec2 refracted = 0.5 + (uv - 0.5) / zoom;
   refracted -= normal * metric * u_strength * rim * rim * 0.16;
+  // Vary curvature near the rim while keeping the center sharp and stable.
+  float edgeBend = u_strength * rim * rim;
+  refracted.x -= u_motion.x * edgeBend * 0.10 * (1.0 - abs(normal.y) * 0.35);
+  refracted.y -= u_motion.y * u_motion.z * edgeBend * 0.08;
   vec2 chroma = normal * metric * u_dispersion * rim * rim;
 
   vec2 sampleUV = (u_lens.xy + refracted * u_lens.zw) / u_size;

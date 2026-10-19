@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:ui' as ui;
 
 import 'dart:async';
@@ -264,8 +266,10 @@ class _Placeholder extends StatelessWidget {
     return ColoredBox(
       color: LumeTheme.fill,
       child: Center(
-        child: Icon(
+        child: LumeIcon(
           failed ? Icons.image_not_supported_outlined : Icons.image_outlined,
+          slot: 'section_image.1',
+          variant: true,
           size: 22,
           color: LumeTheme.muted,
         ),

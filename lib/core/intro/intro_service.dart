@@ -49,6 +49,7 @@ class IntroRecognitionService {
     IntroRequest request,
     IntroCancellation token, {
     required bool allowHeavy,
+    List<SkipSegment>? confirmedSegments,
     void Function(String)? onStatus,
   }) async {
     final options = store.value;
@@ -160,6 +161,12 @@ class IntroRecognitionService {
       }
     }
 
+    if (confirmedSegments != null && confirmedSegments.isNotEmpty) {
+      token.check();
+      await learn(confirmedSegments);
+      return confirmedSegments;
+    }
+
     for (final stage in options.order) {
       token.check();
       onStatus?.call('识别：${stage.label}');
@@ -266,11 +273,20 @@ class IntroRecognitionService {
             }
           case RecognitionStage.manual:
             if (options.enabled('manual')) {
-              result = store.manual(
-                request.episode,
-                request.durationMs,
-                reuseSeason: options.enabled('reuseManualSeason'),
-              );
+              result = store.manual(request.episode, request.durationMs);
+              if (result.isEmpty) {
+                result = store.seriesMemory(
+                  request.episode,
+                  request.durationMs,
+                );
+              }
+              if (result.isEmpty) {
+                result = store.manual(
+                  request.episode,
+                  request.durationMs,
+                  reuseSeason: options.enabled('reuseManualSeason'),
+                );
+              }
             }
           case RecognitionStage.metadata:
             if (![

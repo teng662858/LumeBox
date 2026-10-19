@@ -16,6 +16,7 @@ class ConfigurationBackup {
     'app_preferences.json',
     'tmdb_settings.json',
     'appearance_settings.json',
+    'custom_icons.json',
     'shell_settings.json',
     'source_content_visibility.json',
     'search_settings.json',

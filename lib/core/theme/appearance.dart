@@ -95,6 +95,8 @@ class AppearanceSettings {
   final ThemeBackground background;
   final int customAccentArgb;
   final bool useCustomAccent, adaptiveColor, fontBold, fontItalic;
+
+  /// Font-size multiplier only; independent of module control sizes and spacing.
   final double textScale;
   final String fontId;
 

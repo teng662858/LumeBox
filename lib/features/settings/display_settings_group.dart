@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 
 import 'package:flutter/material.dart';
@@ -79,8 +81,9 @@ class DisplaySettingsGroup extends StatelessWidget {
                 listenable: AppearanceController.instance,
                 builder: (context, _) => SwitchListTile(
                   key: const Key('appearance.adaptiveColor'),
-                  secondary: Icon(
+                  secondary: LumeIcon(
                     Icons.auto_awesome_outlined,
+                    slot: 'display_settings_group.1',
                     color: LumeTheme.textSecondary,
                   ),
                   title: const Text('自适应颜色'),
@@ -141,7 +144,14 @@ class _DisplayRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: <Widget>[
-            Icon(icon, size: 22, color: LumeTheme.textSecondary),
+            LumeIcon(
+              icon,
+              slot: 'settings.appearance.$title',
+              label: title,
+              group: '设置',
+              size: 22,
+              color: LumeTheme.textSecondary,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -169,7 +179,12 @@ class _DisplayRow extends StatelessWidget {
                 ),
               ),
             const SizedBox(width: 4),
-            Icon(Icons.chevron_right, size: 20, color: LumeTheme.muted),
+            LumeIcon(
+              Icons.chevron_right,
+              slot: 'display_settings_group.3',
+              size: 20,
+              color: LumeTheme.muted,
+            ),
           ],
         ),
       ),
@@ -399,10 +414,12 @@ class OptionSheet<T> extends StatelessWidget {
                         leading: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
-                            Icon(
+                            LumeIcon(
                               option == current
                                   ? Icons.check_circle
                                   : Icons.circle_outlined,
+                              slot: 'display_settings_group.4',
+                              variant: true,
                               size: 20,
                               color: option == current
                                   ? LumeTheme.accent

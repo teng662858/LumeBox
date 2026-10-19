@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/reading/reading.dart';
@@ -198,10 +199,12 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
             IconButton(
               tooltip: mode.label,
               visualDensity: VisualDensity.compact,
-              icon: Icon(
+              icon: LumeIcon(
                 mode == ShelfViewMode.grid
                     ? Icons.grid_view_rounded
                     : Icons.view_list_rounded,
+                slot: 'novel_shelf_page.1',
+                variant: true,
                 size: 20,
                 color: _viewMode == mode
                     ? LumeTheme.accent
@@ -346,7 +349,11 @@ class _NovelShelfPageState extends State<NovelShelfPage> {
                     child: const Text('续读'),
                   )
                 else
-                  Icon(Icons.chevron_right, color: LumeTheme.muted),
+                  LumeIcon(
+                    Icons.chevron_right,
+                    slot: 'novel_shelf_page.2',
+                    color: LumeTheme.muted,
+                  ),
               ],
             ),
           ),

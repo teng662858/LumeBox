@@ -1,10 +1,10 @@
 # 离线模型下载与安装
 
-下次打包只保留校验清单，不内置 VITS 压缩包或 waifu2x 模型；未安装时系统语音和原图显示仍可使用。
+2026-10-19 更新：1.0.163 实际已内置 VITS 分包资源，当前源码优先提供“启用内置离线音色包”，首次使用时解压并校验，不需要重复下载。waifu2x 仍按需导入；未安装时系统语音和原图显示仍可使用。
 
 ## VITS 音色包
 
-[下载 vits-zh-aishell3.tar.bz2](https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-zh-aishell3.tar.bz2)（146,922,607 字节）。保持 tar.bz2 原样，不要解压。在小说听书设置选择「从本地安装离线音色包」。安装前校验整个归档 SHA256，提取后逐个校验运行文件；安装失败可重选文件。
+在小说听书设置选择“启用内置离线音色包”，再选择“启用内置包”。成功后可选择本地离线朗读。也可使用“从文件安装”作为替代入口：[下载 vits-zh-aishell3.tar.bz2](https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-zh-aishell3.tar.bz2)（146,922,607 字节），保持 tar.bz2 原样，不要解压。安装前校验整个归档 SHA256，提取后逐个校验运行文件；安装失败会显示原因，可重试。
 
 ## waifu2x 超分模型
 

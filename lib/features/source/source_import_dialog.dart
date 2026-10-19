@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:convert';
 
 import 'package:file_selector/file_selector.dart';
@@ -196,12 +198,18 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
                 segments: const <ButtonSegment<_ImportMode>>[
                   ButtonSegment<_ImportMode>(
                     value: _ImportMode.local,
-                    icon: Icon(Icons.description_outlined),
+                    icon: LumeIcon(
+                      Icons.description_outlined,
+                      slot: 'source_import_dialog.1',
+                    ),
                     label: Text('本地文件'),
                   ),
                   ButtonSegment<_ImportMode>(
                     value: _ImportMode.subscription,
-                    icon: Icon(Icons.cloud_download_outlined),
+                    icon: LumeIcon(
+                      Icons.cloud_download_outlined,
+                      slot: 'source_import_dialog.2',
+                    ),
                     label: Text('订阅链接'),
                   ),
                 ],
@@ -311,12 +319,20 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
       children: <Widget>[
         FilledButton.tonalIcon(
           onPressed: _busy ? null : _pickLocal,
-          icon: const Icon(Icons.folder_open_outlined, size: 18),
+          icon: const LumeIcon(
+            Icons.folder_open_outlined,
+            slot: 'source_import_dialog.3',
+            size: 18,
+          ),
           label: const Text('选择本地文件'),
         ),
         TextButton.icon(
           onPressed: _busy ? null : _fromClipboard,
-          icon: const Icon(Icons.content_paste, size: 18),
+          icon: const LumeIcon(
+            Icons.content_paste,
+            slot: 'source_import_dialog.4',
+            size: 18,
+          ),
           label: const Text('从剪贴板'),
         ),
       ],
@@ -420,7 +436,11 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
     const SizedBox(height: 8),
     TextButton.icon(
       onPressed: _busy ? null : _fromClipboard,
-      icon: const Icon(Icons.content_paste, size: 18),
+      icon: const LumeIcon(
+        Icons.content_paste,
+        slot: 'source_import_dialog.5',
+        size: 18,
+      ),
       label: const Text('从剪贴板'),
     ),
     const SizedBox(height: 4),

@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 import 'playback_glass.dart';
 
@@ -453,7 +455,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           ),
           IconButton(
             tooltip: '关闭',
-            icon: const Icon(Icons.close),
+            icon: const LumeIcon(Icons.close, slot: 'player_settings_sheet.1'),
             onPressed: () => Navigator.of(context).pop(),
           ),
         ],
@@ -694,7 +696,11 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   onPressed: capabilities.subtitleTracks
                       ? widget.onPickSubtitleTrack
                       : () => _unsupported(context),
-                  icon: const Icon(Icons.subtitles_outlined, size: 18),
+                  icon: const LumeIcon(
+                    Icons.subtitles_outlined,
+                    slot: 'player_settings_sheet.2',
+                    size: 18,
+                  ),
                   label: const Text('字幕轨'),
                 ),
               ),
@@ -704,7 +710,11 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   onPressed: capabilities.externalSubtitle
                       ? widget.onPickSubtitleFile
                       : () => _unsupported(context),
-                  icon: const Icon(Icons.file_open_outlined, size: 18),
+                  icon: const LumeIcon(
+                    Icons.file_open_outlined,
+                    slot: 'player_settings_sheet.3',
+                    size: 18,
+                  ),
                   label: const Text('外挂字幕'),
                 ),
               ),
@@ -898,7 +908,11 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               onPressed: capabilities.audioTracks
                   ? widget.onPickAudioTrack
                   : () => _unsupported(context),
-              icon: const Icon(Icons.graphic_eq, size: 18),
+              icon: const LumeIcon(
+                Icons.graphic_eq,
+                slot: 'player_settings_sheet.4',
+                size: 18,
+              ),
               label: const Text('选择音轨'),
             ),
           ),

@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/column_list.dart';
 
 import 'package:flutter/material.dart';
@@ -143,7 +145,10 @@ class _CollectionPanelState extends State<CollectionPanel> {
                 PopupMenuButton<BrowseLayoutMode>(
                   tooltip: '显示模式',
                   initialValue: mode,
-                  icon: const Icon(Icons.grid_view_outlined),
+                  icon: const LumeIcon(
+                    Icons.grid_view_outlined,
+                    slot: 'collection_panel.1',
+                  ),
                   onSelected: (value) {
                     widget.library?.setSetting(widget.storageKey, value.id);
                     setState(() => mode = value);

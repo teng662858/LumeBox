@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/reading/reading.dart';
@@ -137,14 +138,14 @@ class _NovelPageState extends State<NovelPage> {
         // 右上角统一的入口（与视频 / 漫画同一套设计）：⏱️ 历史（底部抽屉）。
         IconButton(
           tooltip: '阅读历史',
-          icon: const Icon(Icons.history),
+          icon: const LumeIcon(Icons.history, slot: 'novel_page.1'),
           onPressed: () => _openHistory(library),
         ),
         // 右上角「图源管理」：本板块已导入图源的统一入口（启用 / 禁用 /
         // 重命名 / 导出 / 删除）。与全局设置的图源总管理不是一回事。
         IconButton(
           tooltip: '源管理',
-          icon: const Icon(Icons.source_outlined),
+          icon: const LumeIcon(Icons.source_outlined, slot: 'novel_page.2'),
           onPressed: _manageSources,
         ),
         // 右上角统一的「+」添加图源：本地文件 / 订阅链接，只写小说板块。

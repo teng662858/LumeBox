@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/source_update_badge.dart';
 import '../../core/reading/reading_library.dart';
 import '../../core/source/source_subscription_sync.dart';
@@ -241,12 +243,13 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
   });
 
   @override
-  Widget build(BuildContext context) => GlassScaffold(effectModule: GlassModule.cat,
+  Widget build(BuildContext context) => GlassScaffold(
+    effectModule: GlassModule.cat,
     title: '猫源配置中心',
     actions: [
       IconButton(
         tooltip: '添加订阅',
-        icon: const Icon(Icons.add),
+        icon: const LumeIcon(Icons.add, slot: 'cat_subscription_page.1'),
         onPressed: working ? null : () => add(),
       ),
     ],
@@ -260,7 +263,10 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
             builder: (_, count, _) => count == 0
                 ? const SizedBox.shrink()
                 : ListTile(
-                    leading: const Icon(Icons.notifications_active_outlined),
+                    leading: const LumeIcon(
+                      Icons.notifications_active_outlined,
+                      slot: 'cat_subscription_page.2',
+                    ),
                     title: Text('猫源订阅已变动 $count 条'),
                     subtitle: Text(
                       SourceSubscriptionSync.notices(Section.cat)
@@ -279,7 +285,10 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
                   ),
           ),
           FilledButton.icon(
-            icon: const Icon(Icons.system_update_alt),
+            icon: const LumeIcon(
+              Icons.system_update_alt,
+              slot: 'cat_subscription_page.3',
+            ),
             label: const Text('一键更新全部订阅'),
             onPressed: working
                 ? null
@@ -307,7 +316,10 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
           TextField(
             onChanged: (value) => setState(() => sourceQuery = value),
             decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
+              prefixIcon: LumeIcon(
+                Icons.search,
+                slot: 'cat_subscription_page.4',
+              ),
               hintText: '搜索猫源订阅',
             ),
           ),
@@ -441,7 +453,10 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
                       onPressed: working
                           ? null
                           : () => add(name: record.name, url: record.url),
-                      icon: const Icon(Icons.key_outlined),
+                      icon: const LumeIcon(
+                        Icons.key_outlined,
+                        slot: 'cat_subscription_page.5',
+                      ),
                       label: const Text('填写作者提供的订阅授权'),
                     )
                   else if (record.hash.isEmpty || record.sites.isEmpty)
@@ -453,14 +468,20 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
                               await service.save();
                               await service.refreshSites(record);
                             }),
-                      icon: const Icon(Icons.refresh),
+                      icon: const LumeIcon(
+                        Icons.refresh,
+                        slot: 'cat_subscription_page.6',
+                      ),
                       label: Text(record.hash.isEmpty ? '下载并读取站点' : '重新读取站点'),
                     ),
                   TextButton.icon(
                     onPressed: working || service.busy
                         ? null
                         : () => configure(record),
-                    icon: const Icon(Icons.cloud_outlined),
+                    icon: const LumeIcon(
+                      Icons.cloud_outlined,
+                      slot: 'cat_subscription_page.7',
+                    ),
                     label: Text(record.enabled ? '网盘登录 · 站点配置' : '启用并打开配置'),
                   ),
                 ],

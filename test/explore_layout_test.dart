@@ -11,6 +11,7 @@ import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/reading/explore_view.dart';
 import 'package:lume_box/features/reading/poster_card.dart';
+import 'package:lume_box/features/reading/browse_layout_button.dart';
 
 import 'support/fake_source_manager.dart';
 
@@ -107,6 +108,37 @@ void main() {
     }
   }
 
+  test('旧布局配置映射到保留的两档，四个板块独立保存', () async {
+    File('${root.path}/browse_layout.json').writeAsStringSync(
+      '{"compactHomeV1":"1","novel":"list","comic":"grid2","video":"grid4","cat":"grid5"}',
+    );
+    await BrowseLayoutSettings.instance.boot();
+    expect(
+      BrowseLayoutSettings.instance.modeFor(Section.novel),
+      BrowseLayoutMode.list2,
+    );
+    for (final section in [Section.comic, Section.video, Section.cat]) {
+      expect(
+        BrowseLayoutSettings.instance.modeFor(section),
+        BrowseLayoutMode.grid3,
+      );
+    }
+    await BrowseLayoutSettings.instance.setMode(
+      Section.cat,
+      BrowseLayoutMode.list2,
+    );
+    BrowseLayoutSettings.instance.resetForTesting();
+    await BrowseLayoutSettings.instance.boot();
+    expect(
+      BrowseLayoutSettings.instance.modeFor(Section.cat),
+      BrowseLayoutMode.list2,
+    );
+    expect(
+      BrowseLayoutSettings.instance.modeFor(Section.video),
+      BrowseLayoutMode.grid3,
+    );
+  });
+
   testWidgets('默认档：小说单列（无网格），漫画三列网格', (tester) async {
     await pumpExplore(tester, Section.novel, layout: ExploreLayout.list);
     expect(gridColumns(tester), 3, reason: '小说首页统一三列封面');
@@ -116,7 +148,7 @@ void main() {
     expectPosterCorners(tester);
   });
 
-  testWidgets('布局菜单保留四档，四列五列已移除，当场生效', (tester) async {
+  testWidgets('布局菜单保留双列列表、三列网格，当场生效', (tester) async {
     await pumpExplore(tester, Section.comic, layout: ExploreLayout.grid);
     expect(gridColumns(tester), 3);
 
@@ -124,9 +156,11 @@ void main() {
     // 悬浮顶栏那一版把入口藏了，这里改成从 UI 切，入口再丢就会失败）。
     await tester.tap(find.byTooltip('布局'));
     await tester.pumpAndSettle();
-    for (final label in <String>['单列列表', '双列列表', '双列网格', '三列网格']) {
+    for (final label in <String>['双列列表', '三列网格']) {
       expect(find.text(label), findsOneWidget);
     }
+    expect(find.text('单列列表'), findsNothing);
+    expect(find.text('双列网格'), findsNothing);
     expect(find.text('四列网格'), findsNothing);
     expect(find.text('五列网格'), findsNothing);
     await tester.tap(find.text('三列网格'));
@@ -147,6 +181,17 @@ void main() {
   testWidgets('双列列表使用横排封面文字，四版块分别保存', (tester) async {
     for (final section in Section.values) {
       await pumpExplore(tester, section);
+      final layoutButton = find.byType(BrowseLayoutButton);
+      final icon = tester.widget<Icon>(
+        find
+            .descendant(
+              of: layoutButton,
+              matching: find.byWidgetPredicate((w) => w is Icon),
+            )
+            .first,
+      );
+      expect(icon.icon, Icons.apps_outlined);
+      expect(icon.size, 20);
       await tester.tap(find.byTooltip('布局'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('双列列表'));
@@ -186,15 +231,15 @@ void main() {
 
     await BrowseLayoutSettings.instance.setMode(
       Section.novel,
-      BrowseLayoutMode.grid2,
+      BrowseLayoutMode.list2,
     );
     await tester.pumpAndSettle();
 
-    expect(gridColumns(tester), 2, reason: '选双列后应当场变成两列网格');
-    expectPosterCorners(tester);
+    expect(gridColumns(tester), 2, reason: '选双列后应当场变成双列列表');
+    expect(find.byType(TwoColumnSourceItemTile), findsWidgets);
     expect(
       BrowseLayoutSettings.instance.modeFor(Section.novel),
-      BrowseLayoutMode.grid2,
+      BrowseLayoutMode.list2,
     );
 
     // 别的板块不受影响（按板块分别记住）。
@@ -205,7 +250,7 @@ void main() {
     await BrowseLayoutSettings.instance.boot();
     expect(
       BrowseLayoutSettings.instance.modeFor(Section.novel),
-      BrowseLayoutMode.grid2,
+      BrowseLayoutMode.list2,
       reason: '布局选择必须本地持久化',
     );
   });

@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/session/privacy_settings.dart';
@@ -134,7 +135,7 @@ class _ComicExtensionPageState extends State<ComicExtensionPage> {
       actions: <Widget>[
         IconButton(
           tooltip: '刷新仓库',
-          icon: const Icon(Icons.refresh),
+          icon: const LumeIcon(Icons.refresh, slot: 'comic_extension_page.1'),
           onPressed: _refresh,
         ),
       ],
@@ -302,7 +303,11 @@ class _ExtensionTile extends StatelessWidget {
                 Switch(value: enabled ?? false, onChanged: onToggle),
                 IconButton(
                   tooltip: '卸载',
-                  icon: const Icon(Icons.delete_outline, size: 20),
+                  icon: const LumeIcon(
+                    Icons.delete_outline,
+                    slot: 'comic_extension_page.2',
+                    size: 20,
+                  ),
                   onPressed: onUninstall,
                 ),
               ],

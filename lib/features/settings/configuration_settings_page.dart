@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -150,13 +152,19 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
         ListTile(
           title: const Text('导出配置备份'),
           subtitle: const Text('全局设置、各版块偏好与源配置'),
-          leading: const Icon(Icons.upload_file),
+          leading: const LumeIcon(
+            Icons.upload_file,
+            slot: 'configuration_settings_page.1',
+          ),
           enabled: !busy,
           onTap: () => run(export),
         ),
         ListTile(
           title: const Text('恢复配置备份'),
-          leading: const Icon(Icons.settings_backup_restore),
+          leading: const LumeIcon(
+            Icons.settings_backup_restore,
+            slot: 'configuration_settings_page.2',
+          ),
           enabled: !busy,
           onTap: () => run(restore),
         ),
@@ -187,7 +195,10 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
         ),
         ListTile(
           title: const Text('恢复自动备份'),
-          leading: const Icon(Icons.history),
+          leading: const LumeIcon(
+            Icons.history,
+            slot: 'configuration_settings_page.3',
+          ),
           enabled: !busy,
           onTap: () => run(restoreAutomatic),
         ),

@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/lume_theme.dart';
@@ -103,7 +104,13 @@ class _GuideSectionCard extends StatelessWidget {
       child: ExpansionTile(
         key: PageStorageKey<String>(section.title),
         initiallyExpanded: section.initiallyExpanded,
-        leading: Icon(section.icon, size: 22, color: LumeTheme.textSecondary),
+        leading: LumeIcon(
+          section.icon,
+          slot: 'usage_guide_page.1',
+          variant: true,
+          size: 22,
+          color: LumeTheme.textSecondary,
+        ),
         title: Text(
           section.title,
           style: TextStyle(

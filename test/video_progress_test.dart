@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/intro/intro_store.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/player_stats.dart';
@@ -51,6 +52,7 @@ void main() {
     await MediaLibrary.instance.boot();
     // Load file-backed routing outside the widget fake clock.
     await PlayerChoice.instance.boot();
+    await IntroStore.open();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
           const MethodChannel('lumebox/mediaTracks'),
@@ -78,6 +80,7 @@ void main() {
   });
 
   tearDown(() async {
+    await IntroStore.resetForTesting();
     ReadingLibrary.disposeAll();
     ReadingStore.disposeAll();
     await SectionScope.closeAll();
@@ -779,7 +782,7 @@ void main() {
     expect(library.onShelf('movie-1'), isTrue);
   });
 
-  testWidgets('片头片尾：从源条目播时记一下，片尾到点自动跳（用户口径）', (tester) async {
+  testWidgets('片头片尾：旧标记迁移后记片头保留片尾，倒计时结束跳到结尾', (tester) async {
     source.items = const <SourceItem>[SourceItem(id: 'movie-1', title: '示例影片')];
     source.chapterList = const <SourceChapter>[
       SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
@@ -797,7 +800,7 @@ void main() {
 
     // 进播放器（有作品身份：记的标记会落到这部件品上）。
     await tapWithDetailPlay(tester, find.text('示例影片'));
-    // 预写了片尾标记后，页面进场就开始持续判定跳过，pumpAndSettle 等不到静止。
+    // 旧标记迁移到两套播放器共用的同剧记忆。
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -814,9 +817,10 @@ void main() {
     await tapWithDetailPlay(tester, find.text('记片头'));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.textContaining('已记片头'), findsOneWidget);
+    expect(created.last.seeks, isEmpty, reason: '记片头不会当场把当前片段跳走');
 
     // 播到片尾标记之后：这一部只有 1 集 → 跳到结尾（不走连播）。
-    // （不先停在 44:00 那一刻：那已经是「到点」位置，会立刻触发一次跳过。）
+    // 不先停在 44:00 那一刻，避免提前启动片尾倒计时。
     created.last.seeks.clear();
     created.last.emit(
       position: const Duration(minutes: 44, seconds: 30),
@@ -824,15 +828,17 @@ void main() {
       playing: true,
     );
     await tester.pump(const Duration(milliseconds: 400));
+    expect(created.last.seeks, isEmpty, reason: '倒计时尚未结束，不提前跳转');
+    expect(find.textContaining('跳过片尾'), findsWidgets);
+    await tester.pump(const Duration(seconds: 6));
     expect(
       created.last.seeks,
       contains(const Duration(minutes: 45)),
       reason: '片尾到点：没有下一集就跳到结尾',
     );
-    // 提示是**新顶旧**（用户口径：黑条不再排队压着控制栏），所以这条一到就
-    // 可以直接断言——但也不能多推时间（1.6 秒后它自己就收起了）。
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.textContaining('已跳过片尾'), findsOneWidget);
+    expect(created.last.seeks, hasLength(1), reason: '片尾只跳一次');
+    await tester.pump();
+    expect(find.textContaining('跳过片尾'), findsNothing, reason: '跳过后撤下倒计时提示');
   }, timeout: const Timeout(Duration(seconds: 60)));
 
   testWidgets('快捷智能按钮：播到片尾区间自动变成「记片尾」（用户口径）', (tester) async {

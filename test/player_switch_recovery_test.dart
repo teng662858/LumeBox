@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/intro/intro_store.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/player_stats.dart';
@@ -49,9 +50,11 @@ void main() {
         );
     // 库在真实时钟里先打开：testWidgets 的 fake-async 里等不到真实异步。
     await ReadingLibrary.open(Section.video);
+    await IntroStore.open();
   });
 
   tearDown(() async {
+    await IntroStore.resetForTesting();
     PlayerFactory.clearMpvInitFailure();
     PlayerFactory.clearMdkInitFailure();
     ReadingLibrary.disposeAll();

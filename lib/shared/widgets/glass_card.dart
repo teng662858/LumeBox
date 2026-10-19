@@ -9,6 +9,17 @@ import '../../core/theme/lume_theme.dart';
 import '../../core/theme/floating_modules.dart';
 import '../../features/shell/shell_dock.dart';
 
+/// 四个板块首页筛选面板共用尺寸。
+abstract final class HomePanelLayout {
+  static const double sidePadding = 10;
+  static const double radius = 24;
+  static const double contentGap = 8;
+  static const EdgeInsets padding = EdgeInsets.symmetric(
+    horizontal: 6,
+    vertical: 4,
+  );
+}
+
 /// 清透微磨砂玻璃层：低透明底色、极浅描边与可调的轻微背景模糊。
 ///
 /// 用在「浮在内容之上」的表面上（顶部栏 / 底部栏 / 覆盖面板）——它下面有东西

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -107,6 +108,70 @@ void main() {
     store.db.close();
   });
 
+  testWidgets(
+    'unsupported native scanner allocates no session or cleanup timers',
+    (tester) async {
+      final calls = <String>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(NativeIntroBackend.channel, (
+        call,
+      ) async {
+        calls.add(call.method);
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(
+          NativeIntroBackend.channel,
+          null,
+        ),
+      );
+      final backend = NativeIntroBackend(platformSupported: false);
+      expect((await backend.resources())['allowed'], isFalse);
+      await expectLater(
+        backend.metadata(Uri.parse('file:///sample.mp4'), {}),
+        throwsA(isA<MissingPluginException>()),
+      );
+      await backend.close();
+      await tester.pump();
+      expect(calls, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'closing a pending native session cancels its request and releases exactly once',
+    (tester) async {
+      final calls = <String>[];
+      final metadata = Completer<Map<String, Object?>>();
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(NativeIntroBackend.channel, (
+        call,
+      ) async {
+        calls.add(call.method);
+        return call.method == 'metadata' ? metadata.future : null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(
+          NativeIntroBackend.channel,
+          null,
+        ),
+      );
+      final backend = NativeIntroBackend(platformSupported: true);
+      final pending = expectLater(
+        backend.metadata(Uri.parse('file:///sample.mp4'), {}),
+        throwsA(isA<IntroCancelled>()),
+      );
+      await tester.pump();
+      await backend.close();
+      await pending;
+      await backend.close();
+      metadata.complete({});
+      await tester.pump();
+      expect(calls, ['metadata', 'cancel', 'release']);
+    },
+  );
+
   test('manual four points, generated results and seasons have distinct persistence', () {
     store.saveSegments(episode, duration, [opening], manual: true);
     store.saveSegments(episode, duration, [
@@ -155,6 +220,75 @@ void main() {
     );
     expect(store.manual(episode, duration), hasLength(1));
   });
+  test('same-series memory reuses OP and relative ED across unequal episodes without IDs', () {
+    const first = EpisodeIdentity(series: 'source:work', episode: 1);
+    const second = EpisodeIdentity(series: 'source:work', episode: 2);
+    const tail = SkipSegment(
+      kind: SegmentKind.ending,
+      startMs: duration - 90000,
+      endMs: duration,
+      confidence: 1,
+      source: 'manual',
+    );
+    store.rememberSeries(first, duration, [opening, tail]);
+    final memory = store.seriesMemory(second, duration + 20000);
+    expect(memory.map((s) => s.kind), [
+      SegmentKind.opening,
+      SegmentKind.ending,
+    ]);
+    expect(memory.first.endMs, 65000);
+    expect(memory.last.startMs, duration + 20000 - 90000);
+    expect(memory.last.endMs, duration + 20000);
+    expect(
+      store.seriesMemory(
+        const EpisodeIdentity(series: 'another', episode: 2),
+        duration,
+      ),
+      isEmpty,
+    );
+    expect(
+      store.seriesMemory(
+        const EpisodeIdentity(series: 'source:work', season: 2, episode: 2),
+        duration,
+      ),
+      isEmpty,
+    );
+    expect(store.seriesMemory(first, duration + 20000), isEmpty);
+    store.update({'reuseManualSeason': false});
+    expect(store.seriesMemory(second, duration), isEmpty);
+    store.update({'reuseManualSeason': true, 'manual': false});
+    expect(store.seriesMemory(second, duration), isEmpty);
+    store.update({'manual': true});
+    final reopened = IntroStore(store.db);
+    expect(reopened.seriesMemory(second, duration), hasLength(2));
+    reopened.dispose();
+    store.clearSeriesMemory(second);
+    expect(
+      store.hasSeriesMemory(first),
+      isTrue,
+      reason: 'Do not import cleared legacy marks again',
+    );
+    expect(store.seriesMemory(first, duration), isEmpty);
+    expect(store.manual(first, duration, reuseSeason: true), isEmpty);
+  });
+
+  test('replacing precise marks removes a deleted opening from later episode memory', () {
+    const tail = SkipSegment(
+      kind: SegmentKind.ending,
+      startMs: duration - 90000,
+      endMs: duration,
+      confidence: 1,
+      source: 'manual',
+    );
+    store.saveSegments(episode, duration, [opening, tail], manual: true);
+    store.saveSegments(episode, duration, [tail], manual: true);
+    final later = store.seriesMemory(
+      const EpisodeIdentity(series: 'test-series', episode: 2),
+      duration + 20000,
+    );
+    expect(later.single.kind, SegmentKind.ending);
+  });
+
   test('priority reorder deduplicates and retains every scheme', () {
     final options = IntroOptions({
       'order': ['ai', 'manual', 'ai', 'unknown'],
@@ -222,6 +356,8 @@ void main() {
           ),
         ),
       );
+      await tester.tap(find.text('高级：精确调整起止时间'));
+      await tester.pumpAndSettle();
       position = const Duration(seconds: 42);
       final current = find.widgetWithText(TextButton, '当前位置').first;
       await tester.ensureVisible(current);
@@ -821,6 +957,73 @@ void main() {
       controller.dispose();
     },
   );
+  testWidgets(
+    'background PiP keeps automatic skip while heavy scanning stays idle',
+    (tester) async {
+      final seeks = <Duration>[];
+      final controller = await ready(tester, seeks);
+      controller.update(within, foreground: false, pictureInPicture: true);
+      expect(controller.prompt, isNotNull);
+      await tester.pump(const Duration(seconds: 4));
+      expect(seeks, [const Duration(milliseconds: 65000)]);
+      expect(controller.scanning, isFalse);
+      controller.dispose();
+    },
+  );
+
+  testWidgets(
+    'PiP pause and buffering freeze countdown; leaving PiP stops skipping',
+    (tester) async {
+      final seeks = <Duration>[];
+      final controller = await ready(tester, seeks);
+      controller.update(within, foreground: false, pictureInPicture: true);
+      controller.update(
+        const PlayerSnapshot(position: Duration(seconds: 10)),
+        foreground: false,
+        pictureInPicture: true,
+      );
+      await tester.pump(const Duration(seconds: 5));
+      expect(seeks, isEmpty);
+      controller.update(
+        const PlayerSnapshot(
+          playing: true,
+          buffering: true,
+          position: Duration(seconds: 10),
+        ),
+        foreground: false,
+        pictureInPicture: true,
+      );
+      await tester.pump(const Duration(seconds: 5));
+      expect(seeks, isEmpty);
+      controller.update(within, foreground: false);
+      await tester.pump(const Duration(seconds: 5));
+      expect(seeks, isEmpty);
+      controller.update(within, foreground: false, pictureInPicture: true);
+      await tester.pump(const Duration(seconds: 4));
+      expect(seeks, hasLength(1));
+      controller.dispose();
+    },
+  );
+
+  testWidgets(
+    'finishing an old seek after changing episode does not learn for the new episode',
+    (tester) async {
+      final seeks = <Duration>[];
+      final controller = await ready(tester, seeks);
+      final pending = Completer<void>();
+      controller.seek = (_) => pending.future;
+      controller.update(within, foreground: true);
+      final done = controller.skipNow();
+      const other = EpisodeIdentity(series: 'different-work', episode: 1);
+      controller.bind(request(identity: other), (_) async {});
+      pending.complete();
+      await done;
+      expect(store.hasSeriesMemory(other), isFalse);
+      controller.dispose();
+      await tester.pump();
+    },
+  );
+
   testWidgets('countdown performs one seek to the exact OP endpoint', (
     tester,
   ) async {

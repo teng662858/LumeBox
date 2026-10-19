@@ -20,6 +20,7 @@ class ICloudSync extends ChangeNotifier with WidgetsBindingObserver {
   static const channel = MethodChannel('lumebox/icloud');
   static const files = {
     'appearance_settings.json',
+    'custom_icons.json',
     'browse_layout.json',
     'shell_settings.json',
     'floating_modules.json',

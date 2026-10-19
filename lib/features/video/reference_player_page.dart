@@ -1,3 +1,5 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
+
 import '../../shared/widgets/drawer_geometry.dart';
 import 'playback_glass.dart';
 
@@ -58,6 +60,7 @@ import 'player_source_sheet.dart';
 import 'player_speed_meter.dart';
 import 'source_playback.dart';
 import 'video_play_target.dart';
+import 'player_intro_memory.dart';
 import 'reference_player_settings.dart';
 import '../../core/player/reference_player_factory.dart';
 import '../../core/player/reference_player_launcher.dart';
@@ -411,7 +414,8 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
     if (introSnapshot != null) {
       _intro?.update(
         introSnapshot,
-        foreground: state == AppLifecycleState.resumed && !_locked,
+        foreground: state == AppLifecycleState.resumed,
+        pictureInPicture: _session?.state == PipState.active,
       );
     }
     if (state != AppLifecycleState.resumed) _nextEpisodeBuffer.discard();
@@ -2074,6 +2078,15 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
         : _skipMarks.copyWith(outro: position);
     SkipMarksStore(library)
         .save('reference:${target.sourceId}:${target.itemId}', next);
+    unawaited(
+      rememberPlayerSkip(
+        target,
+        next,
+        snapshot.duration,
+        intro: intro,
+        controller: _intro,
+      ).catchError((Object error) => LumeLog.warn('同剧跳过记忆保存失败：$error')),
+    );
     setState(() => _skipMarks = next);
     _introHandled = !intro && _introducedAlready;
     // 「记片尾」记的就是**当前位置**：当场算作已处理，这一集不会被立刻跳走
@@ -2093,6 +2106,14 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
     if (target == null || library == null) return;
     SkipMarksStore(library)
         .clear('reference:${target.sourceId}:${target.itemId}');
+    unawaited(
+      rememberPlayerSkip(
+        target,
+        SkipMarks.none,
+        _player?.snapshot.value.duration ?? Duration.zero,
+        controller: _intro,
+      ).catchError((Object error) => LumeLog.warn('同剧跳过记忆清除失败：$error')),
+    );
     setState(() => _skipMarks = SkipMarks.none);
     _showToast('已清除片头片尾标记');
   }
@@ -2384,6 +2405,8 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
       case PipEventKind.restored:
         unawaited(_restoreInlinePlayback());
     }
+    final snapshot = _player?.snapshot.value;
+    if (snapshot != null) _syncReferenceIntro(snapshot);
   }
 
   /// 开始帧转发（仅 MPV 内核需要：AVPlayer 走原生 `AVPlayerLayer` 通路）。
@@ -3353,7 +3376,10 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
                   IconButton(
                     tooltip: '关闭',
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
+                    icon: const LumeIcon(
+                      Icons.close,
+                      slot: 'reference_player_page.1',
+                    ),
                   ),
                 ],
               ),
@@ -3414,7 +3440,7 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
       tooltip: tooltip,
       icon: _fullscreen
           ? PlayerControlGlyph(icon, size: _iconSize)
-          : Icon(icon),
+          : LumeIcon(icon, slot: 'reference_player_page.2', variant: true),
       onPressed: onPressed,
     );
   }
@@ -3697,7 +3723,11 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
         actions: <Widget>[
           FilledButton.icon(
             onPressed: _retryBoot,
-            icon: const Icon(Icons.refresh, size: 18),
+            icon: const LumeIcon(
+              Icons.refresh,
+              slot: 'reference_player_page.3',
+              size: 18,
+            ),
             label: const Text('重试'),
           ),
         ],
@@ -3713,7 +3743,11 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
         actions: <Widget>[
           FilledButton.icon(
             onPressed: _retryFailedKernel,
-            icon: const Icon(Icons.refresh, size: 18),
+            icon: const LumeIcon(
+              Icons.refresh,
+              slot: 'reference_player_page.4',
+              size: 18,
+            ),
             label: const Text('重试'),
           ),
           OutlinedButton(
@@ -3773,7 +3807,7 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
       actions: <Widget>[
         FilledButton.icon(
           onPressed: () => _restoreInlinePlayback(retry: true),
-          icon: const Icon(Icons.refresh),
+          icon: const LumeIcon(Icons.refresh, slot: 'reference_player_page.5'),
           label: const Text('重试播放'),
         ),
         if (_target != null &&
@@ -3913,15 +3947,19 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
                   ),
                 ),
               // 锁屏开关：锁定时只留它，其余控制全收起。
-              if (!_fullscreen && !_locked && !_experience.flag('referenceChrome', true))
+              if (!_fullscreen &&
+                  !_locked &&
+                  !_experience.flag('referenceChrome', true))
                 Align(
                   alignment: Alignment.topRight,
                   child: Padding(
                     padding: const EdgeInsets.all(4),
                     child: IconButton(
                       tooltip: _locked ? '解除锁定' : '锁定（防误触）',
-                      icon: Icon(
+                      icon: LumeIcon(
                         _locked ? Icons.lock : Icons.lock_open,
+                        slot: 'reference_player_page.6',
+                        variant: true,
                         color: Colors.white,
                         shadows: const <Shadow>[
                           Shadow(color: Colors.black54, blurRadius: 6),
@@ -4285,8 +4323,9 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
         padding: EdgeInsets.zero,
         color: _fullscreen ? Colors.white : LumeTheme.textPrimary,
         tooltip: '后退 10 秒',
-        icon: Icon(
+        icon: LumeIcon(
           Icons.replay_10,
+          slot: 'reference_player_page.7',
           shadows: _fullscreen ? _controlShadows : null,
         ),
         onPressed: player == null
@@ -4301,8 +4340,10 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
         padding: EdgeInsets.zero,
         color: _fullscreen ? Colors.white : LumeTheme.textPrimary,
         tooltip: playing ? '暂停' : '播放',
-        icon: Icon(
+        icon: LumeIcon(
           playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
+          slot: 'reference_player_page.8',
+          variant: true,
           shadows: _fullscreen ? _controlShadows : null,
         ),
         onPressed: player == null
@@ -4318,8 +4359,9 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
         padding: EdgeInsets.zero,
         color: _fullscreen ? Colors.white : LumeTheme.textPrimary,
         tooltip: '停止',
-        icon: Icon(
+        icon: LumeIcon(
           Icons.stop_circle,
+          slot: 'reference_player_page.9',
           shadows: _fullscreen ? _controlShadows : null,
         ),
         onPressed: player?.stop,
@@ -4330,7 +4372,11 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
         visualDensity: VisualDensity.compact,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         padding: EdgeInsets.zero,
-        icon: Icon(Icons.speed, shadows: _fullscreen ? _controlShadows : null),
+        icon: LumeIcon(
+          Icons.speed,
+          slot: 'reference_player_page.10',
+          shadows: _fullscreen ? _controlShadows : null,
+        ),
         color: _fullscreen ? Colors.white : LumeTheme.textPrimary,
         onPressed: _showSpeedPicker,
       ),
@@ -4341,8 +4387,9 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
         padding: EdgeInsets.zero,
         color: _fullscreen ? Colors.white : LumeTheme.textPrimary,
         tooltip: '前进 10 秒',
-        icon: Icon(
+        icon: LumeIcon(
           Icons.forward_10,
+          slot: 'reference_player_page.11',
           shadows: _fullscreen ? _controlShadows : null,
         ),
         onPressed: player == null
@@ -4421,7 +4468,7 @@ class _ReferencePlayerPageState extends State<ReferencePlayerPage>
       tooltip: tooltip,
       icon: _fullscreen
           ? PlayerControlGlyph(icon, size: _iconSize)
-          : Icon(icon),
+          : LumeIcon(icon, slot: 'reference_player_page.12', variant: true),
       onPressed: onPressed,
     );
   }
@@ -4651,48 +4698,56 @@ class _PlayerStageNotice extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: GlassCard(
           padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              if (busy)
-                const SizedBox(
-                  width: 26,
-                  height: 26,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
-                )
-              else
-                Icon(icon, size: 26, color: LumeTheme.textSecondary),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: LumeTypography.titleSize,
-                  fontWeight: FontWeight.w600,
-                  color: LumeTheme.textPrimary,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (busy)
+                  const SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  )
+                else
+                  LumeIcon(
+                    icon,
+                    slot: 'reference_player_page.13',
+                    variant: true,
+                    size: 26,
+                    color: LumeTheme.textSecondary,
+                  ),
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: LumeTypography.titleSize,
+                    fontWeight: FontWeight.w600,
+                    color: LumeTheme.textPrimary,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                detail,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: LumeTypography.descriptionSize,
-                  height: 1.5,
-                  color: LumeTheme.descriptionColor,
+                const SizedBox(height: 6),
+                Text(
+                  detail,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: LumeTypography.descriptionSize,
+                    height: 1.5,
+                    color: LumeTheme.descriptionColor,
+                  ),
                 ),
-              ),
-              if (actions.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: actions,
-                ),
+                if (actions.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: actions,
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -4775,7 +4830,7 @@ class _GestureHint extends StatelessWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Icon(
+                    LumeIcon(
                       switch (state.intent) {
                         PlayerGestureIntent.brightness => Icons.brightness_6,
                         PlayerGestureIntent.volume => Icons.volume_up,
@@ -4783,6 +4838,8 @@ class _GestureHint extends StatelessWidget {
                         PlayerGestureIntent.boost => Icons.speed,
                         PlayerGestureIntent.none => Icons.touch_app,
                       },
+                      slot: 'reference_player_page.14',
+                      variant: true,
                       size: 18,
                       color: Colors.white,
                     ),
@@ -4893,7 +4950,11 @@ class _TrackSheet extends StatelessWidget {
                     if (allowOff)
                       ListTile(
                         dense: true,
-                        leading: const Icon(Icons.block, size: 20),
+                        leading: const LumeIcon(
+                          Icons.block,
+                          slot: 'reference_player_page.15',
+                          size: 20,
+                        ),
                         title: Text(
                           '关闭字幕',
                           style: TextStyle(
@@ -4906,10 +4967,12 @@ class _TrackSheet extends StatelessWidget {
                     for (final track in tracks)
                       ListTile(
                         dense: true,
-                        leading: Icon(
+                        leading: LumeIcon(
                           track.selected
                               ? Icons.check_circle
                               : Icons.circle_outlined,
+                          slot: 'reference_player_page.16',
+                          variant: true,
                           size: 20,
                           color: track.selected
                               ? LumeTheme.textPrimary
@@ -5006,8 +5069,10 @@ class _QualitySheet extends StatelessWidget {
                     final selected = index == currentIndex;
                     return ListTile(
                       dense: true,
-                      leading: Icon(
+                      leading: LumeIcon(
                         selected ? Icons.check_circle : Icons.circle_outlined,
+                        slot: 'reference_player_page.17',
+                        variant: true,
                         size: 20,
                         color: selected
                             ? LumeTheme.textPrimary

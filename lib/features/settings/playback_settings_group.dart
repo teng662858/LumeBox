@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/player/playback_orientation.dart';
@@ -46,8 +47,9 @@ class PlaybackSettingsGroup extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
               child: Row(
                 children: <Widget>[
-                  Icon(
+                  LumeIcon(
                     Icons.stay_current_landscape,
+                    slot: 'playback_settings_group.1',
                     size: 22,
                     color: LumeTheme.textSecondary,
                   ),

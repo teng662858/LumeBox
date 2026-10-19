@@ -15,12 +15,18 @@ class DockLiquidLens extends StatefulWidget {
     required this.press,
     required this.stretch,
     required this.highlight,
+    this.lean = 0,
+    this.grip = 0,
+    this.refraction = 1,
+    this.dispersion = 1,
   });
 
   static const shaderAsset = 'assets/shaders/dock_liquid_lens.frag';
   static const filterKey = Key('shell.dock.lens.filter');
   final Path path;
   final double press, stretch, highlight;
+  final double lean, grip;
+  final double refraction, dispersion;
 
   @override
   State<DockLiquidLens> createState() => _DockLiquidLensState();
@@ -65,18 +71,28 @@ class _DockLiquidLensState extends State<DockLiquidLens> {
           final reduced = MediaQuery.disableAnimationsOf(context);
           final press = reduced ? 0.0 : widget.press.clamp(0.0, 1.0);
           final stretch = reduced ? 0.0 : widget.stretch.clamp(0.0, 1.0);
-          final strength = .07 + .13 * press + .10 * stretch;
+          final strength =
+              (.07 + .20 * press + .14 * stretch) * widget.refraction;
           final shader = _shader;
           final ImageFilterConfig filter;
           if (shader != null && ui.ImageFilter.isShaderFilterSupported) {
             // Floats 0/1 and sampler 0 are owned by ImageFilter.shader.
             shader
               ..setFloat(2, strength)
-              ..setFloat(3, .004 + .012 * press + .008 * stretch)
-              ..setFloat(4, widget.highlight.clamp(0.0, 1.0) * .16);
+              ..setFloat(
+                3,
+                (.004 + .018 * press + .014 * stretch) * widget.dispersion,
+              )
+              ..setFloat(4, widget.highlight.clamp(0.0, 1.0) * .16)
+              ..setFloat(9, reduced ? 0 : widget.lean.clamp(-1.0, 1.0))
+              ..setFloat(10, reduced ? 0 : widget.grip.clamp(-1.0, 1.0))
+              ..setFloat(11, press);
             filter = _LensShaderFilter(
               shader,
               MediaQuery.devicePixelRatioOf(context),
+              () => (context.findRenderObject()! as RenderBox).localToGlobal(
+                Offset.zero,
+              ),
             );
           } else {
             // Keep the backdrop stable while Impeller loads the shader. The
@@ -104,9 +120,10 @@ class _DockLiquidLensState extends State<DockLiquidLens> {
 /// Resolve the capsule's current canvas bounds at paint time and convert them
 /// to physical pixels. This also handles preview repaint boundaries and DPR.
 class _LensShaderFilter implements ImageFilterConfig {
-  const _LensShaderFilter(this.shader, this.pixelRatio);
+  const _LensShaderFilter(this.shader, this.pixelRatio, this.origin);
   final ui.FragmentShader shader;
   final double pixelRatio;
+  final Offset Function() origin;
   @override
   String get debugShortDescription => 'dockLensShader';
   @override
@@ -114,9 +131,10 @@ class _LensShaderFilter implements ImageFilterConfig {
   @override
   ui.ImageFilter resolve(ImageFilterContext context) {
     final bounds = context.bounds;
+    final position = origin();
     shader
-      ..setFloat(5, bounds.left * pixelRatio)
-      ..setFloat(6, bounds.top * pixelRatio)
+      ..setFloat(5, position.dx * pixelRatio)
+      ..setFloat(6, position.dy * pixelRatio)
       ..setFloat(7, bounds.width * pixelRatio)
       ..setFloat(8, bounds.height * pixelRatio);
     return filter;

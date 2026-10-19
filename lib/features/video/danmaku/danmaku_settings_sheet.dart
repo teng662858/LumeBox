@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/lume_theme.dart';
@@ -55,13 +56,19 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
                 ListTile(
                   leading: IconButton(
                     tooltip: '返回播放',
-                    icon: const Icon(Icons.arrow_back),
+                    icon: const LumeIcon(
+                      Icons.arrow_back,
+                      slot: 'danmaku_settings_sheet.1',
+                    ),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                   title: const Text('弹幕设置'),
                   trailing: IconButton(
                     tooltip: '关闭弹幕设置',
-                    icon: const Icon(Icons.close),
+                    icon: const LumeIcon(
+                      Icons.close,
+                      slot: 'danmaku_settings_sheet.2',
+                    ),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ),
@@ -74,19 +81,28 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
                           ListTile(title: Text(widget.status!)),
                         if (widget.onMatch != null)
                           ListTile(
-                            leading: const Icon(Icons.search),
+                            leading: const LumeIcon(
+                              Icons.search,
+                              slot: 'danmaku_settings_sheet.3',
+                            ),
                             title: const Text('匹配公共弹幕'),
                             onTap: widget.onMatch,
                           ),
                         if (widget.onConfigureService != null)
                           ListTile(
-                            leading: const Icon(Icons.cloud_outlined),
+                            leading: const LumeIcon(
+                              Icons.cloud_outlined,
+                              slot: 'danmaku_settings_sheet.4',
+                            ),
                             title: const Text('弹幕服务地址'),
                             onTap: widget.onConfigureService,
                           ),
                         if (widget.onReload != null)
                           ListTile(
-                            leading: const Icon(Icons.refresh),
+                            leading: const LumeIcon(
+                              Icons.refresh,
+                              slot: 'danmaku_settings_sheet.5',
+                            ),
                             title: const Text('重新加载弹幕'),
                             onTap: widget.onReload,
                           ),
@@ -433,7 +449,11 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
           const SizedBox(height: 8),
           TextButton.icon(
             onPressed: () => _update(DanmakuSettings.defaults),
-            icon: const Icon(Icons.restart_alt, size: 18),
+            icon: const LumeIcon(
+              Icons.restart_alt,
+              slot: 'danmaku_settings_sheet.6',
+              size: 18,
+            ),
             label: const Text('恢复默认'),
           ),
         ],
