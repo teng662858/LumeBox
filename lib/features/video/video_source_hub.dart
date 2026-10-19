@@ -4,6 +4,7 @@ import '../../core/cat/cat_service.dart';
 import '../../core/reading/reading_library.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
+import '../../core/util/lume_log.dart';
 import '../cat/cat_page.dart';
 import '../source/video_source_picker.dart';
 import '../source/video_source_scope.dart';
@@ -31,18 +32,36 @@ class _VideoSourceHubState extends State<VideoSourceHub> {
   }
 
   Future<void> _restore() async {
-    final generation = _selection;
-    final library = await ReadingLibrary.open(Section.video);
-    if (!mounted || generation != _selection) return;
-    if (library.setting('video.source.kind') == 'cat') {
-      setState(() {
-        _cat = true;
-        _catCreated = true;
-      });
+    try {
+      final generation = _selection;
+      final library = await ReadingLibrary.open(Section.video);
+      if (!mounted || generation != _selection) return;
+      if (library.setting('video.source.kind') == 'cat') {
+        setState(() {
+          _cat = true;
+          _catCreated = true;
+        });
+      }
+    } catch (error, stackTrace) {
+      // The content page owns its storage error UI; a missing preference must
+      // not turn a recoverable storage problem into an unhandled exception.
+      LumeLog.error(error, stackTrace);
     }
   }
 
   Future<void> _pick(BuildContext context) async {
+    try {
+      await _pickSource(context);
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('切换源失败，请重试')));
+      }
+    }
+  }
+
+  Future<void> _pickSource(BuildContext context) async {
     final manager = LumeSources.manager(Section.video);
     final selected = await showVideoSourcePicker(
       context: context,
