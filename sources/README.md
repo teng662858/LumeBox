@@ -46,7 +46,23 @@
 
 `video/bttwo.js`：两个BT影视（发布页 bttwo.vip；bttwo.life/.org/.top/.me、bttwoo.com、bttwo.net）。与 4k影视同一套 CMS（`/play/ch…`、`/filter?page=N`、同一份 `nbmovie_wasm`）：全部影片/电影/剧集/动漫 + 站内搜索；播放地址由站点 wasm 现算签名 → `content()` 打开 `/play/<slug>`（网页播放器，选集在页面里点）。
 
-## 2026-10-31 歪比巴卜（wbbb_video，详见 docs/2026-10-31_歪比巴卜源.md）
+## 2026-11-01 歪比巴卜 v2.0.0（wbbb_video，详见 docs/2026-11-01_歪比巴卜源v2.md）
+
+`video/wbbb.js`：歪比巴卜（发布页 xn--clr79vmzkema.com；节点 wbbb1.com / v.wbbb1.com / www.wbbb1.com）。
+苹果CMS v10 主题站：栏目 `/show/{1-4}-----------.html`（真翻页）、详情 `/detail/{id}.html`、播放 `/vplay/{id}-{线路}-{集}.html`。
+首访 403 Cookie 门（源里自动重试一次）。**v2 改掉了「打开详情页」的老做法**：
+
+- 详情页 `#y-playList` 的播放源 tab（高清C / 蓝光B / BF有广 / LZ有广…）与分集面板按顺序配对，
+  **线路 × 分集全部展开成章节**（`高清C · 1080P · 第 1 集` …）；
+- `content()` 读出这一集 `player_aaaa` 的密文与 `link_next`，拼出站点自己的播放器地址
+  `https://xn--qvr2v.850088.xyz/player/?url=<密文>&next=<下一集>&title=<标题>` 交给 App 网页播放器 ——
+  **点哪一集就直接打开那一集的播放器**，不再落回详情页；
+- 解析接口的签名也逆出来了（`key22 = md5(Q) 后 20 位 + ' P'`、`enplay = base64(RC4(key22, md5(Q+'stray')))`、
+  `ckey` 用播放器域名，`aesplay` 就是标准 RC4），实测能拿到 `{"code":200,...}` 的播放载荷，
+  但载荷里的媒体地址是站点 `aes_key/aes_iv` 二次加密的，这一层未破 → 仍走网页播放器，不伪造 `video()`。
+- 站内搜索被 WAF 拦 → 用本地索引（浏览过的条目可搜）。
+
+## 2026-10-31 歪比巴卜 v1.0.0（历史记录，详见 docs/2026-10-31_歪比巴卜源.md）
 
 `video/wbbb.js`：歪比巴卜（发布页 xn--clr79vmzkema.com；节点 wbbb1.com / v.wbbb1.com / www.wbbb1.com）。
 苹果CMS v10 主题站：栏目 `/show/{1-4}-----------.html`（真翻页）、详情 `/detail/{id}.html`、播放 `/vplay/…`。
