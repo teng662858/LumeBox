@@ -9,13 +9,22 @@
 		<!-- 网页视图（内置「网页视图」过 Cloudflare 校验）里允许明文 http。
 		     源站的正文与挑战页都会嵌 http 子资源，ATS 默认把它们拦掉，
 		     表现就是「页面一片白、看不到验证勾选框」（真机反馈）。
-		     只作用于 Web 内容：App 自己的 Dart 网络请求不受影响。 -->
+		     URLSession 发出的源请求需单独配置下方的精确主机例外。 -->
 		<key>NSAllowsArbitraryLoadsForMedia</key>
 		<true/>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
+			<!-- iOS 17+ applies ATS to direct IP connections; allow this legacy
+			     HTTP source host without relaxing transport security globally. -->
+			<key>103.45.132.22</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+			</dict>
 			<!-- These legacy source URLs use HTTP.
                  URLSession needs its own exception; WebKit permission is separate. -->
 			<key>yuetingba.cn</key>
@@ -49,7 +58,7 @@
 				<true/>
 			</dict>
 			<!-- 320lu 的移动线只有明文 HTTP：http://www.fawu110.com:66（备用 http://218.11.5.233）。
-			     IP 无法做域名例外，域名镜像放行后 App 内可直接切。 -->
+			     此处只放行域名镜像；iOS 17+ 的 IP 镜像需要独立的 IP 例外。 -->
 			<key>fawu110.com</key>
 			<dict>
 				<key>NSExceptionAllowsInsecureHTTPLoads</key>
