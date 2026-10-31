@@ -1,5 +1,15 @@
 # LumeBox 视频源：站点转源结果
 
+## 2026-10-31 看剧AI（kanju_ai_video，详见 docs/2026-10-31_看剧AI源.md）
+
+`video/kanju-ai.js`：看剧AI（主站 kanju24.com，镜像 kanju.ai / kanju13.com / www.kanju24.com）是 React SPA，
+数据全走同源 `/v1/*`，每个请求要 **HMAC-SHA256 签名**（key 与算法从 `movie-card-runtime-*.js` 挖出，
+源内纯 JS 实现）。5 个分类（电视剧/电影/动漫/综艺/短剧）+ 分类/地区/语言/年份/状态/形式/排序筛选（从
+`/v1/runtime/bootstrap` 实时取）+ 站内搜索。
+播放先走**第三方直链**（`resolve_mode:"direct"`，实测占 25/34 条，m3u8 直连、不需要登录、不扣额度，逐条探活后
+把可用线路放进 `qualities`）；直链全挂时才用官方票券线路（`POST /v1/users/anonymous` 拿游客 Cookie →
+`POST /v1/playback/resolve-line`），每集扣 30000–60000 token，游客 900000/天。
+
 ## 2026-10-31 听书 HTML / 咕噜 Python
 
 `video/咕噜咕噜.py` 为 Python 1.0.1 单文件源：视频板块 → Python 源 → 本地文件导入，或同步现有影视订阅。分类不再发网络请求；网络失败显示原因，分集编码与播放请求头已修复。验证见 [本次审核记录](../docs/2026-10-31_听书导入与工作区审核.md)。
@@ -152,6 +162,11 @@ sources/video/
 ├── heroero.js    HeroEro（heroero.com）KVS；**需代理**；/latest-updates/、/categories/<slug>/，详情 flashvars 直给 mp4（Range 1KB）
 └── qinav.js      Qinav（www.qinav.com）；**需代理**；/site/5/<N>-<P>.html 分类分页、/search.html?wd=，embed 页 const url 给 m3u8
 ```
+
+- `video/kanju-ai.js` —— 看剧AI（kanju24.com；镜像 kanju.ai / kanju13.com / www.kanju24.com）：
+  React SPA + 同源 `/v1/*` 接口，**每个请求要 HMAC-SHA256 签名**（key 来自 `/assets/movie-card-runtime-*.js`，源内纯 JS 实现）；
+  分类 = kind（电视剧/电影/动漫/综艺/短剧），筛选从 `/v1/runtime/bootstrap` 实时取；
+  播放默认走第三方直链（m3u8 直连、不登录、不扣额度），官方线路兜底时用游客会话换票券（扣 30000–60000 token/集）。
 
 **漫画 / 图片类图源**不在 video/ 下：
 - `comic/gamebus.js` —— 同一站绅游巴士的 H 漫（`/api/comic/{chapterId}/pages` 直接给整话图片）；
@@ -348,6 +363,10 @@ dart run tools/site_reachability.dart
 - **蝴蝶影院的搜索接口对脚本 503**：`/node/search` 只对带完整浏览器上下文的请求放行，`list({keyword})` 改为本地索引过滤（列表/详情访问过的条目才能被搜到），索引为空时先抓第 1 页。
 - **8x8x 的内容页在随机前缀下**：真实域根路径只有 347 字节外壳，`data-body-url=/4rov3/` 才是内容页前缀（每次改版会变，源里动态取并缓存 6 小时）；**站点根路径的 `/category/1/` 会被 SPA 兜底 302 到首页**，必须带前缀。推荐流 `/json/recommend/rmd_N` 是 AES-256-GCM 密文（key 由 base64+异或派生），源内自带纯 JS 实现。分类/标签是 SSR（23 张/页、`第 X / Y 页`），站点**没有排序控件**（`?sort=`/`?order=`/`/hot/` 全被忽略或 302），源里只给「最新 / 推荐」两种真实顺序；标签只认单个（`A+B`/`A,B` 都 302），多选取第一个。镜像按站点自己公布的永久域名排：`8x.vip`（实测直连 200、同内容，主站）+ `1azm0i.qcsw2b5yf.com`（跳板，302 跟真实域）+ `8x8x.com`（官方另一个永久域名，本机 DNS 被污染未复核，只供手选）；旧跳板 `qnzu16v.u85772.com` 已 NXDOMAIN 换掉。
 - **App 的 HTTP 桥不回报最终 URL**：8x8x 靠跳板域 302 到真实域，`reply.url` 在 Node 检查器里有、在 App 里没有。源里读不到最终地址时用种子域兜底（后续请求照样被 302 带走）；只按 `reply.url` 判活会让真机误报「跳板域都打不开了」。
+- **看剧AI 的播放靠两套线路**：默认用第三方资源站的 m3u8 直链（实测 25/34 条，免费、不需登录，源里逐条探活挑可用的）；
+  直链全挂时才换官方票券线路，需要游客会话（`POST /v1/users/anonymous`，同一 anonymous_id 复用同一账号）并按集扣
+  30000–60000 token，游客额度 900000/天（约 15–30 集），用尽后给可读错误。**签名 key 轮换**时接口返回
+  `invalid_request_signature`，把新 `main-*.js` 里的 `lo="…"` 抄进 `SIGN_KEY` 即可（源里不写站点版本号，发版不影响）。
 - **四色视频的标题与链接都是站点自己的加密**：标题/分类名/菜单链接是 AES-256-CBC（key、iv 在 `/assets/js/common/encrypt.js`，**iv 只有 10 字节 + 固定后缀 `883346`**，见 `common.js` 的 `decodeString2`），卡片 href 是 `/cYc` + base64(明文路径)。明文路径（`/juqing/play-438649.html`、`/juqing/list-麻豆传媒.html`）直接可访问，所以源里**只解不拼**：链接先 base64 还原再取页，AES 用源内纯 JS 实现（沙箱没有 atob/Buffer/crypto）。站点换 key 时源会抛「标题一条都解不开（站点换加密 key 了？）」。
 - **四色视频的封面别用站点自己的图片主机**：卡片 `data-base64` 指到 `base4s.0827.la`，回来的是 `data:image/jpg;base64,…` **文本**，App 图片管线不吃文本 body；但**同一个路径在媒体 CDN（`www.0734.la` / `s4.dt188.site`）上就是真 JPEG**，所以封面改用 play 页 `m3u8_host` 拼，域名随站点轮换自动跟着换。它的 `m3u8_host1`（`s5.sanheyiliao.xyz`）已 NXDOMAIN，只作备用线路，`content()` 会先探一次再决定是否回落到线路一。
 
