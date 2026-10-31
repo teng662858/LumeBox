@@ -245,6 +245,86 @@ void main() {
       expect((content! as VideoContent).url.toString(), contains('.m3u8'));
     }, skip: _skipUnless(<String>['luttt_video.js', 'luttt_detail.html', 'luttt_play.html']));
 
+    test('千千影视：分类 / 搜索 / 筛选 / 分页 / 公开播放与 VIP 拒绝', () async {
+      final fixture =
+          jsonDecode(_read('qqys01_fixture.json')) as Map<String, dynamic>;
+      final routes = Map<String, dynamic>.from(fixture['routes'] as Map);
+      final responses = <String, String>{
+        for (final entry in routes.entries)
+          'https://www.qqys01.com${entry.key}': '${entry.value}',
+      };
+      final publicPlayer =
+          responses['https://www.qqys01.com/vodplay/68501-2-1.html']!;
+      responses['https://www.qqys01.com/vodplay/99999-1-1.html'] = publicPlayer
+          .replaceFirst('"points":0', '"points":5');
+
+      final source = await _boot(
+        _script('千千影视.js'),
+        section: Section.video,
+        http: _SnapshotHttp(get: responses),
+      );
+      addTearDown(source.dispose);
+
+      final categories = await source.data.categories();
+      expect(categories.map((item) => item.id), <String>[
+        'home',
+        '1',
+        '2',
+        '3',
+        '4',
+      ]);
+      expect(
+        categories.map((item) => item.title),
+        containsAll(<String>['首页推荐', '电影', '连续剧']),
+      );
+
+      final movies = await source.data.list(categoryId: '1', page: 1);
+      final page2 = await source.data.list(categoryId: '1', page: 2);
+      final series = await source.data.list(categoryId: '2', page: 1);
+      expect(movies.items, isNotEmpty);
+      expect(movies.hasMore, isTrue);
+      expect(page2.items.first.id, isNot(movies.items.first.id));
+      expect(series.items.first.id, isNot(movies.items.first.id));
+
+      final matches = await source.data.list(keyword: '长征');
+      expect(matches.items.first.id, '68501');
+      expect(matches.items.first.title, '伟大的长征');
+      final searchPage2 = await source.data.list(keyword: '我', page: 2);
+      expect(searchPage2.items.first.id, '1033');
+      expect(searchPage2.hasMore, isTrue);
+
+      final filterGroups = await source.data.filtersFor(categoryId: '1');
+      expect(
+        filterGroups.map((group) => group.id),
+        containsAll(<String>['type', 'area', 'genre', 'lang', 'year']),
+      );
+      final action = await source.data.list(
+        categoryId: '1',
+        filters: const <String, String>{'type': '6'},
+      );
+      expect(action.items.first.id, isNot(movies.items.first.id));
+
+      final detail = await source.data.detail('68501');
+      expect(detail?.title, '伟大的长征');
+      final chapters = await source.data.chapters('68501');
+      expect(chapters.length, 364, reason: '多线路完整保留，不能在总集数 300 处截断');
+      expect(chapters.first.title, startsWith('JS线路'));
+      final content = await source.data.content(
+        itemId: '68501',
+        chapterId: '/vodplay/68501-2-1.html',
+      );
+      expect(content, isA<VideoContent>());
+      expect((content! as VideoContent).url.host, 'vodcnd17.ajupf.com');
+
+      await expectLater(
+        source.data.content(
+          itemId: '99999',
+          chapterId: '/vodplay/99999-1-1.html',
+        ),
+        throwsA(isA<SourceException>()),
+      );
+    }, skip: _skipUnless(<String>['千千影视.js', 'qqys01_fixture.json']));
+
     test('p5mh 漫画：列表 / 详情 / 章节 / 多页图片拼接', () async {
       final source = await _boot(
         _script('p5mh_comic.js'),
