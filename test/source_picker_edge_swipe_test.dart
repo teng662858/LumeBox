@@ -24,6 +24,25 @@ void main() {
     expect(opens, 1);
   });
 
+  testWidgets('left-edge right swipe opens the source picker', (tester) async {
+    var opens = 0;
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SourcePickerEdgeSwipe(
+          onOpen: () async {
+            opens++;
+          },
+          child: const Scaffold(body: SizedBox.expand()),
+        ),
+      ),
+    );
+
+    await tester.dragFrom(const Offset(1, 300), const Offset(100, 0));
+    expect(opens, 1);
+  });
+
   testWidgets('other directions and non-edge drags do not open the picker', (
     tester,
   ) async {
@@ -42,9 +61,11 @@ void main() {
     );
 
     await tester.dragFrom(const Offset(389, 300), const Offset(100, 0));
+    await tester.dragFrom(const Offset(1, 300), const Offset(-100, 0));
     await tester.dragFrom(const Offset(200, 300), const Offset(-100, 0));
     await tester.dragFrom(const Offset(389, 300), const Offset(-10, 100));
     await tester.dragFrom(const Offset(389, 300), const Offset(-40, 0));
+    await tester.dragFrom(const Offset(1, 300), const Offset(40, 0));
     final cancelled = await tester.startGesture(const Offset(389, 300));
     await cancelled.moveBy(const Offset(-100, 0));
     await cancelled.cancel();

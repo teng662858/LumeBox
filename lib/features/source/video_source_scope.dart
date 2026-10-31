@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 
-/// Opens the shared video source picker from a leftward swipe at the right edge.
+/// Opens the shared video source picker from a horizontal swipe that starts at
+/// either screen edge: right edge → swipe left, left edge → swipe right.
 class SourcePickerEdgeSwipe extends StatefulWidget {
   const SourcePickerEdgeSwipe({
     super.key,
@@ -17,16 +18,33 @@ class SourcePickerEdgeSwipe extends StatefulWidget {
 }
 
 class _SourcePickerEdgeSwipeState extends State<SourcePickerEdgeSwipe> {
+  /// 边缘判定宽度：手指按下时离屏幕左右边缘这么近才算「从边缘划出」。
+  static const double _edgeWidth = 28;
+
+  /// 触发距离：至少横划这么远才开抽屉（太短当作误触）。
+  static const double _minTravel = 64;
+
+  /// 横竖比：横向位移要明显大于纵向，避免斜着滑列表时误开。
+  static const double _directionRatio = 1.2;
+
   Offset _start = Offset.zero;
   Offset _travel = Offset.zero;
   bool _opening = false;
+  bool _fromLeft = false;
 
   bool _startsAtEdge(PointerEvent event) {
     if (_opening) return false;
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return false;
     final position = box.globalToLocal(event.position);
-    return position.dx >= box.size.width - 28 && position.dx <= box.size.width;
+    final fromLeft = position.dx >= 0 && position.dx <= _edgeWidth;
+    final fromRight =
+        position.dx >= box.size.width - _edgeWidth &&
+        position.dx <= box.size.width;
+    if (!fromLeft && !fromRight) return false;
+    // 极窄宽度下两边都命中时按右边缘处理（与旧行为一致）。
+    _fromLeft = fromLeft && !fromRight;
+    return true;
   }
 
   Future<void> _open() async {
@@ -58,11 +76,13 @@ class _SourcePickerEdgeSwipeState extends State<SourcePickerEdgeSwipe> {
               _travel = details.globalPosition - _start;
             }
             ..onEnd = (_) {
-              if (!recognizer.cancelled &&
-                  _travel.dx <= -64 &&
-                  _travel.dx.abs() > _travel.dy.abs() * 1.2) {
-                _open();
-              }
+              if (recognizer.cancelled) return;
+              final dx = _travel.dx;
+              final horizontal =
+                  dx.abs() > _travel.dy.abs() * _directionRatio;
+              // 左边边缘往右划、右边边缘往左划，都是「把源抽屉拉出来」。
+              final enough = _fromLeft ? dx >= _minTravel : dx <= -_minTravel;
+              if (horizontal && enough) _open();
             }
             ..onCancel = () => _travel = Offset.zero;
         },
