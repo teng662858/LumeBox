@@ -461,6 +461,9 @@ class CatSourceManager implements SourceManager {
   Future<SourceDescriptor?> select(String sourceId) async =>
       sourceId == site.id ? current() : null;
   @override
+  Future<void> invalidateRuntime(String sourceId) async {}
+
+  @override
   void close() {}
   @override
   dynamic noSuchMethod(Invocation invocation) =>

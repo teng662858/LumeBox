@@ -167,8 +167,9 @@ class SourceRegistry {
     return client;
   }
 
-  /// 更新单图源的网络覆盖并丢弃旧客户端（下次请求即用新配置）。
+  /// 更新单图源网络覆盖并释放它的运行时（引擎 + HTTP 客户端）。
   ///
+  /// 引擎持有创建时的客户端；只移除 HTTP 表项会让启用中的源继续使用已释放实例。
   /// 这里**不动** WAF 会话：会话是用户手动过校验换来的凭据，与 UA/代理无关。
   void setSourceNetwork(
     String sourceId, {
@@ -187,7 +188,10 @@ class SourceRegistry {
       bridge: bridge.trim(),
       allowBadCertificate: allowBadCertificate,
     );
-    _httpBySource.remove(sourceId)?.dispose();
+    // The engine owns the LumeHttp instance it was created with. Removing only
+    // the client leaves an enabled source pointing at a disposed client until
+    // process restart, so invalidate the pair as one runtime unit.
+    release(sourceId);
   }
 
   /// 本板块的图源记录。归属标记不符的记录一律不返回。
@@ -513,13 +517,14 @@ class SourceRegistry {
 
   /// 保存单图源的「换网址 / 账号登入」（镜像选择、自定义域名、登录账号）。
   ///
-  /// **不释放运行时**：这份配置是宿主在每次调用前注入脚本的快照
-  /// （见 [_EngineRuntime.call]），下一次调用自然读到新值——用户改完设置立刻
-  /// 生效，且不必重新载入脚本（脚本里的会话缓存由脚本经 `LumeSource.fs` 自己管）。
+  /// 保存单图源的站点配置并释放对应运行时。
+  ///
+  /// 每次调用会注入新快照，但脚本可能在初始化时把域名复制到自身全局状态；
+  /// 释放并重建可确保自定义域名、镜像和账号状态同时更新，不留旧 JSContext。
   void setSourceSiteConfig(String sourceId, SourceSiteConfig config) {
     if (!_owns(sourceId)) return;
     _database.setSourceSiteConfig(sourceId, config);
-    SectionMemoryCache.instance.removeSource(section, sourceId);
+    release(sourceId);
   }
 
   /// 本源当前解析后的脚本配置快照（脚本读到的 `LumeSource.config`）。

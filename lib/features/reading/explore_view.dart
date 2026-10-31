@@ -1178,6 +1178,8 @@ class _ExploreViewState extends State<ExploreView>
       ),
     );
     if (!mounted) return;
+    // 源设置可能更改镜像/自定义域名；同 id 的预热首页已不再可信。
+    SectionPreloader.discard(widget.section);
     // 返回后重新解析：可能导入了新图源、改变了启用状态或当前图源。
     await _bootstrap();
   }

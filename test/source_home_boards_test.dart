@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/session/section.dart';
@@ -5,6 +7,9 @@ import 'package:lume_box/core/reading/browse_layout.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/reading/source_home_view.dart';
+import 'package:lume_box/features/shell/section_preloader.dart';
+
+import 'support/fake_source_manager.dart';
 
 /// 首页多板块横滑（用户口径任务 3；视频 / 小说 / 漫画三块共用同一个组件）。
 ///
@@ -14,8 +19,14 @@ import 'package:lume_box/features/reading/source_home_view.dart';
 ///   3. 旧图源（没有 home 契约）与空返回都不崩、不空转。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUp(() => BrowseLayoutSettings.instance.resetForTesting());
-  tearDown(() => BrowseLayoutSettings.instance.resetForTesting());
+  setUp(() {
+    BrowseLayoutSettings.instance.resetForTesting();
+    SectionPreloader.discard(Section.video);
+  });
+  tearDown(() {
+    BrowseLayoutSettings.instance.resetForTesting();
+    SectionPreloader.discard(Section.video);
+  });
 
   group('两套格式自动识别', () {
     test('板块数组 → 多板块模式（title / moreUrl / items）', () {
@@ -204,6 +215,103 @@ void main() {
       expect(find.text('去分类浏览'), findsOneWidget);
     });
 
+    testWidgets('同 id 新数据源替换时丢弃预热并拒绝旧首页结果', (tester) async {
+      final oldSource = _PendingHomeSource();
+      final newSource = _HomeSource(
+        const SourceHome(
+          items: <SourceItem>[SourceItem(id: 'new', title: '新域名首页')],
+        ),
+      );
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: LumeTheme.build(),
+          home: Scaffold(
+            body: SourceHomeView(
+              source: oldSource,
+              pipeline: null,
+              onOpenItem: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(oldSource.calls, 1);
+
+      // A concurrent preloader can still finish an old same-id result; settings
+      // reload must discard it rather than consume it as the new domain's home.
+      final warmSource = _HomeSource(
+        const SourceHome(
+          items: <SourceItem>[SourceItem(id: 'warm', title: '旧预热首页')],
+        ),
+      );
+      final warmManager = FakeSourceManager(
+        sources: const <SourceDescriptor>[
+          SourceDescriptor(
+            id: 'home-source',
+            name: '首页测试源',
+            version: '1.0.0',
+            enabled: true,
+          ),
+        ],
+        opened: <String, DataSource>{'home-source': warmSource},
+      );
+      await SectionPreloader.warm(Section.video, manager: warmManager);
+      expect(SectionPreloader.hasWarm(Section.video), isTrue);
+
+      // Settings return creates a new DataSource with the same persistent id.
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: LumeTheme.build(),
+          home: Scaffold(
+            body: SourceHomeView(
+              source: newSource,
+              pipeline: null,
+              onOpenItem: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('新域名首页'), findsOneWidget);
+      expect(find.text('旧预热首页'), findsNothing);
+      expect(SectionPreloader.hasWarm(Section.video), isFalse);
+
+      // An old uncancellable source Future may complete later; its result is stale.
+      oldSource.gate.complete(
+        const SourceHome(
+          items: <SourceItem>[SourceItem(id: 'old', title: '旧域名首页')],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('新域名首页'), findsOneWidget);
+      expect(find.text('旧域名首页'), findsNothing);
+    });
+
+    testWidgets('请求已取消后只自动重试一次并加载首页', (tester) async {
+      final source = _CancelOnceHomeSource();
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: LumeTheme.build(),
+          home: Scaffold(
+            body: SourceHomeView(
+              source: source,
+              pipeline: null,
+              onOpenItem: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(source.calls, 2);
+      expect(find.text('取消后恢复首页'), findsOneWidget);
+      expect(find.text('首页加载失败'), findsNothing);
+    });
+
     testWidgets('首页重试同时刷新分类元数据', (tester) async {
       final source = _FailOnceHomeSource();
       var metadataRefreshes = 0;
@@ -288,6 +396,35 @@ class _HomeSource implements DataSource, HomeCapable {
     required String itemId,
     required String chapterId,
   }) async => null;
+}
+
+class _PendingHomeSource extends _HomeSource {
+  _PendingHomeSource() : super(const SourceHome());
+
+  final gate = Completer<SourceHome>();
+  int calls = 0;
+
+  @override
+  Future<SourceHome> home() {
+    calls++;
+    return gate.future;
+  }
+}
+
+class _CancelOnceHomeSource extends _HomeSource {
+  _CancelOnceHomeSource() : super(const SourceHome());
+
+  int calls = 0;
+
+  @override
+  Future<SourceHome> home() async {
+    if (calls++ == 0) {
+      throw const SourceException(SourceErrorKind.network, '请求已取消');
+    }
+    return const SourceHome(
+      items: <SourceItem>[SourceItem(id: 'recovered', title: '取消后恢复首页')],
+    );
+  }
 }
 
 /// 老图源：没有 home()（接口存在但探测为 false）。

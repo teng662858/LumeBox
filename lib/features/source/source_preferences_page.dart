@@ -13,6 +13,7 @@ import '../../core/source/source_picker_groups.dart';
 import '../../core/source/source_content_category.dart';
 import '../../core/source/data_source.dart';
 import '../../core/cache/section_memory_cache.dart';
+import '../shell/section_preloader.dart';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -202,14 +203,25 @@ class _SourcePreferencesPageState extends State<SourcePreferencesPage> {
         await _manager.setSiteConfig(widget.sourceId, site.site);
       }
       final current = SourcePreferences.read(widget.section, widget.sourceId);
-      await prefs
-          .copyWith(
-            iconUrl: url,
-            iconData: url.isEmpty ? (_fetchedIconData ?? prefs.iconData) : '',
-            originalOrigin: _unifiedSite ? current.originalOrigin : from,
-            customOrigin: _unifiedSite ? current.customOrigin : domain,
-          )
-          .save(widget.section, widget.sourceId);
+      final updated = prefs.copyWith(
+        iconUrl: url,
+        iconData: url.isEmpty ? (_fetchedIconData ?? prefs.iconData) : '',
+        originalOrigin: _unifiedSite ? current.originalOrigin : from,
+        customOrigin: _unifiedSite ? current.customOrigin : domain,
+      );
+      await updated.save(widget.section, widget.sourceId);
+      final legacyOriginChanged =
+          !_unifiedSite &&
+          (current.originalOrigin != updated.originalOrigin ||
+              current.customOrigin != updated.customOrigin);
+      if (site != null || legacyOriginChanged) {
+        // Unified setters release on write; the legacy origin editor persists
+        // separately and needs an explicit runtime reset here.
+        if (legacyOriginChanged) {
+          await _manager.invalidateRuntime(widget.sourceId);
+        }
+        SectionPreloader.discard(widget.section);
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (_) {
       if (mounted) setState(() => error = '保存失败，请重试');

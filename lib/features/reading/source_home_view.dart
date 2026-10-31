@@ -114,7 +114,10 @@ class _SourceHomeViewState extends State<SourceHomeView>
     if (!identical(oldWidget.source, widget.source)) {
       networkRequests.cancelAll();
       _bindSession();
-      _load();
+      // Source ids are stable across settings changes. A new DataSource object
+      // therefore needs a forced load: cancel old warm data and advance _seq,
+      // even when _loadingSourceId still equals this id.
+      _load(force: true);
     } else if (!identical(oldWidget.pipeline, widget.pipeline) &&
         _home != null) {
       _bindSession();

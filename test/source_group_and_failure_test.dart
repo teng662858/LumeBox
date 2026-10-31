@@ -5,9 +5,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'package:lume_box/core/db/section_database.dart';
+import 'package:lume_box/core/js/cat_engines.dart';
+import 'package:lume_box/core/js/source_engine.dart';
+import 'package:lume_box/core/js/sandbox/sandbox_result.dart';
 import 'package:lume_box/core/js/source_registry.dart';
+import 'package:lume_box/core/net/lume_http.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
+import 'package:lume_box/core/source/source_site_config.dart';
 import 'package:lume_box/core/util/lume_log.dart';
 
 /// 图源分组与失效标记的**存储层**验证（文档「图源导入/导出模块规范」）。
@@ -63,6 +68,50 @@ void main() {
     }
     return SourceRegistry.open(section);
   }
+
+  test('保存网络与站点配置后释放引擎及其旧 HTTP 客户端', () async {
+    CatEngines.debugPlatformOverride = 'android';
+    addTearDown(() {
+      CatEngines.debugPlatformOverride = null;
+      SourceEngineRegistry.reset();
+    });
+    final clients = <LumeHttp>[];
+    final engines = <_RegistryTestEngine>[];
+    SourceEngineRegistry.register(CatEngineKind.quickjs, ({
+      required String sourceId,
+      required LumeHttp http,
+      required Section section,
+    }) async {
+      clients.add(http);
+      final engine = _RegistryTestEngine();
+      engines.add(engine);
+      return engine;
+    });
+    final registry = await seed(Section.cat);
+
+    final first = await registry.engineFor('a') as _RegistryTestEngine;
+    expect(clients, hasLength(1));
+
+    registry.setSourceNetwork(
+      'a',
+      userAgent: 'new-agent',
+      cookie: '',
+      proxy: '',
+    );
+    expect(first.disposals, 1);
+    final second = await registry.engineFor('a') as _RegistryTestEngine;
+    expect(engines, hasLength(2));
+    expect(clients[1], isNot(same(clients[0])));
+
+    registry.setSourceSiteConfig(
+      'a',
+      const SourceSiteConfig(domainOverride: 'mirror.example'),
+    );
+    expect(second.disposals, 1);
+    await registry.engineFor('a');
+    expect(engines, hasLength(3));
+    expect(clients[2], isNot(same(clients[1])));
+  });
 
   test('并发打开共享同一注册表，旧实例重复释放不误关新注册表', () async {
     final registries = await Future.wait(
@@ -323,4 +372,30 @@ CREATE TABLE section_setting (
       expect(warnings, isEmpty, reason: 'v4→v5 是加列，不该有任何跳过告警：$warnings');
     });
   });
+}
+
+class _RegistryTestEngine implements SourceEngine {
+  int disposals = 0;
+
+  @override
+  String get id => 'registry-test';
+
+  @override
+  Future<bool> loadScript(String script) async => true;
+
+  @override
+  Future<Set<String>?> contractMethods() async => const <String>{};
+
+  @override
+  String? get loadFailure => null;
+
+  @override
+  Future<Map<String, Object?>?> metadata() async => null;
+
+  @override
+  Future<SandboxResult> callResult(String method, [Object? argument]) async =>
+      const SandboxSuccess(null);
+
+  @override
+  void dispose() => disposals++;
 }

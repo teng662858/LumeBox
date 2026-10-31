@@ -34,6 +34,7 @@ import 'source_section_page.dart';
 import 'source_maintenance.dart';
 import 'add_source_button.dart';
 import 'source_drawer_actions.dart';
+import '../shell/section_preloader.dart';
 import '../settings/subscription_sync_page.dart';
 
 enum SourceQuickAction { pin, preferences, browse, test, update }
@@ -171,10 +172,8 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
       bridge: profile.bridge,
       allowBadCertificate: profile.allowBadCertificate,
     );
-    // 换网址 / 账号登入：只落库，不释放运行时——下一次调用前宿主会把新快照
-    // 注入脚本（见 SourceRegistry.scriptConfigFor）。
     await manager.setSiteConfig(source.id, result.site);
-    await manager.setEnabled(source.id, source.enabled);
+    SectionPreloader.discard(widget.section);
     widget.onChanged?.call();
     await reload();
   }

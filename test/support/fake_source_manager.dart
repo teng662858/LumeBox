@@ -13,10 +13,10 @@ class FakeSourceManager implements SourceManager {
     this.runtimeAvailable = true,
     List<SourceDescriptor> sources = const <SourceDescriptor>[],
     Map<String, DataSource>? opened,
-  })  : sources = List<SourceDescriptor>.of(sources),
-        opened = Map<String, DataSource>.of(
-          opened ?? const <String, DataSource>{},
-        );
+  }) : sources = List<SourceDescriptor>.of(sources),
+       opened = Map<String, DataSource>.of(
+         opened ?? const <String, DataSource>{},
+       );
 
   @override
   bool runtimeAvailable;
@@ -41,6 +41,7 @@ class FakeSourceManager implements SourceManager {
   final List<String> removed = <String>[];
   final List<String> openedIds = <String>[];
   final List<String> selectedIds = <String>[];
+  final List<String> invalidatedRuntimeIds = <String>[];
   bool closed = false;
 
   /// 非空时导入按失败返回该原因。
@@ -58,8 +59,9 @@ class FakeSourceManager implements SourceManager {
 
   @override
   Future<SourceDescriptor?> current() async {
-    final enabled =
-        sources.where((source) => source.enabled).toList(growable: false);
+    final enabled = sources
+        .where((source) => source.enabled)
+        .toList(growable: false);
     if (enabled.isEmpty) return null;
     for (final source in enabled) {
       if (source.id == selected) return source;
@@ -113,6 +115,11 @@ class FakeSourceManager implements SourceManager {
   }
 
   @override
+  Future<void> invalidateRuntime(String sourceId) async {
+    invalidatedRuntimeIds.add(sourceId);
+  }
+
+  @override
   Future<void> setEnabled(String sourceId, bool enabled) async {
     toggled.add((sourceId, enabled));
     _replace(
@@ -122,6 +129,8 @@ class FakeSourceManager implements SourceManager {
         name: source.name,
         version: source.version,
         enabled: enabled,
+        network: source.network,
+        siteConfig: source.siteConfig,
         group: source.group,
         failureCount: source.failureCount,
         broken: source.broken,
@@ -255,7 +264,8 @@ class FakeSourceManager implements SourceManager {
   }
 
   /// 连通性测试结果（按 sourceId 配置）；未配置时按「能打开就可用」推断。
-  final Map<String, SourceTestResult> testResults = <String, SourceTestResult>{};
+  final Map<String, SourceTestResult> testResults =
+      <String, SourceTestResult>{};
 
   final List<String> testedIds = <String>[];
 

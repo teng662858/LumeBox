@@ -175,8 +175,8 @@ class LumeSources {
 
   /// 保存单图源的「换网址 / 账号登入」（镜像选择、自定义域名、登录账号。
   ///
-  /// 落本板块库；不释放运行时——这份配置在每次调用前注入脚本（见 `_EngineRuntime`），
-  /// 用户改完设置下一次浏览就用新域名，不必重新导入脚本。
+  /// 落本板块库并释放对应运行时：下次 open 会用新域名、账号与脚本配置重建引擎，
+  /// 不必重新导入脚本。
   static Future<void> setSiteConfig(
     Section section,
     String sourceId,
@@ -196,6 +196,14 @@ class LumeSources {
           )
           .save(section, sourceId);
     }
+  }
+
+  static Future<void> invalidateRuntime(
+    Section section,
+    String sourceId,
+  ) async {
+    if (!runtimeAvailableFor(section)) return;
+    (await SourceRegistry.open(section)).release(sourceId);
   }
 
   /// 重命名图源：只改本板块库里的展示名（脚本与运行时保持原样）。
@@ -582,6 +590,10 @@ class _LumeSourceManager
   @override
   Future<void> setSiteConfig(String sourceId, SourceSiteConfig config) =>
       LumeSources.setSiteConfig(_section, sourceId, config);
+
+  @override
+  Future<void> invalidateRuntime(String sourceId) =>
+      LumeSources.invalidateRuntime(_section, sourceId);
 
   @override
   Future<void> rename(String sourceId, String name) =>

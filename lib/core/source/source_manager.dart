@@ -65,6 +65,9 @@ abstract interface class SourceManager {
   /// `LumeSource.config`），并用于已声明线路的地址映射。图源不存在或跨板块时无操作。
   Future<void> setSiteConfig(String sourceId, SourceSiteConfig config);
 
+  /// 释放指定图源的运行时，使下次 open 使用最新脚本配置与网络客户端。
+  Future<void> invalidateRuntime(String sourceId);
+
   /// 导出图源脚本原文（备份 / 迁移用）；不存在或跨板块时返回 null。
   Future<String?> exportScript(String sourceId);
 

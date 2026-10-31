@@ -37,6 +37,7 @@ import '../cat/cat_engine_settings_page.dart';
 import 'add_source_button.dart';
 import 'source_editor_page.dart';
 import 'source_import_dialog.dart';
+import '../shell/section_preloader.dart';
 
 /// 板块页面：图源维护与批量操作。日常五项操作位于首页源抽屉。
 ///
@@ -452,8 +453,9 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
       allowBadCertificate: profile.allowBadCertificate,
     );
     await _manager.setSiteConfig(source.id, result.site);
-    // 运行时重建：旧客户端带着旧 UA / Cookie，必须释放。
-    await _manager.setEnabled(source.id, source.enabled);
+    // Network/site setters release their per-source runtime; also drop a possibly
+    // prewarmed home for this id before ExploreView reopens it on return.
+    SectionPreloader.discard(widget.section);
     await _reload();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
