@@ -1,4 +1,4 @@
-// LumeSource: {"id":"bttwo_video","name":"两个BT影视","version":"2.0.1","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.bttwo.life","https://www.bttwo.org","https://www.bttwo.top","https://www.bttwo.me"],"network":"direct","icon":"https://www.bttwo.life/ico.png"}
+// LumeSource: {"id":"bttwo_video","name":"两个BT影视","version":"2.0.2","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.bttwo.life","https://www.bttwo.org","https://www.bttwo.top","https://www.bttwo.me"],"network":"direct","icon":"https://www.bttwo.life/ico.png"}
 // LumeRuntime: javascript
 //
 // 站点：两个BT影视（发布页 https://bttwo.vip/ → 列出 bttwo.life / .org / .top / .me；
@@ -21,7 +21,7 @@
 //   清晰度：1080 免费；720 / 480 返回「需要VIP会员才能观看」；4k 返回「仅支持客户端播放」。
 //   → 本源只用 1080，不伪造 VIP，也不假装能播 4K。
 //
-// ── VIP（v2.0.1 复核：破不了，有实测回显）──
+// ── VIP（v2.0.1 复核：破不了，有实测回显；v2.0.2 起支持用自己的会员账号）──
 //   · q=720 / q=480 → `{"code":401,"message":"需要VIP会员才能观看，请先登录"}`；
 //   · q=4k        → `{"code":403,"message":"4K清晰度仅支持客户端播放，Web端不支持"}`；
 //   · q=1080 的响应里 4K 那档是 `{"isvip":true,"locked":true,"url":"1"}`（占位值，不是地址）。
@@ -37,6 +37,10 @@
 //     5) 页面层：播放页 HTML 里没有任何 720/480 地址；「影片下载」跳的是另一个 BT 站（btbtla.com），本站不给磁力。
 //   → VIP 是**服务端账号门禁**（按 `k` 里的用户标识判），匿名拿不到 720/480。扫码注册要邮箱验证码，
 //     属于「需要用户账号」的范畴，本源不做，也不伪造会员身份。因此：只取 1080 免费档，VIP 档给可读错误。
+//
+//   v2.0.2：给「有会员账号的人」留了一个口子——源设置里填 `会员 userlink`（站点登录后播放页源码里的
+//   `userlink:'……'`），`content()` 就用它当 `k` 去请求，等价于用你自己的登录态取 720/480 与会员专享片。
+//   留空＝游客（只有 1080）。4K 那条是「仅官方客户端」，填了也没用。
 //
 // 限制：栏目页 /movie /tv /anime 服务端只有一页（?page= 不换内容），真分页在 /filter；
 //       综艺（classify=4）站点本身为空，如实返回空并说明，不拿别的分类顶替。
@@ -380,6 +384,13 @@ async function siteStamp(slug) {
   }
 }
 
+// 站点按账号判 VIP：设置里填了自己的会员 userlink 就用它，否则用页面里的游客 userlink
+function settingText(key, fallback) {
+  var settings = (LumeSource.config && LumeSource.config.settings) || {};
+  var value = settings[key];
+  return value == null || String(value).trim() === '' ? fallback : String(value).trim();
+}
+
 // 拿一集的可播地址：1080 免费；720/480 需 VIP；4k 仅官方客户端
 // v2.0.1：返回 {url, qualities}，并把「整片会员专享」与「只是高清档要会员」分开报。
 async function resolveEpisode(episode, userlink) {
@@ -428,7 +439,7 @@ async function resolveEpisode(episode, userlink) {
 var LumeSource = {
   id: 'bttwo_video',
   name: '两个BT影视',
-  version: '2.0.1',
+  version: '2.0.2',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
@@ -462,6 +473,14 @@ var LumeSource = {
       type: 'info',
       title: '站点说明',
       description: '两个BT影视（bttwo.life，另有 .org / .top / .me 三个同内容域名）。本源直接解析出 m3u8：1080p 免费直连；720/480 需站点 VIP，4K 仅官方客户端，都不绕过。栏目页（电影/剧集/动漫）站点本身只有一页，全量翻页请用「全部影片」。'
+    },
+    {
+      key: 'vipUserlink',
+      type: 'text',
+      title: '会员 userlink（可选）',
+      description: '站点按账号判 VIP：整片会员专享的条目（连 1080p 都回 401）、以及 720/480 清晰度，只对「已登录且是会员」的会话下发。' +
+        '本源默认是游客身份，所以只能播免费条目。想用你自己的会员账号：在站点登录后打开任意一集的播放页，查看网页源码，找 `userlink:\'……\'`，把引号里那串粘到这里（留空＝游客）。' +
+        '注意：4K 是「仅官方客户端」，填了也没用；本源不伪造会员身份，只复用你自己的登录态。'
     }
   ],
 
@@ -645,7 +664,8 @@ var LumeSource = {
       if (!only) throw new Error('这一条在站点上没有可播放的地址');
       episode = { slug: slug, dataid: only[1], number: 1, line: 1 };
     }
-    var resolved = await resolveEpisode(episode, info.userlink);
+    var userlink = settingText('vipUserlink', info.userlink);
+    var resolved = await resolveEpisode(episode, userlink);
     if (!resolved || !resolved.url) throw new Error('站点没有返回可播放地址');
     var out = {
       kind: 'video',
