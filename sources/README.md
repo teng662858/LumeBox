@@ -41,6 +41,21 @@ libvio.host / www.libvio.to / libviobd.com 已停用为停车页）。站点用 
 不绕过任何校验。5 栏 + 地区/年份筛选 + 站内搜索；播放页 `player_aaaa` 里就是明文 mp4
 （实测 206 + video/mp4，播放器 readyState=4）。详见 [源记录](../docs/2026-11-01_LIBVIO地域限制.md)。
 
+## 2026-11-01 两个BT影视 v2.0.1 · 八号影视 v1.0.1（会员核查，详见 docs/2026-11-01_两个BT与八号影视会员核查.md）
+
+**两个BT 的 720/480 破不了**：不是签名或前端的问题，是服务端按账号判会员。实测 `q=720/480` → `401 需要VIP会员`、
+`q=4k` → `403 仅客户端`，`q=1080` 的响应里 4K 那档是 `{isvip:true,locked:true,url:"1"}` 占位值。
+换清晰度编码（`q=1…5/hd/sd/fhd/2160/all/…`，只有 1080、4k 两个特判）、换客户端 UA 与 `&client/&app/&platform`、
+CDN 路径推导（`m3u8/<32位hash>` 采样 6 条，md5 各种拼法全不符；加 `_720` 等后缀回 `404 token 不存在或已过期`）、
+接口越权（`/api/vod` 只有统计；`/api/video/play`、`/video/playall`、`/api/app/config` 全 404；wasm 只导出 `build_play_url`）、
+「影片下载」（跳 `btbtla.com`，不给磁力）、同库镜像（4k影视/子子影视 同样 401）—— 全部排除。
+`/api/register` 要邮箱验证码，属于「要用户账号」，按约定不做。→ 源里只取 1080 免费档，**v2.0.1** 改成按清晰度从高到低挑、
+`content()` 多给 `qualities`、401 拆成「整片会员专享 / 只是清晰度要会员」两种文案，文件头写清整张排除表。
+
+**八号影视没有会员墙**：抽样 8 条首集播放页全是 `trysee=0 / points=0`，iframe 配置解出来就是完整 mp4
+（206 + video/mp4 + `ftypisom`）；`/label/vip.html`、`/user/index.html` 都是「网站维护中」，站点不卖会员。
+**v1.0.1** 只补核查记录，播放逻辑不动。
+
 ## 2026-11-01 两个BT影视 v2.0.0（bttwo_video，详见 docs/2026-11-01_两个BT影视源升级.md）
 
 `video/bttwo.js`：两个BT影视（发布页 https://bttwo.vip/；实测可用域名 bttwo.life / .org / .top / .me，旧的 bttwoo.com、bttwo.net 已失效）。与 4k影视同一套 CMS，但**本源自己算播放签名、直接拿 m3u8**：播放页每个分集有自己的 slug 与 dataid，`s = HMAC-SHA256(key=slug, msg="dataid:t:slug")[:32]`、`k = base64(xor("nbmovie2024secretkey", userlink))`（游客 userlink 页面上就有，`k=0` 亦可）。站点只把 **1080p 免费**开放给游客，720/480 需 VIP、4K 仅官方客户端，本源只取 1080，不绕过付费墙。分集逐项可播；筛选 `classify/types/areas/years/tags/sort_by` 六组实测生效且可组合。

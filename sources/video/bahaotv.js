@@ -1,4 +1,4 @@
-// LumeSource: {"id":"bahaotv_video","name":"八号影视","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.bhtv001.com","https://www.bahaotv.com"],"network":"direct","icon":"https://www.bhtv001.com/icon.png"}
+// LumeSource: {"id":"bahaotv_video","name":"八号影视","version":"1.0.1","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.bhtv001.com","https://www.bahaotv.com"],"network":"direct","icon":"https://www.bhtv001.com/icon.png"}
 // LumeRuntime: javascript
 //
 // 站点：八号影视（bahaotv.com 的证书签发名是 bhtv001.com，两者同一台站；
@@ -12,6 +12,12 @@
 //   用 AES-128-CBC（key=VFBTzdujpR9FWBhe，iv=rand，Pkcs7）解出 JSON，里面才是真正的 mp4/m3u8 地址。
 //   实测：解出的 mp4 走 206 + video/mp4（ftypisom 头），无 VIP/试看限制（trysee=0、points=0）。
 //   站点有多条线路时全部保留，按线路分组交给 App 的线路/选集 UI。
+//
+// ── 会员 / VIP（v1.0.1 复核：本站没有付费墙，不需要破解）──
+//   抽样 8 条（电影/剧集各 4 条）首集播放页：`trysee=0 / points=0 / encrypt=0`，全部 from=iframe 或 yg1，
+//   iframe 里拿到的播放配置解出来就是完整 mp4（实测 206 + video/mp4 + ftypisom，可整片播放）。
+//   站内 `/label/vip.html`、`/user/index.html` 都返回「网站维护中」，没有会员片库入口；
+//   播放页与详情页也没有「会员/金币/收费」字样 → 站点不卖会员，本源不声明 VIP 限制。
 //
 // 分类 / 筛选 / 排序 / 搜索：
 //   列表 /vodshow/<cat>-<area>-<order>-<class>-<lang>------<year>--<page>--.html
@@ -347,7 +353,7 @@ async function resolvePlayPage(playPath) {
 var LumeSource = {
   id: 'bahaotv_video',
   name: '八号影视',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,

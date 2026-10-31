@@ -1,4 +1,4 @@
-// LumeSource: {"id":"bttwo_video","name":"两个BT影视","version":"2.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.bttwo.life","https://www.bttwo.org","https://www.bttwo.top","https://www.bttwo.me"],"network":"direct","icon":"https://www.bttwo.life/ico.png"}
+// LumeSource: {"id":"bttwo_video","name":"两个BT影视","version":"2.0.1","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.bttwo.life","https://www.bttwo.org","https://www.bttwo.top","https://www.bttwo.me"],"network":"direct","icon":"https://www.bttwo.life/ico.png"}
 // LumeRuntime: javascript
 //
 // 站点：两个BT影视（发布页 https://bttwo.vip/ → 列出 bttwo.life / .org / .top / .me；
@@ -20,6 +20,23 @@
 //
 //   清晰度：1080 免费；720 / 480 返回「需要VIP会员才能观看」；4k 返回「仅支持客户端播放」。
 //   → 本源只用 1080，不伪造 VIP，也不假装能播 4K。
+//
+// ── VIP（v2.0.1 复核：破不了，有实测回显）──
+//   · q=720 / q=480 → `{"code":401,"message":"需要VIP会员才能观看，请先登录"}`；
+//   · q=4k        → `{"code":403,"message":"4K清晰度仅支持客户端播放，Web端不支持"}`；
+//   · q=1080 的响应里 4K 那档是 `{"isvip":true,"locked":true,"url":"1"}`（占位值，不是地址）。
+//   试过并排除的路子：
+//     1) 换清晰度编码：q=1..5 / hd / sd / fhd / uhd / 2160 / "1080,720" / all —— 除 1080、4k 外全部回落 1080；
+//     2) 换客户端：okhttp / Dart / 自造 App UA，加 &client=1 / &app=1 / &platform=android / &type=app —— 仍然 401/403；
+//     3) CDN 路径推导：1080 的 m3u8 是 `https://zijieapi.douyinbyte.com/m3u8/<32位hash>.m3u8`，
+//        采样 6 条，md5(dataid / dataid+清晰度 / …) 全部对不上；同 hash 加 _720/-720/_hd 等后缀一律
+//        `404 token 不存在或已过期`（CDN 按路径签名）；
+//     4) 接口越权：站内只有 `/api/vod/<id>/hits|play|viewer`（统计用），
+//        `/api/video/play`、`/video/playv2`、`/video/playall`、`/api/app/config` 全 404；
+//        wasm 里也只导出 `build_play_url(dataid, secret_key, quality, play_key)` 一个函数；
+//     5) 页面层：播放页 HTML 里没有任何 720/480 地址；「影片下载」跳的是另一个 BT 站（btbtla.com），本站不给磁力。
+//   → VIP 是**服务端账号门禁**（按 `k` 里的用户标识判），匿名拿不到 720/480。扫码注册要邮箱验证码，
+//     属于「需要用户账号」的范畴，本源不做，也不伪造会员身份。因此：只取 1080 免费档，VIP 档给可读错误。
 //
 // 限制：栏目页 /movie /tv /anime 服务端只有一页（?page= 不换内容），真分页在 /filter；
 //       综艺（classify=4）站点本身为空，如实返回空并说明，不拿别的分类顶替。
@@ -298,18 +315,38 @@ function signPlayUrl(dataid, slug, quality, userlink, stamp) {
 
 // 站点会一次返回多档：1080 免费，4K 常带 isvip/locked 且 url 是占位符 "1"。
 // 只取「未锁定 + 非 VIP + 真 http 地址」的那一档，绝不把锁定档当成可播地址。
-function pickUrl(rows) {
+// v2.0.1：不再取「第一条未锁定」，而是按清晰度从高到低挑（站点哪天放开 720 也不会退档）。
+function qualityRank(row) {
+  var text = String((row && (row.title || '')) || '') + ' ' + String((row && row.description) || '');
+  var bitrate = Number((row && row.bitrate) || 0);
+  var m = /(\d{3,4})\s*p/i.exec(text);
+  var height = m ? Number(m[1]) : 0;
+  if (!height) {
+    if (/4k|2160/i.test(text)) height = 2160;
+    else if (bitrate >= 2000000) height = 2160;
+    else if (bitrate >= 1000000) height = 1080;
+    else if (bitrate >= 700) height = 720;
+    else if (bitrate > 0) height = 480;
+  }
+  return height || bitrate;
+}
+function unlockedList(rows) {
   var list = rows || [];
-  var best = '';
+  var out = [];
   for (var i = 0; i < list.length; i++) {
     var row = list[i];
     if (!row || !row.url) continue;
     var url = String(row.url);
     if (!/^https?:\/\//i.test(url)) continue;
     if (row.isvip === true || row.locked === true) continue;
-    if (!best) best = url;
+    out.push({ url: url, title: String(row.title || ('清晰度 ' + (i + 1))), rank: qualityRank(row) });
   }
-  return best;
+  out.sort(function (a, b) { return b.rank - a.rank; });
+  return out;
+}
+function pickUrl(rows) {
+  var list = unlockedList(rows);
+  return list.length ? list[0].url : '';
 }
 // 站点是否把这一集全部标成 VIP/锁定（用于给出准确提示）
 function lockedOnly(rows) {
@@ -344,15 +381,20 @@ async function siteStamp(slug) {
 }
 
 // 拿一集的可播地址：1080 免费；720/480 需 VIP；4k 仅官方客户端
+// v2.0.1：返回 {url, qualities}，并把「整片会员专享」与「只是高清档要会员」分开报。
 async function resolveEpisode(episode, userlink) {
   var quality = '1080';
   var settings = LumeSource.config && LumeSource.config.commonSettings;
   if (settings && settings.quality === '1080') quality = '1080';
   var now = Date.now ? Date.now() : new Date().getTime();
   var attempt = await requestPlay(signPlayUrl(episode.dataid, episode.slug, quality, userlink, now));
+  var build = function (rows) {
+    var list = unlockedList(rows);
+    return list.length ? { url: list[0].url, qualities: list } : null;
+  };
   if (usable(attempt)) {
-    var url = pickUrl(attempt.data.data.quality_urls);
-    if (url) return url;
+    var hit = build(attempt.data.data.quality_urls);
+    if (hit) return hit;
     if (lockedOnly(attempt.data.data.quality_urls)) {
       throw new Error('这一集在站点上只有 VIP/4K 档（返回的地址是锁定的占位值），1080p 未开放，本源不绕过。');
     }
@@ -363,16 +405,17 @@ async function resolveEpisode(episode, userlink) {
   if (stamp && String(stamp) !== String(now)) {
     attempt = await requestPlay(signPlayUrl(episode.dataid, episode.slug, quality, userlink, stamp));
     if (usable(attempt)) {
-      var retryUrl = pickUrl(attempt.data.data.quality_urls);
-      if (retryUrl) return retryUrl;
+      var retryHit = build(attempt.data.data.quality_urls);
+      if (retryHit) return retryHit;
     }
   }
 
   var data = attempt.data || {};
   var message = String(data.message || attempt.body || '').trim();
   if (data.code === 401) {
-    throw new Error('这一集需要站点 VIP 才能播放' + (message ? '（' + message + '）' : '') +
-      '。站点只开放 1080p 免费，720/480 属会员清晰度，本源不绕过。');
+    // 连 1080 都回 401 = 整片是会员专享；否则只是这个清晰度要会员
+    throw new Error('这一集是站点会员专享（' + (message || '需要VIP会员') + '）。' +
+      '实测匿名只有 1080p 免费档，720/480 要会员登录，4K 仅官方客户端；本源不伪造会员身份，也不绕过付费墙。');
   }
   if (data.code === 403) {
     throw new Error('站点拒绝了这个清晰度' + (message ? '（' + message + '）' : '') +
@@ -385,7 +428,7 @@ async function resolveEpisode(episode, userlink) {
 var LumeSource = {
   id: 'bttwo_video',
   name: '两个BT影视',
-  version: '2.0.0',
+  version: '2.0.1',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
@@ -602,12 +645,14 @@ var LumeSource = {
       if (!only) throw new Error('这一条在站点上没有可播放的地址');
       episode = { slug: slug, dataid: only[1], number: 1, line: 1 };
     }
-    var url = await resolveEpisode(episode, info.userlink);
-    if (!url) throw new Error('站点没有返回可播放地址');
-    return {
+    var resolved = await resolveEpisode(episode, info.userlink);
+    if (!resolved || !resolved.url) throw new Error('站点没有返回可播放地址');
+    var out = {
       kind: 'video',
-      url: url,
+      url: resolved.url,
       headers: { 'User-Agent': UA, Referer: base() + '/' }
     };
+    if (resolved.qualities && resolved.qualities.length > 1) out.qualities = resolved.qualities;
+    return out;
   }
 };
