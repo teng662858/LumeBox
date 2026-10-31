@@ -65,6 +65,10 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
 
   VideoPlayerController? _controller;
   int _loadGeneration = 0;
+
+  /// 最新一次跳转代次。容差写入与 video_player.seekTo 分属两个异步通道：
+  /// 松手的精确 seek 到来后，仍在等容差写入的旧快 seek 必须作废，不能晚到覆盖。
+  int _seekGeneration = 0;
   PlayerMedia? _retryMedia;
   Timer? _retryTimer;
   int _networkRetries = 0;
@@ -193,6 +197,7 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
     final cancelled = Completer<void>();
     _loadCancelled = cancelled;
     final generation = ++_loadGeneration;
+    _seekGeneration++;
     _externalSubtitles = null;
     _externalLabel = null;
     _externalSelected = false;
@@ -211,6 +216,9 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
     // 缓冲参数要先落到原生侧：插件正是在下面的 initialize() 里建 AVPlayer，
     // 晚一步写就只对下一次起播生效（那正是「第一次起播慢」的那一次）。
     await _applyBufferingOnce();
+    // seek 容差存在进程级 UserDefaults；拖动被中断时可能留在 400ms / -1。
+    // 每次换集、换地址、重开都归零，不能只在播放器实例第一次装载时做。
+    await _setSeekTolerance(Duration.zero);
     if (_disposed) return;
     if (generation != _loadGeneration) return;
     await _releaseController();
@@ -332,8 +340,10 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
 
   @override
   Future<void> seek(Duration position) async {
+    final generation = ++_seekGeneration;
     // 松手/系统跳转用精确 seek（容差归零，恢复上游行为）。
     await _setSeekTolerance(Duration.zero);
+    if (generation != _seekGeneration) return;
     await _controller?.seekTo(position);
   }
 
@@ -345,9 +355,11 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
 
   @override
   Future<void> seekFast(Duration position) async {
+    final generation = ++_seekGeneration;
     await _setSeekTolerance(
       _snapToKeyframe ? const Duration(milliseconds: -1) : fastSeekTolerance,
     );
+    if (generation != _seekGeneration) return;
     await _controller?.seekTo(position);
   }
 

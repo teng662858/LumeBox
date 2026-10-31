@@ -155,6 +155,56 @@ void main() {
       await player.dispose();
     });
 
+    test('每次换媒体前归零拖动容差，不继承上一轮关键帧档', () async {
+      final backend = _RecordingBufferingBackend();
+      final player = AvPlayer(buffering: backend);
+
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
+      );
+      expect(backend.seekTolerances, <Duration>[Duration.zero]);
+
+      await player.seekFast(const Duration(seconds: 30));
+      expect(
+        backend.seekTolerances.last,
+        AvPlayer.fastSeekTolerance,
+        reason: '拖动预览允许落到关键帧',
+      );
+
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.com/b.mp4')),
+      );
+      expect(
+        backend.seekTolerances.last,
+        Duration.zero,
+        reason: '换集 / 换地址前必须恢复精确 seek',
+      );
+      await player.dispose();
+    });
+
+    test('松手精确 seek 作废仍在写容差的旧 fast seek', () async {
+      final backend = _RecordingBufferingBackend();
+      final player = AvPlayer(buffering: backend);
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
+      );
+
+      final gate = Completer<void>();
+      backend.nonZeroToleranceGate = gate;
+      final fast = player.seekFast(const Duration(seconds: 30));
+      await Future<void>.delayed(Duration.zero);
+      expect(backend.seekTolerances.last, AvPlayer.fastSeekTolerance);
+
+      await player.seek(const Duration(seconds: 40));
+      gate.complete();
+      await fast;
+
+      expect(platform.seekCalls, <Duration>[
+        const Duration(seconds: 40),
+      ], reason: '旧快 seek 恢复后不能晚到覆盖松手目标');
+      await player.dispose();
+    });
+
     test('缓冲参数先于播放器创建：起播那一次就吃到新参数', () async {
       final backend = _RecordingBufferingBackend();
       // 平台侧记录「创建播放器时缓冲参数写过没有」——这是本项的要害：
@@ -260,8 +310,13 @@ class _RecordingBufferingBackend implements BufferingBackend {
   @override
   Future<void> applySeekTolerance(Duration tolerance) async {
     seekTolerances.add(tolerance);
+    if (tolerance != Duration.zero) {
+      final gate = nonZeroToleranceGate;
+      if (gate != null) await gate.future;
+    }
   }
 
+  Completer<void>? nonZeroToleranceGate;
   final List<Duration> seekTolerances = <Duration>[];
 }
 
@@ -272,6 +327,7 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   final Map<int, StreamController<VideoEvent>> _streams =
       <int, StreamController<VideoEvent>>{};
   final positions = <int, Duration>{};
+  final seekCalls = <Duration>[];
   int _nextId = 0;
   bool holdFirst = false;
   int failures = 0;
@@ -354,6 +410,7 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
 
   @override
   Future<void> seekTo(int playerId, Duration position) async {
+    seekCalls.add(position);
     positions[playerId] = position;
   }
 

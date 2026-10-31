@@ -1746,18 +1746,19 @@ void main() {
       await gesture.moveBy(const Offset(60, 0));
       await tester.pump();
       expect(find.textContaining('拖动到'), findsOneWidget);
-      // 拖动中会节流快 seek（150ms 一次），但不会每帧都发。
+      // 拖动中会节流快 seek（150ms 一次），但不会每帧都发，也不进精确 seek。
       expect(
-        players.single.seeks.length,
+        players.single.fastSeeks.length,
         lessThanOrEqualTo(1),
         reason: '拖动中节流，不每帧 seek',
       );
+      expect(players.single.seeks, isEmpty, reason: '拖动中不做过精确跳转');
       for (var i = 0; i < 6; i++) {
         await gesture.moveBy(const Offset(30, 0));
         await tester.pump(const Duration(milliseconds: 40));
       }
       expect(
-        players.single.seeks.length,
+        players.single.fastSeeks.length,
         lessThanOrEqualTo(4),
         reason: '连续拖动也按 150ms 节流',
       );
@@ -1776,6 +1777,102 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.textContaining('拖动到'), findsNothing);
+    });
+
+    testWidgets('拖动中快 seek 串行且只留最新落点', (tester) async {
+      final players = await pump(tester);
+      players.single.emit(
+        position: const Duration(minutes: 1),
+        duration: const Duration(minutes: 10),
+      );
+      await tester.pumpAndSettle();
+
+      // 快 seek 挂在闸门上：模拟内核还在处理上一次跳转。
+      final gate = Completer<void>();
+      players.single.seekGate = gate;
+
+      final slider = find.byType(Slider).first;
+      final box = tester.getRect(slider);
+      final gesture = await tester.startGesture(
+        Offset(box.left + box.width * 0.5, box.center.dy),
+      );
+      for (var i = 0; i < 8; i++) {
+        await gesture.moveBy(const Offset(24, 0));
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+      expect(
+        players.single.fastSeeks.length,
+        1,
+        reason: '上一次快 seek 没回来之前不并发下发',
+      );
+
+      // 放行之后只补一次「最新落点」，中间那些落点不补发。
+      gate.complete();
+      players.single.seekGate = null;
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(players.single.fastSeeks.length, 2, reason: '排队的多个落点合并成最新一个');
+      expect(
+        players.single.fastSeeks.last,
+        isNot(players.single.fastSeeks.first),
+        reason: '补发的是最新落点，不是被打断的那个',
+      );
+      await gesture.up();
+      await tester.pump();
+      // 让内核把位置落到松手的目标上：确认成功就不会再挂看门狗。
+      players.single.emit(
+        position: players.single.seeks.last,
+        duration: const Duration(minutes: 10),
+      );
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('松手后内核跳转不返回：预览不滞留，自动重发一次', (tester) async {
+      final players = await pump(tester);
+      players.single.emit(
+        position: const Duration(minutes: 1),
+        duration: const Duration(minutes: 10),
+      );
+      await tester.pumpAndSettle();
+
+      final slider = find.byType(Slider).first;
+      final box = tester.getRect(slider);
+      final gesture = await tester.startGesture(
+        Offset(box.left + box.width * 0.5, box.center.dy),
+      );
+      await gesture.moveBy(const Offset(80, 0));
+      await tester.pump(const Duration(milliseconds: 200));
+
+      // 松手这一刻起，内核的 seek 一直不返回。
+      final gate = Completer<void>();
+      players.single.seekGate = gate;
+      await gesture.up();
+      await tester.pump();
+      expect(players.single.seeks, hasLength(1));
+      expect(find.textContaining('拖动到'), findsOneWidget);
+
+      // 2s 超时后不再挂着：预览文字收掉（缓冲由内核状态自己表达）。
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        find.textContaining('拖动到'),
+        findsNothing,
+        reason: '跳转回调不来也必须收尾，不能把预览留在屏幕上',
+      );
+
+      // 6s 看门狗：位置没动且还在缓冲，自动重发同一跳转。
+      players.single.emit(buffering: true);
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pump();
+      expect(players.single.seeks.length, 2, reason: '卡住不动时自动重发一次同一跳转');
+      expect(players.single.seeks.last, players.single.seeks.first);
+      // 放行并让位置到位：重发这次确认成功，不再挂下一轮看门狗。
+      players.single.seekGate = null;
+      players.single.emit(
+        position: players.single.seeks.last,
+        duration: const Duration(minutes: 10),
+      );
+      gate.complete();
+      await tester.pumpAndSettle();
     });
 
     testWidgets('前进 10 秒：按当前位次跳转', (tester) async {
@@ -2365,6 +2462,13 @@ class _FakePlayer extends AbstractPlayer {
 
   PlayerMedia? media;
   final List<Duration> seeks = <Duration>[];
+
+  /// 拖动中的快 seek（内核允许落到关键帧那一档）。
+  final List<Duration> fastSeeks = <Duration>[];
+
+  /// 非 null 时 seek / seekFast 都挂在它上面：模拟「内核的跳转回调不来」。
+  Completer<void>? seekGate;
+
   Object? seekError;
   Object? loadError;
   int plays = 0, pauses = 0, stops = 0, disposals = 0, loads = 0;
@@ -2418,6 +2522,15 @@ class _FakePlayer extends AbstractPlayer {
   Future<void> seek(Duration position) async {
     if (seekError case final error?) throw error;
     seeks.add(position);
+    final gate = seekGate;
+    if (gate != null) await gate.future;
+  }
+
+  @override
+  Future<void> seekFast(Duration position) async {
+    fastSeeks.add(position);
+    final gate = seekGate;
+    if (gate != null) await gate.future;
   }
 
   @override

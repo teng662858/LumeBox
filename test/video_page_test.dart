@@ -949,6 +949,14 @@ class _FakePlayer extends AbstractPlayer {
   Future<void> seek(Duration position) async {
     calls.add('seek');
     seeks.add(position);
+    final current = _snapshot.value;
+    _snapshot.value = PlayerSnapshot(
+      position: position,
+      duration: current.duration,
+      playing: current.playing,
+      buffering: false,
+      error: current.error,
+    );
   }
 
   @override

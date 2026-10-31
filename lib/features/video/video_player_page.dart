@@ -346,6 +346,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   bool _overlayVisible = true;
   bool _panelOpen = false;
   DateTime? _lastScrubSeek;
+
+  /// 拖动中待下发的目标：同一时刻只允许一个快 seek 在路上，只保留最新目标。
+  ///
+  /// 之前是「每 150ms 直接发一次 seekFast」，既不排队也不取消：松手那一下
+  /// 往往还有几次快 seek 在飞，紧接着的精确定位排在它们后面，源端和解码器
+  /// 被这一串请求堵住——真机表现就是松手后一直「缓冲中」、网速 0KB/s。
+  Duration? _pendingScrubSeek;
+  bool _scrubSeekInFlight = false;
+
+  /// 跳转后的停滞看门狗（三个内核共用）：位置不动先重发同一跳转，
+  /// 仍不动才换地址重开，避免把用户留在永远转圈的画面里。
+  Timer? _seekWatchdog;
+  int _seekWatchdogGeneration = 0;
   String? _hint;
   Timer? _hintTimer;
   bool _swipeNextFired = false;
@@ -499,7 +512,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     }
   }
 
-  Future<void> _restoreInlinePlayback({bool retry = false}) async {
+  Future<void> _restoreInlinePlayback({
+    bool retry = false,
+    Duration? position,
+  }) async {
     final player = _player;
     final media = _media;
     if (!mounted || player == null || media == null || _recoveringPlayback) {
@@ -511,7 +527,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _suppressProgressSave = true;
     try {
       if (retry || snapshot.error != null) {
-        final position = _healthyPosition;
+        // 跳转卡死的重开要回到**用户想去的位置**，而不是卡住前的旧位置。
+        final resumeAt = position ?? _healthyPosition;
         if (_lifecycle == AppLifecycleState.resumed ||
             _session?.state != PipState.active) {
           _stopFrameForwarding();
@@ -537,7 +554,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             !identical(recoveryMedia, _media)) {
           return;
         }
-        if (position > Duration.zero) await player.seek(position);
+        if (resumeAt > Duration.zero) await player.seek(resumeAt);
       }
       if (shouldPlay && !player.snapshot.value.playing) await player.play();
       if (!shouldPlay && player.snapshot.value.playing) await player.pause();
@@ -781,6 +798,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _progressTimer = null;
     _autoHideTimer?.cancel();
     _autoHideTimer = null;
+    _seekWatchdog?.cancel();
+    _seekWatchdog = null;
     _saveProgress(force: true);
 
     PlaybackOrientationController.instance.removeListener(
@@ -1341,6 +1360,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _pendingKernel = null;
       _rebuildFailure = null;
     });
+    // 换内核 / 换集：上一轮拖动留下的落点与看门狗都要作废。
+    _pendingScrubSeek = null;
+    _lastScrubSeek = null;
+    _seekWatchdog?.cancel();
+    _seekWatchdog = null;
+    _seekWatchdogGeneration++;
     player.snapshot.addListener(_onSnapshotChanged);
     // 分辨率参数也算全屏方向的输入（「自动」档要按宽高比判断，见 [_onStatsChanged]）。
     player.stats.addListener(_onStatsChanged);
@@ -3078,9 +3103,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   }
 
   /// 拖动中节流快 seek：每 150ms 一次，画面跟着手指走；松手再精确 seek。
+  ///
+  /// 串行 + 只保留最新目标：拖动时目标是连续变化的，中间那些落点没有一个是
+  /// 用户要的，排队发出去只会让源端连开一路又一路 Range 请求。
   void _scrubSeekThrottled(Duration target) {
     final player = _player;
     if (player == null) return;
+    _pendingScrubSeek = target;
     final now = DateTime.now();
     final last = _lastScrubSeek;
     if (last != null &&
@@ -3088,12 +3117,125 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       return;
     }
     _lastScrubSeek = now;
-    unawaited(player.seekFast(target));
+    unawaited(_drainScrubSeeks(player));
+  }
+
+  Future<void> _drainScrubSeeks(AbstractPlayer player) async {
+    if (_scrubSeekInFlight) return;
+    _scrubSeekInFlight = true;
+    try {
+      while (mounted && identical(player, _player)) {
+        final target = _pendingScrubSeek;
+        if (target == null) break;
+        _pendingScrubSeek = null;
+        try {
+          // 挂死的快 seek 不能把后来的跳转堵在后面：超时即放行下一次。
+          await player.seekFast(target).timeout(const Duration(seconds: 2));
+        } on TimeoutException {
+          LumeLog.warn('[player] 拖动快 seek 超时：${target.inMilliseconds}ms');
+        } catch (error, stack) {
+          LumeLog.error(error, stack);
+        }
+      }
+    } finally {
+      _scrubSeekInFlight = false;
+      // 关闸和下一次 onChanged 恰好交错时，最新目标可能在 finally 前才写入；
+      // 再看一眼，避免它没有后续手势事件来唤醒而静默丢失。
+      if (_pendingScrubSeek != null && mounted && identical(player, _player)) {
+        unawaited(_drainScrubSeeks(player));
+      }
+    }
+  }
+
+  /// 松手 / 按钮 / 手势跳转共用：精确 seek + 等一次位置确认。
+  ///
+  /// 内核的 seek 可能一直不返回（AVPlayer 的 seekToTime 完成回调在源端卡住时
+  /// 就不来），所以这段必须自带超时——否则调用方一直挂在 await 上，
+  /// 拖动预览文字和「缓冲中」就一起留着不动了。
+  Future<bool> _seekAndConfirm(AbstractPlayer player, Duration target) async {
+    // 新一轮跳转作废上一轮看门狗：不然上一个落点的超时会来复查这次跳转。
+    _seekWatchdog?.cancel();
+    _seekWatchdogGeneration++;
+    final acknowledged = Completer<bool>();
+    void checkPosition() {
+      if (!acknowledged.isCompleted &&
+          (player.snapshot.value.position - target).abs() <=
+              const Duration(seconds: 1)) {
+        acknowledged.complete(true);
+      }
+    }
+
+    player.snapshot.addListener(checkPosition);
+    try {
+      final returned = await player
+          .seek(target)
+          .then((_) => true)
+          .timeout(
+            const Duration(seconds: 2),
+            onTimeout: () {
+              LumeLog.warn(
+                '[player] ${_settings.kernel.label} 跳转未返回：'
+                '${target.inMilliseconds}ms',
+              );
+              return false;
+            },
+          );
+      checkPosition();
+      if (acknowledged.isCompleted) return true;
+      // seek 自己都没回来时不再多挂 800ms；预览立刻收尾，由看门狗恢复。
+      if (!returned) return false;
+      return await acknowledged.future.timeout(
+        const Duration(milliseconds: 800),
+        onTimeout: () => false,
+      );
+    } finally {
+      player.snapshot.removeListener(checkPosition);
+    }
+  }
+
+  /// 跳转后停滞的看门狗：6 秒内位置没动就重发一次同一跳转，
+  /// 再 6 秒还不动就换地址重开并回到目标位置（三个内核都走这条路）。
+  void _armSeekWatchdog(
+    AbstractPlayer player,
+    Duration target, {
+    bool retried = false,
+  }) {
+    _seekWatchdog?.cancel();
+    final generation = ++_seekWatchdogGeneration;
+    final anchor = player.snapshot.value.position;
+    _seekWatchdog = Timer(const Duration(seconds: 6), () {
+      if (!mounted ||
+          generation != _seekWatchdogGeneration ||
+          !identical(player, _player)) {
+        return;
+      }
+      final snapshot = player.snapshot.value;
+      final stalled =
+          snapshot.buffering &&
+          snapshot.error == null &&
+          (snapshot.position - anchor).abs() <= const Duration(seconds: 1);
+      if (!stalled) return;
+      LumeLog.warn(
+        '[player] ${_settings.kernel.label} 跳转后无进展：'
+        '${anchor.inMilliseconds}ms → ${target.inMilliseconds}ms'
+        '${retried ? '（重发过）' : ''}',
+      );
+      if (retried) {
+        unawaited(_restoreInlinePlayback(retry: true, position: target));
+        return;
+      }
+      unawaited(
+        _seekAndConfirm(player, target).then((ok) {
+          if (!ok) _armSeekWatchdog(player, target, retried: true);
+        }),
+      );
+    });
   }
 
   Future<void> _seekGesture(AbstractPlayer player, Duration target) async {
     try {
-      await player.seek(target);
+      final ok = await _seekAndConfirm(player, target);
+      if (!ok) _armSeekWatchdog(player, target);
     } catch (_) {
       if (mounted) _showToast('跳转失败，请重试');
     }
@@ -5389,6 +5531,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           : (value) {
               _seekRevision++;
               _lastScrubSeek = null;
+              _pendingScrubSeek = null;
+              _seekWatchdog?.cancel();
+              _seekWatchdogGeneration++;
               _cancelAutoHide();
               setState(
                 () => _previewTarget = _positionAt(value, snapshot.duration),
@@ -5408,30 +5553,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               final player = _player;
               final revision = _seekRevision;
               _lastScrubSeek = null;
-              final acknowledged = Completer<void>();
-              void checkPosition() {
-                if (player != null &&
-                    !acknowledged.isCompleted &&
-                    (player.snapshot.value.position - target).abs() <=
-                        const Duration(seconds: 1)) {
-                  acknowledged.complete();
-                }
-              }
-
-              player?.snapshot.addListener(checkPosition);
+              // 松手即作废还没下发的拖动落点：这一轮只留这次精确跳转。
+              _pendingScrubSeek = null;
               try {
                 if (player != null) {
-                  await player.seek(target);
-                  checkPosition();
-                  await acknowledged.future.timeout(
-                    const Duration(milliseconds: 800),
-                    onTimeout: () {},
-                  );
+                  final ok = await _seekAndConfirm(player, target);
+                  if (!ok) _armSeekWatchdog(player, target);
                 }
               } catch (error) {
                 if (mounted) _showToast('跳转失败，请重试');
               } finally {
-                player?.snapshot.removeListener(checkPosition);
                 if (mounted && revision == _seekRevision) {
                   setState(() => _previewTarget = null);
                   _scheduleAutoHide();
@@ -5750,7 +5881,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       target = snapshot.duration;
     }
     try {
-      await player.seek(target);
+      final ok = await _seekAndConfirm(player, target);
+      if (!ok) _armSeekWatchdog(player, target);
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       LumeLog.warn(

@@ -179,6 +179,10 @@ class MediaKitMpvEngine
   bool _networkMedia = false;
   double? _downloadBytesPerSecond;
 
+  /// `hr-seek` 属性写入与真正 seek 是两段异步操作；松手的精确跳转到来后，
+  /// 仍在写 `hr-seek=no` 的旧快 seek 必须作废，不能晚到覆盖新落点。
+  int _seekGeneration = 0;
+
   @override
   void listen(void Function(MpvEngineSnapshot snapshot) onSnapshot) {
     _onSnapshot = onSnapshot;
@@ -188,6 +192,7 @@ class MediaKitMpvEngine
   @override
   Future<void> open(MpvMediaRequest request) async {
     if (_disposed) return;
+    _seekGeneration++;
     final uri = await _highestHls.resolve(
       Uri.parse(request.url),
       request.headers,
@@ -556,6 +561,7 @@ class MediaKitMpvEngine
   @override
   Future<void> seek(Duration position) async {
     if (_disposed) return;
+    final generation = ++_seekGeneration;
     // open() only queues loadfile. Network metadata may still be pending, and
     // libmpv silently ignores a seek issued before the file is ready.
     if (_duration <= Duration.zero) {
@@ -564,6 +570,7 @@ class MediaKitMpvEngine
     }
     _pendingSeek = null;
     await _setHrSeek(true);
+    if (generation != _seekGeneration) return;
     await _player.seek(position);
   }
 
@@ -571,12 +578,14 @@ class MediaKitMpvEngine
   @override
   Future<void> seekFast(Duration position) async {
     if (_disposed) return;
+    final generation = ++_seekGeneration;
     if (_duration <= Duration.zero) {
       _pendingSeek = position;
       return;
     }
     _pendingSeek = null;
     await _setHrSeek(false);
+    if (generation != _seekGeneration) return;
     await _player.seek(position);
   }
 
