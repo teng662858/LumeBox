@@ -23,6 +23,21 @@
 
 `video/qqys01.js` 为千千影视公开影视目录源。支持首页推荐、电影/连续剧/综艺/动漫、公开筛选、搜索、详情、分集和站点公开播放配置；站点明确标注 VIP、积分或付费的内容会拒绝播放，不绕过授权。镜像与线路限制及实测结果见 [源记录](../docs/2026-10-31_千千影视源.md)。
 
+## 2026-11-01 八号影视 / 可可影视（新源）
+
+`video/bahaotv.js`（`bahaotv_video`）：八号影视。苹果CMS v10，电影/电视剧/动漫三栏，各栏独立
+地区/类型/语言 + 年份 + 排序筛选（实测全生效可组合）。播放页 `player_aaaa` → 第三方 iframe →
+**AES-128-CBC** 解出直链（mp4，206 可播）；详情页多条线路（实测 3 线 × 8 集）全部保留。
+默认走证书匹配的 `www.bhtv001.com`（`bahaotv.com` 证书名不匹配，作镜像）。详见
+[源记录](../docs/2026-11-01_八号影视与可可影视源.md)。
+
+`video/kkys.js`（`kkys_video`）：可可影视。入口有 **cdndefend 反爬挑战**（纯 JS SHA-1 现算 PoW
+自动过，首次 1-2 秒）。电影/连续剧/动漫/综艺 + 类型/地区/语言/年份/排序筛选 + 站内搜索（需页面 `t` 令牌）；
+详情页最多 **37 条线路**，每条线路分集全列；播放页直出 m3u8。限制：封面图被源站 403 拦，列表可能无封面。
+
+**LIBVIO（libvio.app 系列）没做成**：三个真实域名全部 `403 Access denied by geographic restriction`
+（站点按出口 IP 地域封锁），本机取不到任何页面结构。详见 [地域限制记录](../docs/2026-11-01_LIBVIO地域限制.md)。
+
 ## 2026-11-01 两个BT影视 v2.0.0（bttwo_video，详见 docs/2026-11-01_两个BT影视源升级.md）
 
 `video/bttwo.js`：两个BT影视（发布页 https://bttwo.vip/；实测可用域名 bttwo.life / .org / .top / .me，旧的 bttwoo.com、bttwo.net 已失效）。与 4k影视同一套 CMS，但**本源自己算播放签名、直接拿 m3u8**：播放页每个分集有自己的 slug 与 dataid，`s = HMAC-SHA256(key=slug, msg="dataid:t:slug")[:32]`、`k = base64(xor("nbmovie2024secretkey", userlink))`（游客 userlink 页面上就有，`k=0` 亦可）。站点只把 **1080p 免费**开放给游客，720/480 需 VIP、4K 仅官方客户端，本源只取 1080，不绕过付费墙。分集逐项可播；筛选 `classify/types/areas/years/tags/sort_by` 六组实测生效且可组合。
