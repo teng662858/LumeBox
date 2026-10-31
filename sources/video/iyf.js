@@ -1,4 +1,4 @@
-// LumeSource: {"id":"iyf_video","name":"爱壹帆","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.iyf.tv","https://www.aiyifan.tv","https://www.wyav.tv","https://www.flyv.tv","https://www.jssp.tv"],"network":"direct","icon":"https://www.iyf.tv/favicon-32x32.png"}
+// LumeSource: {"id":"iyf_video","name":"爱壹帆","version":"1.0.1","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.iyf.tv","https://www.aiyifan.tv","https://www.wyav.tv","https://www.flyv.tv","https://www.jssp.tv"],"network":"direct","icon":"https://www.iyf.tv/favicon-32x32.png"}
 // LumeRuntime: javascript
 //
 // 站点：爱壹帆 iyf.tv（站内配置里自带的同内容域名：aiyifan.tv / wyav.tv / flyv.tv / jssp.tv）。
@@ -339,7 +339,7 @@ function fetchDetail(key) {
 var LumeSource = {
   id: 'iyf_video',
   name: '爱壹帆',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
