@@ -35,8 +35,11 @@
 自动过，首次 1-2 秒）。电影/连续剧/动漫/综艺 + 类型/地区/语言/年份/排序筛选 + 站内搜索（需页面 `t` 令牌）；
 详情页最多 **37 条线路**，每条线路分集全列；播放页直出 m3u8。限制：封面图被源站 403 拦，列表可能无封面。
 
-**LIBVIO（libvio.app 系列）没做成**：三个真实域名全部 `403 Access denied by geographic restriction`
-（站点按出口 IP 地域封锁），本机取不到任何页面结构。详见 [地域限制记录](../docs/2026-11-01_LIBVIO地域限制.md)。
+`video/libvio.js`（`libvio_video` v2.0.0）：**LIBVIO**（真实站 `www.libvio.io`；旧域名
+libvio.host / www.libvio.to / libviobd.com 已停用为停车页）。站点用 CDN 浏览器校验挡非浏览器请求
+（403 `x-cdn-challenge`），本源按约定抛 `NEED_WEBVIEW_VERIFY`，由 App 网页视图**由用户本人**过校验后自动重试，
+不绕过任何校验。5 栏 + 地区/年份筛选 + 站内搜索；播放页 `player_aaaa` 里就是明文 mp4
+（实测 206 + video/mp4，播放器 readyState=4）。详见 [源记录](../docs/2026-11-01_LIBVIO地域限制.md)。
 
 ## 2026-11-01 两个BT影视 v2.0.0（bttwo_video，详见 docs/2026-11-01_两个BT影视源升级.md）
 
