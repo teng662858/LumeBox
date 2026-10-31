@@ -1,10 +1,33 @@
 # LumeBox 视频源：站点转源结果
 
+## 2026-11-01 六个新源（子子影视 / PPnix / 厂长资源 / 嘀嗒影视 / 多多追剧 / 爱壹帆）
+
+详见 [源记录](../docs/2026-11-01_六源制作.md)。
+
+- `video/ziziys.js` **子子影视**（发布页 ziziys.info；主用 ziziys.org、镜像 ziziys.net，ziziys.com 官方标注国内不可访问）：
+  与 4k影视/两个BT 同一套 CMS，本源**自算 HMAC 签名**直接取 1080p m3u8（实测 200 + #EXTM3U 95,696 B）；
+  4K 档站点只给客户端（403）、720 属会员（401），不绕过；分类/类型/地区/年份/标签/排序六组筛选实测可组合。
+- `video/ppnix.js` **PPnix**（ppnix.com/cn）：`/cn/{movie|tv}/{类型}-{国家}-{年代}-{页码-1}-{排序}.html`，
+  播放直接取站点 HLS 接口 `/info/m3u8/<id>/<集>.m3u8`（206 + #EXTM3U 205,464 B）；站点无付费墙。
+- `video/czzy.js` **厂长资源**（导航页 cz01.vip → 4kcz.com）：WordPress + mibt，18 个栏目 + `paged` 翻页，
+  筛选 `movie_bt_series/cat/tags/year` 实测组合生效；播放页 iframe 的 `url=` 即真 m3u8（200 + #EXTM3U 102,903 B）。
+- `video/didahd.js` **嘀嗒影视**（didahd.xyz / dida.im）：苹果CMS + mytheme；列表走 `/index.php/ajax/data`（真分页 51 页）；
+  明文线路直连，蓝光线路是 hex 密文（站点混淆脚本现解）→ 网页播放；网盘线路标注不可在线播放。
+- `video/duoduo.js` **多多追剧**（发布页 duoduozhuiju.com，四条线路）：Vue3 SPA + `/api.php/web/*`（要 X-Client / web-sign 头）；
+  分类/筛选/排序/搜索/详情/线路集数都是真数据；每集地址是令牌，解码要站点 protobuf+wasm 签名 → 网页播放。
+- `video/iyf.js` **爱壹帆**（iyf.tv，同内容 aiyifan.tv / wyav.tv / flyv.tv / jssp.tv）：接口在 m10.iyf.tv，
+  每个请求都要首页下发的 `pConfig` 签名（**纯 JS MD5 复现**，签名错会回「用户签名错误」）；
+  电影/电视剧/综艺/动漫/纪录片 + 排行榜，筛选支持地区与连载状态；站点按出口限流（`访问过量`），源内已做 detail 缓存 + 重试。
+
 ## 2026-10-31 千千影视
 
 `video/qqys01.js` 为千千影视公开影视目录源。支持首页推荐、电影/连续剧/综艺/动漫、公开筛选、搜索、详情、分集和站点公开播放配置；站点明确标注 VIP、积分或付费的内容会拒绝播放，不绕过授权。镜像与线路限制及实测结果见 [源记录](../docs/2026-10-31_千千影视源.md)。
 
-## 2026-10-31 两个BT影视（bttwo_video，详见 docs/2026-10-31_两个BT影视源.md）
+## 2026-11-01 两个BT影视 v2.0.0（bttwo_video，详见 docs/2026-11-01_两个BT影视源升级.md）
+
+`video/bttwo.js`：两个BT影视（发布页 https://bttwo.vip/；实测可用域名 bttwo.life / .org / .top / .me，旧的 bttwoo.com、bttwo.net 已失效）。与 4k影视同一套 CMS，但**本源自己算播放签名、直接拿 m3u8**：播放页每个分集有自己的 slug 与 dataid，`s = HMAC-SHA256(key=slug, msg="dataid:t:slug")[:32]`、`k = base64(xor("nbmovie2024secretkey", userlink))`（游客 userlink 页面上就有，`k=0` 亦可）。站点只把 **1080p 免费**开放给游客，720/480 需 VIP、4K 仅官方客户端，本源只取 1080，不绕过付费墙。分集逐项可播；筛选 `classify/types/areas/years/tags/sort_by` 六组实测生效且可组合。
+
+## 2026-10-31 两个BT影视（v1.0.0 历史记录，详见 docs/2026-10-31_两个BT影视源.md）
 
 `video/bttwo.js`：两个BT影视（发布页 bttwo.vip；bttwo.life/.org/.top/.me、bttwoo.com、bttwo.net）。与 4k影视同一套 CMS（`/play/ch…`、`/filter?page=N`、同一份 `nbmovie_wasm`）：全部影片/电影/剧集/动漫 + 站内搜索；播放地址由站点 wasm 现算签名 → `content()` 打开 `/play/<slug>`（网页播放器，选集在页面里点）。
 
