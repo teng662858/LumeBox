@@ -4,6 +4,10 @@
 
 `video/qqys01.js` 为千千影视公开影视目录源。支持首页推荐、电影/连续剧/综艺/动漫、公开筛选、搜索、详情、分集和站点公开播放配置；站点明确标注 VIP、积分或付费的内容会拒绝播放，不绕过授权。镜像与线路限制及实测结果见 [源记录](../docs/2026-10-31_千千影视源.md)。
 
+## 2026-10-31 两个BT影视（bttwo_video，详见 docs/2026-10-31_两个BT影视源.md）
+
+`video/bttwo.js`：两个BT影视（发布页 bttwo.vip；bttwo.life/.org/.top/.me、bttwoo.com、bttwo.net）。与 4k影视同一套 CMS（`/play/ch…`、`/filter?page=N`、同一份 `nbmovie_wasm`）：全部影片/电影/剧集/动漫 + 站内搜索；播放地址由站点 wasm 现算签名 → `content()` 打开 `/play/<slug>`（网页播放器，选集在页面里点）。
+
 ## 2026-10-31 歪比巴卜（wbbb_video，详见 docs/2026-10-31_歪比巴卜源.md）
 
 `video/wbbb.js`：歪比巴卜（发布页 xn--clr79vmzkema.com；节点 wbbb1.com / v.wbbb1.com / www.wbbb1.com）。
