@@ -27,6 +27,43 @@ class LocalHandler(BaseHTTPRequestHandler):
             self.wfile.write(b'<title>Local fixture</title><header><a href="/"><img src="/logo.svg"></a></header><a href="/privacy">Privacy</a><div id="root"></div><script>setTimeout(()=>{document.querySelector("#root").innerHTML="<p class=ready>dynamic fixture</p><article class=video-card><a href=/item/1>Lesson</a><img src=/cover.jpg></article>"},750)</script>')
 
 
+def embed_checks():
+    from browser_session import BrowserSession
+    class Child(BaseHTTPRequestHandler):
+        def log_message(self, *_): pass
+        def do_GET(self):
+            self.send_response(200); self.send_header('Content-Type', 'text/html'); self.end_headers()
+            self.wfile.write(b'<video src="/lesson.mp4"></video>')
+    child = ThreadingHTTPServer(('127.0.0.1', 0), Child)
+    child_url = f'http://127.0.0.1:{child.server_port}/player'
+    class Parent(Child):
+        def do_GET(self):
+            self.send_response(200); self.send_header('Content-Type', 'text/html'); self.end_headers()
+            self.wfile.write(f'<iframe id="video" src="{child_url}"></iframe>'.encode())
+    parent = ThreadingHTTPServer(('127.0.0.1', 0), Parent)
+    for server in (child, parent):
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    browser = None
+    try:
+        url = f'http://127.0.0.1:{parent.server_port}/'
+        browser = BrowserSession(url, hidden_test=True, engine='playwright')
+        browser.get(url, purpose='media')
+        final, html = browser.get(child_url, purpose='media')
+        assert final == child_url and '<video src="/lesson.mp4">' in html
+        try:
+            browser.get(child_url + '/unrelated', purpose='media')
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('Unadvertised foreign URL must be rejected')
+        assert browser.current_page()[0] == url
+        return {'ok': True, 'cross_origin_frame': True, 'foreign_url_rejected': True}
+    finally:
+        if browser: browser.close()
+        for server in (parent, child):
+            server.shutdown(); server.server_close()
+
+
 def browser_checks(report):
     from browser_session import BrowserSession
     from batch_crawler import crawl_public_pages
@@ -39,13 +76,20 @@ def browser_checks(report):
     results = {}
     try:
         engines = ('webview', 'playwright', 'selenium', 'scrapling-browser', 'scrapling-async-browser', 'scrapling-browser-session', 'scrapling-async-browser-session')
+        from mcp_backend import server_command
+        try:
+            server_command()
+            engines += ('mcp-playwright',)
+        except ValueError:
+            pass  # Optional companion; ordinary installations do not require Node.js.
         for engine in engines:
             browser = None
             try:
                 browser = BrowserSession(url, hidden_test=True, engine=engine)
                 final, html = browser.get(url, selector='.ready')
                 assert '<p class="ready">dynamic fixture</p>' in html, html
-                assert browser.cookie_count >= 1
+                if engine != 'mcp-playwright':
+                    assert browser.cookie_count >= 1
                 _, delayed_list = browser.get(url + 'slow-list', purpose='list')
                 assert '<article class="video-card">' in delayed_list
                 _, delayed_media = browser.get(url + 'slow-media', purpose='media')
@@ -59,7 +103,7 @@ def browser_checks(report):
                 _, acted = browser.get(url + 'interactive', selector='.video-card')
                 assert '<article class="video-card">' in acted
                 results[engine]['click_wait'] = True
-                if engine in ('webview', 'playwright', 'selenium'):
+                if engine in ('webview', 'playwright', 'selenium', 'mcp-playwright'):
                     current_url, current_html = browser.current_page()
                     assert current_url == url + 'interactive', current_url
                     assert '<article class="video-card">' in current_html
@@ -75,7 +119,7 @@ def browser_checks(report):
                         assert 'Scrapling' in str(error), error
                     else:
                         raise AssertionError('Scrapling must report unsupported manual tab capture')
-                if engine != 'webview':
+                if engine not in ('webview', 'mcp-playwright'):
                     records = browser.network()
                     assert any('Local API fixture' in json.dumps(r) for r in records), records
                     assert 'must-be-redacted' not in json.dumps(records)

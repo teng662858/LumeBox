@@ -119,11 +119,12 @@ async function resolveManifest(url, depth = 0) {
 }
 
 function identityOf(script) {
-  const match = /^\s*\/\/\s*LumeSource:\s*(\{[\s\S]*?\})\s*$/m.exec(script);
+  const match = /^\s*(?:\/\/|#)\s*LumeSource:\s*(\{[^\n]+\})\s*$/m.exec(script);
   if (!match) return { id: '', name: '', category: '' };
   try {
     const data = JSON.parse(match[1]);
-    return { id: data.id ?? '', name: data.name ?? '', category: data.category ?? '', mirrors: data.mirrors ?? [] };
+    return { id: data.id ?? '', name: data.name ?? '', category: data.category ?? '', mirrors: data.mirrors ?? [],
+      runtime: /^\s*#\s*LumeRuntime:\s*python\s*$/m.test(script) ? 'python' : 'javascript' };
   } catch (_) {
     return { id: '', name: '', category: '' };
   }
@@ -202,11 +203,12 @@ for (const row of rows) {
     delete env.HTTP_PROXY;
   }
   let report = { ok: false, calls: {} };
-  const args = ['tools/lume-source-check.mjs', row.file, '--json'];
+  const python = row.identity.runtime === 'python';
+  const args = [python ? 'tools/lume-python-source-check.py' : 'tools/lume-source-check.mjs', row.file, '--json'];
   const keyword = KEYWORDS[row.identity.id];
   if (keyword) args.push('--keyword', keyword);
   try {
-    const { stdout } = await run(process.execPath, args, {
+    const { stdout } = await run(python ? (process.env.LUME_PYTHON || 'python') : process.execPath, args, {
       env,
       maxBuffer: 32 * 1024 * 1024,
     });

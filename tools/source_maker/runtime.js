@@ -89,6 +89,11 @@ function htmlFilters(html) {
   }
   return {groups:groups};
 }
+function verificationPage(html) {
+  if(/cf-chl-|验证您是真人/i.test(html))return true;
+  var m=/<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html),t=m?text(m[1]):'';
+  return /^(?:Just a moment(?:\.\.\.)?|Attention Required(?:!|\s.*)?|安全验证|人机验证|访问验证|Security Verification|Verification Required|Verify (?:you are|you.re) human)$/i.test(t);
+}
 async function get(url, selector, purpose, referer) {
   if(C.useBrowser) {
     if(!LumeSource.web || !LumeSource.web.render)throw new Error('当前 App 不支持浏览器源运行环境');
@@ -96,11 +101,14 @@ async function get(url, selector, purpose, referer) {
     if(selector && !C.browserActions)options.waitForSelector=selector;
     var page=await LumeSource.web.render(options);
     if(!page || !page.html)throw new Error('浏览器没有返回页面；请在 App 网页视图中完成验证');
-    return typeof page.result==='string'?page.result:page.html;
+    var html=typeof page.result==='string'?page.result:page.html;
+    if(verificationPage(html))throw new Error('NEED_WEBVIEW_VERIFY：站点需要人工验证，请在网页视图完成后重试');
+    return html;
   }
   var r = await LumeSource.http.get(url, {headers:{Referer:referer||C.url}});
   if (r.status === 403 || r.status === 503) throw new Error('NEED_WEBVIEW_VERIFY：请在网页视图完成验证');
   if (r.status < 200 || r.status >= 300) throw new Error('抓取失败 HTTP ' + r.status + ' ' + url);
+  if(verificationPage(r.body))throw new Error('NEED_WEBVIEW_VERIFY：站点需要人工验证，请在网页视图完成后重试');
   return r.body;
 }
 function template(s, page, keyword) { return s.replace(/\{page\}/g,String(page)).replace(/\{keyword\}/g,encodeURIComponent(keyword || '')); }
@@ -121,7 +129,7 @@ function media(html, base) {
 async function resolveMedia(html,base,depth,seen) {
   var url=media(html,base);if(url)return {url:url,referer:base};
   if(depth>=2)return null;seen=seen||{};seen[base]=true;
-  var frames=selectNodes(parseTree(html),'#player iframe,.player iframe,iframe[src*="/embed/"],iframe[src*="/player/"],iframe[src*="/play/"]');
+  var frames=selectNodes(parseTree(html),'#player iframe,.player iframe,iframe#video,iframe[src*="/embed/"],iframe[src*="/player/"],iframe[src*="/play/"]');
   for(var i=0;i<frames.length&&i<2;i++) {
     var n=frames[i],at=abs(n.attrs.src||n.attrs['data-src']||'',base);
     if(!at||seen[at]||/advert|doubleclick|popunder|\/ads?\//i.test(at)||n.attrs.width==='0'||n.attrs.height==='0')continue;
@@ -189,7 +197,7 @@ var LumeSource = {
     if(C.mode === 'maccms') return item(await apiDetail(a.id));
     var h = await get(a.id), heading = /<h1\b[^>]*>([\s\S]*?)<\/h1>/i.exec(h), title = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(h);
     var found=knownItems[a.id];
-    return {id:a.id,title:text(heading ? heading[1] : title ? title[1] : a.id),cover:abs(meta(h,'og:image'),a.id)||(found?found.cover:''),description:meta(h,'description')||meta(h,'og:description')};
+    return {id:a.id,title:text(heading ? heading[1] : '')||text(title ? title[1] : '')||(found&&found.title)||a.id,cover:abs(meta(h,'og:image'),a.id)||(found?found.cover:''),description:meta(h,'description')||meta(h,'og:description')};
   },
   async chapters(a) {
     if(C.mode==='inline-media')return [{id:a.id,title:'播放'}];

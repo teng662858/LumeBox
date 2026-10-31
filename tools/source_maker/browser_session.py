@@ -29,8 +29,9 @@ class BrowserSession:
         self.events = queue.Queue()
         self.ready = False
         self.notice = ''
-        self.browser_mode = engine in ('webview', 'playwright', 'selenium') or 'browser' in engine
+        self.browser_mode = engine in ('webview', 'playwright', 'selenium', 'mcp-playwright') or 'browser' in engine
         self.actions = {}
+        self.embed_urls = set()
         self.worker = None
         self.closed = threading.Event()
         self.cancel_event = cancel_event
@@ -90,12 +91,13 @@ class BrowserSession:
     def get(self, url, selector='', purpose=''):
         from core import validate_url
         url = validate_url(url)
-        if not same_site(self.url, url):
+        embedded = not same_site(self.url, url) and purpose == 'media' and url in self.embed_urls
+        if not same_site(self.url, url) and not embedded:
             raise ValueError('浏览器会话只用于当前站点；跨域接口需单独适配')
         with self.lock:
             if self.closed.is_set() or not self.ready or self.worker.poll() is not None:
                 raise ValueError('网页验证窗口已关闭，请重新打开验证')
-            self.worker.stdin.write(json.dumps({'action': 'get', 'url': url, 'selector': selector, 'actions': self.actions, 'purpose': purpose}) + '\n')
+            self.worker.stdin.write(json.dumps({'action': 'embed' if embedded else 'get', 'url': url, 'selector': selector, 'actions': {} if embedded else self.actions, 'purpose': purpose}) + '\n')
             self.worker.stdin.flush()
             try:
                 result = self.events.get(timeout=38)
@@ -104,7 +106,24 @@ class BrowserSession:
                 raise ValueError('浏览器抓取超时，请重新打开网页验证') from e
             if self.closed.is_set() or not result.get('ok'):
                 raise ValueError(result.get('error', '浏览器抓取失败'))
+            if not embedded:
+                self.register_embeds(result['url'], result['html'])
             return result['url'], result['html']
+
+    def register_embeds(self, url, html):
+        if not same_site(self.url, url):
+            return
+        from bs4 import BeautifulSoup
+        from urllib.parse import urljoin
+        from core import validate_url
+        soup = BeautifulSoup(html, 'html.parser')
+        allowed = set()
+        for frame in soup.select('#player iframe,.player iframe,iframe#video,iframe[src*="/embed/"],iframe[src*="/player/"],iframe[src*="/play/"]')[:10]:
+            try:
+                allowed.add(validate_url(urljoin(url, frame.get('src') or frame.get('data-src') or '')))
+            except ValueError:
+                pass
+        self.embed_urls = allowed
 
     def network(self):
         with self.lock:
@@ -137,6 +156,7 @@ class BrowserSession:
                 raise ValueError('当前页属于其他站点，请返回原站点或重新连接')
             if len(html.encode('utf-8')) > LIMIT:
                 raise ValueError('网页超过 6MB，请改用具体列表页')
+            self.register_embeds(url, html)
             return url, html
 
     def cancel(self):
@@ -205,6 +225,10 @@ def run_worker():
         options = json.loads(sys.stdin.readline())
         from core import validate_url
         url = validate_url(options['url'])
+        if options.get('engine') == 'mcp-playwright':
+            from mcp_backend import run_worker as mcp_worker
+            mcp_worker(options, send)
+            return
         if options.get('engine', '').startswith('scrapling-'):
             from scrapling_backend import run_worker as scrapling_worker
             scrapling_worker(options, send)
@@ -228,8 +252,9 @@ def run_worker():
             body = page['html']
             if len(body.encode()) > LIMIT:
                 raise ValueError('网页超过 6MB，请改用具体列表页')
-            if 'cf-chl-' in body or page.get('title', '').lower().strip() == 'just a moment...':
-                raise ValueError('页面仍在验证，请完成后继续')
+            from page_verification import requires_verification, MESSAGE
+            if requires_verification(body):
+                raise ValueError(MESSAGE)
             return current, body, page
 
         def accept():

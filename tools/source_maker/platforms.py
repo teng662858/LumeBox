@@ -23,6 +23,23 @@ def advertised_platform(config, html, fetcher):
     if config['target'] not in ('video', 'audio', 'module', 'cat'):
         return None
     base = config['url']
+    if config['target'] == 'video' and urlsplit(base).hostname == 'gaze.red':
+        rows, seen = [], set()
+        for card in BeautifulSoup(html, 'html.parser').select('article'):
+            link, image, heading = card.select_one('a[href]'), card.select_one('img[data-src]') or card.select_one('img[alt]:not([src*="/static/img/svg/"])'), card.select_one('h2,h3,h4,h5')
+            address = urljoin(base, link.get('href', '')) if link else ''
+            if not re.fullmatch(r'https://gaze\.red/play/[a-f0-9]{32}/?', address) or address in seen:
+                continue
+            title = heading.get_text(' ', strip=True) if heading else image.get('alt', '') if image else ''
+            cover = urljoin(base, image.get('data-src') or image.get('src') or '') if image else ''
+            if title and image and cover:
+                seen.add(address)
+                rows.append(dict(id=address, title=title, cover=cover, coverHeaders={'Referer': 'https://gaze.red/'}))
+        if not rows:
+            raise ValueError('注视影视未读到作品卡片，请在浏览器完成验证后读取当前页')
+        config.update(mode='gaze', id='gaze_video', name='注视影视', url='https://gaze.red/',
+                      contentCategory='movie', profile='注视影视网页播放器', useBrowser=True, version='1.0.2')
+        return config, rows, '专用适配：公开目录、浏览器筛选和默认线路按钮选集；播放交给源站网页播放器，需要新版 App 选集支持。不把 blob 地址导出为媒体直链。'
     if config['target'] == 'video' and urlsplit(base).hostname in ('yeguodj.com','www.yeguodj.com'):
         from core import html_items
         rows = html_items(html, base, r'/drama/detail/\d+/?$')

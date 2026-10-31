@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, ttk
 from core import TARGETS, BrowserRequired, Fetcher, discover, generate, html_items, target_config, source_filename
 from exports import export_source
 
-ENGINES = {'推荐浏览器（Edge）': 'playwright', '内置浏览器': 'webview', 'Playwright': 'playwright', 'Selenium': 'selenium',
+ENGINES = {'推荐浏览器（Edge）': 'playwright', '内置浏览器': 'webview', 'Playwright': 'playwright', 'Playwright MCP（需 Node.js）': 'mcp-playwright', 'Selenium': 'selenium',
     'Scrapling HTTP': 'scrapling-fetcher', 'Scrapling 异步 HTTP': 'scrapling-async',
     'Scrapling HTTP 会话': 'scrapling-session', 'Scrapling 异步 HTTP 会话': 'scrapling-async-session',
     'Scrapling 浏览器': 'scrapling-browser', 'Scrapling 异步浏览器': 'scrapling-async-browser',
@@ -47,7 +47,7 @@ class TaskFetcher:
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('LumeBox 制源工坊 0.7.9')
+        self.title('LumeBox 制源工坊 0.8.2')
         self.geometry('980x760')
         self.minsize(820, 660)
         self.configure(bg='#f4f6fa')
@@ -60,6 +60,7 @@ class App(tk.Tk):
         self.browser = None
         self.fetcher = Fetcher()
         self.browser_actions = {}
+        self.ai_settings = {'endpoint': '', 'model': '', 'key': ''}
         self.updates = queue.Queue()
         self.batch_stop = None
         self.input_revision = 0
@@ -126,6 +127,8 @@ class App(tk.Tk):
         self.browser_btn.pack(side='left')
         self.current_page_btn = ttk.Button(browser_tools, text='读取浏览器当前页', command=self.read_browser_page)
         self.current_page_btn.pack(side='left', padx=(8, 0))
+        self.ai_btn = ttk.Button(browser_tools, text='AI 辅助识别', command=self.ai_dialog)
+        self.ai_btn.pack(side='left', padx=(8, 0))
         self.status = tk.StringVar(value='准备就绪，填入网址后点击“开始制作”。')
         ttk.Label(shell, textvariable=self.status, wraplength=900, foreground='#4d5eea').pack(anchor='w', pady=(14, 8))
         self.progress = ttk.Progressbar(shell, mode='indeterminate')
@@ -152,7 +155,7 @@ class App(tk.Tk):
             values=['自动识别', '影视', '成人', '待分类'], state='readonly', width=9)
         self.content_category_box.pack(side='left')
         self.browser_help = ttk.LabelFrame(self.left, text='在浏览器里完成后，回来继续', padding=10)
-        ttk.Label(self.browser_help, text='看到作品列表后点击“已完成，继续制作”。', wraplength=440).pack(anchor='w')
+        ttk.Label(self.browser_help, text='在浏览器中完成网页验证、看到作品列表后，点击“已完成，继续制作”。', wraplength=640).pack(anchor='w')
         browser_actions = ttk.Frame(self.browser_help)
         browser_actions.pack(fill='x', pady=(8, 0))
         self.continue_btn = ttk.Button(browser_actions, text='已完成，继续制作', command=self.accept_browser)
@@ -191,7 +194,7 @@ class App(tk.Tk):
         ttk.Combobox(right, textvariable=self.category, values=list(TARGETS), state='readonly').pack(fill='x', pady=(3, 8))
         ttk.Label(right, text='浏览器与采集引擎').pack(anchor='w')
         ttk.Combobox(right, textvariable=self.browser_engine, values=list(ENGINES), state='readonly').pack(fill='x', pady=(3, 6))
-        self.buttons = [self.browser_btn, self.current_page_btn]
+        self.buttons = [self.browser_btn, self.current_page_btn, self.ai_btn]
         for label, callback in [('连接当前引擎', lambda: self.verify_in_browser(auto_verify=True)), ('结束浏览器会话', self.end_browser), ('浏览器操作 / 接口记录', self.browser_options_dialog)]:
             button = ttk.Button(right, text=label, command=callback)
             button.pack(fill='x', pady=3)
@@ -207,7 +210,7 @@ class App(tk.Tk):
             self.fields[key] = value
         self.target_note = tk.StringVar(value='默认输出 JS，不会自动切换 PY。')
         ttk.Label(right, textvariable=self.target_note, wraplength=320, foreground='#68738a').pack(anchor='w', pady=10)
-        for label, callback in [('编辑 Kazumi XPath', self.edit_kazumi), ('高级解析规则 · CSS', self.edit_rules), ('查看各引擎功能范围', self.show_capabilities), ('仅重新识别', self.analyze), ('重新预览', self.preview), ('保存工程', self.save_project), ('打开工程', self.open_project), ('批量制作', self.batch_dialog)]:
+        for label, callback in [('AI 辅助识别规则', self.ai_dialog), ('编辑 Kazumi XPath', self.edit_kazumi), ('高级解析规则 · CSS', self.edit_rules), ('查看各引擎功能范围', self.show_capabilities), ('仅重新识别', self.analyze), ('重新预览', self.preview), ('保存工程', self.save_project), ('打开工程', self.open_project), ('批量制作', self.batch_dialog)]:
             button = ttk.Button(right, text=label, command=callback)
             button.pack(fill='x', pady=3)
             self.buttons.append(button)
@@ -421,6 +424,68 @@ class App(tk.Tk):
         ttk.Button(row, text='读取接口响应（不含请求头）', command=lambda: self.attempt(inspect)).pack(side='left')
         ttk.Button(row, text='保存操作', command=lambda: self.attempt(save)).pack(side='right')
 
+    def ai_dialog(self):
+        dialog = tk.Toplevel(self)
+        dialog.title('AI 辅助规则 · 可选')
+        dialog.geometry('710x470')
+        ttk.Label(dialog, text='填写兼容 Chat Completions 的完整接口地址、模型名和密钥。\n点击分析会向该服务发送当前页面的精简结构（不含脚本、正文、输入值和 Cookie）。\n密钥仅保留在本次软件运行内，不保存到工程或源文件。模型服务可能收费。', wraplength=660).pack(anchor='w', padx=16, pady=14)
+        values = {}
+        for key, label in [('endpoint', '完整接口地址（如服务商提供的 /v1/chat/completions）'), ('model', '模型名'), ('key', '密钥（本地无鉴权模型可留空）')]:
+            ttk.Label(dialog, text=label).pack(anchor='w', padx=16)
+            values[key] = tk.StringVar(value=self.ai_settings[key])
+            ttk.Entry(dialog, textvariable=values[key], show='*' if key == 'key' else '').pack(fill='x', padx=16, pady=(2, 8))
+        role = tk.StringVar(value='列表页')
+        ttk.Label(dialog, text='浏览器当前页面用途；详情/阅读页需先识别已有源').pack(anchor='w', padx=16)
+        ttk.Combobox(dialog, textvariable=role, values=['列表页', '详情 / 选集页', '漫画 / 图片页'], state='readonly').pack(fill='x', padx=16)
+        def start():
+            self.ai_settings = {key: value.get().strip() for key, value in values.items()}
+            selected = {'列表页':'list', '详情 / 选集页':'chapters', '漫画 / 图片页':'images'}[role.get()]
+            self.ai_analyze(selected)
+            dialog.destroy()
+        ttk.Button(dialog, text='发送页面结构并分析', command=lambda: self.attempt(start)).pack(pady=16)
+
+    def ai_analyze(self, role='list'):
+        if self.busy:
+            return
+        from core import validate_url, html_config
+        from browser_session import same_site
+        from ai_assist import propose, validate_rules
+        url = validate_url(self.url.get())
+        if role != 'list' and not self.config_data:
+            raise ValueError('请先识别列表或打开工程，再在浏览器中进入详情/阅读页')
+        settings = dict(self.ai_settings)
+        config = self.collect() if self.config_data else None
+        target = TARGETS[self.category.get()]
+        if target not in ('video', 'comic', 'images', 'audio', 'module'):
+            raise ValueError('AI CSS 辅助目前支持视频、漫画、图片、有声小说的 JS 或模块输出；请先选择相应格式')
+        browser = self.browser
+        rows = list(self.rows)
+        def run():
+            if browser:
+                final, html = browser.current_page()
+            else:
+                final, html = self.active_fetcher().get(url)
+            if not same_site(url, final):
+                raise ValueError('当前页面属于其他站点，请重新连接')
+            base = config if config and role != 'list' else html_config(final, target, html)
+            if base['mode'] != 'html':
+                raise ValueError('AI CSS 辅助仅用于 HTML 源，不能覆盖已有接口协议')
+            base = dict(base, useBrowser=bool(browser and browser.browser_mode))
+            rules = propose(settings, html, final, role, self.worker_context.cancel)
+            candidate, extracted = validate_rules(base, html, rules, role)
+            return candidate, extracted if extracted is not None else rows, rules
+        def done(result):
+            candidate, extracted, rules = result
+            preview = json.dumps(rules, ensure_ascii=False, indent=2)
+            if not messagebox.askyesno('应用 AI 规则并检查？', f'页面结构检查通过，候选作品 {len(extracted)} 条。\n\n{preview}\n\n是否应用并继续验证？通过前不能导出。', parent=self):
+                self.status.set('已保留原规则，未应用 AI 建议。')
+                return
+            self.load_config(candidate)
+            self.show_rows(extracted)
+            self.note('已应用 AI 提出的 CSS 规则；正在抽查实际链路。')
+            self.test_first()
+        self.work(run, done)
+
     def show_capabilities(self):
         dialog = tk.Toplevel(self)
         dialog.title('已接入的能力与使用范围')
@@ -430,6 +495,9 @@ class App(tk.Tk):
         text.insert('1.0', '''Playwright / Selenium
 真实浏览器、手动登录与验证、会话 Cookie、点击加载更多、滚动、等待元素、同站 JSON 接口响应记录。
 主界面可读取手动导航后的当前页，更新制源入口并重新验证；内置浏览器也支持。Scrapling 不提供手动导航标签页。
+
+Playwright MCP / AI 辅助
+实际接入 Microsoft Playwright MCP 0.0.83：需 Node.js 18+ 与 install_mcp.ps1 安装的本机依赖。提供隔离浏览器、手动验证、DOM 读取、点击/滚动/等待和制源验证；当前 MCP 通道不记录 JSON 响应体。AI 辅助需要自己填写兼容接口、模型和密钥，发送精简页面结构，返回 CSS 后先本地检查，再由你应用并验证；密钥不保存到工程或源。
 
 Scrapling 0.5
 Fetcher、AsyncFetcher、HTTP 同步/异步会话；StealthyFetcher 同步/异步浏览器抓取与 StealthySession / AsyncStealthySession。浏览器支持同样的页面操作与接口记录，验证仍由你手动完成。
@@ -444,13 +512,16 @@ Scrapy
 默认保持 JS；检查失败不会切换 PY，必须由你确认后才尝试。漫画默认 JS，确认后可输出漫画 PY。分类、筛选、分页、封面、详情、选集和内容都需要对应规则。抓取成功不等于源已可用，检查媒体地址不等于实际起播。
 
 范围
-这是制源工作流的集成，并非所有框架 API 的图形化编辑器。分布式部署、远程爬虫集群、MCP 服务、任意专用加密播放器等没有接入。''')
+这是制源工作流的集成，并非所有框架 API 的图形化编辑器。当前只接入上述 Playwright MCP 工具子集，分布式部署、远程爬虫集群、其他 MCP 服务、任意专用加密播放器等没有接入。''')
         text.configure(state='disabled')
 
     def accept_browser(self):
         if self.browser and not self.browser.ready:
             self.browser.accept()
             self.status.set('正在检查当前网页；如验证未通过，请继续在浏览器中操作')
+        elif self.browser and not self.busy:
+            self.browser_help.pack_forget()
+            self.make_source()
 
     def end_browser(self):
         if self.busy:
@@ -653,6 +724,8 @@ Scrapy
                     self.conversion_status.set('验证未通过，已阻止导出 · 可保存工程继续适配')
                 self.status.set('检查未通过：' + str(error).splitlines()[0][:180])
                 self.note(str(error))
+                if self.browser and getattr(self.browser, 'ready', False) and '人工验证' in str(error):
+                    self.browser_help.pack(fill='x', before=self.treeframe, pady=(0, 10))
                 if not self.details_visible:
                     self.toggle_details()
                 if self.failed_config and self.failed_config.get('target') in ('video', 'comic') and not self.failed_config.get('useBrowser'):
@@ -827,6 +900,7 @@ Scrapy
             from verifier import verify_with_fallback
             rows = list(self.rows)
             signature = self.fingerprint(c)
+            retry_browser = self.browser_engine.get() == '推荐浏览器（Edge）'
             self.failed_config = c
             self.validated_signature = None
             self.refresh_export()
@@ -847,7 +921,21 @@ Scrapy
                     self.conversion_status.set('已抽样检查详情、选集和内容地址；导入 App 后可实际播放或阅读。')
             def run():
                 fetcher = self.active_fetcher()
-                checked, report = verify_with_fallback(c, rows, fetcher, allow_python=allow_python)
+                try:
+                    checked, report = verify_with_fallback(c, rows, fetcher, allow_python=allow_python)
+                except ValueError as error:
+                    if retry_browser and c['mode'] == 'html' and not c.get('useBrowser') and not allow_python:
+                        import re
+                        pages = list(getattr(fetcher, 'pages', {}).values())
+                        if not pages and rows:
+                            try:
+                                pages = [fetcher.get(rows[0]['id'])[1]]
+                            except ValueError:
+                                pass
+                        dynamic = any(re.search(r'<iframe\b|id\s*=\s*[\"\x27]kt_player|class\s*=\s*[\"\x27][^\"\x27]*\bplayer\b', page, re.I) for page in pages)
+                        if dynamic or re.search(r'HTTP 403|NEED_WEBVIEW_VERIFY|人工验证|证书校验', str(error)):
+                            raise BrowserRequired('静态页面未读到可用播放器，将在浏览器中继续验证：' + str(error), c['url']) from error
+                    raise
                 if self.adaptive_enabled and hasattr(fetcher, 'pages'):
                     try:
                         count = self.adaptive_store.learn(checked, rows, fetcher)
@@ -901,6 +989,20 @@ Scrapy
 
 if __name__ == '__main__':
     import sys
+    if len(sys.argv) == 4 and sys.argv[1] == '--https-check':
+        from network_tls import trust_context
+        from core import validate_url
+        try:
+            url = validate_url(sys.argv[2])
+            if not url.startswith('https://'):
+                raise ValueError('检查网址必须使用 HTTPS')
+            final, html = Fetcher().get(url)
+            report = {'ok': True, 'url': final, 'body_bytes': len(html.encode('utf-8')),
+                'verified_tls': True, 'root_certificates': trust_context().cert_store_stats()['x509_ca']}
+        except Exception as error:
+            report = {'ok': False, 'error': str(error)}
+        Path(sys.argv[3]).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+        sys.exit(0 if report['ok'] else 1)
     if len(sys.argv) == 3 and sys.argv[1] == '--engine-check':
         from browser_check import browser_checks
         try:

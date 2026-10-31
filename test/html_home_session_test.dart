@@ -125,6 +125,20 @@ void main() {
     expect(source.copyWith(name: '自定义名称').html, html);
   });
 
+  test('用户听书合集完整文件可导入并注入宿主 SDK', () async {
+    final imported = HtmlHomeImport.decode(
+      '听书合集.html',
+      File('sources/web/听书合集.html').readAsBytesSync(),
+    );
+    expect(imported.name, '听书');
+    expect(imported.html, contains('name="lumebox-version" content="1.0.1"'));
+    store.upsert(imported);
+    final session = await start(home: imported);
+    final page = await get(session.page);
+    expect(page.$1, 200);
+    expect(page.$2, contains('window.fm='));
+  });
+
   test('拒绝损坏、非 HTML、错误编码和过大的导入文件', () {
     expect(
       () => HtmlHomeImport.decode('x.js', utf8.encode(html)),
@@ -206,6 +220,26 @@ void main() {
     });
     expect((failed as Map)['ok'], false);
     expect(failed['status'], 403);
+  });
+
+  test('HTTP 请求兼容使用 options.data 的网页脚本', () async {
+    late http.Request seen;
+    final session = await start(
+      send: (request) async {
+        seen = request;
+        return http.Response('ok', 200);
+      },
+    );
+    final result = await session.dispatch('request', {
+      'url': 'https://fixture.invalid/api',
+      'options': {
+        'method': 'POST',
+        'data': {'q': '中文'},
+      },
+    }) as Map;
+    expect(result['ok'], true);
+    expect(seen.body, '{"q":"中文"}');
+    expect(seen.headers['Content-Type'], 'application/json');
   });
 
   test('资源转发使用正确请求头，保留图片响应并限制访问协议', () async {

@@ -504,6 +504,13 @@ void main() {
       (call) async {
         expect(call.method, 'openFile');
         expect((call.arguments as Map)['multiple'], true);
+        final groups = (call.arguments as Map)['acceptedTypeGroups'] as List;
+        final htmlGroup = groups.single as Map;
+        expect(htmlGroup['extensions'], containsAll(['html', 'htm']));
+        expect(
+          htmlGroup['uniformTypeIdentifiers'],
+          containsAll(['public.html', 'public.plain-text', 'public.data']),
+        );
         return selected;
       },
     );
@@ -642,6 +649,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(manager.sources.length, 2);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('有声小说筛选下仍可找到 HTML 导入入口', (tester) async {
+    await pump(tester);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('video-source-type-audio')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('video-source-type-audio')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('video-import-html')), findsOneWidget);
   });
 
   testWidgets('Kazumi 独立入口预填官方订阅，取消不写入任何源', (tester) async {

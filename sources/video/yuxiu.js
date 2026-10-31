@@ -1,4 +1,4 @@
-// LumeSource: {"id":"yuxiu_video","name":"玉羞园","version":"1.0.0","category":"video","contentCategory":"adult","mirrors":["https://yhh.yxy881p.icu"]}
+// LumeSource: {"id":"yuxiu_video","name":"玉羞园","version":"1.0.0","category":"video","contentCategory":"adult","mirrors":["https://yhh.yxy881p.icu"],"network":"direct"}
 // LumeRuntime: javascript
 //
 // 站点：玉羞园（https://yhh.yxy881p.icu）—— xvideos 镜像站：模板、播放器、缩略图全是 xvideos 原版，

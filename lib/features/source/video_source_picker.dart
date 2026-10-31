@@ -507,7 +507,13 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
           XTypeGroup(
             label: 'HTML 网页',
             extensions: ['html', 'htm'],
-            uniformTypeIdentifiers: ['public.html'],
+            // Files providers sometimes expose downloaded HTML as plain text
+            // or generic data; HtmlHomeImport validates the actual contents.
+            uniformTypeIdentifiers: [
+              'public.html',
+              'public.plain-text',
+              'public.data',
+            ],
             mimeTypes: ['text/html'],
           ),
         ],
@@ -1458,9 +1464,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                                   runtimeGroup(VideoSourceType.kazumi),
                                   runtimeGroup(VideoSourceType.module),
                                 ],
-                                if (showWeb &&
-                                    (type != VideoSourceType.audio ||
-                                        filteredWeb.isNotEmpty)) ...[
+                                if (showWeb) ...[
                                   KeyedSubtree(
                                     key: const ValueKey(
                                       'video-source-group-web',

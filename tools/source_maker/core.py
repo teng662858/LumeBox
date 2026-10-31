@@ -13,7 +13,7 @@ from collections import Counter
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit, quote
-from urllib.request import Request, build_opener, HTTPCookieProcessor, HTTPRedirectHandler
+from urllib.request import Request, build_opener, HTTPCookieProcessor, HTTPRedirectHandler, HTTPSHandler
 from http.cookiejar import CookieJar
 
 from bs4 import BeautifulSoup
@@ -105,8 +105,9 @@ def entry_redirect(html, base):
 def navigation_link(url):
     p = urlsplit(url)
     root_without_item = not p.path.strip('/') and not any(k in ('p', 'id', 'video_id', 'vod_id', 'book_id', 'm') and v for k, v in parse_qsl(p.query))
-    return root_without_item or bool(re.search(
-        r'/(?:c|privacy|terms|dmca|2257|contact|about|help|faq|vip-info|points|featured|recommended|accounts?|login|signup|register|search|tags?|categories|category|types?|genres?|authors?|actors?|models?|users?|cdn-cgi)(?:/|$)',
+    catalogue_index = bool(re.fullmatch(r'/(?:videos|movies|latest|recent|new|home)/?', p.path, re.I))
+    return root_without_item or catalogue_index or bool(re.search(
+        r'/(?:c|a-z|alphabet|privacy|terms|dmca|2257|contact|about|help|faq|vip-info|points|featured|recommended|accounts?|login|signup|register|search|tags?|categories|category|types?|genres?|authors?|actors?|models?|pornstars?|performers?|users?|cdn-cgi)(?:/|$)',
         p.path, re.I))
 
 
@@ -140,7 +141,8 @@ class EncodedRedirects(HTTPRedirectHandler):
 
 class Fetcher:
     def __init__(self, cancel_event=None):
-        self.opener = build_opener(EncodedRedirects(), HTTPCookieProcessor(CookieJar()))
+        from network_tls import trust_context
+        self.opener = build_opener(EncodedRedirects(), HTTPCookieProcessor(CookieJar()), HTTPSHandler(context=trust_context()))
         self.cancel_event = cancel_event
 
     def request(self, options):
@@ -157,6 +159,11 @@ class Fetcher:
             response = self.opener.open(request, timeout=18)
         except HTTPError as error:
             response = error
+        except URLError as error:
+            from network_tls import certificate_error, CertificateTrustError
+            if certificate_error(error):
+                raise CertificateTrustError(error) from error
+            raise
         with response as r:
             raw = r.read(MAX_BYTES + 1)
             if len(raw) > MAX_BYTES:
@@ -192,6 +199,9 @@ class Fetcher:
                 hint = '；站点要求等待后重试' if code == 429 or delay > 8 else '；可能需要登录、网页验证或稍后重试'
                 raise ValueError(f'站点返回 HTTP {code}' + hint) from e
             except (URLError, TimeoutError) as e:
+                from network_tls import certificate_error, CertificateTrustError
+                if certificate_error(e):
+                    raise CertificateTrustError(e) from e
                 if attempt == 0:
                     if cancel.wait(.5):
                         raise InterruptedError('已取消制作')
@@ -222,8 +232,9 @@ class Fetcher:
                 body = raw.decode('utf-8-sig' if raw.startswith(b'\xef\xbb\xbf') else charset, errors='replace')
             except LookupError:
                 body = raw.decode('utf-8', errors='replace')
-            if re.search(r'<title[^>]*>\s*(Just a moment|Attention Required)|cf-chl-|验证您是真人', body, re.I):
-                raise ValueError('站点需要人工验证，请点击“用浏览器重试”，手动完成后继续。')
+            from page_verification import requires_verification, MESSAGE
+            if requires_verification(body):
+                raise ValueError(MESSAGE)
             return r.url, body
 
 
@@ -260,7 +271,11 @@ def guess_pattern(rows, base):
         if numeric:
             path = re.escape(p.path[:numeric.start()]) + r'/[^/?#]+(?:/[^?#]*)?'
         elif '/' in p.path.strip('/'):
-            path = re.escape(p.path.rsplit('/', 1)[0]) + r'/[^/?#]+'
+            path = re.escape(p.path.rstrip('/').rsplit('/', 1)[0]) + r'/[^/?#]+/?'
+        elif re.fullmatch(r'/[a-fA-F0-9]{24,64}/?', p.path):
+            path = r'/[a-fA-F0-9]{24,64}/?'
+        elif re.search(r'\.html?$', p.path, re.I):
+            path = r'/[^/?#]+\.html?'
         else:
             path = re.sub(r'\d+', lambda _: r'\d+', re.escape(p.path))
         groups[path] += 3 if r['cover'] else 1
@@ -269,11 +284,27 @@ def guess_pattern(rows, base):
     return '^' + re.escape(urlsplit(base).scheme + '://' + host) + groups.most_common(1)[0][0] + r'(?:[?#]|$)'
 
 
-def discover(url, category='video', fetcher=None):
+def html_config(url, category='video', html=''):
+    config = {'url': url, 'id': 'web-' + hashlib.sha256(url.encode()).hexdigest()[:12],
+        'name': site_name(BeautifulSoup(html, 'html.parser'), url), 'category': category,
+        'mode': 'html', 'api': '', 'list': url, 'search': '', 'links': '',
+        'chapters': r'(?:/play/|/vodplay/|/chapter/|/read/|/\d+/\d+\.html)', 'contentId': '',
+        'categoryLinks': r'/(?:category|categories|catalog|type|genre)/',
+        'filterFormIndex': -1, 'filterAction': '', 'filterKeys': [], 'filterNames': {}}
+    return target_config(config, category)
+
+
+def discover(url, category='video', fetcher=None, *, follow_catalogue=True):
     if category == 'novel':
         raise ValueError('当前 LumeBox 不支持文字小说，请选择有声小说')
     fetcher = fetcher or Fetcher()
-    final, html = fetcher.get(url, purpose='list') if getattr(fetcher, 'browser_mode', False) else fetcher.get(url)
+    try:
+        final, html = fetcher.get(url, purpose='list') if getattr(fetcher, 'browser_mode', False) else fetcher.get(url)
+    except ValueError as error:
+        from network_tls import CertificateTrustError
+        if not getattr(fetcher, 'browser_mode', False) and (isinstance(error, CertificateTrustError) or re.search(r'HTTP 403|人工验证|网页验证', str(error))):
+            raise BrowserRequired(str(error)) from error
+        raise
     redirects = []
     if not getattr(fetcher, 'browser_mode', False):
         for _ in range(3):
@@ -304,13 +335,7 @@ def discover(url, category='video', fetcher=None):
             redirects.append(final)
             final, html = fetcher.get(targets[0])
             soup = BeautifulSoup(html, 'html.parser')
-    name = site_name(soup, final)
-    config = {'url': final, 'id': 'web-' + hashlib.sha256(final.encode()).hexdigest()[:12],
-              'name': name, 'category': category, 'mode': 'html', 'api': '', 'list': final,
-              'search': '', 'links': '', 'chapters': r'(?:/play/|/vodplay/|/chapter/|/read/|/\d+/\d+\.html)', 'contentId': '',
-              'categoryLinks': r'/(?:category|categories|catalog|type|genre)/',
-              'filterFormIndex': -1, 'filterAction': '', 'filterKeys': [], 'filterNames': {}}
-    config = target_config(config, category)
+    config = html_config(final, category, html)
     if redirects:
         config['entryRedirects'] = redirects
     if category in ('audio', 'video', 'module') and re.search(r'<(?:rss|feed)\b', html, re.I):
@@ -399,6 +424,20 @@ def discover(url, category='video', fetcher=None):
         if payload_rows:
             config.update(structuredList=True, profile='公开结构化 JSON')
             card_rows = all_rows = payload_rows
+    if follow_catalogue and not card_rows and sum(bool(row.get('cover')) for row in all_rows) < 3:
+        candidates = []
+        for a in soup.select('a[href]'):
+            candidate = urljoin(final, a['href'])
+            parts = urlsplit(candidate)
+            if parts.netloc == urlsplit(final).netloc and candidate != final and re.fullmatch(r'/(?:videos?|movies?|latest|recent|new)/?', parts.path) and candidate not in candidates:
+                candidates.append(candidate)
+        for candidate in candidates[:2]:
+            try:
+                return discover(candidate, category, fetcher, follow_catalogue=False)
+            except (ValueError, URLError):
+                continue
+        if candidates:
+            raise BrowserRequired('首页主要是分类导航；已找到列表入口，请在浏览器中继续读取真实作品', candidates[0])
     if not all_rows:
         if len(soup.select('button')) >= 5 and soup.select('.track-step,.choose-block,.wv-destination'):
             raise ValueError('当前是多步选择或推广落地页，未发现作品目录；请手动进入实际作品列表后，填写该列表的网址。')
@@ -409,9 +448,9 @@ def discover(url, category='video', fetcher=None):
     visual_rows = [row for row in all_rows if row.get('cover')]
     pattern_rows = card_rows or (visual_rows if len(visual_rows) >= 3 else all_rows)
     config['links'] = guess_pattern(pattern_rows, final)
-    rows = card_rows or html_items(html, final, config['links'])
+    rows = card_rows or [row for row in html_items(html, final, config['links']) if not navigation_link(row['id'])]
     if not rows:
-        raise ValueError('没有识别到内容链接。页面可能由 JavaScript 动态加载，请填写实际列表页或公开 JSON 接口')
+        raise BrowserRequired('没有识别到作品链接，页面可能动态加载；请在浏览器中继续或进入实际作品列表')
     path = urlsplit(rows[0]['id']).path
     prefix = path.rsplit('/', 1)[0] + '/' if '/' in path.strip('/') else re.split(r'\d', path, maxsplit=1)[0]
     if "'" not in prefix:
@@ -442,13 +481,15 @@ def generate(config):
         validate_url(config['api'])
     root = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
     api_mode = config['mode'] in ('mediacms', 'wordpress')
-    runtime = (root / ('yeguo_runtime.js' if config['mode'] == 'yeguo' else 'drama_runtime.js' if config['mode'] == 'zhilian' else 'api_runtime.js' if api_mode else 'runtime.js')).read_text(encoding='utf-8')
+    runtime = (root / ('gaze_runtime.js' if config['mode'] == 'gaze' else 'yeguo_runtime.js' if config['mode'] == 'yeguo' else 'drama_runtime.js' if config['mode'] == 'zhilian' else 'api_runtime.js' if api_mode else 'runtime.js')).read_text(encoding='utf-8')
     helpers = (root / 'html_rules.js').read_text(encoding='utf-8')
     helpers += '\n' + (root / 'page_actions.js').read_text(encoding='utf-8')
     helpers += '\n' + (root / 'structured_rules.js').read_text(encoding='utf-8')
     identity = {k: config[k] for k in ('id', 'name', 'category')}
     identity.update(version=config.get('version', '1.0.0'), mirrors=[config['url']])
     identity['mediaType'] = config['media']
+    if config['mode'] == 'gaze':
+        identity['icon'] = 'https://gaze.red/favicon.png'
     content_category = config.get('contentCategory', '')
     if config['target'] == 'video' and content_category:
         if content_category not in ('movie', 'adult', 'unclassified'):

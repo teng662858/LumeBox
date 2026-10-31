@@ -194,6 +194,8 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
       'fwd',
       'md5',
       'txt',
+      'html',
+      'htm',
     ],
     uniformTypeIdentifiers: <String>[
       'com.netscape.javascript-source',
@@ -677,6 +679,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
           _hint = '已从剪贴板填入 ${input.urls.length} 个地址，点「拉取并导入」';
         case SourceImportInputKind.checksum:
         case SourceImportInputKind.backup:
+        case SourceImportInputKind.html:
         case SourceImportInputKind.unknown:
           _error = input.describeFailure;
       }
@@ -705,6 +708,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
           collections.add((text: input.text, label: label));
         case SourceImportInputKind.checksum:
         case SourceImportInputKind.backup:
+        case SourceImportInputKind.html:
         case SourceImportInputKind.unknown:
           skipped.add(
             SourceImportSkip(label: label, message: input.describeFailure),

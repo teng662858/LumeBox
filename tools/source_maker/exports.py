@@ -38,6 +38,8 @@ def export_source(config, rows=()):
     c = target_config(config, config.get('target', config['category']))
     script = generate(c)  # Shared metadata/rule validation.
     target = c['target']
+    if c['mode'] == 'gaze' and target != 'video':
+        raise ValueError('注视影视目前只支持视频 JS 网页播放，请保持 JS 格式')
     if c['mode'] in ('zhilian','yeguo') and target != 'video':
         raise ValueError('该短剧游客接口目前只支持视频 JS，请保持 JS 格式')
     if c['mode'] in ('mediacms', 'wordpress', 'feed','inline-media') and target not in ('video', 'audio', 'module'):

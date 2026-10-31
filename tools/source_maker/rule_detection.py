@@ -10,6 +10,8 @@ CARD_PRESETS = [
     ('图文目录', '.video-item, .video-card, .post-item, article.type-post'),
     ('缩略图作品卡片', '.onevideothumb, a.clip-link'),
     ('Bootstrap 作品卡片', '.card'),
+    ('缩略图目录', '.item.big, .coll-art, .item.thumb, .list_box a'),
+    ('语义作品卡片', 'article'),
 ]
 CHAPTER_PRESETS = ['.wp-manga-chapter a', '#chapterlist a', '.chapter-list a', '.chapters a',
                    '.module-play-list a', '.playlist a', '.stui-content__playlist a', '.myui-content__list a',
@@ -36,6 +38,8 @@ def inferred_cards(html, base, adaptive_store=None):
             if not link:
                 continue
             url = urljoin(base, link.attrib['href'])
+            if selector == 'article' and urlsplit(url).netloc != urlsplit(base).netloc:
+                continue
             if urlsplit(url).scheme not in ('http', 'https') or url in seen or navigation_link(url):
                 continue
             images, headings = card.css('img,source,[style*="background-image"],[data-background],video[poster]'), card.css('h2,h3,h4,h5,.title,.card-title')

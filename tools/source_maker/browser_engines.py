@@ -38,6 +38,7 @@ def run_automation_worker(options, send):
     network = []
     started = False
     from browser_actions import program, network_row
+    from page_verification import requires_verification, MESSAGE
     try:
         if engine == 'playwright':
             from playwright.sync_api import sync_playwright
@@ -154,7 +155,7 @@ def run_automation_worker(options, send):
             if not same_site(url, current()) or info['ready'] not in ('interactive', 'complete'):
                 send({'event': 'notice', 'message': '请回到目标站点，等页面加载完成后继续'})
                 return
-            if 'cf-chl-' in info['html'] or 'just a moment' in info.get('title', '').lower():
+            if requires_verification(info['html']):
                 send({'event': 'notice', 'message': '页面仍在验证，请手动完成后继续'})
                 return
             accepted = True
@@ -181,7 +182,7 @@ def run_automation_worker(options, send):
                         raise ValueError('当前页属于其他站点，请返回原站点或重新连接')
                     if len(info['html'].encode('utf-8')) > LIMIT:
                         raise ValueError('网页超过 6MB')
-                    if info['ready'] not in ('interactive', 'complete') or 'cf-chl-' in info['html'] or 'just a moment' in info.get('title', '').lower():
+                    if info['ready'] not in ('interactive', 'complete') or requires_verification(info['html']):
                         raise ValueError('页面尚未加载或验证完成，请稍后重试')
                     send({'ok': True, 'url': location, 'html': info['html']})
                 except Exception as error:
@@ -190,6 +191,27 @@ def run_automation_worker(options, send):
             if request['action'] == 'network':
                 collect_network()
                 send({'ok': True, 'network': network})
+                continue
+            if request['action'] == 'embed':
+                try:
+                    target = validate_url(request['url'])
+                    if engine != 'playwright':
+                        raise ValueError('跨站播放器 DOM 读取当前仅支持推荐浏览器 / Playwright')
+                    # Read an already loaded frame, never navigate the main session
+                    # to an arbitrary foreign URL or copy its cookies elsewhere.
+                    frames = [frame for frame in page.frames if frame != page.main_frame and frame.url == target]
+                    if not frames:
+                        raise ValueError('源站声明的播放器尚未加载，或发生跨站跳转；需要人工验证或单独适配')
+                    frame = frames[0]
+                    frame.evaluate(program({}, '', 'media'))
+                    info = frame.evaluate(SNAPSHOT_SCRIPT)
+                    if requires_verification(info['html']):
+                        raise ValueError(MESSAGE)
+                    if len(info['html'].encode('utf-8')) > LIMIT:
+                        raise ValueError('播放器页面超过 6MB')
+                    send({'ok': True, 'url': frame.url, 'html': info['html']})
+                except Exception as error:
+                    send({'ok': False, 'error': str(error)})
                 continue
             try:
                 if not accepted:
@@ -203,6 +225,8 @@ def run_automation_worker(options, send):
                     apply_actions(request.get('actions'), request.get('selector', ''), request.get('purpose', ''))
                 info = capture()
                 collect_network()
+                if requires_verification(info['html']):
+                    raise ValueError(MESSAGE)
                 if len(info['html'].encode()) > LIMIT:
                     raise ValueError('网页超过 6MB')
                 if not same_site(url, current()):

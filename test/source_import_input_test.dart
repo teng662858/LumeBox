@@ -8,8 +8,11 @@ import 'package:lume_box/core/source/source_backup.dart';
 /// 这一层是「本地文件与剪贴板共用的一遍识别」，判定顺序本身就是口径：
 /// 备份必须排在脚本之前（备份里带着脚本原文，否则会被当成脚本导入）。
 void main() {
-  SourceImportInput classify(String text, {String name = '', int urlLimit = 20}) =>
-      SourceImportInput.classify(text, name: name, urlLimit: urlLimit);
+  SourceImportInput classify(
+    String text, {
+    String name = '',
+    int urlLimit = 20,
+  }) => SourceImportInput.classify(text, name: name, urlLimit: urlLimit);
 
   group('脚本', () {
     test('头部注释声明的函数式脚本', () {
@@ -39,6 +42,26 @@ void main() {
         input.text.startsWith('\uFEFF'),
         isTrue,
         reason: '剥 BOM 由落库前的统一预处理负责，这里不重复动原文',
+      );
+    });
+  });
+
+  group('HTML 网页', () {
+    test('文件名或 HTML 内容给出网页主页导入指引', () {
+      final byName = classify(
+        '<html><body>homepage</body></html>',
+        name: '听书合集.html',
+      );
+      final byContent = classify('<!doctype html><html></html>');
+      expect(byName.kind, SourceImportInputKind.html);
+      expect(byName.isImportable, isFalse);
+      expect(byName.describeFailure, contains('网页'));
+      expect(byContent.kind, SourceImportInputKind.html);
+    });
+    test('脚本中的 HTML 字符串仍按脚本识别', () {
+      expect(
+        classify('var LumeSource = {}; var page = "<html></html>";').kind,
+        SourceImportInputKind.script,
       );
     });
   });

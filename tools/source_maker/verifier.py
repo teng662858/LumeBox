@@ -59,7 +59,7 @@ def execute(script, expression, fetcher=None):
       post:async function(url,body,options){return __host.request(Object.assign({},options||{},{url:url,body:body,method:'POST'}));}};
     ''')
     context.eval(script)
-    context.eval('LumeSource.tools={aes:async function(p){return __aes(JSON.stringify(p));},base64Encode:async function(v){return __b64encode(v);},base64Decode:async function(v){return __b64decode(v);}}; LumeSource.http = __host; var __files=Object.create(null); LumeSource.fs={readText:async function(p){return __files[p]||"";},writeText:async function(p,v){__files[p]=v;}}; LumeSource.web={render:async function(o){var r=await __host.get(o.url,o.waitForSelector||\'\',o.purpose||\'\');return {html:r.body,url:r.url};}}; var __result=null, __error=null, __done=false;')
+    context.eval('LumeSource.tools={aes:async function(p){return __aes(JSON.stringify(p));},base64Encode:async function(v){return __b64encode(v);},base64Decode:async function(v){return __b64decode(v);}}; LumeSource.http = __host; var __files=Object.create(null); LumeSource.fs={readText:async function(p){return __files[p]||"";},writeText:async function(p,v){__files[p]=v;}}; LumeSource.web={episodeSelection:true,render:async function(o){var r=await __host.get(o.url,o.waitForSelector||\'\',o.purpose||\'\');return {html:r.body,url:r.url};}}; var __result=null, __error=null, __done=false;')
     context.eval('(async function(){try{__result=JSON.stringify(await (' + expression + '));}catch(e){__error=String(e);}finally{__done=true;}})();')
     jobs = 0
     while context.execute_pending_job():

@@ -4,6 +4,13 @@ from pathlib import Path
 
 
 def smoke(report):
+    import ssl
+    from network_tls import trust_context
+    from pathlib import Path
+    import certifi
+    context = trust_context()
+    assert context.check_hostname and context.verify_mode == ssl.CERT_REQUIRED
+    assert Path(certifi.where()).is_file() and context.cert_store_stats()['x509_ca'] > 100
     from app import App
     from core import TARGETS, discover, generate, target_config
     from exports import export_source
@@ -27,7 +34,7 @@ def smoke(report):
             app.update()
             assert not app.advanced_pane.winfo_ismapped()
             assert not app.log.winfo_ismapped()
-            for button in (app.analyze_btn, app.export_btn, app.next_btn, app.current_page_btn):
+            for button in (app.analyze_btn, app.export_btn, app.next_btn, app.current_page_btn, app.ai_btn):
                 x, y = button.winfo_rootx() - app.winfo_rootx(), button.winfo_rooty() - app.winfo_rooty()
                 assert button.winfo_ismapped(), button['text']
                 assert 0 <= x and x + button.winfo_width() <= app.winfo_width(), (geometry, button['text'], x)
@@ -86,6 +93,19 @@ def smoke(report):
         assert app.config_data is None and app.artifact is None and not app.rows
         assert not app.browser_actions and app.url.get() == ''
         assert 'disabled' in app.export_btn.state()
+        from ai_assist import validate_rules
+        from core import html_config
+        ai_html = '<article class="video-card"><a href="/item/1"><img src="/one.jpg">Lesson</a></article>'
+        ai_config, ai_rows = validate_rules(html_config('https://fixture.example/'), ai_html,
+            {'listSelector':'article.video-card','linkSelector':'a[href]','coverSelector':'img'}, 'list')
+        assert ai_config['aiAssisted'] and len(ai_rows) == 1
+        from mcp_backend import evaluate_result
+        assert evaluate_result({'content':[{'type':'text','text':'### Result\n"LUME_JSON:{\\"ok\\":true}"'}]})['ok']
+        gaze_config = dict(config, mode='gaze', id='gaze_video', name='注视影视', target='video', category='video', media='video', url='https://gaze.red/', list='https://gaze.red/', search='', contentCategory='movie')
+        gaze_script = generate(gaze_config)
+        gaze_page = 'https://gaze.red/play/' + 'ab' * 16
+        gaze_content = execute(gaze_script, 'LumeSource.content(' + json.dumps({'id': gaze_page, 'chapterId': gaze_page + '#episode=2'}) + ')')
+        assert gaze_content['kind'] == 'webplayer' and 'data-id="2"' in gaze_content['webPlayerOptions']['episodeSelector']
         Path(report).write_text(json.dumps({'ok': True, 'gui': app.title(), 'items': value['items'], 'formats': formats, 'layouts': layouts, 'conversion_and_stale_export': True, 'adaptive_relocation': True, 'engine_options':len(ENGINES), 'source_bytes': len(script.encode())}, ensure_ascii=False, indent=2), encoding='utf-8')
         return True
     except Exception as e:

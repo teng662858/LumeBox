@@ -3,12 +3,13 @@ import 'source_subscription.dart';
 import '../source/source_package.dart';
 import 'rex_collection.dart';
 
-/// 一份导入输入的形态。本地文件内容与剪贴板文本都可能是这五种之一。
+/// 一份导入输入的形态；本地文件与剪贴板共用识别和入口指引。
 ///
 /// 判定顺序（**顺序有意义**，不能换）：
 /// 1. 空文本 → [unknown]；
 /// 2. **备份 JSON → [backup]**：备份里带着图源脚本原文，因此它同时也「像脚本」，
 ///    必须在脚本判定之前拦下，否则用户粘贴一份备份会被当成脚本导入；
+/// HTML 网页在脚本判定前识别，引导到网页主页入口。
 /// 3. 脚本正文 → [script]（有头部元信息注释，或正文含 `LumeSource`）；
 /// 4. 一行一个 http(s) 地址 → [manifest]（`.js.md5` 校验清单也走这条）；
 /// 5. 裸 MD5 校验值 → [checksum]：本机导入**拿不到**脚本实体地址，只能明确告诉
@@ -17,6 +18,7 @@ import 'rex_collection.dart';
 enum SourceImportInputKind {
   script('脚本'),
   collection('Rex 集合'),
+  html('网页文件'),
   manifest('地址清单'),
   checksum('校验值'),
   backup('备份'),
@@ -65,6 +67,8 @@ class SourceImportInput {
     SourceImportInputKind.backup =>
       '$_subject看起来是源备份：请到「设置 → 源总管理 → 恢复源」里恢复它，'
           '导入弹窗不接受备份文本。',
+    SourceImportInputKind.html =>
+      '$_subject是 HTML 网页，不是听书源脚本。请回到视频源管理，选择「网页」→「导入 HTML 文件」。',
     SourceImportInputKind.unknown => '$_subject里没有识别出源脚本或订阅地址。',
     _ => '',
   };
@@ -89,6 +93,9 @@ class SourceImportInput {
         kind: SourceImportInputKind.backup,
         name: name,
       );
+    }
+    if (_looksLikeHtml(text, name)) {
+      return SourceImportInput._(kind: SourceImportInputKind.html, name: name);
     }
     if (RexCollection.matches(text)) {
       return SourceImportInput._(
@@ -129,4 +136,11 @@ class SourceImportInput {
     if (!text.startsWith('{')) return false;
     return text.contains('"format"') && text.contains('lume.sources');
   }
+
+  static bool _looksLikeHtml(String text, String name) =>
+      RegExp(r'\.html?$', caseSensitive: false).hasMatch(name) ||
+      RegExp(
+        r'^(?:<!--[\s\S]*?-->\s*)*(?:<!doctype\s+html\b|<html\b)',
+        caseSensitive: false,
+      ).hasMatch(text);
 }

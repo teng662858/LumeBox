@@ -117,7 +117,7 @@ function ruleItems(html, base) {
 function navigationAddress(id) {
   var path=id.replace(/^https?:\/\/[^/]+/i,'').split(/[?#]/)[0]||'/';
   if(path==='/'&&!/[?&](?:p|id|video_id|vod_id|book_id|m)=[^&#]+/.test(id))return true;
-  return /\/(?:c|privacy|terms|dmca|2257|contact|about|help|faq|vip-info|points|featured|recommended|accounts?|login|signup|register|search|tags?|categories|category|types?|genres?|authors?|actors?|models?|users?|cdn-cgi)(?:\/|$)/i.test(path);
+  return /^\/(?:videos|movies|latest|recent|new|home)\/?$/i.test(path)||/\/(?:c|a-z|alphabet|privacy|terms|dmca|2257|contact|about|help|faq|vip-info|points|featured|recommended|accounts?|login|signup|register|search|tags?|categories|category|types?|genres?|authors?|actors?|models?|pornstars?|performers?|users?|cdn-cgi)(?:\/|$)/i.test(path);
 }
 function ruleChapters(html,base) {
   if(!C.chapterSelector)return anchors(html,base,C.chapters);

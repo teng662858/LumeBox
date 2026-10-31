@@ -104,6 +104,14 @@ function payloadMedia(html,base) {
   });return candidates.filter(Boolean)[0]||'';
 }
 function playerLiteralMedia(html,base) {
+  // KVS exposes this work's public source in a flashvars object. Read literals
+  // only; function/ wrappers and license transformations are not direct URLs.
+  if(/id\s*=\s*["']kt_player["']/i.test(html)){
+    var fv=/\b(?:var|let|const)\s+flashvars\s*=\s*\{([\s\S]*?)\}\s*;/.exec(html);
+    if(fv){var kvs=/\b(?:video_url|video_alt_url)\s*:\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g,match;
+      while((match=kvs.exec(fv[1]))){var publicUrl=literalString(match[1]);if(/^https?:\/\//i.test(publicUrl)&&!/\bfunction\//i.test(publicUrl)&&/\.(?:mp4|m3u8|webm)\/?(?:[?#]|$)/i.test(publicUrl))return abs(publicUrl,base);}
+    }
+  }
   if(!/<(?:video|audio)\b/i.test(html)&&!/jwplayer\s*\(|videojs\s*\(/i.test(html))return '';
   var nodes=selectNodes(parseTree(html),'script'),found='';
   nodes.forEach(function(n){if(found||n.attrs.src)return;var raw=nodeRawText(n);

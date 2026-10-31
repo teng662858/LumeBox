@@ -337,7 +337,9 @@ class HtmlHomeSession {
           throw const FormatException('不支持的请求方法');
         }
         final headers = htmlHomeHeaders(options['headers']);
-        final rawBody = options['body'];
+        final rawBody = options.containsKey('body')
+            ? options['body']
+            : options['data'];
         final body = rawBody is Map || rawBody is List
             ? jsonEncode(rawBody)
             : rawBody?.toString();

@@ -52,7 +52,7 @@ class SimpleAppTests(unittest.TestCase):
             self.app.update()
             self.assertFalse(self.app.advanced_pane.winfo_ismapped())
             self.assertFalse(self.app.log.winfo_ismapped())
-            for button in (self.app.analyze_btn, self.app.export_btn, self.app.next_btn, self.app.current_page_btn):
+            for button in (self.app.analyze_btn, self.app.export_btn, self.app.next_btn, self.app.current_page_btn, self.app.ai_btn):
                 self.assertTrue(button.winfo_ismapped())
                 bottom = button.winfo_rooty() - self.app.winfo_rooty() + button.winfo_height()
                 self.assertLessEqual(bottom, self.app.winfo_height())
@@ -258,3 +258,27 @@ class SimpleAppTests(unittest.TestCase):
         self.assertTrue(self.app.collect()['useBrowser'])
         self.assertEqual(self.app.rows[0]['id'], 'https://fixture.test/item/1')
         self.assertNotIn('disabled', self.app.export_btn.state(), self.app.status.get())
+
+    def test_ai_proposal_requires_application_and_real_chain_check(self):
+        self.app.url.set('https://fixture.test/')
+        self.app.ai_settings = {'endpoint':'https://model.test/chat/completions','model':'test','key':'must-not-export'}
+        rules = {'listSelector':'article.video-card', 'linkSelector':'a[href]', 'titleSelector':'a', 'coverSelector':'img'}
+        with patch('ai_assist.propose',return_value=rules), patch('app.messagebox.askyesno',return_value=False):
+            self.app.ai_analyze()
+            self.wait()
+        self.assertIsNone(self.app.config_data)
+        with patch('ai_assist.propose',return_value=rules), patch('app.messagebox.askyesno',return_value=True):
+            self.app.ai_analyze()
+            self.wait()
+        self.assertIsNotNone(self.app.artifact,self.app.status.get())
+        self.assertNotIn('disabled',self.app.export_btn.state())
+        self.assertNotIn(b'must-not-export',self.app.artifact[2])
+
+    def test_continue_after_detail_verification_reuses_ready_browser(self):
+        from unittest.mock import Mock
+        self.app.browser=Mock()
+        self.app.browser.ready=True
+        with patch.object(self.app,'make_source') as make:
+            self.app.accept_browser()
+        make.assert_called_once()
+        self.app.browser.accept.assert_not_called()
