@@ -1,4 +1,4 @@
-// LumeSource: {"id":"ziziys_video","name":"子子影视","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.ziziys.org","https://www.ziziys.net","https://www.ziziys.com"],"network":"direct","icon":"https://www.ziziys.org/favicon.ico"}
+// LumeSource: {"id":"ziziys_video","name":"子子影视","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.ziziys.org","https://www.ziziys.net","https://www.ziziys.com"],"network":"direct","icon":"https://zizi.staticimgjs.org/uploads/2026/05/logo-2.png"}
 // LumeRuntime: javascript
 //
 // 站点：子子影视（发布页 https://www.ziziys.info/ → 主用 www.ziziys.org；
@@ -382,7 +382,7 @@ var LumeSource = {
   requiresSettings: ['commonSettings', 'settingsActions'],
   mirrors: MIRRORS,
   network: 'direct',
-  icon: HOST + '/favicon.ico',
+  icon: 'https://zizi.staticimgjs.org/uploads/2026/05/logo-2.png',
   commonSettings: [
     {
       key: 'quality', title: '清晰度', type: 'select',
