@@ -64,6 +64,22 @@ CDN 路径推导（`m3u8/<32位hash>` 采样 6 条，md5 各种拼法全不符�
 
 `video/bttwo.js`：两个BT影视（发布页 bttwo.vip；bttwo.life/.org/.top/.me、bttwoo.com、bttwo.net）。与 4k影视同一套 CMS（`/play/ch…`、`/filter?page=N`、同一份 `nbmovie_wasm`）：全部影片/电影/剧集/动漫 + 站内搜索；播放地址由站点 wasm 现算签名 → `content()` 打开 `/play/<slug>`（网页播放器，选集在页面里点）。
 
+## 2026-11-01 歪比巴卜 v3.0.0（wbbb_video，详见 docs/2026-11-01_歪比巴卜源v3.md）
+
+`video/wbbb.js` 现在**原生直链**，不再走网页播放器。播放地址是两层加密，两层都在源里用纯 JS 复现：
+
+1. **拿载荷**：`Q = 密文 + '&next=' + …`、`key22 = md5(Q) 后 20 位 + ' P'`、
+   `key = base64(rc4(key22, md5(Q+'stray')))`、`ckey = base64(rc4(key22, md5(播放器域名+'stray')))`，
+   `POST https://xn--qvr2v.850088.xyz/player/api.php`（key/ckey 错一个就 404，vkey 不校验）；
+2. **解媒体地址**：`K = rc4(key22, atob(aes_key))`、`IV = rc4(key22, atob(aes_iv))`，
+   再 `AES-128-CBC(PKCS#7)(atob(resp.url), K, IV)` —— **坑是 aes_key/aes_iv 要先过一遍 RC4**，
+   直接当 AES key 解出来是乱码。
+
+实测：电影整片 mp4（`wxs…stodownload…filename=BBA.mp4`，206 + video/mp4，976 MB）、
+剧集 HLS（`…/醉梦EP01.m3u8`，206 + #EXTM3U 40,452 B）。`content()` 先试直链，解不出才退回网页播放器。
+章节按「线路 × 分集」全量展开（高清C · 1080P / 蓝光B · 1080P / BF有广 · HD …）。
+站点对高频请求回 429，连续验证要间隔几十秒。
+
 ## 2026-11-01 歪比巴卜 v2.0.0（wbbb_video，详见 docs/2026-11-01_歪比巴卜源v2.md）
 
 `video/wbbb.js`：歪比巴卜（发布页 xn--clr79vmzkema.com；节点 wbbb1.com / v.wbbb1.com / www.wbbb1.com）。
