@@ -22,9 +22,12 @@
 
 var HOST = 'https://www.iyf.tv';
 var API_HOST = 'https://m10.iyf.tv';
+// 镜像：只有 www.iyf.tv 实测可用（首页能取到 pConfig、接口签名通过）。
+// aiyifan.tv 打开是 200 但页面里没有 pConfig（过不了签名，选了也用不了），已移出；
+// wyav.tv / flyv.tv / jssp.tv 是站内配置里列的同内容域名，本机（含代理）连不上，
+// 按规则留在 mirrors 供手选，脚本自动解析永远走 www.iyf.tv。
 var MIRRORS = [
   'https://www.iyf.tv',
-  'https://www.aiyifan.tv',
   'https://www.wyav.tv',
   'https://www.flyv.tv',
   'https://www.jssp.tv'

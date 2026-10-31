@@ -1,4 +1,4 @@
-// LumeSource: {"id":"didahd_video","name":"嘀嗒影视","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.didahd.xyz","https://www.dida.im"],"network":"direct","icon":"https://www.didahd.xyz/template/mytheme/statics/img/favicon.ico"}
+// LumeSource: {"id":"didahd_video","name":"嘀嗒影视","version":"1.0.1","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.didahd.xyz","https://www.didahd.pro"],"network":"direct","icon":"https://www.didahd.xyz/template/mytheme/statics/img/favicon.ico"}
 // LumeRuntime: javascript
 //
 // 站点：嘀嗒影视（https://www.didahd.xyz；首页底部给出备用域 www.dida.im）。
@@ -24,7 +24,9 @@
 //       webplayer；明文 m3u8 线路（高清线路①②/备用线路）直接给 video。
 
 var HOST = 'https://www.didahd.xyz';
-var MIRRORS = ['https://www.didahd.xyz', 'https://www.dida.im'];
+// 镜像：www.didahd.pro 实测同站（首页 58 条 / 电影页 48 条，标题一致）；
+// www.dida.im 是「网址发布页」（只列 didahd.xyz / didahd.pro），不是内容站，放到设置里的发布页入口。
+var MIRRORS = ['https://www.didahd.xyz', 'https://www.didahd.pro'];
 var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 var PAGE_SIZE = 20;
 
@@ -194,7 +196,7 @@ function isHttpUrl(url) {
 var LumeSource = {
   id: 'didahd_video',
   name: '嘀嗒影视',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
@@ -204,10 +206,18 @@ var LumeSource = {
   icon: HOST + '/template/mytheme/statics/img/favicon.ico',
   settings: [
     {
+      key: 'publishPage',
+      type: 'action',
+      action: 'openWebsite',
+      title: '打开发布页',
+      url: 'https://www.dida.im/',
+      description: '站点换域名时先看这里（发布页会列出当前可用域名）'
+    },
+    {
       key: 'note',
       type: 'info',
       title: '站点说明',
-      description: '嘀嗒影视（didahd.xyz，备用域 dida.im），苹果CMS mytheme 模板。列表走站内 AJAX 接口（真分页）；播放页为每个线路/分集单独页。明文 m3u8 线路直接播，hex 密文线路（蓝光B/K/G 等，由站点混淆脚本现解）交给 App 网页播放器；网盘线路（夸克/百度/UC/PikPak）不可在线播放，已在选集里标注。站点无会员/收费墙。'
+      description: '嘀嗒影视（didahd.xyz，镜像 didahd.pro，发布页 dida.im）。苹果CMS mytheme 模板。列表走站内 AJAX 接口（真分页）；播放页为每个线路/分集单独页。明文 m3u8 线路直接播，hex 密文线路（蓝光B/K/G 等，由站点混淆脚本现解）交给 App 网页播放器；网盘线路（夸克/百度/UC/PikPak）不可在线播放，已在选集里标注。站点无会员/收费墙。'
     }
   ],
 

@@ -1,4 +1,4 @@
-// LumeSource: {"id":"czzy_video","name":"厂长资源","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.4kcz.com","https://czzy.top","https://www.cz4k.com","https://czzy.site"],"network":"direct","icon":"https://www.4kcz.com/favicon.ico"}
+// LumeSource: {"id":"czzy_video","name":"厂长资源","version":"1.0.1","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.4kcz.com","https://czzy.top","https://www.cz4k.com","https://czzy.site"],"network":"direct","icon":"https://www.4kcz.com/favicon.ico"}
 // LumeRuntime: javascript
 //
 // 站点：厂长资源 CZZY（导航页 https://cz01.vip/ → 新地址 www.4kcz.com，易记 cz01.tv；
@@ -22,7 +22,9 @@
 //        VIP/会员/收费标记），匿名即可取到全部清晰度，本源不做额外绕过。
 
 var HOST = 'https://www.4kcz.com';
-var MIRRORS = ['https://www.4kcz.com', 'https://czzy.top', 'https://www.cz4k.com', 'https://czzy.site'];
+// 镜像：czzy.top / www.cz4k.com 是导航页列出的内容域名（本机访问回 468 WAF，留作手选）；
+// czzy.site 实测是「导航页」（2 KB，只列 4kcz.com / czzy.top / cz4k.com / cz01.tv），不是内容站，已移出 mirrors。
+var MIRRORS = ['https://www.4kcz.com', 'https://czzy.top', 'https://www.cz4k.com'];
 var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 var CATS = [
@@ -224,7 +226,7 @@ function hasNext(html, page, query) {
 var LumeSource = {
   id: 'czzy_video',
   name: '厂长资源',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
