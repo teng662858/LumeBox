@@ -27,6 +27,7 @@ class _VideoSourceHubState extends State<VideoSourceHub> {
   WebHomeSource? _webHome;
   int _revision = 0;
   int _selection = 0;
+  bool _pickerOpen = false;
 
   @override
   void initState() {
@@ -60,6 +61,8 @@ class _VideoSourceHubState extends State<VideoSourceHub> {
   }
 
   Future<void> _pick(BuildContext context) async {
+    if (_pickerOpen) return;
+    _pickerOpen = true;
     try {
       await _pickSource(context);
     } catch (error, stackTrace) {
@@ -68,6 +71,8 @@ class _VideoSourceHubState extends State<VideoSourceHub> {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('切换源失败，请重试')));
       }
+    } finally {
+      _pickerOpen = false;
     }
   }
 
@@ -135,21 +140,24 @@ class _VideoSourceHubState extends State<VideoSourceHub> {
   @override
   Widget build(BuildContext context) => VideoSourceScope(
     openPicker: _pick,
-    child: IndexedStack(
-      index: _cat ? 1 : 0,
-      children: [
-        TickerMode(
-          enabled: !_cat,
-          child: VideoPage(sourceRevision: _revision),
-        ),
-        if (_catCreated)
+    child: SourcePickerEdgeSwipe(
+      onOpen: () => _pick(context),
+      child: IndexedStack(
+        index: _cat ? 1 : 0,
+        children: [
           TickerMode(
-            enabled: _cat,
-            child: CatPage(requestedSite: _site),
-          )
-        else
-          const SizedBox.shrink(),
-      ],
+            enabled: !_cat,
+            child: VideoPage(sourceRevision: _revision),
+          ),
+          if (_catCreated)
+            TickerMode(
+              enabled: _cat,
+              child: CatPage(requestedSite: _site),
+            )
+          else
+            const SizedBox.shrink(),
+        ],
+      ),
     ),
   );
 }
