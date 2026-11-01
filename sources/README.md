@@ -359,6 +359,7 @@ App → 视频板块 → **源管理** → 导入，三种方式任选：
 | HeroEro（18+） | **是** | 2 块 | 23 | 40 | 55（`/search/<词>/`） | ok | 1 | **video（详情 `flashvars.video_url` → mp4 `/get_file/…`，Range 206 + video/mp4）** |
 | Qinav（18+） | **是** | 2 块 | 18（2 排序 + 16 分类） | 52 | 52（`/search.html?wd=`） | ok | 1 | **video（`/embed/<id>.html` 的 `const url` → `2609.lajiao2026.com/…/index.m3u8`，探活 200 + `#EXTM3U`）** |
 | 麻豆TV（18+） | **是** | 1 块 | 60 频道（麻豆/糖心/蜜桃/天美/SWAG/JVID…） | 24 | 0（接口无搜索） | ok | 1 | **video（/video/listcache 条目自带 ideo_url → m3md.n6uem8.xyz/…/index.m3u8，探活 200 + #EXTM3U；接口 AES-256-CBC + md5 签名）** |
+| 蜜桃网（18+） | **是** | 1 块 | 2 列表（今日/热门）+ 9 分类 | 40 | 23（/search/<词>/） | ok | 1 | **video（详情 data-config.video.url → hls.ohjzmm.cn/videos5/…/index.m3u8，探活 200 + #EXTM3U）** |
 
 「播放」列是**真去请求那个地址**验的：`video` 表示拿到播放地址且 HTTP 200 + `#EXTM3U`（HLS 清单）；
 `webplayer` 表示拿不到可直连的 m3u8，交给 App 内置网页播放器去跑源站自己的播放器。
