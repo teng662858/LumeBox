@@ -1,25 +1,24 @@
-// LumeSource: {"id":"ysd_video","name":"影视岛","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://tv.yingshidao.com","https://www.yingshidao.com"],"network":"direct","icon":"https://tv.yingshidao.com/brand/icon-180.f528dac723b16dab.png"}
+// LumeSource: {"id":"ysd_video","name":"影视岛","version":"2.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://tv.yingshidao.com","https://www.yingshidao.com"],"network":"direct","icon":"https://tv.yingshidao.com/brand/icon-180.f528dac723b16dab.png"}
 // LumeRuntime: javascript
 //
-// 站点：影视岛（tv.yingshidao.com；面向海外华人的正版向视频站，首页/搜索/详情都能直连）。
-//   库：电影 / 电视剧 / 综艺 / 动漫 / 纪录片 / 少儿 / 短剧 / 微剧，条目带 **has4k 标记**——这是目前
-//   找到的唯一「国产剧 + 真 4K 档位」的海外站，4K 不是海报上的贴纸，是接口里的字段。
+// 站点：影视岛（tv.yingshidao.com，面向海外华人的华语影视站，条目带 has4k 字段）。
 //
-//   已实测可用的开放接口（不需要登录）：
-//     GET /api/v1/video/category?categoryId=<1..10>&page=<n>
-//           → {list:[{id,title,subtitle,coverUrl,has4k,isVip,totalEpisodes,first_episode_id,year,region,…}],has_more,filter_tags}
-//     GET /api/v1/video/category?categoryId=2&type=tv-kdrama&regions=KR&years=2025&page=1   筛选（type/years/regions 实测生效）
-//     GET /api/v1/video/search?q=<关键词>&page=<n>
-//     GET /api/v1/video/detail?id=<mov_…>                    → 标题/封面/简介/年份/总集数/first_episode_id
+// ── 开放接口（免登录，实测）────────────────────────────────────────────
+//   GET  /api/v1/video/category?categoryId=<1..10>&page=<n>[&type=&regions=&years=]
+//   GET  /api/v1/video/search?q=<词>&page=<n>
+//   GET  /api/v1/video/detail?id=<mov_…>
+//   GET  /api/v1/video/list?id=<mov_…>&page=1&limit=5000&include_free=1   ← 整部剧分集（含 is_free / is_vip / 片头片尾时间点）
+//   POST /api/v1/video/playback/access  {episode_id, play_attempt_id, purpose:"PLAYBACK", ckey_prepare:{direct_guest:true}}
+//        → {decision:"ALLOW", play_url:[{n:"1080p", u:"https://tv.yingshidao.com/media/index.m3u8?url=…"}],
+//           playback_token, device_token, locked_qualities:[{n:"4k", reason:"FOUR_K_ENTITLEMENT_REQUIRED"}]}
+//   POST /api/v1/pingPlay/<episode_id>  （带 X-Playback-Token）
 //
-//   **播放为什么走网页播放器**：本站的点播要「设备密钥 + CKey」——
-//     · 登录后 enrollDeviceAfterLogin：WebCrypto 生成 ECDSA P-256 设备密钥对，签名
-//       "ysd-ckey-direct-v1\n…\n<episode_id>\n<play_attempt_id>\n<issued_at>\n<nonce>" 后提交；
-//     · POST /api/v1/video/playback/access 缺 CKey 直接返回 403 PLAYBACK_CKEY_INVALID；
-//       换新设备登录还会返回 DEVICE_KEY_SESSION_MISMATCH（账号绑着原设备的公钥）；
-//     · 拿到 playback_token 后才能取 HLS，源里没法在纯 JS 沙箱复刻 ECDSA + 设备注册，也不该硬来。
-//   所以本源：列表/搜索/详情走接口，播放交 App 网页播放器（在网页里登录一次，站内播放器自己算 CKey，
-//   4K 档位按账号权限给）。这和「4k影视」那条网页播放器线路是同一套做法。
+// ── 播放 ───────────────────────────────────────────────────────────
+//   免费集：guest 会发 play_url（1080p），但要播放 Cookie（__Host-ysd_media）才放行；
+//          本源把 Cookie 一并塞进 headers，返回前先自探一次，探活不过就退回网页播放器。
+//   会员集 / 4K：guest 直接 DENY（MEMBERSHIP）或 4K 锁（paid_members）。点播还要设备密钥
+//          （ECDSA P-256 + CKey wasm），纯 JS 沙箱复刻不了 → 网页播放器里登录后由站点自解。
+//   账号登录态与设备公钥绑定（新设备登录回 DEVICE_KEY_SESSION_MISMATCH），本源不代登录、不存密码。
 
 var HOST = 'https://tv.yingshidao.com';
 var MIRRORS = ['https://tv.yingshidao.com', 'https://www.yingshidao.com'];
@@ -45,29 +44,72 @@ function base() {
 function clean(t) {
   return String(t == null ? '' : t).replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 }
-function api(path, params) {
-  var q = [];
-  for (var k in params || {}) {
-    if (!Object.prototype.hasOwnProperty.call(params, k)) continue;
-    var v = params[k];
-    if (v === '' || v == null) continue;
-    q.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
-  }
-  var url = base() + path + (q.length ? (path.indexOf('?') >= 0 ? '&' : '?') + q.join('&') : '');
-  return LumeSource.http.get(url, {
-    headers: { 'User-Agent': UA, 'Accept': 'application/json' }
-  }).then(function (r) {
+function randHex(n) {
+  var s = '', chars = '0123456789abcdef';
+  for (var i = 0; i < n; i++) s += chars.charAt(Math.floor(Math.random() * 16));
+  return s;
+}
+function deviceIdentity() {
+  return {
+    headers: {
+      'X-App-Version': 'web',
+      'X-Client-Platform': 'web',
+      'X-Client-Actions': '2',
+      'X-Device-Id': 'webv2_' + randHex(32),
+      'X-Device-Fingerprint': 'fpwebv2_' + randHex(32),
+      'X-Request-Id': 'req_' + randHex(32)
+    }
+  };
+}
+function req(method, path, body, extra, dev) {
+  var url = path.indexOf('http') === 0 ? path : base() + path;
+  var headers = { 'User-Agent': UA, 'Accept': 'application/json', 'Origin': base(), 'Referer': base() + '/' };
+  var d = dev && dev.headers ? dev.headers : deviceIdentity().headers;
+  for (var k in d) headers[k] = d[k];
+  var userCookie = (LumeSource.config && LumeSource.config.cookie) ? String(LumeSource.config.cookie) : '';
+  if (userCookie) headers['Cookie'] = userCookie;
+  for (var e in extra || {}) headers[e] = extra[e];
+  var opts = { headers: headers };
+  if (body != null) opts.body = typeof body === 'string' ? body : JSON.stringify(body);
+  var p = method === 'POST' ? LumeSource.http.post(url, opts.body, opts) : LumeSource.http.get(url, opts);
+  return p.then(function (r) {
     var s = r ? r.status : 0;
     if (!s) throw new Error('连不上影视岛，请检查网络或到「源设置 → 站点网络」配置代理');
-    if (s !== 200) throw new Error('影视岛接口返回 HTTP ' + s);
-    var body = String(r.body || '');
-    var json = null;
-    try { json = JSON.parse(body); } catch (e) { json = null; }
-    if (!json || Number(json.code) !== 200) {
-      throw new Error('影视岛接口返回异常：' + (json && (json.msg || json.message) ? (json.msg || json.message) : '无法解析'));
-    }
-    return json.data || {};
+    return r;
   });
+}
+function jsonOf(r) {
+  var body = String((r && r.body) || '');
+  try { return JSON.parse(body); } catch (e) { return null; }
+}
+function apiData(r) {
+  var j = jsonOf(r);
+  if (!j || Number(j.code) !== 200) {
+    var msg = (j && (j.msg || j.message)) || ('HTTP ' + (r ? r.status : '?'));
+    throw new Error('影视岛接口返回异常：' + msg);
+  }
+  return j.data;
+}
+
+// 从响应里尽量把 Set-Cookie 抠出来（运行时暴露方式不同，取不到就返回空）
+function cookiesFrom(r) {
+  var out = [];
+  function push(line) {
+    var first = String(line || '').split(';')[0];
+    if (first && first.indexOf('=') > 0) out.push(first.trim());
+  }
+  if (r && r.setCookie) {
+    if (Array.isArray(r.setCookie)) for (var i = 0; i < r.setCookie.length; i++) push(r.setCookie[i]);
+    else push(r.setCookie);
+  }
+  var h = (r && r.headers) || {};
+  for (var k in h) {
+    if (k.toLowerCase() !== 'set-cookie') continue;
+    var v = h[k];
+    if (Array.isArray(v)) for (var j = 0; j < v.length; j++) push(v[j]);
+    else String(v).split('\n').forEach(push);
+  }
+  return out;
 }
 
 function rowToItem(x) {
@@ -90,7 +132,7 @@ function rowToItem(x) {
 var LumeSource = {
   id: 'ysd_video',
   name: '影视岛',
-  version: '1.0.0',
+  version: '2.0.0',
   category: 'video',
   settingsApiVersion: 2,
   requiresSettings: ['settingsActions'],
@@ -99,14 +141,14 @@ var LumeSource = {
       key: 'note',
       type: 'info',
       title: '站点说明',
-      description: '影视岛（tv.yingshidao.com）：面向海外的华语影视站，条目带 has4k 标记（真 4K 档位），电影/电视剧/综艺/动漫/纪录片/少儿/短剧/微剧八类，支持类型/地区/年份筛选与搜索。列表和详情走开放接口；播放交网页播放器——站内点播要设备密钥（ECDSA）+ CKey，在网页里登录一次即可由站点自己算签名，4K 按账号权限给。'
+      description: '影视岛（tv.yingshidao.com）：海外华语站，条目带 has4k（真 4K 档位）。分类/筛选/搜索/分集都走开放接口；分集标题直接标「免费 / 会员」。免费集能取到 1080p m3u8（连带播放 Cookie，探活通过才下发）；会员集和 4K 走网页播放器——站内点播要设备密钥（ECDSA）+ CKey，在网页里登录一次即可。账号登录态绑定设备，本源不代登录、不存密码。'
     }
   ],
 
   async categories() { return CATS; },
 
   async filters() {
-    var data = await api('/api/v1/video/category', { categoryId: '2' });
+    var data = apiData(await req('GET', '/api/v1/video/category?categoryId=2'));
     var tags = data.filter_tags || {};
     var groups = [];
     if (Array.isArray(tags.types) && tags.types.length) {
@@ -129,15 +171,13 @@ var LumeSource = {
     var f = a.filters || {};
     var data;
     if (kw) {
-      data = await api('/api/v1/video/search', { q: kw, page: page });
+      data = apiData(await req('GET', '/api/v1/video/search?q=' + encodeURIComponent(kw) + '&page=' + page));
     } else {
-      data = await api('/api/v1/video/category', {
-        categoryId: cat,
-        page: page,
-        type: f.type || '',
-        regions: f.regions || '',
-        years: f.years || ''
-      });
+      var q = '/api/v1/video/category?categoryId=' + encodeURIComponent(cat) + '&page=' + page;
+      if (f.type) q += '&type=' + encodeURIComponent(f.type);
+      if (f.regions) q += '&regions=' + encodeURIComponent(f.regions);
+      if (f.years) q += '&years=' + encodeURIComponent(f.years);
+      data = apiData(await req('GET', q));
     }
     var rows = Array.isArray(data.list) ? data.list : [];
     var items = [];
@@ -151,7 +191,7 @@ var LumeSource = {
   async detail(argument) {
     var id = String((argument && argument.id) || '').trim();
     if (!id) return null;
-    var d = await api('/api/v1/video/detail', { id: id });
+    var d = apiData(await req('GET', '/api/v1/video/detail?id=' + encodeURIComponent(id)));
     if (!d || !d.id) return null;
     var bits = [];
     if (d.has4k) bits.push('4K');
@@ -171,19 +211,91 @@ var LumeSource = {
   async chapters(argument) {
     var id = String((argument && argument.id) || '').trim();
     if (!id) return [];
-    var d = await api('/api/v1/video/detail', { id: id });
-    var total = Number(d.totalEpisodes || 1);
-    var label = total > 1 ? ('网页播放（共 ' + total + ' 集，选集在网页里）') : '网页播放';
-    return [{ id: 'web:' + id, title: label }];
+    var list = apiData(await req('GET', '/api/v1/video/list?id=' + encodeURIComponent(id) + '&page=1&limit=5000&include_free=1'));
+    var eps = Array.isArray(list) ? list : (list.list || []);
+    if (!eps.length) return [{ id: 'web:' + id, title: '网页播放（选集在网页里）' }];
+    var out = [];
+    for (var i = 0; i < eps.length; i++) {
+      var e = eps[i] || {};
+      if (!e.id) continue;
+      var title = clean(e.title) || ('第' + (e.episode_num || i + 1) + '集');
+      if (e.is_free) title += ' · 免费';
+      else if (e.is_vip) title += ' · 会员';
+      out.push({ id: 'ep:' + e.id, title: title });
+    }
+    return out;
   },
 
   async content(argument) {
     var a = argument || {};
-    var id = String(a.id || '').trim();
-    if (!id) throw new Error('缺少作品 id');
-    return {
-      kind: 'webplayer',
-      url: base() + '/video/' + encodeURIComponent(id) + '?play=1'
-    };
+    var mediaId = String(a.id || '').trim();
+    var raw = String(a.chapterId || '');
+    var webUrl = base() + '/video/' + encodeURIComponent(mediaId) + '?play=1';
+    if (raw.indexOf('web:') === 0 || !mediaId) return { kind: 'webplayer', url: webUrl };
+
+    var epId = raw.indexOf('ep:') === 0 ? raw.slice(3) : raw;
+    var dev = deviceIdentity();
+    var access;
+    try {
+      access = await req(
+        'POST',
+        '/api/v1/video/playback/access',
+        {
+          episode_id: epId,
+          play_attempt_id: 'web_' + randHex(24),
+          purpose: 'PLAYBACK',
+          supports_watch_prompts: true,
+          supports_watch_usage: true,
+          startup_admission: true,
+          ckey_prepare: { direct_guest: true }
+        },
+        { 'Content-Type': 'application/json', 'X-Playback-Startup-Admission': '1' },
+        dev
+      );
+    } catch (e) {
+      return { kind: 'webplayer', url: webUrl };
+    }
+    var d = (jsonOf(access) || {}).data || null;
+    var urls = (d && Array.isArray(d.play_url)) ? d.play_url : [];
+    if (!urls.length) return { kind: 'webplayer', url: webUrl };
+
+    var best = urls[0];
+    for (var i = 1; i < urls.length; i++) {
+      if (Number(urls[i].quality_height || 0) > Number(best.quality_height || 0)) best = urls[i];
+    }
+    var cookies = cookiesFrom(access);
+    if (!cookies.length && d.device_token) cookies = ['watchtv_device_token=' + String(d.device_token)];
+
+    if (d.playback_token) {
+      try {
+        var ping = await req('POST', '/api/v1/pingPlay/' + encodeURIComponent(epId), '{}', {
+          'Content-Type': 'application/json',
+          'X-Playback-Token': String(d.playback_token),
+          'Cookie': cookies.join('; ')
+        }, dev);
+        cookies = cookies.concat(cookiesFrom(ping));
+      } catch (e) { /* 没有 Cookie 就退回网页播放器 */ }
+    }
+
+    var cookieLine = cookies.join('; ');
+    var userCookie = (LumeSource.config && LumeSource.config.cookie) ? String(LumeSource.config.cookie) : '';
+    if (userCookie) cookieLine = cookieLine ? (userCookie + '; ' + cookieLine) : userCookie;
+    if (!/__Host-ysd_media=/.test(cookieLine)) return { kind: 'webplayer', url: webUrl };
+
+    var headers = { 'User-Agent': UA, 'Referer': base() + '/', 'Cookie': cookieLine };
+    var qualities = [];
+    for (var j = 0; j < urls.length; j++) {
+      if (!urls[j] || !urls[j].u) continue;
+      qualities.push({ label: String(urls[j].n || urls[j].quality_height || ('线路' + (j + 1))), url: String(urls[j].u), headers: headers });
+    }
+    // 直链令牌和本次播放会话绑定、很快就失效：返回前先自探一次，探活不过就退回网页播放器
+    try {
+      var probe = await LumeSource.http.get(String(best.u), { headers: headers });
+      var pbody = String((probe && probe.body) || '');
+      if (!probe || probe.status !== 200 || pbody.indexOf('#EXTM3U') < 0) return { kind: 'webplayer', url: webUrl };
+    } catch (e2) {
+      return { kind: 'webplayer', url: webUrl };
+    }
+    return { kind: 'video', url: String(best.u), headers: headers, qualities: qualities };
   }
 };
