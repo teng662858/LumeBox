@@ -1,9 +1,10 @@
-// LumeSource: {"id":"haijiao_video","name":"海角 18+","version":"1.0.0","category":"video","mirrors":["https://haijiao.com"]}
+// LumeSource: {"id":"haijiao_video","name":"海角 18+","version":"1.1.0","category":"video","contentCategory":"adult","mirrors":["https://www.haijiao.com","https://haijiao.com"],"network":"direct","icon":"https://www.haijiao.com/imgs/project/favicon.ico"}
 //
-// 站点：海角社区（https://haijiao.com，Vue2 SPA，2026-10-25 实测）
+// 站点：海角社区（https://www.haijiao.com/home，Vue2 SPA + /api JSON，2026-11-01 复测）
 //
-// ⚠ 网络：本站**直连不可用**（curl 直连 000），只有走代理才 200。
-//   请在「源设置 → 网络」里给本源配代理（如 http://127.0.0.1:7890）。
+// ── 网络：2026-11-01 复测直连可开（/api/video-center/video/list 200、1.7s）；
+//   2026-10-25 那会儿要代理，所以两边都能连的写法更稳 —— 直连失败时再到「源设置 → 网络」配代理。
+//   www / 裸域都能开，优先 www（裸域同样 200）。
 //
 // ── 页面是空壳，数据全在 /api 下（从 /js/app.4074e6c8.js 里挖出来的）
 //   分类树  GET  /api/video-center/category/list        → [{id,name,children:[…]}]（6 个分组）
@@ -42,7 +43,8 @@
 //       的解锁动作（观影券 / VIP / 花积分），那是站点账务，本源不去绕、不代刷。
 //   所以本源：
 //     1) 元数据（分类 / 列表 / 搜索 / 详情 / 封面 / 线路名）匿名全部可用；
-//     2) content 拿不到地址时**抛可读错误**，把上面这段证据写进报错里 —— 不伪造、不拿别的片顶替；
+//     2) content 拿不到地址时**改走网页播放**（kind:'webplayer' → /watch?id=<id>，登录/解锁后
+//        在 App 的网页视图里直接看），不再是一句干巴巴的报错；
 //     3) 支持登录：账号密码填「源设置 → 账号登入」，或把浏览器 Cookie（含 token=、uid=）
 //        粘到「网络配置」，本源用 /api/login/signin 换 token 并带 X-User-Token / X-User-Id 重取地址。
 //        ——登录只解决「身份」，片子本身还要「解锁」，那一步本源不做。
@@ -51,6 +53,8 @@
 //     4) 站点 HLS 的 EXT-X-KEY 密钥在播放器里还要过一层 wasm（同名 .jpg 参与计算，
 //        play 页 `jquery_key`），**这点没能验证**（拿不到一条真实地址）；如果哪天解锁后拿到地址却
 //        解不出画面，大概率是这个原因，不是解析错了。
+//     5) 网页播放页路由实测：/watch?id=<videoId>（c3 里 `$router.push({name:'videoWatch',query:{id}})`），
+//        帖子详情页是 /post/details?pid=<topicId>。
 //
 // ── 未成年相关的分类/标签：分类树里「服装 → 学生」(#20)、「特色 → 校园」(#40) 属于未成年指向，
 //   **不接进 categories / filters**，标题命中的条目在列表层直接剔除（见 BANNED）。
@@ -447,23 +451,23 @@ function playableLines(lines) {
   return played;
 }
 
+/// 播放门禁的说明（详情页里给用户看；播放时改用网页视图，不再抛错）
 function gateMessage() {
   return (
-    '海角：播放地址只对已登录账号下发，匿名拿不到。实测证据：GET /api/topic/att/{id} 匿名返回 3 条线路' +
-    '（普通1/普通2/VIP线路）但 url 全为空；POST /api/attachment 匿名返回 errorCode=1（未登录）；' +
-    '连站点标为免费的片（access_type=1）也是 can_play=false、url 为空。' +
-    '解决：到「源设置 → 账号登入」填海角账号密码（本源用 /api/login/signin 换 token），' +
-    '或把浏览器 Cookie（含 token=、uid=）粘进「网络配置」。' +
-    '注意登录后多数片子还要观影券/VIP，那是站点账务，本源不去绕。'
+    '获取地址：匿名请求 /api/topic/att/{id} 只回线路名、url 为空（实测 2026-11-01 复现），' +
+    '连标称免费的片也是 can_play=false；本源在这一步改走网页播放（/watch?id=…），' +
+    '登录/观影券解锁后在网页视图里直接看。想走原生地址：到「源设置 → 账号登入」填账号密码，' +
+    '或把浏览器 Cookie（含 token=、uid=）粘进「网络配置」。'
   );
 }
 
 var LumeSource = {
   id: 'haijiao_video',
   name: '海角',
-  version: '1.0.0',
+  version: '1.1.0',
   category: 'video',
-  mirrors: ['https://haijiao.com'],
+  contentCategory: 'adult',
+  mirrors: ['https://www.haijiao.com', 'https://haijiao.com'],
 
   async categories() {
     var tree = await loadTree();
@@ -479,13 +483,22 @@ var LumeSource = {
     var boards = [];
     var latest = await fetchList(1, PAGE_LIMIT, {});
     if (latest.items.length) boards.push({ title: '最新', moreUrl: 'feed_latest', items: latest.items.slice(0, 18) });
+    // 第二块别再拿第 1 页充数（1.0.0 两块内容一模一样）：取第 2 页并与首屏去重。
     try {
-      var hot = await fetchList(1, PAGE_LIMIT, {});
-      if (hot.items.length) boards.push({ title: '推荐', moreUrl: 'feed_hot', items: hot.items.slice(0, 18) });
+      var seen = {};
+      for (var index = 0; index < latest.items.length; index++) seen[latest.items[index].id] = true;
+      var more = await fetchList(2, PAGE_LIMIT, {});
+      var extra = [];
+      for (var c = 0; c < more.items.length; c++) {
+        if (!seen[more.items[c].id]) extra.push(more.items[c]);
+      }
+      if (extra.length) {
+        boards.push({ title: '更多', moreUrl: 'feed_latest', items: extra.slice(0, 18) });
+      }
     } catch (error) {
       /* 第二块挂了不影响首屏 */
     }
-    if (!boards.length) throw new Error('海角：首页没有解析出条目（站点可能改版，或没配代理）');
+    if (!boards.length) throw new Error('海角：首页没有解析出条目（站点可能改版，或网络被拦）');
     return boards;
   },
 
@@ -558,6 +571,7 @@ var LumeSource = {
         : '观看权限：需观影券 / VIP（匿名与免费账号都拿不到地址）'
     );
     if (row.description) lines.push(String(row.description).slice(0, 300));
+    if (!row.can_play) lines.push(gateMessage());
     var bits = [];
     if (row.duration_seconds) bits.push(clock(row.duration_seconds));
     if (row.view_count) bits.push(row.view_count + ' 播放');
@@ -607,7 +621,16 @@ var LumeSource = {
       }
     }
 
-    if (!played.length) throw new Error(gateMessage());
+    if (!played.length) {
+      // 匿名 / 未解锁：不给假地址，也不只报错 —— 转交 App 的网页视图，
+      // 用户在站内登录（或买券）后自己点播放，播放器/HLS 密钥全由站点自己处理。
+      return {
+        kind: 'webplayer',
+        pageUrl: base() + '/watch?id=' + id,
+        headers: { Referer: base() + '/home', 'User-Agent': UA, Origin: base() },
+        webPlayerOptions: {}
+      };
+    }
 
     var wants = String(arg.chapterId || '').trim();
     var picked = played[0];

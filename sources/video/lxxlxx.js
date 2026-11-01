@@ -1,6 +1,18 @@
-// LumeSource: {"id":"lxxlxx_video","name":"LXXLXX","version":"1.0.0","category":"video","mirrors":["https://zhs.lxxlxx.com"]}
-
-// 站点：https://zhs.lxxlxx.com （繁中成人短片站，2026-10-25 逐页实测，走本机代理出口）
+// LumeSource: {"id":"lxxlxx_video","name":"LXXLXX","version":"1.0.1","category":"video","contentCategory":"adult","mirrors":["https://zhs.lxxxxlxxx.com","https://zhs.lxxlxx.com","https://www.lxxlxx.com"],"network":"direct"}
+//
+// 站点：https://zhs.lxxxxlxxx.com （繁中成人短片站；2026-11-01 复测：**站点改名换域了**）
+//
+// ── 〇、域名（2026-11-01 实测）
+//   旧域 lxxlxx.com 全系现在只做跳转：zhx./zhy.lxxlxx.com 301 → https://zhs.lxxxxlxxx.com，
+//   而 www./m./zhs./hk. 这些子域的源站已经挂了，直接回 **Cloudflare 522**（约 20s 才回，
+//   所以 App 里看到的是「请求超时：调用超时：LumeSource.home」而不是站点错误）。
+//   lxxxxlxxx.com 就是「字母加倍」的新域（同前缀 zhs.），本机与第三方代理实测同为 522 —— 源站全球挂，
+//   不是本机网络问题。所以本源：
+//     · mirrors 以新域 zhs.lxxxxlxxx.com 为主，旧 zhs./www. 留作备用（源站恢复后它们会 301 过去）；
+//     · 每个请求都带 **4.5 秒软超时**（App 单次调用预算 10s）：源站不回就立刻抛出可读错误，
+//       不再让用户干等 20 秒然后只看到「请求超时」；
+//     · 5xx（520/521/522/523/524/525/527）明确报「源站不可达」，并把失败记 60 秒，
+//       期间点重试立刻失败，不会每次都等一轮。
 //
 // 结构：
 //   列表     GET /new/、/best/、/hot/、/hd/                 （各自只有第 1 页；站点自己给的分页链接是坏的）
@@ -23,8 +35,10 @@
 //            （pageUrl 指向详情页）**——换到能回源的网络就是直链，回不了源也不会给假地址。
 var H = {
   name: 'LXXLXX',
-  defaultBase: 'https://zhs.lxxlxx.com',
-  base: 'https://zhs.lxxlxx.com',
+  defaultBase: 'https://zhs.lxxxxlxxx.com',
+  base: 'https://zhs.lxxxxlxxx.com',
+  softTimeoutMs: 4500,
+  downTtlMs: 60 * 1000,
   ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
 
   useDomain: function () {
@@ -59,23 +73,70 @@ var H = {
   },
   response: function (r) {    if (!r) throw new Error(this.name + '：没有网络响应');
     var s = Number(r.status);
-    if (s === 403 || s === 503 || s === 521) throw new Error('NEED_WEBVIEW_VERIFY：' + this.name + ' 要求网页验证（HTTP ' + s + '）');
+    if (s === 403 || s === 503) throw new Error('NEED_WEBVIEW_VERIFY：' + this.name + ' 要求网页验证（HTTP ' + s + '）');
+    if (s === 520 || s === 521 || s === 522 || s === 523 || s === 524 || s === 525 || s === 527) {
+      throw new Error(this.name + '：站点源站当前不可达（Cloudflare ' + s + '），换域名/修源站中，稍后重试');
+    }
     if (s === 404) throw new Error(this.name + '：页面不存在（HTTP 404）');
     if (s !== 200) throw new Error(this.name + '：请求失败（HTTP ' + s + '）');
     return String(r.body || '');
   },
+  // App 单次调用预算 10s，而源站挂掉时 Cloudflare 要约 20s 才回 522 —— 干等只会得到「请求超时」。
+  // 这里给每个请求套一个 4.5s 软超时：超时立刻抛可读错误，并记 60 秒「本站不可达」，
+  // 期间再点重试直接失败，不重复等。
+  down: function (reason) {
+    var now = Date.now();
+    if (this._downAt && now - this._downAt < this.downTtlMs) {
+      throw new Error(this.name + '：站点源站当前不可达（' + (this._downWhy || reason) + '），约 1 分钟后再试');
+    }
+    this._downAt = now;
+    this._downWhy = reason;
+    throw new Error(this.name + '：站点 ' + this.softTimeoutMs + 'ms 内没响应（' + reason + '）。' +
+      '源站可能正在换域名/宕机：稍后重试，或到「源设置 → 换网址」换一个镜像');
+  },
   get: async function (path, referer) {
+    if (this._downAt && Date.now() - this._downAt < this.downTtlMs) {
+      throw new Error(this.name + '：站点源站当前不可达（' + (this._downWhy || '无响应') + '），约 1 分钟后再试');
+    }
     var url = /^https?:\/\//i.test(path) ? path : this.base + path;
-    return this.response(await LumeSource.http.get(url, { headers: this.headers(referer) }));
+    var alive = false;
+    var timer = null;
+    var deadline = new Promise(function (resolve) {
+      timer = setTimeout(function () { resolve({ __timeout: true }); }, H.softTimeoutMs);
+    });
+    var reply = await Promise.race([
+      LumeSource.http.get(url, { headers: this.headers(referer) }).then(function (r) {
+        alive = true;
+        return r;
+      }, function (e) {
+        alive = true;
+        throw e;
+      }),
+      deadline
+    ]);
+    if (timer) clearTimeout(timer);
+    if (reply && reply.__timeout) {
+      this.down('4.5 秒内没有响应');
+    }
+    try {
+      var text = this.response(reply);
+      this._downAt = 0;
+      return text;
+    } catch (error) {
+      var message = String((error && error.message) || '');
+      if (/Cloudflare 5\d\d/.test(message)) this._downAt = Date.now(), (this._downWhy = message);
+      throw error;
+    }
   }
 };
 
 var LumeSource = {
   id: 'lxxlxx_video',
   name: 'LXXLXX',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'video',
-  mirrors: ['https://zhs.lxxlxx.com'],
+  contentCategory: 'adult',
+  mirrors: ['https://zhs.lxxxxlxxx.com', 'https://zhs.lxxlxx.com', 'https://www.lxxlxx.com'],
 
   async home() {
     H.useDomain();

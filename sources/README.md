@@ -237,7 +237,7 @@ sources/video/
 ├── jiuxse.js      9sex（9sex.com）        ThinkPHP；info 接口要 Accept-Language+XHR 三件套；**需代理**
 ├── mwx43zd.js     快猫镜像站（mwx43zd.xyz）AES hex 密文 + md5(升序query+salt)；免费整片，付费/VIP/搜索服务端 401
 ├── yuese.js       月色视频（ys.ph3ywdns.icu）Flutter Web 的 REST（dart2js 常量）；switch_line 绕游客配额
-├── haijiao.js     海角（haijiao.com）     三重 Base64；**播放地址只对登录态下发**，需填账号
+├── haijiao.js     海角（www.haijiao.com）Vue2 SPA + /api，三重 Base64；**匿名只给线路名不给地址** → 播放走 webplayer(/watch?id=)，填账号后可取原生地址
 ├── aido8.js       爱豆（ww15.aido8.icu）  /awsapi 加密 JSON；匿名整片；封面是反转 JPEG（占位图）
 ├── tangtoutiao.js 汤头条（p1.wgbqoiqv.com）Nuxt 壳 + 独立接口域，AES-256-CFB 签名；付费仅 ~2 分钟试看
 ├── h4dh3.js       hxc（h4dh3.com）        **VIP 真破解**：getPreUrl 签名只覆盖路径，删 start/end 即整片
@@ -317,7 +317,7 @@ App → 视频板块 → **源管理** → 导入，三种方式任选：
 | 9sex | **是** | — | 29 | — | — | ok | 1 | **video（m3u8）** |
 | 快猫镜像站 | 否 | 2 块 | 5 | 20 | 本地过滤 | ok | 1 | **video（m3u8 整片）** |
 | 月色视频 | 否 | 2 块 | 76 | 24 | ok | ok | 1 | **video（m3u8 整片，2–3 清晰度）** |
-| 海角 | **是** | — | 6 组 | ok | ok | ok | — | 需登录（账号登入）后才有播放地址 |
+| 海角 | 否 | 2 块 | 8 分类 + 6 组筛选 | 20 | 20（`keyword`） | ok | 3 线路 | **webplayer（/watch?id=，站内登录/解锁后播）；填账号或 Cookie 后取原生地址** |
 | 爱豆 | 否 | 4 块 | 9 | ok | ok | ok | 1 | **video（m3u8 整片）** |
 | 汤头条 | 否 | 2 块 | 8 | 10 | 20 | ok | 1 | **video（免费整片；付费 2 分钟试看）** |
 | hxc | 否 | 2 块 | ok | ok | ok | ok | 1 | **video（m3u8 整片，删 start/end 后）** |
