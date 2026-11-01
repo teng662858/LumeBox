@@ -1,4 +1,4 @@
-// LumeSource: {"id":"fplayer_video","name":"飞播","version":"1.0.0","category":"video","contentCategory":"adult","mirrors":["https://fplayer.cc"],"network":"proxy","icon":"https://fplayer.cc/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"飞播 FPlayer（fplayer.cc）：国产原创/自拍短视频。榜单页 /rankings/latest|trending|most-liked/?page=N，搜索 /search/?keyword=<词>&page=N（注意有斜杠）。详情 /video/<id>/，播放走 /embed/<id>/ 内的 m3u8（播放域 cdnawsgoogle.456311.xyz）。国内直连不通，需要代理。"}]}
+// LumeSource: {"id":"fplayer_video","name":"飞播","version":"1.0.1","category":"video","contentCategory":"adult","mirrors":["https://fplayer.cc"],"network":"proxy","icon":"https://fplayer.cc/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"飞播 FPlayer（fplayer.cc）：国产原创/自拍短视频。榜单页 /rankings/latest|trending|most-liked/?page=N，搜索 /search/?keyword=<词>&page=N（注意有斜杠）。详情 /video/<id>/，播放走 /embed/<id>/ 内的 m3u8（播放域 cdnawsgoogle.456311.xyz）。国内直连不通，需要代理。"}]}
 // LumeRuntime: javascript
 //
 // 站点：飞播 FPlayer（https://fplayer.cc）
@@ -93,7 +93,7 @@ function parseCards(html) {
 var LumeSource = {
   id: 'fplayer_video',
   name: '飞播',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'video',
   contentCategory: 'adult',
   mirrors: ['https://fplayer.cc'],
@@ -181,10 +181,11 @@ var LumeSource = {
       return { kind: 'webplayer', pageUrl: embedUrl, headers: headers(pageUrl) };
     }
     url = entity(url).replace(/\\\//g, '/');
+    // 注意：不要给播放器带 Range 头——播放器拿它去请求每一条分片，只会拿到前 1KB，画面停在 0:00。
     return {
       kind: 'video',
       url: url,
-      headers: { 'User-Agent': UA, Referer: embedUrl, Range: 'bytes=0-1023' }
+      headers: { 'User-Agent': UA, Referer: embedUrl }
     };
   }
 };

@@ -1,4 +1,4 @@
-// LumeSource: {"id":"d9y1w_video","name":"四色视频 18+","version":"1.0.3","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.z2g9w.top","https://www.x5p2n.top","https://www.zie2.com"],"network":"direct","icon":"https://www.z2g9w.top/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（站点自救页）","url":"https://www.z2g9w.top/help/help.html","description":"站点换域名时先看这里：官方页写明本站 3 天换一次域名，页内有正确访问方式与找回邮箱"},{"key":"note","type":"info","title":"站点说明","description":"四色视频（maomi 模板，全站 18+）。域名 3 天轮换一次：当前实测可用 www.z2g9w.top、www.x5p2n.top；官方长期地址 www.zie2.com（本机 TLS 被劫持，打不开就在镜像里换一台）。找回最新域名：邮件 liumangtu@mail.com，或看站点 /help/help.html。脚本已内置换域名自愈：域名只剩 302 到「进入页」时会自动换到能用的镜像。"}]}
+// LumeSource: {"id":"d9y1w_video","name":"四色视频 18+","version":"1.0.4","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.z2g9w.top","https://www.x5p2n.top","https://www.zie2.com"],"network":"direct","icon":"https://www.z2g9w.top/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（站点自救页）","url":"https://www.z2g9w.top/help/help.html","description":"站点换域名时先看这里：官方页写明本站 3 天换一次域名，页内有正确访问方式与找回邮箱"},{"key":"note","type":"info","title":"站点说明","description":"四色视频（maomi 模板，全站 18+）。域名 3 天轮换一次：当前实测可用 www.z2g9w.top、www.x5p2n.top；官方长期地址 www.zie2.com（本机 TLS 被劫持，打不开就在镜像里换一台）。找回最新域名：邮件 liumangtu@mail.com，或看站点 /help/help.html。脚本已内置换域名自愈：域名只剩 302 到「进入页」时会自动换到能用的镜像。"}]}
 //
 // 站点：https://www.z2g9w.top/index/home.html（「maomi」模板成人站，2026-11-01 逐页实测）
 //
@@ -52,7 +52,7 @@
 
 var SITE = 'https://www.z2g9w.top';
 // 用户手选的镜像坏了、站点又换域名时按这张表依次试（都是实测同内容 / 官方公布的地址）
-var MIRRORS = ['https://www.z2g9w.top', 'https://www.x5p2n.top', 'https://www.zie2.com'];
+var MIRRORS = ['https://www.u6k0m.top', 'https://www.z2g9w.top', 'https://www.x5p2n.top', 'https://www.zie2.com'];
 // 媒体 CDN：2026-11-01 复测 play 页给的两台——4sv.0827.la（主）与 s4.dt188.site（备）
 // 都是「m3u8 / 分片 / 封面 JPEG 全 200」；老的 www.0734.la / s5.sanheyiliao.xyz 已连不上，
 // 不再当兜底（少一次必败的探活）。
@@ -706,7 +706,7 @@ function listPath(category, page) {
 var LumeSource = {
   id: 'd9y1w_video',
   name: '四色视频 18+',
-  version: '1.0.3',
+  version: '1.0.4',
   category: 'video',
   contentCategory: 'adult',
   settingsApiVersion: 2,

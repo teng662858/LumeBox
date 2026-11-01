@@ -1,4 +1,4 @@
-// LumeSource: {"id":"yuxiu_video","name":"玉羞园","version":"1.0.0","category":"video","contentCategory":"adult","mirrors":["https://yhh.yxy881p.icu"],"network":"direct"}
+// LumeSource: {"id":"yuxiu_video","name":"玉羞园","version":"1.1.0","category":"video","contentCategory":"adult","mirrors":["https://www.xvideos.com","https://yhh.yxy881p.icu"],"network":"direct"}
 // LumeRuntime: javascript
 //
 // 站点：玉羞园（https://yhh.yxy881p.icu）—— xvideos 镜像站：模板、播放器、缩略图全是 xvideos 原版，
@@ -21,7 +21,7 @@
 // 实测（源站当前状态）：hls master 200 + application/vnd.apple.mpegurl（206 B）；
 // mp4_sd 200 + video/mp4（单条 93,026,181 B 整片，可直下）。全站 18+。
 
-var BASE_URL = 'https://yhh.yxy881p.icu';
+var BASE_URL = 'https://www.xvideos.com';
 var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 var PAGE_SIZE = 27;
 var NAV_TTL_MS = 6 * 3600 * 1000;

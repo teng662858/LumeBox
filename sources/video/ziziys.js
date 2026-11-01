@@ -1,4 +1,4 @@
-// LumeSource: {"id":"ziziys_video","name":"子子影视","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.ziziys.org","https://www.ziziys.net","https://www.ziziys.com"],"network":"direct","icon":"https://zizi.staticimgjs.org/uploads/2026/05/logo-2.png"}
+// LumeSource: {"id":"ziziys_video","name":"子子影视","version":"1.0.1","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.ziziys.org","https://www.ziziys.net","https://www.ziziys.com"],"network":"direct","icon":"https://zizi.staticimgjs.org/uploads/2026/05/logo-2.png"}
 // LumeRuntime: javascript
 //
 // 站点：子子影视（发布页 https://www.ziziys.info/ → 主用 www.ziziys.org；
@@ -360,9 +360,29 @@ async function resolveEpisode(episode, userlink) {
       if (retryUrl) return retryUrl;
     }
   }
+  // 401「请提供访问令牌」= k 里编的 userlink 失效（游客链接会过期）：重读播放页拿新的再试一次
+  var first = (attempt && attempt.data) || {};
+  if (first.code === 401 && /令牌/.test(String(first.message || ''))) {
+    try {
+      var fresh = String(await get('/play/' + episode.slug) || '');
+      var freshLink = /userlink:\s*'([^']+)'/.exec(fresh);
+      var freshId = /dataid="(\d+)"/.exec(fresh);
+      if (freshLink && freshLink[1] && (!userlink || freshLink[1] !== userlink)) {
+        var again = await requestPlay(signPlayUrl(freshId ? freshId[1] : episode.dataid, episode.slug, '1080', freshLink[1], stamp || now));
+        if (usable(again)) {
+          var againUrl = pickUrl(again.data.data.quality_urls);
+          if (againUrl) return againUrl;
+        }
+        attempt = again;
+      }
+    } catch (e2) { /* 保持后面的可读报错 */ }
+  }
   var data = (attempt && attempt.data) || {};
   var message = String(data.message || (attempt && attempt.body) || '').trim();
   if (data.code === 401) {
+    if (/令牌/.test(message)) {
+      throw new Error('站点要求播放令牌（游客 userlink 已过期）：刷新详情页或稍后重试即可。');
+    }
     throw new Error('站点把这一集标成 VIP 清晰度（' + (message || '需要会员') + '），1080p 未开放，本源不绕过。');
   }
   if (data.code === 403) {
@@ -375,7 +395,7 @@ async function resolveEpisode(episode, userlink) {
 var LumeSource = {
   id: 'ziziys_video',
   name: '子子影视',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
