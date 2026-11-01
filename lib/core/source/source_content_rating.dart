@@ -157,7 +157,7 @@ class SourceContentRating {
     'twitthub_video',
     // BetaTok（betareel.com）：竖屏成人短片 Feed。
     'betareel_video',
-    // 四色视频（www.z8f0q.top，镜像 www.zie2.com；maomi 模板站，
+    // 四色视频（www.z2g9w.top / www.x5p2n.top，3 天换域名；maomi 模板站，
     // 标题 AES-256-CBC、菜单链接再套一层 AES、播放 m3u8 直链）。
     'd9y1w_video',
     // 第一女優網 / PornBest（www.pornbest.org，镜像 www.av01.org；日本 AV 站，大陆出口 302 封锁页，需代理）。

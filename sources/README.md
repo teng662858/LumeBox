@@ -263,7 +263,7 @@ sources/video/
 ├── huangguo-duanju.js 黄果短剧（huangguoai.com）AI 短剧，**需代理**；播放页直给签名 m3u8
 ├── juzhi.js       橘汁 - 影视（juziapp.hzhcbkj.cn，从橘汁 APK 里挖出的官方后端）；开放 JSON 端点 + 换流接口
 ├── hqvod.js       点播-高清（hqvod.com）苹果CMS 站；列表走 ajax 数据接口，播放页有滑块 → webplayer
-├── d9y1w.js       四色视频（www.d9y1w.top）maomi 模板站；标题 AES-256-CBC、卡片链接 base64 混淆，播放 m3u8 直链
+├── d9y1w.js       四色视频（www.z2g9w.top / www.x5p2n.top，3 天换域名）maomi 模板站；标题 AES-256-CBC、卡片链接 base64 混淆，播放 m3u8 直链
 ├── x8x8.js        8x8x（8x8x.fun / 随机跳板域）SPA 外壳 + bodyRoot 内容页；频道/标签 SSR、推荐流 AES-256-GCM，播放三线路 HLS
 ├── pornbest.js    第一女優網 / PornBest（www.pornbest.org，镜像 www.av01.org）Yii2 SSR + video.js；**需代理**；大陆出口 302 到封锁页，另有 CDNLah WAF 的 PoW（源内纯 JS SHA-256 自动解）；详情页 `<source>` 直给 m3u8
 ├── 91pornplus.js  91PornPlus（91pornplus.com 站群）Angular SPA + 单入口 `POST /js`；响应 AES(passphrase=xxx) 密文（源内纯 JS MD5+AES-256-CBC），**接口域名国内直连**，匿名给 m3u8
@@ -349,7 +349,7 @@ App → 视频板块 → **源管理** → 导入，三种方式任选：
 | 黄果 - 短剧（18+） | **是** | 1 块 | 6 分类 | 47 | 30（`/search/video/<词>/`） | ok | 1~3 | **video（m3u8，实测 200 + `#EXTM3U`，AES-128 key）** |
 | 橘汁 - 影视 | 否 | 3 块 | 8 分类 | 24 | 本地索引过滤 | ok | 1 | **video（`videoParse/test/videoUsableUrl` 换流，实测 200 + `#EXTM3U` 59 KB）** |
 | 点播 - 高清 | 否 | 1 块 | 5 分类 | 10 | 本地索引过滤 | ok | 5 线路 | **webplayer（播放页滑块人机校验，脚本 403 → App 网页视图过校验后播）** |
-| 四色视频（18+） | 否 | 3 块 | 27 分类 | 20 | 30（剧情/视频/精品三频道合并） | ok | 2 线路 | **video（m3u8 直链 + AES-128 key 与分片同域，实测 200 + `#EXTM3U` 79 KB）** |
+| 四色视频（18+） | 否 | 3 块 | 27 分类 | 20 | 30（剧情/视频/精品三频道合并） | ok | 2 线路 | **video（m3u8 直链 + AES-128 key 与分片同域，实测 200 + `#EXTM3U` 23.8 KB）** |
 | 8x8x（18+） | **是** | 2 块 | 5 频道 + 12 组标签 | 23 | 28（`/api/search/video`） | ok | 3 线路 | **video（`data-route1..3` + `data-m3u8`，探活 200 + `#EXTM3U` 158 B master）** |
 | 第一女優網（18+） | **是** | 2 块 | 51 分类 | 48 | 24（`/q/<词>`） | ok | 1 | **video（详情页 `<source>` / ld+json `contentUrl` → `voddadaizi5.com:…/index.m3u8`，探活 200 + `#EXTM3U` 300 KB）** |
 | 91PornPlus（18+） | 否 | 2 块 | 12 栏目 | 24 | 24（`/searchSevenVideos`，time/views 两种排序） | ok | 1 | **video（`POST /js` 加密接口 → 详情 `m3u8s[0]` = `tm.pppsuccess.com/…/index.m3u8`，探活 200 + `#EXTM3U`）** |
@@ -484,7 +484,8 @@ dart run tools/site_reachability.dart
   30000–60000 token，游客额度 900000/天（约 15–30 集），用尽后给可读错误。**签名 key 轮换**时接口返回
   `invalid_request_signature`，把新 `main-*.js` 里的 `lo="…"` 抄进 `SIGN_KEY` 即可（源里不写站点版本号，发版不影响）。
 - **四色视频的标题与链接都是站点自己的加密**：标题/分类名/菜单链接是 AES-256-CBC（key、iv 在 `/assets/js/common/encrypt.js`，**iv 只有 10 字节 + 固定后缀 `883346`**，见 `common.js` 的 `decodeString2`），卡片 href 是 `/cYc` + base64(明文路径)。明文路径（`/juqing/play-438649.html`、`/juqing/list-麻豆传媒.html`）直接可访问，所以源里**只解不拼**：链接先 base64 还原再取页，AES 用源内纯 JS 实现（沙箱没有 atob/Buffer/crypto）。站点换 key 时源会抛「标题一条都解不开（站点换加密 key 了？）」。
-- **四色视频的封面别用站点自己的图片主机**：卡片 `data-base64` 指到 `base4s.0827.la`，回来的是 `data:image/jpg;base64,…` **文本**，App 图片管线不吃文本 body；但**同一个路径在媒体 CDN（`www.0734.la` / `s4.dt188.site`）上就是真 JPEG**，所以封面改用 play 页 `m3u8_host` 拼，域名随站点轮换自动跟着换。它的 `m3u8_host1`（`s5.sanheyiliao.xyz`）已 NXDOMAIN，只作备用线路，`content()` 会先探一次再决定是否回落到线路一。
+- **四色视频的封面别用站点自己的图片主机**：卡片 `data-base64` 指到 `base4s.0827.la`，回来的是 `data:image/jpg;base64,…` **文本**，App 图片管线不吃文本 body；但**同一个路径在媒体 CDN（2026-11-01 实测 `4sv.0827.la` / `s4.dt188.site`）上就是真 JPEG**，所以封面改用 play 页 `m3u8_host` 拼，域名随站点轮换自动跟着换。老的 `www.0734.la`（连不上）与 `s5.sanheyiliao.xyz`（NXDOMAIN）已从兜底里去掉。
+- **四色视频 3 天换一次域名，脚本要能自己跟过去**：官方 `/help/help.html` 写明这点，并给出长期地址 `https://www.zie2.com` 和找回邮箱 `liumangtu@mail.com`。旧域（`www.z8f0q.top` / `www.d9y1w.top`）现在还在响应，但**整站 302 到新域的 `/enter/index.html`**——App 的 HTTP 桥会跟随 302，却既不回报 `reply.url` 也不回 302 的 `Location`，脚本拿到的是那张「进入页」，于是「首页没有解析到板块」。源里靠**页面形态**（有 `enter-content` / `qrcodeSmall`、没有 `video-item`）认出它，再按 `MIRRORS` 换台重试并把成功的主机缓存 12 小时（`host.json`）。当前可用：`www.z2g9w.top`（主）、`www.x5p2n.top`（镜像）。
 
 ## 七、免责
 

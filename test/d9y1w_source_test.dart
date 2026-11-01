@@ -14,7 +14,7 @@ import 'package:lume_box/core/source/source.dart';
 
 import 'support/source_scripts.dart';
 
-/// 四色视频（www.z8f0q.top）：maomi 模板成人站，用真站点快照在 **QuickJS 沙箱**里跑。
+/// 四色视频（www.z2g9w.top）：maomi 模板成人站，用真站点快照在 **QuickJS 沙箱**里跑。
 ///
 /// 站点两层编码，本源全靠脚本自己解（沙箱没有 atob / Buffer / crypto）：
 ///   1. 标题 / 分类名 / 菜单链接是 AES-256-CBC（key、iv 在 `/assets/js/common/encrypt.js`，
@@ -24,11 +24,13 @@ import 'support/source_scripts.dart';
 ///      （解开仍是 `/cYc...`）；解出来的明文路径脚本只用来取 id/channel，
 ///      不再拼混淆链接；搜索打 `/search/<频道>-<词>-<页>.html` 三个频道各一次。
 ///
-/// 还守着封面与线路：
+/// 还守着封面、线路与换域名自愈：
 ///   3. 封面不能用站点图片主机（`base4s.0827.la` 回的是 `data:image/...` 文本），
-///      要落到媒体 CDN（`s4.dt188.site`）上的真 JPEG；
-///   4. 站点给的两条线路都不可用（`www.0734.la` 连不上、`s5.sanheyiliao.xyz` 已 NXDOMAIN），
-///      `content()` 要探活后交回能播的那台，用户点「线路二」也不能拿到死地址。
+///      要落到媒体 CDN（2026-11-01 起是 `4sv.0827.la`）上的真 JPEG；
+///   4. 站点 play 页给的线路会换域名，`content()` 要探活后交回能播的那台，
+///      用户点「线路二」也不能拿到死地址；
+///   5. 站点 3 天换一次域名，旧域只剩「进入页」（302 到 /enter/index.html）。
+///      脚本要认出这种页面形态并自动换镜像（见第二个用例）。
 void main() {
   final bridge = _resolveBridge();
   if (bridge != null) {
@@ -54,6 +56,8 @@ void main() {
   ];
 
   // 媒体 CDN：站点 play 页里那条 m3u8 相对路径挂到实测可用的 s4.dt188.site 上
+  // （内置顺序是 4sv.0827.la → s4.dt188.site，用例只给 s4 开路由，
+  //  顺便验证第一台探不通时会继续往下走）
   const m3u8 =
       'https://s4.dt188.site/videos/202610/28/6ae0eb981d9e3a98b9e2a6d8/088d87/index.m3u8';
 
@@ -97,7 +101,7 @@ void main() {
       final first = home.boards.first.items.first;
       expect(first.id, 'juqing-438819');
       expect(first.title, contains('VAGU-283-CN'), reason: 'AES-256 标题要解出真中文');
-      expect(first.cover, startsWith('https://s4.dt188.site/videos/'),
+      expect(first.cover, startsWith('https://4sv.0827.la/videos/'),
           reason: '封面走媒体 CDN 的真 JPEG，不走站点 data URI 主机');
 
       // ---- 分类：三个「全部」+ 菜单里 24 个视频标签（实时抓 + AES 解名）。
@@ -135,7 +139,7 @@ void main() {
       final detail = await source.data.detail('juqing-438819');
       expect(detail, isNotNull);
       expect(detail!.title, contains('VAGU-283-CN'));
-      expect(detail.cover, startsWith('https://s4.dt188.site/videos/'));
+      expect(detail.cover, startsWith('https://4sv.0827.la/videos/'));
       expect(detail.description, contains('剧情 · 中文字幕'));
       expect(detail.description, contains('收录：2026-10-30'));
 
@@ -152,7 +156,7 @@ void main() {
       expect(content, isA<VideoContent>());
       final video = content! as VideoContent;
       expect(video.url.toString(), m3u8);
-      expect(video.headers['Referer'], 'https://www.z8f0q.top/');
+      expect(video.headers['Referer'], 'https://www.z2g9w.top/');
 
       final backup = await source.data.content(
         itemId: 'juqing-438819',
@@ -164,6 +168,46 @@ void main() {
         http.paths.any((path) => path.contains('sanheyiliao.xyz')),
         isTrue,
         reason: '备用线路要先探一次再决定',
+      );
+    },
+    skip: skipUnless(assets),
+    timeout: const Timeout(Duration(seconds: 120)),
+  );
+
+  // 站点 3 天换一次域名：旧域还响应，但整站 302 到新域的 /enter/index.html。
+  // App 的 HTTP 桥跟随 302 却既不回报 reply.url 也不回 Location，脚本只能靠页面形态
+  // （enter-content / qrcodeSmall，且没有 video-item）认出「这台只剩进入页」，
+  // 然后换 MIRRORS 里的下一台。这条用例就是拿两个域重演一次换域名。
+  const gate =
+      '<!DOCTYPE html><html><body class="enter-content">'
+      '<div id="txt3">在吗</div>'
+      '<div class="qrcode" id="qrcodeSmall"></div>'
+      '<a href="/index/home.html">进入</a></body></html>';
+
+  test(
+    '四色视频：主域只剩「进入页」时自动换镜像取首页',
+    () async {
+      final http = _RouteHttp(<String, String>{
+        // 顺序有意义：更具体的地址先匹配，主域直接被换成进入页
+        'https://www.z2g9w.top/index/home.html': gate,
+        'https://www.x5p2n.top/index/home.html': _read('d9y1w_home.html'),
+      });
+      final source = await _boot(
+        _script('四色视频.js'),
+        section: Section.video,
+        http: http,
+      );
+      addTearDown(source.dispose);
+
+      final home = await source.data.home();
+      expect(home.isBoards, isTrue, reason: '进入页不能被当成首页内容');
+      expect(home.boards.length, 3);
+      expect(http.paths.first, contains('https://www.z2g9w.top/'),
+          reason: '先试用户选中的域（mirrors[0]）');
+      expect(
+        http.paths.any((path) => path.startsWith('https://www.x5p2n.top/')),
+        isTrue,
+        reason: '主域只剩进入页时要自动换到下一台镜像',
       );
     },
     skip: skipUnless(assets),
