@@ -4985,10 +4985,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 ),
               Positioned.fill(
                 child: IgnorePointer(
-                  // 弹幕让开顶部状态/片名与底部进度/控制两段，避免文字压在 HUD 上。
+                  // 全屏弹幕贴屏幕顶部起排，底部仍让开进度与控制栏。
                   child: Padding(
                     padding: EdgeInsets.only(
-                      top: _fullscreen ? 72 : 8,
+                      top: _fullscreen ? 0 : 8,
                       // 竖屏底部多了安全区，留 110 才不压进度条。
                       bottom: _fullscreen
                           ? (size.height > size.width ? 110 : 96)
