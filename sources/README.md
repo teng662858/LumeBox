@@ -275,8 +275,11 @@ sources/video/
 ├── kpkuang.js    看片狂人（kpkuang.com，镜像 www.kpkuang.one / kpkuang.one）macCMS「vfed」；48 条/页真分页，国产剧/短剧/电影分类型共 16 组；
 │                 单条 4–26 条线路（4K/2160P、1080P、睿映HD、720高清云…），`data-play` 前缀+base64 → m3u8 直链，外链线路转 webplayer；
 │                 搜索走站点 JSONP 接口（/vodsearch 被 Cloudflare 挡）
-└── gimy.js       劇迷（gimy.org，海外镜像站）Bootstrap SSR；大陆/港/台/韩/日/美 + 电影/综艺/动漫 9 组，24 条/页；
-                  单集 13–27 条 m3u8 线路（`/_gimy_plays/{id}/{ep}`），源内按顺序探活前 4 条再定默认线
+├── gimy.js       劇迷（gimy.org，海外镜像站）Bootstrap SSR；大陆/港/台/韩/日/美 + 电影/综艺/动漫 9 组，24 条/页；
+│                 单集 13–27 条 m3u8 线路（`/_gimy_plays/{id}/{ep}`），源内按顺序探活前 4 条再定默认线
+├── bfzy.js       暴风资源（bfzyapi.com）苹果CMS v10 JSON 接口；17 万条库、**分钟级更新**（比聚合站更快出片），国产剧 9228 条；
+│                 叶子分类 16 组 + 搜索；`vod_play_url` 即 m3u8（实测 1080P），chapterId 直接编 URL，播放零额外请求
+└── zy360.js      360资源（360zy.com）同套苹果CMS 接口，片库与暴风互补；7.4 万条、国产剧 4551 条，master 实测 `RESOLUTION=1920x1080`
 ```
 
 - `video/kanju-ai.js` —— 看剧AI（kanju24.com；镜像 kanju.ai / kanju13.com / www.kanju24.com）：
@@ -368,6 +371,8 @@ App → 视频板块 → **源管理** → 导入，三种方式任选：
 | 蜜桃视频（18+） | **是** | 1 块 | 6 频道（国产/日韩/网黄/欧美/AI剧/动漫）+ 最新/推荐 | 20 | 0（无搜索） | ok | 1 | **video（/play/<id> 的 APP_DATA → p.xionganzhengwu.com/…/video.m3u8?sign=，签名 md5(path-ts-rand-0-密钥) 已在源内复刻，探活 200 + #EXTM3U）** |
 | 看片狂人 | 否 | — | 16 组（国产剧/港台剧/日韩剧/欧美剧/海外剧/台剧/泰剧/韩剧/短剧细分/电影分类型/综艺/动漫/纪录片） | 48 | 15（站点 JSONP 接口，`/vodsearch` 被 CF 挡） | ok | 4 线路 | **video（`data-play` 前缀+base64 → `svip.ryiplay18.com/…/index.m3u8`，探活 200 + `#EXTM3U` 1080x608）；外链线路（腾讯/优酷/B站/Abyss/mixdrop）转 webplayer** |
 | 劇迷 | 否 | — | 9 组（大陸/港/台/韩/日/美剧 + 电影/综艺/动漫） | 24 | 24（`/search?q=`） | ok | 1（集内 13–27 线路） | **video（`/_gimy_plays/{id}/{ep}` → `bfikuncdn.com/…/index.m3u8`，源内探活前 4 条，200 + `#EXTM3U` 1920x1080）** |
+| 暴风资源 | 否 | — | 16 叶子组（国产剧/各国剧/动作·剧情·科幻片/国产动漫/综艺/短剧细分） | 20 | 20（`?wd=`） | ok | 全部分集 | **video（`vod_play_url` → `v.fengbao14.com/…/index.m3u8`，206 + `#EXTM3U`；分片 ffprobe 1920x1080 h264，分钟级更新）** |
+| 360资源 | 否 | — | 16 叶子组（国产剧/各国剧/电影类型/国产动漫/综艺/短剧细分） | 20 | 20（`?wd=`） | ok | 全部分集 | **video（`vod1.maowushi.com/…/index.m3u8`，200 + `#EXTM3U` `RESOLUTION=1920x1080`）** |
 
 「播放」列是**真去请求那个地址**验的：`video` 表示拿到播放地址且 HTTP 200 + `#EXTM3U`（HLS 清单）；
 `webplayer` 表示拿不到可直连的 m3u8，交给 App 内置网页播放器去跑源站自己的播放器。
