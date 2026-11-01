@@ -98,6 +98,24 @@ void main() {
     expect(find.text('右侧测试内容'), findsNothing);
   });
 
+  for (final left in [true, false]) {
+    testWidgets('${left ? '左' : '右'}边缘慢划 80 点即可展开，无需划过半屏', (tester) async {
+      await mount(tester);
+      final pointer = await tester.startGesture(Offset(left ? 1 : 389, 300));
+      await pointer.moveBy(Offset(left ? 80 : -80, 0));
+      await tester.pump(const Duration(milliseconds: 400));
+      await pointer.up();
+      await tester.pumpAndSettle();
+      final drawer = find.byKey(
+        ValueKey(left ? 'browse-left-drawer' : 'browse-right-drawer'),
+      );
+      expect(drawer, findsOneWidget);
+      expect(tester.getTopLeft(drawer).dx, closeTo(0, 1));
+      await tester.tap(find.text('选择并关闭'));
+      await tester.pumpAndSettle();
+    });
+  }
+
   testWidgets('反向收回可拖回取消，快速反向甩动关闭', (tester) async {
     await mount(tester);
     await tester.tap(find.text('切换源'));

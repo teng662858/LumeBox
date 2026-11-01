@@ -22,6 +22,7 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
   BufferingConfig _buffering = BufferingConfig.defaults;
   late final Future<int> _created = _create();
   int? _id;
+  int? get nativePlayerId => _id;
   bool _disposed = false, _polling = false;
   int _generation = 0;
   Timer? _timer;

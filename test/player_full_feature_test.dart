@@ -2080,6 +2080,26 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets('全屏片头设置使用面板文字颜色，不继承视频浮层白字', (tester) async {
+      await pump(tester);
+      await tester.tap(find.byTooltip('全屏'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('播放器设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('player-category-intro')));
+      await tester.pumpAndSettle();
+      final label = find.descendant(
+        of: find.byType(PlayerSettingsSheet),
+        matching: find.text('记片头'),
+      );
+      final button = tester.widget<TextButton>(
+        find.ancestor(of: label, matching: find.byType(TextButton)).first,
+      );
+      expect(button.style!.foregroundColor!.resolve({}), isNot(Colors.white));
+      expect(tester.widget<Text>(label).style?.shadows, isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('播放页提示走顶部胶囊：1.6 秒、不排队、不再是黑条', (tester) async {
       await pump(tester);
       // 快捷记片头按钮在没有作品身份时会弹一句提示。

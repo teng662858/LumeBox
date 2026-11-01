@@ -18,6 +18,10 @@ import Security
 /// AVPlayer 直接绑定插件持有的真实 AVPlayer；MDK / MPV 转发解码帧。
 /// 各内核保留当前媒体和进度，不为开启画中画重建播放器。
 final class PipController: NSObject {
+  static weak var shared: PipController?
+  private var externalActive: ((Bool) -> Void)?
+  private var externalTimeRange: (() -> CMTimeRange)?
+  private var externalPaused: (() -> Bool)?
   private let methodChannelName = "lumebox/pip"
   private let eventChannelName = "lumebox/pip/events"
 
@@ -52,6 +56,7 @@ final class PipController: NSObject {
   }
 
   func register(with messenger: FlutterBinaryMessenger) {
+    Self.shared = self
     avObserver = NotificationCenter.default.addObserver(
       forName: Notification.Name("LumeBox.avplayer.pip"), object: nil, queue: .main
     ) { [weak self] note in
@@ -120,6 +125,7 @@ final class PipController: NSObject {
       case "submitFrame":
         self.handleFrame(call, result: result)
       case "teardown":
+        self.clearExternalSource()
         self.stopAvFrames()
         self.avPlayer = nil
         self.avUsesFrames = false
@@ -146,6 +152,49 @@ final class PipController: NSObject {
   }
 
   /// 收一帧：BGRA 字节 → CMSampleBuffer → 显示层。
+  // The engine owns these layers: never reparent them or clear their player.
+  func attachExternal(playerLayer: AVPlayerLayer?, sampleLayer: AVSampleBufferDisplayLayer?,
+                      active: @escaping (Bool) -> Void,
+                      timeRange: @escaping () -> CMTimeRange,
+                      isPaused: @escaping () -> Bool) -> Bool {
+    guard controller?.isPictureInPictureActive != true else { return false }
+    clearExternalSource()
+    controller?.delegate = nil
+    controller?.stopPictureInPicture()
+    controller = nil
+    stopAvFrames()
+    avPlayer = nil
+    avUsesFrames = false
+    avLayer?.player = nil
+    avLayer = nil
+    frameHost?.removeFromSuperview()
+    frameHost = nil
+    frameLayer = nil
+    framePump.teardown()
+    if let layer = playerLayer {
+      controller = AVPictureInPictureController(playerLayer: layer)
+    } else if let layer = sampleLayer {
+      let source = AVPictureInPictureController.ContentSource(
+        sampleBufferDisplayLayer: layer, playbackDelegate: self)
+      controller = AVPictureInPictureController(contentSource: source)
+    }
+    guard let controller else { return false }
+    externalActive = active
+    externalTimeRange = timeRange
+    externalPaused = isPaused
+    controller.delegate = self
+    // Preparation occurs on the explicit PiP action; stale sources cannot auto-enter.
+    controller.canStartPictureInPictureAutomaticallyFromInline = false
+    return true
+  }
+
+  private func clearExternalSource() {
+    externalActive?(false)
+    externalActive = nil
+    externalTimeRange = nil
+    externalPaused = nil
+  }
+
   private func handleFrame(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     if avPlayer != nil { stopAvFrames(); avPlayer = nil; avUsesFrames = false }
 
@@ -390,6 +439,7 @@ extension PipController: FlutterStreamHandler {
 
 extension PipController: AVPictureInPictureControllerDelegate {
   func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
+    externalActive?(true)
     starting = true
     startAvFrames()
     if let rate = (avPlayer ?? avLayer?.player)?.rate, rate > 0 { playbackRate = rate }
@@ -415,6 +465,7 @@ extension PipController: AVPictureInPictureControllerDelegate {
   }
 
   func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+    externalActive?(false)
     starting = false
     emit(kind: "exited", message: nil)
   }
@@ -423,6 +474,7 @@ extension PipController: AVPictureInPictureControllerDelegate {
     _ controller: AVPictureInPictureController,
     failedToStartPictureInPictureWithError error: Error
   ) {
+    externalActive?(false)
     starting = false
     emit(kind: "failed", message: error.localizedDescription)
   }
@@ -474,6 +526,7 @@ extension PipController: AVPictureInPictureSampleBufferPlaybackDelegate {
   func pictureInPictureControllerTimeRangeForPlayback(
     _ controller: AVPictureInPictureController
   ) -> CMTimeRange {
+    if let externalTimeRange { return externalTimeRange() }
     if durationSeconds > 0 {
       return CMTimeRange(start: .zero, duration: CMTime(seconds: durationSeconds, preferredTimescale: 1000))
     }
@@ -483,6 +536,7 @@ extension PipController: AVPictureInPictureSampleBufferPlaybackDelegate {
   func pictureInPictureControllerIsPlaybackPaused(
     _ controller: AVPictureInPictureController
   ) -> Bool {
+    if let externalPaused { return externalPaused() }
     return paused
   }
 

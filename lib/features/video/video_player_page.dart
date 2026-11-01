@@ -32,6 +32,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/player/abstract_player.dart';
+import '../../core/player/aether_player.dart';
 import '../../core/player/brightness.dart';
 import '../../core/player/buffering.dart';
 import '../../core/cache/media_preload.dart';
@@ -2565,31 +2566,34 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   ///
   /// 文案随播放位置切换，不再需要用户自己判断「现在该记哪一头」；两个入口
   /// （全屏浮层与竖屏控制栏）读同一份判定，行为不会各说各话。
-  Widget _skipQuickButton() => ValueListenableBuilder<PlayerSnapshot>(
-    valueListenable: _player?.snapshot ?? _idleSnapshot,
-    builder: (context, snapshot, _) => Tooltip(
-      message: _skipQuickTooltip(snapshot),
-      child: TextButton(
-        onPressed: () => _intro?.prompt != null
-            ? _originalSkipNow()
-            : _markSkipFromQuick(snapshot),
-        onLongPress: _clearSkipMarksFromQuick,
-        style: TextButton.styleFrom(
-          minimumSize: const Size(56, 40),
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          foregroundColor: _fullscreen ? Colors.white : LumeTheme.accent,
-        ),
-        child: Text(
-          _skipQuickLabel(snapshot),
-          style: TextStyle(
-            fontSize: LumeTypography.bodySize + 1,
-            fontWeight: FontWeight.w600,
-            shadows: _fullscreen ? _controlShadows : null,
+  Widget _skipQuickButton({bool inPanel = false}) =>
+      ValueListenableBuilder<PlayerSnapshot>(
+        valueListenable: _player?.snapshot ?? _idleSnapshot,
+        builder: (context, snapshot, _) => Tooltip(
+          message: _skipQuickTooltip(snapshot),
+          child: TextButton(
+            onPressed: () => _intro?.prompt != null
+                ? _originalSkipNow()
+                : _markSkipFromQuick(snapshot),
+            onLongPress: _clearSkipMarksFromQuick,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(56, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              foregroundColor: _fullscreen && !inPanel
+                  ? Colors.white
+                  : LumeTheme.accent,
+            ),
+            child: Text(
+              _skipQuickLabel(snapshot),
+              style: TextStyle(
+                fontSize: LumeTypography.bodySize + 1,
+                fontWeight: FontWeight.w600,
+                shadows: _fullscreen && !inPanel ? _controlShadows : null,
+              ),
+            ),
           ),
         ),
-      ),
-    ),
-  );
+      );
 
   /// 起播时是否已经走过片头（用来判断「记片尾」后要不要重新判片头）。
   bool get _introducedAlready {
@@ -2750,6 +2754,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             }
             await _syncPipDanmaku();
             await nativeBackend.prepareAvPlayer(id);
+          } else if (player is AetherPlayer) {
+            final id = player.nativePlayerId;
+            if (id == null) {
+              _showToast('请等播放画面就绪');
+              return;
+            }
+            await nativeBackend.prepareAetherPlayer(id);
           } else {
             final engine = _frameEngineOf(player);
             if (engine == null) {
@@ -3339,7 +3350,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   );
                 },
               ),
-            if (group == 'intro') _skipQuickButton(),
+            if (group == 'intro') _skipQuickButton(inPanel: true),
             if (group == 'intro')
               ListTile(
                 title: const Text('片头片尾与同剧记忆'),

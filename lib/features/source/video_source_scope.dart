@@ -129,7 +129,9 @@ class _SourcePickerEdgeSwipeState extends State<SourcePickerEdgeSwipe> {
                 final velocity =
                     (_fromLeft ? 1 : -1) * (details.primaryVelocity ?? 0);
                 input.settle(
-                  velocity > 650 || (velocity >= -650 && input.progress >= .5),
+                  velocity > 650 ||
+                      (velocity >= -650 &&
+                          input.progress * _width >= _minTravel),
                 );
                 return;
               }

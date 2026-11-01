@@ -84,6 +84,15 @@ final class AetherPlayerController: NSObject, FlutterPlatformViewFactory {
       case "seek": await session.engine.seek(to: (args["seconds"] as? Double ?? 0)); result(nil)
       case "volume": session.engine.volume = Float(args["value"] as? Double ?? 1); result(nil)
       case "snapshot": result(session.snapshot())
+      case "preparePip":
+        guard session.loaded, let pip = PipController.shared else { result(false); return }
+        let engine = session.engine
+        let software = engine.softwarePiPSource
+        result(pip.attachExternal(
+          playerLayer: engine.nativePlayerLayer, sampleLayer: software?.layer,
+          active: { [weak engine] active in engine?.pictureInPictureActive = active },
+          timeRange: { software?.timeRange() ?? .invalid },
+          isPaused: { [weak engine] in engine?.state != .playing }))
       case "audioTracks": result(session.tracks(subtitle: false))
       case "subtitleTracks": result(session.tracks(subtitle: true))
       case "selectAudio":
