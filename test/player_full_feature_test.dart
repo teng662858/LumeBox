@@ -793,6 +793,8 @@ void main() {
       expect(find.text('暂停'), findsNothing);
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('player-category-controls')));
+      await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.text('文字'),
         300,
@@ -1102,7 +1104,7 @@ void main() {
       expect(x('弹幕：开'), lessThan(x('播放速度（1.0x）')));
       expect(x('播放速度（1.0x）'), lessThan(x('线路 / 选集')));
       expect(find.text('弹幕'), findsOneWidget);
-      expect(find.text('1.0×'), findsOneWidget);
+      expect(find.text('1×'), findsOneWidget);
       expect(find.text('选集'), findsOneWidget);
       expect(find.byTooltip('清晰度'), findsNothing);
       expect(find.byTooltip('播放内核'), findsNothing);
@@ -1115,6 +1117,8 @@ void main() {
       // AVPlayer：字幕样式不支持（能力矩阵里为 false）。
       await pump(tester, catalog: const _AvPlayerOnlyCatalog());
       await tester.tap(find.byTooltip('播放器设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('player-category-audio')));
       await tester.pumpAndSettle();
 
       // 控件都在（不因内核而消失）。面板可滚动，先滚到字幕那一段。
@@ -1135,50 +1139,30 @@ void main() {
       expect(find.text(PlayerCapabilities.unsupportedMessage), findsOneWidget);
     });
 
-    testWidgets('设置弹窗：切内核后倍速显示那个内核自己的值', (tester) async {
+    testWidgets('切内核后按钮旁倍速菜单显示那个内核自己的值', (tester) async {
       await pump(tester);
+      await tester.tap(find.byTooltip('播放速度（1.0x）'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ChoiceChip, '1.5×'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('播放速度（1.5x）'), findsOneWidget);
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
-
-      // AVPlayer 上调 1.5x。
-      await tester.dragUntilVisible(
-        find.widgetWithText(ChoiceChip, '1.5x').first,
-        find.byType(PlayerSettingsSheet),
-        const Offset(0, -120),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find
-            .descendant(
-              of: find.byType(PlayerSettingsSheet),
-              matching: find.widgetWithText(ChoiceChip, '1.5x'),
-            )
-            .first,
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('1.5x'), findsWidgets);
-
-      // 分类跳转到内核，再回到播放分类，验证各内核独立倍速。
       await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('MPV'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('player-category-playback')));
+      Navigator.of(tester.element(find.byType(PlayerSettingsSheet))).pop();
       await tester.pumpAndSettle();
-      // 倍速滑杆在弹窗里（控制栏的进度条也是 Slider，因此先限定在弹窗内）。
+      await tester.tap(find.byTooltip('播放速度（1.0x）'));
+      await tester.pumpAndSettle();
       final slider = tester.widget<Slider>(
-        find
-            .descendant(
-              of: find.byType(PlayerSettingsSheet),
-              matching: find.byType(Slider),
-            )
-            .first,
+        find.descendant(
+          of: find.byKey(const Key('player-speed-menu')),
+          matching: find.byType(Slider),
+        ),
       );
-      expect(
-        slider.value,
-        1.0,
-        reason: 'MPV 的倍速是它自己记住的那一份，不继承 AVPlayer 的 1.5x',
-      );
+      expect(slider.value, 1.0);
     });
 
     testWidgets('弹幕独立入口有效，播放器设置不重复弹幕面板', (tester) async {
@@ -1404,6 +1388,8 @@ void main() {
       expect(find.byIcon(Icons.music_note_rounded), findsOneWidget);
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('player-category-audio')));
+      await tester.pumpAndSettle();
       await tester.dragUntilVisible(
         find.text('音乐模式'),
         find.byType(PlayerSettingsSheet),
@@ -1479,10 +1465,10 @@ void main() {
       await pump(tester);
       await tester.tap(find.byTooltip('播放速度（1.0x）'));
       await tester.pumpAndSettle();
-      expect(find.text('播放速度'), findsOneWidget);
-      await tester.tap(find.widgetWithText(ChoiceChip, '2.0x'));
+      expect(find.byKey(const Key('player-speed-menu')), findsOneWidget);
+      await tester.tap(find.widgetWithText(ChoiceChip, '2×'));
       await tester.pumpAndSettle();
-      expect(find.text('播放速度'), findsNothing);
+      expect(find.byKey(const Key('player-speed-menu')), findsNothing);
       expect(find.byTooltip('播放速度（2.0x）'), findsOneWidget);
     });
 
@@ -2226,6 +2212,8 @@ void main() {
 
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('player-category-picture')));
+      await tester.pumpAndSettle();
       await tester.dragUntilVisible(
         find.text('自动隐藏控制栏'),
         find.byType(PlayerSettingsSheet),
@@ -2585,6 +2573,8 @@ class _CountingClient extends http.BaseClient {
 Future<void> openPlayerAction(WidgetTester tester, String action) async {
   if (action == '清晰度' && find.byTooltip('清晰度').evaluate().isEmpty) {
     await tester.tap(find.byTooltip('播放器设置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('player-category-playback')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.widgetWithText(ListTile, '画质'));
     await tester.tap(find.widgetWithText(ListTile, '画质'));

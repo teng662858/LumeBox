@@ -40,6 +40,11 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
   }
 
   @override
+  Future<void> initialize() async {
+    await _created;
+  }
+
+  @override
   ValueListenable<PlayerSnapshot> get snapshot => _snapshot;
   @override
   ValueListenable<PlayerStats> get stats => _stats;
@@ -234,9 +239,21 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
     _generation++;
     _timer?.cancel();
     try {
-      final id = _id ?? await _created;
-      // Bypass the transport queue: native stop must cancel an in-flight load.
-      await channel.invokeMethod<void>('dispose', {'id': id});
+      final id = _id;
+      if (id != null) {
+        // Bypass the transport queue: native stop must cancel an in-flight load.
+        await channel.invokeMethod<void>('dispose', {'id': id});
+      } else {
+        // A timed-out native creation must not hold the fallback hostage. Dispose
+        // its eventual result as soon as it arrives, even after this Dart object exits.
+        unawaited(
+          _created
+              .then((id) async {
+                await channel.invokeMethod<void>('dispose', {'id': id});
+              })
+              .catchError((Object _) {}),
+        );
+      }
     } finally {
       await _hls.close();
       _snapshot.dispose();

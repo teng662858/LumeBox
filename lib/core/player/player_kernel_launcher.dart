@@ -115,6 +115,17 @@ class PlayerKernelLauncher {
       return null;
     }
     if (created == null) return null;
+    final remaining = timeout - DateTime.now().difference(started);
+    try {
+      if (remaining <= Duration.zero) {
+        throw TimeoutException('kernel initialization');
+      }
+      await created.initialize().timeout(remaining);
+    } catch (error, stackTrace) {
+      LumeLog.error(error, stackTrace);
+      await _discard(created, kernel);
+      return null;
+    }
     PlaybackDiagnostics.record(
       'kernel-created',
       kernel: kernel.name,
@@ -155,7 +166,10 @@ class PlayerKernelLauncher {
     // MDK 与 MPV 同一套熔断口径：失败的内核本次运行内不再提供，
     // 重启 App 会再给一次机会（不写进持久化配置）。
     if (kernel == PlayerKernel.mdk) PlayerFactory.markMdkInitFailed();
-    LumeLog.warn('[player] ${kernel.label} 初始化失败：本次运行内不再提供');
+    final action = kernel == PlayerKernel.aether
+        ? '已进入回退流程，可手动重试'
+        : '本次运行内不再提供';
+    LumeLog.warn('[player] ${kernel.label} 初始化失败：$action');
   }
 }
 

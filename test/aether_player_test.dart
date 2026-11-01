@@ -10,15 +10,17 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final calls = <MethodCall>[];
   Completer<void>? loading;
+  Completer<int>? creating;
   setUp(() {
     calls.clear();
     loading = null;
+    creating = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(AetherPlayer.channel, (call) async {
           calls.add(call);
           switch (call.method) {
             case 'create':
-              return 42;
+              return creating == null ? 42 : await creating!.future;
             case 'load':
               await loading?.future;
               return null;
@@ -88,5 +90,17 @@ void main() {
     await pending;
     await player.dispose();
     expect(calls.where((c) => c.method == 'dispose').length, 1);
+  });
+  test('late native creation is disposed without blocking fallback', () async {
+    creating = Completer<int>();
+    final player = AetherPlayer();
+    final initialization = player.initialize();
+    await Future<void>.delayed(Duration.zero);
+    await player.dispose().timeout(const Duration(seconds: 1));
+    creating!.complete(91);
+    await initialization;
+    await Future<void>.delayed(Duration.zero);
+    expect(calls.last.method, 'dispose');
+    expect((calls.last.arguments as Map)['id'], 91);
   });
 }

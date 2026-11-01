@@ -1,5 +1,4 @@
 import 'package:lume_box/core/intro/intro_store.dart';
-import 'package:lume_box/features/video/player_settings_sheet.dart';
 
 import 'dart:async';
 import 'dart:io';
@@ -255,6 +254,8 @@ void main() {
 
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('MPV'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('MPV'));
@@ -307,6 +308,8 @@ void main() {
 
       // 切到 MPV：初始化抛错 → 回退 AVPlayer + 提示。
       await tester.tap(find.byTooltip('播放器设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('MPV'));
       await tester.pumpAndSettle();
@@ -365,6 +368,8 @@ void main() {
       // 换成 MPV 内核：同一块 HUD 直接显示 MPV 的参数，页面代码零改动。
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('MPV'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('MPV'));
@@ -401,29 +406,11 @@ void main() {
         available: <PlayerKernel>{PlayerKernel.avplayer},
       );
 
-      await tester.tap(find.byTooltip('播放器设置'));
+      await tester.tap(find.byTooltip('播放速度（1.0x）'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(
-        find
-            .descendant(
-              of: find.byType(PlayerSettingsSheet),
-              matching: find.widgetWithText(ChoiceChip, '1.5x'),
-            )
-            .first,
-      );
+      await tester.tap(find.widgetWithText(ChoiceChip, '1.5×'));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find
-            .descendant(
-              of: find.byType(PlayerSettingsSheet),
-              matching: find.widgetWithText(ChoiceChip, '1.5x'),
-            )
-            .first,
-      );
-      await tester.pumpAndSettle();
-      // 设置是弹窗：用它的关闭按钮收起（不再是整页返回）。
-      await tester.tap(find.byTooltip('关闭'));
-      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('player-speed-menu')), findsNothing);
 
       expect(created.single.applied?.speed, 1.5);
       final store = await VideoPlayerSettingsStore.open();

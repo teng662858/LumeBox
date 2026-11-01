@@ -235,6 +235,8 @@ void main() {
       // 换到 MPV。
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('MPV'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('MPV'));
@@ -278,6 +280,10 @@ void main() {
       // 来回切四轮：AVPlayer → MPV → AVPlayer → MPV → AVPlayer。
       for (final kernel in <String>['MPV', 'AVPlayer', 'MPV', 'AVPlayer']) {
         await tester.tap(find.byTooltip('播放器设置'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('player-category-advanced')),
+        );
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text(kernel));
         await tester.pumpAndSettle();

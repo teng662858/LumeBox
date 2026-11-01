@@ -40,8 +40,8 @@ class PlayerSnapshot {
 
 /// 播放器抽象层。
 ///
-/// 三套实现：AVPlayer（video_player 驱动）、MPV（libmpv / media_kit 驱动）与
-/// MDK（libmdk / fvp 驱动）。
+/// 四套实现：AVPlayer（video_player 驱动）、MPV（libmpv / media_kit 驱动）与
+/// MDK（libmdk / fvp 驱动），以及原生 AetherEngine。
 ///
 /// ## 能力差异的唯一表达：能力矩阵 + 统一提示
 ///
@@ -58,6 +58,9 @@ class PlayerSnapshot {
 /// 所有方法都给了默认实现（默认 = 不支持），新内核只需覆盖它真能做的部分，
 /// 不必为了「接口齐全」写一堆空方法再各自解释。
 abstract class AbstractPlayer {
+  /// Engines with asynchronous native construction finish it inside the launch budget.
+  Future<void> initialize() async {}
+
   /// 当前状态。UI 通过 [snapshot] 订阅，无需自行轮询。
   ValueListenable<PlayerSnapshot> get snapshot;
 

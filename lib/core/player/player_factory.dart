@@ -1,6 +1,6 @@
-import 'aether_player.dart';
-
 import 'dart:io';
+
+import 'aether_player.dart';
 
 import 'abstract_player.dart';
 import 'av_player.dart';
@@ -9,10 +9,10 @@ import 'media_kit_mpv_engine.dart';
 import 'mpv_player.dart';
 import 'player_settings.dart';
 
-/// 播放器工厂：三套内核（AVPlayer / MPV / MDK）的唯一选择点。
+/// 播放器工厂：四套内核（AVPlayer / MPV / MDK / AetherEngine）的唯一选择点。
 ///
-/// 现状：iOS 上三套**都可用**——AVPlayer（video_player 驱动）、MPV（libmpv，
-/// media_kit 提供）与 **MDK**（libmdk，由 `fvp` 提供原生库与纹理渲染）。
+/// 现状：iOS 上四套**都可用**——AVPlayer（video_player 驱动）、MPV（libmpv，
+/// media_kit 提供）、MDK（libmdk / fvp），以及 AetherEngine 的原生显示层。
 /// 三者各有自己的解码链（系统 / libmpv / libmdk），因此「某台设备上某个内核
 /// 放不动（例如硬解 HEVC 花屏）」时还有别的选择——这正是留三套的意义。
 ///

@@ -119,6 +119,8 @@ void main() {
       // 在设置里选 MPV：初始化抛异常 → 自动回退。
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('MPV'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('MPV'));

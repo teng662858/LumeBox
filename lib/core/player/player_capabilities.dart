@@ -69,11 +69,11 @@ class PlayerCapabilities {
   static const String unsupportedMessage = '当前播放器内核不支持该功能，请切换其它播放器';
 
   /// 基础控制（播放 / 暂停 / 停止 / 进度 / 倍速 / 手势 / 缩放 / 旋转 / 锁屏 /
-  /// 画中画开关）**由 UI 层实现**，三套内核都支持，因此不在这里列出——
+  /// 画中画开关）**由 UI 层实现**，四套内核都支持，因此不在这里列出——
   /// 列出来的都是「必须内核配合」的项。
   static const PlayerCapabilities none = PlayerCapabilities();
 
-  /// 三套内核的能力矩阵：**全项目唯一的声明处**。
+  /// 四套内核的能力矩阵：**全项目唯一的声明处**。
   ///
   /// 各内核的 `capabilities` getter 都返回这里的表，因此不存在「实现里一份、
   /// 文档里一份」的漂移；没有播放器实例的地方（全局设置页）也能查到某个内核的
@@ -166,7 +166,7 @@ class PlayerCapabilities {
 
 /// 一条可选音轨 / 字幕轨（内核无关的统一形状）。
 ///
-/// 三套内核的原始形状差别很大（libmpv 的轨道 id 是字符串、MDK 是下标、AVPlayer
+/// 四套内核的原始形状差别很大（libmpv 的轨道 id 是字符串、MDK 是下标、AVPlayer
 /// 是 "0/1/2" 这样的序号），这里统一成「id + 展示名 + 语言 + 是否默认」。
 @immutable
 class PlayerTrack {

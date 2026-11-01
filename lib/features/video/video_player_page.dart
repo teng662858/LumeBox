@@ -3307,6 +3307,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       // 方向锁定：值来自应用级偏好（与全局设置的「横屏播放」同一份）。
       orientation: _orientation,
       onOrientationChanged: PlaybackOrientationController.instance.apply,
+      introControls: _buildPlaybackSettings('intro'),
       extraControls: _buildPlaybackSettings('playback'),
       audioControls: _buildPlaybackSettings('audio'),
       connectionControls: _buildPlaybackSettings('connection'),
@@ -3336,6 +3337,25 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                       ),
                     ),
                   );
+                },
+              ),
+            if (group == 'intro') _skipQuickButton(),
+            if (group == 'intro')
+              ListTile(
+                title: const Text('片头片尾与同剧记忆'),
+                subtitle: const Text('记一次，后续各集自动沿用；无需作品 ID'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  unawaited(_openOriginalIntro());
+                },
+              ),
+            if (group == 'playback' && _fullscreen && _media != null)
+              ListTile(
+                title: const Text('画质'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  unawaited(_openQualityMenu());
                 },
               ),
             if (group == 'audio') ...[

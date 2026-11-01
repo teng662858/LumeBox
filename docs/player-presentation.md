@@ -79,3 +79,7 @@ bash tool/check_ios_player_presentation.sh
 「播放与连接」分别展示片源动态范围、内核报告动态范围、播放路由及音频路径。Atmos 音轨标签不表示已验证 Atmos 输出；须按上述真机清单检查设备、耳机/HDMI 接收器和片源。新增桥接回归覆盖请求头/偏好传递、轨道 ID、状态回报，以及加载途中释放不阻塞、不更新已释放通知器。
 
 上游代码和分发条款：[AetherEngine 7.53.1](https://github.com/superuser404notfound/AetherEngine/tree/7.53.1)。构建通过 SPM 链接其运行库；发行包须保留其及依赖的许可证，参见 third_party/AetherEngine-NOTICES.md。
+
+同批保留按钮旁倍速菜单与分组偏好面板；补回全屏设置里的画质入口，并保留片头片尾的快捷标记与同剧记忆。相关回归通过新入口操作，仍验证切内核时的进度保留、旧实例释放与独立倍速偏好。
+
+本次验证：静态检查无问题；常规回归 2800 项及原生串行回归 10 项通过，原有 11 项跳过。macOS 完整未签名 iOS 构建通过；检查产物确认 MinimumOSVersion 为 18.0，原生 Aether 通道、视图注册、运行库和许可证均在包内。HDR／杜比实际显示与 Atmos 输出仍需真机验收。

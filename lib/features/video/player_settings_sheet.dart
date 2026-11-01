@@ -273,7 +273,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           const SizedBox(height: 20),
         ],
       ),
-      if (widget.showPlaybackShortcuts)
+      if (widget.showPlaybackShortcuts || widget.introControls != null)
         _group('intro', '片头片尾', Icons.skip_next_outlined, [
           widget.introControls ??
               ListTile(
@@ -575,7 +575,9 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       runSpacing: 6,
       children: [
         for (final category in _categories)
-          if ((category.$1 != 'intro' || widget.showPlaybackShortcuts) &&
+          if ((category.$1 != 'intro' ||
+                  widget.showPlaybackShortcuts ||
+                  widget.introControls != null) &&
               (category.$1 != 'danmaku' ||
                   _danmaku != null ||
                   widget.danmakuControls != null))
