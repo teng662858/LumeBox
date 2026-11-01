@@ -190,6 +190,7 @@ class SourceContentRating {
     'xcamtube_video',
     'madoutv_video',
     'mitaow_video',
+    'mitaovideo_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

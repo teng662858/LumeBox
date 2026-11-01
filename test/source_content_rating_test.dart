@@ -63,6 +63,7 @@ void main() {
     'xcamtube_video',
     'madoutv_video',
     'mitaow_video',
+    'mitaovideo_video',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);
