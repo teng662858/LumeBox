@@ -1,4 +1,4 @@
-﻿# LumeBox 视频源：站点转源结果
+# LumeBox 视频源：站点转源结果
 
 ## 2026-11-01 六个新源（子子影视 / PPnix / 厂长资源 / 嘀嗒影视 / 多多追剧 / 爱壹帆）
 
@@ -271,7 +271,12 @@ sources/video/
 ├── 9188porn.js   9188色情网（www.9188porn.com）macCMS；**需代理**；列表直链播放页，player_aaaa 给 m3u8
 ├── mtav.js       蜜桃视频（mtav.art）macCMS/TKTube；**需代理**；/vod/show/id/<N>/ 三区、搜索 /vod/search.html?wd=（导航里的 tmav.art 是天美AV，不同站，不作镜像）
 ├── heroero.js    HeroEro（heroero.com）KVS；**需代理**；/latest-updates/、/categories/<slug>/，详情 flashvars 直给 mp4（Range 1KB）
-└── qinav.js      Qinav（www.qinav.com）；**需代理**；/site/5/<N>-<P>.html 分类分页、/search.html?wd=，embed 页 const url 给 m3u8
+├── qinav.js      Qinav（www.qinav.com）；**需代理**；/site/5/<N>-<P>.html 分类分页、/search.html?wd=，embed 页 const url 给 m3u8
+├── kpkuang.js    看片狂人（kpkuang.com，镜像 www.kpkuang.one / kpkuang.one）macCMS「vfed」；48 条/页真分页，国产剧/短剧/电影分类型共 16 组；
+│                 单条 4–26 条线路（4K/2160P、1080P、睿映HD、720高清云…），`data-play` 前缀+base64 → m3u8 直链，外链线路转 webplayer；
+│                 搜索走站点 JSONP 接口（/vodsearch 被 Cloudflare 挡）
+└── gimy.js       劇迷（gimy.org，海外镜像站）Bootstrap SSR；大陆/港/台/韩/日/美 + 电影/综艺/动漫 9 组，24 条/页；
+                  单集 13–27 条 m3u8 线路（`/_gimy_plays/{id}/{ep}`），源内按顺序探活前 4 条再定默认线
 ```
 
 - `video/kanju-ai.js` —— 看剧AI（kanju24.com；镜像 kanju.ai / kanju13.com / www.kanju24.com）：
@@ -361,6 +366,8 @@ App → 视频板块 → **源管理** → 导入，三种方式任选：
 | 麻豆TV（18+） | **是** | 1 块 | 60 频道（麻豆/糖心/蜜桃/天美/SWAG/JVID…） | 24 | 0（接口无搜索） | ok | 1 | **video（/video/listcache 条目自带 ideo_url → m3md.n6uem8.xyz/…/index.m3u8，探活 200 + #EXTM3U；接口 AES-256-CBC + md5 签名）** |
 | 蜜桃网（18+） | **是** | 1 块 | 2 列表（今日/热门）+ 9 分类 | 40 | 23（/search/<词>/） | ok | 1 | **video（详情 data-config.video.url → hls.ohjzmm.cn/videos5/…/index.m3u8，探活 200 + #EXTM3U）** |
 | 蜜桃视频（18+） | **是** | 1 块 | 6 频道（国产/日韩/网黄/欧美/AI剧/动漫）+ 最新/推荐 | 20 | 0（无搜索） | ok | 1 | **video（/play/<id> 的 APP_DATA → p.xionganzhengwu.com/…/video.m3u8?sign=，签名 md5(path-ts-rand-0-密钥) 已在源内复刻，探活 200 + #EXTM3U）** |
+| 看片狂人 | 否 | — | 16 组（国产剧/港台剧/日韩剧/欧美剧/海外剧/台剧/泰剧/韩剧/短剧细分/电影分类型/综艺/动漫/纪录片） | 48 | 15（站点 JSONP 接口，`/vodsearch` 被 CF 挡） | ok | 4 线路 | **video（`data-play` 前缀+base64 → `svip.ryiplay18.com/…/index.m3u8`，探活 200 + `#EXTM3U` 1080x608）；外链线路（腾讯/优酷/B站/Abyss/mixdrop）转 webplayer** |
+| 劇迷 | 否 | — | 9 组（大陸/港/台/韩/日/美剧 + 电影/综艺/动漫） | 24 | 24（`/search?q=`） | ok | 1（集内 13–27 线路） | **video（`/_gimy_plays/{id}/{ep}` → `bfikuncdn.com/…/index.m3u8`，源内探活前 4 条，200 + `#EXTM3U` 1920x1080）** |
 
 「播放」列是**真去请求那个地址**验的：`video` 表示拿到播放地址且 HTTP 200 + `#EXTM3U`（HLS 清单）；
 `webplayer` 表示拿不到可直连的 m3u8，交给 App 内置网页播放器去跑源站自己的播放器。
