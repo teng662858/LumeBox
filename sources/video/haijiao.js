@@ -1,4 +1,4 @@
-// LumeSource: {"id":"haijiao_video","name":"海角 18+","version":"1.1.0","category":"video","contentCategory":"adult","mirrors":["https://www.haijiao.com","https://haijiao.com"],"network":"direct","icon":"https://www.haijiao.com/imgs/project/favicon.ico"}
+// LumeSource: {"id":"haijiao_video","name":"海角 18+","version":"1.2.0","category":"video","contentCategory":"adult","mirrors":["https://www.haijiao.com","https://haijiao.com"],"network":"direct","icon":"https://www.haijiao.com/imgs/project/favicon.ico"}
 //
 // 站点：海角社区（https://www.haijiao.com/home，Vue2 SPA + /api JSON，2026-11-01 复测）
 //
@@ -26,33 +26,31 @@
 //     （站点前端用 v-lazyloadimg 指令现解），App 图片管线解不开 —— 这种不给封面，
 //     宁可留空也不要在列表里刷一片破图。
 //
-// ── 播放地址：**匿名拿不到，服务端硬门禁**（本源最大的已知限制，如实记账）
-//   实测证据（2026-10-25，代理下多轮复现）：
-//     · GET /api/topic/att/{att} 匿名 → 200，返回 3 条线路（普通1 / 普通2 / VIP线路），
-//       但 **url 字段全是空字符串**；
-//     · POST /api/attachment {id, resource_id, resource_type:'video_center', line} 匿名 →
-//       {"errorCode":1}（拦截器里 1 = ErrorNotLogin）；
-//     · 站点标成免费（access_type=1）的片子也一样：detail 里 can_play=false、is_unlocked=false，url 仍为空；
-//     · 拿猜出来的直链撞 CDN（…/<hash>/49.m3u8、index.m3u8、加 .txt 后缀…）全部 404；
-//     · 页面是纯 SPA，没有 SSR / og:video 可蹭（/homepage/video/{id} 回的还是同一个空壳）。
-//   结论：**海角的播放地址不是「登录就有」，登录之后还要「解锁」**。
-//   2026-10-25 用真实登录态（浏览器登录后导出的 token + uid=17761204）实测：
-//     · GET /api/topic/att/{attachment_id}  带着 X-User-Token / X-User-Id / Cookie → 200，
-//       但 3 条线路（普通1 / 普通2 / VIP线路）的 `url` **仍然全为空**（逐层 base64 解出来确认过）；
-//     · 详情行里带 `is_unlocked` / `can_play` 两个字段 —— 说明还差一步 `POST /api/attachment`
-//       的解锁动作（观影券 / VIP / 花积分），那是站点账务，本源不去绕、不代刷。
+// ── 播放地址：2026-11-01 用真账号把两条路都跑通了（结论按接口分开说，别再一概而论）
+//   **A. 帖子（topic）里的视频：登录就够，不用买券** ✅ 原生可播
+//       POST /api/attachment  {id:<附件id>, line:'', resource_id:<topicId>, resource_type:'topic'}
+//       → 200 data.remoteUrl = https://ts10.hj260302818.top/hjstore/video/<日期>/<hash>/<附件id><tok>_i.m3u8
+//       实测该 m3u8 200 + #EXTM3U、key 200（16 字节）、分片 200，App 原生 HLS 直接能放。
+//       ★ 注意 line 必须传 ''（传 0 会回"请求错误"），resource_type 必须是 'topic'。
+//   **B. 视频中心（video_center）的片子：服务端账务门禁** ❌ 拿不到
+//       同一个接口传 resource_type:'video_center' → 200 但 message="当前用户无权播放该视频"
+//       （登录 + 无券账号实测；GET /api/video/<id> 指的是另一张旧表，不是视频中心的 id）。
+//       这条走网页播放，本源码不去绕站点账务。
+//   **C. sleazyfork 上那些"海角破解脚本"的真相（拆包实证）**
+//       ① 只处理 post/details 页面 —— 也就是上面的 A 路：它们只是把附件地址取出来换播放器；
+//       ② 遇到"付费帖"它们并不破站，而是去 GitHub Gist 拉配置（svc + 一个 JWT 形式的 key），
+//          再请求第三方解析站（实测配置里是 https://kittymao.xyz/api/hj/movieInfo?kthjau=<key>…）
+//          拿别人的转码地址。那是外部盗链服务，key 会轮换、随时挂，还有广告/钓鱼风险，本源不接。
+//
 //   所以本源：
-//     1) 元数据（分类 / 列表 / 搜索 / 详情 / 封面 / 线路名）匿名全部可用；
-//     2) content 拿不到地址时**改走网页播放**（kind:'webplayer' → /watch?id=<id>，登录/解锁后
-//        在 App 的网页视图里直接看），不再是一句干巴巴的报错；
-//     3) 支持登录：账号密码填「源设置 → 账号登入」，或把浏览器 Cookie（含 token=、uid=）
-//        粘到「网络配置」，本源用 /api/login/signin 换 token 并带 X-User-Token / X-User-Id 重取地址。
-//        ——登录只解决「身份」，片子本身还要「解锁」，那一步本源不做。
+//     1) 元数据（分类 / 列表 / 搜索 / 详情 / 封面）匿名全部可用；
+//     2) 帖子视频（条目 id = `t<topicId>`，分类「帖子视频」）：登录后走 A 路取真 m3u8，原生播放；
+//        没登录就退回网页播放（/post/details?pid=…）；
+//     3) 视频中心：先试 A 接口（B 路若放行就原生播），拿不到就 webplayer（/watch?id=…）；
+//     4) 登录方式：账号密码填「源设置 → 账号登入」（POST /api/login/signin，不需要图形验证码），
+//        或把浏览器 Cookie（含 token=、uid=）粘到「网络配置」。
 //        注：Cookie 里可能同时存在别的域的同名 uid（例如广告域 ad.* 的 16 位十六进制 uid），
 //        本源优先取**纯数字**的那个（海角的 uid 是数字），避免把广告 uid 当账号 id 发出去。
-//     4) 站点 HLS 的 EXT-X-KEY 密钥在播放器里还要过一层 wasm（同名 .jpg 参与计算，
-//        play 页 `jquery_key`），**这点没能验证**（拿不到一条真实地址）；如果哪天解锁后拿到地址却
-//        解不出画面，大概率是这个原因，不是解析错了。
 //     5) 网页播放页路由实测：/watch?id=<videoId>（c3 里 `$router.push({name:'videoWatch',query:{id}})`），
 //        帖子详情页是 /post/details?pid=<topicId>。
 //
@@ -451,20 +449,143 @@ function playableLines(lines) {
   return played;
 }
 
+// ── 真正的取地址接口（2026-11-01 用真账号实测出来的）──
+//   POST /api/attachment  {id:<附件 id>, line:'', resource_id:<帖子/视频 id>, resource_type:'topic'|'video_center'}
+//   · resource_type:'topic' + 已登录 → 200 且 data.remoteUrl = https://ts10.hj…/<hash>/<附件id><token>_i.m3u8
+//     （**登录就够，不用买券**；帖子正文里的视频走这条）——这就是那些"解锁脚本"真正用的接口。
+//   · resource_type:'video_center' → 未购买/VIP 时 200 但 message="当前用户无权播放该视频"。这是站点账务，
+//     源里如实退回网页播放，不绕。
+//   line 传 '' 才会命中"普通1"；传 0 会回 "请求错误"。
+async function fetchAttachmentUrl(attachmentId, resourceId, resourceType) {
+  var id = Number(attachmentId);
+  var owner = Number(resourceId);
+  if (!id || !owner) return '';
+  var auth = await currentAuth();
+  if (!auth) auth = await signIn();
+  if (!auth) return '';
+  var reply = await apiRequest('/attachment', {
+    auth: auth,
+    referer: base() + '/home',
+    body: { id: id, line: '', resource_id: owner, resource_type: resourceType }
+  });
+  if (!reply.ok) return '';
+  var data = reply.data || {};
+  return String(data.remoteUrl || '').trim();
+}
+
+// ── 论坛帖子（topic）：正文里的视频登录即可原生播放，所以单独接成一类条目 ──
+var TOPIC_FEED = '/topic/node/topics?type=1&page=';
+
+function topicVideoAttachment(row) {
+  var list = row && Array.isArray(row.attachments) ? row.attachments : [];
+  for (var i = 0; i < list.length; i++) {
+    var att = list[i] || {};
+    if (String(att.category || '') === 'video' && att.id) return att;
+  }
+  return null;
+}
+
+function topicToItem(row) {
+  if (!row || !row.topicId) return null;
+  var title = String(row.title || '').trim();
+  if (!title || BANNED.test(title)) return null;
+  var att = topicVideoAttachment(row);
+  if (!att) return null; // 只有图文帖的先进来也没用，直接跳过
+  var bits = [];
+  if (row.node && row.node.name) bits.push(String(row.node.name));
+  if (row.viewCount) bits.push(row.viewCount + ' 浏览');
+  if (row.likeCount) bits.push(row.likeCount + ' 赞');
+  return {
+    id: 't' + row.topicId,
+    title: title,
+    cover: coverOf(att.coverUrl || ''),
+    subtitle: bits.join(' · ')
+  };
+}
+
+async function fetchTopicPage(page) {
+  var reply = await apiRequest(TOPIC_FEED + page, { referer: base() + '/home' });
+  if (reply.code !== 0 || !reply.data) {
+    throw new Error('海角：帖子列表接口失败（' + (reply.message || 'errorCode ' + reply.code) + '）');
+  }
+  var rows = Array.isArray(reply.data.results) ? reply.data.results : [];
+  var items = [];
+  for (var i = 0; i < rows.length; i++) {
+    var item = topicToItem(rows[i]);
+    if (item) items.push(item);
+  }
+  var meta = reply.data.page || {};
+  var total = Number(meta.total) || 0;
+  return { items: items, hasMore: total > page * PAGE_LIMIT };
+}
+
+var TOPIC_MEMORY = {};
+
+async function topicRow(topicId) {
+  var key = String(topicId);
+  if (TOPIC_MEMORY[key]) return TOPIC_MEMORY[key];
+  var reply = await apiRequest('/topic/' + key, { referer: base() + '/home' });
+  if (reply.code !== 0 || !reply.data) return null;
+  TOPIC_MEMORY[key] = reply.data;
+  return reply.data;
+}
+
+/// 帖子详情（t<topicId>）
+async function topicDetail(topicId) {
+  var row = await topicRow(topicId);
+  if (!row) return null;
+  var title = String(row.title || '').trim();
+  if (!title) return null;
+  var lines = [];
+  if (row.node && row.node.name) lines.push('版块：' + String(row.node.name));
+  if (row.user && row.user.nickname) lines.push('作者：' + String(row.user.nickname));
+  if (row.createTime) lines.push('发布：' + String(row.createTime).slice(0, 16));
+  var bits = [];
+  if (row.viewCount) bits.push(row.viewCount + ' 浏览');
+  if (row.commentCount) bits.push(row.commentCount + ' 评论');
+  var tags = [];
+  if (Array.isArray(row.tags)) {
+    for (var i = 0; i < row.tags.length; i++) {
+      var tag = row.tags[i];
+      if (tag && tag.tagName && !BANNED.test(String(tag.tagName))) tags.push(String(tag.tagName));
+    }
+  }
+  if (tags.length) lines.push('标签：' + tags.join(' / '));
+  if (row.money_type) {
+    lines.push('付费帖：money_type=' + row.money_type + '（帖子视频登录可播，正文内容按站点规则）');
+  } else {
+    lines.push('观看：帖子里的视频登录后可直接原生播放');
+  }
+  var text = String(row.content || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text) lines.push(text.slice(0, 300));
+  var att = topicVideoAttachment(row);
+  return {
+    id: 't' + String(topicId),
+    title: title,
+    cover: att ? coverOf(att.coverUrl || '') : '',
+    subtitle: bits.join(' · '),
+    description: lines.join('\n')
+  };
+}
+
 /// 播放门禁的说明（详情页里给用户看；播放时改用网页视图，不再抛错）
 function gateMessage() {
   return (
-    '获取地址：匿名请求 /api/topic/att/{id} 只回线路名、url 为空（实测 2026-11-01 复现），' +
-    '连标称免费的片也是 can_play=false；本源在这一步改走网页播放（/watch?id=…），' +
-    '登录/观影券解锁后在网页视图里直接看。想走原生地址：到「源设置 → 账号登入」填账号密码，' +
-    '或把浏览器 Cookie（含 token=、uid=）粘进「网络配置」。'
+    '获取地址：视频中心的片子要不买券/开 VIP，服务端不会下发地址（POST /api/attachment 明确回' +
+    '「当前用户无权播放该视频」），本源在这一步改走网页播放（/watch?id=…）。' +
+    '想走原生地址：到「源设置 → 账号登入」填账号密码或粘 Cookie（含 token=、uid=）。' +
+    '注：论坛帖子里的视频登录就够，不需要买券，本源会自动走原生播放。'
   );
 }
 
 var LumeSource = {
   id: 'haijiao_video',
   name: '海角',
-  version: '1.1.0',
+  version: '1.2.0',
   category: 'video',
   contentCategory: 'adult',
   mirrors: ['https://www.haijiao.com', 'https://haijiao.com'],
@@ -472,6 +593,7 @@ var LumeSource = {
   async categories() {
     var tree = await loadTree();
     var rows = [
+      { id: 'topic_video', title: '帖子视频（登录可原生播）' },
       { id: 'feed_latest', title: '最新' },
       { id: 'feed_hot', title: '最热' }
     ];
@@ -497,6 +619,15 @@ var LumeSource = {
       }
     } catch (error) {
       /* 第二块挂了不影响首屏 */
+    }
+    // 第三块：论坛帖子里带视频的（登录后能直接原生播放，见文件头实证）
+    try {
+      var topics = await fetchTopicPage(1);
+      if (topics.items.length) {
+        boards.push({ title: '帖子视频', moreUrl: 'topic_video', items: topics.items.slice(0, 18) });
+      }
+    } catch (error) {
+      /* 帖子流挂了不影响首屏 */
     }
     if (!boards.length) throw new Error('海角：首页没有解析出条目（站点可能改版，或网络被拦）');
     return boards;
@@ -525,6 +656,7 @@ var LumeSource = {
     if (picks.length) categoryId = 'cat_' + picks[0];
 
     if (categoryId === 'feed_hot' || categoryId === 'feed_latest') return fetchList(page, PAGE_LIMIT, {});
+    if (categoryId === 'topic_video') return fetchTopicPage(page);
 
     if (categoryId.indexOf('cat_') === 0) {
       var childId = categoryId.slice(4);
@@ -546,7 +678,9 @@ var LumeSource = {
   },
 
   async detail(argument) {
-    var id = String((argument && argument.id) || '').replace(/[^\d]/g, '');
+    var raw = String((argument && argument.id) || '');
+    if (/^t\d+$/i.test(raw)) return topicDetail(raw.slice(1));
+    var id = raw.replace(/[^\d]/g, '');
     if (!id) return null;
     var row = await detailRow(id);
     if (!row) return null;
@@ -587,7 +721,9 @@ var LumeSource = {
 
   /// 「章节」= 播放线路（普通1 / 普通2 / VIP线路）。线路名匿名可见，地址要登录。
   async chapters(argument) {
-    var id = String((argument && argument.id) || '').replace(/[^\d]/g, '');
+    var raw = String((argument && argument.id) || '');
+    if (/^t\d+$/i.test(raw)) return [{ id: '0', title: '正片' }];
+    var id = raw.replace(/[^\d]/g, '');
     if (!id) return [];
     var row = await detailRow(id);
     if (!row || !row.attachment_id) return [];
@@ -602,16 +738,52 @@ var LumeSource = {
 
   async content(argument) {
     var arg = argument || {};
-    var id = String(arg.id || '').replace(/[^\d]/g, '');
+    var raw = String(arg.id || '');
+    if (!raw) throw new Error('海角：缺少 id');
+
+    // 帖子（t<topicId>）：登录就能拿到 m3u8，不需要买券
+    if (/^t\d+$/i.test(raw)) {
+      var topicId = raw.slice(1);
+      var trow = await topicRow(topicId);
+      if (!trow) throw new Error('海角：取不到帖子（' + topicId + '）');
+      var att = topicVideoAttachment(trow);
+      var topicPage = base() + '/post/details?pid=' + topicId;
+      var topicUrl = att ? await fetchAttachmentUrl(att.id, topicId, 'topic') : '';
+      if (topicUrl) {
+        return {
+          kind: 'video',
+          url: topicUrl,
+          headers: { Referer: topicPage, 'User-Agent': UA, Origin: base() }
+        };
+      }
+      return {
+        kind: 'webplayer',
+        pageUrl: topicPage,
+        headers: { Referer: base() + '/home', 'User-Agent': UA, Origin: base() },
+        webPlayerOptions: {}
+      };
+    }
+
+    var id = raw.replace(/[^\d]/g, '');
     if (!id) throw new Error('海角：缺少视频 id');
     var row = await detailRow(id);
     if (!row) throw new Error('海角：取不到视频详情（id ' + id + '）');
     if (!row.attachment_id) throw new Error('海角：这条没有视频附件（可能是图文帖）');
 
+    // 第一优先：POST /api/attachment（真地址入口；video_center 要已购买/有权限）
+    var direct = await fetchAttachmentUrl(row.attachment_id, id, 'video_center');
+    if (direct) {
+      var watchPage0 = base() + '/watch?id=' + id;
+      return {
+        kind: 'video',
+        url: direct,
+        headers: { Referer: watchPage0, 'User-Agent': UA, Origin: base() }
+      };
+    }
+
+    // 第二优先：老的分线路表（有些片子从这里能拿到）
     var lines = await fetchLines(row.attachment_id, id);
     var played = playableLines(lines);
-
-    // 匿名拿不到地址时，如果配了账号/Cookie，就用登录态再试一次
     if (!played.length) {
       var auth = await currentAuth();
       if (!auth) auth = await signIn();
@@ -622,8 +794,7 @@ var LumeSource = {
     }
 
     if (!played.length) {
-      // 匿名 / 未解锁：不给假地址，也不只报错 —— 转交 App 的网页视图，
-      // 用户在站内登录（或买券）后自己点播放，播放器/HLS 密钥全由站点自己处理。
+      // 没权限（服务端明确回「当前用户无权播放该视频」）：不给假地址，转交网页视图
       return {
         kind: 'webplayer',
         pageUrl: base() + '/watch?id=' + id,
