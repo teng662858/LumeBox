@@ -61,6 +61,7 @@ void main() {
     'rule34video_video',
     'oreno3d_video',
     'xcamtube_video',
+    'madoutv_video',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);

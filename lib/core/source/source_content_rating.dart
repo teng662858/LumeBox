@@ -1,4 +1,4 @@
-/// Explicitly identified adult sources. Unknown sources stay unclassified.
+﻿/// Explicitly identified adult sources. Unknown sources stay unclassified.
 class SourceContentRating {
   // Synced from LumeBox-Sources/content-ratings.json (2026-10-26).
   // Unknown sources remain unclassified; these IDs also drive privacy hiding.
@@ -188,6 +188,7 @@ class SourceContentRating {
     'rule34video_video',
     'oreno3d_video',
     'xcamtube_video',
+    'madoutv_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
