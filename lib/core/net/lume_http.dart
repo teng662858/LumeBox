@@ -243,16 +243,11 @@ class LumeHttp {
     final rewritten = _rewriteUrl?.call(url) ?? url;
     var target = Uri.parse(rewritten);
     var verb = method.toUpperCase();
-    var outgoing = _headersFor(headers, url: url);
-    if (rewritten != url) {
-      outgoing.removeWhere(
-        (k, _) => ['cookie', 'authorization'].contains(k.toLowerCase()),
-      );
-      final ref = outgoing.keys
-          .where((k) => k.toLowerCase() == 'referer')
-          .firstOrNull;
-      if (ref != null) outgoing[ref] = _rewriteUrl!(outgoing[ref]!);
-    }
+    var outgoing = _routedHeaders(
+      url,
+      rewritten,
+      _headersFor(headers, url: url),
+    );
     var payload = body;
     var binary = bodyBytes;
     final seen = <String>{};
@@ -269,6 +264,7 @@ class LumeHttp {
         outgoing,
         forceCookies:
             hop == 0 &&
+            Uri.parse(url).origin == target.origin &&
             (headers?.keys.any((k) => k.toLowerCase() == 'cookie') ?? false),
       );
       final response = await _sendOne(
@@ -358,23 +354,13 @@ class LumeHttp {
     bool preparedHeaders = false,
   }) async {
     final target = _rewriteUrl?.call(url) ?? url;
-    final outgoingHeaders = preparedHeaders
-        ? Map<String, String>.of(headers ?? {})
-        : _headersFor(headers);
-    if (target != url) {
-      outgoingHeaders.removeWhere(
-        (key, _) =>
-            const {'cookie', 'authorization'}.contains(key.toLowerCase()),
-      );
-      final refererKey = outgoingHeaders.keys
-          .where((key) => key.toLowerCase() == 'referer')
-          .firstOrNull;
-      if (refererKey != null) {
-        outgoingHeaders[refererKey] = _rewriteUrl!(
-          outgoingHeaders[refererKey]!,
-        );
-      }
-    }
+    final outgoingHeaders = _routedHeaders(
+      url,
+      target,
+      preparedHeaders
+          ? Map<String, String>.of(headers ?? {})
+          : _headersFor(headers, url: url),
+    );
     final cancellation = NetworkCancellation();
     final stopLifetime = _lifetime.onCancel(cancellation.cancel);
     final stopOwner = NetworkCancellation.current?.onCancel(
@@ -487,6 +473,37 @@ class LumeHttp {
       body: bytes,
       headers: streamed.headers,
     );
+  }
+
+  /// Keep site routing and request identity consistent for every HTTP source.
+  /// Only origin changes discard credentials; changing a directory on the same
+  /// origin must retain its session. Destination cookies are added separately
+  /// by SiteSessionPool, never copied from the old site.
+  Map<String, String> _routedHeaders(
+    String original,
+    String target,
+    Map<String, String> headers,
+  ) {
+    if (original == target) return headers;
+    final from = Uri.parse(original), to = Uri.parse(target);
+    if (from.origin != to.origin) {
+      headers.removeWhere(
+        (key, _) => const {
+          'cookie',
+          'authorization',
+          'proxy-authorization',
+          'host',
+        }.contains(key.toLowerCase()),
+      );
+    }
+    for (final key in headers.keys.toList()) {
+      if (key.toLowerCase() == 'referer') {
+        headers[key] = _rewriteUrl!(headers[key]!);
+      } else if (key.toLowerCase() == 'origin' && headers[key] == from.origin) {
+        headers[key] = to.origin;
+      }
+    }
+    return headers;
   }
 
   /// 请求头：调用方给的优先，UA 与 Cookie 按「图源覆盖 → 全局」补齐。
