@@ -16,5 +16,5 @@ assert source.count(marker) == 1
 Path(sys.argv[1]).write_text('import AVFoundation\nimport Flutter\n' + source[source.index(marker):])
 PY
 xcrun swiftc -typecheck -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
-  -target arm64-apple-ios16.0-simulator -F "$FRAMEWORKS" "$CHECK_DIR/PlayerPresentation.swift"
+  -target arm64-apple-ios18.0-simulator -F "$FRAMEWORKS" "$CHECK_DIR/PlayerPresentation.swift"
 echo "AVFoundation presentation channel typecheck passed"

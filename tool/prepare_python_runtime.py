@@ -148,7 +148,7 @@ def embed(output):
         with (folder / "Info.plist").open("wb") as handle:
             plistlib.dump({"CFBundleExecutable": module, "CFBundleIdentifier": identifier,
                 "CFBundlePackageType": "FMWK", "CFBundleVersion": "1",
-                "CFBundleShortVersionString": "1.0", "MinimumOSVersion": "13.0"}, handle)
+                "CFBundleShortVersionString": "1.0", "MinimumOSVersion": "18.0"}, handle)
         marker = binary.with_suffix(".fwork")
         marker.write_text(target.relative_to(app).as_posix() + "\n")
         (folder / (module + ".origin")).write_text(marker.relative_to(app).as_posix() + "\n")

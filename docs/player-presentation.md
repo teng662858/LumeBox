@@ -2,7 +2,7 @@
 
 播放器设置中的「HDR 与杜比」「画质增强」「字幕偏好」提供独立开关，设置保存在视频板块自己的数据库中。开关代表播放偏好；「播放与连接」里的信息显示内核报告的格式、显示路径和未生效参数。
 
-当前主力平台为 iOS，最低支持版本统一为 iOS 16.0。HDR 亮度、杜比视界 Profile 兼容性和 Atmos 输出需要用实际设备、片源与输出设备验收；设备具备 HDR 条件、音轨是 EC-3、系统允许空间音频，均不能单独证明 HDR 或 Atmos 已实际输出。
+当前主力平台为 iOS，最低支持版本统一为 iOS 18.0。HDR 亮度、杜比视界 Profile 兼容性和 Atmos 输出需要用实际设备、片源与输出设备验收；设备具备 HDR 条件、音轨是 EC-3、系统允许空间音频，均不能单独证明 HDR 或 Atmos 已实际输出。
 
 ## 调整播放效果
 
@@ -67,3 +67,15 @@ bash tool/check_ios_player_presentation.sh
 - [Apple：HDR 播放条件](https://developer.apple.com/documentation/avfoundation/avplayer/eligibleforhdrplayback)
 - [Apple：系统空间音频与输出路由](https://developer.apple.com/videos/play/wwdc2021/10265/)
 - [MPV：渲染、色调映射与字幕选项](https://mpv.io/manual/stable/)
+
+## AetherEngine（iOS 18 起）
+
+播放内核菜单新增 AetherEngine，保留 AVPlayer / MPV / MDK。SPM 固定 7.53.1；FFmpeg 解封装，VideoToolbox / 软件解码，AetherPlayerView 的原生 AVPlayerLayer / AVSampleBufferDisplayLayer 呈现，避免将 HDR 画面压进 SDR Flutter 纹理。最低目标统一升至 iOS 18.0，包括自维护插件与验证脚本。
+
+现有 HDR / 杜比视界偏好传给 HLS 选流和 Aether 原生路由。关闭 DV 时对具备兼容基础层的片源使用基础层；无兼容基础层的 Profile 5 不做错误的强制剥离。SDR 偏好关闭 Match Content、优先选择 SDR 变体；单一 HDR 片源仍由系统处理，不承诺强制 SDR 转码。普通 EAC3 JOC 音轨可走原生音频链；未开启可选 TrueHDObjectAudio / DTSXObjectAudio / 双层 FEL 构建特性。
+
+现有控制栏负责播放、暂停、进度、音量、倍速、缩放与旋转；内核提供音轨、内封和外挂字幕、后台音频与缓冲选项。Aether 7.53.1 视频倍速最高 2x（音频最高 3x），超过时由内核限制。字幕使用原生文字/位图叠加，不提供 libass 原始特效及完整字幕样式/延迟控制；此类需求可选 MPV。画中画沿用现有页面的内核能力判定和切换行为，本次未提供 Aether 独立 PiP 通路。
+
+「播放与连接」分别展示片源动态范围、内核报告动态范围、播放路由及音频路径。Atmos 音轨标签不表示已验证 Atmos 输出；须按上述真机清单检查设备、耳机/HDMI 接收器和片源。新增桥接回归覆盖请求头/偏好传递、轨道 ID、状态回报，以及加载途中释放不阻塞、不更新已释放通知器。
+
+上游代码和分发条款：[AetherEngine 7.53.1](https://github.com/superuser404notfound/AetherEngine/tree/7.53.1)。构建通过 SPM 链接其运行库；发行包须保留其及依赖的许可证，参见 third_party/AetherEngine-NOTICES.md。

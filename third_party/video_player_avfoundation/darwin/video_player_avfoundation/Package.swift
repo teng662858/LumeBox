@@ -9,7 +9,7 @@ import PackageDescription
 let package = Package(
   name: "video_player_avfoundation",
   platforms: [
-    .iOS("16.0"),
+    .iOS("18.0"),
     .macOS("10.15"),
   ],
   products: [

@@ -80,6 +80,7 @@ import 'next_episode_buffer.dart';
 import 'player_settings_sheet.dart';
 import 'player_source_sheet.dart';
 import 'player_speed_meter.dart';
+import 'player_speed_button.dart';
 import 'source_playback.dart';
 import 'source_web_player_page.dart';
 import '../../core/cat/cat_web_parse.dart';
@@ -3289,12 +3290,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   PlayerCapabilities get _capabilities =>
       _player?.capabilities ?? PlayerCapabilities.of(_effectiveKernel);
 
-  /// 打开设置弹窗（所有功能入口都在这里）。
+  /// 设置仅保留偏好和高级参数，已有独立按钮的操作不重复列出。
   Future<void> _openSettings() async {
     _cancelAutoHide();
     await showPlayerSettingsSheet(
       context: context,
       settings: _settings,
+      showPlaybackShortcuts: false,
       capabilities: _capabilities,
       catalog: _catalog,
       onChanged: _applySettings,
@@ -3305,46 +3307,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       // 方向锁定：值来自应用级偏好（与全局设置的「横屏播放」同一份）。
       orientation: _orientation,
       onOrientationChanged: PlaybackOrientationController.instance.apply,
-      // 弹幕设置也收进同一份设置弹窗（用户点名：所有功能入口都固定在这里）；
-      // 控制栏那颗 tune 仍保留为快捷入口。
-      danmaku: _danmakuSettings,
-      onDanmakuChanged: _applyDanmakuSettings,
-      introControls: _buildPlaybackSettings('intro'),
       extraControls: _buildPlaybackSettings('playback'),
       audioControls: _buildPlaybackSettings('audio'),
       connectionControls: _buildPlaybackSettings('connection'),
-      danmakuControls: ListTile(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('弹幕显示与匹配'),
-        subtitle: const Text('显示样式、来源匹配与屏蔽词'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () async {
-          Navigator.of(context).pop();
-          await _openDanmakuSettings();
-        },
-      ),
-    );
-    if (mounted) _scheduleAutoHide();
-  }
-
-  Future<void> _showGestureHelp() async {
-    _cancelAutoHide();
-    await showPlayerDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('播放手势'),
-        content: const SingleChildScrollView(
-          child: Text(
-            '左右滑动：调整播放进度\n左侧上下滑：调整亮度\n右侧上下滑：调整音量\n长按画面：临时倍速，松手恢复\n\n左右互换、换集和灵敏度以「手势与外观」设置为准。锁定后仅解锁按钮可操作。',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('知道了'),
-          ),
-        ],
-      ),
     );
     if (mounted) _scheduleAutoHide();
   }
@@ -3373,60 +3338,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   );
                 },
               ),
-            if (group == 'intro') _skipQuickButton(),
-            if (group == 'intro')
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const LumeIcon(
-                  Icons.skip_next,
-                  slot: 'video_player_page.1',
-                ),
-                title: const Text('片头片尾与同剧记忆'),
-                subtitle: const Text('记一次，后续各集自动沿用；无需作品 ID'),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  await _openOriginalIntro();
-                },
-              ),
-            if (group == 'playback') ...[
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('画质'),
-                subtitle: const Text('切换当前片源提供的清晰度'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(context);
-                  unawaited(_openQualityMenu());
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('选集与线路'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.pop(context);
-                  unawaited(_openSourceSheet());
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('画中画'),
-                subtitle: const Text('文字叠加字幕不会自动进入系统画中画'),
-                onTap: () {
-                  Navigator.pop(context);
-                  unawaited(_togglePip());
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('查看手势说明'),
-                trailing: const Icon(Icons.touch_app_outlined),
-                onTap: () {
-                  Navigator.pop(context);
-                  unawaited(_showGestureHelp());
-                },
-              ),
-            ],
             if (group == 'audio') ...[
               SwitchListTile(
                 title: const Text('静音'),
@@ -4461,48 +4372,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _showToast('屏幕方向：${next.label}');
   }
 
-  Future<void> _showSpeedPicker() async {
-    _cancelAutoHide();
-    final speed = await _playbackMenu<double>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  '播放速度',
-                  style: TextStyle(
-                    fontSize: LumeTypography.pageTitleSize,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (final value in PlayerSettings.speeds)
-                      ChoiceChip(
-                        label: Text('${value}x'),
-                        selected: value == _settings.speed,
-                        onSelected: (_) => Navigator.pop(context, value),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    if (!mounted) return;
-    if (speed != null) await _applySettings(_settings.copyWith(speed: speed));
-    _scheduleAutoHide();
-  }
+  Widget _speedControl(Widget Function(VoidCallback open) builder) =>
+      PlayerSpeedButton(
+        speed: _settings.speed,
+        onOpen: _cancelAutoHide,
+        onClose: _scheduleAutoHide,
+        onChanged: (speed) =>
+            unawaited(_applySettings(_settings.copyWith(speed: speed))),
+        builder: builder,
+      );
 
   /// 全屏浮层控制栏：进度 + 主要控制 + 次级控制（退出全屏与设置都在里面）。
   Widget _buildFloatingControls() {
@@ -4641,15 +4519,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             ),
           ),
           const SizedBox(width: 4),
-          action(
-            '${_settings.speed}×',
-            '播放速度（${_settings.speed}x）',
-            Icons.speed,
-            _showSpeedPicker,
-            forceText: true,
-            onLongPress: _settings.speed == 1
-                ? null
-                : () => unawaited(_applySettings(_settings.copyWith(speed: 1))),
+          _speedControl(
+            (open) => action(
+              PlayerSpeedButton.label(_settings.speed),
+              '播放速度（${_settings.speed}x）',
+              Icons.speed,
+              open,
+              forceText: true,
+              onLongPress: _settings.speed == 1
+                  ? null
+                  : () =>
+                        unawaited(_applySettings(_settings.copyWith(speed: 1))),
+            ),
           ),
           const SizedBox(width: 4),
           action(
@@ -5777,21 +5658,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             ? null
             : () => _seekBy(const Duration(seconds: 10)),
       ),
-      IconButton(
-        tooltip: '播放速度（${_settings.speed}x）',
-        iconSize: _iconSize + 5,
-        visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-        padding: EdgeInsets.zero,
-        icon: LumeIcon(
-          Icons.speed,
-          slot: 'video_player_page.11',
-          shadows: _fullscreen ? _controlShadows : null,
+      _speedControl(
+        (open) => IconButton(
+          tooltip: '播放速度（${_settings.speed}x）',
+          iconSize: _iconSize + 5,
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          padding: EdgeInsets.zero,
+          icon: LumeIcon(
+            Icons.speed,
+            slot: 'video_player_page.11',
+            shadows: _fullscreen ? _controlShadows : null,
+          ),
+          color: _fullscreen
+              ? Colors.white
+              : Theme.of(context).colorScheme.onSurface,
+          onPressed: open,
         ),
-        color: _fullscreen
-            ? Colors.white
-            : Theme.of(context).colorScheme.onSurface,
-        onPressed: _showSpeedPicker,
       ),
     ].map((button) => button).toList();
   }

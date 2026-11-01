@@ -1,3 +1,5 @@
+import 'aether_player.dart';
+
 import 'dart:io';
 
 import 'abstract_player.dart';
@@ -51,13 +53,14 @@ class PlayerFactory {
 
   /// 内核是否可用。
   static bool isAvailable(PlayerKernel kernel) => switch (kernel) {
-        // iOS 是主力平台：AVPlayer 与 MPV 都已接入（MPV 的原生库随 iOS 打包）。
-        PlayerKernel.avplayer => Platform.isIOS,
-        // MPV 初始化失败过：本次运行不再提供（逃生入口仍可切回 AVPlayer）。
-        PlayerKernel.mpv => Platform.isIOS && !_mpvInitFailed,
-        // MDK：原生库（libmdk）随 fvp 打包进 iOS；初始化失败过则本次不再提供。
-        PlayerKernel.mdk => Platform.isIOS && !_mdkInitFailed,
-      };
+    // iOS 是主力平台：AVPlayer 与 MPV 都已接入（MPV 的原生库随 iOS 打包）。
+    PlayerKernel.avplayer => Platform.isIOS,
+    PlayerKernel.aether => Platform.isIOS,
+    // MPV 初始化失败过：本次运行不再提供（逃生入口仍可切回 AVPlayer）。
+    PlayerKernel.mpv => Platform.isIOS && !_mpvInitFailed,
+    // MDK：原生库（libmdk）随 fvp 打包进 iOS；初始化失败过则本次不再提供。
+    PlayerKernel.mdk => Platform.isIOS && !_mdkInitFailed,
+  };
 
   /// 该内核能不能携带**逐媒体的请求头**（防盗链用的 Referer / UA）。
   ///
@@ -68,10 +71,11 @@ class PlayerFactory {
   ///   没有写通道），现在三条通路都有，因此不再有「因为带不了请求头而换内核」
   ///   的降级；保留这个查询是为了让降级逻辑在**将来某个内核又带不了**时仍然成立。
   static bool supportsMediaHeaders(PlayerKernel kernel) => switch (kernel) {
-        PlayerKernel.avplayer => true,
-        PlayerKernel.mpv => true,
-        PlayerKernel.mdk => true,
-      };
+    PlayerKernel.avplayer => true,
+    PlayerKernel.aether => true,
+    PlayerKernel.mpv => true,
+    PlayerKernel.mdk => true,
+  };
 
   /// 内核不可用的原因；可用时为 null（设置页直接展示这段文案）。
   static String? unavailableReason(PlayerKernel kernel) {
@@ -90,17 +94,16 @@ class PlayerFactory {
   /// **同步创建，必须经 [PlayerKernelLauncher] 调用**：那里负责把创建挪出
   /// UI 同步路径、加 8 秒超时、超时/抛错时丢弃实例并回退 AVPlayer。
   /// 直接在这里 new 播放器就等于把原生库装载放回主线程，会重现卡死。
-  static AbstractPlayer? create({
-    PlayerKernel kernel = PlayerKernel.avplayer,
-  }) {
+  static AbstractPlayer? create({PlayerKernel kernel = PlayerKernel.avplayer}) {
     if (!isAvailable(kernel)) return null;
     return switch (kernel) {
       PlayerKernel.avplayer => AvPlayer(),
+      PlayerKernel.aether => AetherPlayer(),
       // MPV：libmpv（media_kit）绑定挡在端口后面，上层只认 AbstractPlayer。
       PlayerKernel.mpv => MpvPlayer(
-          engine: MediaKitMpvEngine.create(title: 'Lume Box'),
-          engineLabel: kernel.label,
-        ),
+        engine: MediaKitMpvEngine.create(title: 'Lume Box'),
+        engineLabel: kernel.label,
+      ),
       // MDK：libmdk 绑定（fvp）挡在 MdkEngine 后面，上层只认 AbstractPlayer。
       PlayerKernel.mdk => MdkEngine.create(),
     };

@@ -7,7 +7,7 @@ FLUTTER_SLICE="$FLUTTER_ROOT/bin/cache/artifacts/engine/ios/Flutter.xcframework/
 PYTHON_SLICE="$PWD/ios/PythonRuntime/Python.xcframework/ios-arm64_x86_64-simulator"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 ARCH=$(uname -m)
-xcrun clang -fsyntax-only -fobjc-arc -fmodules -target "$ARCH-apple-ios16.0-simulator" \
+xcrun clang -fsyntax-only -fobjc-arc -fmodules -target "$ARCH-apple-ios18.0-simulator" \
   -isysroot "$SDK" -F "$FLUTTER_SLICE" -F "$PYTHON_SLICE" \
   -I "$PYTHON_SLICE/Python.framework/Headers" ios/Runner/LumePythonController.m
 set -euo pipefail
@@ -16,14 +16,14 @@ mkdir -p "$APP"
 PYTHON_SLICE="$PWD/ios/PythonRuntime/Python.xcframework/ios-arm64_x86_64-simulator"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 ARCH=$(uname -m)
-xcrun clang -fobjc-arc -fmodules -target "$ARCH-apple-ios16.0-simulator" \
+xcrun clang -fobjc-arc -fmodules -target "$ARCH-apple-ios18.0-simulator" \
   -isysroot "$SDK" -F "$PYTHON_SLICE" -I "$PYTHON_SLICE/Python.framework/Headers" \
   -framework UIKit -framework Foundation -framework Python \
   -Wl,-rpath,@executable_path/Frameworks tool/ios_python_smoke.m -o "$APP/Smoke"
 python3 - "$APP" <<'PY'
 import plistlib,sys,pathlib
 with (pathlib.Path(sys.argv[1])/'Info.plist').open('wb') as f:
-    plistlib.dump({'CFBundleExecutable':'Smoke','CFBundleIdentifier':'com.lumebox.python-smoke','CFBundlePackageType':'APPL','CFBundleVersion':'1','CFBundleShortVersionString':'1.0','MinimumOSVersion':'16.0','UIDeviceFamily':[1]},f)
+    plistlib.dump({'CFBundleExecutable':'Smoke','CFBundleIdentifier':'com.lumebox.python-smoke','CFBundlePackageType':'APPL','CFBundleVersion':'1','CFBundleShortVersionString':'1.0','MinimumOSVersion':'18.0','UIDeviceFamily':[1]},f)
 PY
 TARGET_BUILD_DIR="$RUNNER_TEMP" WRAPPER_NAME=LumePythonSmoke.app \
   PLATFORM_NAME=iphonesimulator CURRENT_ARCH="$ARCH" CODE_SIGNING_ALLOWED=YES \

@@ -31,7 +31,7 @@ Pod::Spec.new do |s|
   s.source_files = 'Classes/**/*'
   s.vendored_frameworks = 'Frameworks/NodeMobile.xcframework'
   s.dependency 'Flutter'
-  s.platform = :ios, '16.0'
+  s.platform = :ios, '18.0'
   s.frameworks = 'Security'
   s.static_framework = true
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }

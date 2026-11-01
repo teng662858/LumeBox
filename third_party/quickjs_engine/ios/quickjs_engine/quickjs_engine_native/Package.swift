@@ -23,7 +23,7 @@ import PackageDescription
 let package = Package(
     name: "quickjs_engine_native",
     platforms: [
-        .iOS("16.0")
+        .iOS("18.0")
     ],
     products: [
         .library(name: "quickjs-engine-native", type: .dynamic, targets: ["quickjs_engine_native"])

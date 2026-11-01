@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "audio_service",
     platforms: [
-        .iOS("16.0"),
+        .iOS("18.0"),
         .macOS("10.14")
     ],
     products: [

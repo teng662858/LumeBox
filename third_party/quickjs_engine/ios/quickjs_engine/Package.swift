@@ -7,7 +7,7 @@ import PackageDescription
 let package = Package(
     name: "quickjs_engine",
     platforms: [
-        .iOS("16.0")
+        .iOS("18.0")
     ],
     products: [
         // Flutter links plugin packages by product name, with "_" replaced by "-".
@@ -80,5 +80,5 @@ if flutterFrameworkIsAvailable {
         target.dependencies.append(.product(name: flutterFramework, package: flutterFramework))
     }
 } else {
-    package.platforms = [.iOS("16.0")]
+    package.platforms = [.iOS("18.0")]
 }

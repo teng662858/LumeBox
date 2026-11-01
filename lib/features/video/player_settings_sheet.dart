@@ -45,6 +45,7 @@ Future<void> showPlayerSettingsSheet({
   Widget? audioControls,
   Widget? connectionControls,
   Widget? danmakuControls,
+  bool showPlaybackShortcuts = true,
 }) {
   final glass = ValueNotifier(settings.playbackGlass);
   return showDanmakuPanel<void>(
@@ -55,6 +56,7 @@ Future<void> showPlayerSettingsSheet({
         enabled: enabled,
         child: PlayerSettingsSheet(
           showDanmakuPanel: false,
+          showPlaybackShortcuts: showPlaybackShortcuts,
           settings: settings,
           capabilities: capabilities,
           onChanged: (next) {
@@ -82,7 +84,7 @@ Future<void> showPlayerSettingsSheet({
   ).whenComplete(glass.dispose);
 }
 
-/// 播放器设置面板：**所有功能入口都固定在这里**（用户点名）。
+/// 共用播放器偏好面板：播放页按分类显示，全局页保留完整设置。
 ///
 /// 三条硬约束（用户点名）：
 /// 1. **控件不随内核变化显隐**——同一个内核支持与否，控件都在原位；
@@ -113,6 +115,7 @@ class PlayerSettingsSheet extends StatefulWidget {
     this.danmakuCount,
     this.showDanmakuPanel = true,
     this.embedded = false,
+    this.showPlaybackShortcuts = true,
     this.introControls,
     this.extraControls,
     this.audioControls,
@@ -169,6 +172,9 @@ class PlayerSettingsSheet extends StatefulWidget {
   /// 是否作为**内嵌内容**使用（全局设置页）：不画拖拽把手与关闭按钮，
   /// 也不限高（由外层滚动容器负责）。
   final bool embedded;
+
+  /// 播放页已有倍速、选集、弹幕及片头尾入口时，不在设置里重复。
+  final bool showPlaybackShortcuts;
   final Widget? introControls;
   final Widget? extraControls,
       audioControls,
@@ -228,52 +234,60 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final groups = <Widget>[
-      _group('playback', '播放与选集', Icons.play_circle_outline, [
-        _section('播放倍速', '0.25x ~ 4x，步长 0.25x；切换立即生效'),
-        _speedSlider(context),
-        const SizedBox(height: 20),
-        if (widget.extraControls != null) widget.extraControls!,
-        _section('清晰度偏好', '起播与切集时使用的画质选择'),
-        DropdownButtonFormField<DefaultQuality>(
-          isExpanded: true,
-          initialValue: settings.defaultQuality,
-          decoration: const InputDecoration(labelText: '默认清晰度'),
-          items: [
-            for (final value in DefaultQuality.values)
-              DropdownMenuItem(value: value, child: Text(value.label)),
+      _group(
+        'playback',
+        widget.showPlaybackShortcuts ? '播放与选集' : '播放偏好',
+        Icons.play_circle_outline,
+        [
+          if (widget.showPlaybackShortcuts) ...[
+            _section('播放倍速', '0.25x ~ 4x，步长 0.25x；切换立即生效'),
+            _speedSlider(context),
+            const SizedBox(height: 20),
           ],
-          onChanged: (value) {
-            if (value != null) {
-              _update(settings.copyWith(defaultQuality: value));
-            }
-          },
-        ),
-        NativeSwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('记住手动选择的清晰度'),
-          subtitle: const Text(
-            '下一集优先使用手动选择的同名清晰度；未匹配或关闭时按默认清晰度选择，最后回退至本集最高画质。',
+          if (widget.extraControls != null) widget.extraControls!,
+          _section('清晰度偏好', '起播与切集时使用的画质选择'),
+          DropdownButtonFormField<DefaultQuality>(
+            isExpanded: true,
+            initialValue: settings.defaultQuality,
+            decoration: const InputDecoration(labelText: '默认清晰度'),
+            items: [
+              for (final value in DefaultQuality.values)
+                DropdownMenuItem(value: value, child: Text(value.label)),
+            ],
+            onChanged: (value) {
+              if (value != null) {
+                _update(settings.copyWith(defaultQuality: value));
+              }
+            },
           ),
-          value: settings.rememberManualQuality,
-          onChanged: (value) =>
-              _update(settings.copyWith(rememberManualQuality: value)),
-        ),
-        const SizedBox(height: 20),
-      ]),
-      _group('intro', '片头片尾', Icons.skip_next_outlined, [
-        widget.introControls ??
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('片头片尾与同剧记忆'),
-              subtitle: const Text('自动识别、手动标记、跳过倒计时与取消'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const IntroSettingsPage(),
+          NativeSwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('记住手动选择的清晰度'),
+            subtitle: const Text(
+              '下一集优先使用手动选择的同名清晰度；未匹配或关闭时按默认清晰度选择，最后回退至本集最高画质。',
+            ),
+            value: settings.rememberManualQuality,
+            onChanged: (value) =>
+                _update(settings.copyWith(rememberManualQuality: value)),
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+      if (widget.showPlaybackShortcuts)
+        _group('intro', '片头片尾', Icons.skip_next_outlined, [
+          widget.introControls ??
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('片头片尾与同剧记忆'),
+                subtitle: const Text('自动识别、手动标记、跳过倒计时与取消'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const IntroSettingsPage(),
+                  ),
                 ),
               ),
-            ),
-      ]),
+        ]),
       _group('picture', '画面与显示', Icons.aspect_ratio, [
         _section('画面', '缩放 / 旋转 / 镜像（三套内核都支持）'),
         _pictureCard(context),
@@ -490,6 +504,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
 
     final list = SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      key: ValueKey(_selectedCategory),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: children,
@@ -527,6 +542,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     return legacy;
   }
 
+  String _selectedCategory = 'playback';
+
   final _categoryKeys = <String, GlobalKey>{};
   final _navigationKey = GlobalKey();
   static const _categories = [
@@ -558,13 +575,22 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       runSpacing: 6,
       children: [
         for (final category in _categories)
-          if (category.$1 != 'danmaku' ||
-              _danmaku != null ||
-              widget.danmakuControls != null)
-            ActionChip(
+          if ((category.$1 != 'intro' || widget.showPlaybackShortcuts) &&
+              (category.$1 != 'danmaku' ||
+                  _danmaku != null ||
+                  widget.danmakuControls != null))
+            ChoiceChip(
               key: ValueKey('player-category-${category.$1}'),
               label: Text(category.$2),
-              onPressed: () => _jumpTo(_categoryKeys[category.$1]!),
+              selected: !widget.embedded && _selectedCategory == category.$1,
+              showCheckmark: false,
+              onSelected: (_) {
+                if (widget.embedded) {
+                  _jumpTo(_categoryKeys[category.$1]!);
+                } else {
+                  setState(() => _selectedCategory = category.$1);
+                }
+              },
             ),
       ],
     ),
@@ -575,36 +601,42 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     String title,
     IconData icon,
     List<Widget> children,
-  ) => Padding(
-    key: _categoryKeys.putIfAbsent(id, GlobalKey.new),
-    padding: const EdgeInsets.only(top: 8, bottom: 20),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
+  ) => !widget.embedded && id != _selectedCategory
+      ? const SizedBox.shrink()
+      : Padding(
+          key: _categoryKeys.putIfAbsent(id, GlobalKey.new),
+          padding: const EdgeInsets.only(top: 8, bottom: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    icon,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  if (widget.embedded)
+                    IconButton(
+                      tooltip: '回到分类',
+                      onPressed: () => _jumpTo(_navigationKey),
+                      icon: const Icon(Icons.vertical_align_top, size: 18),
+                    ),
+                ],
               ),
-            ),
-            if (widget.embedded)
-              IconButton(
-                tooltip: '回到分类',
-                onPressed: () => _jumpTo(_navigationKey),
-                icon: const Icon(Icons.vertical_align_top, size: 18),
-              ),
-          ],
-        ),
-        const Divider(),
-        ...children,
-      ],
-    ),
-  );
+              const Divider(),
+              ...children,
+            ],
+          ),
+        );
 
   Widget _handle(BuildContext context) {
     // 与选集抽屉保持同一套紧凑头部：小号标题 + 小图标，不再占一整条 AppBar 高度。

@@ -7,7 +7,7 @@ export SDKROOT="$SDK"
 ARCH=$(uname -m)
 APP="$RUNNER_TEMP/LumeSystemTabBarSmoke.app"
 mkdir -p "$APP/Frameworks"
-xcrun swiftc -sdk "$SDK" -target "$ARCH-apple-ios16.0-simulator" \
+xcrun swiftc -sdk "$SDK" -target "$ARCH-apple-ios18.0-simulator" \
   -F "$FLUTTER_SLICE" -framework UIKit -framework Flutter \
   -Xlinker -rpath -Xlinker @executable_path/Frameworks \
   ios/Runner/LumeSystemTabBar.swift tool/ios_system_tab_bar_smoke.swift -o "$APP/Smoke"
@@ -17,7 +17,7 @@ import pathlib,plistlib,sys
 with (pathlib.Path(sys.argv[1])/'Info.plist').open('wb') as output:
     plistlib.dump({'CFBundleExecutable':'Smoke','CFBundleIdentifier':'com.lumebox.system-tab-bar-smoke',
                   'CFBundlePackageType':'APPL','CFBundleVersion':'1','CFBundleShortVersionString':'1.0',
-                  'MinimumOSVersion':'16.0','UIDeviceFamily':[1], 'UILaunchScreen':{}},output)
+                  'MinimumOSVersion':'18.0','UIDeviceFamily':[1], 'UILaunchScreen':{}},output)
 PY
 codesign --force --sign - "$APP/Frameworks/Flutter.framework"
 codesign --force --sign - "$APP"

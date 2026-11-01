@@ -20,11 +20,12 @@ export 'player_gesture_options.dart';
 
 import 'package:flutter/foundation.dart';
 
-/// 播放内核。只保留宪法允许的三套。
+/// 播放内核。支持四套独立的播放引擎。
 enum PlayerKernel {
   avplayer('avplayer', 'AVPlayer'),
   mpv('mpv', 'MPV'),
-  mdk('mdk', 'MDK');
+  mdk('mdk', 'MDK'),
+  aether('aether', 'AetherEngine');
 
   const PlayerKernel(this.id, this.label);
 

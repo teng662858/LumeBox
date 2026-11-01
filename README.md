@@ -54,3 +54,5 @@ samples, guidance on mobile development, and a full API reference.
 在播放器“更多 → 弹幕服务地址”中选择 Cynn、Wenjian、官方服务或自定义 HTTPS 部署前缀；支持 [danmu_api](https://github.com/huangxd-/danmu_api) 的搜索与弹幕接口。默认使用用户指定的 Cynn 地址；服务无结果或不稳定时可换服务。匹配不唯一时使用“匹配公共弹幕”选择对应作品和集数。
 
 官方服务须按[官方接入说明](https://doc.dandanplay.com/open/)申请应用凭证。iOS 配置保存在设备钥匙串，签名仅发到官方主机；第三方兼容服务不接收官方凭证。没有对应弹幕的作品不生成模拟弹幕。
+
+最低支持 iOS 18.0。播放器提供 AVPlayer、MPV、MDK 和 AetherEngine，HDR／杜比能力与实际输出限制见 [播放器展示说明](docs/player-presentation.md)。

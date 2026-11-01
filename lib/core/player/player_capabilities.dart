@@ -112,6 +112,14 @@ class PlayerCapabilities {
       nowPlaying: true,
       bufferingParams: true,
     ),
+    PlayerKernel.aether => const PlayerCapabilities(
+      audioTracks: true,
+      subtitleTracks: true,
+      externalSubtitle: true,
+      backgroundAudio: true,
+      nowPlaying: true,
+      bufferingParams: true,
+    ),
     PlayerKernel.mdk => const PlayerCapabilities(
       audioTracks: true,
       subtitleTracks: true,

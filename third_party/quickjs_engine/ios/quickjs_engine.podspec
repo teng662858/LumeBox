@@ -31,7 +31,7 @@ platform — no JavaScriptCore fallback.
   s.public_header_files = []
 
   s.dependency 'Flutter'
-  s.platform = :ios, '16.0'
+  s.platform = :ios, '18.0'
   s.swift_version = '5.0'
 
   preprocessor_definitions = 'CONFIG_VERSION=\"ng-0.14.0\" $(inherited)'

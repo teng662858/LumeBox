@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>MinimumOSVersion</key>
-  <string>16.0</string>
+  <string>18.0</string>
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleExecutable</key>

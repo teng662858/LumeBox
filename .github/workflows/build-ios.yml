@@ -60,7 +60,7 @@ jobs:
       - name: 拉取依赖
         run: flutter pub get --enforce-lockfile
 
-      - name: 检查播放器原生通道（匹配插件 iOS 16 最低目标）
+      - name: 检查播放器原生通道（匹配插件 iOS 18 最低目标）
         run: bash tool/check_ios_player_presentation.sh
 
       - name: 准备并校验片头片尾本地模型
@@ -89,7 +89,7 @@ jobs:
           fi
           test -n "$FRAMEWORKS"
           xcrun swiftc -typecheck -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
-            -target arm64-apple-ios16.0-simulator -F "$FRAMEWORKS" \
+            -target arm64-apple-ios18.0-simulator -F "$FRAMEWORKS" \
             ios/Runner/SpeechStream.swift ios/Runner/SpeechController.swift \
             ios/Runner/ICloudSyncController.swift ios/Runner/ComicImageToolsController.swift \
             ios/Runner/IntroRecognitionController.swift ios/Runner/LumeGlassBackdrop.swift \
