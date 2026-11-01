@@ -5,6 +5,30 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/features/source/video_source_scope.dart';
 
 void main() {
+  testWidgets('保留系统返回手势区域，内侧边缘仍可打开抽屉', (tester) async {
+    var opens = 0;
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(
+            size: Size(390, 844),
+            systemGestureInsets: EdgeInsets.symmetric(horizontal: 20),
+          ),
+          child: SourcePickerEdgeSwipe(
+            onOpen: () async => opens++,
+            child: const Scaffold(body: SizedBox.expand()),
+          ),
+        ),
+      ),
+    );
+    await tester.dragFrom(const Offset(1, 300), const Offset(100, 0));
+    expect(opens, 0);
+    await tester.dragFrom(const Offset(25, 300), const Offset(100, 0));
+    expect(opens, 1);
+  });
   testWidgets('right-edge left swipe opens the source picker', (tester) async {
     var opens = 0;
     await tester.binding.setSurfaceSize(const Size(390, 844));

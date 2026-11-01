@@ -1,3 +1,7 @@
+import '../../shared/widgets/browse_side_drawer.dart';
+
+import 'package:flutter/foundation.dart' show mapEquals;
+
 import '../../shared/widgets/native_glass_surfaces.dart';
 import '../../shared/widgets/network_owned_state.dart';
 import '../../core/net/network_cancellation.dart';
@@ -571,10 +575,10 @@ class _CatPageState extends State<CatPage>
     if (context.mounted) refresh();
   }
 
-  Future<void> sitePicker() async {
+  Future<void> sitePicker({BrowseDrawerMotion? motion}) async {
     final videoScope = VideoSourceScope.maybeOf(context);
     if (videoScope != null) {
-      await videoScope.openPicker(context);
+      await videoScope.openPicker(context, motion: motion);
       return;
     }
     await ReadingLibrary.open(Section.cat);
@@ -611,9 +615,10 @@ class _CatPageState extends State<CatPage>
       return rows;
     }
 
-    final selected = await showLumeBottomSheet<Object>(
+    final selected = await showBrowseSideDrawer<Object>(
       context: context,
-      isScrollControlled: true,
+      side: BrowseDrawerSide.right,
+      motion: motion,
       builder: (context) => StatefulBuilder(
         builder: (context, pickerSetState) => ListenableBuilder(
           listenable: service,
@@ -1376,15 +1381,19 @@ class _CatPageState extends State<CatPage>
       ),
     ),
   );
-  Future<void> combinedFilters() async {
+  Future<void> combinedFilters({BrowseDrawerMotion? motion}) async {
     final selected = await showBrowseFilters(
       context: context,
       categories: categories,
       groups: groups,
       category: category,
       filters: filters,
+      motion: motion,
     );
     if (!mounted || selected == null) return;
+    if (category == selected.category && mapEquals(filters, selected.filters)) {
+      return;
+    }
     setState(() {
       browseMode = null;
       category = selected.category;
@@ -1528,174 +1537,184 @@ class _CatPageState extends State<CatPage>
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: LumeTheme.base,
-    body: SafeArea(
-      top: false,
-      bottom: false,
-      child: Stack(
-        children: [
-          NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              final hidden = BrowseHeaderScroll.hiddenAfter(
-                notification,
-                _headerHidden,
-              );
-              if (_headerHidden != hidden) {
-                setState(() => _headerHidden = hidden);
-              }
-              return false;
-            },
-            child: RefreshIndicator(
-              onRefresh: refresh,
-              child: CoverViewport(
-                child: CustomScrollView(
-                  scrollCacheExtent: const ScrollCacheExtent.viewport(1),
-                  controller: scroll,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: SizedBox(
-                        height:
-                            trimmedTopInset(MediaQuery.paddingOf(context).top) +
-                            _headerHeight +
-                            FloatingModules.instance
-                                .style(FloatingModule.home)
-                                .y
-                                .clamp(0, 80) +
-                            HomePanelLayout.contentGap,
-                      ),
-                    ),
-                    if (service.busy)
+  Widget build(BuildContext context) => SourcePickerEdgeSwipe(
+    onOpen: sitePicker,
+    onOpenLeft: (motion) => combinedFilters(motion: motion),
+    onOpenRight: (motion) => sitePicker(motion: motion),
+    child: Scaffold(
+      backgroundColor: LumeTheme.base,
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: Stack(
+          children: [
+            NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                final hidden = BrowseHeaderScroll.hiddenAfter(
+                  notification,
+                  _headerHidden,
+                );
+                if (_headerHidden != hidden) {
+                  setState(() => _headerHidden = hidden);
+                }
+                return false;
+              },
+              child: RefreshIndicator(
+                onRefresh: refresh,
+                child: CoverViewport(
+                  child: CustomScrollView(
+                    scrollCacheExtent: const ScrollCacheExtent.viewport(1),
+                    controller: scroll,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
                       SliverToBoxAdapter(
-                        child: Column(
-                          children: [
-                            const LinearProgressIndicator(),
-                            Text(service.status),
-                          ],
+                        child: SizedBox(
+                          height:
+                              trimmedTopInset(
+                                MediaQuery.paddingOf(context).top,
+                              ) +
+                              _headerHeight +
+                              FloatingModules.instance
+                                  .style(FloatingModule.home)
+                                  .y
+                                  .clamp(0, 80) +
+                              HomePanelLayout.contentGap,
                         ),
                       ),
-                    if (loading)
-                      const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.all(40),
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
-                      )
-                    else if (error != null)
-                      SliverToBoxAdapter(
-                        child: GlassCard(
+                      if (service.busy)
+                        SliverToBoxAdapter(
                           child: Column(
                             children: [
-                              Text(error!),
-                              TextButton(
-                                onPressed: source == null ? boot : refresh,
-                                child: const Text('重试'),
-                              ),
-                              TextButton(
-                                onPressed: subscriptions,
-                                child: const Text('管理订阅'),
-                              ),
+                              const LinearProgressIndicator(),
+                              Text(service.status),
                             ],
                           ),
                         ),
-                      )
-                    else if (source == null)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            children: [
-                              const Text('添加猫源订阅后，选择包内站点即可浏览。'),
-                              FilledButton.icon(
-                                onPressed: subscriptions,
-                                icon: const SubscriptionStatusIcon(
-                                  section: Section.cat,
-                                ),
-                                label: const Text('添加订阅'),
-                              ),
-                            ],
+                      if (loading)
+                        const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.all(40),
+                            child: Center(child: CircularProgressIndicator()),
                           ),
-                        ),
-                      )
-                    else if (items.isEmpty)
-                      const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.all(40),
-                          child: Center(child: Text('暂无内容，请选择分类或其他站点')),
-                        ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: _layout == BrowseLayoutMode.grid3
-                              ? ThreeColumnPosterLayout.sidePadding
-                              : TwoColumnSourceLayout.sidePadding,
-                        ),
-                        sliver: _layout == BrowseLayoutMode.list
-                            ? SliverList.separated(
-                                itemCount: items.length,
-                                itemBuilder: browseItem,
-                                separatorBuilder: (_, _) => const Divider(
-                                  height: 1,
-                                  thickness: 1,
-                                  color: Color(0xFFE5E5EA),
+                        )
+                      else if (error != null)
+                        SliverToBoxAdapter(
+                          child: GlassCard(
+                            child: Column(
+                              children: [
+                                Text(error!),
+                                TextButton(
+                                  onPressed: source == null ? boot : refresh,
+                                  child: const Text('重试'),
                                 ),
-                              )
-                            : SliverLayoutBuilder(
-                                builder: (context, constraints) => SliverGrid(
-                                  gridDelegate:
-                                      SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: _layout.columns,
-                                        childAspectRatio:
-                                            _layout.tileAspectRatio,
-                                        mainAxisExtent:
-                                            _layout == BrowseLayoutMode.list2
-                                            ? TwoColumnSourceLayout.itemExtent(
-                                                context,
-                                                (constraints.crossAxisExtent -
-                                                        TwoColumnSourceLayout
-                                                            .spacing) /
-                                                    2,
-                                              )
-                                            : null,
-                                        crossAxisSpacing:
-                                            _layout == BrowseLayoutMode.grid3
-                                            ? ThreeColumnPosterLayout.spacing
-                                            : _layout == BrowseLayoutMode.list2
-                                            ? TwoColumnSourceLayout.spacing
-                                            : 12,
-                                        mainAxisSpacing:
-                                            _layout == BrowseLayoutMode.grid3
-                                            ? ThreeColumnPosterLayout.rowSpacing
-                                            : _layout == BrowseLayoutMode.list2
-                                            ? TwoColumnSourceLayout.rowSpacing
-                                            : 12,
-                                      ),
-                                  delegate: SliverChildBuilderDelegate(
-                                    browseItem,
-                                    childCount: items.length,
+                                TextButton(
+                                  onPressed: subscriptions,
+                                  child: const Text('管理订阅'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else if (source == null)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              children: [
+                                const Text('添加猫源订阅后，选择包内站点即可浏览。'),
+                                FilledButton.icon(
+                                  onPressed: subscriptions,
+                                  icon: const SubscriptionStatusIcon(
+                                    section: Section.cat,
+                                  ),
+                                  label: const Text('添加订阅'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else if (items.isEmpty)
+                        const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.all(40),
+                            child: Center(child: Text('暂无内容，请选择分类或其他站点')),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: _layout == BrowseLayoutMode.grid3
+                                ? ThreeColumnPosterLayout.sidePadding
+                                : TwoColumnSourceLayout.sidePadding,
+                          ),
+                          sliver: _layout == BrowseLayoutMode.list
+                              ? SliverList.separated(
+                                  itemCount: items.length,
+                                  itemBuilder: browseItem,
+                                  separatorBuilder: (_, _) => const Divider(
+                                    height: 1,
+                                    thickness: 1,
+                                    color: Color(0xFFE5E5EA),
+                                  ),
+                                )
+                              : SliverLayoutBuilder(
+                                  builder: (context, constraints) => SliverGrid(
+                                    gridDelegate:
+                                        SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: _layout.columns,
+                                          childAspectRatio:
+                                              _layout.tileAspectRatio,
+                                          mainAxisExtent:
+                                              _layout == BrowseLayoutMode.list2
+                                              ? TwoColumnSourceLayout.itemExtent(
+                                                  context,
+                                                  (constraints.crossAxisExtent -
+                                                          TwoColumnSourceLayout
+                                                              .spacing) /
+                                                      2,
+                                                )
+                                              : null,
+                                          crossAxisSpacing:
+                                              _layout == BrowseLayoutMode.grid3
+                                              ? ThreeColumnPosterLayout.spacing
+                                              : _layout ==
+                                                    BrowseLayoutMode.list2
+                                              ? TwoColumnSourceLayout.spacing
+                                              : 12,
+                                          mainAxisSpacing:
+                                              _layout == BrowseLayoutMode.grid3
+                                              ? ThreeColumnPosterLayout
+                                                    .rowSpacing
+                                              : _layout ==
+                                                    BrowseLayoutMode.list2
+                                              ? TwoColumnSourceLayout.rowSpacing
+                                              : 12,
+                                        ),
+                                    delegate: SliverChildBuilderDelegate(
+                                      browseItem,
+                                      childCount: items.length,
+                                    ),
                                   ),
                                 ),
-                              ),
+                        ),
+                      if (loadingMore)
+                        const SliverToBoxAdapter(
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: ShellDockScope.bottomInset(context) + 24,
+                        ),
                       ),
-                    if (loadingMore)
-                      const SliverToBoxAdapter(
-                        child: Center(child: CircularProgressIndicator()),
-                      ),
-                    SliverToBoxAdapter(
-                      child: SizedBox(
-                        height: ShellDockScope.bottomInset(context) + 24,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          floatingHeader(),
-          BrowseSearchButton(onPressed: source == null ? null : search),
-        ],
+            floatingHeader(),
+            BrowseSearchButton(onPressed: source == null ? null : search),
+          ],
+        ),
       ),
     ),
   );

@@ -4,6 +4,7 @@ import '../../core/source/source_labels.dart';
 import 'package:lume_box/shared/widgets/lume_icon.dart';
 
 import '../../shared/widgets/drawer_geometry.dart';
+import '../../shared/widgets/browse_side_drawer.dart';
 
 import 'package:flutter/material.dart';
 
@@ -255,17 +256,18 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
   required List<SourceFilterGroup> groups,
   required String? category,
   required Map<String, String> filters,
+  BrowseDrawerMotion? motion,
 }) {
   var chosenCategory = category;
   var chosenFilters = Map<String, String>.of(filters);
   var query = '';
-  return showLumeBottomSheet<({String? category, Map<String, String> filters})>(
+  return showBrowseSideDrawer<
+    ({String? category, Map<String, String> filters})
+  >(
     context: context,
+    side: BrowseDrawerSide.left,
+    motion: motion,
     useRootNavigator: true,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: Colors.transparent,
-    elevation: 0,
     builder: (context) => StatefulBuilder(
       builder: (context, setPanelState) {
         Widget choices(
@@ -381,6 +383,12 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                                 chosenCategory = id;
                                 chosenFilters.remove('tid');
                                 chosenFilters.remove('class');
+                                if (groups.isEmpty) {
+                                  Navigator.pop(context, (
+                                    category: chosenCategory,
+                                    filters: chosenFilters,
+                                  ));
+                                }
                               }),
                             for (final group in groups)
                               choices(

@@ -44,7 +44,11 @@ void main() {
       final before = tester.getRect(actions);
       final footer = tester.getRect(find.byKey(const Key('filter-footer')));
       expect(before.left, 24);
-      expect(before.right, 366);
+      expect(
+        before.right,
+        tester.getRect(find.byKey(const ValueKey('browse-left-drawer'))).right -
+            24,
+      );
       expect(height - footer.bottom, 34);
       expect(footer.height, 64);
       expect(before.top - tester.getRect(options).bottom, 8);

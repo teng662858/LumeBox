@@ -289,10 +289,13 @@ void main() {
       expect(tester.getRect(a).right - more.right, 4);
       expect(tester.getTopLeft(a).dx, lessThan(tester.getTopLeft(b).dx));
       expect(tester.getTopLeft(a).dy, tester.getTopLeft(b).dy);
-      expect(tester.getRect(a).left, 14);
-      expect(tester.getRect(b).right, 376);
+      final panel = tester.getRect(
+        find.byKey(const ValueKey('browse-right-drawer')),
+      );
+      expect(tester.getRect(a).left, panel.left + 14);
+      expect(tester.getRect(b).right, panel.right - 14);
       expect(tester.getRect(b).left - tester.getRect(a).right, 8);
-      expect(tester.getSize(a).width, 177);
+      expect(tester.getSize(a).width, (panel.width - 36) / 2);
       await tester.tap(find.byKey(const ValueKey('picker-more-b')));
       await tester.pumpAndSettle();
       for (final label in ['置顶此源', '源设置', '浏览', '测试连通性', '更新订阅源']) {
@@ -354,9 +357,12 @@ void main() {
     final card = find.byKey(const ValueKey('picker-source-c1'));
     final second = find.byKey(const ValueKey('picker-source-c2'));
     expect(tester.getSize(card).height, 55, reason: '单列卡片统一 55 高');
-    // 默认单列：卡片铺满 390 - 32 = 358，且左缘与搜索框同基线。
-    expect(tester.getSize(card).width, 358);
-    expect(tester.getTopLeft(card).dx, 16);
+    // 单列铺满侧栏内容宽度，左缘仍与搜索框同基线。
+    final panel = tester.getRect(
+      find.byKey(const ValueKey('browse-right-drawer')),
+    );
+    expect(tester.getSize(card).width, panel.width - 32);
+    expect(tester.getTopLeft(card).dx, panel.left + 16);
     final decoration =
         tester
                 .widget<DecoratedBox>(
@@ -431,8 +437,8 @@ void main() {
     // 名称仍然居中。
     await tester.tap(find.byTooltip('切换为双列'));
     await tester.pumpAndSettle();
-    expect(tester.getSize(card).width, 175);
-    expect(tester.getSize(second).width, 175);
+    expect(tester.getSize(card).width, (panel.width - 40) / 2);
+    expect(tester.getSize(second).width, (panel.width - 40) / 2);
     expect(tester.getSize(card).height, 55);
     expect(tester.getSize(second).height, 55);
     // 单列拖动后 c2 在前，双列里应落在左侧。

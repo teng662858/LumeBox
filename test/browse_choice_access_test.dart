@@ -105,7 +105,11 @@ void main() {
     final reset = tester.getRect(find.widgetWithText(TextButton, '重置'));
     final footer = tester.getRect(find.byKey(const Key('filter-footer')));
     expect(footer.left, 16);
-    expect(footer.right, 374);
+    expect(
+      footer.right,
+      tester.getRect(find.byKey(const ValueKey('browse-left-drawer'))).right -
+          16,
+    );
     expect(footer.bottom, 844 - 34);
     expect(footer.height, 64);
     expect(apply.height, 48);

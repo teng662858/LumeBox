@@ -1,4 +1,12 @@
+import 'dart:convert';
+
 import '../../shared/widgets/source_translation.dart';
+
+import 'package:flutter/foundation.dart' show mapEquals;
+
+import '../../shared/widgets/browse_side_drawer.dart';
+import '../source/video_source_scope.dart';
+import '../source/source_picker_sheet.dart';
 import '../../core/source/source_labels.dart';
 import '../../core/net/network_cancellation.dart';
 import '../../shared/widgets/network_owned_state.dart';
@@ -77,6 +85,7 @@ class ExploreView extends StatefulWidget {
     this.showSort = false,
     this.onOpenFacetFilter,
     this.revision = 0,
+    this.selectionRevision = 0,
   });
 
   final Section section;
@@ -99,6 +108,7 @@ class ExploreView extends StatefulWidget {
   /// 图源变更代数：宿主导入 / 删除 / 停用图源后 +1，本页**原地**重新解析
   /// （重挂会与旧实例的 dispose 抢同一份板块注册表，真机上会报「图源存储不可用」）。
   final int revision;
+  final int selectionRevision;
 
   /// 图源条里是否显示「源管理」入口。
   ///
@@ -155,6 +165,40 @@ class _ExploreViewState extends State<ExploreView>
   String? _categoryId;
   String? _homeBrowseMode;
   List<String> _homeTranslationTexts = const [];
+  final Map<String, _ExploreVisit> _visits = {};
+
+  void _rememberVisit() {
+    final source = _source;
+    if (source == null || _loadingFirst || _failure != null) return;
+    _visits.remove(source.id);
+    _visits[source.id] = _ExploreVisit(
+      source: source,
+      signature: _visitSignature(_current!),
+      category: _categoryId,
+      filters: Map.of(_facetFilters),
+      categories: _categories,
+      groups: _filterGroups,
+      items: List.of(_items),
+      page: _page,
+      hasMore: _hasMore,
+      home: _homeSupported,
+      mode: _homeBrowseMode,
+    );
+    if (_visits.length > 8) _visits.remove(_visits.keys.first);
+  }
+
+  String _visitSignature(SourceDescriptor source) => jsonEncode([
+    source.version,
+    source.siteConfig.toJson(),
+    source.network.toJson(),
+  ]);
+
+  String get _scrollKey {
+    final filters = _facetFilters.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return 'browse:${_source?.id}:$_categoryId:${filters.map((e) => '${e.key}=${e.value}').join('&')}:${_mode.name}';
+  }
+
   List<SourceCategory> _categories = const [];
   List<SourceFilterGroup> _filterGroups = const [];
   final SourceFilterCache _inlineFilterCache = SourceFilterCache();
@@ -274,6 +318,9 @@ class _ExploreViewState extends State<ExploreView>
     // 宿主说「图源变了」：原地重新解析（不换 Key，见 [revision] 的说明）。
     if (widget.revision != oldWidget.revision) {
       unawaited(_bootstrap());
+    } else if (widget.selectionRevision != oldWidget.selectionRevision) {
+      _rememberVisit();
+      unawaited(_bootstrap(restoreVisit: true));
     }
   }
 
@@ -306,7 +353,11 @@ class _ExploreViewState extends State<ExploreView>
   // ------------------------------------------------------------------ 数据
 
   /// 解析当前图源、打开数据源、取分类与首页列表。
-  Future<void> _bootstrap() async {
+  Future<void> _bootstrap({bool restoreVisit = false}) async {
+    if (!restoreVisit) {
+      _visits.clear();
+      if (_source != null) SectionPreloader.discard(widget.section);
+    }
     final bootstrapSeq = ++_bootstrapSeq;
     networkRequests.cancelAll();
     _resetPagination();
@@ -376,6 +427,14 @@ class _ExploreViewState extends State<ExploreView>
         return;
       }
       _resetPagination();
+      final remembered = _visits[current.id];
+      final visit =
+          remembered != null &&
+              remembered.signature == _visitSignature(current) &&
+              (identical(remembered.source, source) ||
+                  (source is JsDataSource && remembered.source is JsDataSource))
+          ? remembered
+          : null;
       setState(() {
         _sources = sources;
         _current = current;
@@ -388,10 +447,22 @@ class _ExploreViewState extends State<ExploreView>
           _facetFilters = const {};
           _homeSupported = false;
         }
-        _source = source;
+        _source = visit?.source ?? source;
+        if (visit != null) {
+          _categoryId = visit.category;
+          _facetFilters = Map.of(visit.filters);
+          _categories = visit.categories;
+          _filterGroups = visit.groups;
+          _items.addAll(visit.items);
+          _page = visit.page;
+          _hasMore = visit.hasMore;
+          _homeSupported = visit.home;
+          _homeBrowseMode = visit.mode;
+        }
         _state = SourceStateKind.ready;
         _failure = null;
       });
+      if (visit != null) return;
       // 首页探针**并行**跑：它是一次 JS 求值，串行会把列表加载整整推后一拍
       //（真机表现：进板块先闪两秒「暂无内容」才出数据）。
       unawaited(_probeHomeSupport());
@@ -579,21 +650,50 @@ class _ExploreViewState extends State<ExploreView>
     unawaited(_refresh());
   }
 
-  Future<void> _openCombinedFilters() async {
+  Future<void> _openCombinedFilters({BrowseDrawerMotion? motion}) async {
     final selected = await showBrowseFilters(
       context: context,
       categories: _categories,
       groups: _distinctFilterGroups.toList(),
       category: _categoryId,
       filters: _facetFilters,
+      motion: motion,
     );
     if (!mounted || selected == null) return;
+    if (_categoryId == selected.category &&
+        mapEquals(_facetFilters, selected.filters)) {
+      return;
+    }
     setState(() {
       _homeBrowseMode = null;
       _categoryId = selected.category;
       _facetFilters = selected.filters;
     });
     await _refresh();
+  }
+
+  Future<void> _openSourceDrawer({BrowseDrawerMotion? motion}) async {
+    final scope = VideoSourceScope.maybeOf(context);
+    if (widget.section == Section.video && scope != null) {
+      await scope.openPicker(context, motion: motion);
+      return;
+    }
+    var changed = false;
+    final selected = await showSourcePicker(
+      context: context,
+      section: widget.section,
+      sources: _sources.where((s) => s.enabled).toList(),
+      currentId: _current?.id,
+      manager: _manager,
+      motion: motion,
+      onChanged: () => changed = true,
+    );
+    if (!mounted) return;
+    if (selected != null && selected != _current?.id) {
+      await _selectSource(selected);
+    } else if (changed) {
+      await _bootstrap();
+    }
   }
 
   Widget _buildInlineFacets() => Column(
@@ -974,6 +1074,7 @@ class _ExploreViewState extends State<ExploreView>
 
   Future<void> _selectSource(String sourceId) async {
     if (sourceId == _current?.id || _switching) return;
+    _rememberVisit();
     SectionPreloader.discard(widget.section);
     setState(() => _switching = true);
     final selected = await _manager.select(sourceId);
@@ -984,7 +1085,7 @@ class _ExploreViewState extends State<ExploreView>
           .showSnackBar(const SnackBar(content: Text('该源不可用')));
       return;
     }
-    await _bootstrap();
+    await _bootstrap(restoreVisit: true);
   }
 
   /// 可读提示（不冒泡异常）。
@@ -1190,104 +1291,109 @@ class _ExploreViewState extends State<ExploreView>
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: FloatingModules.instance,
-      builder: (context, _) => Scaffold(
-        // **本页不随键盘收缩**（真机反馈：唤起键盘后顶部搜索框被顶出屏幕，
-        // 漫画 / 视频三块都复现）。这里的布局契约是：
-        //   顶栏占位 + 搜索行是**固定头部**，键盘只能影响下面的内容列表。
-        // 交给 Scaffold 收缩的话，头部会跟着被挤压/位移；因此关掉自动收缩，
-        // 让键盘的高度由列表自己用底部内边距让出来（见 _keyboardInset）。
-        resizeToAvoidBottomInset: false,
-        backgroundColor: Colors.transparent,
-        key: _scaffold,
-        drawerScrimColor: Colors.black54,
-        // 返回键：**联想弹窗开着时先关它**（用户点名「返回关闭联想弹窗」），
-        // 而不是直接退出搜索 / 退出页面。
-        body: PopScope(
-          canPop: _suggestions.isEmpty,
-          onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) _closeSuggestions();
-          },
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _closeSuggestions,
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: (notification) {
-                      final hidden = BrowseHeaderScroll.hiddenAfter(
-                        notification,
-                        _headerHidden,
-                      );
-                      if (hidden != _headerHidden) {
-                        setState(() => _headerHidden = hidden);
-                      }
-                      return false;
-                    },
-                    child: _buildBody(),
+      builder: (context, _) => SourcePickerEdgeSwipe(
+        onOpen: _openSourceDrawer,
+        onOpenLeft: (motion) => _openCombinedFilters(motion: motion),
+        onOpenRight: (motion) => _openSourceDrawer(motion: motion),
+        child: Scaffold(
+          // **本页不随键盘收缩**（真机反馈：唤起键盘后顶部搜索框被顶出屏幕，
+          // 漫画 / 视频三块都复现）。这里的布局契约是：
+          //   顶栏占位 + 搜索行是**固定头部**，键盘只能影响下面的内容列表。
+          // 交给 Scaffold 收缩的话，头部会跟着被挤压/位移；因此关掉自动收缩，
+          // 让键盘的高度由列表自己用底部内边距让出来（见 _keyboardInset）。
+          resizeToAvoidBottomInset: false,
+          backgroundColor: Colors.transparent,
+          key: _scaffold,
+          drawerScrimColor: Colors.black54,
+          // 返回键：**联想弹窗开着时先关它**（用户点名「返回关闭联想弹窗」），
+          // 而不是直接退出搜索 / 退出页面。
+          body: PopScope(
+            canPop: _suggestions.isEmpty,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop) _closeSuggestions();
+            },
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _closeSuggestions,
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        final hidden = BrowseHeaderScroll.hiddenAfter(
+                          notification,
+                          _headerHidden,
+                        );
+                        if (hidden != _headerHidden) {
+                          setState(() => _headerHidden = hidden);
+                        }
+                        return false;
+                      },
+                      child: _buildBody(),
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                top:
-                    GlassScaffold.barHeight(
-                      context,
-                      extra: BoardTabHeader.height,
-                    ) +
-                    FloatingModules.instance.style(FloatingModule.home).y,
-                left:
-                    HomePanelLayout.sidePadding +
-                    FloatingModules.instance.style(FloatingModule.home).x,
-                right:
-                    HomePanelLayout.sidePadding -
-                    FloatingModules.instance.style(FloatingModule.home).x,
-                child: BrowseHeaderMotion(
-                  hidden: _headerHidden,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      _measureFloatingHeader();
-                      return ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.sizeOf(context).height * .5,
-                        ),
-                        child: GlassPanel(
-                          module: null,
-                          key: _floatingHeaderKey,
-                          radius: HomePanelLayout.radius,
-                          color: LumeTheme.glass.withValues(
-                            alpha: FloatingModules.instance
-                                .style(FloatingModule.home)
-                                .opacity,
+                Positioned(
+                  top:
+                      GlassScaffold.barHeight(
+                        context,
+                        extra: BoardTabHeader.height,
+                      ) +
+                      FloatingModules.instance.style(FloatingModule.home).y,
+                  left:
+                      HomePanelLayout.sidePadding +
+                      FloatingModules.instance.style(FloatingModule.home).x,
+                  right:
+                      HomePanelLayout.sidePadding -
+                      FloatingModules.instance.style(FloatingModule.home).x,
+                  child: BrowseHeaderMotion(
+                    hidden: _headerHidden,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        _measureFloatingHeader();
+                        return ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: MediaQuery.sizeOf(context).height * .5,
                           ),
-                          blur: FloatingModules.instance
-                              .style(FloatingModule.home)
-                              .blur,
-                          padding: HomePanelLayout.padding,
-                          child: SingleChildScrollView(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (!_compactHome)
-                                  ?HomeHeaderScope.headerOf(context),
-                                _searching
-                                    ? _buildSearchField()
-                                    : _buildHeader(),
-                                if (!_searching) _buildInlineFacets(),
-                              ],
+                          child: GlassPanel(
+                            module: null,
+                            key: _floatingHeaderKey,
+                            radius: HomePanelLayout.radius,
+                            color: LumeTheme.glass.withValues(
+                              alpha: FloatingModules.instance
+                                  .style(FloatingModule.home)
+                                  .opacity,
+                            ),
+                            blur: FloatingModules.instance
+                                .style(FloatingModule.home)
+                                .blur,
+                            padding: HomePanelLayout.padding,
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (!_compactHome)
+                                    ?HomeHeaderScope.headerOf(context),
+                                  _searching
+                                      ? _buildSearchField()
+                                      : _buildHeader(),
+                                  if (!_searching) _buildInlineFacets(),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
-              ),
-              if (_compactHome)
-                BrowseSearchButton(
-                  onPressed: _openSearch,
-                  visible: !_searching,
-                ),
-            ],
+                if (_compactHome)
+                  BrowseSearchButton(
+                    onPressed: _openSearch,
+                    visible: !_searching,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1573,6 +1679,7 @@ class _ExploreViewState extends State<ExploreView>
     // 首页模式：横滑板块（或旧兼容的普通网格），由 SourceHomeView 自理加载与空态。
     if (_isHomeMode) {
       return SourceHomeView(
+        key: ObjectKey(_source),
         browseMode: _homeBrowseMode,
         source: _source!,
         topInset: _contentTop,
@@ -1712,6 +1819,7 @@ class _ExploreViewState extends State<ExploreView>
           },
           child: CoverViewport(
             child: GridView.builder(
+              key: PageStorageKey('$_scrollKey:grid'),
               scrollCacheExtent: const ScrollCacheExtent.viewport(1),
               // 内容不足一屏时也要能下拉刷新。
               physics: const AlwaysScrollableScrollPhysics(),
@@ -1776,6 +1884,7 @@ class _ExploreViewState extends State<ExploreView>
         },
         child: CoverViewport(
           child: ListView.separated(
+            key: PageStorageKey('$_scrollKey:list'),
             scrollCacheExtent: const ScrollCacheExtent.viewport(1),
             physics: const AlwaysScrollableScrollPhysics(),
             padding: EdgeInsets.fromLTRB(
@@ -1910,3 +2019,28 @@ class _RoundAction extends StatelessWidget {
 /// 右侧筛选抽屉：分类选择 + 图源管理入口。
 
 /// 封面位：管线就绪时走 [PosterCover]，否则出主题占位（图位不变，避免列表跳动）。
+
+class _ExploreVisit {
+  const _ExploreVisit({
+    required this.source,
+    required this.signature,
+    required this.category,
+    required this.filters,
+    required this.categories,
+    required this.groups,
+    required this.items,
+    required this.page,
+    required this.hasMore,
+    required this.home,
+    required this.mode,
+  });
+  final DataSource source;
+  final String signature;
+  final String? category, mode;
+  final Map<String, String> filters;
+  final List<SourceCategory> categories;
+  final List<SourceFilterGroup> groups;
+  final List<SourceItem> items;
+  final int page;
+  final bool hasMore, home;
+}

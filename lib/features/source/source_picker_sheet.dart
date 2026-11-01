@@ -7,6 +7,7 @@ import 'package:lume_box/shared/widgets/lume_icon.dart';
 
 import '../../shared/widgets/source_category_columns.dart';
 import '../../shared/widgets/drawer_geometry.dart';
+import '../../shared/widgets/browse_side_drawer.dart';
 import '../../core/source/source_subscription_sync.dart';
 import '../../shared/widgets/cat_site_tile.dart';
 import '../../shared/widgets/source_drag_tile.dart';
@@ -46,11 +47,11 @@ Future<String?> showSourcePicker({
   required String? currentId,
   SourceManager? manager,
   VoidCallback? onChanged,
-}) => showLumeBottomSheet<String>(
+  BrowseDrawerMotion? motion,
+}) => showBrowseSideDrawer<String>(
   context: context,
-  isScrollControlled: true,
-  useSafeArea: true,
-  backgroundColor: Colors.transparent,
+  side: BrowseDrawerSide.right,
+  motion: motion,
   builder: (_) => SourcePickerSheet(
     section: section,
     sources: sources,

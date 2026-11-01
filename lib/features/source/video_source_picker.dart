@@ -23,6 +23,7 @@ import '../../core/theme/lume_theme.dart';
 import '../../core/web/web_home_sources.dart';
 import '../../core/web/html_home_import.dart';
 import '../../shared/widgets/drawer_geometry.dart';
+import '../../shared/widgets/browse_side_drawer.dart';
 import '../../shared/widgets/lume_icon.dart';
 import '../../shared/widgets/source_card_metrics.dart';
 import '../../shared/widgets/source_drag_tile.dart';
@@ -83,14 +84,18 @@ Future<VideoSourceChoice?> showVideoSourcePicker({
   String? currentCatId,
   String? currentWebId,
   bool showingCat = false,
-}) => showLumeBottomSheet<VideoSourceChoice>(
+  BrowseDrawerMotion? motion,
+  VoidCallback? onChanged,
+}) => showBrowseSideDrawer<VideoSourceChoice>(
   context: context,
-  backgroundColor: Colors.transparent,
+  side: BrowseDrawerSide.right,
+  motion: motion,
   builder: (_) => VideoSourcePicker(
     manager: manager,
     currentCatId: currentCatId,
     currentWebId: currentWebId,
     showingCat: showingCat,
+    onChanged: onChanged,
   ),
 );
 
@@ -105,12 +110,14 @@ class VideoSourcePicker extends StatefulWidget {
     this.currentWebId,
     this.showingCat = false,
     this.service,
+    this.onChanged,
   });
   final SourceManager manager;
   final String? currentCatId;
   final String? currentWebId;
   final bool showingCat;
   final CatService? service;
+  final VoidCallback? onChanged;
 
   @override
   State<VideoSourcePicker> createState() => _VideoSourcePickerState();
@@ -208,6 +215,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
   }
 
   void changed() {
+    widget.onChanged?.call();
     if (mounted) {
       setState(() {
         webHomes = _webStore?.items ?? webHomes;
@@ -311,7 +319,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
     bool widgetParameters = false,
     SourceDescriptor? descriptor,
   }) async {
-    await Navigator.push<void>(
+    final saved = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => SourcePreferencesPage(
@@ -324,6 +332,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
         ),
       ),
     );
+    if (saved == true) widget.onChanged?.call();
     if (mounted) await load();
   }
 
@@ -405,6 +414,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
       ),
     );
     if (!mounted || target == null) return;
+    widget.onChanged?.call();
     if (target == _VideoImportAction.kazumi) {
       await runSourceImport(
         context,
@@ -719,6 +729,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
     setState(() => busy.add(id));
     try {
       await remove();
+      widget.onChanged?.call();
       if (mounted) await load();
     } catch (_) {
       if (mounted) {
@@ -1136,6 +1147,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                           ),
                         ),
                       );
+                      widget.onChanged?.call();
                       if (mounted) await load();
                     },
                     title: '选择视频源',
@@ -1149,6 +1161,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                           ),
                         ),
                       );
+                      widget.onChanged?.call();
                       if (mounted) await load();
                     },
                     addAction: IconButton(

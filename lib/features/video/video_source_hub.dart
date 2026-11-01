@@ -1,3 +1,5 @@
+import '../../shared/widgets/browse_side_drawer.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../core/cat/cat_service.dart';
@@ -26,6 +28,7 @@ class _VideoSourceHubState extends State<VideoSourceHub> {
   CatSite? _site;
   WebHomeSource? _webHome;
   int _revision = 0;
+  int _sourceSelection = 0;
   int _selection = 0;
   bool _pickerOpen = false;
 
@@ -60,11 +63,11 @@ class _VideoSourceHubState extends State<VideoSourceHub> {
     }
   }
 
-  Future<void> _pick(BuildContext context) async {
+  Future<void> _pick(BuildContext context, {BrowseDrawerMotion? motion}) async {
     if (_pickerOpen) return;
     _pickerOpen = true;
     try {
-      await _pickSource(context);
+      await _pickSource(context, motion: motion);
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       if (context.mounted) {
@@ -76,7 +79,11 @@ class _VideoSourceHubState extends State<VideoSourceHub> {
     }
   }
 
-  Future<void> _pickSource(BuildContext context) async {
+  Future<void> _pickSource(
+    BuildContext context, {
+    BrowseDrawerMotion? motion,
+  }) async {
+    var changed = false;
     final manager = LumeSources.manager(Section.video);
     final selected = await showVideoSourcePicker(
       context: context,
@@ -84,11 +91,14 @@ class _VideoSourceHubState extends State<VideoSourceHub> {
       currentCatId: _cat ? CatService.instance.selectedSiteId : null,
       currentWebId: _webHome?.id,
       showingCat: _cat,
+      motion: motion,
+      onChanged: () => changed = true,
     );
     if (!mounted) return;
+    if (selected == null && !changed) return;
     // Imports can change the available sources even when the drawer is closed.
     setState(() {
-      _revision++;
+      if (changed) _revision++;
       if (_site != null &&
           CatService.instance.subscriptions.any(
             (record) => record.removedSiteIds.contains(_site!.id),
@@ -126,11 +136,14 @@ class _VideoSourceHubState extends State<VideoSourceHub> {
       );
       return;
     } else if (selected.sourceId case final id?) {
+      if (!_cat && _webHome == null && (await manager.current())?.id == id) {
+        return;
+      }
       if (await manager.select(id) == null || !mounted) return;
       setState(() {
         _cat = false;
         _webHome = null;
-        _revision++;
+        _sourceSelection++;
       });
     }
     final library = await ReadingLibrary.open(Section.video);
@@ -140,24 +153,24 @@ class _VideoSourceHubState extends State<VideoSourceHub> {
   @override
   Widget build(BuildContext context) => VideoSourceScope(
     openPicker: _pick,
-    child: SourcePickerEdgeSwipe(
-      onOpen: () => _pick(context),
-      child: IndexedStack(
-        index: _cat ? 1 : 0,
-        children: [
-          TickerMode(
-            enabled: !_cat,
-            child: VideoPage(sourceRevision: _revision),
+    child: IndexedStack(
+      index: _cat ? 1 : 0,
+      children: [
+        TickerMode(
+          enabled: !_cat,
+          child: VideoPage(
+            sourceRevision: _revision,
+            sourceSelectionRevision: _sourceSelection,
           ),
-          if (_catCreated)
-            TickerMode(
-              enabled: _cat,
-              child: CatPage(requestedSite: _site),
-            )
-          else
-            const SizedBox.shrink(),
-        ],
-      ),
+        ),
+        if (_catCreated)
+          TickerMode(
+            enabled: _cat,
+            child: CatPage(requestedSite: _site),
+          )
+        else
+          const SizedBox.shrink(),
+      ],
     ),
   );
 }

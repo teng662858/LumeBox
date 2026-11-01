@@ -79,6 +79,7 @@ class SourceHomeView extends StatefulWidget {
 
 class _SourceHomeViewState extends State<SourceHomeView>
     with NetworkOwnedState<SourceHomeView> {
+  static final _visits = Expando<SourceHome>();
   SourceHome? _home;
   Object? _error;
   int _seq = 0;
@@ -168,6 +169,7 @@ class _SourceHomeViewState extends State<SourceHomeView>
       );
       if (!mounted || seq != _seq) return;
       final home =
+          (!force ? _visits[source] : null) ??
           SectionPreloader.takeWarmHome(source.section, sourceId: source.id) ??
           await networkRequests.run<SourceHome>(
             'home',
@@ -179,6 +181,7 @@ class _SourceHomeViewState extends State<SourceHomeView>
             ),
           );
       if (!mounted || seq != _seq) return;
+      _visits[source] = home;
       setState(() => _home = home);
       _preloadFirstScreen(home);
       widget.onTranslationTexts?.call([
@@ -435,6 +438,9 @@ class _SourceHomeViewState extends State<SourceHomeView>
         BrowseLayoutMode.grid3;
     if (mode == BrowseLayoutMode.list) {
       return ListView.separated(
+        key: PageStorageKey(
+          'home:${widget.source.id}:${widget.browseMode}:list',
+        ),
         scrollCacheExtent: const ScrollCacheExtent.viewport(1),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(
@@ -469,6 +475,9 @@ class _SourceHomeViewState extends State<SourceHomeView>
         : TwoColumnSourceLayout.spacing;
     return LayoutBuilder(
       builder: (context, constraints) => GridView.builder(
+        key: PageStorageKey(
+          'home:${widget.source.id}:${widget.browseMode}:${mode.name}',
+        ),
         scrollCacheExtent: const ScrollCacheExtent.viewport(1),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(

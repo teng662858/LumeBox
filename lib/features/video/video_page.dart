@@ -54,9 +54,11 @@ class VideoPage extends StatefulWidget {
     this.sourceManager,
     this.library,
     this.sourceRevision = 0,
+    this.sourceSelectionRevision = 0,
   });
 
   final int sourceRevision;
+  final int sourceSelectionRevision;
 
   /// 播放器创建端口（按内核）。为空时用 [PlayerFactory.create]。
   ///
@@ -448,6 +450,7 @@ class _VideoPageState extends State<VideoPage> {
             // 导入 / 删除图源后原地重解析（不重挂：重挂会与旧实例的 dispose
             // 抢同一份板块注册表，真机上会报「图源存储不可用」）。
             revision: _browseRevision + widget.sourceRevision,
+            selectionRevision: widget.sourceSelectionRevision,
             onOpenItem: _playFromSelection,
             // 视频筛选：一级分类（底部弹窗）→ 独立筛选子页（分页跳转模式，用户口径）。
             onOpenFacetFilter: _openFacetFilter,

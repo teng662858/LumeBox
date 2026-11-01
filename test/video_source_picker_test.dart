@@ -899,7 +899,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: VideoSourceScope(
-          openPicker: (_) async {
+          openPicker: (_, {motion}) async {
             opened++;
           },
           child: Scaffold(
