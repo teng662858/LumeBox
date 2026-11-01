@@ -333,7 +333,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('首页加载失败'), findsOneWidget);
+      expect(find.text('网络异常'), findsOneWidget);
       expect(metadataRefreshes, 0);
       await tester.tap(find.text('重试'));
       await tester.pumpAndSettle();

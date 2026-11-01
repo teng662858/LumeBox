@@ -14,7 +14,9 @@ void main() {
         SourceStateKind.disabled,
       );
       expect(
-        stateForError(const SourceException(SourceErrorKind.unsupported, '无运行时')),
+        stateForError(
+          const SourceException(SourceErrorKind.unsupported, '无运行时'),
+        ),
         SourceStateKind.disabled,
       );
     });
@@ -25,12 +27,14 @@ void main() {
         SourceStateKind.networkError,
       );
       expect(
-        stateForError(const SourceException(SourceErrorKind.callFailed, 'TypeError')),
+        stateForError(
+          const SourceException(SourceErrorKind.callFailed, 'TypeError'),
+        ),
         SourceStateKind.scriptError,
       );
     });
 
-    test('非 SourceException 一律按脚本报错兜底', () {
+    test('没有已知特征的非 SourceException 按脚本报错兜底', () {
       expect(stateForError(StateError('boom')), SourceStateKind.scriptError);
       expect(stateForError('莫名其妙'), SourceStateKind.scriptError);
     });
@@ -71,8 +75,9 @@ void main() {
 
     test('释放与不支持归一到 notFound', () {
       expect(
-        mapSandboxFailure(const SandboxError(SandboxErrorKind.disposed, '沙箱已释放'))
-            .kind,
+        mapSandboxFailure(
+          const SandboxError(SandboxErrorKind.disposed, '沙箱已释放'),
+        ).kind,
         SourceErrorKind.notFound,
       );
       expect(
@@ -80,6 +85,56 @@ void main() {
           const SandboxError(SandboxErrorKind.unsupported, '原生库不可用'),
         ).kind,
         SourceErrorKind.notFound,
+      );
+    });
+  });
+
+  group('通用加载失败诊断', () {
+    test('DNS 失败与解析失败分开，网络异常也能进一步区分', () {
+      for (final kind in [
+        SourceErrorKind.network,
+        SourceErrorKind.callFailed,
+      ]) {
+        expect(
+          stateForError(
+            SourceException(kind, 'Failed host lookup: example.test'),
+          ),
+          SourceStateKind.addressUnavailable,
+        );
+      }
+      expect(
+        classifyCallFailure('首页没有解析到板块（站点改版了？）'),
+        SourceStateKind.pageUnrecognized,
+      );
+      expect(SourceStateKind.pageUnrecognized.recoveryHint, contains('可能'));
+    });
+    test('网页验证只按验证标记识别，HTTP 403 不等于验证码', () {
+      expect(
+        classifyCallFailure('NEED_WEBVIEW_VERIFY：页面未解析到内容'),
+        SourceStateKind.verificationRequired,
+      );
+      expect(
+        classifyCallFailure('请求失败 HTTP 403'),
+        SourceStateKind.networkError,
+      );
+      expect(
+        classifyCallFailure('WAF_RECAPTCHA_V3：需要外部桥接'),
+        isNot(SourceStateKind.verificationRequired),
+      );
+    });
+    test('明确的 JS 错误不能被调用栈中的网络和解析字样覆盖', () {
+      expect(
+        classifyCallFailure('TypeError: timeout is not a function; 没有解析到内容'),
+        SourceStateKind.scriptError,
+      );
+      expect(
+        classifyCallFailure('CERTIFICATE_VERIFY_FAILED'),
+        SourceStateKind.networkError,
+      );
+      expect(classifyCallFailure('执行超时: home'), SourceStateKind.timeout);
+      expect(
+        classifyCallFailure('Error: unknown format'),
+        SourceStateKind.scriptError,
       );
     });
   });

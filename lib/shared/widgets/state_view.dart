@@ -62,9 +62,17 @@ class SourceStateView extends StatelessWidget {
       );
     }
     if (state == SourceStateKind.ready) return const SizedBox.shrink();
+    final hint = state.recoveryHint;
+    final specific = {
+      SourceStateKind.addressUnavailable,
+      SourceStateKind.verificationRequired,
+      SourceStateKind.pageUnrecognized,
+    }.contains(state);
     return NoticeCard(
       title: title ?? state.label,
-      subtitle: detail ?? _defaultDetail(state),
+      subtitle: specific && hint != null
+          ? (detail == null || detail!.isEmpty ? hint : '$hint\n\n$detail')
+          : (detail ?? _defaultDetail(state)),
       action: _buildAction(),
     );
   }
