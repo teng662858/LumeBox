@@ -169,13 +169,23 @@ void main() {
       expect(find.text('网站第$i行'), findsOneWidget);
     }
     expect(find.text('展开全部筛选'), findsNothing);
+    await tester.dragUntilVisible(
+      find.text('第五组条件5'),
+      find
+          .ancestor(
+            of: find.text('第五组条件5'),
+            matching: find.byType(SingleChildScrollView),
+          )
+          .first,
+      const Offset(0, -100),
+    );
     await tester.tap(find.text('第五组条件5'));
     await tester.pumpAndSettle();
     expect(source.requests.last.$2, {'row5': 'pick5'});
     expect(find.byType(AppBar), findsNothing);
   });
 
-  testWidgets('大量筛选时顶部最多半屏，内部滚动仍可选择末尾条件', (tester) async {
+  testWidgets('大量筛选时顶部最多三分之一屏，内部滚动仍可选择末尾条件', (tester) async {
     final source = _ManyFilterSource(count: 20);
     await show(
       tester,
@@ -191,7 +201,7 @@ void main() {
       matching: find.byType(SingleChildScrollView),
     );
     expect(headerScroll, findsOneWidget);
-    expect(tester.getSize(headerScroll).height, lessThanOrEqualTo(956 / 2));
+    expect(tester.getSize(headerScroll).height, lessThanOrEqualTo(956 / 3));
     await tester.ensureVisible(find.text('第五组条件20'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('第五组条件20'));

@@ -50,19 +50,207 @@ class DanmakuSettingsSheet extends StatefulWidget {
 }
 
 class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
+  static const _hint = '连接成功只表示服务可访问；作品、集数和弹幕数量以本集加载结果为准。';
+
+  Widget _sourcePanel(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final buttonStyle = ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll(Size(0, 36)),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 8),
+      ),
+      textStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 12)),
+      visualDensity: VisualDensity.compact,
+    );
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.surface.withValues(alpha: .3),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      '本集 ${widget.danmakuCount ?? 0} 条',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '源弹幕 ${widget.sourceCount} · 公共弹幕 ${widget.publicCount}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (widget.loading)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
+                if (widget.status?.isNotEmpty == true)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Tooltip(
+                      message: widget.status!,
+                      child: Text(
+                        widget.status!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
+                if (widget.matchLabel?.isNotEmpty == true)
+                  Tooltip(
+                    message: widget.matchLabel!,
+                    child: Text(
+                      '已关联：${widget.matchLabel}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            if (widget.onMatch != null)
+              Expanded(
+                child: FilledButton.icon(
+                  style: buttonStyle,
+                  onPressed: widget.onMatch,
+                  icon: const LumeIcon(
+                    Icons.search,
+                    slot: 'danmaku.match',
+                    size: 16,
+                  ),
+                  label: const Text(
+                    '匹配公共弹幕',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            if (widget.onMatch != null && widget.onReload != null)
+              const SizedBox(width: 8),
+            if (widget.onReload != null)
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: buttonStyle,
+                  onPressed: widget.loading ? null : widget.onReload,
+                  icon: const LumeIcon(
+                    Icons.refresh,
+                    slot: 'danmaku.reload',
+                    size: 16,
+                  ),
+                  label: const Text(
+                    '重新加载本集',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        ListTile(
+          dense: true,
+          minTileHeight: 44,
+          minVerticalPadding: 0,
+          contentPadding: EdgeInsets.zero,
+          minLeadingWidth: 20,
+          horizontalTitleGap: 8,
+          leading: const LumeIcon(
+            Icons.dns_outlined,
+            slot: 'danmaku.service',
+            size: 20,
+          ),
+          title: const Text('弹幕服务', style: TextStyle(fontSize: 13)),
+          subtitle: Text(
+            widget.serviceLabel ?? '选择官方或自定义 danmu 服务',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11),
+          ),
+          trailing: const LumeIcon(
+            Icons.chevron_right,
+            slot: 'danmaku.service.next',
+            size: 18,
+          ),
+          onTap: widget.onConfigureService,
+        ),
+        if (widget.onClearMatch != null &&
+            widget.matchLabel?.isNotEmpty == true)
+          TextButton(
+            style: buttonStyle,
+            onPressed: widget.onClearMatch,
+            child: const Text('清除本集关联，重新匹配'),
+          ),
+        Text(
+          _hint,
+          style: TextStyle(
+            fontSize: 11,
+            height: 1.2,
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) => DefaultTabController(
     length: 2,
     child: Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+          padding: const EdgeInsets.fromLTRB(12, 2, 4, 0),
           child: Row(
             children: [
-              const Expanded(
-                child: Text(
-                  '弹幕',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '弹幕',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (widget.videoTitle?.isNotEmpty == true)
+                      Text(
+                        [
+                          widget.videoTitle!,
+                          if (widget.episodeTitle?.isNotEmpty == true)
+                            widget.episodeTitle!,
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               Switch.adaptive(
@@ -73,143 +261,33 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
               IconButton(
                 tooltip: '返回播放',
                 onPressed: () => Navigator.pop(context),
-                icon: const LumeIcon(Icons.close, slot: 'danmaku.close'),
+                icon: const LumeIcon(
+                  Icons.close,
+                  slot: 'danmaku.close',
+                  size: 22,
+                ),
               ),
             ],
           ),
         ),
-        if (widget.videoTitle?.isNotEmpty == true)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                [
-                  widget.videoTitle!,
-                  if (widget.episodeTitle?.isNotEmpty == true)
-                    widget.episodeTitle!,
-                ].join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
         const TabBar(
+          labelPadding: EdgeInsets.symmetric(horizontal: 8),
           tabs: [
-            Tab(text: '来源与匹配'),
-            Tab(text: '显示样式'),
+            Tab(height: 32, text: '来源与匹配'),
+            Tab(height: 32, text: '显示样式'),
           ],
         ),
         Expanded(
           child: TabBarView(
             children: [
-              ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surface
-                          .withValues(alpha: .3),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '本集 ${widget.danmakuCount ?? 0} 条',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '源弹幕 ${widget.sourceCount} · 公共弹幕 ${widget.publicCount}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          if (widget.loading) const LinearProgressIndicator(),
-                          if (widget.status != null)
-                            Text(
-                              widget.status!,
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          if (widget.matchLabel?.isNotEmpty == true) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              '已关联：${widget.matchLabel}',
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (widget.onMatch != null)
-                    FilledButton.icon(
-                      onPressed: widget.onMatch,
-                      icon: const LumeIcon(Icons.search, slot: 'danmaku.match'),
-                      label: const Text('匹配公共弹幕'),
-                    ),
-                  const SizedBox(height: 6),
-                  if (widget.onReload != null)
-                    OutlinedButton.icon(
-                      onPressed: widget.loading ? null : widget.onReload,
-                      icon: const LumeIcon(
-                        Icons.refresh,
-                        slot: 'danmaku.reload',
-                      ),
-                      label: const Text('重新加载本集'),
-                    ),
-                  const SizedBox(height: 12),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const LumeIcon(
-                      Icons.dns_outlined,
-                      slot: 'danmaku.service',
-                    ),
-                    title: const Text('弹幕服务'),
-                    subtitle: Text(widget.serviceLabel ?? '选择官方或自定义 danmu 服务'),
-                    trailing: const LumeIcon(
-                      Icons.chevron_right,
-                      slot: 'danmaku.service.next',
-                    ),
-                    onTap: widget.onConfigureService,
-                  ),
-                  if (widget.onClearMatch != null &&
-                      widget.matchLabel?.isNotEmpty == true)
-                    TextButton(
-                      onPressed: widget.onClearMatch,
-                      child: const Text('清除本集关联，重新匹配'),
-                    ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '连接成功只表示服务可访问；作品、集数和弹幕数量以本集加载结果为准。',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
+              _sourcePanel(context),
               SingleChildScrollView(
                 child: DanmakuSettingsPanel(
                   settings: widget.settings,
                   onChanged: widget.onChanged,
                   showTitle: false,
                   showEnabled: false,
+                  compact: true,
                 ),
               ),
             ],
@@ -232,6 +310,7 @@ class DanmakuSettingsPanel extends StatefulWidget {
     this.showTitle = true,
     this.showAvoidSubtitles = true,
     this.showEnabled = true,
+    this.compact = false,
   });
 
   final DanmakuSettings settings;
@@ -244,6 +323,7 @@ class DanmakuSettingsPanel extends StatefulWidget {
   final bool showTitle;
   final bool showAvoidSubtitles;
   final bool showEnabled;
+  final bool compact;
 
   @override
   State<DanmakuSettingsPanel> createState() => _DanmakuSettingsPanelState();
@@ -294,6 +374,10 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
   Widget _switch(String title, bool value, ValueChanged<bool> onChanged) =>
       SwitchListTile(
         contentPadding: EdgeInsets.zero,
+        dense: widget.compact,
+        visualDensity: widget.compact
+            ? VisualDensity.compact
+            : VisualDensity.standard,
         title: Text(
           title,
           style: const TextStyle(
@@ -314,7 +398,9 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      padding: widget.compact
+          ? const EdgeInsets.fromLTRB(12, 8, 12, 8)
+          : const EdgeInsets.fromLTRB(20, 16, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -577,6 +663,36 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
     required ValueChanged<double> onChanged,
     int? divisions,
   }) {
+    if (widget.compact) {
+      return SizedBox(
+        height: 36,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 64,
+              child: Text(label, style: const TextStyle(fontSize: 12)),
+            ),
+            Expanded(
+              child: NativeGlassSlider(
+                value: value.clamp(min, max),
+                min: min,
+                max: max,
+                divisions: divisions ?? 20,
+                onChanged: onChanged,
+              ),
+            ),
+            SizedBox(
+              width: 48,
+              child: Text(
+                display,
+                textAlign: TextAlign.end,
+                style: const TextStyle(fontSize: 11),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[

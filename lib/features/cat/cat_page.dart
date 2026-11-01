@@ -91,7 +91,7 @@ class _CatPageState extends State<CatPage>
         hidden: _headerHidden,
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * .75,
+            maxHeight: MediaQuery.sizeOf(context).height / 3,
           ),
           child: SingleChildScrollView(key: _headerKey, child: header()),
         ),

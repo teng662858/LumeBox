@@ -52,7 +52,7 @@ class SectionModuleSettings {
 
   static const int defaultDoubleTapWindowMs = 260;
   static const int defaultSwipeTurnThresholdPx = 18;
-  static const int defaultLongPressMs = 450;
+  static const int defaultLongPressMs = 800;
 
   // 可调范围（UI 只读这些常量，不各自写数字）。
   static const int minToolbarToggleDelayMs = 0;

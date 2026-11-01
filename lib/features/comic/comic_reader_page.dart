@@ -1,3 +1,4 @@
+import 'reader_interaction_surface.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
 import '../source/source_login_page.dart';
 import '../../shared/widgets/network_owned_state.dart';
@@ -1339,8 +1340,8 @@ class _ComicReaderPageState extends State<ComicReaderPage>
         children: <Widget>[
           Positioned.fill(
             child: LayoutBuilder(
-              builder: (context, constraints) => GestureDetector(
-                behavior: HitTestBehavior.opaque,
+              builder: (context, constraints) => ReaderInteractionSurface(
+                onCancelTap: _cancelToolbarToggle,
                 onTapUp: (details) => _onTapUp(details, constraints.biggest),
                 child: Stack(
                   fit: StackFit.expand,
@@ -1494,6 +1495,7 @@ class _ComicReaderPageState extends State<ComicReaderPage>
             translations: _translations[_images[index]],
             // 双击放大 = 用户要的是放大，不是面板：把待呼出的那次撤掉。
             onDoubleTapZoom: _cancelToolbarToggle,
+            longPressDelay: _module.longPress,
             onLongPress: () => _onImageLongPress(index),
             onRatio: (ratio) => _onRatio(index, ratio),
           ),
@@ -1556,6 +1558,7 @@ class _ComicReaderPageState extends State<ComicReaderPage>
                     translations: _translations[_images[physical]],
                     // 双击放大 = 用户要的是放大，不是面板：把待呼出的那次撤掉。
                     onDoubleTapZoom: _cancelToolbarToggle,
+                    longPressDelay: _module.longPress,
                     onLongPress: () => _onImageLongPress(physical),
                   ),
           );
@@ -1601,6 +1604,7 @@ class _ComicReaderPageState extends State<ComicReaderPage>
     zoomLocked: _preferences.zoomLocked,
     speechCursor: _speechCursor,
     translations: _translations[_images[index]],
+    longPressDelay: _module.longPress,
     onLongPress: () => _onImageLongPress(index),
   );
 
@@ -1901,6 +1905,7 @@ class _ComicImageTile extends StatefulWidget {
     required this.decodeWidth,
     required this.doubleTapZoom,
     required this.onLongPress,
+    this.longPressDelay = const Duration(milliseconds: 800),
     this.onDoubleTapZoom,
     this.zoomLocked = false,
     this.onRatio,
@@ -1929,6 +1934,7 @@ class _ComicImageTile extends StatefulWidget {
   /// 双击放大真正生效前回调（阅读器用它取消「待呼出工具栏」）。
   final VoidCallback? onDoubleTapZoom;
   final VoidCallback onLongPress;
+  final Duration longPressDelay;
 
   /// 解码完成后回报「高/宽」比（瀑布流据此精确定位）。
   final ValueChanged<double>? onRatio;
@@ -2238,37 +2244,45 @@ class _ComicImageTileState extends State<_ComicImageTile>
       ),
     );
     if (!widget.doubleTapZoom && _transform.value.getMaxScaleOnAxis() <= 1.01) {
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onLongPress: widget.onLongPress,
-        child: Center(child: content),
+      return _longPressRegion(
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          child: Center(child: content),
+        ),
       );
     }
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onLongPress: widget.onLongPress,
-      onDoubleTapDown: widget.zoomLocked || !widget.doubleTapZoom
-          ? null
-          : (details) => _zoomPoint = details.localPosition,
-      onDoubleTap: widget.zoomLocked || !widget.doubleTapZoom
-          ? null
-          : () {
-              widget.onDoubleTapZoom?.call();
-              _toggleZoom();
-            },
-      child: InteractiveViewer(
-        transformationController: _transform,
-        minScale: 1,
-        maxScale: 4,
-        // 未放大时不抢纵向拖动，列表照常滚动；放大后拖动用于看图。
-        scaleEnabled: !widget.zoomLocked,
-        panEnabled:
-            !widget.zoomLocked && _transform.value.getMaxScaleOnAxis() > 1.01,
-        onInteractionEnd: (_) => setState(() {}),
-        child: Center(child: content),
+    return _longPressRegion(
+      GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onDoubleTapDown: widget.zoomLocked || !widget.doubleTapZoom
+            ? null
+            : (details) => _zoomPoint = details.localPosition,
+        onDoubleTap: widget.zoomLocked || !widget.doubleTapZoom
+            ? null
+            : () {
+                widget.onDoubleTapZoom?.call();
+                _toggleZoom();
+              },
+        child: InteractiveViewer(
+          transformationController: _transform,
+          minScale: 1,
+          maxScale: 4,
+          // 未放大时不抢纵向拖动，列表照常滚动；放大后拖动用于看图。
+          scaleEnabled: !widget.zoomLocked,
+          panEnabled:
+              !widget.zoomLocked && _transform.value.getMaxScaleOnAxis() > 1.01,
+          onInteractionEnd: (_) => setState(() {}),
+          child: Center(child: content),
+        ),
       ),
     );
   }
+
+  Widget _longPressRegion(Widget child) => ReaderLongPressRegion(
+    duration: widget.longPressDelay,
+    onLongPress: widget.onLongPress,
+    child: child,
+  );
 
   Widget _buildPlaceholder() => ColoredBox(
     color: LumeTheme.fill,
