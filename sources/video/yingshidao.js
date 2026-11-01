@@ -1,4 +1,4 @@
-// LumeSource: {"id":"ysd_video","name":"影视岛","version":"2.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://tv.yingshidao.com","https://www.yingshidao.com"],"network":"direct","icon":"https://tv.yingshidao.com/brand/icon-180.f528dac723b16dab.png"}
+// LumeSource: {"id":"ysd_video","name":"影视岛","version":"2.0.1","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://tv.yingshidao.com","https://www.yingshidao.com"],"network":"direct","icon":"https://tv.yingshidao.com/brand/icon-180.f528dac723b16dab.png"}
 // LumeRuntime: javascript
 //
 // 站点：影视岛（tv.yingshidao.com，面向海外华人的华语影视站，条目带 has4k 字段）。
@@ -120,19 +120,23 @@ function rowToItem(x) {
   if (x.region) bits.push(String(x.region));
   if (Number(x.totalEpisodes) > 1) bits.push('共' + x.totalEpisodes + '集');
   else if (clean(x.badge)) bits.push(clean(x.badge));
-  return {
+  var item = {
     id: String(x.id || ''),
     title: clean(x.title) || '未命名',
     cover: String(x.coverUrl || x.horizontalCover || ''),
     subtitle: bits.join(' · ')
   };
+  if (/yingshiduo\.com|yingshidao\.com/i.test(item.cover)) {
+    item.coverHeaders = { 'Referer': base() + '/' };
+  }
+  return item;
 }
 
 // ------------------------------------------------------------------ 入口
 var LumeSource = {
   id: 'ysd_video',
   name: '影视岛',
-  version: '2.0.0',
+  version: '2.0.1',
   category: 'video',
   settingsApiVersion: 2,
   requiresSettings: ['settingsActions'],
@@ -204,7 +208,8 @@ var LumeSource = {
       title: clean(d.title) || ('作品 ' + d.id),
       cover: String(d.coverUrl || d.horizontalCover || ''),
       subtitle: bits.join(' · '),
-      description: clean(d.description || '') || '影视岛（tv.yingshidao.com）'
+      description: clean(d.description || '') || '影视岛（tv.yingshidao.com）',
+      coverHeaders: { 'Referer': base() + '/' }
     };
   },
 
