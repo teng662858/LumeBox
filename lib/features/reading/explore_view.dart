@@ -1293,7 +1293,7 @@ class _ExploreViewState extends State<ExploreView>
       listenable: FloatingModules.instance,
       builder: (context, _) => SourcePickerEdgeSwipe(
         onOpen: _openSourceDrawer,
-        onOpenLeft: (motion) => _openCombinedFilters(motion: motion),
+        onOpenLeft: (motion) => _openSourceDrawer(motion: motion),
         onOpenRight: (motion) => _openSourceDrawer(motion: motion),
         child: Scaffold(
           // **本页不随键盘收缩**（真机反馈：唤起键盘后顶部搜索框被顶出屏幕，

@@ -20,9 +20,10 @@ void main() {
                 context: context,
                 side: side,
                 motion: motion,
+                edgeToggle: true,
                 builder: (context) => Column(
                   children: [
-                    Text(side == BrowseDrawerSide.left ? '分类内容' : '源内容'),
+                    Text(side == BrowseDrawerSide.left ? '左侧测试内容' : '右侧测试内容'),
                     TextButton(
                       onPressed: () => Navigator.pop(context),
                       child: const Text('选择并关闭'),
@@ -51,7 +52,7 @@ void main() {
     );
   }
 
-  testWidgets('左右分工固定，拖动中就跟手，松手后展开', (tester) async {
+  testWidgets('双侧面板拖动中就跟手，松手后展开', (tester) async {
     await mount(tester);
     final pointer = await tester.startGesture(const Offset(1, 300));
     await pointer.moveBy(const Offset(110, 0));
@@ -64,35 +65,37 @@ void main() {
     await pointer.up();
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(left).dx, closeTo(0, 1));
+    expect(tester.getSize(left).width, 390);
+    expect(tester.getBottomRight(left).dx, closeTo(390, 1));
     await tester.tap(find.text('选择并关闭'));
     await tester.pumpAndSettle();
     await tester.dragFrom(const Offset(389, 300), const Offset(-260, 0));
     await tester.pumpAndSettle();
-    expect(find.text('源内容'), findsOneWidget);
-    expect(find.text('分类内容'), findsNothing);
+    expect(find.text('右侧测试内容'), findsOneWidget);
+    expect(find.text('左侧测试内容'), findsNothing);
   });
 
   testWidgets('短拖回弹，取消手势不打开，点击和返回均可关闭', (tester) async {
     await mount(tester);
     await tester.dragFrom(const Offset(1, 300), const Offset(50, 0));
     await tester.pumpAndSettle();
-    expect(find.text('分类内容'), findsNothing);
+    expect(find.text('左侧测试内容'), findsNothing);
     final pointer = await tester.startGesture(const Offset(389, 300));
     await pointer.moveBy(const Offset(-110, 0));
     await tester.pump();
     await pointer.cancel();
     await tester.pumpAndSettle();
-    expect(find.text('源内容'), findsNothing);
+    expect(find.text('右侧测试内容'), findsNothing);
     await tester.tap(find.text('切换源'));
     await tester.pumpAndSettle();
-    await tester.tapAt(const Offset(8, 400));
+    await tester.tapAt(const Offset(8, 50));
     await tester.pumpAndSettle();
-    expect(find.text('源内容'), findsNothing);
+    expect(find.text('右侧测试内容'), findsNothing);
     await tester.tap(find.text('切换源'));
     await tester.pumpAndSettle();
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(find.text('源内容'), findsNothing);
+    expect(find.text('右侧测试内容'), findsNothing);
   });
 
   testWidgets('反向收回可拖回取消，快速反向甩动关闭', (tester) async {
@@ -106,10 +109,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await pointer.up();
     await tester.pumpAndSettle();
-    expect(find.text('源内容'), findsOneWidget);
+    expect(find.text('右侧测试内容'), findsOneWidget);
     await tester.flingFrom(const Offset(80, 400), const Offset(120, 0), 1000);
     await tester.pumpAndSettle();
-    expect(find.text('源内容'), findsNothing);
+    expect(find.text('右侧测试内容'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -121,6 +124,30 @@ void main() {
     await pointer.moveBy(const Offset(270, 0));
     await pointer.up();
     await tester.pumpAndSettle();
-    expect(find.text('源内容'), findsNothing);
+    expect(find.text('右侧测试内容'), findsNothing);
   });
+
+  for (final openLeft in [true, false]) {
+    for (final closeLeft in [true, false]) {
+      testWidgets(
+        '从${openLeft ? '左' : '右'}侧打开后，再划${closeLeft ? '左' : '右'}边缘收回',
+        (tester) async {
+          await mount(tester);
+          await tester.dragFrom(
+            Offset(openLeft ? 1 : 389, 400),
+            Offset(openLeft ? 270 : -270, 0),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text(openLeft ? '左侧测试内容' : '右侧测试内容'), findsOneWidget);
+          await tester.dragFrom(
+            Offset(closeLeft ? 1 : 389, 400),
+            Offset(closeLeft ? 120 : -120, 0),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('左侧测试内容'), findsNothing);
+          expect(find.text('右侧测试内容'), findsNothing);
+        },
+      );
+    }
+  }
 }

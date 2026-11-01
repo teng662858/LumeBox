@@ -20,7 +20,11 @@ void main() {
     SectionPreloader.discard(Section.video);
   });
 
-  Future<void> mount(WidgetTester tester, FakeSourceManager manager) async {
+  Future<void> mount(
+    WidgetTester tester,
+    FakeSourceManager manager, {
+    Section section = Section.comic,
+  }) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -28,7 +32,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: ExploreView(
-            section: Section.comic,
+            section: section,
             manager: manager,
             onOpenItem: (_) {},
           ),
@@ -65,38 +69,44 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('中间滑动和关闭右侧抽屉不重载首页，左右分工一致', (tester) async {
-    final a = _Source('a'), b = _Source('b');
-    await mount(tester, manager(a, b));
-    expect(a.homeCalls, 1);
-    await tester.dragFrom(const Offset(200, 400), const Offset(-100, 0));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('browse-right-drawer')), findsNothing);
-    await tester.dragFrom(const Offset(389, 400), const Offset(-270, 0));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('browse-right-drawer')), findsOneWidget);
-    await tester.tapAt(const Offset(8, 400));
-    await tester.pumpAndSettle();
-    expect(a.homeCalls, 1);
-    await tester.dragFrom(const Offset(1, 400), const Offset(270, 0));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('browse-left-drawer')), findsOneWidget);
-    await tester.dragFrom(const Offset(300, 500), const Offset(-270, 0));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('browse-left-drawer')), findsNothing);
-    await tester.dragFrom(const Offset(1, 400), const Offset(270, 0));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, '分类甲'));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('browse-left-drawer')), findsNothing);
-    expect(a.lastCategory, 'category-a');
-  });
+  for (final section in [Section.comic, Section.video]) {
+    testWidgets('${section.label}：左右边缘都开源选择，再划相同边缘收回，筛选仍用按钮', (tester) async {
+      final a = _Source('a', section: section),
+          b = _Source('b', section: section);
+      await mount(tester, manager(a, b), section: section);
+      expect(a.homeCalls, 1);
+      await tester.dragFrom(const Offset(200, 400), const Offset(-100, 0));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('browse-right-drawer')), findsNothing);
+      await tester.dragFrom(const Offset(389, 400), const Offset(-270, 0));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('browse-right-drawer')), findsOneWidget);
+      await tester.tapAt(const Offset(8, 50));
+      await tester.pumpAndSettle();
+      expect(a.homeCalls, 1);
+      await tester.dragFrom(const Offset(1, 400), const Offset(270, 0));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('browse-left-drawer')), findsOneWidget);
+      expect(find.text('选择${section.label}源'), findsOneWidget);
+      expect(find.text('分类与筛选'), findsNothing);
+      await tester.dragFrom(const Offset(1, 400), const Offset(120, 0));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('browse-left-drawer')), findsNothing);
+      expect(a.homeCalls, 1);
+      await tester.tap(find.byTooltip('展开全部分类'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ChoiceChip, '分类甲'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('browse-left-drawer')), findsNothing);
+      expect(a.lastCategory, 'category-a');
+    });
+  }
 
   testWidgets('切源回来保留分类、已加载结果和滚动位置，配置变化不复用旧结果', (tester) async {
     final a = _Source('a'), b = _Source('b');
     final sources = manager(a, b);
     await mount(tester, sources);
-    await tester.dragFrom(const Offset(1, 400), const Offset(270, 0));
+    await tester.tap(find.byTooltip('展开全部分类'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ChoiceChip, '分类甲'));
     await tester.pumpAndSettle();

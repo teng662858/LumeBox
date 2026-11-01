@@ -109,7 +109,11 @@ class _SourcePickerEdgeSwipeState extends State<SourcePickerEdgeSwipe> {
                   callback != null &&
                   distance > 8 &&
                   distance > _travel.dy.abs() * _directionRatio) {
-                _motion = BrowseDrawerMotion();
+                _motion = BrowseDrawerMotion(
+                  side: _fromLeft
+                      ? BrowseDrawerSide.left
+                      : BrowseDrawerSide.right,
+                );
                 _motion!.update(distance / _width);
                 _open(motion: _motion);
               }

@@ -11,6 +11,8 @@ enum BrowseDrawerSide { left, right }
 
 /// The initiating edge gesture remains the pointer owner while the route opens.
 class BrowseDrawerMotion extends ChangeNotifier {
+  BrowseDrawerMotion({this.side = BrowseDrawerSide.right});
+  final BrowseDrawerSide side;
   double progress = 0;
   bool? open;
   void update(double value) {
@@ -26,13 +28,14 @@ class BrowseDrawerMotion extends ChangeNotifier {
   }
 }
 
-double browseDrawerWidth(double width) => math.min(width * .92, 520);
+double browseDrawerWidth(double width) => width;
 
 Future<T?> showBrowseSideDrawer<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   required BrowseDrawerSide side,
   BrowseDrawerMotion? motion,
+  bool edgeToggle = false,
   bool useRootNavigator = true,
 }) async {
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
@@ -93,7 +96,9 @@ Future<T?> showBrowseSideDrawer<T>({
                           key: ValueKey('browse-${side.name}-drawer'),
                           color: Theme.of(context).colorScheme.surface,
                           elevation: 16,
-                          borderRadius: BorderRadius.circular(24),
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(24),
+                          ),
                           clipBehavior: Clip.antiAlias,
                           child: SafeArea(
                             top: false,
@@ -137,6 +142,7 @@ Future<T?> showBrowseSideDrawer<T>({
       builder: builder,
       side: side,
       motion: motion,
+      edgeToggle: edgeToggle,
       top: top,
       reduceMotion: reduceMotion,
       label: label,
@@ -154,6 +160,7 @@ class _BrowseDrawerRoute<T> extends PopupRoute<T> {
     required this.label,
     required this.themes,
     this.motion,
+    this.edgeToggle = false,
   });
   final WidgetBuilder builder;
   final BrowseDrawerSide side;
@@ -162,6 +169,10 @@ class _BrowseDrawerRoute<T> extends PopupRoute<T> {
   final String label;
   final CapturedThemes themes;
   final BrowseDrawerMotion? motion;
+  final bool edgeToggle;
+  int? edgePointer;
+  Offset edgeStart = Offset.zero, edgeTravel = Offset.zero;
+  bool fromLeftEdge = false;
   late AnimationController movement;
   bool settled = false;
   bool closing = false;
@@ -238,7 +249,9 @@ class _BrowseDrawerRoute<T> extends PopupRoute<T> {
             child: Material(
               color: Theme.of(context).colorScheme.surface,
               elevation: 16,
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
               clipBehavior: Clip.antiAlias,
               child: SafeArea(
                 top: false,
@@ -246,60 +259,96 @@ class _BrowseDrawerRoute<T> extends PopupRoute<T> {
                 child: Builder(builder: builder),
               ),
             ),
-            builder: (context, child) => Stack(
-              children: [
-                Positioned.fill(
-                  child: Semantics(
-                    label: label,
-                    button: true,
-                    child: GestureDetector(
-                      key: const Key('browse-drawer-scrim'),
-                      behavior: HitTestBehavior.opaque,
-                      onTap: dismiss,
-                      child: ColoredBox(
-                        color: Colors.black.withValues(
-                          alpha: .42 * animation.value,
+            builder: (context, child) => Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (event) {
+                if (!edgeToggle || closing || edgePointer != null) return;
+                final edges = MediaQuery.systemGestureInsetsOf(context);
+                final x = event.localPosition.dx;
+                final left = x >= edges.left && x <= edges.left + 28;
+                final right =
+                    x >= constraints.maxWidth - edges.right - 28 &&
+                    x <= constraints.maxWidth - edges.right;
+                if (!left && !right) return;
+                edgePointer = event.pointer;
+                fromLeftEdge = left && !right;
+                edgeStart = event.localPosition;
+                edgeTravel = Offset.zero;
+              },
+              onPointerMove: (event) {
+                if (event.pointer == edgePointer) {
+                  edgeTravel = event.localPosition - edgeStart;
+                }
+              },
+              onPointerUp: (event) {
+                if (event.pointer != edgePointer) return;
+                edgePointer = null;
+                final inward = fromLeftEdge ? edgeTravel.dx : -edgeTravel.dx;
+                if (inward >= 64 && inward > edgeTravel.dy.abs() * 1.2) {
+                  dismiss();
+                }
+              },
+              onPointerCancel: (event) {
+                if (event.pointer == edgePointer) edgePointer = null;
+              },
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Semantics(
+                      label: label,
+                      button: true,
+                      child: GestureDetector(
+                        key: const Key('browse-drawer-scrim'),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: dismiss,
+                        child: ColoredBox(
+                          color: Colors.black.withValues(
+                            alpha: .42 * animation.value,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  top: inset,
-                  bottom: 0,
-                  left: side == BrowseDrawerSide.left ? 0 : null,
-                  right: side == BrowseDrawerSide.right ? 0 : null,
-                  width: width,
-                  child: Transform.translate(
-                    offset: Offset(-sign * width * (1 - animation.value), 0),
-                    child: GestureDetector(
-                      key: ValueKey('browse-${side.name}-drawer'),
-                      dragStartBehavior: DragStartBehavior.down,
-                      behavior: HitTestBehavior.opaque,
-                      onHorizontalDragStart: (_) {
-                        settled = true;
-                        movement.stop();
-                      },
-                      onHorizontalDragUpdate: (details) {
-                        if (!closing) {
-                          movement.value += sign * details.delta.dx / width;
-                        }
-                      },
-                      onHorizontalDragCancel: () => movement.forward(),
-                      onHorizontalDragEnd: (details) {
-                        final speed = sign * (details.primaryVelocity ?? 0);
-                        if (speed < -650 ||
-                            (speed <= 650 && movement.value < .5)) {
-                          dismiss();
-                        } else {
-                          movement.forward();
-                        }
-                      },
-                      child: child,
+                  Positioned(
+                    top: inset,
+                    bottom: 0,
+                    left: side == BrowseDrawerSide.left ? 0 : null,
+                    right: side == BrowseDrawerSide.right ? 0 : null,
+                    width: width,
+                    child: Transform.translate(
+                      offset: Offset(-sign * width * (1 - animation.value), 0),
+                      child: GestureDetector(
+                        key: ValueKey('browse-${side.name}-drawer'),
+                        dragStartBehavior: DragStartBehavior.down,
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragStart: (_) {
+                          settled = true;
+                          movement.stop();
+                        },
+                        onHorizontalDragUpdate: (details) {
+                          if (!closing) {
+                            movement.value += sign * details.delta.dx / width;
+                          }
+                        },
+                        onHorizontalDragCancel: () {
+                          if (!closing) movement.forward();
+                        },
+                        onHorizontalDragEnd: (details) {
+                          if (closing) return;
+                          final speed = sign * (details.primaryVelocity ?? 0);
+                          if (speed < -650 ||
+                              (speed <= 650 && movement.value < .5)) {
+                            dismiss();
+                          } else {
+                            movement.forward();
+                          }
+                        },
+                        child: child,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );

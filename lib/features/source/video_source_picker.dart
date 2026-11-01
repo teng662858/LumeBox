@@ -88,7 +88,8 @@ Future<VideoSourceChoice?> showVideoSourcePicker({
   VoidCallback? onChanged,
 }) => showBrowseSideDrawer<VideoSourceChoice>(
   context: context,
-  side: BrowseDrawerSide.right,
+  side: motion?.side ?? BrowseDrawerSide.right,
+  edgeToggle: true,
   motion: motion,
   builder: (_) => VideoSourcePicker(
     manager: manager,
