@@ -1,4 +1,4 @@
-// LumeSource: {"id":"chengshe_video","name":"橙涩视频","version":"2.1.0","category":"video","contentCategory":"adult","mirrors":["https://6s9b2f4hkmbh.xyz"],"network":"direct","icon":"https://6s9b2f4hkmbh.xyz/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页","url":"https://8if2pvzp.cc","description":"站点换域名时先看这里（离线页里还有备用地址与邮箱）"},{"key":"note","type":"info","title":"站点说明","description":"橙涩视频（6s9b2f4hkmbh.xyz，Vue3 SPA + Cloudflare）：接口在独立 API 域（30 个 .cc 短链的 /api/sys/findLive 自发现）；请求参数 AES-CBC（key = iv = 毫秒时间戳 + 000），响应用 token 第 3-18 位倒序做 key 解。首次访问用 POST /user/tryLogin {deviceId} 自动拿游客 token，无需注册。VIP/金币片（price 5-9）接口层不鉴权：详情照发 videoUrl，拼 CDN 直接播——实测含 VIP 片 12/12 200 + #EXTM3U，HLS 是标准 AES-128（index.key 可取）。v2.0.0 增加短剧板块与站内搜索（/video/findVideoByTag 按标签命中）。"}]}
+// LumeSource: {"id":"chengshe_video","name":"橙涩视频","version":"2.1.1","category":"video","contentCategory":"adult","mirrors":["https://6s9b2f4hkmbh.xyz"],"network":"direct","icon":"https://6s9b2f4hkmbh.xyz/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页","url":"https://8if2pvzp.cc","description":"站点换域名时先看这里（离线页里还有备用地址与邮箱）"},{"key":"note","type":"info","title":"站点说明","description":"橙涩视频（6s9b2f4hkmbh.xyz，Vue3 SPA + Cloudflare）：接口在独立 API 域（30 个 .cc 短链的 /api/sys/findLive 自发现）；请求参数 AES-CBC（key = iv = 毫秒时间戳 + 000），响应用 token 第 3-18 位倒序做 key 解。首次访问用 POST /user/tryLogin {deviceId} 自动拿游客 token，无需注册。VIP/金币片（price 5-9）接口层不鉴权：详情照发 videoUrl，拼 CDN 直接播——实测含 VIP 片 12/12 200 + #EXTM3U，HLS 是标准 AES-128（index.key 可取）。v2.0.0 增加短剧板块与站内搜索（/video/findVideoByTag 按标签命中）。"}]}
 // LumeRuntime: javascript
 //
 // 站点：橙涩视频（入口 https://6s9b2f4hkmbh.xyz，随机域名，会换）。
@@ -262,10 +262,16 @@ function imgUrl(p) {
   return IMG_CDN[0] + (x.charAt(0) === '/' ? '' : '/') + x;
 }
 function coverOf(v) {
-  var arr = v && v.coverImg;
-  if (arr && arr.length && arr[0] && arr[0].coverImg) return imgUrl(arr[0].coverImg);
-  var vert = v && v.verticalImg;
-  if (vert && vert.length && vert[0] && vert[0].coverImg) return imgUrl(vert[0].coverImg);
+  if (!v) return '';
+  var sources = [];
+  if (v.coverImg) sources.push(v.coverImg);
+  if (v.verticalImg) sources.push(v.verticalImg);
+  for (var i = 0; i < sources.length; i++) {
+    // 视频是 [{coverImg}] 数组，短剧是 {coverImg,width,height} 单对象
+    var item = Array.isArray(sources[i]) ? sources[i][0] : sources[i];
+    var path = item ? s(item.coverImg) : '';
+    if (path) return imgUrl(path);
+  }
   return '';
 }
 function durationText(seconds) {
@@ -392,7 +398,7 @@ async function fetchSerial(serialId) {
 var LumeSource = {
   id: 'chengshe_video',
   name: '橙涩视频',
-  version: '2.1.0',
+  version: '2.1.1',
   category: 'video',
   contentCategory: 'adult',
 
@@ -496,12 +502,15 @@ var LumeSource = {
     var id = s(args && args.id).trim();
     if (!id) return [];
     if (id.charAt(0) === 's') {
-      var serial = await fetchSerial(id.slice(1));
-      if (!serial) return [];
-      var count = Number(serial.videoNum) || 1;
+      var count = 1;
+      try {
+        var serial = await fetchSerial(id.slice(1));
+        if (serial && Number(serial.videoNum) > 0) count = Number(serial.videoNum);
+      } catch (e) {}
       return [{ id: id, title: '全集（共 ' + count + ' 集）' }];
     }
-    var v = await fetchVideo(id);
+    var v = null;
+    try { v = await fetchVideo(id); } catch (e) { v = null; }
     if (!v) return [{ id: id, title: '正片' }];
     var title = '正片';
     if (Number(v.playTime) > 0) title += ' · ' + durationText(v.playTime);
