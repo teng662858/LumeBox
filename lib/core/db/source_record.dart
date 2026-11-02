@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../security/local_cipher.dart';
+
 import 'package:sqlite3/sqlite3.dart';
 
 import '../net/network_settings.dart';
@@ -65,29 +67,47 @@ class SourceRecord {
   /// 是否来自订阅（可「更新订阅源」）。
   bool get isSubscribed => originUrl.trim().isNotEmpty;
 
-  factory SourceRecord.fromRow(Row row) => SourceRecord(
-        id: row['id'] as String,
-        name: row['name'] as String,
-        version: row['version'] as String,
-        section: row['section'] as String,
-        script: row['script'] as String,
-        enabled: (row['enabled'] as int) != 0,
-        network: NetworkProfile(
-          userAgent: '${row['user_agent'] ?? ''}',
-          cookie: '${row['cookie'] ?? ''}',
-          proxy: '${row['proxy'] ?? ''}',
-          bridge: '${row['bridge'] ?? ''}',
-          // 缺列（老库还没来得及迁移）时按「关闭」读：宁可连不上，也不悄悄放宽校验。
-          allowBadCertificate: '${row['allow_bad_cert'] ?? ''}' == '1',
-        ),
-        // 换网址 / 账号登入：整份配置以 JSON 存在一列里（老库 / 老行缺列时
-        // 读出来是空串 → 落到默认值，既有数据库照常可用）。
-        siteConfig: SourceSiteConfig.fromJson(_siteJson(row['site_config'])),
-        originUrl: '${row['origin_url'] ?? ''}',
-        group: '${row['source_group'] ?? ''}',
-        failureCount: (row['failure_count'] as int?) ?? 0,
-        brokenAt: (row['broken_at'] as int?) ?? 0,
-      );
+  factory SourceRecord.fromRow(Row row, [LocalCipher? cipher]) => SourceRecord(
+    id: row['id'] as String,
+    name: row['name'] as String,
+    version: row['version'] as String,
+    section: row['section'] as String,
+    script: row['script'] as String,
+    enabled: (row['enabled'] as int) != 0,
+    network: NetworkProfile(
+      userAgent: '${row['user_agent'] ?? ''}',
+      cookie:
+          cipher?.reveal(
+            '${row['cookie'] ?? ''}',
+            context: 'source:${row['id']}:cookie',
+          ) ??
+          '${row['cookie'] ?? ''}',
+      proxy:
+          cipher?.reveal(
+            '${row['proxy'] ?? ''}',
+            context: 'source:${row['id']}:proxy',
+          ) ??
+          '${row['proxy'] ?? ''}',
+      bridge: '${row['bridge'] ?? ''}',
+      // 缺列（老库还没来得及迁移）时按「关闭」读：宁可连不上，也不悄悄放宽校验。
+      allowBadCertificate: '${row['allow_bad_cert'] ?? ''}' == '1',
+    ),
+    // 换网址 / 账号登入：整份配置以 JSON 存在一列里（老库 / 老行缺列时
+    // 读出来是空串 → 落到默认值，既有数据库照常可用）。
+    siteConfig: SourceSiteConfig.fromJson(
+      _siteJson(
+        cipher?.reveal(
+              '${row['site_config'] ?? ''}',
+              context: 'source:${row['id']}:site',
+            ) ??
+            row['site_config'],
+      ),
+    ),
+    originUrl: '${row['origin_url'] ?? ''}',
+    group: '${row['source_group'] ?? ''}',
+    failureCount: (row['failure_count'] as int?) ?? 0,
+    brokenAt: (row['broken_at'] as int?) ?? 0,
+  );
 
   /// 落库的配置列 → JSON 值；空串 / 坏 JSON 一律按「没有配置」处理
   /// （坏数据只该让这一项回到默认，不该让整个源读不出来）。

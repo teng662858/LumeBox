@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/js/lume_js_engine.dart';
+import 'package:lume_box/core/js/source_crypto.dart';
 import 'package:lume_box/core/js/qjs_bindings.dart';
 import 'package:lume_box/core/js/sandbox/sandbox.dart';
 
@@ -38,7 +39,9 @@ void main() {
       addTearDown(sandbox.dispose);
 
       // 真实脚本在加载期就会 require 一串内建，并把工具函数挂到 module.exports。
-      final gzipBase64 = base64Encode(gzip.encode(utf8.encode('{"list":[{"vod_id":1,"vod_name":"测试条目"}]}')));
+      final gzipBase64 = base64Encode(
+        gzip.encode(utf8.encode('{"list":[{"vod_id":1,"vod_name":"测试条目"}]}')),
+      );
       final loaded = await sandbox.load('''
         var crypto = require('node:crypto');
         var path = require('node:path');
@@ -111,15 +114,21 @@ void main() {
       ''');
       expect(loaded.isOk, isTrue, reason: loaded.error?.message);
 
-      final result = await sandbox.call('LumeSource.list', <String, Object?>{'page': 1});
+      final result = await sandbox.call('LumeSource.list', <String, Object?>{
+        'page': 1,
+      });
       expect(result.isOk, isTrue, reason: result.error?.message);
 
       // 宿主收到的请求：URL 已按 URLSearchParams 序列化（空格 → +）。
-      expect(host.calls.single, contains('https://api.example.com/list?page=1&sign='));
+      expect(
+        host.calls.single,
+        contains('https://api.example.com/list?page=1&sign='),
+      );
       expect(host.calls.single, contains('wd=%E4%B8%AD+%E6%96%87'));
 
       final payload = result.value! as Map<Object?, Object?>;
-      final item = (payload['items']! as List<Object?>).single! as Map<Object?, Object?>;
+      final item =
+          (payload['items']! as List<Object?>).single! as Map<Object?, Object?>;
       // 标题里带着：util.format + 小端读取 + 事件 + 流的结果。
       expect(item['title'], '测试条目/258|first|stream-ok');
       // 副标题里带着：二进制十六进制、宿主响应状态与正文。
@@ -131,7 +140,10 @@ void main() {
 }
 
 /// 记录请求并回填响应（模拟宿主网络层）。
-class _Host implements SandboxHost {
+class _Host implements SandboxHost, SandboxSyncHost {
+  @override
+  Object? invokeSync(SandboxHostRequest request) =>
+      SourceCrypto.run(Map<String, dynamic>.from(request.payload as Map));
   final List<String> calls = <String>[];
 
   @override

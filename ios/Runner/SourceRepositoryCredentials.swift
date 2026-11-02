@@ -5,6 +5,22 @@ import Security
 enum SourceRepositoryCredentials {
   static func register(with messenger: FlutterBinaryMessenger) {
     FlutterMethodChannel(name: "lumebox/source_repository", binaryMessenger: messenger).setMethodCallHandler { call, result in
+      if call.method == "storageKey" {
+        let keyQuery: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+          kSecAttrService as String: "lumebox.private-storage", kSecAttrAccount as String: "master-v1"]
+        var read = keyQuery; read[kSecReturnData as String] = true
+        var existing: CFTypeRef?
+        let status = SecItemCopyMatching(read as CFDictionary, &existing)
+        if status == errSecSuccess, let data = existing as? Data, data.count == 32 { result(data.base64EncodedString()); return }
+        guard status == errSecItemNotFound else { result(FlutterError(code: "keychain", message: "无法读取私密存储密钥", details: nil)); return }
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { result(FlutterError(code: "random", message: "无法生成安全密钥", details: nil)); return }
+        let data = Data(bytes)
+        var insert = keyQuery; insert[kSecValueData as String] = data
+        insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else { result(FlutterError(code: "keychain", message: "无法保存私密存储密钥", details: nil)); return }
+        result(data.base64EncodedString()); return
+      }
       let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: "lumebox.source-repository", kSecAttrAccount as String: "github"]
       if call.method == "read" {

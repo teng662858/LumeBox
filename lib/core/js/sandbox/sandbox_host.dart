@@ -42,6 +42,11 @@ abstract interface class SandboxHost {
   Future<Object?> invoke(SandboxHostRequest request);
 }
 
+/// Explicit synchronous capabilities. Async network/storage remain separate.
+abstract interface class SandboxSyncHost {
+  Object? invokeSync(SandboxHostRequest request);
+}
+
 /// 默认宿主：拒绝一切外部能力访问。
 class DenyAllSandboxHost implements SandboxHost {
   const DenyAllSandboxHost();

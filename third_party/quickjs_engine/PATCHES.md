@@ -1,8 +1,16 @@
 # 本地补丁说明（third_party/quickjs_engine）
 
+## 同步加密桥的返回值所有权
+
+`CChannelFunction` 为 `LumeSync` 路由到宿主发送通道；返回的新 JSValue 交给 JS，
+同时释放 C++ 包装指针。其余通道仍保留共享 JS_NULL 包装。所有通道在返回前释放
+`JS_ToCString` 产生的频道和消息字符串，并检查参数数量及转换失败，避免反复加密
+或大报文调用泄漏原生内存。Dart 同步宿主仍按沙箱身份、调用次数、输入/输出大小与
+执行时间限制能力；此补丁不开放网络或文件系统。
+
 本目录是 **`quickjs_engine` 0.1.6 的本地 vendored 副本**（来自 pub 镜像
 `pub.flutter-io.cn`，上游仓库见插件 `pubspec.yaml` 的 `repository` 字段），
-`pubspec.yaml` 以**路径依赖**引用它。保留 vendored 副本的唯一原因是携带下面这一处补丁。
+`pubspec.yaml` 以**路径依赖**引用它，以携带本文记录的本地补丁。
 
 ## 补丁 1 · 导出 `JS_SetInterruptHandler`（安全关键）
 

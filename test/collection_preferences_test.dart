@@ -5,6 +5,8 @@ import 'package:lume_box/features/reading/history_privacy.dart';
 
 import 'dart:convert';
 
+import 'package:lume_box/core/security/local_cipher.dart';
+
 import 'package:lume_box/core/session/configuration_backup.dart';
 
 import 'dart:io';
@@ -145,7 +147,7 @@ void main() {
     library.setSetting('waf.cookies.site', 'credential');
     final service = ConfigurationBackup();
     final encoded = await service.export();
-    final decoded = jsonDecode(encoded) as Map;
+    final decoded = jsonDecode(await BackupCipher.decode(encoded)) as Map;
     expect(decoded['sections']['video']['reader.fontSize'], '22');
     expect(encoded, isNot(contains('credential')));
     expect(encoded, isNot(contains('secret')));

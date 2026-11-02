@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../security/local_cipher.dart';
+
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 
@@ -25,7 +27,8 @@ import 'reading_identity.dart';
 /// 缓存目录同样独占：`sections/<id>/reading_cache/`，其下 `images/` 放图片缓存，
 /// `exports/` 保留用户手动保存的图片，不参与缓存清理。
 class ReadingStore {
-  ReadingStore._(this.section, this._scope, this._db);
+  ReadingStore._(this.section, this._scope, this._db, this._cipher);
+  final LocalCipher _cipher;
 
   /// 库内自证键：本库属于哪个板块。
   static const String _ownerKey = 'owner_section';
@@ -114,7 +117,7 @@ CREATE TABLE IF NOT EXISTS reading_setting (
             key.startsWith('video.player.')) {
           target._db.execute(
             'INSERT OR IGNORE INTO reading_setting(key,value) VALUES (?,?)',
-            [key, row['value']],
+            [key, target._cipher.seal(setting(key)!, context: 'reading:${target.section.id}:$key')],
           );
         }
       }
@@ -193,9 +196,11 @@ CREATE TABLE IF NOT EXISTS reading_setting (
       section,
       scope,
       sqlite3.open(_readingDbPath(scope)),
+      await LocalCipher.open(),
     );
     try {
       store._migrate();
+      store._protectLegacySettings();
       store._prepareDirectories();
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
@@ -736,7 +741,10 @@ CREATE TABLE IF NOT EXISTS reading_setting (
       if (!(row['key'] as String).startsWith('waf.') &&
           !(row['key'] as String).startsWith('rex.widget.') &&
           !(row['key'] as String).startsWith('history.lock'))
-        row['key'] as String: row['value'] as String,
+        row['key'] as String: _cipher.reveal(
+          row['value'] as String,
+          context: 'reading:${section.id}:${row['key']}',
+        ),
   };
 
   String? setting(String key) {
@@ -744,7 +752,12 @@ CREATE TABLE IF NOT EXISTS reading_setting (
     final rows = _db.select('SELECT value FROM reading_setting WHERE key = ?', [
       key,
     ]);
-    return rows.isEmpty ? null : rows.first['value'] as String;
+    return rows.isEmpty
+        ? null
+        : _cipher.reveal(
+            rows.first['value'] as String,
+            context: 'reading:${section.id}:$key',
+          );
   }
 
   /// Station credentials/preferences only. Shelf, progress and app settings survive.
@@ -761,8 +774,34 @@ CREATE TABLE IF NOT EXISTS reading_setting (
     _db.execute(
       'INSERT INTO reading_setting (key, value) VALUES (?, ?) '
       'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-      <Object?>[key, value],
+      <Object?>[
+        key,
+        _cipher.seal(value, context: 'reading:${section.id}:$key'),
+      ],
     );
+  }
+
+  void _protectLegacySettings() {
+    _db.execute('PRAGMA secure_delete = ON');
+    var changed = false;
+    _db.execute('BEGIN IMMEDIATE');
+    try {
+      for (final row in _db.select('SELECT key,value FROM reading_setting')) {
+        final text = row['value'] as String;
+        if (text.startsWith(LocalCipher.prefix)) continue;
+        setSetting(row['key'] as String, text);
+        changed = true;
+      }
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+    if (changed) {
+      _db.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+      _db.execute('VACUUM');
+      _db.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+    }
   }
 
   /// Cloud sync reads rows through this store, never copies a live SQLite file.

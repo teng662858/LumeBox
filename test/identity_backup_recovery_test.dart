@@ -3,6 +3,9 @@ import 'package:lume_box/core/cat/cat_service.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'dart:convert';
+
+import 'package:lume_box/core/security/local_cipher.dart';
+
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -225,12 +228,12 @@ PRAGMA user_version = 4;
         s.id: (await ReadingStore.open(s)).cloudRecords(includeSettings: false),
     };
     final backup = ConfigurationBackup(catService: CatService.testing());
-    final encoded = await backup.export();
+    final encoded = await backup.export(password: 'portable-backup-test');
     expect(encoded, isNot(contains('never-export-lock')));
     await close();
     newDevice();
     expect(await root.list().isEmpty, true);
-    await backup.restore(encoded);
+    await backup.restore(encoded, password: 'portable-backup-test');
     for (final s in Section.values) {
       expect(
         (await ReadingStore.open(s)).cloudRecords(includeSettings: false),
@@ -319,11 +322,11 @@ PRAGMA user_version = 4;
     final service = CatService.testing();
     addTearDown(service.closeForTesting);
     final backup = ConfigurationBackup(catService: service);
-    final text = await backup.export();
+    final text = await backup.export(password: 'portable-backup-test');
     expect(backup.warnings, isEmpty);
     await close();
     newDevice();
-    await backup.restore(text);
+    await backup.restore(text, password: 'portable-backup-test');
     expect(service.subscriptions.single.id, 'local-cat');
     expect(service.favoriteItems.single['title'], 'Node favorite');
     expect(service.history.single['site'], 'local-cat|video|site');
@@ -334,7 +337,9 @@ PRAGMA user_version = 4;
       '${root.path}/sections/cat/node/bundles/local-cat/$hash-$configHash/index.js',
     );
     expect(await restored.readAsBytes(), index);
-    final bad = jsonDecode(text) as Map;
+    final bad = jsonDecode(
+      await BackupCipher.decode(text, password: 'portable-backup-test'),
+    ) as Map;
     bad['catData']['bundles']['local-cat']['index'] = base64Encode([1, 2, 3]);
     await expectLater(backup.restore(jsonEncode(bad)), throwsFormatException);
     expect(await restored.readAsBytes(), index);
@@ -348,7 +353,8 @@ PRAGMA user_version = 4;
       await File('${root.path}/app_preferences.json')
           .writeAsString('{"autoBackup":true}');
       final backup = ConfigurationBackup(catService: CatService.testing());
-      final data = jsonDecode(await backup.export()) as Map;
+      final data =
+          jsonDecode(await BackupCipher.decode(await backup.export())) as Map;
       expect(data['files']['app_preferences.json'], {'autoBackup': true});
       expect(
         (data['files'] as Map).containsKey('appearance_settings.json'),
@@ -359,7 +365,8 @@ PRAGMA user_version = 4;
   );
   test('malformed subscriptions and mismatched identities fail before any settings mutation', () async {
     final backup = ConfigurationBackup(catService: CatService.testing());
-    final data = jsonDecode(await backup.export()) as Map;
+    final data =
+        jsonDecode(await BackupCipher.decode(await backup.export())) as Map;
     data['files'] = {
       'app_preferences.json': {'autoBackup': false},
     };

@@ -1,4 +1,6 @@
 import 'source_tools.dart';
+import 'source_crypto.dart';
+import 'rex_encrypted_loader.dart';
 import 'source_compression_polyfill.dart';
 import '../player/source_media_runtime.dart';
 import '../net/site_session_pool.dart';
@@ -277,6 +279,12 @@ class LumeJsEngine {
 
   void disableWidgetHost() => _host.widgetEnabled = false;
 
+  late final _encryptedWidgets = RexEncryptedLoader(
+    _host._http.hostServiceClient(),
+  );
+  Future<String> prepareWidgetScript(String script) =>
+      _encryptedWidgets.load(script);
+
   /// JSON 文本 → JS 字符串字面量。
   ///
   /// `jsonEncode` 已转义引号 / 反斜杠 / 控制字符，只剩行分隔符
@@ -304,6 +312,7 @@ class LumeJsEngine {
   /// 沙盒存储（`LumeSource.fs` 的进程内表）也在这一步清空。
   void dispose() {
     _sandbox.dispose();
+    _encryptedWidgets.clear();
     _host.dispose();
   }
 }
@@ -319,7 +328,17 @@ class LumeJsEngine {
 /// （[expectedSandboxId]）。沙箱身份自带板块前缀，因此「A 板块的脚本打到 B 板块
 /// 的宿主」这类串线会在第一跳被拒绝，而不是靠「每个板块各自建宿主」这个约定
 /// 默默兜住——约定会被重构改掉，校验不会。
-class LumeSourceHost implements SandboxHost {
+class LumeSourceHost implements SandboxHost, SandboxSyncHost {
+  @override
+  Object? invokeSync(SandboxHostRequest request) {
+    if (request.sandboxId != expectedSandboxId ||
+        request.method != 'crypto' ||
+        request.payload is! Map) {
+      throw const SandboxHostException('同步宿主调用被拒绝');
+    }
+    return SourceCrypto.run(Map<String, dynamic>.from(request.payload as Map));
+  }
+
   LumeSourceHost(
     this._http, {
     required this.timeout,

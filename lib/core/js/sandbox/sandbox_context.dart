@@ -813,9 +813,54 @@ Pointer<JsValueHandle> _onBridgeMessage(
   final instance = SandboxContext._instances[context.address];
   if (instance != null && !instance._destroyed) {
     try {
+      if (channel.toDartString() == 'LumeSync') {
+        Object? response;
+        try {
+          if (instance._poisoned ||
+              !instance.policy.allowHostAccess ||
+              !instance._activeBudget.spendHostCall() ||
+              !instance._activeBudget.spendStep() ||
+              instance.host is! SandboxSyncHost) {
+            throw const SandboxHostException('同步宿主能力不可用或超出预算');
+          }
+          final text = message.toDartString();
+          if (text.length > instance.policy.maxResultChars) {
+            throw const SandboxHostException('同步调用输入过大');
+          }
+          final decoded = jsonDecode(text) as Map;
+          final value = (instance.host as SandboxSyncHost).invokeSync(
+            SandboxHostRequest(
+              sandboxId: instance.id,
+              method: '${decoded['method']}',
+              payload: decoded['payload'],
+            ),
+          );
+          if (instance._activeBudget.isExpired ||
+              jsonEncode(value).length > instance.policy.maxResultChars) {
+            throw const SandboxHostException('同步宿主操作超出预算');
+          }
+          response = {'ok': true, 'value': value};
+        } catch (_) {
+          response = {'ok': false, 'error': '加密操作失败：请检查算法、密钥、IV、填充或认证标签'};
+        }
+        final encoded = jsonEncode(response).toNativeUtf8();
+        try {
+          return Qjs.newString(context, encoded);
+        } finally {
+          malloc.free(encoded);
+        }
+      }
       instance._handleMessage(message.toDartString());
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
+    }
+  }
+  if (channel.toDartString() == 'LumeSync') {
+    final text = '{"ok":false,"error":"同步宿主已释放"}'.toNativeUtf8();
+    try {
+      return Qjs.newString(context, text);
+    } finally {
+      malloc.free(text);
     }
   }
   return Qjs.nullValue;
@@ -851,6 +896,11 @@ const String _prelude = r'''
   };
 
   globalThis.LumeBridge = {
+    invokeSync: function(method, payload) {
+      var reply = JSON.parse(FLUTTER_JS_NATIVE_BRIDGE_sendMessage('LumeSync', JSON.stringify({method:method,payload:payload})));
+      if (!reply.ok) throw new Error(reply.error);
+      return reply.value;
+    },
     invoke: function (method, payload) {
       return new Promise(function (resolve, reject) {
         var id = nextId('h');

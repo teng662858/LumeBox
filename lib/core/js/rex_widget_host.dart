@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../net/lume_http.dart';
+import '../net/waf.dart';
 import '../reading/reading_library.dart';
 import '../session/section.dart';
 import '../tmdb/tmdb.dart';
@@ -230,6 +231,13 @@ class RexWidgetHost {
       maxBytes: maxBytes,
     );
     var bytes = response.body;
+    if (WafDetector.isChallenge(
+      statusCode: response.statusCode,
+      headers: response.headers,
+      body: utf8.decode(bytes.take(128 * 1024).toList(), allowMalformed: true),
+    )) {
+      throw SandboxHostException('NEED_WEBVIEW_VERIFY：${uri.origin} WAF 人机验证');
+    }
     if (payload['zlibMode'] == true) {
       final sink = _BoundedWidgetBytes(maxBytes);
       final decoder = ZLibDecoder().startChunkedConversion(sink);

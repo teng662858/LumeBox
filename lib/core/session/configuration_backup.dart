@@ -5,6 +5,8 @@ import '../media/media_library.dart';
 import 'dart:convert';
 import 'dart:io';
 
+import '../security/local_cipher.dart';
+
 import 'package:path_provider/path_provider.dart';
 
 import '../reading/reading_library.dart';
@@ -38,7 +40,10 @@ class ConfigurationBackup {
     'browse_layout.json',
     'network_settings.json',
   };
-  Future<String> export() async {
+  Future<String> export({String? password}) async =>
+      BackupCipher.encode(await _exportPlaintext(), password: password);
+
+  Future<String> _exportPlaintext() async {
     final base = await getApplicationSupportDirectory();
     warnings.clear();
     final settings = <String, Object?>{};
@@ -100,8 +105,10 @@ class ConfigurationBackup {
     });
   }
 
-  Future<void> restore(String text) async {
-    final data = jsonDecode(text);
+  Future<void> restore(String text, {String? password}) async {
+    final data = jsonDecode(
+      await BackupCipher.decode(text, password: password),
+    );
     if (data is! Map ||
         data['format'] != 'lumebox-configuration' ||
         ![1, 2].contains(data['version']) ||
@@ -284,6 +291,7 @@ class ConfigurationBackup {
     final base = await getApplicationSupportDirectory();
     final directory = Directory('${base.path}/configuration_backups');
     if (!directory.existsSync()) return [];
+    await _protectOldSnapshots(directory);
     return directory
         .listSync()
         .whereType<File>()
@@ -295,10 +303,17 @@ class ConfigurationBackup {
       ..sort((a, b) => b.path.compareTo(a.path));
   }
 
+  Future<void> protectExistingSnapshots() async {
+    final base = await getApplicationSupportDirectory();
+    final directory = Directory('${base.path}/configuration_backups');
+    if (directory.existsSync()) await _protectOldSnapshots(directory);
+  }
+
   Future<File> _createAutomatic() async {
     final base = await getApplicationSupportDirectory();
     final directory = Directory('${base.path}/configuration_backups')
       ..createSync(recursive: true);
+    await _protectOldSnapshots(directory);
     final day = DateTime.now().toIso8601String().substring(0, 10);
     final file = File('${directory.path}/LumeBox-$day.json');
     if (!file.existsSync()) {
@@ -321,5 +336,24 @@ class ConfigurationBackup {
       old.deleteSync();
     }
     return file;
+  }
+
+  Future<void> _protectOldSnapshots(Directory directory) async {
+    for (final file in directory.listSync().whereType<File>()) {
+      if (!file.path.endsWith('.json')) continue;
+      final text = await file.readAsString();
+      if (BackupCipher.isEncrypted(text)) continue;
+      try {
+        final value = jsonDecode(text);
+        if (value is! Map || value['format'] != 'lumebox-configuration') {
+          continue;
+        }
+      } catch (_) {
+        continue;
+      }
+      final temp = File('${file.path}.encrypting');
+      await temp.writeAsString(await BackupCipher.encode(text), flush: true);
+      await temp.rename(file.path);
+    }
   }
 }

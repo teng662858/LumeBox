@@ -264,9 +264,9 @@ class QuickJsSourceEngine implements SourceEngine, ScriptConfigCapable {
     engine.disableWidgetHost();
     try {
       if (RexWidget.matches(script)) {
-        RexWidget.requirePlaintext(script);
+        final executable = await engine.prepareWidgetScript(script);
         return await engine.loadScript(
-          RexWidget.wrap(script, await engine.prepareWidgetState()),
+          RexWidget.wrap(executable, await engine.prepareWidgetState()),
         );
       }
       return await engine.loadScript(

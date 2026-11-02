@@ -1,5 +1,7 @@
 # REX 明文模块：导入与验证
 
+> 2026-11-03 更新：REXENC v2（A256GCM / rex-1）已接入官方内容密钥服务与认证解密；三份用户加密样例均通过原生 QuickJS 加载。懂片帝、山楂4K 实测走通列表、详情、选集及播放地址解析。详见 [源加密与安全备份实现报告](2026-11-03_实现-源加密与安全备份-report.md)。本文其余早期验证记录保留历史语境。
+
 本轮完成普通明文视频模块的列表、搜索、详情、线路选集与播放适配。加密模块及依赖浏览器执行的模块仍有兼容限制，不能把成功导入等同于所有功能可用。
 
 ## 直接试用
@@ -31,7 +33,7 @@ https://raw.githubusercontent.com/teng662858/LumeBox/main/assets/rex/lumebox_dem
 | Widget.dom、requiresWebView | 尚未完成；不能直接运行所有浏览器模块 |
 | 独立弹幕/字幕扩展、字幕压缩包 | 不作为普通视频源完整接入 |
 | 自动网盘身份匹配、全部自由参数约定 | 尚未完整实现 |
-| FWENC / REXENC | 仅识别并提示，不具备通用解密兼容能力 |
+| FWENC / REXENC | REXENC v2 已支持官方取钥和认证解密；FWENC 仍是不同协议，不支持 |
 | playerType | 仍由 LumeBox 可用播放内核控制，不承诺复现其他 APP 的内核分流 |
 
 字段约定参考 [ForwardWidgets 官方示例](https://raw.githubusercontent.com/InchStudio/ForwardWidgets/master/widgets/demo.js)。制作文档说明模块如何编写，并不意味着其他 APP 专用接口自动在 LumeBox 中可用。

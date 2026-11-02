@@ -88,6 +88,10 @@ class LumeHttp {
 
   static const Duration defaultTimeout = NetworkSettings.defaultTimeout;
 
+  /// Host services never inherit a source's Cookie, headers, session or URL rewrite.
+  LumeHttp hostServiceClient() =>
+      LumeHttp(client: _client, settings: _settings, source: '宿主服务');
+
   static const String defaultUserAgent =
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
       'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';

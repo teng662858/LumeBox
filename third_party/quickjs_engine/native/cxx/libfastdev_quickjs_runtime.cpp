@@ -69,9 +69,14 @@ extern "C"
     static JSValue CChannelFunction(JSContext *ctx, JSValueConst this_val,
                                     int argc, JSValueConst *argv)
     {
-
+        if (argc < 2) return JS_ThrowTypeError(ctx, "Bridge requires channel and payload");
         const char *channelName = JS_ToCString(ctx, argv[0]);
         const char *message = JS_ToCString(ctx, argv[1]);
+        if (!channelName || !message) {
+            if (channelName) JS_FreeCString(ctx, channelName);
+            if (message) JS_FreeCString(ctx, message);
+            return JS_EXCEPTION;
+        }
 
         JSValue jsResult = JS_NULL;
         // while(cur->ctx) {
@@ -86,7 +91,7 @@ extern "C"
         // }
 
         int idxChannel = 0;
-        if (strcmp("SendNative", channelName) == 0)
+        if (strcmp("SendNative", channelName) == 0 || strcmp("LumeSync", channelName) == 0)
         {
             idxChannel = QUICKJS_CHANNEL_SENDNATIVE;
         }
@@ -105,7 +110,12 @@ extern "C"
 
             if (funcCaller != nullptr)
             {
-                jsResult = *funcCaller(ctx, channelName, message);
+                JSValue *value = funcCaller(ctx, channelName, message);
+                jsResult = value ? *value : JS_NULL;
+                // LumeSync transfers a fresh value to JS. Only delete its C++
+                // wrapper; JS now owns the value reference. Other channels may
+                // return the shared cached JS_NULL wrapper and must retain it.
+                if (value && strcmp("LumeSync", channelName) == 0) delete value;
             }
             else
             {
@@ -113,6 +123,8 @@ extern "C"
             }
         }
 
+        JS_FreeCString(ctx, channelName);
+        JS_FreeCString(ctx, message);
         return jsResult;
     }
 

@@ -81,7 +81,7 @@ class RexWidget {
       throw const FormatException('REXENC 加密信封损坏或字段长度无效');
     }
     throw const FormatException(
-      '已识别 REXENC v2 加密模块；尚未接通 Rex 内容密钥加载，无法执行。请使用作者提供的明文 Widget 源码',
+      'REXENC 模块须先由宿主异步加载内容密钥，不能直接作为明文执行',
     );
   }
 

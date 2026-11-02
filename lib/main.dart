@@ -142,5 +142,11 @@ Future<void> _startupMaintenance() async {
     } catch (error) {
       LumeLog.warn('自动备份失败：$error');
     }
+  } else {
+    try {
+      await ConfigurationBackup().protectExistingSnapshots();
+    } catch (error) {
+      LumeLog.warn('旧备份加密迁移失败：$error');
+    }
   }
 }

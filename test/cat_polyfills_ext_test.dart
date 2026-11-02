@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/js/lume_js_engine.dart';
+import 'package:lume_box/core/js/source_crypto.dart';
 import 'package:lume_box/core/js/qjs_bindings.dart';
 import 'package:lume_box/core/js/sandbox/sandbox.dart';
 
@@ -39,7 +40,8 @@ void main() {
   }
 
   /// 出错分支的取值：返回 `code|message`，避免用例里到处写 try/catch。
-  String errorProbe(String body) => '''
+  String errorProbe(String body) =>
+      '''
     (function () {
       try { $body; return 'no-error'; }
       catch (error) { return (error.code || error.name) + '|' + error.message; }
@@ -121,18 +123,30 @@ void main() {
       );
 
       expect(
-        await evalValue(sandbox, "new URL('../c?q=1', 'https://example.com/a/b/d').toString()"),
+        await evalValue(
+          sandbox,
+          "new URL('../c?q=1', 'https://example.com/a/b/d').toString()",
+        ),
         'https://example.com/a/c?q=1',
       );
       expect(
-        await evalValue(sandbox, "new URL('/x', 'https://example.com/a/b').toString()"),
+        await evalValue(
+          sandbox,
+          "new URL('/x', 'https://example.com/a/b').toString()",
+        ),
         'https://example.com/x',
       );
       expect(
-        await evalValue(sandbox, "new URLSearchParams({a: 1, b: 'x y'}).toString()"),
+        await evalValue(
+          sandbox,
+          "new URLSearchParams({a: 1, b: 'x y'}).toString()",
+        ),
         'a=1&b=x+y',
       );
-      expect(await evalValue(sandbox, "new URL('https://a.com').pathname"), '/');
+      expect(
+        await evalValue(sandbox, "new URL('https://a.com').pathname"),
+        '/',
+      );
       expect(
         await evalValue(sandbox, errorProbe("new URL('/relative')")),
         contains('TypeError'),
@@ -186,11 +200,17 @@ void main() {
       addTearDown(sandbox.dispose);
 
       expect(
-        await evalValue(sandbox, "Buffer.from('猫源', 'utf16le').toString('hex')"),
+        await evalValue(
+          sandbox,
+          "Buffer.from('猫源', 'utf16le').toString('hex')",
+        ),
         '2b73906e',
       );
       expect(
-        await evalValue(sandbox, "Buffer.from('2b73906e', 'hex').toString('utf16le')"),
+        await evalValue(
+          sandbox,
+          "Buffer.from('2b73906e', 'hex').toString('utf16le')",
+        ),
         '猫源',
       );
       expect(await evalValue(sandbox, "Buffer.isEncoding('utf16le')"), true);
@@ -236,12 +256,14 @@ void main() {
       );
     });
 
-    test('常用实例方法：indexOf / includes / copy / fill / reverse / compare / subarray', () async {
-      final sandbox = catSandbox();
-      addTearDown(sandbox.dispose);
+    test(
+      '常用实例方法：indexOf / includes / copy / fill / reverse / compare / subarray',
+      () async {
+        final sandbox = catSandbox();
+        addTearDown(sandbox.dispose);
 
-      expect(
-        await evalValue(sandbox, '''
+        expect(
+          await evalValue(sandbox, '''
           (function () {
             var buffer = Buffer.from('hello world');
             var target = Buffer.alloc(5);
@@ -265,13 +287,17 @@ void main() {
             ].join('|');
           })()
         '''),
-        '6|-1|true|9|4|6263616200|AAA|ba|-1|hello|11',
-      );
-      expect(
-        await evalValue(sandbox, 'Buffer.from(new Uint8Array([1, 2, 3]).buffer).toString("hex")'),
-        '010203',
-      );
-    });
+          '6|-1|true|9|4|6263616200|AAA|ba|-1|hello|11',
+        );
+        expect(
+          await evalValue(
+            sandbox,
+            'Buffer.from(new Uint8Array([1, 2, 3]).buffer).toString("hex")',
+          ),
+          '010203',
+        );
+      },
+    );
   }, skip: skipReason);
 
   group('crypto 垫片', () {
@@ -281,15 +307,22 @@ void main() {
 
       Future<String> digest(String algorithm, String value) async =>
           (await evalValue(
-            sandbox,
-            "require('crypto').createHash('$algorithm').update('$value', 'utf8').digest('hex')",
-          ))! as String;
+                sandbox,
+                "require('crypto').createHash('$algorithm').update('$value', 'utf8').digest('hex')",
+              ))!
+              as String;
 
       expect(await digest('md5', 'abc'), '900150983cd24fb0d6963f7d28e17f72');
       expect(await digest('md5', ''), 'd41d8cd98f00b204e9800998ecf8427e');
       expect(await digest('md5', '猫源'), '33c539d76eca2e5ca7d7dd7cfe5366f3');
-      expect(await digest('sha1', 'abc'), 'a9993e364706816aba3e25717850c26c9cd0d89d');
-      expect(await digest('sha1', '猫源'), '7ebfe9cdfad7be0bd76071268a76307e6d0c9bd2');
+      expect(
+        await digest('sha1', 'abc'),
+        'a9993e364706816aba3e25717850c26c9cd0d89d',
+      );
+      expect(
+        await digest('sha1', '猫源'),
+        '7ebfe9cdfad7be0bd76071268a76307e6d0c9bd2',
+      );
       expect(
         await digest('sha256', 'abc'),
         'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
@@ -312,7 +345,10 @@ void main() {
       );
       // 不带编码时返回 Buffer（Node 口径）。
       expect(
-        await evalValue(sandbox, "Buffer.isBuffer(require('crypto').createHash('md5').digest())"),
+        await evalValue(
+          sandbox,
+          "Buffer.isBuffer(require('crypto').createHash('md5').digest())",
+        ),
         true,
       );
     });
@@ -375,8 +411,11 @@ void main() {
       addTearDown(sandbox.dispose);
 
       expect(
-        await evalValue(sandbox, errorProbe("require('crypto').createHash('sha512')")),
-        contains('md5 / sha1 / sha256'),
+        await evalValue(
+          sandbox,
+          errorProbe("require('crypto').createHash('invalid-hash')"),
+        ),
+        contains('Unsupported digest'),
       );
     });
   }, skip: skipReason);
@@ -391,7 +430,10 @@ void main() {
       final samples = <String>[
         'abc',
         '猫源解压测试 ' * 64,
-        List<String>.generate(2048, (i) => String.fromCharCode(32 + (i * 37) % 90)).join(),
+        List<String>.generate(
+          2048,
+          (i) => String.fromCharCode(32 + (i * 37) % 90),
+        ).join(),
       ];
       for (final sample in samples) {
         final bytes = utf8.encode(sample);
@@ -483,17 +525,24 @@ void main() {
         'on:1,once:1,on:2|0',
       );
       expect(
-        await evalValue(sandbox, errorProbe("new (require('events').EventEmitter)().emit('error', new Error('boom'))")),
+        await evalValue(
+          sandbox,
+          errorProbe(
+            "new (require('events').EventEmitter)().emit('error', new Error('boom'))",
+          ),
+        ),
         contains('boom'),
       );
     });
 
-    test('path：posix 语义的 join / resolve / dirname / extname / relative', () async {
-      final sandbox = catSandbox();
-      addTearDown(sandbox.dispose);
+    test(
+      'path：posix 语义的 join / resolve / dirname / extname / relative',
+      () async {
+        final sandbox = catSandbox();
+        addTearDown(sandbox.dispose);
 
-      expect(
-        await evalValue(sandbox, '''
+        expect(
+          await evalValue(sandbox, '''
           (function () {
             var path = require('node:path');
             return [
@@ -508,9 +557,10 @@ void main() {
             ].join('|');
           })()
         '''),
-        '/a/c|/a/b|/a/b|c|.txt|c/d|/a/b/c/|false',
-      );
-    });
+          '/a/c|/a/b|/a/b|c|.txt|c/d|/a/b/c/|false',
+        );
+      },
+    );
 
     test('util / assert / os / tty / 探测模块', () async {
       final sandbox = catSandbox();
@@ -550,20 +600,50 @@ void main() {
       expect(await evalValue(sandbox, 'globalThis.__promisified'), 42);
 
       expect(
-        await evalValue(sandbox, errorProbe("require('assert').strictEqual(1, 2)")),
+        await evalValue(
+          sandbox,
+          errorProbe("require('assert').strictEqual(1, 2)"),
+        ),
         contains('ERR_ASSERTION'),
       );
-      expect(await evalValue(sandbox, "require('assert').deepStrictEqual({a:1},{a:1}) === undefined"), true);
-      expect(await evalValue(sandbox, "require('os').platform()"), 'darwin');
-      expect(await evalValue(sandbox, "require('tty').isatty(1)"), false);
-      expect(await evalValue(sandbox, "require('perf_hooks').performance.now() >= 0"), true);
-      expect(await evalValue(sandbox, "require('diagnostics_channel').channel('x').hasSubscribers"), false);
       expect(
-        await evalValue(sandbox, "require('async_hooks').AsyncLocalStorage && new (require('async_hooks').AsyncLocalStorage)().getStore() === undefined"),
+        await evalValue(
+          sandbox,
+          "require('assert').deepStrictEqual({a:1},{a:1}) === undefined",
+        ),
         true,
       );
-      expect(await evalValue(sandbox, "typeof require('module').createRequire"), 'function');
-      expect(await evalValue(sandbox, "require('module').isBuiltin('fs')"), true);
+      expect(await evalValue(sandbox, "require('os').platform()"), 'darwin');
+      expect(await evalValue(sandbox, "require('tty').isatty(1)"), false);
+      expect(
+        await evalValue(
+          sandbox,
+          "require('perf_hooks').performance.now() >= 0",
+        ),
+        true,
+      );
+      expect(
+        await evalValue(
+          sandbox,
+          "require('diagnostics_channel').channel('x').hasSubscribers",
+        ),
+        false,
+      );
+      expect(
+        await evalValue(
+          sandbox,
+          "require('async_hooks').AsyncLocalStorage && new (require('async_hooks').AsyncLocalStorage)().getStore() === undefined",
+        ),
+        true,
+      );
+      expect(
+        await evalValue(sandbox, "typeof require('module').createRequire"),
+        'function',
+      );
+      expect(
+        await evalValue(sandbox, "require('module').isBuiltin('fs')"),
+        true,
+      );
     });
 
     test('stream：Readable.from / PassThrough / pipeline', () async {
@@ -640,12 +720,18 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(await evalValue(sandbox, 'globalThis.__fsPromise'), 'promise');
       expect(
-        await evalValue(sandbox, errorProbe("require('fs').readFileSync('/nope.txt')")),
+        await evalValue(
+          sandbox,
+          errorProbe("require('fs').readFileSync('/nope.txt')"),
+        ),
         contains('ENOENT'),
       );
       // 内存盘不落盘：这里断言的是「沙箱内可见、且没有真实文件系统 API」。
       expect(
-        await evalValue(sandbox, "require('fs').readFileSync('/cache/sub/a.txt').toString('utf8')"),
+        await evalValue(
+          sandbox,
+          "require('fs').readFileSync('/cache/sub/a.txt').toString('utf8')",
+        ),
         '内容追加',
       );
     });
@@ -665,8 +751,18 @@ void main() {
         'function',
         reason: '取属性拿到的是「调用即抛」的函数（不是静默 undefined）',
       );
-      for (final name in <String>['net', 'node:tls', 'dns', 'child_process', 'worker_threads', 'http2']) {
-        final message = await evalValue(sandbox, errorProbe("require('$name').createServer()"));
+      for (final name in <String>[
+        'net',
+        'node:tls',
+        'dns',
+        'child_process',
+        'worker_threads',
+        'http2',
+      ]) {
+        final message = await evalValue(
+          sandbox,
+          errorProbe("require('$name').createServer()"),
+        );
         expect(message, contains('LUME_UNSUPPORTED'), reason: '$name 用到了就该被拒');
       }
       // net / tls / http2 这类归到「自建服务端」那一类：文案要说清「为什么
@@ -715,7 +811,10 @@ void main() {
       expect(host.calls.single, 'https://api.example.com/list?page=2');
       // 脚本自带的请求头原样透传（UA 由宿主网络层统一补，不在这一层）。
       expect(host.headers.length, 1);
-      expect(await evalValue(sandbox, 'globalThis.__httpResult'), '200|application/json|{"ok":true}');
+      expect(
+        await evalValue(sandbox, 'globalThis.__httpResult'),
+        '200|application/json|{"ok":true}',
+      );
     });
 
     test('http.request：POST + 请求头 + 事件回调 + pipe 到 PassThrough', () async {
@@ -758,8 +857,14 @@ void main() {
       expect(host.calls.single, 'https://api.example.com/save');
       expect(host.methods.single, 'POST');
       expect(host.bodies.single, 'name=值');
-      expect(host.headers.single['Content-Type'], 'application/x-www-form-urlencoded');
-      expect(await evalValue(sandbox, 'globalThis.__postResult'), '200|{"ok":true}');
+      expect(
+        host.headers.single['Content-Type'],
+        'application/x-www-form-urlencoded',
+      );
+      expect(
+        await evalValue(sandbox, 'globalThis.__postResult'),
+        '200|{"ok":true}',
+      );
     });
 
     test('网络失败：错误经 request 的 error 事件抛出（不崩上下文）', () async {
@@ -804,7 +909,10 @@ void main() {
   }, skip: skipReason);
 }
 
-class _NullHost implements SandboxHost {
+class _NullHost implements SandboxHost, SandboxSyncHost {
+  @override
+  Object? invokeSync(SandboxHostRequest request) =>
+      SourceCrypto.run(Map<String, dynamic>.from(request.payload as Map));
   const _NullHost();
 
   @override
@@ -828,7 +936,11 @@ class _RecordingHost implements SandboxHost {
     methods.add('${map['method']}');
     bodies.add(map['body'] == null ? '' : '${map['body']}');
     headers.add(<String, String>{
-      for (final entry in (map['headers'] is Map ? map['headers'] as Map : const <Object?, Object?>{}).entries)
+      for (final entry
+          in (map['headers'] is Map
+                  ? map['headers'] as Map
+                  : const <Object?, Object?>{})
+              .entries)
         '${entry.key}': '${entry.value}',
     });
     return <String, Object?>{

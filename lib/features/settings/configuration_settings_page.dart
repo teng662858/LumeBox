@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/session/app_preferences.dart';
 import '../../core/session/configuration_backup.dart';
+import '../../core/security/local_cipher.dart';
 import '../../shared/widgets/glass_card.dart';
 import 'app_icon_settings_page.dart';
 import 'settings_ui.dart';
@@ -45,7 +46,9 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
   }
 
   Future<String?> export() async {
-    final text = await backup.export();
+    final password = await backupPassword(confirm: true);
+    if (password == null) return null;
+    final text = await backup.export(password: password);
     if (Platform.isIOS || Platform.isAndroid) {
       final saved = await const MethodChannel('lumebox/configuration')
           .invokeMethod<bool>('export', {
@@ -106,6 +109,11 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
 
   Future<String?> restoreText(String text) async {
     if (!mounted) return null;
+    String? password;
+    if (BackupCipher.needsPassword(text)) {
+      password = await backupPassword();
+      if (password == null || !mounted) return null;
+    }
     final yes = await showGlassDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -124,10 +132,16 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
       ),
     );
     if (yes != true) return null;
-    await backup.restore(text);
+    await backup.restore(text, password: password);
     await preferences.boot();
     return '配置已恢复，请重新启动 App 以应用全部界面设置${backup.warnings.isEmpty ? '' : '；${backup.warnings.join('；')}'}';
   }
+
+  Future<String?> backupPassword({bool confirm = false}) =>
+      showGlassDialog<String>(
+        context: context,
+        builder: (_) => _BackupPasswordDialog(confirm: confirm),
+      );
 
   @override
   Widget build(BuildContext context) => GlassScaffold(
@@ -155,7 +169,7 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
         ),
         ListTile(
           title: const Text('导出配置备份'),
-          subtitle: const Text('全局设置、各版块偏好与源配置'),
+          subtitle: const Text('使用密码加密全局设置、各版块偏好与源配置'),
           leading: const LumeIcon(
             Icons.upload_file,
             slot: 'configuration_settings_page.1',
@@ -174,7 +188,7 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
         ),
         SwitchListTile(
           title: const Text('自动备份'),
-          subtitle: const Text('每天使用 App 时备份到本机，保留最近 7 份'),
+          subtitle: const Text('使用本机密钥加密，每天保留一份，最近 7 份可在本机恢复'),
           value: preferences.autoBackup,
           onChanged: busy
               ? null
@@ -219,5 +233,73 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
         ),
       ],
     ),
+  );
+}
+
+class _BackupPasswordDialog extends StatefulWidget {
+  const _BackupPasswordDialog({required this.confirm});
+  final bool confirm;
+  @override
+  State<_BackupPasswordDialog> createState() => _BackupPasswordDialogState();
+}
+
+class _BackupPasswordDialogState extends State<_BackupPasswordDialog> {
+  final password = TextEditingController();
+  final repeated = TextEditingController();
+  String? error;
+  @override
+  void dispose() {
+    password.dispose();
+    repeated.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.confirm ? '设置备份密码' : '输入备份密码'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          widget.confirm ? '备份将加密保存。请妥善保管密码，换设备恢复时也需要它。' : '请输入导出这份备份时设置的密码。',
+        ),
+        TextField(
+          controller: password,
+          obscureText: true,
+          autocorrect: false,
+          enableSuggestions: false,
+          decoration: InputDecoration(labelText: '备份密码', errorText: error),
+        ),
+        if (widget.confirm)
+          TextField(
+            controller: repeated,
+            obscureText: true,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: const InputDecoration(labelText: '再次输入密码'),
+          ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('取消'),
+      ),
+      FilledButton(
+        onPressed: () {
+          if (password.text.isEmpty ||
+              widget.confirm &&
+                  (password.text.length < 8 ||
+                      password.text != repeated.text)) {
+            setState(
+              () => error = widget.confirm ? '密码至少 8 位，两次输入须一致' : '请输入密码',
+            );
+            return;
+          }
+          Navigator.pop(context, password.text);
+        },
+        child: const Text('继续'),
+      ),
+    ],
   );
 }

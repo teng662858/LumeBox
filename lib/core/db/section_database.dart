@@ -2,6 +2,8 @@ import '../source/source_extension_settings.dart';
 
 import 'dart:convert';
 
+import '../security/local_cipher.dart';
+
 import 'package:crypto/crypto.dart';
 
 import 'package:sqlite3/sqlite3.dart';
@@ -17,7 +19,8 @@ import 'source_record.dart';
 /// 库内另记一份 `owner_section`；标记与打开它的板块不符即拒绝打开，库文件被
 /// 挪到别的板块目录下也不会被误用。
 class SectionDatabase {
-  SectionDatabase._(this._db, this._sectionId);
+  SectionDatabase._(this._db, this._sectionId, this._cipher);
+  final LocalCipher _cipher;
 
   static const int _schemaVersion = 9;
 
@@ -61,9 +64,11 @@ CREATE TABLE IF NOT EXISTS section_setting (
     final database = SectionDatabase._(
       sqlite3.open(scope.dbPath),
       scope.section.id,
+      await LocalCipher.open(),
     );
     try {
       database._migrate();
+      database._protectLegacy();
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       database.dispose();
@@ -187,12 +192,12 @@ CREATE TABLE IF NOT EXISTS section_setting (
 
   List<SourceRecord> sources() => _db
       .select('SELECT * FROM source ORDER BY name')
-      .map(SourceRecord.fromRow)
+      .map((row) => SourceRecord.fromRow(row, _cipher))
       .toList(growable: false);
 
   SourceRecord? source(String id) {
     final rows = _db.select('SELECT * FROM source WHERE id = ?', [id]);
-    return rows.isEmpty ? null : SourceRecord.fromRow(rows.first);
+    return rows.isEmpty ? null : SourceRecord.fromRow(rows.first, _cipher);
   }
 
   void upsertSource({
@@ -256,7 +261,7 @@ CREATE TABLE IF NOT EXISTS section_setting (
           section,
           script,
           DateTime.now().millisecondsSinceEpoch,
-          _encodeSite(site),
+          _cipher.seal(_encodeSite(site), context: 'source:$id:site'),
         ],
       );
       if (rejectedScript != null) {
@@ -296,7 +301,10 @@ CREATE TABLE IF NOT EXISTS section_setting (
   /// 因此用户在设置里改完就落库，不需要重新导入脚本）。
   void setSourceSiteConfig(String id, SourceSiteConfig config) {
     _db.execute('UPDATE source SET site_config = ? WHERE id = ?', [
-      _encodeSite(config.normalized()),
+      _cipher.seal(
+        _encodeSite(config.normalized()),
+        context: 'source:$id:site',
+      ),
       id,
     ]);
   }
@@ -341,7 +349,14 @@ CREATE TABLE IF NOT EXISTS section_setting (
     _db.execute(
       'UPDATE source SET user_agent = ?, cookie = ?, proxy = ?, bridge = ?, '
       'allow_bad_cert = ? WHERE id = ?',
-      [userAgent, cookie, proxy, bridge, allowBadCertificate ? '1' : '', id],
+      [
+        userAgent,
+        _cipher.seal(cookie, context: 'source:$id:cookie'),
+        _cipher.seal(proxy, context: 'source:$id:proxy'),
+        bridge,
+        allowBadCertificate ? '1' : '',
+        id,
+      ],
     );
   }
 
@@ -447,6 +462,37 @@ CREATE TABLE IF NOT EXISTS section_setting (
     'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
     [key, value],
   );
+
+  void _protectLegacy() {
+    _db.execute('PRAGMA secure_delete = ON');
+    var changed = false;
+    _db.execute('BEGIN IMMEDIATE');
+    try {
+      for (final row in _db.select(
+        'SELECT id,cookie,proxy,site_config FROM source',
+      )) {
+        for (final column in ['cookie', 'proxy', 'site_config']) {
+          final text = '${row[column] ?? ''}';
+          if (text.isEmpty || text.startsWith(LocalCipher.prefix)) continue;
+          final field = column == 'site_config' ? 'site' : column;
+          _db.execute('UPDATE source SET $column=? WHERE id=?', [
+            _cipher.seal(text, context: 'source:${row['id']}:$field'),
+            row['id'],
+          ]);
+          changed = true;
+        }
+      }
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+    if (changed) {
+      _db.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+      _db.execute('VACUUM');
+      _db.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+    }
+  }
 
   void dispose() {
     _opened.removeWhere((_, value) => identical(value, this));
