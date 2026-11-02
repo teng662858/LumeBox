@@ -206,6 +206,8 @@ class SourceContentRating {
     'chengshe_video',
     // ITsACG（www.itsacg.com，Discuz + jameson_manhua）：绅士向同人本/单行本/韩漫/3D 漫。
     'itsacg_comic',
+    // 夜社资源（yeshezy1.com，苹果CMS 综合站）：视频/有声/写真/漫画/小说七大类。
+    'yeshezy_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

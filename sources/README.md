@@ -6,6 +6,15 @@
 **VIP 只锁交易（券/金币/会员），`canWatch:false` 时接口照常下发 videoUrl+access，换 m3u8 实测 200**，
 无需会员态。搜索参数未公开，本源不提供搜索。详见 [记录](../docs/2026-11-02_橙涩视频源-加密链路与VIP绕过.md)。
 
+## 2026-11-02 夜社资源（video/yeshezy.js，详见 [源记录](docs/2026-11-02_夜社资源综合源.md)）
+
+苹果CMS + panghu 模板的**综合**成人资源站（yeshezy1.com）：视频 / 有声 / 写真 / 漫画 / 小说 / 影视 七大类，
+一个源全包：35 个分类入口（t1 全部 + 27 个视频/有声/写真/漫画/影视 + 7 个小说分类）。
+详情页把播放地址**直接内联**（形如「第1集$m3u8」「1P$图片」），列表/详情/播放都不用再打播放页。
+形态分派：视频 → kind video；有声三组 → kind audio；写真/漫画与小说 → kind webplayer
+（App 视频板块只渲染 video/audio，图片与文本走内嵌网页）。HLS 实测 206 + #EXTM3U；
+搜索 /vodsearch/词----------页---.html 可用（20 条/页）。采集 API /api.php/provide/vod 要授权域名，未用。
+
 ## 2026-11-02 ITsACG 漫画（`comic/itsacg.js`，详见 [源记录](docs/2026-11-02_ITsACG漫画源.md)）
 
 Discuz + `jameson_manhua` 插件的绅士向漫画站（主站 www.itsacg.com，发布页 itsacg.top 给备用 itsacgaa123.space）。

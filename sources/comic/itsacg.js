@@ -1,4 +1,4 @@
-// LumeSource: {"id":"itsacg_comic","name":"ITsACG 漫画","version":"1.0.0","category":"comic","contentCategory":"adult","mirrors":["https://www.itsacg.com","https://www.itsacgaa123.space"],"network":"direct","icon":"https://www.itsacg.com/source/plugin/jameson_manhua/images/myjs/logo/newlogo.jpg","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（itsacg.top）","url":"https://itsacg.top/","description":"官方地址发布页：主站 www.itsacg.com、备用 www.itsacgaa123.space，另有邮箱索取最新地址"},{"key":"note","type":"info","title":"站点说明","description":"ITsACG（Discuz + jameson_manhua 插件）：绅士向同人本/单行本/杂志短篇/韩漫/3D 漫，全部单话整本，阅读页 nopage=1 一次给出整本图片（实测 132 张）。列表/详情/阅读/搜索都是匿名 GET，不需要登录也不需要会员；主站在大陆被屏蔽，需要代理或改走备用站。"}]}
+// LumeSource: {"id":"itsacg_comic","name":"ITsACG 漫画","version":"1.1.0","category":"comic","contentCategory":"adult","mirrors":["https://www.itsacg.com","https://www.itsacgaa123.space"],"network":"direct","icon":"https://www.itsacg.com/source/plugin/jameson_manhua/images/myjs/logo/newlogo.jpg","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（itsacg.top）","url":"https://itsacg.top/","description":"官方地址发布页：主站 www.itsacg.com、备用 www.itsacgaa123.space，另有邮箱索取最新地址"},{"key":"note","type":"info","title":"站点说明","description":"ITsACG（Discuz + jameson_manhua 插件）：绅士向同人本/单行本/杂志短篇/韩漫/3D 漫，全部单话整本，阅读页 nopage=1 一次给出整本图片（实测 132 张）。列表/详情/阅读/搜索都是匿名 GET，不需要登录也不需要会员；主站在大陆被屏蔽，需要代理或改走备用站。"}]}
 // LumeRuntime: javascript
 //
 // 站点：ITsACG（漫画中心）—— Discuz! + 插件 jameson_manhua，全部是绅士向漫画。
@@ -32,6 +32,7 @@ var PLUGIN = '/plugin.php?id=jameson_manhua';
 var PAGE_SIZE = 30;
 
 var CATEGORIES = [
+  { id: 'all', title: '全部漫画' },
   { id: 'rank', title: '排行榜' },
   { id: 'update', title: '最近更新' },
   { id: 'tj', title: '编辑推荐' },
@@ -211,7 +212,7 @@ async function detailInfo(kuid) {
 var LumeSource = {
   id: 'itsacg_comic',
   name: 'ITsACG 漫画',
-  version: '1.0.0',
+  version: '1.1.0',
   category: 'comic',
   contentCategory: 'adult',
   mirrors: MIRRORS,
@@ -236,6 +237,10 @@ var LumeSource = {
       var tj = parseCards(await fetchHtml(PLUGIN + '&a=new_tj'));
       if (tj.length) boards.push({ title: '编辑推荐', moreUrl: 'tj', items: tj.slice(0, 12) });
     } catch (error) { /* 同上 */ }
+    try {
+      var all = parseCards(await fetchHtml(PLUGIN + '&a=ku'));
+      if (all.length) boards.push({ title: '全部漫画', moreUrl: 'all', items: all.slice(0, 12) });
+    } catch (error) { /* 同上 */ }
     if (!boards.length) throw new Error('首页板块一个都没取到：站点可能被 Cloudflare 挡住或换了域名（看发布页 itsacg.top）');
     return boards;
   },
@@ -255,7 +260,8 @@ var LumeSource = {
 
     if (!categoryId) categoryId = 'rank';
     var path;
-    if (categoryId === 'rank') path = PLUGIN + '&a=rank&page=' + page;
+    if (categoryId === 'all') path = PLUGIN + '&a=ku&page=' + page;
+    else if (categoryId === 'rank') path = PLUGIN + '&a=rank&page=' + page;
     else if (categoryId === 'update') path = PLUGIN + '&a=updatelist';
     else if (categoryId === 'tj') path = PLUGIN + '&a=new_tj';
     else if (categoryId.charAt(0) === 'c') path = PLUGIN + '&a=ku&category_id=' + Number(categoryId.slice(1)) + '&page=' + page;
