@@ -31,6 +31,7 @@ import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../source/global_source_page.dart';
+import '../source/source_repository_page.dart';
 import 'app_icon_settings_page.dart';
 import 'cache_settings_page.dart';
 import 'display_settings_group.dart';
@@ -208,6 +209,12 @@ class SettingsPage extends StatelessWidget {
     ),
 
     const SettingsGroupTitle('内容与订阅'),
+    SettingsEntryCard(
+      icon: Icons.cloud_upload_outlined,
+      title: 'GitHub 仓库源管理',
+      subtitle: '授权后直接新增或删除远端源文件，更新公共订阅',
+      onTap: () => _push(context, const SourceRepositoryPage()),
+    ),
     SettingsEntryCard(
       icon: Icons.sync,
       title: '一键同步全部订阅',

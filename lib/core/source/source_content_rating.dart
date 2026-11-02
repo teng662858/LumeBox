@@ -1,5 +1,17 @@
 /// Explicitly identified adult sources. Unknown sources stay unclassified.
 class SourceContentRating {
+  // Rebuilt from installed scripts while descriptors are read. This also covers
+  // repository sources published after the App was built (including Python).
+  static final _declaredAdultIds = <String>{};
+  static void registerDeclaration(String id, String contentCategory) {
+    final key = id.toLowerCase();
+    if (contentCategory == 'adult') {
+      _declaredAdultIds.add(key);
+    } else {
+      _declaredAdultIds.remove(key);
+    }
+  }
+
   // Synced from LumeBox-Sources/content-ratings.json (2026-10-26).
   // Unknown sources remain unclassified; these IDs also drive privacy hiding.
   static const adultIds = <String>{
@@ -356,6 +368,7 @@ class SourceContentRating {
     "龙禁漫",
   };
   static bool isAdult(String id, String name) =>
+      _declaredAdultIds.contains(id.toLowerCase()) ||
       adultIds.contains(id.toLowerCase()) ||
       adultNames.contains(name.toLowerCase().replaceAll(RegExp(r'\s+'), '')) ||
       adultIds.any(

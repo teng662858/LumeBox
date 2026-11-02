@@ -51,6 +51,7 @@ import Security
       videoMerge.register(with: messenger)
       introRecognition.register(with: messenger)
       referenceCredentials.register(with: messenger)
+      SourceRepositoryCredentials.register(with: messenger)
       FlutterMethodChannel(name: "lumebox/app_icon", binaryMessenger: messenger).setMethodCallHandler { call, result in
         if call.method == "current" { result(UIApplication.shared.alternateIconName ?? "default"); return }
         guard call.method == "set" else { result(FlutterMethodNotImplemented); return }

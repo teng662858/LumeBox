@@ -1,5 +1,6 @@
 import 'source_preferences.dart';
 import 'source_presentation_cache.dart';
+import 'source_content_rating.dart';
 
 import '../net/network_cancellation.dart';
 
@@ -466,6 +467,7 @@ class LumeSources {
       '${record.section}/${record.id}',
       record.script,
     );
+    SourceContentRating.registerDeclaration(record.id, info.contentCategory);
     return SourceDescriptor(
       id: record.id,
       runtimeKind: info.runtimeKind,

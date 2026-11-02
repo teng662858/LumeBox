@@ -2,6 +2,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/source/source_content_rating.dart';
 
 void main() {
+  test('新发布源按已安装脚本声明分级，无需重新编译 ID 表', () {
+    const id = 'remote_python_rating_fixture';
+    expect(SourceContentRating.isAdult(id, '新发布源'), false);
+    SourceContentRating.registerDeclaration(id, 'adult');
+    expect(SourceContentRating.isAdult(id, '新发布源'), true);
+    SourceContentRating.registerDeclaration(id, 'movie');
+    expect(SourceContentRating.isAdult(id, '新发布源'), false);
+    SourceContentRating.registerDeclaration('jm18_comic', 'movie');
+    expect(SourceContentRating.isAdult('jm18_comic', '已知源'), true);
+  });
   test('仓库明确分级的新增源和带命名空间的 ID 均识别为 18+', () {
     for (final id in [
       'jcomic_comic',
@@ -44,27 +54,27 @@ void main() {
       'mtav_video',
       'heroero_video',
       'qinav_video',
-    'laosiji_video',
-    'fplayer_video',
-    'forcedcinema_video',
-    'avbebe_video',
-    'cartoonporn_video',
-    'pmvtube_video',
-    'sexbjcam_video',
-    'xxxfollow_video',
-    'gifscroll_video',
-    'xiaohuangniao_video',
-    'ogfap_video',
-    'hstream_video',
-    'p91pinse_video',
-    'ho5ho_comic',
-    'rule34video_video',
-    'oreno3d_video',
-    'xcamtube_video',
-    'madoutv_video',
-    'mitaow_video',
-    'mitaovideo_video',
-    'chengshe_video',
+      'laosiji_video',
+      'fplayer_video',
+      'forcedcinema_video',
+      'avbebe_video',
+      'cartoonporn_video',
+      'pmvtube_video',
+      'sexbjcam_video',
+      'xxxfollow_video',
+      'gifscroll_video',
+      'xiaohuangniao_video',
+      'ogfap_video',
+      'hstream_video',
+      'p91pinse_video',
+      'ho5ho_comic',
+      'rule34video_video',
+      'oreno3d_video',
+      'xcamtube_video',
+      'madoutv_video',
+      'mitaow_video',
+      'mitaovideo_video',
+      'chengshe_video',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);
@@ -76,7 +86,10 @@ void main() {
     expect(SourceContentRating.isAdult('version_18', '普通站点'), isFalse);
     expect(SourceContentRating.isAdult('SUB:FXCOMIC_COMIC', ''), isTrue);
     expect(SourceContentRating.isAdult('imported_custom_id', 'P5韩漫'), isTrue);
-    expect(SourceContentRating.isAdult('imported_custom_id', 'SpankBang'), isTrue);
+    expect(
+      SourceContentRating.isAdult('imported_custom_id', 'SpankBang'),
+      isTrue,
+    );
     expect(SourceContentRating.isAdult('unknown', '普通站点评论'), isFalse);
     for (final name in ['18＋', '18 +', 'R-18', 'r 18']) {
       expect(SourceContentRating.isAdult('new_source', name), isTrue);

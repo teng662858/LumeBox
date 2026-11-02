@@ -17,6 +17,7 @@
 		E817B0030000000000000002 /* ICloudSyncController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E817B0030000000000000001 /* ICloudSyncController.swift */; };
 		E817B0020000000000000002 /* MediaTrackProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = E817B0020000000000000001 /* MediaTrackProbe.swift */; };
 		E817B0010000000000000002 /* SpeechStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = E817B0010000000000000001 /* SpeechStream.swift */; };
+		E817B0A10000000000000002 /* SourceRepositoryCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = E817B0A10000000000000001 /* SourceRepositoryCredentials.swift */; };
 		AC0160160000000000000004 /* PrivacyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0160160000000000000003 /* PrivacyController.swift */; };
 		AC0160160000000000000002 /* ComicImageToolsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0160160000000000000001 /* ComicImageToolsController.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
@@ -73,6 +74,7 @@
 		E817B0030000000000000001 /* ICloudSyncController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudSyncController.swift; sourceTree = "<group>"; };
 		E817B0020000000000000001 /* MediaTrackProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaTrackProbe.swift; sourceTree = "<group>"; };
 		E817B0010000000000000001 /* SpeechStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechStream.swift; sourceTree = "<group>"; };
+		E817B0A10000000000000001 /* SourceRepositoryCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceRepositoryCredentials.swift; sourceTree = "<group>"; };
 		AC0160160000000000000003 /* PrivacyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyController.swift; sourceTree = "<group>"; };
 		AC0160160000000000000001 /* ComicImageToolsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComicImageToolsController.swift; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
@@ -174,6 +176,7 @@
 				A1B2C3D40000000000000003 /* PipFramePump.swift */,
 				A1B2C3D40000000000000005 /* SpeechController.swift */,
 				E817B0010000000000000001 /* SpeechStream.swift */,
+				E817B0A10000000000000001 /* SourceRepositoryCredentials.swift */,
 				E817B0020000000000000001 /* MediaTrackProbe.swift */,
 				E817B0030000000000000001 /* ICloudSyncController.swift */,
 				A1B2C3D40000000000000007 /* BrightnessController.swift */,
@@ -387,6 +390,7 @@
 				A1B2C3D40000000000000004 /* PipFramePump.swift in Sources */,
 				A1B2C3D40000000000000006 /* SpeechController.swift in Sources */,
 				E817B0010000000000000002 /* SpeechStream.swift in Sources */,
+				E817B0A10000000000000002 /* SourceRepositoryCredentials.swift in Sources */,
 				E817B0020000000000000002 /* MediaTrackProbe.swift in Sources */,
 				E817B0030000000000000002 /* ICloudSyncController.swift in Sources */,
 				A1B2C3D40000000000000008 /* BrightnessController.swift in Sources */,
