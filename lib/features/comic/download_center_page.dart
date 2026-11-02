@@ -249,6 +249,8 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
                     Text(
                       '${switch (task.state) {
                         'running' => '下载中',
+                        'merging' => '正在合并 MP4',
+                        'merge_failed' => '合并失败，分片已保留',
                         'queued' => '等待中',
                         'done' => '已完成',
                         'failed' => '下载失败',
@@ -256,8 +258,11 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
                       }} · ${_size(task.bytes)}${task.totalBytes > 0 ? ' / ${_size(task.totalBytes)}' : ''}${task.total > 0 ? ' · ${task.completed}/${task.total} 分片' : ''}',
                     ),
                     if (task.running) ...[
-                      LinearProgressIndicator(value: task.progress),
-                      Text('${_size(task.bytesPerSecond)}/s'),
+                      LinearProgressIndicator(
+                        value: task.state == 'merging' ? null : task.progress,
+                      ),
+                      if (task.state != 'merging')
+                        Text('${_size(task.bytesPerSecond)}/s'),
                     ],
                     if (task.error != null) Text(task.error!),
                     Wrap(
@@ -271,9 +276,22 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
                         else if (task.state != 'done')
                           TextButton(
                             onPressed: () => videos.resume(task),
-                            child: Text(task.state == 'failed' ? '重试' : '继续'),
+                            child: Text(
+                              task.hasLocalPlaylist
+                                  ? '重试合并'
+                                  : task.state == 'failed'
+                                  ? '重试'
+                                  : '继续',
+                            ),
                           ),
-                        if (task.state == 'done') ...[
+                        if (task.state == 'done' && task.hasLocalPlaylist)
+                          TextButton(
+                            onPressed: () => videos.resume(task),
+                            child: const Text('合并为 MP4'),
+                          ),
+                        if (!task.running &&
+                            (task.state == 'done' ||
+                                task.hasLocalPlaylist)) ...[
                           TextButton(
                             onPressed: _busy
                                 ? null

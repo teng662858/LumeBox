@@ -1,0 +1,91 @@
+"""Exercise the actual Swift/FFmpeg remuxer with generated media (macOS CI)."""
+from pathlib import Path
+import json
+import subprocess
+import sys
+
+
+def run(*args):
+    return subprocess.run(args, check=True, capture_output=True)
+
+
+executable, root = sys.argv[1], Path(sys.argv[2])
+root.mkdir(parents=True)
+base = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y']
+video = ['-f', 'lavfi', '-i', 'testsrc2=size=96x64:rate=10']
+audio = ['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000']
+codec = ['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-g', '10', '-c:a', 'aac']
+hls = ['-f', 'hls', '-hls_time', '1', '-hls_playlist_type', 'vod']
+
+
+def probe(path):
+    return json.loads(run('ffprobe', '-v', 'error', '-show_streams', '-show_format',
+                          '-of', 'json', str(path)).stdout)
+
+
+def hashes(path):
+    output = run('ffmpeg', '-v', 'error', '-i', str(path), '-map', '0:v:0',
+                 '-f', 'framemd5', '-').stdout.decode()
+    return [line.split(',')[-1].strip() for line in output.splitlines()
+            if line and not line.startswith('#')]
+
+
+def check(directory, source=None):
+    before = {str(p): p.read_bytes() for p in directory.rglob('*') if p.is_file()}
+    run(executable, str(directory))
+    output = directory / 'merged.mp4.part'
+    result = probe(output)
+    assert {s['codec_type'] for s in result['streams']} == {'video', 'audio'}, result
+    assert 3.8 <= float(result['format']['duration']) <= 4.3, result
+    assert hashes(output) == hashes(source or directory / 'index.m3u8'), 'Video content changed'
+    for name, contents in before.items():
+        assert Path(name).read_bytes() == contents, 'Original media changed'
+    assert not (directory / '.remux-work').exists()
+
+
+plain = root / 'plain'
+plain.mkdir()
+run(*base, *video, *audio, '-t', '4', *codec, *hls, str(plain / 'index.m3u8'))
+check(plain)
+
+fragmented = root / 'fmp4'
+fragmented.mkdir()
+run(*base, *video, *audio, '-t', '4', *codec, *hls,
+    '-hls_segment_type', 'fmp4', str(fragmented / 'index.m3u8'))
+check(fragmented)
+
+separate = root / 'separate'
+(separate / 'video').mkdir(parents=True)
+(separate / 'audio').mkdir()
+run(*base, *video, '-t', '4', *codec, '-an', *hls, str(separate / 'video/index.m3u8'))
+run(*base, *audio, '-t', '4', '-c:a', 'aac', *hls, str(separate / 'audio/index.m3u8'))
+(separate / 'index.m3u8').write_text(
+    '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="original",'
+    'DEFAULT=YES,URI="audio/index.m3u8"\n'
+    '#EXT-X-STREAM-INF:BANDWIDTH=200000,AUDIO="audio"\nvideo/index.m3u8\n')
+check(separate)
+
+encrypted = root / 'encrypted'
+encrypted.mkdir()
+(encrypted / 'key').write_bytes(bytes(range(16)))
+(root / 'key-info').write_text(f'key\n{encrypted / "key"}\n')
+run(*base, *video, *audio, '-t', '4', *codec, *hls,
+    '-hls_key_info_file', str(root / 'key-info'), str(encrypted / 'index.m3u8'))
+check(encrypted)
+
+# Failure and cancellation must leave input intact and no completed-looking output.
+for name, contents, cancel in [
+    ('missing', '#EXTM3U\n#EXTINF:1,\nmissing.ts\n#EXT-X-ENDLIST\n', False),
+    ('escape', '#EXTM3U\n#EXTINF:1,\n../plain/index0.ts\n#EXT-X-ENDLIST\n', False),
+    ('cancel', (plain / 'index.m3u8').read_text(), True),
+]:
+    folder = root / name
+    folder.mkdir()
+    (folder / 'index.m3u8').write_text(contents)
+    result = subprocess.run([executable, str(folder)] + (['--cancel'] if cancel else []),
+                            capture_output=True)
+    assert result.returncode != 0, name
+    assert not (folder / 'merged.mp4.part').exists(), name
+    assert not (folder / '.remux-work').exists(), name
+    assert (folder / 'index.m3u8').read_text() == contents
+print('Native remux: TS, fMP4, separate audio, AES-128, missing input, path escape and cancellation passed')

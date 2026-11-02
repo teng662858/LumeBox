@@ -126,6 +126,10 @@ jobs:
             --build-name=1.0.${{ github.run_number }} \
             --build-number=${{ github.run_number }}
 
+      - name: 验证离线 MP4 无损合并（实际 FFmpeg 库）
+        if: ${{ inputs.typecheck_only != true }}
+        run: bash tool/check_offline_remux.sh
+
       - name: 打包未签名 IPA
         if: ${{ inputs.typecheck_only != true }}
         run: |

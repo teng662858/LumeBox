@@ -14,6 +14,7 @@ import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/util/sensitive_data.dart';
 import 'source_playback.dart';
+import 'video_download_merger.dart';
 
 class VideoDownloadTask {
   VideoDownloadTask({
@@ -36,7 +37,8 @@ class VideoDownloadTask {
   String? error;
   int bytes, totalBytes, completed, total;
   double bytesPerSecond = 0;
-  bool get running => state == 'running';
+  bool get running => state == 'running' || state == 'merging';
+  bool get hasLocalPlaylist => fileName.endsWith('.m3u8');
   double? get progress => total > 0
       ? completed / total
       : totalBytes > 0
@@ -60,10 +62,18 @@ class VideoDownloadTask {
 
 /// Persistent, page-independent VOD downloads. Credentials and resolved URLs are never serialized.
 class VideoDownloadCenter extends ChangeNotifier {
-  VideoDownloadCenter({this.directory, this.resolve});
+  VideoDownloadCenter({
+    this.directory,
+    this.resolve,
+    this.merge,
+    this.cancelMerge,
+  });
   static final instance = VideoDownloadCenter();
   final Future<Directory> Function()? directory;
   final Future<VideoContent> Function(VideoDownloadTask)? resolve;
+  final Future<void> Function(Directory, File, String)? merge;
+  final Future<void> Function(String)? cancelMerge;
+  final _merger = VideoDownloadMerger();
   final tasks = <VideoDownloadTask>[];
   Future<void>? _boot;
   Future<void> _writes = Future.value();
@@ -167,6 +177,10 @@ class VideoDownloadCenter extends ChangeNotifier {
   Future<void> resume(VideoDownloadTask task) async {
     await boot();
     if (task.running || task.state == 'queued') return;
+    // A cancelled writer must finish before a retry can reuse its files.
+    while (identical(_active, task)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
     task.state = 'queued';
     task.error = null;
     await _save();
@@ -175,8 +189,10 @@ class VideoDownloadCenter extends ChangeNotifier {
   }
 
   Future<void> pause(VideoDownloadTask task) async {
+    final merging = task.state == 'merging';
     task.state = 'paused';
     if (identical(_active, task)) _client?.close(force: true);
+    if (merging) await (cancelMerge ?? _merger.cancel)(task.id);
     await _save();
     notifyListeners();
   }
@@ -220,6 +236,10 @@ class VideoDownloadCenter extends ChangeNotifier {
         await _save();
         notifyListeners();
         try {
+          if (task.hasLocalPlaylist && await localFile(task).exists()) {
+            await _mergeDownloaded(task);
+            continue;
+          }
           _proxy = LumeNet.settings.proxy;
           final content = await (resolve?.call(task) ?? _resolve(task)).timeout(
             const Duration(seconds: 45),
@@ -268,10 +288,14 @@ class VideoDownloadCenter extends ChangeNotifier {
           _speedBytes = 0;
           await _download(task, uri, content.headers);
           _check(task);
+          if (task.hasLocalPlaylist) {
+            await _save();
+            await _mergeDownloaded(task);
+          }
           task.state = 'done';
         } catch (error) {
-          if (task.state == 'running') {
-            task.state = 'failed';
+          if (task.running) {
+            task.state = task.hasLocalPlaylist ? 'merge_failed' : 'failed';
             task.error = SensitiveData.redact('$error')
                 .replaceAll(RegExp(r'https?://[^\s]+'), '[地址]');
           }
@@ -310,7 +334,58 @@ class VideoDownloadCenter extends ChangeNotifier {
   }
 
   void _check(VideoDownloadTask task) {
-    if (task.state != 'running') throw const _Paused();
+    if (!task.running) throw const _Paused();
+  }
+
+  Future<void> _mergeDownloaded(VideoDownloadTask task) async {
+    task.state = 'merging';
+    task.bytesPerSecond = 0;
+    await _save();
+    notifyListeners();
+    final dir = Directory(folder(task));
+    final part = File(p.join(dir.path, 'merged.mp4.part'));
+    final output = File(p.join(dir.path, 'merged.mp4'));
+    try {
+      // A crash after atomic rename but before manifest update can reuse the result.
+      if (!await output.exists()) {
+        if (await part.exists()) await part.delete();
+        await (merge ?? _merger.merge)(dir, part, task.id);
+        _check(task);
+        if (!await _isMp4(part)) throw StateError('合并未生成有效的 MP4 文件');
+        await part.rename(output.path);
+      } else if (!await _isMp4(output)) {
+        throw StateError('已有合并文件不完整，请删除该文件后重试');
+      }
+      _check(task);
+      task.fileName = 'merged.mp4';
+      task.bytes = task.totalBytes = await output.length();
+      task.state = 'done';
+      await _save();
+      // Persist the committed MP4 before removing any original media.
+      if (storageError == null) {
+        await for (final entry in dir.list(followLinks: false)) {
+          if (p.equals(entry.path, output.path)) continue;
+          try {
+            await entry.delete(recursive: true);
+          } on FileSystemException {
+            task.error = 'MP4 已合并，部分临时文件未能清理';
+          }
+        }
+      }
+    } finally {
+      if (await part.exists()) await part.delete();
+    }
+  }
+
+  static Future<bool> _isMp4(File file) async {
+    if (!await file.exists() || await file.length() < 16) return false;
+    final header = await file.open();
+    try {
+      final bytes = await header.read(12);
+      return ascii.decode(bytes.sublist(4, 8), allowInvalid: true) == 'ftyp';
+    } finally {
+      await header.close();
+    }
   }
 
   Future<HttpClientResponse> _open(

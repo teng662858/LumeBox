@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        AD2026110200000000000002 /* OfflineVideoRemuxer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2026110200000000000001; };
         AE1800000000000000000007 /* AetherEngine-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = AE1800000000000000000006; };
         AE1800000000000000000002 /* AetherPlayerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1800000000000000000001; };
         AE1800000000000000000005 /* AetherEngine in Frameworks */ = {isa = PBXBuildFile; productRef = AE1800000000000000000004; };
@@ -64,6 +65,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        AD2026110200000000000001 /* OfflineVideoRemuxer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineVideoRemuxer.swift; sourceTree = "<group>"; };
         AE1800000000000000000006 /* AetherEngine-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "AetherEngine-LICENSE.txt"; sourceTree = "<group>"; };
         AE1800000000000000000001 /* AetherPlayerController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AetherPlayerController.swift; sourceTree = "<group>"; };
         AA2026102100000000000001 /* SourceWebController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceWebController.swift; sourceTree = "<group>"; };
@@ -180,6 +182,7 @@
 				A1B2C3D4000000000000000D /* WafCookieController.swift */,
                 AA2026102100000000000001 /* SourceWebController.swift */,
                 AE1800000000000000000001 /* AetherPlayerController.swift */,
+                AD2026110200000000000001 /* OfflineVideoRemuxer.swift */,
                 AE1800000000000000000006 /* AetherEngine-LICENSE.txt */,
 				A1B2C3D4000000000000000F /* BatteryController.swift */,
 				AA2010200000000000000002 /* LumePythonController.m */,
@@ -392,6 +395,7 @@
 				A1B2C3D4000000000000000E /* WafCookieController.swift in Sources */,
                 AA2026102100000000000002 /* SourceWebController.swift in Sources */,
                 AE1800000000000000000002 /* AetherPlayerController.swift in Sources */,
+                AD2026110200000000000002 /* OfflineVideoRemuxer.swift in Sources */,
 				A1B2C3D40000000000000010 /* BatteryController.swift in Sources */,
 				AA2010200000000000000001 /* LumePythonController.m in Sources */,
 				AC0160160000000000000005 /* LumeGlassBackdrop.swift in Sources */,

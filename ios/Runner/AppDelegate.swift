@@ -25,6 +25,7 @@ import Security
   private let sourceWeb = SourceWebController()
   private let battery = BatteryController()
   private let configurationExport = ConfigurationExportController()
+  private let videoMerge = OfflineVideoMergeController()
   private let comicImages = ComicImageToolsController()
   private let privacy = PrivacyController()
   private let introRecognition = IntroRecognitionController()
@@ -47,6 +48,7 @@ import Security
     }
     if let messenger = engineBridge.pluginRegistry.registrar(forPlugin: "LumeBoxConfiguration")?.messenger() {
       configurationExport.register(with: messenger)
+      videoMerge.register(with: messenger)
       introRecognition.register(with: messenger)
       referenceCredentials.register(with: messenger)
       FlutterMethodChannel(name: "lumebox/app_icon", binaryMessenger: messenger).setMethodCallHandler { call, result in
