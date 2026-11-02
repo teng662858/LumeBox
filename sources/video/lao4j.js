@@ -1,4 +1,4 @@
-// LumeSource: {"id":"lao4j_video","name":"火力视频","version":"1.1.0","category":"video","contentCategory":"adult","mirrors":["http://web.lao4j.net"],"network":"direct","icon":"http://web.lao4j.net/img/favicon.ico","settings":[{"key":"cookie","type":"text","title":"登录 Cookie（可选，用于原生播放）","description":"站点播放页要登录（手机号+短信验证码注册，本源不代注册）。想原生播放就把自己浏览器里 web.lao4j.net 的 Cookie（含 PHPSESSID…）整段粘进来；留空则播放交给内嵌网页，在网页里登录一次即可。"},{"key":"note","type":"info","title":"站点说明","description":"火力视频 / 舞艺吧（web.lao4j.net，ThinkPHP + 独立 API 主机）：擦边舞蹈、录屏、写真向短视频。列表与搜索由 81.70.213.11 / 107.148.42.248:83 上的 JSON 接口提供，匿名可取；但**播放页要求登录**（ajax.php?c=web&m=play 匿名一律返回「请登录后再操作！」，注册要手机号+短信验证码）。本源把播放交给 App 内嵌网页：在网页里用你自己的账号登录一次，之后点条目即可播放。封面直连 yimg3.huolient.com（YouTube 缩略图镜像），视频本体不在图片 CDN 上。"}]}
+// LumeSource: {"id":"lao4j_video","name":"火力视频","version":"2.0.0","category":"video","contentCategory":"adult","mirrors":["http://web.lao4j.net"],"network":"direct","icon":"http://web.lao4j.net/img/favicon.ico","settings":[{"key":"account","type":"text","title":"账号（手机号，用于原生播放）","description":"站点的播放页要「登录 + 会员」两层。填自己的手机号与密码，本源会在本地登录拿 auth_code，再带上去取播放地址；账号不是会员时会给明确提示。留空则播放交给内嵌网页，在网页里自己登录。"},{"key":"password","type":"password","title":"密码","description":"与账号配套；只在本机登录时使用，不写日志。"},{"key":"cookie","type":"text","title":"登录 Cookie（可选，优先级最高）","description":"想跳过登录直接复用浏览器会话，就把 web.lao4j.net 的 auth_code=… 整段粘进来。"},{"key":"note","type":"info","title":"站点说明","description":"火力视频 / 舞艺吧（web.lao4j.net，ThinkPHP + 独立 API 主机）：擦边舞蹈、录屏、写真向短视频。列表与搜索由 81.70.213.11 / 107.148.42.248:83 上的 JSON 接口提供，匿名可取；但**播放页要求登录**（ajax.php?c=web&m=play 匿名一律返回「请登录后再操作！」，注册要手机号+短信验证码）。本源把播放交给 App 内嵌网页：在网页里用你自己的账号登录一次，之后点条目即可播放。封面直连 yimg3.huolient.com（YouTube 缩略图镜像），视频本体不在图片 CDN 上。"}]}
 // LumeRuntime: javascript
 //
 // 站点：火力视频（http://web.lao4j.net）—— 舞艺吧系的舞蹈/擦边视频站。
@@ -180,12 +180,74 @@ function pickMedia(html) {
   return '';
 }
 
+
+/* ───────────── 登录态 ───────────── */
+
+var SESSION_KEY = 'lao4j.session';
+var SESSION_TTL_MS = 6 * 3600 * 1000;
+
+function configValue(key) {
+  try {
+    return String((LumeSource.config && LumeSource.config[key]) || '').trim();
+  } catch (error) {
+    return '';
+  }
+}
+
+async function readSession() {
+  try {
+    var raw = await LumeSource.fs.readText(SESSION_KEY + '.json');
+    if (!raw) return null;
+    var parsed = JSON.parse(String(raw));
+    if (!parsed || !parsed.auth || Date.now() - Number(parsed.at || 0) > SESSION_TTL_MS) return null;
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function writeSession(auth) {
+  try {
+    await LumeSource.fs.writeText(SESSION_KEY + '.json', JSON.stringify({ auth: auth, at: Date.now() }));
+  } catch (error) {
+    /* 缓存失败不影响本次调用 */
+  }
+}
+
+async function clearSession() {
+  try {
+    await LumeSource.fs.writeText(SESSION_KEY + '.json', '');
+  } catch (error) {
+    /* 忽略 */
+  }
+}
+
+/* 返回可直接放进 Cookie 头的字符串；没有登录条件时返回 '' */
+async function sessionCookie() {
+  var manual = configValue('cookie');
+  if (manual) {
+    return manual.indexOf('auth_code=') >= 0 ? manual : 'auth_code=' + encodeURIComponent(manual);
+  }
+  var account = configValue('account');
+  var password = configValue('password');
+  if (!account || !password) return '';
+  var cached = await readSession();
+  if (cached && cached.auth) return 'auth_code=' + encodeURIComponent(cached.auth);
+  var json = await postJson(site() + '/ajax.php?c=web&m=doLogin', 'mobile=' + encodeURIComponent(account) + '&password=' + encodeURIComponent(password));
+  var code = json && json.code === undefined ? 200 : Number(json && json.code);
+  if (code !== 0 || !json.data || !json.data.auth_code) {
+    throw new Error('账号登录失败：' + (String((json && json.msg) || '账号或密码不对')));
+  }
+  await writeSession(String(json.data.auth_code));
+  return 'auth_code=' + encodeURIComponent(String(json.data.auth_code));
+}
+
 /* ───────────── 源对象 ───────────── */
 
 var LumeSource = {
   id: 'lao4j_video',
   name: '火力视频',
-  version: '1.1.0',
+  version: '2.0.0',
   category: 'video',
   contentCategory: 'adult',
   mirrors: ['http://web.lao4j.net'],
@@ -294,31 +356,28 @@ var LumeSource = {
     var id = String(args.id || args.chapterId || '').trim();
     if (!id) throw new Error('缺少视频 ID');
     var pageUrl = site() + '/ajax.php?c=web&m=play&video_id=' + encodeURIComponent(id);
-    var cookie = '';
-    try {
-      cookie = String((LumeSource.config && LumeSource.config.cookie) || '').trim();
-    } catch (error) {
-      cookie = '';
+    var cookie = await sessionCookie();
+    if (!cookie) {
+      // 没有登录态：交给内嵌网页，用户自己在网页里登录
+      return { kind: 'webplayer', pageUrl: pageUrl, headers: headers() };
     }
-    // 配了自己的登录 Cookie：直接去播放页里抠媒体地址（登录态下页面才会带播放器）
-    if (cookie) {
-      try {
-        var reply = await LumeSource.http.get(pageUrl, {
-          headers: Object.assign(headers(), { Cookie: cookie })
-        });
-        var html = reply && reply.body ? String(reply.body) : '';
-        if (/请登录/.test(html) && !/\.m3u8|\.mp4/i.test(html)) {
-          throw new Error('填的 Cookie 已失效或被站点判为未登录');
-        }
-        var media = pickMedia(html);
-        if (media) {
-          return { kind: 'video', url: media, headers: { 'User-Agent': UA, Referer: site() + '/' } };
-        }
-      } catch (error) {
-        // 抠不到就退回网页播放，不把错误吞掉导致误判
-        if (String(error && error.message || '').indexOf('Cookie') >= 0) throw error;
-      }
+    var reply = await LumeSource.http.get(pageUrl, {
+      headers: Object.assign(headers(), { Cookie: cookie })
+    });
+    var html = reply && reply.body ? String(reply.body) : '';
+    if (/请登录后再操作/.test(html)) {
+      await clearSession();
+      throw new Error('登录态失效（账号密码或 Cookie 已过期），请到源设置里重新填写');
     }
+    if (/请开通会员/.test(html)) {
+      throw new Error('该账号已登录，但没有开通会员：站点播放页对非会员一律提示「请开通会员」（会员 29 元/1 个月起）。开通后本源可直接原生播放，不用改设置。');
+    }
+    var media = pickMedia(html);
+    if (media) {
+      return { kind: 'video', url: media, headers: { 'User-Agent': UA, Referer: site() + '/' } };
+    }
+    // 页面既没报权限也没抠到地址：结构可能变了，退回网页
     return { kind: 'webplayer', pageUrl: pageUrl, headers: headers() };
   }
+
 };
