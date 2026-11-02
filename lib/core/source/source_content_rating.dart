@@ -214,6 +214,9 @@ class SourceContentRating {
     'lao4j_video',
     // 有爱爱 UAA（uaa002.com 站群）：视频/有声/漫画/小说四大库的综合成人站。
     'uaa_video',
+    // 18ak漫画 / 爱看漫画（www.18akmanhua.com，来自「暮色」App 内置源）：
+    // /api 签名接口 + AES-256 响应，视频板块 1531 条，付费片 pay_url 直发可播。
+    'akmh_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

@@ -80,6 +80,7 @@ void main() {
       'mitaow_video',
       'mitaovideo_video',
       'chengshe_video',
+      'akmh_video',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);

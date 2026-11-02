@@ -345,6 +345,8 @@ sources/video/
 ├── hqvod.js       点播-高清（hqvod.com）苹果CMS 站；列表走 ajax 数据接口，播放页有滑块 → webplayer
 ├── d9y1w.js       四色视频（www.m9y7a.top，3 天换域名）maomi 模板站；标题 AES-256-CBC、卡片链接 base64 混淆，播放 m3u8 直链；
 │                  v1.2.0 换域名自愈两条腿：旧域 302 的最终地址 reply.url 取 origin 探活 + 站方跳转服务 good.0827.la 兜底
+├── akmh.js        18ak漫画·视频（www.18akmanhua.com，来自「暮色」App 内置源）接口 /api 带 md5 签名 + AES-256 响应密文
+│                  （源内纯 JS 解）；/videoLists 1531 条（type 0=漫画改编 1=真人）、付费片 pay_url 直发可播，m3u8 实测 200 + #EXTM3U
 ├── kkav.js        KKAV（www.32auqm.com；37tmrj → 73tfhk → 85fazc → 32auqm）成人视频站；接口 XOR2 加密（源内纯 JS 解）、
 │                  列表自带 mp4 直链（down.baidu.com 改写为 down.mm7878.com，206）；v1.2.0 从旧域跳板页
 │                  `url2.push("新域")` 自愈（旧域换域后 /api/* 直接 406），SEED_HOSTS + JUMP_HOSTS 两段式发现
