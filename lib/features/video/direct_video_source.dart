@@ -39,6 +39,7 @@ class DirectVideoSource implements DataSource {
   }) async => const SourceList(items: [], hasMore: false);
   @override
   Future<SourceDetail?> detail(String itemId) async => SourceDetail(
+    mediaType: 'video',
     id: itemId,
     title: title,
     subtitle: name,

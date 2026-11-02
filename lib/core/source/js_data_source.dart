@@ -333,7 +333,10 @@ class JsDataSource
         'App 已选择原生播放，该源当前只提供网页线路；请更换线路或播放方式',
       );
     }
-    if (mode == 'webpage' && value is Map && !isWeb) {
+    if (mode == 'webpage' &&
+        value is Map &&
+        !isWeb &&
+        !['text', 'novel', 'html', 'images', 'image'].contains(value['kind'])) {
       final raw = '${value['pageUrl'] ?? itemId}';
       final page = Uri.tryParse(raw);
       if (page == null ||

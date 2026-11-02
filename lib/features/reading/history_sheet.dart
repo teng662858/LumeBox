@@ -514,6 +514,8 @@ class HistoryEntryTile extends StatelessWidget {
   /// 进度条比例：只有算得出比例的形状才画（漫画是页位置，没有总页数）。
   static double? ratioOf(ReadingProgress progress) => switch (progress) {
     VideoProgress p => p.ratio,
+    NovelProgress p =>
+      p.textLength > 0 ? (p.offset / p.textLength).clamp(0.0, 1.0) : null,
     ComicProgress _ => null,
   };
 

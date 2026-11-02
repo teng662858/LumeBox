@@ -316,3 +316,38 @@ final class VideoProgress extends ReadingProgress {
     return hours > 0 ? '$hours:$mm:$ss' : '$mm:$ss';
   }
 }
+
+/// Novel checkpoint uses a character offset, independent of font and viewport.
+final class NovelProgress extends ReadingProgress {
+  const NovelProgress({
+    super.sourceId,
+    required super.section,
+    required super.itemId,
+    required super.chapterIndex,
+    required super.chapterId,
+    required super.chapterTitle,
+    required super.updatedAt,
+    required this.offset,
+    required this.textLength,
+  });
+  final int offset, textLength;
+  @override
+  NovelProgress withChapter({
+    required int chapterIndex,
+    required String chapterId,
+    required String chapterTitle,
+  }) => NovelProgress(
+    section: section,
+    sourceId: sourceId,
+    itemId: itemId,
+    chapterIndex: chapterIndex,
+    chapterId: chapterId,
+    chapterTitle: chapterTitle,
+    updatedAt: DateTime.now(),
+    offset: 0,
+    textLength: 0,
+  );
+  @override
+  String describe() =>
+      '第 ${chapterIndex + 1} 章 · ${textLength == 0 ? 0 : (100 * offset / textLength).clamp(0, 100).round()}%';
+}

@@ -1,3 +1,4 @@
+import '../../core/source/source_content_type.dart';
 import 'reader_interaction_surface.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
 import '../source/source_login_page.dart';
@@ -591,7 +592,8 @@ class _ComicReaderPageState extends State<ComicReaderPage>
     try {
       final content = await networkRequests.run(
         'chapter',
-        () => widget.dataSource.content(
+        () => SourceContentRead.read(
+          widget.dataSource,
           itemId: widget.target.itemId,
           chapterId: chapter.id,
         ),
@@ -621,11 +623,12 @@ class _ComicReaderPageState extends State<ComicReaderPage>
           _saveProgress();
           _showStartupZoneHint();
           if (_translationScope == 'series') unawaited(_translatePages(true));
+        case TextContent():
         case VideoContent():
           setState(() {
             _loading = false;
             _failed = true;
-            _failureDetail = '该章节不是图片内容：源返回了视频地址';
+            _failureDetail = '该章节不是图片内容，请返回详情重新识别类型';
           });
       }
     } on SourceException catch (error) {
@@ -788,7 +791,8 @@ class _ComicReaderPageState extends State<ComicReaderPage>
     try {
       final content = await networkRequests.run(
         'prefetch',
-        () => widget.dataSource.content(
+        () => SourceContentRead.read(
+          widget.dataSource,
           itemId: widget.target.itemId,
           chapterId: chapterId,
         ),

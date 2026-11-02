@@ -10,6 +10,7 @@
 library;
 
 import 'package:flutter/foundation.dart';
+import 'package:html/parser.dart' as html;
 
 /// 可选能力：**搜索联想词**（图源提供 `suggest` 时用服务端的，没有就用本地历史）。
 ///
@@ -249,6 +250,7 @@ class SourceItem {
     this.cover,
     this.coverHeaders = const {},
     this.subtitle,
+    this.mediaType = '',
     this.duration,
     this.updatedAt,
   });
@@ -260,6 +262,8 @@ class SourceItem {
   final String? subtitle;
 
   /// 时长（可选能力）：视频类图源常给（搜索结果里要显示「时长」）。
+  final String mediaType;
+
   final Duration? duration;
 
   /// 更新时间（可选能力）：搜索结果里要显示「更新时间」。
@@ -290,6 +294,8 @@ class SourceItem {
           _text(json['cover']) ??
           _text(json['image']) ??
           _text(json['poster']),
+      mediaType:
+          _text(json['mediaType'] ?? json['contentType'] ?? json['kind']) ?? '',
       subtitle: _text(json['subtitle']),
       duration: parseDuration(
         json['duration'] ?? json['时长'] ?? json['length'] ?? json['runtime'],
@@ -441,7 +447,8 @@ class SourceDetail {
           RegExp(r'^(?:19|20)\d{2}')
               .stringMatch('${json['year'] ?? json['releaseDate'] ?? ''}') ??
           '',
-      mediaType: _text(json['mediaType']) ?? '',
+      mediaType:
+          _text(json['mediaType'] ?? json['contentType'] ?? json['kind']) ?? '',
       cast: (json['cast'] is List ? json['cast'] as List : const [])
           .map(SourcePerson.parse)
           .whereType<SourcePerson>()
@@ -559,6 +566,16 @@ sealed class ChapterContent {
     }
     final kind = '${json['kind'] ?? ''}'.trim().toLowerCase();
     switch (kind) {
+      case 'text':
+      case 'novel':
+      case 'html':
+        final raw = json['text'] ?? json['body'] ?? json['html'];
+        if (raw is! String) throw const FormatException('小说章节缺少正文');
+        final text =
+            kind == 'html' || json['html'] != null || json['format'] == 'html'
+            ? TextContent.fromHtml(raw).text
+            : raw.trim();
+        return text.isEmpty ? null : TextContent(text);
       case 'images':
       case 'image':
         final images = _imageList(json['images']);
@@ -595,6 +612,34 @@ sealed class ChapterContent {
       default:
         throw FormatException('未知的章节内容 kind: $kind');
     }
+  }
+}
+
+/// Actual chapter body, never a synopsis or a URL to a web page.
+final class TextContent extends ChapterContent {
+  const TextContent(this.text);
+  final String text;
+
+  factory TextContent.fromHtml(String value) {
+    final document = html.parse(value);
+    document
+        .querySelectorAll('script,style,noscript,iframe')
+        .forEach((node) => node.remove());
+    for (final node in document.querySelectorAll('br')) {
+      node.replaceWith(html.parseFragment('\n'));
+    }
+    for (final node in document.querySelectorAll(
+      'p,div,section,article,li,h1,h2,h3',
+    )) {
+      node.append(html.parseFragment('\n\n'));
+    }
+    return TextContent(
+      (document.body?.text ?? '')
+          .replaceAll('\u00a0', ' ')
+          .replaceAll(RegExp(r'[ \t]+\n'), '\n')
+          .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+          .trim(),
+    );
   }
 }
 

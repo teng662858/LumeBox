@@ -56,7 +56,12 @@ class DetailSource extends FakeReadingDataSource {
     if (failDetail) {
       throw const SourceException(SourceErrorKind.callFailed, 'fixture没有详情接口');
     }
-    return SourceDetail(id: id, title: '详情测试片', description: '源站原始简介');
+    return SourceDetail(
+      mediaType: 'video',
+      id: id,
+      title: '详情测试片',
+      description: '源站原始简介',
+    );
   }
 
   @override
@@ -1280,7 +1285,11 @@ void main() {
       MaterialApp(
         home: VideoDetailPage(
           source: source,
-          item: const SourceItem(id: 'movie', title: '详情测试片'),
+          item: const SourceItem(
+            id: 'movie',
+            title: '详情测试片',
+            mediaType: 'video',
+          ),
           library: library,
           onPlay: (_, _, _, _) async {
             opened++;

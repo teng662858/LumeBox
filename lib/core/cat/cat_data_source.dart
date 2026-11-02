@@ -4,6 +4,7 @@ import 'dart:io';
 import '../session/section.dart';
 import '../source/source.dart';
 import 'cat_service.dart';
+import '../source/source_content_type.dart';
 import 'cat_web_parse.dart';
 
 Map<String, dynamic> catPayload(Map<String, dynamic> payload) {
@@ -161,6 +162,7 @@ class CatDataSource
     return SourceItem(
       id: scopedId,
       title: title,
+      mediaType: catText(raw['mediaType'] ?? raw['contentType'] ?? raw['kind']),
       cover: cover?.toString(),
       subtitle: catText(
         raw['vod_remarks'] ?? raw['book_remarks'] ?? raw['remarks'],
@@ -285,6 +287,9 @@ class CatDataSource
     if (entry == null) return null;
     return SourceDetail(
       id: entry.id,
+      mediaType: entry.mediaType.isNotEmpty
+          ? entry.mediaType
+          : (site.kind == 'novel' ? 'novel' : ''),
       title: entry.title,
       cover: entry.cover,
       coverHeaders: entry.coverHeaders,
@@ -384,7 +389,18 @@ class CatDataSource
       }),
     );
     final requestHeaders = headers(data['header'] ?? data['headers']);
-    if (site.kind == 'comic') {
+    final contentKind = SourceContentType.parse(catText(data['kind']));
+    if (contentKind == SourceContentType.novel ||
+        (site.kind == 'novel' &&
+            (data['text'] is String || data['html'] is String))) {
+      return ChapterContent.parse({
+        ...data,
+        'kind': data['kind'] ?? (data['html'] != null ? 'html' : 'text'),
+      });
+    }
+    if (site.kind == 'comic' ||
+        contentKind == SourceContentType.comic ||
+        data['images'] is List) {
       var images = data['images'] ?? data['urls'] ?? data['list'];
       if (images is String) {
         try {

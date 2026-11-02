@@ -1,3 +1,5 @@
+import '../../core/source/source_content_type.dart';
+import '../reading/content_detail_router.dart';
 import '../download/download_selection.dart';
 import 'comic_download_center.dart';
 
@@ -41,11 +43,13 @@ class ComicDetailPage extends StatefulWidget {
     required this.library,
     required this.manager,
     required this.target,
+    this.detectContent = true,
     this.runtimeAvailable,
     this.imagePipeline,
     this.downloadCenter,
   });
 
+  final bool detectContent;
   final ReadingLibrary library;
 
   /// 图源管理端口：详情页自己打开图源，因此从书架进来也能用。
@@ -80,6 +84,7 @@ class _ComicDetailPageState extends State<ComicDetailPage>
             automaticUpscale(bytes, UpscaleSurface.cover),
       );
 
+  Widget? _typedDetail;
   DataSource? _source;
   SourceDetail? _detail;
   List<SourceChapter> _chapters = const <SourceChapter>[];
@@ -210,6 +215,32 @@ class _ComicDetailPageState extends State<ComicDetailPage>
         () => source.chapters(widget.target.itemId),
       );
       if (!mounted || revision != _loadRevision) return;
+      if (widget.detectContent) {
+        final type = await networkRequests.run(
+          'content-type',
+          () => detectSourceContent(
+            source: source,
+            itemId: widget.target.itemId,
+            detail: detail,
+            chapters: chapters,
+          ),
+        );
+        if (!mounted || revision != _loadRevision) return;
+        if (type != null && type != SourceContentType.comic) {
+          setState(() {
+            _loading = false;
+            _chaptersLoading = false;
+            _typedDetail = contentDetailPage(
+              type: type,
+              source: source,
+              library: widget.library,
+              manager: widget.manager,
+              target: widget.target,
+            );
+          });
+          return;
+        }
+      }
       // 详情页封面也在源站自己的域名上：把源站会话挂到管线上，脚本带什么它就带什么。
       _pipeline.bindSession(source.section, source.id);
       if (detail?.cover != null) {
@@ -481,7 +512,8 @@ class _ComicDetailPageState extends State<ComicDetailPage>
     try {
       final content = await networkRequests.run(
         'gallery-preview',
-        () => source.content(
+        () => SourceContentRead.read(
+          source,
           itemId: widget.target.itemId,
           chapterId: _chapters.first.id,
         ),
@@ -1139,6 +1171,7 @@ class _ComicDetailPageState extends State<ComicDetailPage>
 
   @override
   Widget build(BuildContext context) {
+    if (_typedDetail != null) return _typedDetail!;
     if (_compact) {
       return Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,

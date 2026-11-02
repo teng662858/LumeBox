@@ -566,6 +566,11 @@ CREATE TABLE IF NOT EXISTS reading_setting (
         pageFraction,
         0,
       ),
+      NovelProgress(:final offset, :final textLength) => (
+        offset,
+        0.0,
+        textLength,
+      ),
       VideoProgress(:final position, :final duration) => (
         position.inMilliseconds,
         duration.inMilliseconds.toDouble(),
@@ -573,6 +578,7 @@ CREATE TABLE IF NOT EXISTS reading_setting (
       ),
     };
     final kind = switch (progress) {
+      NovelProgress() => 'novel',
       ComicProgress() => 'comic',
       VideoProgress() => 'video',
     };
@@ -1130,9 +1136,23 @@ CREATE TABLE IF NOT EXISTS reading_setting (
       chapterTitle: row['chapter_title'] as String,
       updatedAt: updatedAt,
     );
-    final kind = section == Section.cat
-        ? sectionFromId(row['progress_kind'] as String)
-        : section;
+    final progressKind = row['progress_kind'] as String;
+    if (progressKind == 'novel') {
+      return NovelProgress(
+        section: section,
+        sourceId: row['source_id'] as String,
+        itemId: common.itemId,
+        chapterIndex: common.chapterIndex,
+        chapterId: common.chapterId,
+        chapterTitle: common.chapterTitle,
+        updatedAt: updatedAt,
+        offset: row['position'] as int,
+        textLength: row['chapter_length'] as int,
+      );
+    }
+    final kind =
+        sectionFromId(progressKind) ??
+        (section == Section.cat ? null : section);
     return switch (kind) {
       Section.comic => ComicProgress(
         section: section,

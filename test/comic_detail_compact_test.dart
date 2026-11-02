@@ -37,6 +37,7 @@ class CompactComicSource extends FakeReadingDataSource {
   int contentCalls = 0;
   @override
   Future<SourceDetail?> detail(String id) async => SourceDetail(
+    mediaType: 'comic',
     id: id,
     title: '星河漫游',
     author: '示例作者',

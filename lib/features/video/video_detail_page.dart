@@ -1,3 +1,5 @@
+import '../../core/source/source_content_type.dart';
+import '../reading/content_detail_router.dart';
 import '../download/download_selection.dart';
 import '../comic/download_center_page.dart';
 import 'video_download_center.dart';
@@ -88,6 +90,7 @@ typedef OpenVideoPlayer = Future<void> Function(
 class VideoDetailPage extends StatefulWidget {
   const VideoDetailPage({
     super.key,
+    this.detectContent = true,
     this.source,
     this.loadSource,
     this.sourceId,
@@ -104,6 +107,7 @@ class VideoDetailPage extends StatefulWidget {
   });
   final String? initialChapterId;
   final VideoResumeRequest? resumeRequest;
+  final bool detectContent;
   final DataSource? source;
   final Future<DataSource?> Function()? loadSource;
   final String? sourceId;
@@ -142,6 +146,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   final _episodesKey = GlobalKey();
   final _scroll = ScrollController();
 
+  Widget? _typedDetail;
   bool loading = true, resolving = false;
   String? error;
   late final pipeline =
@@ -251,6 +256,35 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         }
       }
       if (!mounted) return;
+      if (widget.detectContent && direct == null) {
+        final type = await detectSourceContent(
+          source: source,
+          itemId: widget.item.id,
+          detail: metadata,
+          chapters: episodes,
+          hint: widget.item.mediaType,
+        );
+        if (!mounted) return;
+        if (type != null && type != SourceContentType.video) {
+          setState(() {
+            loading = false;
+            _typedDetail = contentDetailPage(
+              type: type,
+              source: source,
+              library: widget.library,
+              manager: widget.manager,
+              target: ReadingTarget(
+                sourceId: source.id,
+                itemId: widget.item.id,
+                title: metadata?.title ?? widget.item.title,
+                cover: sourceCover,
+                subtitle: metadata?.subtitle ?? widget.item.subtitle,
+              ),
+            );
+          });
+          return;
+        }
+      }
       // 查看详情只写历史（favorite = 0）；收藏只能由心形按钮触发。
       if (widget.recordHistory) {
         widget.library.recordHistoryItem(
@@ -421,9 +455,12 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       {
         try {
           final resolveWatch = Stopwatch()..start();
-          content = await _source!
-              .content(itemId: widget.item.id, chapterId: chapter.id)
-              .whenComplete(() {
+          content =
+              await SourceContentRead.read(
+                _source!,
+                itemId: widget.item.id,
+                chapterId: chapter.id,
+              ).whenComplete(() {
                 PlaybackDiagnostics.record(
                   'source-resolve-complete',
                   source: _source!.id,
@@ -452,6 +489,27 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       final saved = MediaLibrary.instance.byId(
         MediaResource.sourceKey(_source!.section, _source!.id, widget.item.id),
       );
+      if (content is TextContent || content is ImageContent) {
+        if (!mounted) return;
+        setState(
+          () => _typedDetail = contentDetailPage(
+            type: content is TextContent
+                ? SourceContentType.novel
+                : SourceContentType.comic,
+            source: _source!,
+            library: widget.library,
+            manager: widget.manager,
+            target: ReadingTarget(
+              sourceId: _source!.id,
+              itemId: widget.item.id,
+              title: detail?.title ?? widget.item.title,
+              cover: sourceCover,
+              subtitle: detail?.subtitle ?? widget.item.subtitle,
+            ),
+          ),
+        );
+        return;
+      }
       final address =
           SourcePlayback.contentAddress(content) ??
           direct ??
@@ -773,14 +831,16 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   }
 
   @override
-  Widget build(BuildContext context) => Theme(
-    data: Theme.of(context)
-        .copyWith(textTheme: _bolderTextTheme(Theme.of(context).textTheme)),
-    child: Builder(
-      builder: (context) =>
-          originalStyle ? _buildOriginal(context) : _buildCompact(context),
-    ),
-  );
+  Widget build(BuildContext context) =>
+      _typedDetail ??
+      Theme(
+        data: Theme.of(context)
+            .copyWith(textTheme: _bolderTextTheme(Theme.of(context).textTheme)),
+        child: Builder(
+          builder: (context) =>
+              originalStyle ? _buildOriginal(context) : _buildCompact(context),
+        ),
+      );
 
   void setDetailStyle(bool original) {
     widget.library.setSetting(styleSetting, '$original');

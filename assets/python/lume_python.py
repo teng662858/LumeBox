@@ -633,6 +633,7 @@ def _items(value):
     return [{"id": "py:" + str(x.get("vod_id", x.get("id", ""))),
              "title": str(x.get("vod_name", x.get("name", ""))),
              "cover": x.get("vod_pic", x.get("pic", "")),
+             "mediaType": x.get("mediaType", x.get("contentType", x.get("kind", ""))),
              "subtitle": str(x.get("vod_remarks", x.get("remarks", "")))}
             for x in entries if isinstance(x, dict) and x.get("vod_id", x.get("id")) is not None]
 
@@ -817,7 +818,8 @@ def _dispatch(state, method, arg):
         if method == "detail":
             return {"id": item_id, "title": raw.get("vod_name", ""),
                     "cover": raw.get("vod_pic", ""), "subtitle": raw.get("vod_remarks", ""),
-                    "description": raw.get("vod_content", "")}
+                    "description": raw.get("vod_content", ""),
+                    "mediaType": raw.get("mediaType", raw.get("contentType", raw.get("kind", "")))}
         flags = str(raw.get("vod_play_from", "")).split("$$$")
         chapters = []
         for index, line in enumerate(str(raw.get("vod_play_url", "")).split("$$$")):
@@ -831,19 +833,35 @@ def _dispatch(state, method, arg):
         return chapters
     if method == "content":
         episode = json.loads(arg["chapterId"])
-        if state.get("section") == "comic" and _method(spider, "imageContent"):
+        item_id = str(arg.get("id", ""))
+        item_id = item_id[3:] if item_id.startswith("py:") else item_id
+        detail = state.get("detail", {}) if state.get("detail_id") == item_id else {}
+        hint = str(detail.get("mediaType", detail.get("contentType", detail.get("kind", "")))).lower()
+        use_images = state.get("section") == "comic" and _method(spider, "imageContent") and hint not in ("video", "text", "novel", "html", "audio", "audiobook", "webplayer")
+        if use_images:
             raw = _invoke(spider, "imageContent", (episode["id"],), {"id": episode["id"], "chapterid": episode["id"], "chapter_id": episode["id"], "flag": episode.get("flag", "")})
         else:
             raw = _invoke(spider, "playerContent", (episode.get("flag", ""), episode["id"], []), {"flag": episode.get("flag", ""), "id": episode["id"], "video_id": episode["id"], "vipflags": []})
-        if state.get("section") == "comic":
+        value = _decoded(raw) if not isinstance(raw, list) else raw
+        if isinstance(value, dict):
+            kind = str(value.get("kind", "")).lower()
+            if kind in ("text", "novel", "html"):
+                body = value.get("text", value.get("body", value.get("html")))
+                if not isinstance(body, str):
+                    raise ValueError("小说章节缺少正文")
+                return {"kind": kind, "text": body, "format": value.get("format", "html" if "html" in value else "text")}
+            if kind in ("images", "image") or isinstance(value.get("images"), list):
+                return _image_content(value, episode["id"])
+        explicit_video = isinstance(value, dict) and str(value.get("kind", "")).lower() in ("video", "audio", "audiobook", "webplayer")
+        if state.get("section") == "comic" and not explicit_video:
             return _image_content(raw, episode["id"])
-        raw = _decoded(raw)
+        raw = value
         url = str(raw.get("url") or raw.get("pageUrl") or "")
         if not url:
             raise ValueError("源未返回播放地址；请检查站点、外部解析后端或 Android 专属依赖")
         headers = _decoded(raw.get("header", raw.get("headers", {})))
-        return {"kind": "video", "url": url, "headers": headers,
-                "webPlayer": raw.get("webPlayer") is True,
+        return {"kind": raw.get("kind") if raw.get("kind") in ("audio", "audiobook") else "video", "url": url, "headers": headers,
+                "webPlayer": raw.get("webPlayer") is True or raw.get("kind") == "webplayer",
                 "pageUrl": str(raw.get("pageUrl") or url),
                 "webParse": str(raw.get("parse", 0)) == "1" or (str(raw.get("jx", 0)) == "1" and not re.search(r"\.(?:mp4|m3u8|mp3|m4a|aac|flac|mkv|webm|mpd)(?:$|[?#])", url, re.I))}
     raise ValueError("Python 源不提供接口：" + method)

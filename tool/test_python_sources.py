@@ -105,6 +105,30 @@ def call(source, action="call", **kwargs):
 
 
 class HostTests(unittest.TestCase):
+    def test_comic_spider_uses_declared_text_method_instead_of_image_method(self):
+        source = FIXTURE + "\n    def detailContent(self, ids): return {'list':[{'vod_id':ids[0],'vod_name':'书','mediaType':'novel'}]}\n    def imageContent(self, id): raise ValueError('不应请求图片接口')\n    def playerContent(self, flag, id, vipFlags=None): return {'kind':'text','text':'实际正文'}"
+        self.assertTrue(call('comic-with-novel', 'load', script=source, section='comic')['ok'])
+        self.assertTrue(call('comic-with-novel', method='detail', argument={'id':'book'})['ok'])
+        result = call('comic-with-novel', method='content', argument={'id':'book','chapterId':json.dumps({'id':'chapter'})})
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(result['value']['kind'], 'text')
+
+    def test_explicit_video_inside_comic_source_is_not_coerced_to_images(self):
+        source = FIXTURE + "\n    def playerContent(self, flag, id, vipFlags=None): return {'kind':'video','url':'https://media.test/episode.mp4'}"
+        self.assertTrue(call('comic-with-video', 'load', script=source, section='comic')['ok'])
+        result = call('comic-with-video', method='content', argument={'id':'item','chapterId':json.dumps({'id':'episode'})})
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(result['value']['kind'], 'video')
+
+    def test_comprehensive_spider_preserves_text_images_and_video(self):
+        source = FIXTURE + "\n    def playerContent(self, flag, id, vipFlags=None):\n        if id == 'novel': return {'kind':'text','text':'第一段\\n\\n第二段'}\n        if id == 'comic': return {'kind':'images','images':['https://img.test/page.jpg']}\n        return {'url':'https://media.test/episode.mp4'}"
+        self.assertTrue(call('mixed', 'load', script=source)['ok'])
+        for item, kind in [('novel','text'), ('comic','images'), ('video','video')]:
+            result = call('mixed', method='content', argument={'id':item, 'chapterId':json.dumps({'id':item})})
+            self.assertTrue(result['ok'], result)
+            self.assertEqual(result['value']['kind'], kind)
+        self.assertEqual(call('mixed', method='content', argument={'id':'novel', 'chapterId':json.dumps({'id':'novel'})})['value']['text'], '第一段\n\n第二段')
+
     def test_tvbox_extend_survives_config_and_encoded_python_bytes(self):
         program = '''# coding: gbk
 from base.spider import Spider

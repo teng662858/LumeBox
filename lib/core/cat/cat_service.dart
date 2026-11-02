@@ -82,7 +82,6 @@ class CatSubscription {
           : {},
       sites: catMaps(value['sites'])
           .map((raw) => CatSite.fromJson(id, raw))
-          .where((site) => site.kind != 'novel')
           .toList(),
     );
     record.replaceSites(record.sites);
@@ -161,7 +160,7 @@ class CatSite {
   ) {
     final root = payload['data'] is Map ? catMap(payload['data']) : payload;
     final result = <CatSite>[];
-    for (final kind in ['video', 'comic', 'live']) {
+    for (final kind in ['video', 'comic', 'novel', 'live']) {
       final section = catMap(root[kind]);
       final sites = section['sites'];
       final rawSites = sites is Map ? sites['list'] : sites;
