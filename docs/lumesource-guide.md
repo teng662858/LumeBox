@@ -221,11 +221,16 @@ var LumeSource = {
 
 ```js
 var response = await LumeSource.http.get('https://example.com/api/list?page=1');
-// response: { status, headers, body, text(), json() }
+// response: { status, headers, body, url, text(), json() }
 var data = response.json();
 
 // 其它方法：request({url, method, headers, body}) / post(url, body, opts)
 ```
+
+`response.url` 是**跟随 302 之后的最终地址**（宿主会把重定向一路跟完）。换域名的站点靠它
+认出「这一跳落到哪台主机」：拿一个会跳转的服务（站方的地址发布/跳转页）请求一次，
+再取 `response.url` 的 origin，就是当前正在用的域名 —— 不用再把域名写死在脚本里。
+宿主没回这个字段时脚本要能兜底（`response.url || 请求地址`）。
 
 **所有请求都经宿主网络层发出**，因此自动获得：
 

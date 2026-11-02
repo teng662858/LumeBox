@@ -1,18 +1,34 @@
-// LumeSource: {"id":"d9y1w_video","name":"四色视频 18+","version":"1.0.4","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.z2g9w.top","https://www.x5p2n.top","https://www.zie2.com"],"network":"direct","icon":"https://www.z2g9w.top/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（站点自救页）","url":"https://www.z2g9w.top/help/help.html","description":"站点换域名时先看这里：官方页写明本站 3 天换一次域名，页内有正确访问方式与找回邮箱"},{"key":"note","type":"info","title":"站点说明","description":"四色视频（maomi 模板，全站 18+）。域名 3 天轮换一次：当前实测可用 www.z2g9w.top、www.x5p2n.top；官方长期地址 www.zie2.com（本机 TLS 被劫持，打不开就在镜像里换一台）。找回最新域名：邮件 liumangtu@mail.com，或看站点 /help/help.html。脚本已内置换域名自愈：域名只剩 302 到「进入页」时会自动换到能用的镜像。"}]}
+// LumeSource: {"id":"d9y1w_video","name":"四色视频 18+","version":"1.1.0","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.y1c5w.top","https://www.q5h7m.top","https://www.zie2.com"],"network":"direct","icon":"https://www.y1c5w.top/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开最新地址（站方跳转）","url":"http://good.0827.la/?u=aHR0cHM6Ly93d3cuemllMi5jb20%3D&p=L2luZGV4L2hvbWUuaHRtbA%3D%3D","description":"站点 3 天换一次域名：这个按钮走站方自己的域名跳转服务（永久地址 zie2.com 作种子），永远指向此刻正在用的域名，不受换域影响"},{"key":"note","type":"info","title":"站点说明","description":"四色视频（maomi 模板，全站 18+）。域名 3 天轮换一次，本站已知域名会整站 302 到「进入页」。本源已内置**域名自发现**：全部已知域名都只剩进入页时，会去问站方跳转服务 good.0827.la（用永久地址 zie2.com 当种子）拿到当前域名并缓存，所以换域后能自己爬起来。找回最新域名：邮件 liumangtu@mail.com 或看 /help/help.html。"}]}
 //
-// 站点：https://www.z2g9w.top/index/home.html（「maomi」模板成人站，2026-11-01 逐页实测）
+// 站点：https://www.y1c5w.top/index/home.html（「maomi」模板成人站，2026-11-02 逐页实测）
 //
-// ── 〇、域名与镜像（2026-11-01 重测：整站换域名了）
+// ── 〇、域名与镜像（2026-11-02 重测：又换了一轮域名）
 //    官方在 /help/help.html 里写明「本站 3 天换一次域名」，并给出长期地址 https://www.zie2.com
 //    与找回邮箱 liumangtu@mail.com。
-//    · 当前可用：www.z2g9w.top（主站）、www.x5p2n.top（镜像，两站同内容、同 favicon）
-//    · 旧域 www.z8f0q.top / www.d9y1w.top 还在响应，但**整站 302 到新域名的 /enter/index.html**
-//      （那天看到「首页没有解析到板块」就是它：桥接层跟完 302 只拿到「进入页」的 HTML，
-//      里面既没有 home-list-item 也没有 video-item，而且 App 的 http 不回报 reply.url，
-//      读不到 302 的 Location）。所以这两个域既不当主站也不当镜像，只在脚本里做跳转样识别。
-//    · 官方长期地址 www.zie2.com 在本机 TLS 仍被劫持（握手失败），只放进 mirrors 供用户手选。
+//    · 当前可用：www.y1c5w.top（主站）、www.q5h7m.top（镜像，两站同内容、同 favicon）
+//    · 上一轮的主站 z2g9w.top / x5p2n.top / u6k0m.top 现在整站只剩一张 4513 字节的「进入页」
+//      （enter-content + qrcodeSmall，没有 video-item）——那天的「首页没有解析到板块」就是它。
+//    · 官方长期地址 www.zie2.com 本机 TLS 仍握手失败（境外 IP + 被墙），只作种子里给跳转服务用，
+//      不作镜像首屏。
 //    · 脚本一律用「当前可用主机」：LumeSource.config.domain（用户手选）→ 缓存里上次成功的域 → SITE，
-//      任一台只剩「进入页」就自动换到下一台并缓存结果（见 〇·二）。
+//      任一台只剩「进入页」就换下一台并缓存结果；全部失效则走**域名自发现**（见 〇·二）。
+//
+// ── 〇·二、域名自发现（2026-11-02 新增，换域名自愈的关键）
+//    站点家族有一个「域名跳转服务」good.0827.la：把访问者所在域名（或官方永久地址）base64 塞进
+//    `?u=`、把要访问的路径塞进 `?p=`，它 302 到**此刻正在用的域名**。
+//    跳板页 af284.com 之类的 HTML 里就是这段 JS（`atob('aHR0cDovL2dvb2QwODI3…')`），
+//    实测 `u=aHR0cHM6Ly93d3cuemllMi5jb20`（= https://www.zie2.com，官方永久地址）同样有 302：
+//
+//      GET https://good.0827.la/?u=<b64 https://www.zie2.com>&p=<b64 /index/home.html>
+//        （脚本里用 http://，它的证书已过期；302 的目标仍是 https）
+//      → 302 https://www.x3l6j.top        （又一跳跳板）
+//      → 302 https://www.q5h7m.top/enter/index.html   ← 这一跳的主机就是当前域名
+//
+//    App 的 HTTP 桥会跟完 302，并把**最终地址**放进 `reply.url`（1.0.x 之后支持），
+//    所以脚本只要读一次 `reply.url` 的 origin，就能拿到当前域名，再用探活确认真能开首页。
+//    这一步不依赖任何「已知域名」，站点再换域也能自己找回来。
+//    注意：拿站点自己的域名当 u 传进去，服务只回 `code:1007`（它只认跳板域名/永久地址），
+//    所以种子里固定放 zie2.com 与 af284.com 两个。
 //
 // ── 一、页面形态（都不是 JSON 接口）
 //    首页   GET /index/home.html → 三个横滑板块（最新剧情 / 最新电影 / 最新精选），每块 10 张卡
@@ -26,8 +42,8 @@
 //           **没有简介、没有封面**（封面靠列表带出来缓存）
 //    播放   play 页内联 `var video = decodeString('<base64>')`（m3u8 相对路径）与
 //           `m3u8_host / m3u8_host1 = decodeString('<base64>')`；
-//           2026-11-01 实测 play 页给的是 4sv.0827.la（主）与 s4.dt188.site（备），
-//           两台 m3u8 200 + 封面 JPEG 200，都能播；
+//           2026-11-02 实测 play 页给的是 s4.dt188.site（m3u8_host）与 4sv.0827.la（m3u8_host1），
+//           两台 m3u8 200 + 封面 JPEG 200，都能播（两台在表里都会试，顺序变了不影响）；
 //           老的 www.0734.la（连不上）、s5.sanheyiliao.xyz（NXDOMAIN）已从兜底里去掉。
 //
 // ── 二、两套编码（站点自己的 JS）
@@ -50,10 +66,18 @@
 //    全站 18+；tupian（图集）/ meinv / xiaoshuo（小说）/ yousheng（有声）与赌博外链一律不做，
 //    只做三个视频频道。
 
-var SITE = 'https://www.z2g9w.top';
+var SITE = 'https://www.y1c5w.top';
 // 用户手选的镜像坏了、站点又换域名时按这张表依次试（都是实测同内容 / 官方公布的地址）
-var MIRRORS = ['https://www.u6k0m.top', 'https://www.z2g9w.top', 'https://www.x5p2n.top', 'https://www.zie2.com'];
-// 媒体 CDN：2026-11-01 复测 play 页给的两台——4sv.0827.la（主）与 s4.dt188.site（备）
+var MIRRORS = ['https://www.y1c5w.top', 'https://www.q5h7m.top', 'https://www.zie2.com'];
+
+// 站方「域名跳转服务」：唯一的稳定锚点（见 〇·二）。种子里只放跳板域名与官方永久地址——
+// 站点自己的域名（*.top）传进去只会回 code:1007，不当种子。
+// 用 http 而不是 https：good.0827.la 的证书 2026-11 起已过期，TLS 校验会直接失败；
+// 这台机器只做 302，明文请求没有可丢的东西（跳过去的目标仍是 https）。
+var JUMP_URL = 'http://good.0827.la/';
+var JUMP_SEEDS = ['https://www.zie2.com', 'https://www.af284.com'];
+
+// 媒体 CDN：2026-11-02 复测 play 页给的两台——s4.dt188.site 与 4sv.0827.la
 // 都是「m3u8 / 分片 / 封面 JPEG 全 200」；老的 www.0734.la / s5.sanheyiliao.xyz 已连不上，
 // 不再当兜底（少一次必败的探活）。
 var IMAGE_HOST = 'https://4sv.0827.la';
@@ -170,6 +194,22 @@ function b64Bytes(input) {
 
 function b64Text(input) {
   return bytesText(b64Bytes(input));
+}
+
+// 编码：只给「域名跳转服务」拼 `?u=/?p=` 用（沙箱没有 btoa，自己算）
+function b64Encode(input) {
+  var bytes = utf8Bytes(input);
+  var out = '', i, b0, b1, b2;
+  for (i = 0; i < bytes.length; i += 3) {
+    b0 = bytes[i];
+    b1 = i + 1 < bytes.length ? bytes[i + 1] : -1;
+    b2 = i + 2 < bytes.length ? bytes[i + 2] : -1;
+    out += B64_CHARS.charAt(b0 >> 2);
+    out += B64_CHARS.charAt(((b0 & 3) << 4) | ((b1 < 0 ? 0 : b1) >> 4));
+    out += b1 < 0 ? '=' : B64_CHARS.charAt(((b1 & 15) << 2) | ((b2 < 0 ? 0 : b2) >> 6));
+    out += b2 < 0 ? '=' : B64_CHARS.charAt(b2 & 63);
+  }
+  return out;
 }
 
 /* ─────────────────────────── 纯 JS AES-256-CBC 解密（tiny-AES 思路的字节实现） ─────────────────────────── */
@@ -375,11 +415,14 @@ function resolveLink(raw) {
 
 // ── 换域名自愈 ──
 // 站点 3 天换一次域名，旧域还活着但整站 302 到新域的 /enter/index.html。
-// App 的 HTTP 桥会跟随 302，却既不回报 reply.url 也不回 302 的 Location，落到手的 body
-// 就是那张「进入页」——形态上没有 video-item，只有 enter-content / qrcodeSmall 两个标记。
-// 认得出来就记一笔「这台只剩进入页」，按 MIRRORS 依次换台重试，成功的那台缓存 12 小时。
+// App 的 HTTP 桥会跟随 302，落到手的 body 就是那张「进入页」——形态上没有 video-item，
+// 只有 enter-content / qrcodeSmall 两个标记。认得出来就换下一台已知主机；
+// 已知主机全废时走「域名自发现」（〇·二），用站方跳转服务的最终地址拿当前域名。
 var HOST_FILE = 'host.json';
 var HOST_TTL = 12 * 3600 * 1000;
+var DISCOVER_FILE = 'discover.json';
+// 自发现失败后的退避：10 分钟内不重复问跳转服务（避免每次进首页都多两跳）
+var DISCOVER_BACKOFF = 10 * 60 * 1000;
 
 function configDomain() {
   var value = LumeSource.config && LumeSource.config.domain ? String(LumeSource.config.domain) : '';
@@ -449,44 +492,113 @@ function writeJson(file, value) {
   return LumeSource.fs.writeText(file, JSON.stringify(value)).catch(function () { return null; });
 }
 
-async function getText(path, referer) {
-  var hosts = await hostCandidates();
-  var lastError = null;
-  for (var i = 0; i < hosts.length; i++) {
-    var host = hosts[i];
+// `https://www.abc.top/enter/index.html?x=1` → `https://www.abc.top`
+function originOf(url) {
+  var matched = /^(https?:\/\/[^\/?#]+)/i.exec(String(url == null ? '' : url));
+  return matched ? matched[1] : '';
+}
+
+// 一台主机能不能真的开首页：200 + 有 video-item + 不是「进入页」
+async function hostWorks(host) {
+  var reply = null;
+  try {
+    reply = await LumeSource.http.get(host + '/index/home.html', {
+      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml,*/*;q=0.8', Referer: host + '/' },
+    });
+  } catch (error) {
+    return false;
+  }
+  if (!reply || reply.status !== 200) return false;
+  var body = reply.body ? String(reply.body) : '';
+  return body.indexOf('video-item') >= 0 && !looksLikeGate(body);
+}
+
+// 问站方跳转服务要「当前域名」（见 〇·二）。成功返回主机，失败返回空串并记一次退避。
+async function discoverHost() {
+  var last = await readJson(DISCOVER_FILE);
+  if (last && last.failAt && Date.now() - Number(last.failAt) < DISCOVER_BACKOFF) return '';
+  var note = '';
+  for (var i = 0; i < JUMP_SEEDS.length; i++) {
+    var seed = JUMP_SEEDS[i];
+    var jump = JUMP_URL + '?u=' + encodeURIComponent(b64Encode(seed)) +
+      '&p=' + encodeURIComponent(b64Encode('/index/home.html'));
     var reply = null;
     try {
-      reply = await LumeSource.http.get(host + path, {
+      reply = await LumeSource.http.get(jump, {
         headers: {
           'User-Agent': UA,
-          Accept: 'text/html,application/xhtml+xml,application/json,*/*;q=0.8',
-          Referer: referer || (host + '/'),
+          Accept: 'text/html,application/xhtml+xml,*/*;q=0.8',
+          Referer: seed + '/',
         },
       });
     } catch (error) {
-      lastError = error;
+      note = error && error.message ? error.message : String(error);
       continue;
     }
-    var status = reply ? reply.status : 0;
-    if (status === 403 || status === 503) {
-      throw new Error('NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP ' + status + '）');
-    }
-    var body = reply && reply.body ? String(reply.body) : '';
-    if (status === 200 && looksLikeGate(body)) {
-      // 这台只剩 302 后的「进入页」，换下一台
-      lastError = new Error('域名只剩进入页：' + host);
+    var host = originOf(reply && reply.url ? reply.url : '');
+    if (!host) {
+      note = '跳转服务没有回报最终地址（App 版本太旧？）';
       continue;
     }
-    if (status !== 200) {
-      lastError = new Error('页面打不开：HTTP ' + status + '（' + path + '）');
-      continue;
+    if (await hostWorks(host)) return host;
+    note = '跳到了 ' + host + '，但这台也没有首页';
+  }
+  await writeJson(DISCOVER_FILE, { failAt: Date.now(), note: note });
+  return '';
+}
+
+// 单台取页：返回 { ok, body } / { gate } / { error } / { fatal }
+async function fetchFrom(host, path, referer) {
+  var reply = null;
+  try {
+    reply = await LumeSource.http.get(host + path, {
+      headers: {
+        'User-Agent': UA,
+        Accept: 'text/html,application/xhtml+xml,application/json,*/*;q=0.8',
+        Referer: referer || (host + '/'),
+      },
+    });
+  } catch (error) {
+    return { error: error };
+  }
+  var status = reply ? reply.status : 0;
+  if (status === 403 || status === 503) {
+    return { fatal: new Error('NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP ' + status + '）') };
+  }
+  var body = reply && reply.body ? String(reply.body) : '';
+  if (status === 200 && looksLikeGate(body)) {
+    // 这台只剩 302 后的「进入页」
+    return { gate: true, error: new Error('域名只剩进入页：' + host) };
+  }
+  if (status !== 200) {
+    return { error: new Error('页面打不开：HTTP ' + status + '（' + path + '）') };
+  }
+  return { ok: true, body: body };
+}
+
+async function getText(path, referer) {
+  var hosts = await hostCandidates();
+  var lastError = null;
+  for (var round = 0; round < 2; round++) {
+    for (var i = 0; i < hosts.length; i++) {
+      var host = hosts[i];
+      var result = await fetchFrom(host, path, referer);
+      if (result.fatal) throw result.fatal;
+      if (result.ok) {
+        await rememberHost(host);
+        return result.body;
+      }
+      lastError = result.error;
     }
-    await rememberHost(host);
-    return body;
+    if (round > 0) break;
+    // 已知域名全废：问跳转服务拿当前域名，拿到就再走一轮
+    var found = await discoverHost();
+    if (!found) break;
+    hosts = [found];
   }
   throw new Error('已知域名都取不到页面（' + path + '）：' +
     (lastError && lastError.message ? lastError.message : String(lastError || '未知错误')) +
-    '；站点 3 天换一次域名，请到「源设置 → 打开发布页」看最新地址');
+    '；自动发现也没拿到新域名，请点「源设置 → 打开最新地址」（站方跳转服务，永远指向当前域名）');
 }
 
 async function getJson(path, referer) {
@@ -706,26 +818,26 @@ function listPath(category, page) {
 var LumeSource = {
   id: 'd9y1w_video',
   name: '四色视频 18+',
-  version: '1.0.4',
+  version: '1.1.0',
   category: 'video',
   contentCategory: 'adult',
   settingsApiVersion: 2,
   requiresSettings: ['settingsActions'],
-  mirrors: ['https://www.z2g9w.top', 'https://www.x5p2n.top', 'https://www.zie2.com'],
+  mirrors: ['https://www.y1c5w.top', 'https://www.q5h7m.top', 'https://www.zie2.com'],
   settings: [
     {
       key: 'publishPage',
       type: 'action',
       action: 'openWebsite',
-      title: '打开发布页（站点自救页）',
-      url: 'https://www.z2g9w.top/help/help.html',
-      description: '站点自己说 3 天换一次域名；这页有正确访问方式、找回邮箱与 APP 下载',
+      title: '打开最新地址（站方跳转）',
+      url: 'http://good.0827.la/?u=aHR0cHM6Ly93d3cuemllMi5jb20%3D&p=L2luZGV4L2hvbWUuaHRtbA%3D%3D',
+      description: '站点 3 天换一次域名；这个按钮走站方跳转服务（永久地址 zie2.com 当种子），永远指向当前域名',
     },
     {
       key: 'note',
       type: 'info',
       title: '站点说明',
-      description: '四色视频（maomi 模板，全站 18+）。域名 3 天轮换：当前可用 www.z2g9w.top / www.x5p2n.top，官方长期地址 www.zie2.com。找回最新域名：邮件 liumangtu@mail.com 或看 /help/help.html。脚本已内置换域名自愈，镜像只剩「进入页」时会自动换台。',
+      description: '四色视频（maomi 模板，全站 18+）。域名 3 天轮换，旧域会整站 302 到「进入页」。本源内置域名自发现：已知域名全废时去问站方跳转服务 good.0827.la（种子 zie2.com）拿当前域名并缓存 12 小时，换域后能自己爬起来。找回最新域名：邮件 liumangtu@mail.com 或看 /help/help.html。',
     },
   ],
 

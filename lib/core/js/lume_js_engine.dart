@@ -577,6 +577,9 @@ class LumeSourceHost implements SandboxHost {
     return <String, Object?>{
       'status': response.statusCode,
       'headers': response.headers,
+      // 跟随 302 之后的最终地址：换域名的站点靠它认出「这一跳落到哪台主机」，
+      // 不用再从页面形态猜（见 docs/lumesource-guide.md「response.url」）。
+      'url': response.url,
       'body': response.text,
       if (payload['binary'] == true) 'bodyBase64': base64Encode(response.body),
     };
@@ -684,6 +687,9 @@ class _FetchPolyfill implements SandboxPolyfill {
       return {
         status: reply.status == null ? 0 : reply.status,
         headers: reply.headers || {},
+        // 跟随重定向后的最终地址（宿主没回就退回请求地址）：
+        // 换域名的站点请求一次跳转服务就能拿到「当前正在用的主机」。
+        url: reply.url == null ? String(url) : String(reply.url),
         body: body,
         bytes: bytes,
         text: function () { return Promise.resolve(body); },
