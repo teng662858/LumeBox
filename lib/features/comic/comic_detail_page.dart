@@ -1,3 +1,4 @@
+import '../download/download_selection.dart';
 import 'comic_download_center.dart';
 
 import 'dart:async';
@@ -413,15 +414,23 @@ class _ComicDetailPageState extends State<ComicDetailPage>
       ),
     );
     if (scope == null || !mounted) return;
+    final indices = scope == ComicDownloadScope.selected
+        ? await selectDownloadChapters(
+            context,
+            _chapters,
+            initial: readChapterIndex ?? 0,
+          )
+        : scope.indices(
+            chapterCount: _chapters.length,
+            readChapterIndex: readChapterIndex,
+            currentIndex: readChapterIndex,
+          );
+    if (indices == null || !mounted) return;
     setState(() => _downloadCardHidden = false);
     await (widget.downloadCenter ?? ComicDownloadCenter.instance).enqueue(
       downloader,
       _chapters,
-      scope.indices(
-        chapterCount: _chapters.length,
-        readChapterIndex: readChapterIndex,
-        currentIndex: readChapterIndex,
-      ),
+      indices,
     );
   }
 
@@ -1670,13 +1679,15 @@ class _DownloadScopeSheet extends StatelessWidget {
       for (final scope in ComicDownloadScope.values)
         (
           scope,
-          scope
-              .indices(
-                chapterCount: chapterCount,
-                readChapterIndex: readChapterIndex,
-                currentIndex: readChapterIndex,
-              )
-              .length,
+          scope == ComicDownloadScope.selected
+              ? chapterCount
+              : scope
+                    .indices(
+                      chapterCount: chapterCount,
+                      readChapterIndex: readChapterIndex,
+                      currentIndex: readChapterIndex,
+                    )
+                    .length,
         ),
     ];
     return ClipRRect(
@@ -1729,6 +1740,7 @@ class _DownloadScopeSheet extends StatelessWidget {
                     ),
                     subtitle: Text(
                       switch (scope) {
+                        ComicDownloadScope.selected => '勾选需要保存的章节',
                         ComicDownloadScope.all => '整部作品，共 $count 章',
                         ComicDownloadScope.unread =>
                           count == 0 ? '没有未读章节' : '进度之后，共 $count 章',

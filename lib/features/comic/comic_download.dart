@@ -17,7 +17,8 @@ enum ComicDownloadScope {
   unread('未读章节'),
 
   /// 只下当前在读的那一章。
-  current('仅当前章');
+  current('仅当前章'),
+  selected('手动选章');
 
   const ComicDownloadScope(this.label);
 
@@ -47,6 +48,8 @@ enum ComicDownloadScope {
         return <int>[
           for (var index = first; index < chapterCount; index++) index,
         ];
+      case ComicDownloadScope.selected:
+        return const [];
       case ComicDownloadScope.current:
         final current = (currentIndex ?? 0).clamp(0, chapterCount - 1);
         return <int>[current];
@@ -69,6 +72,8 @@ class ComicDownloadProgress {
     this.currentImageTotal = 0,
     this.imageSaved = 0,
     this.imageSkipped = 0,
+    this.downloadedBytes = 0,
+    this.bytesPerSecond = 0,
     this.destination = '',
     this.failures = const <String>[],
   });
@@ -88,6 +93,8 @@ class ComicDownloadProgress {
   /// 本次新写入的图片数 / 因已存在而跳过的图片数。
   final int imageSaved;
   final int imageSkipped;
+  final int downloadedBytes;
+  final double bytesPerSecond;
 
   /// 落盘目录（导出目录内的作品目录），完成提示里展示与复制。
   final String destination;
@@ -123,6 +130,8 @@ class ComicDownloadProgress {
     int? currentImageTotal,
     int? imageSaved,
     int? imageSkipped,
+    int? downloadedBytes,
+    double? bytesPerSecond,
     String? destination,
     List<String>? failures,
   }) {
@@ -136,6 +145,8 @@ class ComicDownloadProgress {
       currentImageTotal: currentImageTotal ?? this.currentImageTotal,
       imageSaved: imageSaved ?? this.imageSaved,
       imageSkipped: imageSkipped ?? this.imageSkipped,
+      downloadedBytes: downloadedBytes ?? this.downloadedBytes,
+      bytesPerSecond: bytesPerSecond ?? this.bytesPerSecond,
       destination: destination ?? this.destination,
       failures: failures ?? this.failures,
     );
@@ -193,6 +204,7 @@ class ComicDownloader extends ChangeNotifier {
 
   ComicDownloadProgress get progress => _progress;
 
+  final _speedWatch = Stopwatch();
   bool _cancelled = false;
   bool _disposed = false;
 
@@ -229,6 +241,9 @@ class ComicDownloader extends ChangeNotifier {
         if (index >= 0 && index < chapters.length) index,
     ];
     _cancelled = false;
+    _speedWatch
+      ..reset()
+      ..start();
     failedChapterIndices.clear();
     _progress = ComicDownloadProgress(
       status: ComicDownloadStatus.running,
@@ -362,7 +377,13 @@ class ComicDownloader extends ChangeNotifier {
       if (_cancelled || _disposed) return _ImageOutcome.aborted;
       if (bytes == null || bytes.isEmpty) return _ImageOutcome.failed;
       await library.saveDownloadAsync(folder, fileName, bytes);
-      _progress = _progress.copyWith(imageSaved: _progress.imageSaved + 1);
+      final totalBytes = _progress.downloadedBytes + bytes.length;
+      _progress = _progress.copyWith(
+        imageSaved: _progress.imageSaved + 1,
+        downloadedBytes: totalBytes,
+        bytesPerSecond:
+            totalBytes * 1000 / (_speedWatch.elapsedMilliseconds + 1),
+      );
       return _ImageOutcome.saved;
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);

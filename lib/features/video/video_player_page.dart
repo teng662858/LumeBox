@@ -916,6 +916,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   }
 
   Stopwatch? _startupWatch;
+  Stopwatch? _firstFrameWatch;
 
   void _onSnapshotChanged() {
     _syncPipPlaybackState();
@@ -1507,6 +1508,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       }
       _playbackRequestHeaders = headers ?? const {};
       try {
+        _firstFrameWatch = loadWatch;
         await player.load(
           PlayerMedia(uri: media.uri, title: media.title, headers: headers),
         );
@@ -3982,6 +3984,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   void _onStatsChanged() {
     if (!mounted) return;
     final stats = _player?.stats.value;
+    if (stats?.firstFrameReady == true && _firstFrameWatch != null) {
+      PlaybackDiagnostics.record(
+        'first-frame-ready',
+        source: _target?.sourceId,
+        kernel: _settings.kernel.name,
+        uri: _media?.uri,
+        elapsedMs: _firstFrameWatch!.elapsedMilliseconds,
+      );
+      _firstFrameWatch = null;
+    }
     final sizeKey = '${stats?.width}x${stats?.height}';
     if (sizeKey != _lastVideoSize) {
       setState(() => _lastVideoSize = sizeKey);

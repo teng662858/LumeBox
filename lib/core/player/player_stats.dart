@@ -18,6 +18,7 @@ class PlayerStats {
     this.height,
     this.buffered,
     this.buffering = false,
+    this.firstFrameReady,
   });
 
   /// 内核显示名（HUD 上标明数据来自哪个内核，便于核对切换）。
@@ -49,6 +50,9 @@ class PlayerStats {
 
   /// 是否正在缓冲（等待数据）。
   final bool buffering;
+
+  /// Native renderer signal; null when the backend cannot report it.
+  final bool? firstFrameReady;
 
   /// 空参数：HUD 什么都不显示。
   static const PlayerStats empty = PlayerStats();

@@ -1245,7 +1245,28 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 )
               else
                 TextButton(
-                  onPressed: () => _unsupported(context),
+                  onPressed: () => showModalBottomSheet<void>(
+                    context: context,
+                    builder: (sheetContext) => SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('AVPlayer 没有强制软件解码接口。可切换到以下支持解码偏好的内核：'),
+                            PlayerKernelPicker(
+                              selected: settings.kernel,
+                              catalog: catalog,
+                              onChanged: (kernel) {
+                                Navigator.pop(sheetContext);
+                                _update(settings.copyWith(kernel: kernel));
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                   child: const Text('不支持'),
                 ),
             ],
@@ -1253,8 +1274,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           Text(
             capabilities.hardwareDecoding
                 ? (enabled
-                      ? '开启（默认）：优先硬解，省电且流畅；对随后打开的媒体生效'
-                      : '关闭：走软解；对随后打开的媒体生效')
+                      ? '开启（默认）：优先硬解，不兼容时允许回落软解；当前播放需要时会重载并保留位置'
+                      : '关闭：使用软件解码；可能短暂重载，播放位置保留')
                 : '当前内核没有切换解码链的通道（点击看提示与可换的内核）',
             style: TextStyle(
               fontWeight: FontWeight.w600,

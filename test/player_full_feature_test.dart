@@ -110,7 +110,7 @@ void main() {
       expect(mpv.hardwareDecoding, isTrue);
       expect(avplayer.audioDelay, isFalse);
       expect(mdk.audioDelay, isFalse);
-      expect(mdk.hardwareDecoding, isFalse);
+      expect(mdk.hardwareDecoding, isTrue);
       expect(mdk.subtitleDelay, isTrue);
 
       // 后台音频 / 锁屏控制 / 缓冲参数：走宿主原生通道，与内核无关。

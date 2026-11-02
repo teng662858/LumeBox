@@ -2,15 +2,18 @@ import Flutter
 import UIKit
 import AVFoundation
 import AetherEngine
+import Combine
 
 /// Per-player channels share a registry; views can be recreated without losing a session.
 @MainActor
 final class AetherPlayerController: NSObject, FlutterPlatformViewFactory {
   private var sessions: [Int: AetherSession] = [:]
   private var nextID = 0
+  private var messenger: FlutterBinaryMessenger?
 
   static func register(with registrar: FlutterPluginRegistrar) {
     let controller = AetherPlayerController()
+    controller.messenger = registrar.messenger()
     registrar.register(controller, withId: "lumebox/aether_view")
     let channel = FlutterMethodChannel(name: "lumebox/aether", binaryMessenger: registrar.messenger())
     channel.setMethodCallHandler { [controller] call, result in
@@ -27,8 +30,13 @@ final class AetherPlayerController: NSObject, FlutterPlatformViewFactory {
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) async {
     do {
       if call.method == "create" {
-        let session = try AetherSession()
-        nextID += 1; sessions[nextID] = session; result(nextID); return
+        let session = AetherSession(engine: try AetherEngine())
+        nextID += 1; sessions[nextID] = session
+        if let messenger = messenger {
+          session.events = FlutterEventChannel(name: "lumebox/aether/\(nextID)/events", binaryMessenger: messenger)
+          session.events?.setStreamHandler(session)
+        }
+        result(nextID); return
       }
       let args = call.arguments as? [String: Any] ?? [:]
       guard let id = args["id"] as? Int, let session = sessions[id] else {
@@ -40,6 +48,7 @@ final class AetherPlayerController: NSObject, FlutterPlatformViewFactory {
         guard let text = args["url"] as? String, let url = URL(string: text) else {
           result(FlutterError(code: "aether_url", message: "无效播放地址", details: nil)); return
         }
+        session.generation = args["generation"] as? Int ?? session.generation + 1
         session.options = args["options"] as? [String: Any] ?? [:]
         let options = session.loadOptions(headers: args["headers"] as? [String: String] ?? [:])
         session.loadTask?.cancel()
@@ -58,15 +67,19 @@ final class AetherPlayerController: NSObject, FlutterPlatformViewFactory {
         let previous = session.options
         session.options = args["options"] as? [String: Any] ?? [:]
         // Rebuild only options that affect native routing, retaining the timeline and tracks.
-        if session.loaded && ["wantsHdr", "dolbyVision"].contains(where: {
-          (previous[$0] as? Bool) != (session.options[$0] as? Bool)
+        if session.loaded && ["wantsHdr", "dolbyVision", "forwardBufferSeconds", "maxBufferBytes", "hardwareDecoding"].contains(where: {
+          (previous[$0] as? NSNumber) != (session.options[$0] as? NSNumber)
         }) {
           let hdr = session.options["wantsHdr"] as? Bool ?? true
           let dv = session.options["dolbyVision"] as? Bool ?? true
+          let updated = session.loadOptions(headers: [:])
           try await session.engine.reloadAtCurrentPosition { options in
             options.matchContentEnabled = hdr
             options.attemptsHDRMasterOnUnprovenPanel = hdr
             options.dolbyVisionHandling = dv ? .automatic : .baseLayerOnly
+            options.forwardBufferSegments = updated.forwardBufferSegments
+            options.sessionCacheByteBudget = updated.sessionCacheByteBudget
+            options.preferredDecodePath = updated.preferredDecodePath
           }
         }
         session.applyTransportOptions()
@@ -79,6 +92,7 @@ final class AetherPlayerController: NSObject, FlutterPlatformViewFactory {
       case "stop": session.loadTask?.cancel(); session.engine.stop(); session.loaded = false; result(nil)
       case "dispose":
         sessions.removeValue(forKey: id)
+        session.events?.setStreamHandler(nil); session.cancelEvents()
         session.loadTask?.cancel(); session.engine.stop(); session.loaded = false
         result(nil)
       case "seek": await session.engine.seek(to: (args["seconds"] as? Double ?? 0)); result(nil)
@@ -117,29 +131,56 @@ final class AetherPlayerController: NSObject, FlutterPlatformViewFactory {
 }
 
 @MainActor
-private final class AetherSession {
+private final class AetherSession: NSObject, FlutterStreamHandler {
+  var generation = 0
+  var events: FlutterEventChannel?
+  private var eventSink: FlutterEventSink?
+  private var observers = Set<AnyCancellable>()
   let engine: AetherEngine
   var options: [String: Any] = [:]
   var loaded = false
   var loadTask: Task<Void, Error>?
   weak var surface: AetherSurface?
 
-  init() throws {
-    engine = try AetherEngine()
+  init(engine: AetherEngine) {
+    self.engine = engine
+    super.init()
     engine.backgroundPlaybackEnabled = true
     // LumeBox owns lock-screen actions via PlaybackSessionController.
     engine.ownsVideoNowPlayingSession = false
     engine.ownsSoftwareNowPlaying = false
   }
 
+  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    eventSink = events
+    let signals = [
+      engine.$state.map { _ in () }.eraseToAnyPublisher(),
+      engine.$isBuffering.map { _ in () }.eraseToAnyPublisher(),
+      engine.$hasFirstFrameReadyForDisplay.map { _ in () }.eraseToAnyPublisher(),
+      engine.clock.$currentTime.map { _ in () }.eraseToAnyPublisher(),
+      engine.clock.$bufferedPosition.map { _ in () }.eraseToAnyPublisher(),
+    ]
+    Publishers.MergeMany(signals).receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in guard let self = self else { return }; self.eventSink?(self.snapshot()) }
+      .store(in: &observers)
+    engine.clock.$sourceTime.receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in self?.surface?.updateSubtitles() }.store(in: &observers)
+    events(snapshot())
+    return nil
+  }
+  func onCancel(withArguments arguments: Any?) -> FlutterError? { cancelEvents(); return nil }
+  func cancelEvents() { eventSink = nil; observers.removeAll() }
+
   func loadOptions(headers: [String: String]) -> LoadOptions {
     var result = LoadOptions()
     result.httpHeaders = headers
     result.autoplay = false
+    result.audioDelaySeconds = options["audioDelaySeconds"] as? Double ?? 0
     result.matchContentEnabled = options["wantsHdr"] as? Bool ?? true
     result.attemptsHDRMasterOnUnprovenPanel = result.matchContentEnabled
     result.dolbyVisionHandling = (options["dolbyVision"] as? Bool ?? true) ? .automatic : .baseLayerOnly
     // Keep the remux path: audio switching/headers/HDR work for MKV and HLS alike.
+    result.preferredDecodePath = (options["hardwareDecoding"] as? Bool ?? true) ? .automatic : .software
     result.nativeRemoteHLS = false
     result.preserveASSMarkup = false // Plain native caption overlay; libass stays available in MPV.
     result.confirmAtmos = true
@@ -153,6 +194,8 @@ private final class AetherSession {
 
   func applyTransportOptions() {
     engine.setRate(Float(options["speed"] as? Double ?? 1))
+    engine.setAudioDelay(options["audioDelaySeconds"] as? Double ?? 0)
+    surface?.updateSubtitles()
     if options["subtitlesEnabled"] as? Bool == false { surface?.hideSubtitles() }
   }
 
@@ -193,10 +236,13 @@ private final class AetherSession {
     }
     if options["enhancementEnabled"] as? Bool == true { presentation.append("画质增强：当前内核未接入，请切换 MPV") }
     var value: [String: Any] = [
+      "generation": generation,
+      "firstFrameReady": engine.hasFirstFrameReadyForDisplay,
+      "bufferedSeconds": max(0, engine.clock.bufferedPosition - engine.clock.sourceTime),
       "position": engine.currentTime.isFinite ? engine.currentTime : 0,
       "duration": engine.duration.isFinite ? engine.duration : 0,
       "playing": engine.state == .playing,
-      "buffering": engine.isBuffering || engine.state == .loading,
+      "buffering": engine.isBuffering || engine.state == .loading || (loaded && engine.sourceVideoWidth > 0 && !engine.hasFirstFrameReadyForDisplay),
       "width": Int(engine.sourceVideoWidth), "height": Int(engine.sourceVideoHeight),
       "bitrate": Double(engine.sourceVideoBitrate) / 1000,
       "presentation": presentation,
@@ -215,6 +261,7 @@ private final class AetherSurface: NSObject, FlutterPlatformView {
   private let video = AetherPlayerView(frame: .zero)
   private let caption = UILabel()
   private let bitmap = UIImageView()
+  private var captionBottom: NSLayoutConstraint?
   private weak var session: AetherSession?
 
   init(frame: CGRect, session: AetherSession?) {
@@ -227,6 +274,7 @@ private final class AetherSurface: NSObject, FlutterPlatformView {
     caption.layer.shadowColor = UIColor.black.cgColor; caption.layer.shadowOpacity = 1
     caption.layer.shadowRadius = 2; caption.layer.shadowOffset = .zero
     bitmap.contentMode = .scaleAspectFit
+    captionBottom = caption.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -24)
     NSLayoutConstraint.activate([
       video.leadingAnchor.constraint(equalTo: container.leadingAnchor), video.trailingAnchor.constraint(equalTo: container.trailingAnchor),
       video.topAnchor.constraint(equalTo: container.topAnchor), video.bottomAnchor.constraint(equalTo: container.bottomAnchor),
@@ -234,7 +282,7 @@ private final class AetherSurface: NSObject, FlutterPlatformView {
       bitmap.topAnchor.constraint(equalTo: container.topAnchor), bitmap.bottomAnchor.constraint(equalTo: container.bottomAnchor),
       caption.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
       caption.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-      caption.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -24),
+      captionBottom!,
     ])
     session?.surface = self
     session?.engine.bind(view: video)
@@ -243,9 +291,22 @@ private final class AetherSurface: NSObject, FlutterPlatformView {
   func hideSubtitles() { caption.text = nil; bitmap.image = nil }
   func updateSubtitles() {
     guard let session = session, session.options["subtitlesEnabled"] as? Bool != false else { hideSubtitles(); return }
-    let time = session.engine.currentTime
+    let time = session.engine.clock.sourceTime - (session.options["subtitleDelaySeconds"] as? Double ?? 0)
     let cues = session.engine.subtitleCues.filter { $0.startTime <= time && time < $0.endTime }
-    caption.text = cues.compactMap { $0.text }.joined(separator: "\n")
+    let text = cues.compactMap { $0.text }.joined(separator: "\n")
+    let size = CGFloat(session.options["subtitleFontSize"] as? Double ?? 24)
+    let fontName = session.options["subtitleFont"] as? String ?? ""
+    let argb = (session.options["subtitleArgb"] as? NSNumber)?.uint32Value ?? 0xffffffff
+    let color = UIColor(red: CGFloat((argb >> 16) & 255) / 255, green: CGFloat((argb >> 8) & 255) / 255,
+      blue: CGFloat(argb & 255) / 255, alpha: CGFloat((argb >> 24) & 255) / 255)
+    let outline = session.options["subtitleOutlineWidth"] as? Double ?? 1.5
+    caption.attributedText = NSAttributedString(string: text, attributes: [
+      .font: UIFont(name: fontName, size: size) ?? UIFont.systemFont(ofSize: size, weight: .medium),
+      .foregroundColor: color, .strokeColor: UIColor.black, .strokeWidth: -outline,
+    ])
+    caption.backgroundColor = UIColor(white: 0, alpha: session.options["subtitleBackground"] as? Double ?? 0.45)
+    caption.layer.shadowRadius = CGFloat((session.options["subtitleShadow"] as? Double ?? 0) * 6)
+    captionBottom?.constant = -CGFloat(max(0, min(160, 24 + (session.options["subtitleOffsetY"] as? Double ?? 0) * 120)))
     // Preserve the bitmap canvas geometry; subtitles are not stretched to fill the picture.
     guard !container.bounds.isEmpty else { bitmap.image = nil; return }
     let renderer = UIGraphicsImageRenderer(size: container.bounds.size)

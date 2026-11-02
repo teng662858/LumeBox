@@ -1,3 +1,5 @@
+import 'package:lume_box/features/comic/offline_comic_source.dart';
+
 import 'dart:async';
 import 'dart:io';
 
@@ -32,6 +34,55 @@ void main() {
     await SectionScope.closeAll();
     root.deleteSync(recursive: true);
   });
+  test('downloaded chapters can be read offline after restart without reopening the source', () async {
+    final png = img.encodePng(img.Image(width: 2, height: 2));
+    final source = FakeReadingDataSource(section: Section.comic, imageCount: 2);
+    final center = ComicDownloadCenter(
+      directory: () async => root,
+      pipelineFactory: (source, lib) => SectionImagePipeline(
+        cacheDir: lib.imageCacheDir,
+        diskCache: false,
+        requestSender: (_) async => NetworkResponse(
+          statusCode: 200,
+          body: png,
+          headers: {'content-type': 'image/png'},
+        ),
+      ),
+    );
+    await center.boot();
+    final down = center.attach(
+      source: source,
+      library: library,
+      itemId: 'offline',
+      title: 'Offline comic',
+    );
+    await center.enqueue(
+      down,
+      const [SourceChapter(id: 'first', title: 'Chapter 1')],
+      [0],
+    );
+    await center.flush();
+    final restarted = ComicDownloadCenter(
+      directory: () async => root,
+      openSource: (_, _) async => throw StateError('network must not be used'),
+    );
+    await restarted.boot();
+    final local = await OfflineComicSource.open(
+      restarted.tasks.single,
+      library,
+    );
+    expect((await local.chapters('offline')).single.id, 'first');
+    final content = await local.content(
+      itemId: 'offline',
+      chapterId: 'first',
+    ) as ImageContent;
+    expect(content.images, hasLength(2));
+    for (final url in content.images) {
+      expect(Uri.parse(url).scheme, 'file');
+      expect(await File.fromUri(Uri.parse(url)).readAsBytes(), png);
+    }
+  });
+
   test('全局下载离开页面不依赖页面管线，任务重开可恢复并跳过已有图片', () async {
     final source = FakeReadingDataSource(section: Section.comic, imageCount: 2);
     var requests = 0;

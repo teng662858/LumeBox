@@ -1,3 +1,7 @@
+import '../download/download_selection.dart';
+import '../comic/download_center_page.dart';
+import 'video_download_center.dart';
+
 import 'dart:convert';
 
 import '../../core/player/playback_diagnostics.dart';
@@ -94,6 +98,7 @@ class VideoDetailPage extends StatefulWidget {
     required this.library,
     required this.onPlay,
     this.prelaunch,
+    this.downloadCenter,
     this.initialChapterId,
     this.resumeRequest,
   });
@@ -109,6 +114,7 @@ class VideoDetailPage extends StatefulWidget {
   final ReadingLibrary library;
   final OpenVideoPlayer onPlay;
   final PlayerPrelaunch? Function()? prelaunch;
+  final VideoDownloadCenter? downloadCenter;
   @override
   State<VideoDetailPage> createState() => _VideoDetailPageState();
 }
@@ -374,6 +380,29 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           }
         });
       }
+    }
+  }
+
+  Future<void> downloadVideo() async {
+    if (_source == null || chapters.isEmpty || resolving) return;
+    final source = _source!;
+    final episodes = List<SourceChapter>.of(chapters);
+    final indices = await selectDownloadChapters(
+      context,
+      episodes,
+      initial: selected,
+    );
+    if (indices == null || !mounted) return;
+    await (widget.downloadCenter ?? VideoDownloadCenter.instance).enqueue(
+      sourceId: source.id,
+      itemId: widget.item.id,
+      title: widget.item.title,
+      chapters: [for (final i in indices) episodes[i]],
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已添加 ${indices.length} 集到下载中心')));
     }
   }
 
@@ -851,6 +880,15 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           tooltip: '更多',
           onSelected: (action) {
             switch (action) {
+              case 'download':
+                downloadVideo();
+              case 'downloads':
+                Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const DownloadCenterPage(),
+                  ),
+                );
               case 'search':
                 searchCurrentVideo();
               case 'resource-info':
@@ -882,6 +920,12 @@ class _VideoDetailPageState extends State<VideoDetailPage>
             }
           },
           itemBuilder: (_) => videoGlassMenuEntries<String>([
+            PopupMenuItem(
+              value: 'download',
+              enabled: !resolving && chapters.isNotEmpty,
+              child: const Text('下载视频 / 选集'),
+            ),
+            const PopupMenuItem(value: 'downloads', child: Text('下载中心')),
             if (conciseVideoSubtitle(
                   rawSourceSubtitle,
                   availableEpisodes: chapters.length,

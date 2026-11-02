@@ -195,9 +195,30 @@ private final class ConfigurationExportController: NSObject, UIDocumentPickerDel
   func register(with messenger: FlutterBinaryMessenger) {
     FlutterMethodChannel(name: "lumebox/configuration", binaryMessenger: messenger)
       .setMethodCallHandler { [weak self] call, result in
-        guard ["export", "share"].contains(call.method) else { result(FlutterMethodNotImplemented); return }
+        guard ["export", "share", "exportPath"].contains(call.method) else { result(FlutterMethodNotImplemented); return }
         guard let self = self else { result(false); return }
         guard self.pending == nil else { result(FlutterError(code: "busy", message: "An export is already open", details: nil)); return }
+        if call.method == "exportPath" {
+          guard let args = call.arguments as? [String: Any], let path = args["path"] as? String else {
+            result(FlutterError(code: "arguments", message: "Missing local file", details: nil)); return
+          }
+          let url = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL
+          let home = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath().standardizedFileURL.path
+          var directory: ObjCBool = false
+          guard url.path.hasPrefix(home + "/"), FileManager.default.fileExists(atPath: url.path, isDirectory: &directory), !directory.boolValue else {
+            result(FlutterError(code: "arguments", message: "Invalid local file", details: nil)); return
+          }
+          var presenter = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }.first(where: { $0.isKeyWindow })?.rootViewController
+          while let next = presenter?.presentedViewController { presenter = next }
+          guard let viewController = presenter else { result(false); return }
+          let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
+          self.pending = result
+          self.temporary = nil // This is the user's download; never delete it on picker dismissal.
+          picker.delegate = self
+          viewController.present(picker, animated: true)
+          return
+        }
         guard let args = call.arguments as? [String: Any],
               let name = args["name"] as? String, !name.isEmpty, name == (name as NSString).lastPathComponent,
               let data = (args["bytes"] as? FlutterStandardTypedData)?.data ?? (args["text"] as? String)?.data(using: .utf8),
@@ -221,9 +242,7 @@ private final class ConfigurationExportController: NSObject, UIDocumentPickerDel
             viewController.present(activity, animated: true)
             return
           }
-          let picker: UIDocumentPickerViewController
-          if #available(iOS 14.0, *) { picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true) }
-          else { picker = UIDocumentPickerViewController(url: url, in: .exportToService) }
+          let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
           self.pending = result
           self.temporary = url
           picker.delegate = self

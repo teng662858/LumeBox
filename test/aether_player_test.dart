@@ -1,3 +1,5 @@
+import 'package:lume_box/core/player/buffering.dart';
+
 import 'dart:async';
 
 import 'package:flutter/services.dart';
@@ -13,6 +15,11 @@ void main() {
   Completer<int>? creating;
   setUp(() {
     calls.clear();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('lumebox/aether/42/events'),
+          (_) async => null,
+        );
     loading = null;
     creating = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -45,6 +52,11 @@ void main() {
   });
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('lumebox/aether/42/events'),
+          null,
+        );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(AetherPlayer.channel, null);
   });
 
@@ -75,6 +87,70 @@ void main() {
     await player.selectAudioTrack('7');
     expect((calls.last.arguments as Map)['track'], 7);
     expect(PlayerKernel.fromId('aether'), PlayerKernel.aether);
+  });
+
+  test('subtitle, audio delay, decoder and buffering settings reach the real native option names', () async {
+    final player = AetherPlayer();
+    addTearDown(player.dispose);
+    await player.applySettings(
+      const PlayerSettings(
+        kernel: PlayerKernel.aether,
+        hardwareDecoding: false,
+      ).copyWith(
+        subtitleColor: SubtitleColor.yellow,
+        subtitleDelay: const Duration(milliseconds: 400),
+        audioDelay: const Duration(milliseconds: -200),
+      ),
+    );
+    await player.setBuffering(
+      const BufferingConfig(
+        readAhead: Duration(seconds: 30),
+        maxBufferBytes: 128 * 1024 * 1024,
+      ),
+    );
+    final args =
+        calls.lastWhere((c) => c.method == 'settings').arguments as Map;
+    final options = args['options'] as Map;
+    expect(options['hardwareDecoding'], false);
+    expect(options['subtitleArgb'], SubtitleColor.yellow.argb);
+    expect(options['subtitleDelaySeconds'], 0.4);
+    expect(options['audioDelaySeconds'], -0.2);
+    expect(options['forwardBufferSeconds'], 30);
+    expect(options['maxBufferBytes'], 128 * 1024 * 1024);
+    expect(player.capabilities.subtitleStyle, true);
+    expect(player.capabilities.hardwareDecoding, true);
+  });
+
+  test('native first-frame events are accepted only for the current load generation', () async {
+    final player = AetherPlayer();
+    addTearDown(player.dispose);
+    await player.load(PlayerMedia(uri: Uri.file('/movie.mkv')));
+    Future<void> event(Map<String, Object?> data) async {
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+            'lumebox/aether/42/events',
+            const StandardMethodCodec().encodeSuccessEnvelope(data),
+            (_) {},
+          );
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    await event({
+      'generation': 1,
+      'firstFrameReady': true,
+      'position': 0,
+      'width': 1920,
+      'height': 1080,
+    });
+    expect(player.stats.value.firstFrameReady, true);
+    await event({
+      'generation': 0,
+      'firstFrameReady': false,
+      'width': 1,
+      'height': 1,
+    });
+    expect(player.stats.value.firstFrameReady, true);
+    expect(player.stats.value.width, 1920);
   });
 
   test('dispose bypasses a blocked load and stale completions cannot update notifiers', () async {

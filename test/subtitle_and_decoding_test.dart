@@ -1,3 +1,5 @@
+import 'package:lume_box/core/player/mdk_engine.dart';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -23,6 +25,18 @@ import 'package:lume_box/features/video/video_player_settings.dart';
 /// `mpv_player_test` 与 `MpvEngine` 的接口说明）。其中「延迟与硬解当前只记录
 /// 不生效」这条是如实标注的边界，用例把它钉住，避免将来被误读成已实现。
 void main() {
+  test('MDK decoder preference uses the SDK decoder API names and keeps software decoding explicit', () {
+    expect(MdkEngine.decoderPriority(true, platform: 'ios'), [
+      'VT',
+      'FFmpeg',
+      'dav1d',
+    ]);
+    expect(MdkEngine.decoderPriority(false, platform: 'ios'), [
+      'FFmpeg',
+      'dav1d',
+    ]);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory root;

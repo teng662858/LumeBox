@@ -1,0 +1,258 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:archive/archive.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/source/source.dart';
+import 'package:lume_box/features/download/local_download_export.dart';
+import 'package:lume_box/features/video/offline_video_server.dart';
+import 'package:lume_box/features/video/video_download_center.dart';
+
+Future<void> until(bool Function() condition) async {
+  final watch = Stopwatch()..start();
+  while (!condition()) {
+    if (watch.elapsed > const Duration(seconds: 10)) {
+      throw StateError('test timed out');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  late Directory root;
+  late HttpServer server;
+  late Uri origin;
+  setUp(() async {
+    HttpOverrides.global = null;
+    root = await Directory.systemTemp.createTemp('lume-download-test-');
+    server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    origin = Uri.parse('http://127.0.0.1:${server.port}/');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (_) async => root.path,
+        );
+  });
+  tearDown(() async {
+    await server.close(force: true);
+    if (await root.exists()) await root.delete(recursive: true);
+  });
+  Future<VideoDownloadCenter> center(
+    String path, {
+    Map<String, String> headers = const {},
+  }) async {
+    final value = VideoDownloadCenter(
+      directory: () async => root,
+      resolve: (_) async =>
+          VideoContent(url: origin.resolve(path), headers: headers),
+    );
+    await value.boot();
+    return value;
+  }
+
+  Future<void> enqueue(VideoDownloadCenter c) async => c.enqueue(
+    sourceId: 'fixture',
+    itemId: 'movie',
+    title: 'Movie',
+    chapters: const [SourceChapter(id: 'episode', title: 'Episode')],
+  );
+  test('MP4 is persisted, survives restart, and resolved URLs and headers are not serialized', () async {
+    final data = Uint8List.fromList([
+      0,
+      0,
+      0,
+      24,
+      ...ascii.encode('ftypisom'),
+      ...List.filled(1000, 42),
+    ]);
+    server.listen((r) async {
+      r.response.headers.contentType = ContentType('video', 'mp4');
+      r.response.contentLength = data.length;
+      r.response.add(data);
+      await r.response.close();
+    });
+    final c = await center(
+      'movie.mp4?token=private',
+      headers: {'Cookie': 'session=private', 'Authorization': 'Bearer private'},
+    );
+    await enqueue(c);
+    await until(() => c.tasks.single.state == 'done');
+    await c.flush();
+    expect(await c.localFile(c.tasks.single).readAsBytes(), data);
+    final manifest = await File('${c.root.path}/tasks.json').readAsString();
+    expect(manifest, isNot(contains('private')));
+    final restored = VideoDownloadCenter(directory: () async => root);
+    await restored.boot();
+    expect(restored.tasks.single.state, 'done');
+    expect(await restored.localFile(restored.tasks.single).readAsBytes(), data);
+  });
+  test('pause then resume uses Range and preserves exact file bytes', () async {
+    final data = Uint8List.fromList(List.generate(256 * 1024, (i) => i % 251));
+    final ranges = <String?>[];
+    server.listen((r) async {
+      try {
+        final range = r.headers.value('range');
+        ranges.add(range);
+        final start = range == null
+            ? 0
+            : int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!);
+        r.response.headers.set('ETag', '"fixture"');
+        r.response.headers.contentType = ContentType('video', 'mp4');
+        if (start > 0) {
+          r.response.statusCode = 206;
+          r.response.headers.set(
+            'Content-Range',
+            'bytes $start-${data.length - 1}/${data.length}',
+          );
+        }
+        r.response.contentLength = data.length - start;
+        for (var offset = start; offset < data.length; offset += 4096) {
+          r.response.add(
+            data.sublist(offset, (offset + 4096).clamp(0, data.length)),
+          );
+          await r.response.flush();
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        await r.response.close();
+      } catch (_) {}
+    });
+    final c = await center('movie.mp4');
+    await enqueue(c);
+    await until(() => c.tasks.single.bytes > 8192);
+    await c.pause(c.tasks.single);
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    await c.resume(c.tasks.single);
+    await until(() => c.tasks.single.state == 'done');
+    await c.flush();
+    expect(ranges.any((r) => r != null), true);
+    expect(await c.localFile(c.tasks.single).readAsBytes(), data);
+  });
+  test('HLS retries completed fragments, stores AES-128 keys, and plays through local HTTP without origin access', () async {
+    var first = 0, second = 0;
+    const playlist =
+        '#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-KEY:METHOD=AES-128,URI="key"\n#EXTINF:4,\na.ts\n#EXTINF:4,\nb.ts\n#EXT-X-ENDLIST\n';
+    server.listen((r) async {
+      switch (r.uri.path) {
+        case '/index.m3u8':
+          r.response.write(playlist);
+        case '/key':
+          r.response.add(List.filled(16, 7));
+        case '/a.ts':
+          first++;
+          r.response.add(List.filled(188, 65));
+        case '/b.ts':
+          second++;
+          if (second == 1) {
+            r.response.statusCode = 500;
+          } else {
+            r.response.add(List.filled(188, 66));
+          }
+      }
+      await r.response.close();
+    });
+    final c = await center('index.m3u8');
+    await enqueue(c);
+    await until(() => c.tasks.single.state == 'failed');
+    await c.resume(c.tasks.single);
+    await until(() => c.tasks.single.state == 'done');
+    await c.flush();
+    expect(first, 1);
+    expect(second, 2);
+    expect(c.tasks.single.completed, 2);
+    final local = await OfflineVideoServer.open(
+      Directory(c.folder(c.tasks.single)),
+    );
+    final client = HttpClient();
+    try {
+      final r = await (await client.getUrl(local.uri)).close();
+      final text = await utf8.decodeStream(r);
+      expect(text, contains('#EXTM3U'));
+      expect(text, isNot(contains(origin.toString())));
+      final segment = const LineSplitter()
+          .convert(text)
+          .firstWhere((l) => l.isNotEmpty && !l.startsWith('#'));
+      final request = await client.getUrl(local.uri.resolve(segment));
+      request.headers.set('Range', 'bytes=0-2');
+      final response = await request.close();
+      expect(response.statusCode, 206);
+      expect(await response.expand((b) => b).toList(), [65, 65, 65]);
+    } finally {
+      client.close(force: true);
+      await local.close();
+    }
+  });
+  test('HLS master retains a selected separate audio rendition', () async {
+    final paths = <String>[];
+    server.listen((r) async {
+      paths.add(r.uri.path);
+      switch (r.uri.path) {
+        case '/master.m3u8':
+          r.response.write(
+            '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Original",DEFAULT=YES,URI="audio.m3u8"\n#EXT-X-STREAM-INF:BANDWIDTH=200,AUDIO="audio"\nvideo.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=100\nlow.m3u8\n',
+          );
+        case '/audio.m3u8':
+          r.response.write('#EXTM3U\n#EXTINF:1,\na.aac\n#EXT-X-ENDLIST\n');
+        case '/video.m3u8':
+          r.response.write('#EXTM3U\n#EXTINF:1,\nv.ts\n#EXT-X-ENDLIST\n');
+        default:
+          r.response.add([1, 2, 3]);
+      }
+      await r.response.close();
+    });
+    final c = await center('master.m3u8');
+    await enqueue(c);
+    await until(() => c.tasks.single.state == 'done');
+    await c.flush();
+    expect(
+      paths,
+      containsAll(['/audio.m3u8', '/video.m3u8', '/a.aac', '/v.ts']),
+    );
+    expect(paths, isNot(contains('/low.m3u8')));
+    final master = await c.localFile(c.tasks.single).readAsString();
+    expect(master, contains('URI="index-audio.m3u8"'));
+  });
+  test(
+    'DRM and live HLS are reported as failures, never as completed downloads',
+    () async {
+      server.listen((r) async {
+        r.response.write(
+          '#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI="key"\n#EXTINF:1,\na.ts\n#EXT-X-ENDLIST\n',
+        );
+        await r.response.close();
+      });
+      final c = await center('index.m3u8');
+      await enqueue(c);
+      await until(() => c.tasks.single.state == 'failed');
+      expect(c.tasks.single.error, contains('加密格式'));
+      expect(c.tasks.single.fileName, '');
+    },
+  );
+  test('HLS ZIP export includes only local referenced files and survives export cancellation', () async {
+    final dir = await Directory('${root.path}/offline').create();
+    await Directory('${dir.path}/segments').create();
+    await File('${dir.path}/index.m3u8')
+        .writeAsString('#EXTM3U\n#EXTINF:1,\nsegments/a.ts\n#EXT-X-ENDLIST\n');
+    await File('${dir.path}/segments/a.ts').writeAsBytes([1, 2, 3]);
+    await File('${dir.path}/resume.json').writeAsString('private');
+    final saved = await LocalDownloadExport.directory(
+      dir,
+      entryPoint: 'index.m3u8',
+      exporter: (file) async {
+        final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
+        expect(
+          archive.files.map((f) => f.name),
+          containsAll(['index.m3u8', 'segments/a.ts']),
+        );
+        expect(
+          archive.files.map((f) => f.name),
+          isNot(contains('resume.json')),
+        );
+        return false;
+      },
+    );
+    expect(saved, false);
+    expect(await File('${dir.path}/index.m3u8').exists(), true);
+  });
+}
