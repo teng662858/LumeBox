@@ -6,6 +6,14 @@
 **VIP 只锁交易（券/金币/会员），`canWatch:false` 时接口照常下发 videoUrl+access，换 m3u8 实测 200**，
 无需会员态。搜索参数未公开，本源不提供搜索。详见 [记录](../docs/2026-11-02_橙涩视频源-加密链路与VIP绕过.md)。
 
+## 2026-11-02 橙涩视频 v2.0.0（`video/chengshe.js`，详见 [源记录](docs/2026-11-02_橙涩视频v2-VIP直连与短剧搜索.md)）
+
+同站升级：**VIP/金币只是前端遮罩** —— `findVideoById` 对 `canWatch:false` 的付费片（price 5-9）照样下发 `videoUrl`，
+`https://pic.tbem.org` + `videoUrl` 实测 **12/12 → 200 + #EXTM3U**（HLS 标准 AES-128，`index.key` 200/16 B），
+不需要会员态也不需要买券。v2 把播放从 `/api/dec/m3u/ios/access.m3u8` 改成 **CDN 直连**（旧线路保留兜底），
+并补上**短剧板块**（`/api/videoSerial/*`，整部一条播放列表，按「全集」一集处理）和**站内搜索**
+（`POST /api/video/findVideoByTag {tagTitles}`，按标签命中）；首页改成排行榜 / 橙涩短剧 / 热门三个板块。
+
 ## 2026-11-02 稳定性与起播优化
 
 厂长资源 v1.0.3：明确识别网页校验并保留错误；详情与选集请求合并、复用 60 秒；连接失败时从官方发布页读取并验证新主地址。

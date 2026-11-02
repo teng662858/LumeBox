@@ -1,30 +1,46 @@
-// LumeSource: {"id":"chengshe_video","name":"橙涩视频","version":"1.0.0","category":"video","contentCategory":"adult","mirrors":["https://6s9b2f4hkmbh.xyz","https://qtrvqim.p04x0hyl.cc","https://qtrvqim.47svemtl.cc"],"network":"direct","icon":"https://6s9b2f4hkmbh.xyz/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页","url":"https://8if2pvzp.cc/","description":"站点换域名时先看这里；官方邮箱 chs8@pm.me 可索取最新地址"},{"key":"note","type":"info","title":"站点说明","description":"橙涩视频（H5，Vite 构建）：接口全量 AES 加密（请求 encData / 响应 encData），匿名 POST /user/tryLogin 拿 token 后即可全量取数。VIP/金币只是前端遮罩——详情接口对非会员同样下发 videoUrl+access，凭 access 换 m3u8 实测 200（canWatch=false 也照播）。线路：line 域名根路径返回 {result,pool} 给 API 域名池，源内自发现并缓存 12h。搜索接口参数未公开，本源不提供搜索。"}]}
+// LumeSource: {"id":"chengshe_video","name":"橙涩视频","version":"2.0.0","category":"video","contentCategory":"adult","mirrors":["https://6s9b2f4hkmbh.xyz"],"network":"direct","icon":"https://6s9b2f4hkmbh.xyz/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页","url":"https://8if2pvzp.cc","description":"站点换域名时先看这里（离线页里还有备用地址与邮箱）"},{"key":"note","type":"info","title":"站点说明","description":"橙涩视频（6s9b2f4hkmbh.xyz，Vue3 SPA + Cloudflare）：接口在独立 API 域（30 个 .cc 短链的 /api/sys/findLive 自发现）；请求参数 AES-CBC（key = iv = 毫秒时间戳 + 000），响应用 token 第 3-18 位倒序做 key 解。首次访问用 POST /user/tryLogin {deviceId} 自动拿游客 token，无需注册。VIP/金币片（price 5-9）接口层不鉴权：详情照发 videoUrl，拼 CDN 直接播——实测含 VIP 片 12/12 200 + #EXTM3U，HLS 是标准 AES-128（index.key 可取）。v2.0.0 增加短剧板块与站内搜索（/video/findVideoByTag 按标签命中）。"}]}
 // LumeRuntime: javascript
 //
-// 站点：橙涩视频（当前 H5 入口 https://6s9b2f4hkmbh.xyz，随机域名，会换）。
-// 结构（2026-11-02 实测）：
-//   线路发现  GET https://<line 域名>/                → {"status":"success","result":"https://qtrvqim.xxxx.cc/","pool":"…"}
-//   健康检查  GET <apiDomain>/api/sys/findLive        → {"code":200,"data":{"client":"mobile","pt":"CS"}}
-//   匿名注册  POST <api>/user/tryLogin {deviceId}     → 明文 JSON：{userId,token,freeWatches,vipType…}（**不加密**）
-//   分类      GET  <api>/video/findClassifyList       → [{classifyId,classifyTitle,needVip,type}]
-//   排行/热门  GET  <api>/video/findRankList {page,pageSize}
-//   大库      POST <api>/video/library {page,pageSize,classifyId?}
-//   分类视频  POST <api>/video/findClassifyVideos {classifyId,page,pageSize}
-//   详情      GET  <api>/video/findVideoById {videoId} → videoUrl(/hls/xxx.m3u8)、access、coverImg、price、canWatch
-//   播放      GET  <api>/dec/m3u/ios/access.m3u8?encData=<AES({access,path,id})>&t=&s=&_timestamp=
-//             → 200 application/vnd.apple.mpegurl，内部分片带独立 access（AES-128 key + ts 实测 200）
-//   封面      https://pic.tbem.org + coverImg[0].coverImg（200，WEBP 字节）
-//   域名池    GET  <api>/sys/findDomain → imageCdn / mp4Cdn / videoCdnList
+// 站点：橙涩视频（入口 https://6s9b2f4hkmbh.xyz，随机域名，会换）。
 //
-// 加密（前端 fetch 拦截器原样复刻）：
-//   请求：salt = 13 位毫秒时间戳 t；key = iv = t + "000"（16 字节）；AES-128-CBC/PKCS7；Base64
-//         header 另带 t、s = md5(t.slice(3,9))、app=cs、vn=2.6.0、deviceid、permissions=token
-//   响应：encData（Base64）用 key = iv = token.slice(2,18) 反转 16 字符解 AES-128-CBC
+// 一、协议（2026-11-02 用 Tabbit 抓真实请求逐字段还原）
+//   线路发现  GET https://<line 域名>/ 或 /api/sys/findLive
+//             → {"status":"success","result":"https://qtrvqim.xxxx.cc/","pool":"…"}
+//   健康检查  GET <api>/api/sys/findLive     → {"code":200,"data":{"client":"mobile","pt":"CS"}}
+//   匿名登录  POST <api>/api/user/tryLogin {"deviceId":"app_…"}（**不带 permissions 头**）
+//             → 明文 JSON {userId,token,…}；同一个 deviceId 反复调用是同一个号
+//   分类      GET  <api>/api/video/findClassifyList
+//   排行榜    GET  <api>/api/video/findRankList        （只有一页 30 条）
+//   分类视频  POST <api>/api/video/findClassifyVideos {page,pageSize,classifyId}
+//   标签搜索  POST <api>/api/video/findVideoByTag     {page,pageSize,tagTitles:[kw]}
+//   详情      GET  <api>/api/video/findVideoById      {videoId} → videoUrl / access / canWatch / price
+//   短剧分类  GET  <api>/api/videoSerial/findClassify
+//   短剧列表  GET  <api>/api/videoSerial/findListByClass {page,pageSize,classifyId}
+//   短剧详情  GET  <api>/api/videoSerial/findDetail   {serialId} → videoUrl / epList / videoNum
+//   域名池    GET  <api>/api/sys/findDomain → imageCdn / mp4Cdn / videoCdnList
 //
-// VIP：站点 VIP/金币锁的是「下单/观影券/会员权益」这些交易动作；播放层不校验——
-//     canWatch=false、freeWatches=0 时 detail 照样给 access，access 换 m3u8 实测 200 且分片可取。
-//     即「页面层可绕，直接取地址」，本源不需要任何会员态，也不需要买券。
-// 限制：站点无公开搜索参数（/search/content 传 keyword 返回 400），本源搜索给可读错误。
+// 二、加密（前端 fetch 拦截器原样复刻）
+//   请求：t = 13 位毫秒时间戳；key = iv = t + "000"（16 字节）；AES-128-CBC/PKCS7；Base64
+//         头另带 t、s = md5(t.slice(3,9))、app=cs、vn=2.6.0、deviceid、permissions=token
+//   响应：{"code":200,"encData":"…"}，解密 key = iv = token.slice(2,18) 反转后的 16 字符
+//
+// 三、VIP / 金币挡在哪层（2026-11-02 实测：只挡前端）
+//   · 详情返回 canWatch:false、reasonType:2/3，但 **videoUrl 照样下发**（相对路径 …/hls/x.m3u8）；
+//     前端点播放才弹 VipInterceptionAlert，接口没有任何服务端鉴权。
+//   · CDN 主机来自 /api/sys/findDomain → data.imageCdn[].domain
+//     （当前 https://pic.tbem.org / https://pic.tqonth.com；mp4Cdn 的 play.* 反而 403）。
+//   · 实测抽 12 条（其中 8 条 price>0 的 VIP 片）：CDN + videoUrl 12/12 200 + #EXTM3U，
+//     分片 200（单段 3.4 MB）；HLS 为标准 AES-128（#EXT-X-KEY:METHOD=AES-128,URI="index.key"），
+//     index.key 200 + 16 字节。
+//   · 短剧 findDetail 同样给 canWatch:true + videoUrl（整部一条播放列表）；
+//     epList 只是前端分集，epNum 传了不影响返回 → 本源按「全集」一集处理。
+//   · 老线路 /api/dec/m3u/ios/access.m3u8?encData=… 仍然可用，放在 CDN 直连失败时兜底。
+//
+// 四、限制
+//   · 全站 18+；封面/CDN 的 Content-Type 是伪装过的 text/base64.jpg，内容是正常图片。
+//   · 站内搜索是「按标签命中」（tagTitles=[关键词]），不是全文搜索。
+//   · 排行榜没有翻页；分类「精选」(classifyId 14) 接口返回空，本源不列（不拿别的分类顶替）。
+//   · 换域名时的替换点：SEEDS（短链池）、FALLBACK_API、IMG_CDN。
 
 var SEEDS = [
   'https://18rrqswd.cc', 'https://wby3n4sn.cc', 'https://646jlp2d.cc', 'https://k56y3zzo.cc',
@@ -33,15 +49,18 @@ var SEEDS = [
   'https://fg6jn3j7.cc', 'https://djetrr1v.cc', 'https://dqhdp64b.cc', 'https://b603pe32.cc',
   'https://6ys7yxf5.cc', 'https://zriiiylx.cc', 'https://iygrso11.cc', 'https://dk0cp4p7.cc',
   'https://xb20l848.cc', 'https://w6i0l6vj.cc', 'https://802ivhl2.cc', 'https://32bfqtjy.cc',
-  'https://z3m5278f.cc', 'https://q79jtf5d.cc', 'https://vlstzfz.cc', 'https://5m76d0ji.cc',
+  'https://z3m5278f.cc', 'https://q79jtf5d.cc', 'https://vlstzf9z.cc', 'https://5m76d0ji.cc',
   'https://rszoiokv.cc', 'https://4e608owo.cc'
 ];
 var FALLBACK_API = ['https://qtrvqim.p04x0hyl.cc', 'https://qtrvqim.47svemtl.cc'];
 var IMG_CDN = ['https://pic.tbem.org', 'https://pic.tqonth.com'];
+var SITE = 'https://6s9b2f4hkmbh.xyz';
 var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 var CACHE_KEY_API = 'chengshe.api';
 var CACHE_KEY_TOKEN = 'chengshe.token';
 var CACHE_KEY_CATS = 'chengshe.cats';
+var SERIAL_CLASSIFY = 17;
+var PAGE_SIZE = 20;
 
 var state = { api: '', token: '', deviceId: '' };
 var known = {};
@@ -100,14 +119,14 @@ async function resolveApi() {
     var ok = await probeApi(custom);
     if (ok) { state.api = ok; return ok; }
   }
-  var cached = st(CACHE_KEY_API);
+  var cached = await st(CACHE_KEY_API);
   if (cached) {
     var c = await probeApi(String(cached));
     if (c) { state.api = c; return c; }
   }
   for (var i = 0; i < SEEDS.length; i++) {
     try {
-      var res = await LumeSource.http.get(SEEDS[i] + '/', { headers: { 'User-Agent': UA } });
+      var res = await LumeSource.http.get(SEEDS[i] + '/api/sys/findLive', { headers: { 'User-Agent': UA } });
       var txt = String((res && res.body) || '');
       if (txt.indexOf('"result"') < 0) continue;
       var m = /"result"\s*:\s*"([^"]+)"/.exec(txt);
@@ -139,7 +158,7 @@ function ticket() {
 async function apiHeaders(t, s) {
   var h = {
     'User-Agent': UA, app: 'cs', vn: '2.6.0', deviceid: await deviceId(),
-    Origin: 'https://6s9b2f4hkmbh.xyz', Referer: 'https://6s9b2f4hkmbh.xyz/',
+    Origin: SITE, Referer: SITE + '/',
     Accept: 'application/json, text/plain, */*'
   };
   if (t) h.t = t;
@@ -219,6 +238,8 @@ async function ensureToken() {
   var body = JSON.stringify({ encData: aesCbcEncryptB64(JSON.stringify({ deviceId: await deviceId() }), tk.t + '000') });
   var h = await apiHeaders(tk.t, tk.s);
   h['Content-Type'] = 'application/json';
+  // 首次登录取 token 时不能带 permissions 头：带了空值服务端会直接返回空 body
+  delete h.permissions;
   var res = await httpPost(api + '/api/user/tryLogin', h, body);
   if (!res || res.status !== 200) throw new Error('匿名登录失败（HTTP ' + (res && res.status) + '）');
   var j;
@@ -241,7 +262,18 @@ function imgUrl(p) {
 function coverOf(v) {
   var arr = v && v.coverImg;
   if (arr && arr.length && arr[0] && arr[0].coverImg) return imgUrl(arr[0].coverImg);
+  var vert = v && v.verticalImg;
+  if (vert && vert.length && vert[0] && vert[0].coverImg) return imgUrl(vert[0].coverImg);
   return '';
+}
+function durationText(seconds) {
+  var total = Math.max(0, Math.round(Number(seconds) || 0));
+  var hour = Math.floor(total / 3600);
+  var minute = Math.floor((total % 3600) / 60);
+  var second = total % 60;
+  var mm = (minute < 10 ? '0' : '') + minute;
+  var ss = (second < 10 ? '0' : '') + second;
+  return hour > 0 ? hour + ':' + mm + ':' + ss : minute + ':' + ss;
 }
 function rowOf(v) {
   var id = s(v && v.videoId);
@@ -249,11 +281,28 @@ function rowOf(v) {
   var title = s(v.title).trim();
   if (!title) return null;
   var bits = [];
-  var sec = Number(v.playTime || 0);
-  if (sec > 0) bits.push(Math.round(sec / 60) + ' 分钟');
-  if (v.price && Number(v.price) > 0) bits.push('¥' + v.price);
+  if (Number(v.price) > 0) bits.push('金币 ' + v.price + '（VIP 可直接播）');
+  if (Number(v.playTime) > 0) bits.push(durationText(v.playTime));
   if (v.nickName) bits.push(s(v.nickName));
+  if (v.tagTitles && v.tagTitles.length) bits.push(v.tagTitles.slice(0, 2).join(' '));
   return { id: id, title: title, cover: coverOf(v), subtitle: bits.join(' · ') };
+}
+function serialRowOf(v) {
+  var id = s(v && v.serialId);
+  if (!id) return null;
+  var title = s(v.name).trim();
+  if (!title) return null;
+  var bits = [];
+  if (Number(v.price) > 0) bits.push('金币 ' + v.price + '（VIP 可直接播）');
+  if (v.videoNum) bits.push('共 ' + v.videoNum + ' 集');
+  if (v.tags && v.tags.length) bits.push(v.tags.slice(0, 2).join(' '));
+  return { id: 's' + id, title: title, cover: coverOf(v), subtitle: bits.join(' · ') };
+}
+function itemsOf(data) {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.data)) return data.data;
+  if (data && Array.isArray(data.list)) return data.list;
+  return [];
 }
 
 // ---------------------------------------------------------------- 分类
@@ -267,12 +316,14 @@ async function loadCats() {
     } catch (e) {}
   }
   var data = await apiGet('/api/video/findClassifyList', {});
-  var list = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : []);
+  var list = itemsOf(data);
   var out = [];
   list.forEach(function (c) {
     if (!c || c.classifyId === undefined) return;
     var t = s(c.classifyTitle).trim();
     if (!t) return;
+    // 短剧（type 4）走 videoSerial 接口，不在分类视频里
+    if (Number(c.classifyId) === SERIAL_CLASSIFY) return;
     out.push({ id: 'c' + c.classifyId, title: t, classifyId: Number(c.classifyId) });
   });
   if (!out.length) throw new Error('分类接口没有解析到分类');
@@ -281,99 +332,207 @@ async function loadCats() {
   return out;
 }
 
+async function listRanked(page, pageSize) {
+  var data = await apiGet('/api/video/findRankList', { page: page, pageSize: pageSize });
+  var rows = [];
+  itemsOf(data).forEach(function (v) { var r = rowOf(v); if (r) rows.push(r); });
+  return rows;
+}
+
+async function listClassify(cid, page, pageSize) {
+  var data = await apiPost('/api/video/findClassifyVideos', { classifyId: cid, page: page, pageSize: pageSize });
+  var rows = [];
+  itemsOf(data).forEach(function (v) { var r = rowOf(v); if (r) rows.push(r); });
+  return rows;
+}
+
+async function listSerials(page, pageSize) {
+  var data = await apiGet('/api/videoSerial/findListByClass', { classifyId: SERIAL_CLASSIFY, page: page, pageSize: pageSize });
+  var rows = [];
+  itemsOf(data).forEach(function (v) { var r = serialRowOf(v); if (r) rows.push(r); });
+  return rows;
+}
+
+async function listByKeyword(keyword, page, pageSize) {
+  var data = await apiPost('/api/video/findVideoByTag', { tagTitles: [keyword], page: page, pageSize: pageSize });
+  var rows = [];
+  itemsOf(data).forEach(function (v) { var r = rowOf(v); if (r) rows.push(r); });
+  return rows;
+}
+
+async function fetchVideo(videoId) {
+  var d = await apiGet('/api/video/findVideoById', { videoId: Number(videoId) || videoId });
+  var v = d && d.data ? d.data : d;
+  if (!v || (v.videoId === undefined && !v.title)) return null;
+  return v;
+}
+
+async function fetchSerial(serialId) {
+  var d = await apiGet('/api/videoSerial/findDetail', { serialId: Number(serialId) || serialId });
+  var v = d && d.data ? d.data : d;
+  if (!v || v.serialId === undefined) return null;
+  return v;
+}
+
 var LumeSource = {
   id: 'chengshe_video',
   name: '橙涩视频',
-  version: '1.0.0',
+  version: '2.0.0',
   category: 'video',
+  contentCategory: 'adult',
 
   async categories() {
     var cats = [];
     try { cats = await loadCats(); } catch (e) { cats = []; }
-    return [{ id: 'hot', title: '热门' }, { id: 'all', title: '全部' }].concat(cats);
+    var list = [{ id: 'hot', title: '排行榜' }, { id: 'serial', title: '橙涩短剧' }];
+    for (var i = 0; i < cats.length; i++) list.push({ id: cats[i].id, title: cats[i].title });
+    return list;
   },
 
-  async filters() { return { groups: [] }; },
-
-  async home() { return (await this.list({ page: 1, categoryId: 'hot' })).items; },
+  async home() {
+    var boards = [];
+    try {
+      var rank = await listRanked(1, 12);
+      if (rank.length) boards.push({ title: '排行榜', moreUrl: 'hot', items: rank.slice(0, 12) });
+    } catch (e) {}
+    try {
+      var serials = await listSerials(1, 12);
+      if (serials.length) boards.push({ title: '橙涩短剧', moreUrl: 'serial', items: serials.slice(0, 12) });
+    } catch (e) {}
+    try {
+      var hot = await listClassify(15, 1, 12);
+      if (hot.length) boards.push({ title: '热门', moreUrl: 'c15', items: hot.slice(0, 12) });
+    } catch (e) {}
+    if (!boards.length) {
+      throw new Error('首页板块都没取到：可能是线路或游客登录失效，重试或换镜像');
+    }
+    return boards;
+  },
 
   async list(args) {
     var a = args || {};
-    if (a.keyword) throw new Error('该站点搜索参数未公开（/search/content 需要额外签名），请用分类浏览');
     var page = Math.max(1, Number(a.page) || 1);
-    var pageSize = Number(cfg('pageSize')) || 20;
+    var pageSize = Number(cfg('pageSize')) || PAGE_SIZE;
+    var keyword = s(a.keyword).trim();
     var cat = s(a.categoryId) || 'hot';
-    var data, items;
 
+    if (keyword) {
+      var hits = await listByKeyword(keyword, page, pageSize);
+      return { items: hits, hasMore: hits.length >= pageSize };
+    }
     if (cat === 'hot') {
-      data = await apiGet('/api/video/findRankList', { page: page, pageSize: pageSize });
-      items = data && (data.data || data.list) || [];
-    } else if (cat === 'all') {
-      data = await apiPost('/api/video/library', { page: page, pageSize: pageSize });
-      items = data && (data.data || data.list) || [];
-    } else if (cat.indexOf('c') === 0) {
-      var cid = Number(cat.slice(1));
-      data = await apiPost('/api/video/findClassifyVideos', { classifyId: cid, page: page, pageSize: pageSize });
-      items = data && (data.data || data.list) || [];
-    } else {
-      throw new Error('未知分类：' + cat);
+      var rank = page > 1 ? [] : await listRanked(1, pageSize > 30 ? 30 : pageSize);
+      return { items: rank, hasMore: false };
     }
-
-    if (!Array.isArray(items)) items = [];
-    var rows = [];
-    items.forEach(function (v) { var r = rowOf(v); if (r) rows.push(r); });
-    if (!rows.length) {
-      if (page > 1) return { items: [], hasMore: false };
-      throw new Error('这一页没有解析到条目');
+    if (cat === 'serial') {
+      var serials = await listSerials(page, pageSize);
+      return { items: serials, hasMore: serials.length >= pageSize };
     }
-    return { items: rows, hasMore: items.length >= pageSize };
+    if (cat.indexOf('c') === 0) {
+      var rows = await listClassify(Number(cat.slice(1)), page, pageSize);
+      return { items: rows, hasMore: rows.length >= pageSize };
+    }
+    throw new Error('未知分类：' + cat);
   },
 
   async detail(args) {
-    var id = s(args && args.id);
+    var id = s(args && args.id).trim();
     if (!id) return null;
-    var d = await apiGet('/api/video/findVideoById', { videoId: Number(id) || id });
-    var v = d && d.data ? d.data : d;
-    if (!v || (v.videoId === undefined && !v.title)) return null;
+    if (id.charAt(0) === 's') {
+      var serial = await fetchSerial(id.slice(1));
+      if (!serial) return null;
+      var bits = [];
+      if (Number(serial.price) > 0) bits.push('金币 ' + serial.price + '（VIP 已可直接播）');
+      if (serial.videoNum) bits.push('共 ' + serial.videoNum + ' 集');
+      var tags = (serial.tags || []).filter(Boolean).map(String);
+      return {
+        id: 's' + serial.serialId,
+        title: s(serial.name) || '未命名短剧',
+        cover: coverOf(serial),
+        subtitle: bits.join(' · '),
+        tags: tags,
+        description:
+          '橙涩短剧（' + SITE + '）\n' +
+          'canWatch=' + s(serial.canWatch) + '，payType=' + s(serial.payType) + '，price=' + s(serial.price) + '\n' +
+          (tags.length ? '标签：' + tags.join('・') + '\n' : '') +
+          '接口直接下发整部播放列表，不再需要买券；本源按「全集」一集处理。'
+      };
+    }
+    var v = await fetchVideo(id);
+    if (!v) return null;
     if (v.videoUrl) known[id] = { url: s(v.videoUrl), access: s(v.access), title: s(v.title) };
-    var tags = (v.tagTitles || []).filter(Boolean).map(String);
+    var list = (v.tagTitles || []).filter(Boolean).map(String);
     var desc = [];
+    desc.push('canWatch=' + s(v.canWatch) + '，reasonType=' + s(v.reasonType) + '，price=' + s(v.price));
     if (v.nickName) desc.push('作者：' + s(v.nickName));
-    if (tags.length) desc.push('标签：' + tags.join('・'));
+    if (list.length) desc.push('标签：' + list.join('・'));
     if (v.fakeWatchTimes) desc.push('播放：' + s(v.fakeWatchTimes));
     return {
       id: id,
       title: s(v.title) || id,
       cover: coverOf(v),
+      subtitle: rowOf(v) ? rowOf(v).subtitle : '',
       description: desc.join('\n'),
-      tags: tags
+      tags: list
     };
   },
 
   async chapters(args) {
-    var id = s(args && args.id);
-    return [{ id: id, title: '播放' }];
+    var id = s(args && args.id).trim();
+    if (!id) return [];
+    if (id.charAt(0) === 's') {
+      var serial = await fetchSerial(id.slice(1));
+      if (!serial) return [];
+      var count = Number(serial.videoNum) || 1;
+      return [{ id: id, title: '全集（共 ' + count + ' 集）' }];
+    }
+    var v = await fetchVideo(id);
+    if (!v) return [{ id: id, title: '正片' }];
+    var title = '正片';
+    if (Number(v.playTime) > 0) title += ' · ' + durationText(v.playTime);
+    return [{ id: id, title: title }];
   },
 
   async content(args) {
-    var id = s(args && (args.id || args.chapterId));
+    var id = s(args && (args.id || args.chapterId)).trim();
     if (!id) throw new Error('缺少条目 ID');
-    var row = known[id];
-    if (!row || !row.url) {
-      var d = await apiGet('/api/video/findVideoById', { videoId: Number(id) || id });
-      var v = d && d.data ? d.data : d;
-      if (!v || !v.videoUrl) throw new Error('这个条目没有解析到播放地址');
-      row = { url: s(v.videoUrl), access: s(v.access) };
-      known[id] = row;
+
+    var videoUrl = '';
+    var access = '';
+    if (id.charAt(0) === 's') {
+      var serial = await fetchSerial(id.slice(1));
+      if (!serial) throw new Error('短剧详情取不到（可能已下架）');
+      videoUrl = s(serial.videoUrl);
+    } else {
+      var row = known[id];
+      if (!row || !row.url) {
+        var v = await fetchVideo(id);
+        if (!v) throw new Error('视频详情取不到（可能已下架）');
+        row = { url: s(v.videoUrl), access: s(v.access) };
+        known[id] = row;
+      }
+      videoUrl = row.url;
+      access = row.access;
     }
+
+    // 首选：CDN 直连 videoUrl（实测 VIP 片同样 200 + #EXTM3U）
+    if (videoUrl) {
+      var base = videoUrl.charAt(0) === '/' ? IMG_CDN[0] + videoUrl : videoUrl;
+      return {
+        kind: 'video',
+        url: base,
+        headers: { 'User-Agent': UA, Referer: SITE + '/' }
+      };
+    }
+    // 兜底：老线路 /api/dec/m3u/ios/access.m3u8（需要详情里的 access）
+    if (!access) throw new Error('这条没有播放地址：接口既没给 videoUrl 也没给 access');
     var api = await resolveApi();
     var tk = ticket();
-    var payload = { access: row.access, path: row.url, id: '' };
-    var enc = aesCbcEncryptB64(JSON.stringify(payload), tk.t + '000');
+    var enc = aesCbcEncryptB64(JSON.stringify({ access: access, path: videoUrl, id: '' }), tk.t + '000');
     var url = api + '/api/dec/m3u/ios/access.m3u8?encData=' + encodeURIComponent(enc) +
       '&t=' + tk.t + '&s=' + tk.s + '&_timestamp=' + Date.now();
     var h = await apiHeaders(tk.t, tk.s);
-    h.Referer = 'https://6s9b2f4hkmbh.xyz/';
+    h.Referer = SITE + '/';
     return { kind: 'video', url: url, headers: h };
   }
 };
