@@ -217,6 +217,9 @@ class SourceContentRating {
     // 18ak漫画 / 爱看漫画（www.18akmanhua.com，来自「暮色」App 内置源）：
     // /api 签名接口 + AES-256 响应，视频板块 1531 条，付费片 pay_url 直发可播。
     'akmh_video',
+    // INS AV（网页 dcuj77.com / 接口 pqtn95.com，来自「暮色」App 内置 insav 模块）：
+    // 日本 AV 厂牌聚合，请求体整体 AES 加密 + md5 签名，播放需登录（本源走网页播放）。
+    'insav_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
