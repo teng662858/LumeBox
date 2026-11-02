@@ -1,4 +1,4 @@
-// LumeSource: {"id":"lxxlxx_video","name":"LXXLXX","version":"1.1.0","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://zhs.lxxxxlxxx.com","https://zhs.lxxlxx.com","https://www.lxxlxx.com","https://hk.lxxlxx.com"],"network":"direct","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点（站方新域）","url":"https://zhs.lxxxxlxxx.com/","description":"站方自己的 301 目标：zhx./zhy.lxxlxx.com 都跳这里。源站恢复后从这里直接进站"},{"key":"note","type":"info","title":"站点说明","description":"LXXLXX（繁中成人短片）。2026-11-02 复测：zhs.lxxxxlxxx.com 与 lxxlxx.com 的 www./zhs./hk. 全系仍不可达（本机与第三方代理同为 Cloudflare 522，源站全球挂，不是脚本问题）；zhx./zhy.lxxlxx.com 还能回 301 指向新域。本源现在会**按 mirrors 依次自动换台**（每次请求最多试两台、总预算 8.5 秒），换到能开的那台会记住；全部打不通就明确报「源站不可达」，等站方恢复即可。"}]}
+// LumeSource: {"id":"lxxlxx_video","name":"LXXLXX","version":"1.1.1","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://zhs.lxxxxlxxx.com","https://zhs.lxxlxx.com","https://www.lxxlxx.com","https://hk.lxxlxx.com"],"network":"direct","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点（站方新域）","url":"https://zhs.lxxxxlxxx.com/","description":"站方自己的 301 目标：zhx./zhy.lxxlxx.com 都跳这里。源站恢复后从这里直接进站"},{"key":"note","type":"info","title":"站点说明","description":"LXXLXX（繁中成人短片）。2026-11-02 复测：zhs.lxxxxlxxx.com 与 lxxlxx.com 的 www./zhs./hk. 全系仍不可达（本机与第三方代理同为 Cloudflare 522，源站全球挂，不是脚本问题）；zhx./zhy.lxxlxx.com 还能回 301 指向新域。本源现在会**按 mirrors 依次自动换台**（每次请求最多试两台、总预算 8.5 秒），换到能开的那台会记住；全部打不通就明确报「源站不可达」，等站方恢复即可。"}]}
 //
 // 站点：https://zhs.lxxxxlxxx.com （繁中成人短片站；2026-11-01 复测：**站点改名换域了**）
 //
@@ -43,7 +43,13 @@ var H = {
 
   useDomain: function () {
     var c = (typeof LumeSource !== 'undefined' && LumeSource.config) || null;
-    this.base = String((c && c.domain) || this.defaultBase).replace(/\/+$/, '');
+    var selected = String((c && c.domain) || '').replace(/\/+$/, '');
+    // 上次换台成功的那台要留着：否则每次调用都被 useDomain() 拨回用户选的死域
+    if (this._winner && this._winnerSelected === selected) {
+      this.base = this._winner;
+      return this.base;
+    }
+    this.base = selected || this.defaultBase;
     return this.base;
   },
   entity: function (s) {
@@ -154,6 +160,9 @@ var H = {
       if (result.fatal) throw result.fatal;
       if (result.ok) {
         this.base = hosts[i];
+        this._winner = hosts[i];
+        var c0 = (typeof LumeSource !== 'undefined' && LumeSource.config) || null;
+        this._winnerSelected = String((c0 && c0.domain) || '').replace(/\/+$/, '');
         this._downAt = 0;
         return result.text;
       }
@@ -166,7 +175,7 @@ var H = {
 var LumeSource = {
   id: 'lxxlxx_video',
   name: 'LXXLXX',
-  version: '1.1.0',
+  version: '1.1.1',
   category: 'video',
   contentCategory: 'adult',
   settingsApiVersion: 2,
