@@ -1,15 +1,22 @@
-// LumeSource: {"id":"kkav_video","name":"KKAV","version":"1.0.1","category":"video","contentCategory":"adult","mirrors":["https://www.85fazc.com"],"network":"direct","icon":"https://www.85fazc.com/static/favicon.ico"}
+// LumeSource: {"id":"kkav_video","name":"KKAV","version":"1.2.0","category":"video","contentCategory":"adult","mirrors":["https://www.32auqm.com","https://www.85fazc.com"],"network":"direct","icon":"https://www.32auqm.com/static/favicon.ico"}
 // LumeRuntime: javascript
 //
-// 站点：KKAV（https://www.85fazc.com，原 37tmrj → 73tfhk → 85fazc；成人视频站，全站 18+）
+// 站点：KKAV（https://www.32auqm.com，原 37tmrj → 73tfhk → 85fazc → 32auqm；成人视频站，全站 18+）
 //
-// 一、域名沿革（每次换域都先从旧域的跳板页里读出来）
+// 一、域名沿革（每次换域都从旧域的跳板页里读出来，v1.2.0 起脚本自动做）
 //   www.37tmrj.com / www.24nbfp.com / ttss66.com（"永久官网"）都只是一张「换域名」页，
-//   页内 url2 名单给下一站。2026-10 的链条：73tfhk.com → 85fazc.com，
-//   www.73tfhk.com 现在**只回那张跳板页**（/api/* 也回同一张 HTML），所以主站已换到 85fazc。
-//   跳板页名单里就一条，暂时没有别的镜像（等它再出镜像时补进 mirrors）。
-//   ⚠ 站点**只收 https**：http:// 的 /api/* 直接 406（App 里「接口打不开：HTTP 406」就是这么来的），
-//   所以 base() 会把用户填的 http 域强制升到 https。
+//   页内 `url2.push("下一站")` 给新域。2026-11-02 的链条：85fazc.com → 32auqm.com，
+//   www.85fazc.com 现在**只回那张跳板页**，而且 /api/* 一律 406 —— App 里那句
+//   「接口打不开：HTTP 406 (/movie/list?page=1&pageSize=20)」就是旧域 85fazc 被拦的结果。
+//   新站 www.32auqm.com 实测：/api/config/ini、/api/movie/tags、/api/movie/home_sections、
+//   /api/movie/list 全部 200 + XOR2 信封。
+//   ⚠ 站点**只收 https**：http:// 的 /api/* 直接 406，所以域名一律强制升到 https。
+//
+// 一·二、换域名自愈（v1.2.0）
+//   SEED_HOSTS 是真站；JUMP_HOSTS 是只回跳板页的旧域。currentHost() 先探种子（/api/movie/tags
+//   200 且回 XOR2 信封才算真站），全废就问 JUMP_HOSTS 的根路径 —— 先看 reply.url 的 origin
+//   （旧域可能直接 302 到新域），再从跳板页正文里解 `url2.push("新域")`，探到一个能用的就
+//   写 host.json（12 小时）。接口中途返回非 200（换域那一刻）会清缓存再走一遍这条链。
 //
 // 二、接口全部是 XOR2 加密（这就是旧源"渲染后没认出卡片"的原因）
 //   响应形如 {"enc":3,"alg":"XOR2","n":"<11 位随机>","d":"<base64url 密文>"}，
@@ -29,7 +36,7 @@
 //   换配置里的 down 域 down.mm7878.com 同一路径 → 206 video/mp4（源里自动改写）。
 // 18+
 
-var BASE_URL = 'https://www.85fazc.com';
+var BASE_URL = 'https://www.32auqm.com';
 var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 var PAGE_SIZE = 20;
 var DEFAULT_KEY = 'Mumu2026#';
@@ -38,11 +45,139 @@ var DOWN_HOST = 'https://down.mm7878.com';
 var COVER_HOST = 'https://fengmian.gszy12348.com/data/';
 var NAV_TTL_MS = 6 * 3600 * 1000;
 
-function base() {
+// ── 换域名自愈 ──
+// 站点 2 周左右换一次域名，换域后**旧域的 /api/* 一律 406**（App 里「接口打不开：HTTP 406」就是它），
+// 旧域根路径却还回一张「换域名」跳板页：页内 eval(decodeURIComponent('url2%2Epush%28%22新域%22%29…'))。
+// 所以域名候选分两类：
+//   SEED_HOSTS：当前真站（/api/* 200 + XOR2 密文）
+//   JUMP_HOSTS：只回跳板页的旧域，用来读出下一站域名
+var SEED_HOSTS = ['https://www.32auqm.com'];
+var JUMP_HOSTS = ['https://www.85fazc.com', 'https://www.73tfhk.com', 'https://www.37tmrj.com', 'https://ttss66.com'];
+var HOST_FILE = 'host.json';
+var HOST_TTL = 12 * 3600 * 1000;
+var FAIL_FILE = 'discover.json';
+var FAIL_TTL = 10 * 60 * 1000;
+var ACTIVE_HOST = '';
+
+// 站点只收 https：http:// 的 /api/* 一律 406（用户手填域名 / 旧订阅里常有 http）
+function normalizeHost(text) {
+  var s0 = String(text || '').replace(/\/+$/, '');
+  if (!s0) return '';
+  if (/^http:\/\//i.test(s0)) return 'https://' + s0.substring(7);
+  if (!/^https:\/\//i.test(s0)) return 'https://' + s0.replace(/^\/+/, '');
+  return s0;
+}
+
+function userDomain() {
   var domain = LumeSource.config && LumeSource.config.domain ? LumeSource.config.domain : '';
-  var text = String(domain || BASE_URL).replace(/\/+$/, '');
-  // 站点只收 https：http:// 的 /api/* 一律 406（用户手填域名 / 旧订阅里常有 http）
-  return /^http:\/\//i.test(text) ? 'https://' + text.substring(7) : text;
+  return domain ? normalizeHost(domain) : '';
+}
+
+function base() {
+  return ACTIVE_HOST || userDomain() || BASE_URL;
+}
+
+// 一台主机是不是真站：/api/movie/tags 必须 200 且回 XOR2 信封（旧域会 406 或回跳板页）
+async function probeHost(host) {
+  try {
+    var reply = await LumeSource.http.get(host + '/api/movie/tags', {
+      headers: { 'User-Agent': UA, Accept: 'application/json', Referer: host + '/' },
+    });
+    if (!reply || reply.status !== 200) return false;
+    var body = String(reply.body || '');
+    return body.indexOf('"enc"') >= 0 || body.indexOf('"d":"') >= 0;
+  } catch (error) {
+    return false;
+  }
+}
+
+// 从跳板页里读域名：`url2.push("xxx.com")`（被 decodeURIComponent 包着），也兼容 `url2 = new Array("a","b")`
+function jumpHostsIn(html) {
+  var text = String(html || '');
+  var decoded = text.replace(/decodeURIComponent\('([^']*)'\)/g, function (all, payload) {
+    try { return decodeURIComponent(payload); } catch (error) { return ''; }
+  });
+  var out = [];
+  var push = /url2\.push\(\s*["']([^"']+)["']\s*\)/g;
+  var matched;
+  while ((matched = push.exec(decoded)) !== null) out.push(matched[1]);
+  var array = /url2\s*=\s*new\s+Array\(([^)]*)\)/.exec(decoded);
+  if (array) {
+    var quote = /["']([^"']+)["']/g;
+    var one;
+    while ((one = quote.exec(array[1])) !== null) out.push(one[1]);
+  }
+  var list = [];
+  for (var i = 0; i < out.length; i++) {
+    var raw = String(out[i] || '').trim().replace(/^www\./i, '');
+    if (!raw) continue;
+    var host = /^https?:\/\//i.test(raw) ? normalizeHost(raw) : 'https://www.' + raw.replace(/\/+$/, '');
+    if (list.indexOf(host) < 0) list.push(host);
+  }
+  return list;
+}
+
+// 已知域名全废时：问跳板页要下一站，探活成功后缓存 12 小时；失败退避 10 分钟
+async function discoverHost() {
+  var last = await readJson(FAIL_FILE);
+  if (last && last.failAt && Date.now() - Number(last.failAt) < FAIL_TTL) return '';
+  var note = '';
+  for (var i = 0; i < JUMP_HOSTS.length; i++) {
+    var jumper = JUMP_HOSTS[i];
+    var reply = null;
+    try {
+      reply = await LumeSource.http.get(jumper + '/', {
+        headers: { 'User-Agent': UA, Accept: 'text/html,*/*;q=0.8' },
+      });
+    } catch (error) {
+      note = String((error && error.message) || error);
+      continue;
+    }
+    var body = reply && reply.body ? String(reply.body) : '';
+    // 旧域根路径也可能直接 302 到新域：最终地址的 origin 优先试
+    var candidates = [];
+    if (reply && reply.url) {
+      var origin = /^(https?:\/\/[^\/?#]+)/i.exec(String(reply.url));
+      if (origin && origin[1] !== jumper) candidates.push(normalizeHost(origin[1]));
+    }
+    var inPage = jumpHostsIn(body);
+    for (var k = 0; k < inPage.length; k++) if (candidates.indexOf(inPage[k]) < 0) candidates.push(inPage[k]);
+    for (var j = 0; j < candidates.length; j++) {
+      if (await probeHost(candidates[j])) {
+        await writeJson(HOST_FILE, { at: Date.now(), host: candidates[j] });
+        ACTIVE_HOST = candidates[j];
+        return candidates[j];
+      }
+    }
+    if (!candidates.length && body) note = jumper + ' 的跳板页里没读到域名';
+  }
+  await writeJson(FAIL_FILE, { failAt: Date.now(), note: note });
+  return '';
+}
+
+// 当前可用主机：内存 → 缓存（12 小时）→ 用户手选 → 种子；都不行就自发现
+async function currentHost() {
+  if (ACTIVE_HOST) return ACTIVE_HOST;
+  var cached = await readJson(HOST_FILE);
+  if (cached && cached.host && Date.now() - Number(cached.at || 0) < HOST_TTL) {
+    ACTIVE_HOST = normalizeHost(cached.host);
+    return ACTIVE_HOST;
+  }
+  var seeds = [];
+  var picked = userDomain();
+  if (picked) seeds.push(picked);
+  for (var i = 0; i < SEED_HOSTS.length; i++) if (seeds.indexOf(SEED_HOSTS[i]) < 0) seeds.push(SEED_HOSTS[i]);
+  for (var j = 0; j < seeds.length; j++) {
+    if (await probeHost(seeds[j])) {
+      ACTIVE_HOST = seeds[j];
+      await writeJson(HOST_FILE, { at: Date.now(), host: ACTIVE_HOST });
+      return ACTIVE_HOST;
+    }
+  }
+  var found = await discoverHost();
+  if (found) return found;
+  ACTIVE_HOST = normalizeHost(picked || BASE_URL);
+  return ACTIVE_HOST;
 }
 
 function readJson(file) {
@@ -163,6 +298,7 @@ async function apiKey() {
   }
   _apiKey = DEFAULT_KEY;
   try {
+    await currentHost();
     var reply = await LumeSource.http.get(base() + '/api/config/ini', {
       headers: { 'User-Agent': UA, Accept: 'application/json' },
     });
@@ -180,11 +316,31 @@ async function apiKey() {
   return _apiKey;
 }
 
-async function call(path) {
-  var key = await apiKey();
-  var reply = await LumeSource.http.get(base() + '/api' + path, {
+async function fetchApi(path) {
+  return await LumeSource.http.get(base() + '/api' + path, {
     headers: { 'User-Agent': UA, Accept: 'application/json', Referer: base() + '/' },
   });
+}
+
+// 换域名自愈：丢掉主机缓存 + 失败退避，问一次跳板页，探到新域就再取一次
+async function rediscover() {
+  ACTIVE_HOST = '';
+  await writeJson(HOST_FILE, { at: 0, host: '' });
+  await writeJson(FAIL_FILE, { failAt: 0, note: '' });
+  var found = await discoverHost();
+  if (found) return true;
+  ACTIVE_HOST = normalizeHost(userDomain() || BASE_URL);
+  return false;
+}
+
+async function call(path) {
+  await currentHost();
+  var key = await apiKey();
+  var reply = await fetchApi(path);
+  if (!reply || reply.status !== 200) {
+    // 旧域换域名后 /api/* 直接 406，走的正是这条分支
+    if (await rediscover()) reply = await fetchApi(path);
+  }
   if (!reply || reply.status !== 200) throw new Error('接口打不开：HTTP ' + (reply ? reply.status : 0) + '（' + path + '）');
   var text = reply.body ? String(reply.body) : '';
   var raw;
@@ -266,10 +422,10 @@ async function navTags() {
 var LumeSource = {
   id: 'kkav_video',
   name: 'KKAV',
-  version: '1.0.1',
+  version: '1.2.0',
   category: 'video',
   contentCategory: 'adult',
-  mirrors: ['https://www.85fazc.com'],
+  mirrors: ['https://www.32auqm.com', 'https://www.85fazc.com'],
 
   async categories() {
     var list = [{ id: 'all', title: '全部' }];

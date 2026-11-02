@@ -1,4 +1,4 @@
-// LumeSource: {"id":"chengshe_video","name":"橙涩视频","version":"2.1.1","category":"video","contentCategory":"adult","mirrors":["https://6s9b2f4hkmbh.xyz"],"network":"direct","icon":"https://6s9b2f4hkmbh.xyz/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页","url":"https://8if2pvzp.cc","description":"站点换域名时先看这里（离线页里还有备用地址与邮箱）"},{"key":"note","type":"info","title":"站点说明","description":"橙涩视频（6s9b2f4hkmbh.xyz，Vue3 SPA + Cloudflare）：接口在独立 API 域（30 个 .cc 短链的 /api/sys/findLive 自发现）；请求参数 AES-CBC（key = iv = 毫秒时间戳 + 000），响应用 token 第 3-18 位倒序做 key 解。首次访问用 POST /user/tryLogin {deviceId} 自动拿游客 token，无需注册。VIP/金币片（price 5-9）接口层不鉴权：详情照发 videoUrl，拼 CDN 直接播——实测含 VIP 片 12/12 200 + #EXTM3U，HLS 是标准 AES-128（index.key 可取）。v2.0.0 增加短剧板块与站内搜索（/video/findVideoByTag 按标签命中）。"}]}
+// LumeSource: {"id":"chengshe_video","name":"橙涩视频","version":"2.2.0","category":"video","contentCategory":"adult","mirrors":["https://6s9b2f4hkmbh.xyz"],"network":"direct","icon":"https://6s9b2f4hkmbh.xyz/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页","url":"https://8if2pvzp.cc","description":"站点换域名时先看这里（离线页里还有备用地址与邮箱）"},{"key":"note","type":"info","title":"站点说明","description":"橙涩视频（6s9b2f4hkmbh.xyz，Vue3 SPA + Cloudflare）：接口在独立 API 域（30 个 .cc 短链的 /api/sys/findLive 自发现）；请求参数 AES-CBC（key = iv = 毫秒时间戳 + 000），响应用 token 第 3-18 位倒序做 key 解。首次访问用 POST /user/tryLogin {deviceId} 自动拿游客 token，无需注册。VIP/金币片（price 5-9）接口层不鉴权：详情照发 videoUrl，拼 CDN 直接播——实测含 VIP 片 12/12 200 + #EXTM3U，HLS 是标准 AES-128（index.key 可取）。v2.0.0 增加短剧板块与站内搜索（/video/findVideoByTag 按标签命中）。v2.2.0 补齐暗网板块的分类：站点暗网页底下是 5 个子分类（findSubClassify），本源展开成「暗网 · 圣水滋养」等独立分类，视频走 findSubClassifyVideos。"}]}
 // LumeRuntime: javascript
 //
 // 站点：橙涩视频（入口 https://6s9b2f4hkmbh.xyz，随机域名，会换）。
@@ -14,6 +14,8 @@
 //   分类视频  POST <api>/api/video/findClassifyVideos {page,pageSize,classifyId}
 //   标签搜索  POST <api>/api/video/findVideoByTag     {page,pageSize,tagTitles:[kw]}
 //   详情      GET  <api>/api/video/findVideoById      {videoId} → videoUrl / access / canWatch / price
+//   子分类    GET  <api>/api/video/findSubClassify    {classifyId} → [{classifyId,classifyTitle}]
+//   子分类视频 POST <api>/api/video/findSubClassifyVideos {page,pageSize,classifyId: 子分类 id}
 //   短剧分类  GET  <api>/api/videoSerial/findClassify
 //   短剧列表  GET  <api>/api/videoSerial/findListByClass {page,pageSize,classifyId}
 //   短剧详情  GET  <api>/api/videoSerial/findDetail   {serialId} → videoUrl / epList / videoNum
@@ -41,6 +43,16 @@
 //   · 站内搜索是「按标签命中」（tagTitles=[关键词]），不是全文搜索。
 //   · 排行榜没有翻页；分类「精选」(classifyId 14) 接口返回空，本源不列（不拿别的分类顶替）。
 //   · 换域名时的替换点：SEEDS（短链池）、FALLBACK_API、IMG_CDN。
+//
+// 五、暗网板块的分类（v2.2.0，2026-11-02 从 darkWeb-B8H-aILg.js + src-CZ_rGINf.js 逆出）
+//   站点「暗网」页 = findClassifyList({needVip:true})；游客 token 只回一条
+//   「暗网流出」(classifyId 11, type=3)。type=3 = SubClassify，站点上点进去先列子分类，
+//   再进子分类视频（子分类 id 直接当 classifyId 传给 findSubClassifyVideos）。
+//   实测子分类：126 圣水滋养 / 127 恐怖电影院 / 128 黄金盛筵 / 129 全球禁片 / 130 重口调教。
+//   所以本源对「暗网板块里 type=3 的分类」展开成独立分类项（id 前缀 sc），
+//   顺序落在「暗网 · 暗网流出」之后；顶层 11 仍保留（它是聚合，内容与子分类不同）。
+//   顺带实测：暗网视频 findVideoById 返回 canWatch:false、reasonType:5(DarkNet)，但 videoUrl
+//   照样下发，CDN 直连 200 + #EXTM3U（AES-128 index.key 可取）——接口层同样不鉴权。
 
 var SEEDS = [
   'https://18rrqswd.cc', 'https://wby3n4sn.cc', 'https://646jlp2d.cc', 'https://k56y3zzo.cc',
@@ -58,7 +70,7 @@ var SITE = 'https://6s9b2f4hkmbh.xyz';
 var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 var CACHE_KEY_API = 'chengshe.api';
 var CACHE_KEY_TOKEN = 'chengshe.token';
-var CACHE_KEY_CATS = 'chengshe.cats2';
+var CACHE_KEY_CATS = 'chengshe.cats3';
 var SERIAL_CLASSIFY = 17;
 // 实测返回空数组的分类（「精选」14），列出来只会给用户一个空页
 var EMPTY_CLASSIFY = { 14: true };
@@ -314,6 +326,25 @@ function itemsOf(data) {
 }
 
 // ---------------------------------------------------------------- 分类
+// 分类 type（前端 video 模块枚举）：0 Normal / 1 单列 / 2 频道 / 3 子分类 / 4 短剧 / 5 排行榜。
+// type=3 的分类在站点上是「子分类聚合页」：点进去先列子分类，再进子分类视频
+// （/video/findSubClassify {classifyId} → /video/findSubClassifyVideos {classifyId: 子分类 id}）。
+// 暗网板块（needVip）唯一的分类就是这么一块，站点上它底下是 5 个分类，所以这里必须展开，
+// 否则 App 分类栏只看到一条「暗网流出」，看不到板块里真正的分类。
+var CAT_TYPE_SUBCLASSIFY = 3;
+
+async function subCatsOf(classifyId) {
+  var d = await apiGet('/api/video/findSubClassify', { classifyId: Number(classifyId) });
+  var out = [];
+  itemsOf(d).forEach(function (x) {
+    var id = Number(x && x.classifyId);
+    var title = s(x && x.classifyTitle).trim();
+    if (!id || !title) return;
+    out.push({ id: 'sc' + id, title: title, classifyId: id });
+  });
+  return out;
+}
+
 async function loadCats() {
   if (CATS.length) return CATS;
   var cached = await st(CACHE_KEY_CATS);
@@ -325,6 +356,7 @@ async function loadCats() {
   }
   var out = [];
   var seen = {};
+  var pending = [];
   function absorb(data, isVip) {
     itemsOf(data).forEach(function (c) {
       if (!c || c.classifyId === undefined) return;
@@ -338,7 +370,14 @@ async function loadCats() {
       seen[id] = true;
       // 暗网板块：页面是 findClassifyList({needVip:true})，未开「永久至尊」时只显示解锁页，
       // 但分类接口和分类视频接口都不鉴权，视频照样能取到播放地址。
-      out.push({ id: id, title: isVip ? '暗网 · ' + title : title, classifyId: Number(c.classifyId) });
+      var row = {
+        id: id,
+        title: isVip ? '暗网 · ' + title : title,
+        classifyId: Number(c.classifyId),
+        type: Number(c.type),
+      };
+      out.push(row);
+      if (isVip && Number(c.type) === CAT_TYPE_SUBCLASSIFY) pending.push(row);
     });
   }
   absorb(await apiGet('/api/video/findClassifyList', {}), false);
@@ -348,6 +387,24 @@ async function loadCats() {
     /* 暗网分类拿不到时至少还有普通分类 */
   }
   if (!out.length) throw new Error('分类接口没有解析到分类');
+  for (var i = 0; i < pending.length; i++) {
+    var subs = [];
+    try {
+      subs = await subCatsOf(pending[i].classifyId);
+    } catch (e) {
+      subs = [];
+    }
+    for (var j = 0; j < subs.length; j++) {
+      if (seen[subs[j].id]) continue;
+      seen[subs[j].id] = true;
+      out.push({
+        id: subs[j].id,
+        title: '暗网 · ' + subs[j].title,
+        classifyId: subs[j].classifyId,
+        type: 0,
+      });
+    }
+  }
   CATS = out;
   await stSet(CACHE_KEY_CATS, JSON.stringify(out));
   return out;
@@ -362,6 +419,14 @@ async function listRanked(page, pageSize) {
 
 async function listClassify(cid, page, pageSize) {
   var data = await apiPost('/api/video/findClassifyVideos', { classifyId: cid, page: page, pageSize: pageSize });
+  var rows = [];
+  itemsOf(data).forEach(function (v) { var r = rowOf(v); if (r) rows.push(r); });
+  return rows;
+}
+
+// 子分类视频（暗网板块展开出来的分类走这里；子分类 id 直接当 classifyId 传）
+async function listSubClassify(cid, page, pageSize) {
+  var data = await apiPost('/api/video/findSubClassifyVideos', { classifyId: cid, page: page, pageSize: pageSize });
   var rows = [];
   itemsOf(data).forEach(function (v) { var r = rowOf(v); if (r) rows.push(r); });
   return rows;
@@ -398,7 +463,7 @@ async function fetchSerial(serialId) {
 var LumeSource = {
   id: 'chengshe_video',
   name: '橙涩视频',
-  version: '2.1.1',
+  version: '2.2.0',
   category: 'video',
   contentCategory: 'adult',
 
@@ -452,6 +517,10 @@ var LumeSource = {
     if (cat.indexOf('c') === 0) {
       var rows = await listClassify(Number(cat.slice(1)), page, pageSize);
       return { items: rows, hasMore: rows.length >= pageSize };
+    }
+    if (cat.indexOf('sc') === 0) {
+      var subRows = await listSubClassify(Number(cat.slice(2)), page, pageSize);
+      return { items: subRows, hasMore: subRows.length >= pageSize };
     }
     throw new Error('未知分类：' + cat);
   },

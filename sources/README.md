@@ -57,7 +57,7 @@ Discuz + `jameson_manhua` 插件的绅士向漫画站（主站 www.itsacg.com，
 解析踩坑：站点有**两套卡片布局**（分类页 `image-title`、排行页 `item-title`），只认一种会把 `<img>` 当标题；
 详情页没有 og:image，封面取正文第一张图。大陆直连打不开主站（站点自己标注），镜像里放了备用站。
 
-## 2026-11-02 橙涩视频 v2.0.0（`video/chengshe.js`，详见 [源记录](docs/2026-11-02_橙涩视频v2-VIP直连与短剧搜索.md)）
+## 2026-11-02 橙涩视频 v2.2.0（`video/chengshe.js`，详见 [源记录](docs/2026-11-02_橙涩视频v2-VIP直连与短剧搜索.md)）
 
 同站升级：**VIP/金币只是前端遮罩** —— `findVideoById` 对 `canWatch:false` 的付费片（price 5-9）照样下发 `videoUrl`，
 `https://pic.tbem.org` + `videoUrl` 实测 **12/12 → 200 + #EXTM3U**（HLS 标准 AES-128，`index.key` 200/16 B），
@@ -65,6 +65,11 @@ Discuz + `jameson_manhua` 插件的绅士向漫画站（主站 www.itsacg.com，
 并补上**短剧板块**（`/api/videoSerial/*`，整部一条播放列表，按「全集」一集处理）和**站内搜索**
 （`POST /api/video/findVideoByTag {tagTitles}`，按标签命中）；首页改成排行榜 / 橙涩短剧 / 热门三个板块。\n**v2.1.0 补上「暗网」板块**：站点 `/dark-web` 页面只对「永久至尊」放开，但 `findClassifyList {needVip:true}`
 与分类视频接口都不鉴权 —— 「暗网流出」(classifyId 11) 抽 3 页 36 条实测 **36/36 → 200 + #EXTM3U**（`restricted:true`/`reasonType:5`）。
+**v2.2.0 把暗网板块里的分类补齐**：`findClassifyList {needVip:true}` 只回一条「暗网流出」(type=3 = SubClassify)，
+站点上点进去先是 **5 个子分类**（`findSubClassify {classifyId:11}` → 圣水滋养 126 / 恐怖电影院 127 / 黄金盛筵 128 /
+全球禁片 129 / 重口调教 130），子分类视频走 `findSubClassifyVideos {classifyId: 子分类 id}`。
+本源对「暗网板块里 type=3 的分类」展开成独立分类项（`sc126`…，标题 `暗网 · 圣水滋养`），
+顶层 11 保留（它是聚合，内容与子分类不同）。子分类抽测 20 条/页 + 封面 200 + HLS 200 + #EXTM3U。
 
 ## 2026-11-02 稳定性与起播优化
 
@@ -338,7 +343,11 @@ sources/video/
 ├── huangguo-duanju.js 黄果短剧（huangguoai.com）AI 短剧，**需代理**；播放页直给签名 m3u8
 ├── juzhi.js       橘汁 - 影视（juziapp.hzhcbkj.cn，从橘汁 APK 里挖出的官方后端）；开放 JSON 端点 + 换流接口
 ├── hqvod.js       点播-高清（hqvod.com）苹果CMS 站；列表走 ajax 数据接口，播放页有滑块 → webplayer
-├── d9y1w.js       四色视频（www.z2g9w.top / www.x5p2n.top，3 天换域名）maomi 模板站；标题 AES-256-CBC、卡片链接 base64 混淆，播放 m3u8 直链
+├── d9y1w.js       四色视频（www.m9y7a.top，3 天换域名）maomi 模板站；标题 AES-256-CBC、卡片链接 base64 混淆，播放 m3u8 直链；
+│                  v1.2.0 换域名自愈两条腿：旧域 302 的最终地址 reply.url 取 origin 探活 + 站方跳转服务 good.0827.la 兜底
+├── kkav.js        KKAV（www.32auqm.com；37tmrj → 73tfhk → 85fazc → 32auqm）成人视频站；接口 XOR2 加密（源内纯 JS 解）、
+│                  列表自带 mp4 直链（down.baidu.com 改写为 down.mm7878.com，206）；v1.2.0 从旧域跳板页
+│                  `url2.push("新域")` 自愈（旧域换域后 /api/* 直接 406），SEED_HOSTS + JUMP_HOSTS 两段式发现
 ├── x8x8.js        8x8x（8x8x.fun / 随机跳板域）SPA 外壳 + bodyRoot 内容页；频道/标签 SSR、推荐流 AES-256-GCM，播放三线路 HLS
 ├── pornbest.js    第一女優網 / PornBest（www.pornbest.org，镜像 www.av01.org）Yii2 SSR + video.js；**需代理**；大陆出口 302 到封锁页，另有 CDNLah WAF 的 PoW（源内纯 JS SHA-256 自动解）；详情页 `<source>` 直给 m3u8
 ├── 91pornplus.js  91PornPlus（91pornplus.com 站群）Angular SPA + 单入口 `POST /js`；响应 AES(passphrase=xxx) 密文（源内纯 JS MD5+AES-256-CBC），**接口域名国内直连**，匿名给 m3u8
@@ -434,7 +443,7 @@ App → 视频板块 → **源管理** → 导入，三种方式任选：
 | 黄果 - 短剧（18+） | **是** | 1 块 | 6 分类 | 47 | 30（`/search/video/<词>/`） | ok | 1~3 | **video（m3u8，实测 200 + `#EXTM3U`，AES-128 key）** |
 | 橘汁 - 影视 | 否 | 3 块 | 8 分类 | 24 | 本地索引过滤 | ok | 1 | **video（`videoParse/test/videoUsableUrl` 换流，实测 200 + `#EXTM3U` 59 KB）** |
 | 点播 - 高清 | 否 | 1 块 | 5 分类 | 10 | 本地索引过滤 | ok | 5 线路 | **webplayer（播放页滑块人机校验，脚本 403 → App 网页视图过校验后播）** |
-| 四色视频（18+） | 否 | 3 块 | 27 分类 | 20 | 30（剧情/视频/精品三频道合并） | ok | 2 线路 | **video（m3u8 直链 + AES-128 key 与分片同域，实测 200 + `#EXTM3U` 23.8 KB）** |
+| 四色视频（18+） | 否 | 3 块 | 27 分类 | 20 | 30（剧情/视频/精品三频道合并） | ok | 2 线路 | **video（m3u8 直链 + AES-128 key 与分片同域，实测 200 + `#EXTM3U` 32.9 KB）** |
 | 8x8x（18+） | **是** | 2 块 | 5 频道 + 12 组标签 | 23 | 28（`/api/search/video`） | ok | 3 线路 | **video（`data-route1..3` + `data-m3u8`，探活 200 + `#EXTM3U` 158 B master）** |
 | 第一女優網（18+） | **是** | 2 块 | 51 分类 | 48 | 24（`/q/<词>`） | ok | 1 | **video（详情页 `<source>` / ld+json `contentUrl` → `voddadaizi5.com:…/index.m3u8`，探活 200 + `#EXTM3U` 300 KB）** |
 | 91PornPlus（18+） | 否 | 2 块 | 12 栏目 | 24 | 24（`/searchSevenVideos`，time/views 两种排序） | ok | 1 | **video（`POST /js` 加密接口 → 详情 `m3u8s[0]` = `tm.pppsuccess.com/…/index.m3u8`，探活 200 + `#EXTM3U`）** |

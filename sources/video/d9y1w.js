@@ -1,20 +1,25 @@
-// LumeSource: {"id":"d9y1w_video","name":"四色视频 18+","version":"1.1.0","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.y1c5w.top","https://www.q5h7m.top","https://www.zie2.com"],"network":"direct","icon":"https://www.y1c5w.top/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开最新地址（站方跳转）","url":"http://good.0827.la/?u=aHR0cHM6Ly93d3cuemllMi5jb20%3D&p=L2luZGV4L2hvbWUuaHRtbA%3D%3D","description":"站点 3 天换一次域名：这个按钮走站方自己的域名跳转服务（永久地址 zie2.com 作种子），永远指向此刻正在用的域名，不受换域影响"},{"key":"note","type":"info","title":"站点说明","description":"四色视频（maomi 模板，全站 18+）。域名 3 天轮换一次，本站已知域名会整站 302 到「进入页」。本源已内置**域名自发现**：全部已知域名都只剩进入页时，会去问站方跳转服务 good.0827.la（用永久地址 zie2.com 当种子）拿到当前域名并缓存，所以换域后能自己爬起来。找回最新域名：邮件 liumangtu@mail.com 或看 /help/help.html。"}]}
+// LumeSource: {"id":"d9y1w_video","name":"四色视频 18+","version":"1.2.0","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.m9y7a.top","https://www.y1c5w.top","https://www.q5h7m.top","https://www.zie2.com"],"network":"direct","icon":"https://www.m9y7a.top/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开最新地址（站方跳转）","url":"http://good.0827.la/?u=aHR0cHM6Ly93d3cuemllMi5jb20%3D&p=L2luZGV4L2hvbWUuaHRtbA%3D%3D","description":"站点 3 天换一次域名：这个按钮走站方自己的域名跳转服务（永久地址 zie2.com 作种子），永远指向此刻正在用的域名，不受换域影响"},{"key":"note","type":"info","title":"站点说明","description":"四色视频（maomi 模板，全站 18+）。域名 3 天轮换一次，本站已知域名会整站 302 到「进入页」。本源已内置**域名自发现**：①旧域 302 落到别的主机时，直接取最终地址的 origin 当新域探活并缓存；②全部已知域名都只剩进入页时，再问站方跳转服务 good.0827.la（用永久地址 zie2.com 当种子）。找回最新域名：邮件 liumangtu@mail.com 或看 /help/help.html。"}]}
 //
-// 站点：https://www.y1c5w.top/index/home.html（「maomi」模板成人站，2026-11-02 逐页实测）
+// 站点：https://www.m9y7a.top/index/home.html（「maomi」模板成人站，2026-11-02 逐页实测）
 //
-// ── 〇、域名与镜像（2026-11-02 重测：又换了一轮域名）
+// ── 〇、域名与镜像（2026-11-02 深夜重测：这一轮换到 m9y7a）
 //    官方在 /help/help.html 里写明「本站 3 天换一次域名」，并给出长期地址 https://www.zie2.com
 //    与找回邮箱 liumangtu@mail.com。
-//    · 当前可用：www.y1c5w.top（主站）、www.q5h7m.top（镜像，两站同内容、同 favicon）
-//    · 上一轮的主站 z2g9w.top / x5p2n.top / u6k0m.top 现在整站只剩一张 4513 字节的「进入页」
-//      （enter-content + qrcodeSmall，没有 video-item）——那天的「首页没有解析到板块」就是它。
+//    · 当前可用：www.m9y7a.top（主站，/index/home.html 200 + 75 KB + 有 video-item）
+//    · 上一轮的主站 y1c5w.top / q5h7m.top 现在**整站 302 到 m9y7a 的 /enter/index.html**，
+//      连 /index/home.html 也一样被跳走——那天截图里「域名只剩进入页」就是这么来的。
+//      它们仍留在 MIRRORS 里（能跳就是能自愈），但不再排第一。
 //    · 官方长期地址 www.zie2.com 本机 TLS 仍握手失败（境外 IP + 被墙），只作种子里给跳转服务用，
 //      不作镜像首屏。
 //    · 脚本一律用「当前可用主机」：LumeSource.config.domain（用户手选）→ 缓存里上次成功的域 → SITE，
 //      任一台只剩「进入页」就换下一台并缓存结果；全部失效则走**域名自发现**（见 〇·二）。
 //
-// ── 〇·二、域名自发现（2026-11-02 新增，换域名自愈的关键）
-//    站点家族有一个「域名跳转服务」good.0827.la：把访问者所在域名（或官方永久地址）base64 塞进
+// ── 〇·二、域名自发现（两条腿，2026-11-02 加第一条）
+//    ① 旧域自己把我们送过去（最可靠）：请求旧域的 /index/home.html，宿主跟完 302 后
+//       `reply.url` 就是**最终地址**（`https://www.m9y7a.top/enter/index.html`）。取它的 origin，
+//       探活 /index/home.html 成功就记住（host.json，12 小时），本轮直接用它取页。
+//       所以「已知域名都只剩进入页」不再等于报废，换域后第一跳就能自己爬起来。
+//    ② 站方的「域名跳转服务」good.0827.la（兜底）：把访问者所在域名（或官方永久地址）base64 塞进
 //    `?u=`、把要访问的路径塞进 `?p=`，它 302 到**此刻正在用的域名**。
 //    跳板页 af284.com 之类的 HTML 里就是这段 JS（`atob('aHR0cDovL2dvb2QwODI3…')`），
 //    实测 `u=aHR0cHM6Ly93d3cuemllMi5jb20`（= https://www.zie2.com，官方永久地址）同样有 302：
@@ -22,10 +27,8 @@
 //      GET https://good.0827.la/?u=<b64 https://www.zie2.com>&p=<b64 /index/home.html>
 //        （脚本里用 http://，它的证书已过期；302 的目标仍是 https）
 //      → 302 https://www.x3l6j.top        （又一跳跳板）
-//      → 302 https://www.q5h7m.top/enter/index.html   ← 这一跳的主机就是当前域名
+//      → 302 https://www.m9y7a.top/enter/index.html   ← 这一跳的主机就是当前域名
 //
-//    App 的 HTTP 桥会跟完 302，并把**最终地址**放进 `reply.url`（1.0.x 之后支持），
-//    所以脚本只要读一次 `reply.url` 的 origin，就能拿到当前域名，再用探活确认真能开首页。
 //    这一步不依赖任何「已知域名」，站点再换域也能自己找回来。
 //    注意：拿站点自己的域名当 u 传进去，服务只回 `code:1007`（它只认跳板域名/永久地址），
 //    所以种子里固定放 zie2.com 与 af284.com 两个。
@@ -66,9 +69,10 @@
 //    全站 18+；tupian（图集）/ meinv / xiaoshuo（小说）/ yousheng（有声）与赌博外链一律不做，
 //    只做三个视频频道。
 
-var SITE = 'https://www.y1c5w.top';
+var SITE = 'https://www.m9y7a.top';
 // 用户手选的镜像坏了、站点又换域名时按这张表依次试（都是实测同内容 / 官方公布的地址）
-var MIRRORS = ['https://www.y1c5w.top', 'https://www.q5h7m.top', 'https://www.zie2.com'];
+// 2026-11-02 深夜：y1c5w / q5h7m 已整站 302 到 m9y7a，所以 m9y7a 排第一
+var MIRRORS = ['https://www.m9y7a.top', 'https://www.y1c5w.top', 'https://www.q5h7m.top', 'https://www.zie2.com'];
 
 // 站方「域名跳转服务」：唯一的稳定锚点（见 〇·二）。种子里只放跳板域名与官方永久地址——
 // 站点自己的域名（*.top）传进去只会回 code:1007，不当种子。
@@ -547,7 +551,9 @@ async function discoverHost() {
   return '';
 }
 
-// 单台取页：返回 { ok, body } / { gate } / { error } / { fatal }
+// 单台取页：返回 { ok, body } / { gate, moved } / { error } / { fatal }
+// moved：跟完 302 后落在别的主机上（站点换域名）时，那台主机的 origin。
+// 换域名自愈第一靠这个——旧域自己会把我们送到新域，比问跳转服务更可靠。
 async function fetchFrom(host, path, referer) {
   var reply = null;
   try {
@@ -566,22 +572,29 @@ async function fetchFrom(host, path, referer) {
     return { fatal: new Error('NEED_WEBVIEW_VERIFY：站点触发了 Cloudflare 人机校验（HTTP ' + status + '）') };
   }
   var body = reply && reply.body ? String(reply.body) : '';
+  // 最终地址跟请求主机不同 → 站点已经搬到新域（旧域整站 302 到新域的进入页）
+  var finalHost = reply && reply.url ? originOf(reply.url) : '';
+  var moved = finalHost && finalHost !== host ? finalHost : '';
   if (status === 200 && looksLikeGate(body)) {
     // 这台只剩 302 后的「进入页」
-    return { gate: true, error: new Error('域名只剩进入页：' + host) };
+    return { gate: true, moved: moved, error: new Error('域名只剩进入页：' + host) };
   }
   if (status !== 200) {
     return { error: new Error('页面打不开：HTTP ' + status + '（' + path + '）') };
   }
-  return { ok: true, body: body };
+  return { ok: true, body: body, moved: moved };
 }
 
 async function getText(path, referer) {
   var hosts = await hostCandidates();
   var lastError = null;
+  var tried = {};
+  var movedCount = 0;
   for (var round = 0; round < 2; round++) {
     for (var i = 0; i < hosts.length; i++) {
       var host = hosts[i];
+      if (tried[host]) continue;
+      tried[host] = true;
       var result = await fetchFrom(host, path, referer);
       if (result.fatal) throw result.fatal;
       if (result.ok) {
@@ -589,6 +602,11 @@ async function getText(path, referer) {
         return result.body;
       }
       lastError = result.error;
+      // 旧域把我们 302 到了新域：把那个 origin 插到下一台试；真能开首页就记住它。
+      if (result.moved && movedCount < 3 && !tried[result.moved] && hosts.indexOf(result.moved) < 0) {
+        movedCount++;
+        hosts.splice(i + 1, 0, result.moved);
+      }
     }
     if (round > 0) break;
     // 已知域名全废：问跳转服务拿当前域名，拿到就再走一轮
@@ -818,7 +836,7 @@ function listPath(category, page) {
 var LumeSource = {
   id: 'd9y1w_video',
   name: '四色视频 18+',
-  version: '1.1.0',
+  version: '1.2.0',
   category: 'video',
   contentCategory: 'adult',
   settingsApiVersion: 2,

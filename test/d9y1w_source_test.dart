@@ -158,7 +158,7 @@ void main() {
       expect(content, isA<VideoContent>());
       final video = content! as VideoContent;
       expect(video.url.toString(), m3u8);
-      expect(video.headers['Referer'], 'https://www.y1c5w.top/');
+      expect(video.headers['Referer'], 'https://www.m9y7a.top/');
 
       final backup = await source.data.content(
         itemId: 'juqing-438819',
@@ -189,9 +189,9 @@ void main() {
     '四色视频：主域只剩「进入页」时自动换镜像取首页',
     () async {
       final http = _RouteHttp(<String, String>{
-        // 顺序有意义：更具体的地址先匹配，主域直接被换成进入页
-        'https://www.y1c5w.top/index/home.html': gate,
-        'https://www.q5h7m.top/index/home.html': _read('d9y1w_home.html'),
+        // 顺序有意义：更具体的地址先匹配，主域（mirrors[0] = m9y7a）直接被换成进入页
+        'https://www.m9y7a.top/index/home.html': gate,
+        'https://www.y1c5w.top/index/home.html': _read('d9y1w_home.html'),
       });
       final source = await _boot(
         _script('四色视频.js'),
@@ -203,12 +203,55 @@ void main() {
       final home = await source.data.home();
       expect(home.isBoards, isTrue, reason: '进入页不能被当成首页内容');
       expect(home.boards.length, 3);
-      expect(http.paths.first, contains('https://www.y1c5w.top/'),
+      expect(http.paths.first, contains('https://www.m9y7a.top/'),
           reason: '先试主站（mirrors[0]）');
       expect(
-        http.paths.any((path) => path.startsWith('https://www.q5h7m.top/')),
+        http.paths.any((path) => path.startsWith('https://www.y1c5w.top/')),
         isTrue,
         reason: '主域只剩进入页时要自动换到下一台镜像',
+      );
+    },
+    skip: skipUnless(assets),
+    timeout: const Timeout(Duration(seconds: 120)),
+  );
+
+  // 换域名自愈的第一条腿（v1.2.0）：旧域整站 302 到新域的进入页，宿主把跟随后的
+  // 最终地址放进 `reply.url`。脚本取它的 origin 当候选域，探活首页成功就记住——
+  // 这条路径不依赖任何「已知域名」，也不用问站方跳转服务。
+  test(
+    '四色视频：旧域 302 到新域时按最终地址自愈（不依赖跳转服务）',
+    () async {
+      final http = _RouteHttp(
+        <String, String>{
+          'https://www.m9y7a.top/index/home.html': gate,
+          'https://www.y1c5w.top/index/home.html': gate,
+          'https://www.q5h7m.top/index/home.html': gate,
+          'https://www.newhost.top/index/home.html': _read('d9y1w_home.html'),
+        },
+        urls: <String, String>{
+          'https://www.m9y7a.top/index/home.html':
+              'https://www.newhost.top/enter/index.html',
+        },
+      );
+      final source = await _boot(
+        _script('四色视频.js'),
+        section: Section.video,
+        http: http,
+      );
+      addTearDown(source.dispose);
+
+      final home = await source.data.home();
+      expect(home.isBoards, isTrue);
+      expect(home.boards.length, 3);
+      expect(
+        http.paths.any((path) => path.startsWith('https://www.newhost.top/')),
+        isTrue,
+        reason: '302 落到的新域要被拿来取页',
+      );
+      expect(
+        http.paths.any((path) => path.contains('good.0827.la')),
+        isFalse,
+        reason: '已经能从 302 拿到新域，不该再去问跳转服务',
       );
     },
     skip: skipUnless(assets),
@@ -223,6 +266,7 @@ void main() {
     () async {
       final http = _RouteHttp(
         <String, String>{
+          'https://www.m9y7a.top/index/home.html': gate,
           'https://www.y1c5w.top/index/home.html': gate,
           'https://www.q5h7m.top/index/home.html': gate,
           // 跳转服务：跟随 302 后落到新域名的「进入页」
