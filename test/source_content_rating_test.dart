@@ -29,6 +29,7 @@ void main() {
       'cg1_photo',
       'cg1_video',
       'betareel_video',
+      'itsacg_comic',
       'gamebus_comic',
       'gamebus_video',
       'tanhua_video',

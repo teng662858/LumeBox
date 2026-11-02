@@ -6,6 +6,16 @@
 **VIP 只锁交易（券/金币/会员），`canWatch:false` 时接口照常下发 videoUrl+access，换 m3u8 实测 200**，
 无需会员态。搜索参数未公开，本源不提供搜索。详见 [记录](../docs/2026-11-02_橙涩视频源-加密链路与VIP绕过.md)。
 
+## 2026-11-02 ITsACG 漫画（`comic/itsacg.js`，详见 [源记录](docs/2026-11-02_ITsACG漫画源.md)）
+
+Discuz + `jameson_manhua` 插件的绅士向漫画站（主站 www.itsacg.com，发布页 itsacg.top 给备用 itsacgaa123.space）。
+**全匿名 GET，无登录无会员**：分类 `a=ku&category_id`（同人誌/單行本/雜誌&短篇/韓漫/3D&漫畫）、排行榜 `a=rank`、
+详情 `a=bofang&kuid=`、阅读 `a=read&zjid=&nopage=1`（一次给整本图片，实测 132 张 = 分页 7×40 合并），
+搜索 `a=search&keyword=`（**不需要 formhash**）。
+
+解析踩坑：站点有**两套卡片布局**（分类页 `image-title`、排行页 `item-title`），只认一种会把 `<img>` 当标题；
+详情页没有 og:image，封面取正文第一张图。大陆直连打不开主站（站点自己标注），镜像里放了备用站。
+
 ## 2026-11-02 橙涩视频 v2.0.0（`video/chengshe.js`，详见 [源记录](docs/2026-11-02_橙涩视频v2-VIP直连与短剧搜索.md)）
 
 同站升级：**VIP/金币只是前端遮罩** —— `findVideoById` 对 `canWatch:false` 的付费片（price 5-9）照样下发 `videoUrl`，

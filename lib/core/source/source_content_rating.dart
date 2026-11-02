@@ -204,6 +204,8 @@ class SourceContentRating {
     'mitaow_video',
     'mitaovideo_video',
     'chengshe_video',
+    // ITsACG（www.itsacg.com，Discuz + jameson_manhua）：绅士向同人本/单行本/韩漫/3D 漫。
+    'itsacg_comic',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
