@@ -12,7 +12,8 @@
 `https://pic.tbem.org` + `videoUrl` 实测 **12/12 → 200 + #EXTM3U**（HLS 标准 AES-128，`index.key` 200/16 B），
 不需要会员态也不需要买券。v2 把播放从 `/api/dec/m3u/ios/access.m3u8` 改成 **CDN 直连**（旧线路保留兜底），
 并补上**短剧板块**（`/api/videoSerial/*`，整部一条播放列表，按「全集」一集处理）和**站内搜索**
-（`POST /api/video/findVideoByTag {tagTitles}`，按标签命中）；首页改成排行榜 / 橙涩短剧 / 热门三个板块。
+（`POST /api/video/findVideoByTag {tagTitles}`，按标签命中）；首页改成排行榜 / 橙涩短剧 / 热门三个板块。\n**v2.1.0 补上「暗网」板块**：站点 `/dark-web` 页面只对「永久至尊」放开，但 `findClassifyList {needVip:true}`
+与分类视频接口都不鉴权 —— 「暗网流出」(classifyId 11) 抽 3 页 36 条实测 **36/36 → 200 + #EXTM3U**（`restricted:true`/`reasonType:5`）。
 
 ## 2026-11-02 稳定性与起播优化
 

@@ -1,4 +1,4 @@
-// LumeSource: {"id":"chengshe_video","name":"橙涩视频","version":"2.0.0","category":"video","contentCategory":"adult","mirrors":["https://6s9b2f4hkmbh.xyz"],"network":"direct","icon":"https://6s9b2f4hkmbh.xyz/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页","url":"https://8if2pvzp.cc","description":"站点换域名时先看这里（离线页里还有备用地址与邮箱）"},{"key":"note","type":"info","title":"站点说明","description":"橙涩视频（6s9b2f4hkmbh.xyz，Vue3 SPA + Cloudflare）：接口在独立 API 域（30 个 .cc 短链的 /api/sys/findLive 自发现）；请求参数 AES-CBC（key = iv = 毫秒时间戳 + 000），响应用 token 第 3-18 位倒序做 key 解。首次访问用 POST /user/tryLogin {deviceId} 自动拿游客 token，无需注册。VIP/金币片（price 5-9）接口层不鉴权：详情照发 videoUrl，拼 CDN 直接播——实测含 VIP 片 12/12 200 + #EXTM3U，HLS 是标准 AES-128（index.key 可取）。v2.0.0 增加短剧板块与站内搜索（/video/findVideoByTag 按标签命中）。"}]}
+// LumeSource: {"id":"chengshe_video","name":"橙涩视频","version":"2.1.0","category":"video","contentCategory":"adult","mirrors":["https://6s9b2f4hkmbh.xyz"],"network":"direct","icon":"https://6s9b2f4hkmbh.xyz/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页","url":"https://8if2pvzp.cc","description":"站点换域名时先看这里（离线页里还有备用地址与邮箱）"},{"key":"note","type":"info","title":"站点说明","description":"橙涩视频（6s9b2f4hkmbh.xyz，Vue3 SPA + Cloudflare）：接口在独立 API 域（30 个 .cc 短链的 /api/sys/findLive 自发现）；请求参数 AES-CBC（key = iv = 毫秒时间戳 + 000），响应用 token 第 3-18 位倒序做 key 解。首次访问用 POST /user/tryLogin {deviceId} 自动拿游客 token，无需注册。VIP/金币片（price 5-9）接口层不鉴权：详情照发 videoUrl，拼 CDN 直接播——实测含 VIP 片 12/12 200 + #EXTM3U，HLS 是标准 AES-128（index.key 可取）。v2.0.0 增加短剧板块与站内搜索（/video/findVideoByTag 按标签命中）。"}]}
 // LumeRuntime: javascript
 //
 // 站点：橙涩视频（入口 https://6s9b2f4hkmbh.xyz，随机域名，会换）。
@@ -58,8 +58,10 @@ var SITE = 'https://6s9b2f4hkmbh.xyz';
 var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 var CACHE_KEY_API = 'chengshe.api';
 var CACHE_KEY_TOKEN = 'chengshe.token';
-var CACHE_KEY_CATS = 'chengshe.cats';
+var CACHE_KEY_CATS = 'chengshe.cats2';
 var SERIAL_CLASSIFY = 17;
+// 实测返回空数组的分类（「精选」14），列出来只会给用户一个空页
+var EMPTY_CLASSIFY = { 14: true };
 var PAGE_SIZE = 20;
 
 var state = { api: '', token: '', deviceId: '' };
@@ -315,17 +317,30 @@ async function loadCats() {
       if (arr && arr.length) { CATS = arr; return CATS; }
     } catch (e) {}
   }
-  var data = await apiGet('/api/video/findClassifyList', {});
-  var list = itemsOf(data);
   var out = [];
-  list.forEach(function (c) {
-    if (!c || c.classifyId === undefined) return;
-    var t = s(c.classifyTitle).trim();
-    if (!t) return;
-    // 短剧（type 4）走 videoSerial 接口，不在分类视频里
-    if (Number(c.classifyId) === SERIAL_CLASSIFY) return;
-    out.push({ id: 'c' + c.classifyId, title: t, classifyId: Number(c.classifyId) });
-  });
+  var seen = {};
+  function absorb(data, isVip) {
+    itemsOf(data).forEach(function (c) {
+      if (!c || c.classifyId === undefined) return;
+      var title = s(c.classifyTitle).trim();
+      if (!title) return;
+      // 短剧（type 4）走 videoSerial 接口，不在分类视频里
+      if (Number(c.classifyId) === SERIAL_CLASSIFY) return;
+      if (EMPTY_CLASSIFY[Number(c.classifyId)]) return;
+      var id = 'c' + c.classifyId;
+      if (seen[id]) return;
+      seen[id] = true;
+      // 暗网板块：页面是 findClassifyList({needVip:true})，未开「永久至尊」时只显示解锁页，
+      // 但分类接口和分类视频接口都不鉴权，视频照样能取到播放地址。
+      out.push({ id: id, title: isVip ? '暗网 · ' + title : title, classifyId: Number(c.classifyId) });
+    });
+  }
+  absorb(await apiGet('/api/video/findClassifyList', {}), false);
+  try {
+    absorb(await apiGet('/api/video/findClassifyList', { needVip: true }), true);
+  } catch (e) {
+    /* 暗网分类拿不到时至少还有普通分类 */
+  }
   if (!out.length) throw new Error('分类接口没有解析到分类');
   CATS = out;
   await stSet(CACHE_KEY_CATS, JSON.stringify(out));
@@ -377,7 +392,7 @@ async function fetchSerial(serialId) {
 var LumeSource = {
   id: 'chengshe_video',
   name: '橙涩视频',
-  version: '2.0.0',
+  version: '2.1.0',
   category: 'video',
   contentCategory: 'adult',
 
