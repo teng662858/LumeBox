@@ -83,6 +83,7 @@ void main() {
       'akmh_video',
       'insav_video',
       'livebox_video',
+      'akmh_comic',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);

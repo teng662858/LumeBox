@@ -223,6 +223,9 @@ class SourceContentRating {
     // 直播盒子（api.hclyz.com:81，来自「暮色」App 内置 live 模块）：成人直播聚合，
     // 130 个平台 + 主播 flv 直链，接口明文不加密。
     'livebox_video',
+    // 18ak漫画（漫画板块，与 akmh_video 同站）：成人漫画库 6599 部，
+    // 章节图按 /content/<book>/<chapter>/1.jpg 数字序列，接口层不鉴权。
+    'akmh_comic',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
