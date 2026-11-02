@@ -3792,6 +3792,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     return GlassScaffold(
       effectModule: GlassModule.video,
       title: widget.title ?? _target?.title ?? '播放',
+      actions: [
+        _compactIcon(
+          icon: VideoPlayerPage.playerKernelIcon,
+          tooltip: '播放内核',
+          onPressed: _openKernelPicker,
+        ),
+      ],
       behindBar: true,
       child: Padding(padding: GlassScaffold.barInset(context), child: body),
     );
@@ -4289,6 +4296,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 if (!narrow) _buildPipButton(),
                 const SizedBox(width: 4),
                 _topIcon(
+                  icon: VideoPlayerPage.playerKernelIcon,
+                  tooltip: '播放内核',
+                  onPressed: _openKernelPicker,
+                ),
+                _topIcon(
                   icon: Icons.more_horiz,
                   tooltip: '播放器设置',
                   onPressed: _openSettings,
@@ -4593,12 +4605,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       highlighted: _danmakuSettings.enabled,
     ),
     _buildPipButton(),
-    // 播放内核：与全屏那颗同一图标（用户口径：换个好看的图标）。
-    _compactIcon(
-      icon: VideoPlayerPage.playerKernelIcon,
-      tooltip: '播放内核',
-      onPressed: _openKernelPicker,
-    ),
     _compactIcon(
       icon: _fullscreen ? Icons.close_fullscreen : Icons.open_in_full,
       tooltip: _fullscreen ? '退出全屏' : '全屏',

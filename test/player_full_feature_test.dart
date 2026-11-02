@@ -1094,7 +1094,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('横屏右侧文字入口按弹幕、倍速、选集排列，画质与内核收进设置', (tester) async {
+    testWidgets('横屏右侧文字入口按弹幕、倍速、选集排列，内核放在顶栏', (tester) async {
       await tester.binding.setSurfaceSize(const Size(932, 430));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await pump(tester);
@@ -1107,7 +1107,7 @@ void main() {
       expect(find.text('1×'), findsOneWidget);
       expect(find.text('选集'), findsOneWidget);
       expect(find.byTooltip('清晰度'), findsNothing);
-      expect(find.byTooltip('播放内核'), findsNothing);
+      expect(find.byTooltip('播放内核'), findsOneWidget);
       expect(find.byTooltip('记片头（长按清除标记）'), findsNothing);
       expect(find.byTooltip('播放器设置'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -1527,8 +1527,8 @@ void main() {
       // 音轨入口已按用户口径从播放页拿掉（设置弹窗里仍可切）。
       expect(find.byTooltip('音轨'), findsNothing);
       expect(find.byTooltip('字幕'), findsNothing);
-      // 低频的内核选择收进播放器设置。
-      expect(find.byTooltip('播放内核'), findsNothing);
+      // 内核选择在右上角，横竖屏均保留。
+      expect(find.byTooltip('播放内核'), findsOneWidget);
       expect(find.byTooltip('播放器设置'), findsOneWidget);
       expect(find.byTooltip('横竖屏切换'), findsOneWidget);
       await tester.tap(find.byTooltip('横竖屏切换'));
@@ -1977,7 +1977,7 @@ void main() {
           find.byKey(const Key('fullscreen-control-gradient')),
         );
         expect(gradient.size, size, reason: '渐变覆盖全画面，安全区边缘不形成矩形边界');
-        expect(find.byTooltip('播放内核'), findsNothing);
+        expect(find.byTooltip('播放内核'), findsOneWidget);
         expect(find.byTooltip('清晰度'), findsNothing);
         expect(find.text('第1集 · 1920×1080'), findsOneWidget);
         final slider = tester.getRect(find.byType(Slider));
