@@ -220,6 +220,9 @@ class SourceContentRating {
     // INS AV（网页 dcuj77.com / 接口 pqtn95.com，来自「暮色」App 内置 insav 模块）：
     // 日本 AV 厂牌聚合，请求体整体 AES 加密 + md5 签名，播放需登录（本源走网页播放）。
     'insav_video',
+    // 直播盒子（api.hclyz.com:81，来自「暮色」App 内置 live 模块）：成人直播聚合，
+    // 130 个平台 + 主播 flv 直链，接口明文不加密。
+    'livebox_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

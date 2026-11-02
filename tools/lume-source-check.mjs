@@ -583,17 +583,36 @@ async function runSource(file, options) {
 // 播放地址探活：m3u8 取前 1KB 看是否 #EXTM3U；mp4 看状态码与 content-type。
 // 只取开头一段：m3u8 / FLV 一眼能认出来，mp4 按源约定 206 就算通。整段下载会把
 // 「110MB 的 mp4 直链」这种正常地址误判成超时（KKAV 就被这样误报过）。
+// 直播流（flv / SSE）永远不会结束，所以改成流式读、攒够就主动断开，
+// 否则 res.arrayBuffer() 一定挂到超时（直播盒子就是这样误报的）。
 async function probeMedia(url, headers) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': DEFAULT_UA, Range: 'bytes=0-262143', ...headers },
-      signal: AbortSignal.timeout(20000),
+      signal: controller.signal,
     });
-    const buffer = Buffer.from(await res.arrayBuffer());
+    const type = res.headers.get('content-type') || '';
+    const looksLive = /video\/x-flv|event-stream|octet-stream/i.test(type) || /\.flv(\?|$)/i.test(url);
+    const limit = looksLive ? 8192 : 262144;
+    const chunks = [];
+    let total = 0;
+    if (res.body) {
+      const reader = res.body.getReader();
+      while (total < limit) {
+        const step = await reader.read();
+        if (step.done) break;
+        const piece = Buffer.from(step.value);
+        chunks.push(piece);
+        total += piece.length;
+      }
+      reader.cancel().catch(() => {});
+    }
+    const buffer = Buffer.concat(chunks);
     const head = buffer.subarray(0, 400).toString('utf8');
     const looksM3u8 = head.includes('#EXTM3U');
-    const looksFlv = head.slice(0, 3) === 'FLV';
-    const type = res.headers.get('content-type') || '';
+    const looksFlv = buffer.subarray(0, 3).toString('latin1') === 'FLV';
     return {
       ok:
         res.status >= 200 &&
@@ -602,11 +621,15 @@ async function probeMedia(url, headers) {
       status: res.status,
       type,
       bytes: buffer.length,
+      live: looksLive,
       m3u8: looksM3u8,
       sample: head.slice(0, 80).replace(/\s+/g, ' '),
     };
   } catch (error) {
     return { ok: false, error: describe(error) };
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
   }
 }
 
