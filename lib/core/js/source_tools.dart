@@ -51,22 +51,49 @@ class SourceTools {
         if (![16, 24, 32].contains(key.length)) {
           throw const FormatException('AES 密钥长度无效');
         }
-        final cbc = (p['mode'] ?? 'CBC') == 'CBC';
-        if (!cbc && p['mode'] != 'ECB') {
-          throw const FormatException('AES 工具支持 CBC/ECB');
+        final mode = '${p['mode'] ?? 'CBC'}'.toUpperCase();
+        final encrypt = p['encrypt'] == true;
+        var input = binary('data');
+
+        // GCM（带认证标签）：iv 常见 12 字节；解密输入是「密文 + 16 字节 tag」。
+        if (mode == 'GCM') {
+          if (iv.isEmpty || iv.length > 60) {
+            throw const FormatException('AES-GCM IV 长度无效');
+          }
+          final gcm = GCMBlockCipher(AESEngine())
+            ..init(
+              encrypt,
+              AEADParameters(KeyParameter(key), 128, iv, Uint8List(0)),
+            );
+          return base64Encode(gcm.process(input));
         }
+
+        // CTR（流模式，不需要填充，长度任意）。
+        if (mode == 'CTR' || mode == 'SIC') {
+          if (iv.length != 16) {
+            throw const FormatException('AES-CTR IV 需要 16 字节');
+          }
+          final ctr = CTRStreamCipher(AESEngine())
+            ..init(encrypt, ParametersWithIV(KeyParameter(key), iv));
+          final out = Uint8List(input.length);
+          ctr.processBytes(input, 0, input.length, out, 0);
+          return base64Encode(out);
+        }
+
+        if (mode != 'CBC' && mode != 'ECB') {
+          throw const FormatException('AES 工具支持 CBC/ECB/CTR/GCM');
+        }
+        final cbc = mode == 'CBC';
         if (cbc && iv.length != 16) {
           throw const FormatException('AES IV 需要 16 字节');
         }
         final cipher = cbc
             ? CBCBlockCipher(AESEngine())
             : ECBBlockCipher(AESEngine());
-        final encrypt = p['encrypt'] == true;
         cipher.init(
           encrypt,
           cbc ? ParametersWithIV(KeyParameter(key), iv) : KeyParameter(key),
         );
-        var input = binary('data');
         final padding = p['padding'] != 'none';
         if (encrypt && padding) {
           final count = 16 - input.length % 16;
@@ -89,6 +116,31 @@ class SourceTools {
           output = Uint8List.sublistView(output, 0, output.length - count);
         }
         return base64Encode(output);
+      case 'hmac':
+        final mac = <String, hash.Hash>{
+          'md5': hash.md5,
+          'sha1': hash.sha1,
+          'sha256': hash.sha256,
+          'sha384': hash.sha384,
+          'sha512': hash.sha512,
+        }['${p['algorithm'] ?? 'sha256'}'.toLowerCase()];
+        if (mac == null) throw const FormatException('HMAC 算法无效');
+        final macKey =
+            p['keyEncoding'] == 'base64' ? binary('key') : utf8.encode('${p['key'] ?? ''}');
+        return hash.Hmac(mac, macKey)
+            .convert(p['encoding'] == 'base64' ? binary('data') : utf8.encode(data))
+            .toString();
+      case 'xor':
+        final mask =
+            p['keyEncoding'] == 'base64' ? binary('key') : utf8.encode('${p['key'] ?? ''}');
+        if (mask.isEmpty) throw const FormatException('XOR 密钥为空');
+        final source =
+            p['encoding'] == 'base64' ? binary('data') : utf8.encode(data);
+        final mixed = Uint8List(source.length);
+        for (var i = 0; i < source.length; i++) {
+          mixed[i] = source[i] ^ mask[i % mask.length];
+        }
+        return base64Encode(mixed);
       case 'rsa':
         final pem = '${p['pem'] ?? ''}';
         if (pem.length > 16384) throw const FormatException('RSA 密钥过大');

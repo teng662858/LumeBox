@@ -234,7 +234,9 @@ class LumeSourceBridgePolyfill implements SandboxPolyfill {
       base64Encode:function(data){return invoke('tools',{operation:'base64Encode',data:String(data)});},
       base64Decode:function(data){return invoke('tools',{operation:'base64Decode',data:String(data)});},
       urlEncode:function(data){return invoke('tools',{operation:'urlEncode',data:String(data)});},
-      urlDecode:function(data){return invoke('tools',{operation:'urlDecode',data:String(data)});}
+      urlDecode:function(data){return invoke('tools',{operation:'urlDecode',data:String(data)});},
+      hmac:function(options){return invoke('tools',Object.assign({},options||{},{operation:'hmac'}));},
+      xor:function(options){return invoke('tools',Object.assign({},options||{},{operation:'xor'}));}
     },
     media: {
       parseM3u8:function(text,url){return invoke('media',{operation:'parseM3u8',text:String(text),url:String(url)});},
@@ -412,6 +414,45 @@ class LumeSourceBridgePolyfill implements SandboxPolyfill {
     get: function () { return bridge; },
     set: function (value) { absorb(value); }
   });
+
+  // ---- atob / btoa：沙箱没有 window，很多站在解 base64 时第一句就是 atob ----
+  // 同步实现（不走桥接），只处理 latin1 字节串，与浏览器语义一致。
+  if (typeof globalThis.atob !== 'function') {
+    var B64CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    globalThis.atob = function (input) {
+      var text = String(input == null ? '' : input).replace(/[^A-Za-z0-9+/=]/g, '');
+      var out = '';
+      var buffer = 0;
+      var bits = 0;
+      for (var i = 0; i < text.length; i++) {
+        var ch = text.charAt(i);
+        if (ch === '=') break;
+        var value = B64CHARS.indexOf(ch);
+        if (value < 0) continue;
+        buffer = (buffer << 6) | value;
+        bits += 6;
+        if (bits >= 8) {
+          bits -= 8;
+          out += String.fromCharCode((buffer >> bits) & 0xff);
+        }
+      }
+      return out;
+    };
+    globalThis.btoa = function (input) {
+      var text = String(input == null ? '' : input);
+      var out = '';
+      for (var i = 0; i < text.length; i += 3) {
+        var c0 = text.charCodeAt(i) & 0xff;
+        var c1 = i + 1 < text.length ? text.charCodeAt(i + 1) & 0xff : -1;
+        var c2 = i + 2 < text.length ? text.charCodeAt(i + 2) & 0xff : -1;
+        out += B64CHARS.charAt(c0 >> 2);
+        out += B64CHARS.charAt(((c0 & 3) << 4) | (c1 < 0 ? 0 : c1 >> 4));
+        out += c1 < 0 ? '=' : B64CHARS.charAt(((c1 & 15) << 2) | (c2 < 0 ? 0 : c2 >> 6));
+        out += c2 < 0 ? '=' : B64CHARS.charAt(c2 & 63);
+      }
+      return out;
+    };
+  }
 
   globalThis.__lumeSourceBridge = bridge;
 })();

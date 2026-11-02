@@ -25,6 +25,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 
 // App 内置默认 UA（lib/core/net/lume_http.dart: defaultUserAgent）。
 const DEFAULT_UA =
@@ -213,14 +214,58 @@ function makeTools(fsStore) {
       }
       return crypto.createHash(name).update(String(data), 'utf8').digest('hex');
     },
-    aes: async () => {
-      throw new Error('harness: tools.aes 未实现（App 侧为原生能力）');
+    // 与 App 侧 SourceTools 对齐：key/iv/data 是 base64，返回 base64
+    aes: async (options) => {
+      const o = options || {};
+      const mode = String(o.mode || 'CBC').toUpperCase();
+      const encrypt = o.encrypt === true;
+      const key = Buffer.from(String(o.key || ''), 'base64');
+      const iv = Buffer.from(String(o.iv || ''), 'base64');
+      const input = Buffer.from(String(o.data || ''), 'base64');
+      if (![16, 24, 32].includes(key.length)) throw new Error('harness: AES 密钥长度无效');
+      const algo = 'aes-' + key.length * 8 + '-' + mode.toLowerCase();
+      if (mode === 'GCM') {
+        const cipher = crypto.createCipheriv(algo, key, iv, { authTagLength: 16 });
+        if (encrypt) return Buffer.concat([cipher.update(input), cipher.final(), cipher.getAuthTag()]).toString('base64');
+        cipher.setAuthTag(input.subarray(input.length - 16));
+        return Buffer.concat([cipher.update(input.subarray(0, input.length - 16)), cipher.final()]).toString('base64');
+      }
+      if (mode === 'CTR') {
+        const cipher = crypto.createCipheriv(algo, key, iv);
+        return Buffer.concat([cipher.update(input), cipher.final()]).toString('base64');
+      }
+      if (mode === 'ECB') {
+        const cipher = encrypt ? crypto.createCipheriv(algo, key, null) : crypto.createDecipheriv(algo, key, null);
+        cipher.setAutoPadding(o.padding !== 'none');
+        return Buffer.concat([cipher.update(input), cipher.final()]).toString('base64');
+      }
+      const cipher = encrypt ? crypto.createCipheriv(algo, key, iv) : crypto.createDecipheriv(algo, key, iv);
+      cipher.setAutoPadding(o.padding !== 'none');
+      return Buffer.concat([cipher.update(input), cipher.final()]).toString('base64');
+    },
+    hmac: async (options) => {
+      const o = options || {};
+      const algo = String(o.algorithm || 'sha256').toLowerCase();
+      const key = o.keyEncoding === 'base64' ? Buffer.from(String(o.key || ''), 'base64') : Buffer.from(String(o.key || ''), 'utf8');
+      const data = o.encoding === 'base64' ? Buffer.from(String(o.data || ''), 'base64') : Buffer.from(String(o.data || ''), 'utf8');
+      return crypto.createHmac(algo, key).update(data).digest('hex');
+    },
+    xor: async (options) => {
+      const o = options || {};
+      const mask = o.keyEncoding === 'base64' ? Buffer.from(String(o.key || ''), 'base64') : Buffer.from(String(o.key || ''), 'utf8');
+      if (!mask.length) throw new Error('harness: XOR 密钥为空');
+      const data = o.encoding === 'base64' ? Buffer.from(String(o.data || ''), 'base64') : Buffer.from(String(o.data || ''), 'utf8');
+      const out = Buffer.alloc(data.length);
+      for (let i = 0; i < data.length; i++) out[i] = data[i] ^ mask[i % mask.length];
+      return out.toString('base64');
     },
     rsa: async () => {
       throw new Error('harness: tools.rsa 未实现（App 侧为原生能力）');
     },
-    inflate: async () => {
-      throw new Error('harness: tools.inflate 未实现（App 侧为原生能力）');
+    inflate: async (data, raw) => {
+      const input = Buffer.from(String(data || ''), 'base64');
+      const out = raw ? zlib.inflateRawSync(input) : zlib.inflateSync(input);
+      return out.toString('base64');
     },
     base64Encode: async (data) => Buffer.from(String(data), 'utf8').toString('base64'),
     base64Decode: async (data) => Buffer.from(String(data), 'base64').toString('utf8'),
