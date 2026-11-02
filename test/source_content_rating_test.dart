@@ -32,6 +32,7 @@ void main() {
       'itsacg_comic',
       'yeshezy_video',
       'hsckzy_video',
+      'lao4j_video',
       'gamebus_comic',
       'gamebus_video',
       'tanhua_video',

@@ -210,6 +210,8 @@ class SourceContentRating {
     'yeshezy_video',
     // 黄色仓库资源站（hsckzy.vip，苹果CMS）：国产/AV/欧美/动漫/其他五区 36 个分类。
     'hsckzy_video',
+    // 火力视频 / 舞艺吧（web.lao4j.net）：擦边舞蹈与录屏短视频站。
+    'lao4j_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
