@@ -226,6 +226,9 @@ class SourceContentRating {
     // 18ak漫画（漫画板块，与 akmh_video 同站）：成人漫画库 6599 部，
     // 章节图按 /content/<book>/<chapter>/1.jpg 数字序列，接口层不鉴权。
     'akmh_comic',
+    // 看片视频（KPDZ.APP，落地页两级跳板；接口 sm-api.wieuc.com 返回 Fernet 密文，
+    // key 从前端 chunk 里取得；分类/标签/筛选齐全）。
+    'kpdz_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
