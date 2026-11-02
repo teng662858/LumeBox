@@ -547,7 +547,13 @@ async function runSource(file, options) {
       '';
     if (chapterId) {
       const content = await doCall('content', { id: itemId, chapterId });
-      if (content && (content.kind === 'video' || content.kind === 'images' || content.kind === 'text')) {
+      if (content && content.kind === 'text') {
+        // 小说正文没有可探活的地址：按正文字数判定（App 侧也只要求有正文）
+        const body = typeof content.text === 'string' ? content.text.trim() : '';
+        report.calls.playable = body.length
+          ? { ok: true, url: '', text: body.length }
+          : { ok: false, error: 'content 是 text 但正文为空：' + JSON.stringify(content).slice(0, 200) };
+      } else if (content && (content.kind === 'video' || content.kind === 'images')) {
         const url = content.url || (content.images && content.images[0]) || '';
         if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
           report.calls.playable = { ok: true, url: url.slice(0, 160) };

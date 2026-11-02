@@ -229,6 +229,9 @@ class SourceContentRating {
     // 看片视频（KPDZ.APP，落地页两级跳板；接口 sm-api.wieuc.com 返回 Fernet 密文，
     // key 从前端 chunk 里取得；分类/标签/筛选齐全）。
     'kpdz_video',
+    // 爱丽丝书屋（alicesw.com，成人网络小说站）：全属性色情小说，纯文本正文，
+    // 与 alicesw1.homes / alicesw.tw 同源；归漫画板块的「小说」分类。
+    'alicesw_comic',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

@@ -1,3 +1,16 @@
+## 2026-11-03 爱丽丝书屋（`comic/alicesw.js`，详见 [源记录](../docs/2026-11-03_爱丽丝书屋源.md)）
+
+成人网络小说站 `alicesw.com`（全站 18+，diyquge 模板的静态 HTML，无接口无加密；发布页 `alicesw.click`，
+镜像 `alicesw1.homes` 简体同源 / `alicesw.tw` 繁体）。本源按**文字小说**交付：列表与详情带
+`mediaType:"novel"`，正文返回 `kind:"text"`，App 归入漫画板块的「小说」分类并打开文字阅读器。
+
+结构要点：题材分类 `/lists/{id}.html?page=N`、总列表与「题材+排序」`/all[/id/{id}]/order/{排序}+desc.html`、
+原创专区 `/original.html`、排行 `/other/rank_hits/order/hits*`（单页 30 条不分页）、
+搜索 `/search.html?q=&f=_all&sort=relevance&p=N`；详情 `/novel/{id}.html`、目录 `/other/chapters/id/{id}.html`
+（**一次给全**，实测 6972 章 666 KB 单页）、正文 `/book/{书号}/{章节hash}.html`。
+**`/novel/{id}` 与 `/book/{书号}` 编号不同**，章节地址只能从目录页取。35 个分类 + 排序筛选
+（最近更新/人气最高/字数最多，排行与原创专区不受排序影响）。详见 [源记录](../docs/2026-11-03_爱丽丝书屋源.md)。
+
 ## 2026-11-02 有爱爱 UAA 综合源（`video/uaa.js`，详见 [源记录](../docs/2026-11-02_UAA有爱爱综合源-VIP绕行.md)）
 
 UAA 站群（`uaa002.com` 主用，`uaa001`–`uaa010` / `uaa2601`–`uaa2610` 共 21 个同内容域名，永久域名 `uaa.com`、
