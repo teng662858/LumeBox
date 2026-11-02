@@ -1,0 +1,32 @@
+name: Check offline MP4 merge
+on:
+  workflow_dispatch:
+jobs:
+  remux:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: build/offline-remux-check
+          key: offline-remux-ffmpeg-3.11.1-${{ runner.os }}-${{ runner.arch }}
+      - name: Resolve the app's FFmpeg dependency without compiling Flutter
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE="$RUNNER_TEMP/remux-dependency"
+          mkdir -p "$PACKAGE/Sources/Probe"
+          cat > "$PACKAGE/Package.swift" <<'SWIFT'
+          // swift-tools-version: 6.0
+          import PackageDescription
+          let package = Package(name: "RemuxDependency", platforms: [.macOS(.v14)], dependencies: [
+            .package(url: "https://github.com/superuser404notfound/FFmpegBuild", exact: "3.11.1")
+          ], targets: [.executableTarget(name: "Probe", dependencies: [
+            .product(name: "AetherFFmpegBuild", package: "FFmpegBuild")
+          ])])
+          SWIFT
+          echo 'import AetherLibavformat; print(avformat_version())' > "$PACKAGE/Sources/Probe/main.swift"
+          swift build --package-path "$PACKAGE" --scratch-path "$PWD/build/offline-remux-check"
+      - name: Test the production Swift merge implementation with real media
+        run: bash tool/check_offline_remux.sh

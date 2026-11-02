@@ -6,7 +6,10 @@ import sys
 
 
 def run(*args):
-    return subprocess.run(args, check=True, capture_output=True)
+    result = subprocess.run(args, capture_output=True)
+    if result.returncode:
+        raise RuntimeError(f'{args[0]} failed ({result.returncode}): {result.stderr.decode(errors="replace")}')
+    return result
 
 
 executable, root = sys.argv[1], Path(sys.argv[2])
@@ -24,7 +27,8 @@ def probe(path):
 
 
 def hashes(path):
-    output = run('ffmpeg', '-v', 'error', '-i', str(path), '-map', '0:v:0',
+    output = run('ffmpeg', '-v', 'error', '-protocol_whitelist', 'file,crypto,data',
+                 '-allowed_extensions', 'ALL', '-extension_picky', '0', '-i', str(path), '-map', '0:v:0',
                  '-f', 'framemd5', '-').stdout.decode()
     return [line.split(',')[-1].strip() for line in output.splitlines()
             if line and not line.startswith('#')]

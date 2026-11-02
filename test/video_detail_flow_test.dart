@@ -199,6 +199,47 @@ void main() {
     root.deleteSync(recursive: true);
   });
 
+  for (final compact in [false, true]) {
+    testWidgets('下载图标紧邻翻译，点击直接选集：compact=$compact', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VideoDetailPage(
+            source: source,
+            item: const SourceItem(id: 'movie', title: '详情测试片'),
+            library: library,
+            onPlay: (_, _, _, _) async => fail('下载入口不应播放视频'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final state = tester.state(find.byType(VideoDetailPage)) as dynamic;
+      state.setDetailStyle(!compact);
+      await tester.pumpAndSettle();
+      final download = find.byKey(const Key('video-detail-download'));
+      await tester.ensureVisible(download);
+      await tester.pumpAndSettle();
+      final translation = find.byKey(const Key('video-detail-translation'));
+      expect(
+        tester.getCenter(download).dx,
+        greaterThan(tester.getCenter(translation).dx),
+      );
+      expect(
+        (tester.getCenter(download).dy - tester.getCenter(translation).dy)
+            .abs(),
+        lessThan(1),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.tap(download);
+      await tester.pumpAndSettle();
+      expect(find.text('选择下载章节 / 剧集'), findsOneWidget);
+      expect(find.text('第1集'), findsWidgets);
+      expect(find.text('第2集'), findsWidgets);
+      expect(source.parses, 0);
+    });
+  }
+
   for (final extension in ['mp4', 'm3u8']) {
     testWidgets('$extension 起播不等待额外音轨探测', (tester) async {
       source.extension = extension;

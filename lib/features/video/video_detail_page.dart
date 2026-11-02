@@ -880,8 +880,6 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           tooltip: '更多',
           onSelected: (action) {
             switch (action) {
-              case 'download':
-                downloadVideo();
               case 'downloads':
                 Navigator.push(
                   context,
@@ -920,11 +918,6 @@ class _VideoDetailPageState extends State<VideoDetailPage>
             }
           },
           itemBuilder: (_) => videoGlassMenuEntries<String>([
-            PopupMenuItem(
-              value: 'download',
-              enabled: !resolving && chapters.isNotEmpty,
-              child: const Text('下载视频 / 选集'),
-            ),
             const PopupMenuItem(value: 'downloads', child: Text('下载中心')),
             if (conciseVideoSubtitle(
                   rawSourceSubtitle,
@@ -1238,10 +1231,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SourceTranslationAction(
-                key: const Key('video-detail-translation'),
-                texts: [detail?.title ?? widget.item.title, synopsis],
-              ),
+              ...translationDownloadActions(),
               IconButton(
                 tooltip: reversed ? '恢复正序' : '倒序排列',
                 onPressed: chapters.isEmpty
@@ -2036,6 +2026,19 @@ class _VideoDetailPageState extends State<VideoDetailPage>
 
   static const _compactAccent = Color(0xFFE83E68);
 
+  List<Widget> translationDownloadActions() => [
+    SourceTranslationAction(
+      key: const Key('video-detail-translation'),
+      texts: [detail?.title ?? widget.item.title, synopsis],
+    ),
+    IconButton(
+      key: const Key('video-detail-download'),
+      tooltip: '下载视频 / 选集',
+      onPressed: resolving || chapters.isEmpty ? null : downloadVideo,
+      icon: const Icon(Icons.download_outlined, size: 20),
+    ),
+  ];
+
   Widget compactPlaybackControls() => Row(
     key: const Key('video-detail-compact-playback'),
     children: [
@@ -2088,6 +2091,10 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       key: _episodesKey,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: translationDownloadActions(),
+        ),
         Row(
           children: [
             if (MediaQuery.textScalerOf(context).scale(1) > 1.3)
