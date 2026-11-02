@@ -27,8 +27,9 @@ def probe(path):
 
 
 def hashes(path):
+    hls_options = ['-allowed_extensions', 'ALL', '-extension_picky', '0'] if Path(path).suffix == '.m3u8' else []
     output = run('ffmpeg', '-v', 'error', '-protocol_whitelist', 'file,crypto,data',
-                 '-allowed_extensions', 'ALL', '-extension_picky', '0', '-i', str(path), '-map', '0:v:0',
+                 *hls_options, '-i', str(path), '-map', '0:v:0',
                  '-f', 'framemd5', '-').stdout.decode()
     return [line.split(',')[-1].strip() for line in output.splitlines()
             if line and not line.startswith('#')]

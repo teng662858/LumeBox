@@ -1143,9 +1143,8 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   );
 
   Widget linePicker() => LayoutBuilder(
-    builder: (context, bounds) => Row(
-      key: const Key('video-detail-line-heading'),
-      children: [
+    builder: (context, bounds) {
+      final controls = <Widget>[
         Expanded(
           child: PopupMenuButton<String>(
             key: const Key('video-detail-original-line-selector'),
@@ -1288,8 +1287,26 @@ class _VideoDetailPageState extends State<VideoDetailPage>
             ],
           ),
         ),
-      ],
-    ),
+      ];
+      if (bounds.maxWidth < 360 &&
+          MediaQuery.textScalerOf(context).scale(1) > 1.3) {
+        return Column(
+          key: const Key('video-detail-line-heading'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(children: [controls.first]),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: controls.skip(1).toList(),
+            ),
+          ],
+        );
+      }
+      return Row(
+        key: const Key('video-detail-line-heading'),
+        children: controls,
+      );
+    },
   );
 
   Widget episodeStrip(List<int> visible, {bool grid = false}) => LayoutBuilder(

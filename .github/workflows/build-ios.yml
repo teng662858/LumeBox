@@ -21,7 +21,7 @@ on:
         type: boolean
         default: false
 
-run-name: ${{ inputs.typecheck_only && 'Swift typecheck only — no package' || 'Build unsigned IPA' }}
+run-name: ${{ inputs.remux_only && 'Offline MP4 remux check — no package' || inputs.typecheck_only && 'Swift typecheck only — no package' || 'Build unsigned IPA' }}
 
 jobs:
   remux:
