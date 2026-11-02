@@ -437,7 +437,19 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         );
         lineResume = null;
       }
-      final tracks = saved?.manual == true
+      // Source-declared audio and recognizable video URLs need no second
+      // native asset load before navigation. Probe only ambiguous addresses.
+      final audioHint =
+          content is VideoContent && content.audioOnly ||
+          RegExp(
+            r'\.(mp3|m4a|aac|flac|ogg|opus|wav)$',
+            caseSensitive: false,
+          ).hasMatch(address.path);
+      final videoAddress = RegExp(
+        r'\.(m3u8|mpd|mp4|m4v|mkv|webm|mov|avi|flv|ts)$',
+        caseSensitive: false,
+      ).hasMatch(address.path);
+      final tracks = saved?.manual == true || audioHint || videoAddress
           ? const MediaTrackInfo()
           : await const MediaTrackProbe().inspect(
               address,
@@ -446,12 +458,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       if ((saved?.manual == true && saved!.kind != ResourceKind.video) ||
           (saved?.manual != true &&
               (tracks.kind == ResourceKind.audioBook ||
-                  !tracks.known &&
-                      (content is VideoContent && content.audioOnly ||
-                          RegExp(
-                            r'\.(mp3|m4a|aac|flac|ogg|opus|wav)$',
-                            caseSensitive: false,
-                          ).hasMatch(address.path))))) {
+                  !tracks.known && audioHint))) {
         final entry = saved?.manual == true
             ? saved!
             : await MediaResourceService().source(

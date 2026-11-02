@@ -38,6 +38,7 @@ class DetailSource extends FakeReadingDataSource {
   DetailSource() : super(section: Section.video);
   int parses = 0;
   bool failParse = false;
+  String extension = 'mp4';
   bool failDetail = false;
   @override
   Future<SourceList> list({
@@ -72,7 +73,7 @@ class DetailSource extends FakeReadingDataSource {
       throw const SourceException(SourceErrorKind.network, 'fixture解析失败');
     }
     return VideoContent(
-      url: Uri.parse('https://example.test/$chapterId.mp4'),
+      url: Uri.parse('https://example.test/$chapterId.$extension'),
       headers: const {'Referer': 'https://source.test/watch'},
     );
   }
@@ -108,6 +109,8 @@ class LongDetailSource extends DetailSource {
 }
 
 class RoutePlayer extends AbstractPlayer {
+  Completer<void>? loadGate;
+  int loads = 0;
   final state = ValueNotifier(const PlayerSnapshot());
   final information = ValueNotifier(
     const PlayerStats(width: 1920, height: 1080),
@@ -121,6 +124,8 @@ class RoutePlayer extends AbstractPlayer {
   @override
   Future<void> load(PlayerMedia value) async {
     media = value;
+    loads++;
+    await loadGate?.future;
   }
 
   @override
@@ -192,6 +197,48 @@ void main() {
     await SectionScope.closeAll();
     root.deleteSync(recursive: true);
   });
+
+  for (final extension in ['mp4', 'm3u8']) {
+    testWidgets('$extension 起播不等待额外音轨探测', (tester) async {
+      source.extension = extension;
+      var probes = 0, opened = 0;
+      final gate = Completer<Map<String, Object?>>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('lumebox/mediaTracks'),
+            (call) async {
+              if (call.method != 'inspect') return null;
+              probes++;
+              return gate.future;
+            },
+          );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VideoDetailPage(
+            source: source,
+            item: SourceItem(id: 'fast-$extension', title: '详情测试片'),
+            library: library,
+            onPlay: (media, target, qualities, prelaunch) async {
+              opened++;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      try {
+        await tester.runAsync(() async {
+          await tester.tap(find.byKey(const Key('video-detail-play')));
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        });
+        await tester.pump();
+        expect(opened, 1);
+        expect(probes, 0);
+        expect(source.parses, 1);
+      } finally {
+        gate.complete({'known': true, 'video': true, 'audio': true});
+      }
+    });
+  }
 
   testWidgets('换源选择对应剧集，并把时间点写入目标源进度', (tester) async {
     await tester.binding.setSurfaceSize(const Size(440, 1000));
@@ -918,6 +965,10 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final players = <RoutePlayer>[];
+    final loadGate = Completer<void>();
+    addTearDown(() {
+      if (!loadGate.isCompleted) loadGate.complete();
+    });
     final manager = FakeSourceManager(
       sources: [
         SourceDescriptor(
@@ -936,7 +987,7 @@ void main() {
           sourceManager: manager,
           catalog: const RouteCatalog(),
           playerFactory: (_) {
-            final player = RoutePlayer();
+            final player = RoutePlayer()..loadGate = loadGate;
             players.add(player);
             return player;
           },
@@ -961,7 +1012,19 @@ void main() {
     await tester.runAsync(() async {
       await Future<void>.delayed(const Duration(milliseconds: 300));
     });
+    await tester.pump();
+    expect(
+      find.byType(VideoPlayerPage),
+      findsOneWidget,
+      reason: '解码器 load 仍未完成时，播放页就应已经打开',
+    );
+    expect(loadGate.isCompleted, isFalse);
+    loadGate.complete();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
     await tester.pumpAndSettle();
+    expect(players.single.loads, 1, reason: '进入播放页只加载一次媒体');
     expect(source.parses, 1);
     expect(players.length, 1);
     expect(players.single.media?.uri.path, '/e2.mp4');
