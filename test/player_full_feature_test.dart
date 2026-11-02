@@ -1,3 +1,4 @@
+import 'package:lume_box/core/player/playback_diagnostics.dart';
 import 'package:lume_box/features/video/player_source_sheet.dart';
 
 import 'support/fake_source_manager.dart';
@@ -1192,6 +1193,27 @@ void main() {
         reason: '装载与续播定位之后要自动起播，不必再点一下播放键',
       );
       expect(find.byTooltip('暂停'), findsOneWidget, reason: '控制栏显示为「正在播放」');
+      final before = PlaybackDiagnostics.snapshot
+          .where((e) => e['stage'] == 'playback-progress-started')
+          .length;
+      players.single.emit(
+        position: const Duration(milliseconds: 100),
+        playing: true,
+        buffering: false,
+      );
+      await tester.pump();
+      final after = PlaybackDiagnostics.snapshot
+          .where((e) => e['stage'] == 'playback-progress-started')
+          .length;
+      expect(after, before + 1);
+      players.single.emit(position: const Duration(milliseconds: 200));
+      await tester.pump();
+      expect(
+        PlaybackDiagnostics.snapshot
+            .where((e) => e['stage'] == 'playback-progress-started')
+            .length,
+        after,
+      );
     });
 
     testWidgets('全屏：完整分辨率与速率，跟着控制浮层一起出现 / 收起', (tester) async {

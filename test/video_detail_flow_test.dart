@@ -1,3 +1,4 @@
+import 'package:lume_box/core/player/playback_diagnostics.dart';
 import 'package:lume_box/features/video/video_resume_match.dart';
 import 'package:lume_box/features/video/detail_poster_background.dart';
 import 'package:lume_box/core/intro/intro_store.dart';
@@ -234,6 +235,11 @@ void main() {
         expect(opened, 1);
         expect(probes, 0);
         expect(source.parses, 1);
+        final timing = PlaybackDiagnostics.snapshot.lastWhere(
+          (e) => e['stage'] == 'source-resolve-complete',
+        );
+        expect(timing['source'], source.id);
+        expect(timing['elapsedMs'], isA<int>());
       } finally {
         gate.complete({'known': true, 'video': true, 'audio': true});
       }

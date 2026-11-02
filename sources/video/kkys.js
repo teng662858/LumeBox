@@ -1,4 +1,4 @@
-// LumeSource: {"id":"kkys_video","name":"可可影视","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.kkys03.com"],"network":"direct","icon":"https://vf.wkcyvs.cn/vod_pc_static_kkdy/images/p/logo.png"}
+// LumeSource: {"id":"kkys_video","name":"可可影视","version":"1.0.2","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://www.kkys03.com"],"network":"direct","icon":"https://vf.wkcyvs.cn/vod_pc_static_kkdy/images/p/logo.png"}
 // LumeRuntime: javascript
 //
 // 站点：可可影视（kkys03.com）。
@@ -25,7 +25,7 @@
 // 实测：m3u8 200 + #EXTM3U（30 万字节），分片无需额外 Referer。
 
 var HOST = 'https://www.kkys03.com';
-var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 var PAGE_SIZE = 18;
 
 var CATS = [
@@ -60,6 +60,14 @@ var FILTERS = {
   }
 };
 
+async function readPersistent(key) {
+  if (LumeSource.storage && LumeSource.storage.get) return LumeSource.storage.get(key, '');
+  return LumeSource.fs.readText(key);
+}
+async function writePersistent(key, value) {
+  if (LumeSource.storage && LumeSource.storage.set) return LumeSource.storage.set(key, value);
+  return LumeSource.fs.writeText(key, value);
+}
 function base() {
   var d = LumeSource.config && LumeSource.config.domain ? String(LumeSource.config.domain) : '';
   return (d || HOST).replace(/\/+$/, '');
@@ -145,16 +153,69 @@ function solveChallenge(html) {
 }
 
 // ------------------------------------------------------------------ 会话（cookie + 搜索令牌）
-var SESSION = { cookie: '', token: '' };
+var SESSION = { cookie: '', token: '', imageHost: '' };
+var sessionLoaded = false;
+var sessionDomain = '';
+var DETAIL_CACHE = {};
+async function restoreSession() {
+  if (sessionLoaded && sessionDomain === base()) return;
+  sessionLoaded = true; sessionDomain = base();
+  SESSION.cookie = ''; SESSION.token = ''; SESSION.imageHost = '';
+  try {
+    var value = JSON.parse(await readPersistent('kkys-session.json') || '{}');
+    if (value.domain === base() && value.ua === UA && Date.now() - value.time < 6 * 3600000) {
+      SESSION.cookie = value.cookie || '';
+      SESSION.imageHost = value.imageHost || '';
+    }
+  } catch (_) {}
+}
+async function saveSession() {
+  try { await writePersistent('kkys-session.json', JSON.stringify({
+    domain: base(), ua: UA, time: Date.now(), cookie: SESSION.cookie, imageHost: SESSION.imageHost
+  })); } catch (_) {}
+}
+async function discoverImages(html) {
+  if (SESSION.imageHost) return;
+  var match = /<script[^>]+src=["'](https:\/\/[^"']+\/rdul\.js[^"']*)["']/i.exec(html);
+  if (!match) return;
+  try {
+    var reply = await LumeSource.http.request({url: unescapeHtml(match[1]), method: 'GET', headers: {'User-Agent': UA}});
+    if (!reply || reply.status !== 200) return;
+    var urls = String(reply.body || '').match(/https:\/\/[a-z0-9.-]+(?::[0-9]+)?/gi) || [];
+    // RDUL is the site's image origin list. Prefer its DNS origin over IP endpoints.
+    for (var i = 0; i < urls.length; i++) {
+      if (!/^https:\/\/[0-9.]+(?::|$)/.test(urls[i])) { SESSION.imageHost = urls[i]; break; }
+    }
+    if (SESSION.imageHost) await saveSession();
+  } catch (_) {}
+}
+function imageUrl(value) {
+  var url = unescapeHtml(value || '').trim();
+  if (!url || /placeholder|logo_|avatar|empty-box/i.test(url)) return '';
+  if (url.indexOf('//') === 0) return 'https:' + url;
+  if (url.charAt(0) === '/') return (SESSION.imageHost || base()) + url;
+  return url;
+}
+function imageFromHtml(html) {
+  var tags = String(html || '').match(/<img\b[^>]*>/gi) || [];
+  for (var i = 0; i < tags.length; i++) {
+    var match = /data-original=["']([^"']+)["']/i.exec(tags[i]) || /src=["']([^"']+)["']/i.exec(tags[i]);
+    var url = match ? imageUrl(match[1]) : '';
+    if (url && /\/(?:cover|upload)\//i.test(url)) return url;
+  }
+  return '';
+}
 
-function request(path, extraHeaders) {
+async function request(path, extraHeaders) {
+  await restoreSession();
   var headers = {
     'User-Agent': UA,
     'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
     'Accept-Language': 'zh-CN,zh;q=0.9',
     'Referer': base() + '/'
   };
-  if (SESSION.cookie) headers['Cookie'] = SESSION.cookie;
+  var configured = LumeSource.config && LumeSource.config.cookie || '';
+  if (configured || SESSION.cookie) headers['Cookie'] = [configured, SESSION.cookie].filter(Boolean).join('; ');
   if (extraHeaders) {
     for (var k in extraHeaders) if (Object.prototype.hasOwnProperty.call(extraHeaders, k)) headers[k] = extraHeaders[k];
   }
@@ -165,20 +226,49 @@ function request(path, extraHeaders) {
   });
 }
 
-async function fetchText(path, referer) {
+var pendingDetails = {};
+function fetchText(path, referer) {
+  if (!/^\/(?:detail|movie)\//.test(path)) return fetchTextOnce(path, referer);
+  var key = base() + path;
+  if (pendingDetails[key]) return pendingDetails[key];
+  var pending = fetchTextOnce(path, referer);
+  pendingDetails[key] = pending;
+  return pending.then(function (value) { delete pendingDetails[key]; return value; },
+    function (error) { delete pendingDetails[key]; throw error; });
+}
+async function acceptPage(path, body) {
+  await discoverImages(body);
+  if (/^\/detail\//.test(path)) {
+    DETAIL_CACHE = {}; DETAIL_CACHE[base() + path] = {time: Date.now(), body: body};
+  }
+  return body;
+}
+async function fetchTextOnce(path, referer) {
+  var cached = DETAIL_CACHE[base() + path];
+  if (/^\/detail\//.test(path) && cached && Date.now() - cached.time < 60000) return cached.body;
   var reply = await request(path, referer ? { Referer: referer } : null);
   var status = (reply && reply.status) || 0;
   var body = reply && reply.body != null ? String(reply.body) : '';
-  if (status === 200 && body.length > 0) return body;
+  if (status === 200 && body.length > 0 && !/<title[^>]*>Protected by cdndefend/i.test(body)) return acceptPage(path, body);
   // 850 / 503 / 空 body：先过挑战再重试一次
-  if (status === 850 || status === 503 || !body) {
-    var challenge = await request(path);
-    var page = challenge && challenge.body != null ? String(challenge.body) : '';
+  if (status === 850 || status === 503 || !body || /<title[^>]*>Protected by cdndefend/i.test(body)) {
+    var page = body;
+    if (!/cdndefend/i.test(page)) {
+      var challenge = await request(path);
+      page = challenge && challenge.body != null ? String(challenge.body) : '';
+      if (challenge && challenge.status === 200 && page && !/<title[^>]*>Protected by cdndefend/i.test(page)) return acceptPage(path, page);
+    }
     if (/cdndefend/i.test(page)) {
+      SESSION.cookie = ''; SESSION.token = '';
       SESSION.cookie = solveChallenge(page);
       var retry = await request(path, referer ? { Referer: referer } : null);
       var s2 = (retry && retry.status) || 0;
-      if (s2 === 200 && retry.body) return String(retry.body);
+      if (s2 === 200 && retry.body) {
+        await discoverImages(String(retry.body));
+        await saveSession();
+        return acceptPage(path, String(retry.body));
+      }
+      SESSION.cookie = ''; await saveSession();
       throw new Error('过完站点挑战后仍返回 HTTP ' + s2);
     }
     if (status === 850 || status === 503) throw new Error('站点返回 HTTP ' + status + '（反爬挑战没通过）');
@@ -228,7 +318,7 @@ function parseCards(html) {
       cover = u;
       break;
     }
-    if (cover && cover.charAt(0) === '/') cover = base() + cover;
+    cover = imageUrl(cover);
     var note = /<div class="v-item-bottom">\s*<span>([\s\S]{0,30}?)<\/span>/i.exec(block)
       || /<div class="search-result-item-header">\s*<div>([\s\S]{0,20}?)<\/div>/i.exec(block);
     seen[id] = true;
@@ -254,7 +344,7 @@ function parseDetail(html) {
   var text = desc ? clean(desc[1]) : (metaDesc ? unescapeHtml(metaDesc[1]).trim() : '');
   return {
     title: title,
-    cover: cover ? unescapeHtml(cover[1]) : '',
+    cover: imageFromHtml(src),
     description: text,
     lines: parseLines(src)
   };
@@ -302,7 +392,7 @@ function parsePlayUrl(html) {
 var LumeSource = {
   id: 'kkys_video',
   name: '可可影视',
-  version: '1.0.0',
+  version: '1.0.2',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
@@ -325,7 +415,7 @@ var LumeSource = {
       key: 'note',
       type: 'info',
       title: '站点说明',
-      description: '可可影视（kkys03.com）。站点入口有 cdndefend 反爬挑战，本源会用纯 JS 现算 SHA-1 自动通过（首次约 1-2 秒），之后复用。支持电影/连续剧/动漫/综艺，含类型/地区/语言/年份/排序筛选与站内搜索；详情页最多 37 条线路，本源把每条线路的分集都列出来，可直接换线路。播放为站点直出的 m3u8。'
+      description: '可可影视（kkys03.com）。站点入口有 cdndefend 反爬挑战，本源会用纯 JS 现算 SHA-1 自动通过（首次约 1-2 秒），会话按域名与 UA 缓存 6 小时，失效自动重新获取；封面动态读取站点图床，详情和选集合并请求并复用 60 秒。支持电影/连续剧/动漫/综艺，含类型/地区/语言/年份/排序筛选与站内搜索；详情页最多 37 条线路，本源把每条线路的分集都列出来，可直接换线路。播放为站点直出的 m3u8。'
     }
   ],
 
@@ -408,7 +498,7 @@ var LumeSource = {
     var id = String((argument && argument.id) || '').trim();
     if (!/^\d+$/.test(id)) return null;
     var html = '';
-    try { html = await fetchText('/detail/' + id + '.html'); } catch (e) { return null; }
+    html = await fetchText('/detail/' + id + '.html');
     if (!html) return null;
     var info = parseDetail(html);
     if (!info.title) return null;

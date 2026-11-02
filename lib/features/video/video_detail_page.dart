@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../../core/player/playback_diagnostics.dart';
+
 import 'video_resume_match.dart';
 import '../../shared/widgets/video_glass_surface.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
@@ -389,10 +391,16 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       ChapterContent? content;
       {
         try {
-          content = await _source!.content(
-            itemId: widget.item.id,
-            chapterId: chapter.id,
-          );
+          final resolveWatch = Stopwatch()..start();
+          content = await _source!
+              .content(itemId: widget.item.id, chapterId: chapter.id)
+              .whenComplete(() {
+                PlaybackDiagnostics.record(
+                  'source-resolve-complete',
+                  source: _source!.id,
+                  elapsedMs: resolveWatch.elapsedMilliseconds,
+                );
+              });
         } on CatWebParseRequired catch (request) {
           if (!mounted) return;
           if (request.webPlayer) {

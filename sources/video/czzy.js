@@ -1,4 +1,4 @@
-// LumeSource: {"id":"czzy_video","name":"厂长资源","version":"1.0.1","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.4kcz.com","https://czzy.top","https://www.cz4k.com","https://czzy.site"],"network":"direct","icon":"https://www.4kcz.com/favicon.ico"}
+// LumeSource: {"id":"czzy_video","name":"厂长资源","version":"1.0.3","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.4kcz.com","https://czzy.top","https://www.cz4k.com"],"network":"direct","icon":"https://www.4kcz.com/favicon.ico"}
 // LumeRuntime: javascript
 //
 // 站点：厂长资源 CZZY（导航页 https://cz01.vip/ → 新地址 www.4kcz.com，易记 cz01.tv；
@@ -86,9 +86,21 @@ var YEARS = [
   ['2026', '2026'], ['2027', '2027'], ['2028', '2028']
 ];
 
+var discoveredHost = '';
+var detailCache = {};
+var hostLoaded = false;
+var loadedDomain = '';
+async function readPersistent(key) {
+  if (LumeSource.storage && LumeSource.storage.get) return LumeSource.storage.get(key, '');
+  return LumeSource.fs.readText(key);
+}
+async function writePersistent(key, value) {
+  if (LumeSource.storage && LumeSource.storage.set) return LumeSource.storage.set(key, value);
+  return LumeSource.fs.writeText(key, value);
+}
 function base() {
   var d = LumeSource.config && LumeSource.config.domain ? String(LumeSource.config.domain) : '';
-  return (d || HOST).replace(/\/+$/, '');
+  return (discoveredHost || d || HOST).replace(/\/+$/, '');
 }
 function enc(text) { return encodeURIComponent(String(text == null ? '' : text)); }
 function unescapeHtml(text) {
@@ -101,23 +113,79 @@ function unescapeHtml(text) {
 function clean(text) {
   return unescapeHtml(String(text == null ? '' : text).replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 }
-function get(path) {
-  return LumeSource.http.request({
-    url: /^https?:\/\//i.test(path) ? path : base() + path,
-    method: 'GET',
-    headers: {
-      'User-Agent': UA,
-      'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
-      'Accept-Language': 'zh-CN,zh;q=0.9',
-      'Referer': base() + '/'
-    }
-  }).then(function (reply) {
-    var status = (reply && reply.status) || 0;
-    if (!status) throw new Error('连不上站点：' + base() + path);
-    if (status === 404) return '';
-    if (status !== 200) throw new Error('厂长资源返回 HTTP ' + status + '：' + path);
-    return reply.body == null ? '' : String(reply.body);
-  });
+async function readHost() {
+  var configured = String(LumeSource.config && LumeSource.config.domain || HOST).replace(/\/+$/, '');
+  if (hostLoaded && loadedDomain === configured) return;
+  hostLoaded = true; loadedDomain = configured; discoveredHost = '';
+  try {
+    var record = JSON.parse(await readPersistent('czzy-host.json') || '{}');
+    if (record.configured === configured && Date.now() - record.time < 6 * 3600000 && /^https:\/\/[a-z0-9.-]+$/i.test(record.host)) discoveredHost = record.host;
+  } catch (_) {}
+}
+function requestPage(url) {
+  return LumeSource.http.request({url: url, method: 'GET', headers: {
+    'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
+    'Accept-Language': 'zh-CN,zh;q=0.9', 'Referer': base() + '/'
+  }});
+}
+function challenge(reply) {
+  var body = String(reply && reply.body || '');
+  var headers = reply && reply.headers || {};
+  for (var key in headers) if (/^cf-mitigated$/i.test(key)) return true;
+  return /<title[^>]*>\s*(?:just a moment|attention required)|challenge-platform|checking your browser/i.test(body);
+}
+async function discoverHost(path) {
+  // Read only the primary address explicitly published by the official page.
+  // Do not automatically rotate through known WAF-blocked mirrors.
+  var nav = await requestPage('https://cz01.vip/');
+  if (!nav || nav.status !== 200) return null;
+  var match = /href:\s*['"](https:\/\/[a-z0-9.-]+)['"]/i.exec(String(nav.body || ''));
+  if (!match || match[1] === base()) return null;
+  var reply = await requestPage(match[1] + path);
+  if (!reply || reply.status !== 200 || challenge(reply) || !/\/movie\/|\/v_play\//i.test(String(reply.body || ''))) return null;
+  discoveredHost = match[1];
+  try { await writePersistent('czzy-host.json', JSON.stringify({
+    configured: String(LumeSource.config && LumeSource.config.domain || HOST).replace(/\/+$/, ''),
+    host: discoveredHost, time: Date.now()
+  })); } catch (_) {}
+  return reply;
+}
+var pendingDetails = {};
+function get(path, referer) {
+  if (!/^\/(?:detail|movie)\//.test(path)) return getOnce(path, referer);
+  var key = base() + path;
+  if (pendingDetails[key]) return pendingDetails[key];
+  var pending = getOnce(path, referer);
+  pendingDetails[key] = pending;
+  return pending.then(function (value) { delete pendingDetails[key]; return value; },
+    function (error) { delete pendingDetails[key]; throw error; });
+}
+async function getOnce(path) {
+  await readHost();
+  var absolute = /^https?:\/\//i.test(path);
+  var url = absolute ? path : base() + path;
+  var cached = detailCache[url];
+  if (!absolute && /^\/movie\//.test(path) && cached && Date.now() - cached.time < 60000) return cached.body;
+  var reply;
+  try { reply = await requestPage(url); }
+  catch (error) {
+    if (absolute) throw error;
+    try { reply = await discoverHost(path); } catch (_) {}
+    if (!reply) throw error;
+  }
+  var status = reply && reply.status || 0;
+  if (challenge(reply)) throw new Error('NEED_WEBVIEW_VERIFY：厂长资源需要网页校验，请完成后重试：' + (absolute ? path : base() + path));
+  if (!absolute && (status === 0 || status >= 500)) {
+    try { var alternate = await discoverHost(path); if (alternate) { reply = alternate; status = reply.status; } } catch (_) {}
+  }
+  if (status === 404) return '';
+  if (!status) throw new Error('连不上厂长资源，请检查网络或通过源设置打开发布页：' + base());
+  if (status !== 200) throw new Error('厂长资源返回 HTTP ' + status + '：' + path);
+  var body = String(reply.body || '');
+  if (!absolute && /^\/movie\//.test(path)) {
+    detailCache = {}; detailCache[base() + path] = {time: Date.now(), body: body};
+  }
+  return body;
 }
 
 function fixImage(url) {
@@ -226,7 +294,7 @@ function hasNext(html, page, query) {
 var LumeSource = {
   id: 'czzy_video',
   name: '厂长资源',
-  version: '1.0.1',
+  version: '1.0.3',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
@@ -247,7 +315,7 @@ var LumeSource = {
       key: 'note',
       type: 'info',
       title: '站点说明',
-      description: '厂长资源（www.4kcz.com，导航页 cz01.vip）。WordPress + mibt 主题；本源从 /v_play 播放页的 iframe 里取真 m3u8 直连。站点没有付费墙（会员专区实测为空），匿名可播。筛选（系列/地区/类型/年份）按站点 Beautiful Taxonomy Filters 的查询串拼接，实测可组合；翻页用 WordPress 的 paged。'
+      description: '厂长资源（www.4kcz.com，导航页 cz01.vip）。WordPress + mibt 主题；本源从 /v_play 播放页的 iframe 里取真 m3u8 直连。站点没有付费墙（会员专区实测为空），匿名可播。校验过期时会提示在网页视图重新验证；连接失败会从官方发布页发现并验证新的主地址，详情与分集复用 60 秒缓存。筛选（系列/地区/类型/年份）按站点 Beautiful Taxonomy Filters 的查询串拼接，实测可组合；翻页用 WordPress 的 paged。'
     }
   ],
 
@@ -319,11 +387,7 @@ var LumeSource = {
     var id = String((argument && argument.id) || '').replace(/[^0-9]/g, '');
     if (!id) return null;
     var html = '';
-    try {
-      html = await get('/movie/' + id + '.html');
-    } catch (e) {
-      return null;
-    }
+    html = await get('/movie/' + id + '.html');
     if (!html) return null;
     var info = parseDetail(html);
     if (!info.title) return null;

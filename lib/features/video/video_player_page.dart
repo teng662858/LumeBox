@@ -915,9 +915,28 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     if (mounted) setState(() {});
   }
 
+  Stopwatch? _startupWatch;
+
   void _onSnapshotChanged() {
     _syncPipPlaybackState();
     final snapshot = _player?.snapshot.value;
+    final startupWatch = _startupWatch;
+    if (startupWatch != null && snapshot?.error != null) _startupWatch = null;
+    if (startupWatch != null &&
+        snapshot != null &&
+        snapshot.error == null &&
+        snapshot.playing &&
+        !snapshot.buffering &&
+        snapshot.position > Duration.zero) {
+      PlaybackDiagnostics.record(
+        'playback-progress-started',
+        source: _target?.sourceId,
+        kernel: _settings.kernel.name,
+        uri: _media?.uri,
+        elapsedMs: startupWatch.elapsedMilliseconds,
+      );
+      _startupWatch = null;
+    }
     if (snapshot != null) _syncOriginalIntro(snapshot);
     final playing = snapshot?.playing ?? false;
     final work = _target;
@@ -1452,6 +1471,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       uri: media.uri,
     );
     final loadWatch = Stopwatch()..start();
+    _startupWatch = null;
     _nextEpisodeBuffer.discard();
     // 浏览器 UA：片源/会话自带的 User-Agent 优先，否则补上全局偏好。
     final requestMedia = PlaybackPreferenceWiring.applyUserAgent(
@@ -1515,6 +1535,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       elapsedMs: loadWatch.elapsedMilliseconds,
       error: player.snapshot.value.error,
     );
+    _startupWatch = player.snapshot.value.error == null ? loadWatch : null;
     setState(() => _loaded = player.snapshot.value.error == null);
   }
 
