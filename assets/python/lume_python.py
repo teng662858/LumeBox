@@ -861,6 +861,10 @@ def execute(request):
         _close_source(_contexts.pop(source_id, None))
         _contexts[source_id] = state
         source, filename = _unpack_source(state, request["script"])
+        extend_header = re.search(r'^# LumeTVBoxExtend: ([^\r\n]+)', source, re.M) if isinstance(source, str) else None
+        if extend_header:
+            state['tvbox_extend'] = json.loads(extend_header[1])
+            state['config']['extend'] = state['tvbox_extend']
         package = '.'.join(PurePosixPath(state.get('entry', '')).parts[:-1])
         module_name = (package + '.' + Path(filename).stem) if package else 'lume_import_' + hashlib.sha256(source_id.encode()).hexdigest()[:16]
         module = types.ModuleType(module_name)
@@ -913,6 +917,8 @@ def execute(request):
     if state is None:
         raise ValueError("Python 源已释放，请重新选择")
     if action == "config":
+        if 'tvbox_extend' in state:
+            request.setdefault('config', {}).setdefault('extend', state['tvbox_extend'])
         if state.get("config") != request.get("config", {}):
             state.pop("home_metadata", None)
         state["config"] = request.get("config", {})

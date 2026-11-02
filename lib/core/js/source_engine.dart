@@ -24,6 +24,7 @@ import 'sandbox/sandbox_result.dart';
 import '../source/source_package.dart';
 import 'module_script.dart';
 import 'python_source_engine.dart';
+import 'tvbox_source_engine.dart';
 import 'rex_widget.dart';
 
 /// 图源引擎种类。
@@ -110,6 +111,11 @@ class SourceEngineRegistry {
     required LumeHttp http,
     required Section section,
   }) {
+    if (TvBoxSourceEngine.matches(script)) {
+      return Future.value(
+        section == Section.video ? TvBoxSourceEngine(http) : null,
+      );
+    }
     if (SourcePackage.kindOf(script) == SourcePackageKind.python) {
       if (section != Section.video && section != Section.comic) {
         return Future.value(null);

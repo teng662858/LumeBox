@@ -9,6 +9,7 @@ import '../util/lume_log.dart';
 import '../util/md5.dart';
 import 'lume_http.dart';
 import '../source/source_package.dart';
+import '../source/tvbox_config.dart';
 import '../source/source_subscription_catalog.dart';
 import '../source/kazumi_rule.dart';
 import '../source/source_bundle.dart';
@@ -401,6 +402,41 @@ class SourceSubscription {
         visited,
         budget,
       );
+    }
+
+    // TVBox is a data configuration, not JavaScript or a bag of arbitrary URLs.
+    Object? tvboxJson;
+    try {
+      tvboxJson = jsonDecode(stripBomText(download.text));
+    } catch (_) {}
+    if (tvboxJson is Map &&
+        (tvboxJson['sites'] is List || tvboxJson['lives'] is List)) {
+      if (section != null && section != 'video') {
+        throw const FormatException('TVBox 配置请导入视频板块');
+      }
+      final config = TvBoxConfig.parse(download.text, origin: url);
+      final refs = <SourceScriptRef>[];
+      for (final entry in config.entries) {
+        if (!entry.supported) {
+          complete = false;
+          onSkip?.call(entry.name, FormatException(entry.reason));
+          continue;
+        }
+        if (refs.length >= budget) {
+          complete = false;
+          break;
+        }
+        try {
+          final script = entry.kind == TvBoxKind.python
+              ? entry.pythonScript((await _download(entry.api)).bytes)
+              : entry.script;
+          refs.add(SourceScriptRef(script: script, url: url));
+        } catch (error) {
+          complete = false;
+          onSkip?.call(entry.name, error);
+        }
+      }
+      return refs;
     }
 
     // 形态一：`.js.md5` 约定。

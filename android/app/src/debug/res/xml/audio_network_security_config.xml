@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Local emulator preview may browse user-selected HTTP CMS/IPTV endpoints.
+     Release keeps the existing loopback-only cleartext policy. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

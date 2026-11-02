@@ -32,6 +32,7 @@ import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../source/global_source_page.dart';
 import '../source/source_repository_page.dart';
+import '../source/tvbox_import_page.dart';
 import 'app_icon_settings_page.dart';
 import 'cache_settings_page.dart';
 import 'display_settings_group.dart';
@@ -209,6 +210,12 @@ class SettingsPage extends StatelessWidget {
     ),
 
     const SettingsGroupTitle('内容与订阅'),
+    SettingsEntryCard(
+      icon: Icons.playlist_add,
+      title: 'TVBox 聚合配置导入',
+      subtitle: '采集接口、Python 与直播列表 · 逐项预览和导入',
+      onTap: () => _push(context, const TvBoxImportPage()),
+    ),
     SettingsEntryCard(
       icon: Icons.cloud_upload_outlined,
       title: 'GitHub 仓库源管理',

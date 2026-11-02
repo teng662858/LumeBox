@@ -105,6 +105,22 @@ def call(source, action="call", **kwargs):
 
 
 class HostTests(unittest.TestCase):
+    def test_tvbox_extend_survives_config_and_encoded_python_bytes(self):
+        program = '''# coding: gbk
+from base.spider import Spider
+class Spider(Spider):
+    def init(self, extend): self.ext = extend
+    def homeContent(self, filter): return {'class':[{'type_id':'1','type_name':self.ext['label'] + '中文'}]}
+    def detailContent(self, ids): return {'list':[]}
+    def playerContent(self, flag, id, vipFlags): return {'parse':0,'url':'https://fixture.invalid/a.mp4'}
+'''
+        encoded = base64.b64encode(program.encode('gbk')).decode()
+        script = '# LumeTVBoxExtend: {"label":"扩展"}\n# LumePythonBytes: ' + encoded
+        self.assertTrue(call('tvbox-extend', 'load', script=script)['ok'])
+        self.assertTrue(call('tvbox-extend', 'config', config={'domain':'https://fixture.invalid'})['ok'])
+        categories = call('tvbox-extend', method='categories')
+        self.assertTrue(categories['ok'], categories)
+        self.assertEqual(categories['value'][0]['title'], '扩展中文')
     def test_ecc_deterministic_fallback_matches_rfc6979_vectors(self):
         from unittest.mock import patch
         from Crypto.PublicKey import ECC
