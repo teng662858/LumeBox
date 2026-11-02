@@ -1,4 +1,4 @@
-// LumeSource: {"id":"lao4j_video","name":"火力视频","version":"1.0.0","category":"video","contentCategory":"adult","mirrors":["http://web.lao4j.net"],"network":"direct","icon":"http://web.lao4j.net/img/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"火力视频 / 舞艺吧（web.lao4j.net，ThinkPHP + 独立 API 主机）：擦边舞蹈、录屏、写真向短视频。列表与搜索由 81.70.213.11 / 107.148.42.248:83 上的 JSON 接口提供，匿名可取；但**播放页要求登录**（ajax.php?c=web&m=play 匿名一律返回「请登录后再操作！」，注册要手机号+短信验证码）。本源把播放交给 App 内嵌网页：在网页里用你自己的账号登录一次，之后点条目即可播放。封面直连 yimg3.huolient.com（YouTube 缩略图镜像），视频本体不在图片 CDN 上。"}]}
+// LumeSource: {"id":"lao4j_video","name":"火力视频","version":"1.1.0","category":"video","contentCategory":"adult","mirrors":["http://web.lao4j.net"],"network":"direct","icon":"http://web.lao4j.net/img/favicon.ico","settings":[{"key":"cookie","type":"text","title":"登录 Cookie（可选，用于原生播放）","description":"站点播放页要登录（手机号+短信验证码注册，本源不代注册）。想原生播放就把自己浏览器里 web.lao4j.net 的 Cookie（含 PHPSESSID…）整段粘进来；留空则播放交给内嵌网页，在网页里登录一次即可。"},{"key":"note","type":"info","title":"站点说明","description":"火力视频 / 舞艺吧（web.lao4j.net，ThinkPHP + 独立 API 主机）：擦边舞蹈、录屏、写真向短视频。列表与搜索由 81.70.213.11 / 107.148.42.248:83 上的 JSON 接口提供，匿名可取；但**播放页要求登录**（ajax.php?c=web&m=play 匿名一律返回「请登录后再操作！」，注册要手机号+短信验证码）。本源把播放交给 App 内嵌网页：在网页里用你自己的账号登录一次，之后点条目即可播放。封面直连 yimg3.huolient.com（YouTube 缩略图镜像），视频本体不在图片 CDN 上。"}]}
 // LumeRuntime: javascript
 //
 // 站点：火力视频（http://web.lao4j.net）—— 舞艺吧系的舞蹈/擦边视频站。
@@ -156,12 +156,36 @@ async function channelPage(channelId, page) {
   return entry;
 }
 
+
+/* 从播放页里抠媒体地址：video/source 标签、m3u8/mp4 明文、常见播放器配置字段 */
+function pickMedia(html) {
+  var text = String(html || '');
+  var patterns = [
+    /<source[^>]+src=["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/i,
+    /<video[^>]+src=["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/i,
+    /["'](?:url|video_url|playUrl|play_url|m3u8|mp4|src)["']\s*[:=]\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/i,
+    /(https?:\/\/[^"'\s<>\\]+\.m3u8[^"'\s<>\\]*)/i,
+    /(https?:\/\/[^"'\s<>\\]+\.mp4[^"'\s<>\\]*)/i,
+    /(\/\/[^"'\s<>\\]+\.m3u8[^"'\s<>\\]*)/i
+  ];
+  for (var i = 0; i < patterns.length; i++) {
+    var matched = patterns[i].exec(text);
+    if (!matched) continue;
+    var url = String(matched[1] || '').replace(/\\\//g, '/').trim();
+    if (!url) continue;
+    if (url.indexOf('//') === 0) url = 'http:' + url;
+    if (!/^https?:\/\//i.test(url)) continue;
+    return url;
+  }
+  return '';
+}
+
 /* ───────────── 源对象 ───────────── */
 
 var LumeSource = {
   id: 'lao4j_video',
   name: '火力视频',
-  version: '1.0.0',
+  version: '1.1.0',
   category: 'video',
   contentCategory: 'adult',
   mirrors: ['http://web.lao4j.net'],
@@ -269,10 +293,32 @@ var LumeSource = {
     var args = argument || {};
     var id = String(args.id || args.chapterId || '').trim();
     if (!id) throw new Error('缺少视频 ID');
-    return {
-      kind: 'webplayer',
-      pageUrl: site() + '/ajax.php?c=web&m=play&video_id=' + encodeURIComponent(id),
-      headers: headers()
-    };
+    var pageUrl = site() + '/ajax.php?c=web&m=play&video_id=' + encodeURIComponent(id);
+    var cookie = '';
+    try {
+      cookie = String((LumeSource.config && LumeSource.config.cookie) || '').trim();
+    } catch (error) {
+      cookie = '';
+    }
+    // 配了自己的登录 Cookie：直接去播放页里抠媒体地址（登录态下页面才会带播放器）
+    if (cookie) {
+      try {
+        var reply = await LumeSource.http.get(pageUrl, {
+          headers: Object.assign(headers(), { Cookie: cookie })
+        });
+        var html = reply && reply.body ? String(reply.body) : '';
+        if (/请登录/.test(html) && !/\.m3u8|\.mp4/i.test(html)) {
+          throw new Error('填的 Cookie 已失效或被站点判为未登录');
+        }
+        var media = pickMedia(html);
+        if (media) {
+          return { kind: 'video', url: media, headers: { 'User-Agent': UA, Referer: site() + '/' } };
+        }
+      } catch (error) {
+        // 抠不到就退回网页播放，不把错误吞掉导致误判
+        if (String(error && error.message || '').indexOf('Cookie') >= 0) throw error;
+      }
+    }
+    return { kind: 'webplayer', pageUrl: pageUrl, headers: headers() };
   }
 };
