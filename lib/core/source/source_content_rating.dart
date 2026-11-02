@@ -212,6 +212,8 @@ class SourceContentRating {
     'hsckzy_video',
     // 火力视频 / 舞艺吧（web.lao4j.net）：擦边舞蹈与录屏短视频站。
     'lao4j_video',
+    // 有爱爱 UAA（uaa002.com 站群）：视频/有声/漫画/小说四大库的综合成人站。
+    'uaa_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

@@ -1,3 +1,19 @@
+## 2026-11-02 有爱爱 UAA 综合源（`video/uaa.js`，详见 [源记录](../docs/2026-11-02_UAA有爱爱综合源-VIP绕行.md)）
+
+UAA 站群（`uaa002.com` 主用，`uaa001`–`uaa010` / `uaa2601`–`uaa2610` 共 21 个同内容域名，永久域名 `uaa.com`、
+发布页 `uaadizhi.com`）是 Spring Boot SSR + JSON 接口的综合成人站：视频 / 有声 / 漫画 / 小说 四大库一个源全包，
+29 个分类（视频 7 含排序与 origin 地区、有声 7、漫画 6、小说 9）。
+
+**网页被 Cloudflare managed challenge 挡着（连 `/js/`、`/image/` 都挡），但 `/api/` 前缀不在校验规则里** ——
+本源所有页面请求加 `/api/web` 前缀拿同一份 SSR HTML（列表/详情/章节/静态资源全通），取流走
+`/api/video|audio/app/*` JSON，App 自带 UA 实测 200，不需要网页视图过校验。
+
+**VIP / U币 全在前端**：视频 `code:1` 只代表「前端 60 秒试看」，`intro` 返回的 `model.url` 就是整片 m3u8
+（`xc2026103109`：794 段、`#EXTINF` 合计 2381.3 秒 = 详情 `duration` 2381，分片 206）；有声 `chapter` 回
+`code:1「请先登录」` 但照发 mp3；漫画章节 `price:0.3` 仍内联整话 `images`；小说「付费章节」正文照样是 SSR
+的 `div.line`（页面自称「字数：N」，交付字符数与 N 完全相等）。额度记账是播满 60 秒才 POST
+`/video/free/consume`，源里不调它并每次现生成 `viewId`。详见 [源记录](../docs/2026-11-02_UAA有爱爱综合源-VIP绕行.md)。
+
 ## 2026-11-02 橙涩视频（chengshe_video）
 
 成人视频 H5（随机域名，当前 `6s9b2f4hkmbh.xyz`，发布页 `8if2pvzp.cc`）：接口全量 AES-CBC 加密，
@@ -435,6 +451,7 @@ App → 视频板块 → **源管理** → 导入，三种方式任选：
 | 暴风资源 | 否 | — | 16 叶子组（国产剧/各国剧/动作·剧情·科幻片/国产动漫/综艺/短剧细分） | 20 | 20（`?wd=`） | ok | 全部分集 | **video（`vod_play_url` → `v.fengbao14.com/…/index.m3u8`，206 + `#EXTM3U`；分片 ffprobe 1920x1080 h264，分钟级更新）** |
 | 360资源 | 否 | — | 16 叶子组（国产剧/各国剧/电影类型/国产动漫/综艺/短剧细分） | 20 | 20（`?wd=`） | ok | 全部分集 | **video（`vod1.maowushi.com/…/index.m3u8`，200 + `#EXTM3U` `RESOLUTION=1920x1080`）** |
 | 影视岛（4K 库） | 否 | — | 8 类（电视剧/电影/动漫/综艺/短剧/微剧/纪录片/少儿）+ 类型·地区·年份筛选 | 20 | 20（`/api/v1/video/search`） | ok | 全量分集 | **webplayer（`/video/<id>?play=1&ep=<episode_id>`）**：v2.0.2 不预发游客播放请求；游客额度耗尽需网页登录，会员/4K 按账号实际权益开放 |
+| **有爱爱 UAA（18+·综合）** | 否 | 5 板块（视频/有声/漫画/小说/排行） | 29 分组（视频 7 + 有声 7 + 漫画 6 + 小说 9） | 视频/有声/漫画/小说各 48（排行 100） | 20（`/api/video/app/video/search`，仅视频库） | ok | 视频单集 / 有声分集 / 漫画整话 / 小说全章 | **video·audio·images·text 四形态齐全**：视频 m3u8 实测 200 + `#EXTM3U`（整片 2381 秒 = duration）；有声 mp3；漫画 48 张 webp/jpg 首图 200；小说正文逐段。**页面直连被 CF 挡，走 `/api/web` 前缀绕过校验；VIP/U币 只在前端，接口给全量** |
 
 「播放」列是**真去请求那个地址**验的：`video` 表示拿到播放地址且 HTTP 200 + `#EXTM3U`（HLS 清单）；
 `webplayer` 表示拿不到可直连的 m3u8，交给 App 内置网页播放器去跑源站自己的播放器。
@@ -535,6 +552,7 @@ dart run tools/site_reachability.dart
 - **绅游巴士不能按分类/标签过滤**：列表接口只吃 `page` / `pageSize` / `sort` / `keyword`（`categoryId`、`tagId`、`categoryIds` 实测全被忽略，total 恒为 5279），站点 UI 的分类芯片是前端筛的，脚本拿不到全量就没法复刻，所以只给排序 + 站内搜索。它的 `/product` 是游戏下载站（`/cloud-link/{id}` 出网盘），LumeBox 没有对应板块，没做。
 - **探花视频 / 91大神 是同一套内容库**：同一 id 取到的 m3u8 逐字相同，只做**一个**源（`tanhua_video`），另一个域名进 `mirrors`；两个都做成源会在 App 里出现两份相同内容。站点没有搜索接口（`search.php`/`so.html` 403）。域名都是 IDN，`mirrors` 里必须写 punycode（`xn--91-mu9cv53j.com` = 91大神.com，`xn--dzu640eo1e2qq.com` = 探花视频.com）。
 - **VIP 一律先破解再决定怎么放** —— 判定顺序、三种打法（CDN 路径可推导 / 试看签名复用 / 同库镜像）、记录要求见 [docs/VIP处理约定.md](../docs/VIP处理约定.md)；同样规则也适用于此后新增的源。
+- **有爱爱的 `/api/` 是唯一通路**：站点根路径（含 `/js/`、`/image/`）都在 Cloudflare managed challenge 后面，只有 `/api/` 前缀放行 —— 页面侧一律加 `/api/web`，取流走 `/api/video|audio/app/*`。哪天站方把 `/api/` 也纳进校验，源会抛 `NEED_WEBVIEW_VERIFY`。JSON 接口（`intro` / `chapter`）必须带 `viewId`，否则回「非法操作」；额度记账靠播满 60 秒 POST `/video/free/consume`，源里不调它、每次现生成 `viewId`，所以 60 秒试看与每日 10 部/话额度都不生效。站内搜索只有视频库可用（`/api/comic|novel|audio/app/<svc>/search` 一律 500）；排行页固定 100 条不吃 `page`。小说分类跑测时 `playable` 会报「没有给出绝对地址」，属工具对纯文本载荷的限制。
 - **618 影院是「地址表 + 站群」**：`618208.xyz` 首页只有 2×5 的区表（一区…漫画），每格由脚本用 `crypto.getRandomValues()%30` 从 95 个域名码里随机挑一个拼成 `618<码>.xyz/index.php/{vod|art}/type/id/{X}.html`（去重 847 个域名）；页面文字（导航、标题）用 **XOR 0x80** 混淆、浏览器里由内联脚本还原（`幨遨襆頑`→`全部视频`），所以直接抓 HTML 会看到乱码。本源自带 xor80 解码、并会解析地址表自动挑可用域名（缓存 30 分钟）。
 - **TheAVPorn 的流是浏览器抓包定位的**：游客页只有 `no-player`（观看次数受限），但真实播放请求是 `https://bytt.jb-aiwei.cc/contents/videos/{dir}/{id}/index.m3u8?ttl=…&dsc=…`；实测**整段查询串去掉仍 200**、分片 `.ts` 也不带签名、另一个 id 同规则可播 → `content()` 只用 id 拼路径（`dir=floor(id/1000)*1000`）。换分发域时改 `CDN_HOSTS`。
 - **jizeyy / hsex / reddxxx 的取流方式各不相同**：jizeyy 详情页按钮指向 `?action=get&p=1`，页面里是 `jx.php?url=<真 m3u8>`，URL 解码即得直链（`play4.laoyacdn.com` 在本机出口被 RST，换网络可播）；hsex 列表页可直连但详情页一律 CF 挑战、CDN 是逐条签名（`/hls/{id}/index.m3u8` 403），reddxxx 整站 Turnstile 但 **sitemap 未被挑战**（`/sitemap-videos/{N}`，N=0 最新，4214 个分片）——这两个都按 `webplayer` 交付，由 App 内嵌浏览器过 CF 后播放。
