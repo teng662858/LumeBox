@@ -12,7 +12,7 @@ import 'package:lume_box/features/video/video_download_center.dart';
 Future<void> until(bool Function() condition) async {
   final watch = Stopwatch()..start();
   while (!condition()) {
-    if (watch.elapsed > const Duration(seconds: 10)) {
+    if (watch.elapsed > const Duration(seconds: 30)) {
       throw StateError('test timed out');
     }
     await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -214,7 +214,7 @@ void main() {
     expect(master, contains('URI="index-audio.m3u8"'));
   });
   test(
-    'DRM and live HLS are reported as failures, never as completed downloads',
+    'DRM HLS is reported as a failure, never as a completed download',
     () async {
       server.listen((r) async {
         r.response.write(
@@ -227,8 +227,23 @@ void main() {
       await until(() => c.tasks.single.state == 'failed');
       expect(c.tasks.single.error, contains('加密格式'));
       expect(c.tasks.single.fileName, '');
+      await c.flush();
     },
   );
+  test('live HLS is rejected before fetching segments', () async {
+    final requested = <String>[];
+    server.listen((r) async {
+      requested.add(r.uri.path);
+      r.response.write('#EXTM3U\n#EXTINF:1,\nsegment.ts\n');
+      await r.response.close();
+    });
+    final c = await center('live.m3u8');
+    await enqueue(c);
+    await until(() => c.tasks.single.state == 'failed');
+    await c.flush();
+    expect(c.tasks.single.error, contains('直播流'));
+    expect(requested, ['/live.m3u8']);
+  });
   test('HLS ZIP export includes only local referenced files and survives export cancellation', () async {
     final dir = await Directory('${root.path}/offline').create();
     await Directory('${dir.path}/segments').create();

@@ -88,9 +88,11 @@ class PlayerCapabilities {
   /// - **MPV**（media_kit 1.2.6 / libmpv）：轨道、外挂字幕、字幕样式（Flutter
   ///   字幕层）、延迟（`sub-delay` / `audio-delay`）、硬解（`hwdec`）、缓冲参数
   ///   全部有通路；
-  /// - **MDK**（fvp 0.39 / libmdk）：轨道与外挂字幕可用；字幕延迟可写
-  ///   （`sub-delay`）；字幕是内嵌渲染（样式改不了）；音频延迟与解码链切换
-  ///   没有可查证的属性名——**不猜**，如实标不支持。
+  /// - **Aether**（7.53.1）：文字字幕样式与延迟、音频延迟、缓冲及解码偏好
+  ///   走原生公开 API；位图字幕只调整时序，硬件偏好允许软件回退。
+  /// - **MDK**（fvp 0.39 / libmdk）：轨道、外挂字幕及字幕延迟可用；
+  ///   解码通过 `videoDecoders` 选择并保留进度重载；内封字幕样式、
+  ///   音频延迟与缓冲参数没有已验证通路，如实标不支持。
   static PlayerCapabilities of(PlayerKernel kernel) => switch (kernel) {
     PlayerKernel.avplayer => const PlayerCapabilities(
       subtitleTracks: true,

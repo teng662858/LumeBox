@@ -1,3 +1,6 @@
+import '../../core/net/lume_net.dart';
+import '../../core/net/lume_http.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -68,6 +71,9 @@ class VideoDownloadCenter extends ChangeNotifier {
   HttpClient? _client;
   VideoDownloadTask? _active;
   String? storageError;
+  String _proxy = '';
+  final _speedWatch = Stopwatch();
+  int _speedBytes = 0;
   late Directory root;
   static String identity(String source, String item, String chapter) => sha256
       .convert(utf8.encode(jsonEncode([source, item, chapter])))
@@ -214,6 +220,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         await _save();
         notifyListeners();
         try {
+          _proxy = LumeNet.settings.proxy;
           final content = await (resolve?.call(task) ?? _resolve(task)).timeout(
             const Duration(seconds: 45),
           );
@@ -224,6 +231,41 @@ class VideoDownloadCenter extends ChangeNotifier {
           }
           final dir = Directory(folder(task));
           await dir.create(recursive: true);
+          if (_proxy.trim().isNotEmpty) {
+            final proxy = Uri.tryParse(_proxy);
+            if (proxy == null ||
+                !['http', 'https'].contains(proxy.scheme) ||
+                proxy.host.isEmpty) {
+              throw StateError('下载仅支持 HTTP 代理；SOCKS 请通过系统 VPN 使用');
+            }
+            final port = proxy.hasPort
+                ? proxy.port
+                : proxy.scheme == 'https'
+                ? 443
+                : 80;
+            _client!.findProxy = (_) => 'PROXY ${proxy.host}:$port';
+            if (proxy.userInfo.isNotEmpty) {
+              final parts = proxy.userInfo.split(':');
+              _client!.authenticateProxy =
+                  (host, targetPort, scheme, realm) async {
+                    if (host != proxy.host || targetPort != port) return false;
+                    _client!.addProxyCredentials(
+                      host,
+                      targetPort,
+                      realm ?? '',
+                      HttpClientBasicCredentials(
+                        Uri.decodeComponent(parts.first),
+                        Uri.decodeComponent(parts.skip(1).join(':')),
+                      ),
+                    );
+                    return true;
+                  };
+            }
+          }
+          _speedWatch
+            ..reset()
+            ..start();
+          _speedBytes = 0;
           await _download(task, uri, content.headers);
           _check(task);
           task.state = 'done';
@@ -250,6 +292,12 @@ class VideoDownloadCenter extends ChangeNotifier {
   Future<VideoContent> _resolve(VideoDownloadTask task) async {
     final source = await LumeSources.manager(Section.video).open(task.sourceId);
     if (source == null) throw StateError('源不可用，请恢复对应源后继续');
+    final descriptor = (await LumeSources.manager(
+      Section.video,
+    ).list()).where((d) => d.id == task.sourceId).firstOrNull;
+    if (descriptor != null) {
+      _proxy = descriptor.network.mergedWith(LumeNet.settings).proxy;
+    }
     final result = await source.content(
       itemId: task.itemId,
       chapterId: task.chapterId,
@@ -289,6 +337,14 @@ class VideoDownloadCenter extends ChangeNotifier {
           continue;
         }
         req.headers.set(e.key, e.value);
+      }
+      if (!headers.keys.any((key) => key.toLowerCase() == 'user-agent')) {
+        req.headers.set(
+          'User-Agent',
+          LumeNet.settings.userAgent.isNotEmpty
+              ? LumeNet.settings.userAgent
+              : LumeHttp.defaultUserAgent,
+        );
       }
       req.headers.set('Accept-Encoding', 'identity');
       for (final e in extra.entries) {
@@ -349,10 +405,18 @@ class VideoDownloadCenter extends ChangeNotifier {
       response.timeout(const Duration(seconds: 45)),
     );
     if (!await iterator.moveNext()) throw StateError('视频响应为空');
-    final first = iterator.current;
+    final first = <int>[...iterator.current];
+    var ended = false;
+    while (first.length < 16) {
+      if (!await iterator.moveNext()) {
+        ended = true;
+        break;
+      }
+      first.addAll(iterator.current);
+    }
     Stream<List<int>> stream() async* {
       yield first;
-      while (await iterator.moveNext()) {
+      while (!ended && await iterator.moveNext()) {
         _check(task);
         yield iterator.current;
       }
@@ -552,7 +616,9 @@ class VideoDownloadCenter extends ChangeNotifier {
       _check(task);
       if (line.startsWith('#EXT-X-KEY:') &&
           !line.contains('METHOD=NONE') &&
-          (!line.contains('METHOD=AES-128') || line.contains('KEYFORMAT='))) {
+          (!line.contains('METHOD=AES-128') ||
+              (line.contains('KEYFORMAT=') &&
+                  !line.contains('KEYFORMAT="identity"')))) {
         throw StateError('该加密格式不支持离线下载');
       }
       if (line.startsWith('#EXT-X-KEY:') || line.startsWith('#EXT-X-MAP:')) {
@@ -578,7 +644,12 @@ class VideoDownloadCenter extends ChangeNotifier {
       }
       if (line.isNotEmpty && !line.startsWith('#')) {
         final url = uri.resolve(line);
-        final relative = '$name-$plan/segment-${index++}.ts';
+        final suffix = p.extension(url.path).toLowerCase();
+        final extension =
+            ['.ts', '.m4s', '.mp4', '.aac', '.mp3'].contains(suffix)
+            ? suffix
+            : '.ts';
+        final relative = '$name-$plan/segment-${index++}$extension';
         await _resource(
           task,
           url,
@@ -622,6 +693,14 @@ class VideoDownloadCenter extends ChangeNotifier {
         sink.add(b);
         size += b.length;
         task.bytes += b.length;
+        _speedBytes += b.length;
+        if (_speedWatch.elapsedMilliseconds >= 300) {
+          task.bytesPerSecond =
+              _speedBytes * 1000 / _speedWatch.elapsedMilliseconds;
+          _speedBytes = 0;
+          _speedWatch.reset();
+          notifyListeners();
+        }
       }
       await sink.flush();
     } finally {

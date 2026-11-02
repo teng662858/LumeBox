@@ -46,6 +46,7 @@ class OfflineVideoServer {
             '.mp4',
             '.key',
             '.aac',
+            '.mp3',
           ].contains(p.extension(path))) {
         request.response.statusCode = 403;
         return;
@@ -86,6 +87,8 @@ class OfflineVideoServer {
       request.response.headers.contentType = ContentType.parse(switch (p
           .extension(path)) {
         '.m3u8' => 'application/vnd.apple.mpegurl',
+        '.aac' => 'audio/aac',
+        '.mp3' => 'audio/mpeg',
         '.ts' => 'video/mp2t',
         '.mp4' || '.m4s' => 'video/mp4',
         _ => 'application/octet-stream',

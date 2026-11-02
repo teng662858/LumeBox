@@ -3495,7 +3495,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                               .copyWith(bufferSeconds: seconds)
                               .save(library);
                         }
-                        unawaited(_player?.setBuffering(_buffering));
+                        final player = _player;
+                        if (player != null) {
+                          unawaited(
+                            player.setBuffering(_buffering).catchError((
+                              Object error,
+                            ) {
+                              if (mounted) _showToast('本次缓冲调整未完成，将在下次播放时应用');
+                            }),
+                          );
+                        }
                       },
               ),
             ],

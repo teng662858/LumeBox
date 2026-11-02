@@ -1696,74 +1696,76 @@ class _DownloadScopeSheet extends StatelessWidget {
         color: LumeTheme.surface,
         child: SafeArea(
           top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  '批量下载',
-                  style: TextStyle(
-                    fontSize: LumeTypography.sectionTitleSize,
-                    fontWeight: FontWeight.w600,
-                    color: LumeTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '图片存到应用内的导出目录（按作品 / 章节分目录），'
-                  '已下过的图会自动跳过，可随时取消。',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: LumeTypography.descriptionSize,
-                    height: 1.5,
-                    color: LumeTheme.descriptionColor,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                for (final (scope, count) in scopes)
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    enabled: count > 0,
-                    onTap: count > 0
-                        ? () => Navigator.of(context).pop(scope)
-                        : null,
-                    title: Text(
-                      scope.label,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: LumeTypography.titleSize,
-                        color: LumeTheme.textPrimary,
-                      ),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    '批量下载',
+                    style: TextStyle(
+                      fontSize: LumeTypography.sectionTitleSize,
+                      fontWeight: FontWeight.w600,
+                      color: LumeTheme.textPrimary,
                     ),
-                    subtitle: Text(
-                      switch (scope) {
-                        ComicDownloadScope.selected => '勾选需要保存的章节',
-                        ComicDownloadScope.all => '整部作品，共 $count 章',
-                        ComicDownloadScope.unread =>
-                          count == 0 ? '没有未读章节' : '进度之后，共 $count 章',
-                        ComicDownloadScope.current =>
-                          count == 0
-                              ? '暂无可下载章节'
-                              : '只下第 ${(readChapterIndex ?? 0) + 1} 章',
-                      },
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: LumeTypography.descriptionSize,
-                        color: LumeTheme.descriptionColor,
-                      ),
-                    ),
-                    trailing: count > 0
-                        ? LumeIcon(
-                            Icons.chevron_right,
-                            slot: 'comic_detail_page.4',
-                            color: LumeTheme.muted,
-                          )
-                        : null,
                   ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    '图片存到应用内的导出目录（按作品 / 章节分目录），'
+                    '已下过的图会自动跳过，可随时取消。',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: LumeTypography.descriptionSize,
+                      height: 1.5,
+                      color: LumeTheme.descriptionColor,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  for (final (scope, count) in scopes)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      enabled: count > 0,
+                      onTap: count > 0
+                          ? () => Navigator.of(context).pop(scope)
+                          : null,
+                      title: Text(
+                        scope.label,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: LumeTypography.titleSize,
+                          color: LumeTheme.textPrimary,
+                        ),
+                      ),
+                      subtitle: Text(
+                        switch (scope) {
+                          ComicDownloadScope.selected => '勾选需要保存的章节',
+                          ComicDownloadScope.all => '整部作品，共 $count 章',
+                          ComicDownloadScope.unread =>
+                            count == 0 ? '没有未读章节' : '进度之后，共 $count 章',
+                          ComicDownloadScope.current =>
+                            count == 0
+                                ? '暂无可下载章节'
+                                : '只下第 ${(readChapterIndex ?? 0) + 1} 章',
+                        },
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: LumeTypography.descriptionSize,
+                          color: LumeTheme.descriptionColor,
+                        ),
+                      ),
+                      trailing: count > 0
+                          ? LumeIcon(
+                              Icons.chevron_right,
+                              slot: 'comic_detail_page.4',
+                              color: LumeTheme.muted,
+                            )
+                          : null,
+                    ),
+                ],
+              ),
             ),
           ),
         ),

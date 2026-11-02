@@ -136,12 +136,13 @@ class MdkEngine extends AbstractPlayer
   double _speed = 1.0;
   bool _hardwareDecoding = true;
   PlayerMedia? _currentMedia;
+  String? _externalSubtitle;
 
   static List<String> decoderPriority(bool hardware, {String? platform}) {
     if (!hardware) return const ['FFmpeg', 'dav1d'];
     return switch (platform ?? Platform.operatingSystem) {
       'ios' || 'macos' => const ['VT', 'FFmpeg', 'dav1d'],
-      'windows' => const ['MFT', 'D3D11', 'DXVA', 'FFmpeg', 'dav1d'],
+      'windows' => const ['MFT:d3d=11', 'D3D11', 'DXVA', 'FFmpeg', 'dav1d'],
       'android' => const ['AMediaCodec', 'FFmpeg', 'dav1d'],
       _ => const ['FFmpeg', 'dav1d'],
     };
@@ -304,6 +305,7 @@ class MdkEngine extends AbstractPlayer
           : Uri.file(path).toString();
       _subtitleSelection = const [-1];
       _player.setMedia(uri, mdk.MediaType.subtitle);
+      _externalSubtitle = uri;
       LumeLog.info('[mdk] 已加载外挂字幕：$path');
       return true;
     } catch (error) {
@@ -341,6 +343,7 @@ class MdkEngine extends AbstractPlayer
   @override
   Future<void> load(PlayerMedia media) async {
     if (!_live) return;
+    if (_currentMedia?.uri != media.uri) _externalSubtitle = null;
     final uri = await _highestHls.resolve(
       media.uri,
       media.headers,
@@ -535,7 +538,14 @@ class MdkEngine extends AbstractPlayer
     if (decodingChanged && media != null) {
       final position = snapshot.value.position;
       final playing = snapshot.value.playing;
+      final audio = List<int>.of(_player.activeAudioTracks);
+      final subtitles = List<int>.of(_subtitleSelection);
+      final external = _externalSubtitle;
       await load(media);
+      if (external != null) await loadSubtitleFile(external);
+      _player.activeAudioTracks = audio;
+      _subtitleSelection = subtitles;
+      _applySubtitleState();
       await seek(position);
       if (playing) {
         await play();

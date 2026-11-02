@@ -391,6 +391,22 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
                             child: const Text('保存到本地文件'),
                           ),
                           TextButton(
+                            onPressed: _busy
+                                ? null
+                                : () => _perform(() async {
+                                    final library = await ReadingLibrary.open(
+                                      task.section,
+                                    );
+                                    await _storage(
+                                      await comicDownloadDirectory(
+                                        task,
+                                        library,
+                                      ),
+                                    );
+                                  }),
+                            child: const Text('占用空间'),
+                          ),
+                          TextButton(
                             onPressed: _busy ? null : () => center.remove(task),
                             child: const Text('移除任务'),
                           ),

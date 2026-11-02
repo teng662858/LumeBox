@@ -153,6 +153,30 @@ void main() {
     expect(player.stats.value.width, 1920);
   });
 
+  test(
+    'buffer-slider bursts collapse into one native session correction',
+    () async {
+      final player = AetherPlayer();
+      addTearDown(player.dispose);
+      await player.load(PlayerMedia(uri: Uri.file('/movie.mkv')));
+      final count = calls.where((c) => c.method == 'settings').length;
+      final one = player.setBuffering(
+        const BufferingConfig(readAhead: Duration(seconds: 30)),
+      );
+      final two = player.setBuffering(
+        const BufferingConfig(readAhead: Duration(seconds: 60)),
+      );
+      await Future.wait([one, two]);
+      expect(calls.where((c) => c.method == 'settings').length, count + 1);
+      expect(
+        ((calls.lastWhere((c) => c.method == 'settings').arguments
+                as Map)['options']
+            as Map)['forwardBufferSeconds'],
+        60,
+      );
+    },
+  );
+
   test('dispose bypasses a blocked load and stale completions cannot update notifiers', () async {
     loading = Completer<void>();
     final player = AetherPlayer();
