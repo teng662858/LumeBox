@@ -1,4 +1,4 @@
-// LumeSource: {"id":"insav_video","name":"INSAV","version":"1.0.0","category":"video","contentCategory":"adult","mirrors":["https://pqtn95.com"],"network":"direct","icon":"https://pqtn95.com/logo.png"}
+// LumeSource: {"id":"insav_video","name":"INSAV","version":"1.1.0","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://pqtn95.com"],"network":"direct","icon":"https://pqtn95.com/logo.png","settings":[{"key":"token","type":"text","title":"登录 token（可选，用于原生播放）","description":"站点的播放接口 getVideoUrl 要登录态，而登录强制图形验证码（captcha/get 每次换图），源里没法自动过。做法：在浏览器打开 https://pqtn95.com → 登录 → DevTools → Application → Local Storage → 复制 ins_tokenxyz 的值，粘到这里。填了就走原生播放；留空则播放交给站内网页。"},{"key":"note","type":"info","title":"站点说明","description":"INS AV（网页 dcuj77.com / 接口 pqtn95.com，日本 AV 厂牌聚合，全站 18+）。分区按 site：1 有码 / 2 无码 / 3 动漫 / 4 4K；type=3 是免费放送。接口参数整体 AES-256 加密 + md5 签名（源内用宿主原生 tools.aes / tools.digest）。接口域是随机域名，换域后改镜像或在「源设置」里填新域名。"}]}
 // LumeRuntime: javascript
 //
 // 站点：INS AV（网页入口 dcuj77.com，接口在随机域 pqtn95.com；全站 18+，日本 AV 厂牌聚合）
@@ -78,7 +78,13 @@ function categoryOf(id) {
 }
 
 // ---------------- 协议 ----------------
-async function api(path, params) {
+// 源设置（目前只有可选的登录 token）
+function setting(key) {
+  var bag = LumeSource.config && LumeSource.config.settings ? LumeSource.config.settings : {};
+  return bag && bag[key] ? String(bag[key]) : '';
+}
+
+async function api(path, params, extraHeaders) {
   var root = siteBase();
   var payload = { site: 1, device: 2, timestamp: Date.now() };
   var extra = params || {};
@@ -105,15 +111,18 @@ async function api(path, params) {
     root + '/api/' + path + '?_t=' + Date.now(),
     JSON.stringify({ 'post-data': encrypted }),
     {
-      headers: {
-        'User-Agent': UA,
-        Accept: 'application/json, text/plain, */*',
-        'Content-Type': 'application/json',
-        suffix: REQ_SUFFIX,
-        lang: 'zh',
-        Referer: root + '/',
-        Origin: root,
-      },
+      headers: Object.assign(
+        {
+          'User-Agent': UA,
+          Accept: 'application/json, text/plain, */*',
+          'Content-Type': 'application/json',
+          suffix: REQ_SUFFIX,
+          lang: 'zh',
+          Referer: root + '/',
+          Origin: root,
+        },
+        extraHeaders || {},
+      ),
     },
   );
   if (!reply || reply.status !== 200) {
@@ -252,7 +261,31 @@ var LumeSource = {
   async content(args) {
     var id = String((args && (args.id || args.chapterId)) || '').replace(/[^0-9]/g, '');
     if (!id) throw new Error('缺少视频 ID');
-    // 该站的 getVideoUrl 需要登录态，本源不做账号体系：交给站内网页播放器。
+
+    // 有 token 就走原生：getVideoUrl 需要登录态（登录要图形验证码，源里不做自动登录，
+    // token 由用户在网页登录后粘到源设置里）。
+    var token = setting('token');
+    if (token) {
+      try {
+        var play = await api('video/getVideoUrl', { vid: Number(id) }, { token: token });
+        var url = (play && play.data && (play.data.url || play.data.play_url || play.data.video_url)) ||
+          (play && (play.url || play.play_url));
+        if (url) {
+          return {
+            kind: 'video',
+            url: String(url),
+            headers: { 'User-Agent': UA, Referer: siteBase() + '/' },
+          };
+        }
+        if (play && play.code && play.code !== 1) {
+          throw new Error('取播放地址失败：' + (play.msg || play.code) + '（token 可能过期，重新登录再粘一次）');
+        }
+      } catch (error) {
+        if (String(error && error.message).indexOf('token 可能过期') >= 0) throw error;
+        // 接口异常也退回网页，不把用户卡死
+      }
+    }
+
     return {
       kind: 'webplayer',
       url: siteBase() + '/video/info?vid=' + encodeURIComponent(id),
