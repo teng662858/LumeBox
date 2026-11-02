@@ -8,6 +8,10 @@ name: Build unsigned IPA (iOS)
 on:
   workflow_dispatch:
     inputs:
+      remux_only:
+        description: '只检查离线 MP4 合并，不构建 App'
+        type: boolean
+        default: false
       models_only:
         description: '只预计算并验证离线模型资源，不构建 App'
         type: boolean
@@ -20,6 +24,36 @@ on:
 run-name: ${{ inputs.typecheck_only && 'Swift typecheck only — no package' || 'Build unsigned IPA' }}
 
 jobs:
+  remux:
+    if: ${{ inputs.remux_only == true }}
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: build/offline-remux-check
+          key: offline-remux-ffmpeg-3.11.1-${{ runner.os }}-${{ runner.arch }}
+      - name: Resolve the app's FFmpeg dependency without compiling Flutter
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE="$RUNNER_TEMP/remux-dependency"
+          mkdir -p "$PACKAGE/Sources/Probe"
+          cat > "$PACKAGE/Package.swift" <<'SWIFT'
+          // swift-tools-version: 6.0
+          import PackageDescription
+          let package = Package(name: "RemuxDependency", platforms: [.macOS(.v14)], dependencies: [
+            .package(url: "https://github.com/superuser404notfound/FFmpegBuild", exact: "3.11.1")
+          ], targets: [.executableTarget(name: "Probe", dependencies: [
+            .product(name: "AetherFFmpegBuild", package: "FFmpegBuild")
+          ])])
+          SWIFT
+          echo 'import AetherLibavformat; print(avformat_version())' > "$PACKAGE/Sources/Probe/main.swift"
+          swift build --package-path "$PACKAGE" --scratch-path "$PWD/build/offline-remux-check"
+      - name: Test the production Swift merge implementation with real media
+        run: bash tool/check_offline_remux.sh
+
   model-assets:
     if: ${{ inputs.models_only == true }}
     runs-on: macos-latest
@@ -35,7 +69,7 @@ jobs:
           if-no-files-found: error
   # 手动构建直接运行；全量分析与测试由 quality.yml 独立按需执行。
   build-ipa:
-    if: ${{ inputs.models_only != true }}
+    if: ${{ inputs.models_only != true && inputs.remux_only != true }}
     name: ${{ inputs.typecheck_only && 'Swift and simulator checks (no IPA)' || 'Build unsigned IPA' }}
     runs-on: macos-latest
     timeout-minutes: 60
