@@ -349,6 +349,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       // A crash after atomic rename but before manifest update can reuse the result.
       if (!await output.exists()) {
         if (await part.exists()) await part.delete();
+        _check(task);
         await (merge ?? _merger.merge)(dir, part, task.id);
         _check(task);
         if (!await _isMp4(part)) throw StateError('合并未生成有效的 MP4 文件');
@@ -359,6 +360,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       _check(task);
       task.fileName = 'merged.mp4';
       task.bytes = task.totalBytes = await output.length();
+      task.completed = task.total = 0;
       task.state = 'done';
       await _save();
       // Persist the committed MP4 before removing any original media.

@@ -7,8 +7,10 @@ import 'package:path/path.dart' as p;
 class VideoDownloadMerger {
   static const channel = MethodChannel('lumebox/video_remux');
   final _processes = <String, Process>{};
+  final _cancelled = <String>{};
 
   Future<void> merge(Directory directory, File output, String id) async {
+    _cancelled.remove(id);
     if (Platform.isIOS) {
       await channel.invokeMethod<void>('merge', {
         'directory': directory.absolute.path,
@@ -49,6 +51,7 @@ class VideoDownloadMerger {
       output.path,
     ]);
     _processes[id] = process;
+    if (_cancelled.contains(id)) process.kill();
     // Drain diagnostics without retaining site paths or unbounded output.
     final errors = process.stderr.drain<void>();
     final stdout = process.stdout.drain<void>();
@@ -58,6 +61,7 @@ class VideoDownloadMerger {
       if (code != 0) throw StateError('MP4 合并失败，原始分片已保留（$code）');
     } finally {
       _processes.remove(id);
+      _cancelled.remove(id);
     }
   }
 
@@ -65,6 +69,7 @@ class VideoDownloadMerger {
     if (Platform.isIOS) {
       await channel.invokeMethod<void>('cancel', {'id': id});
     } else {
+      _cancelled.add(id);
       _processes[id]?.kill();
     }
   }

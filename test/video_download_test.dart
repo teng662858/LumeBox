@@ -45,6 +45,7 @@ void main() {
   }) async {
     final value = VideoDownloadCenter(
       directory: () async => root,
+      merge: (_, _, _) async => throw StateError('fixture cannot remux'),
       resolve: (_) async =>
           VideoContent(url: origin.resolve(path), headers: headers),
     );
@@ -156,7 +157,7 @@ void main() {
     await enqueue(c);
     await until(() => c.tasks.single.state == 'failed');
     await c.resume(c.tasks.single);
-    await until(() => c.tasks.single.state == 'done');
+    await until(() => c.tasks.single.state == 'merge_failed');
     await c.flush();
     expect(first, 1);
     expect(second, 2);
@@ -203,7 +204,7 @@ void main() {
     });
     final c = await center('master.m3u8');
     await enqueue(c);
-    await until(() => c.tasks.single.state == 'done');
+    await until(() => c.tasks.single.state == 'merge_failed');
     await c.flush();
     expect(
       paths,

@@ -302,7 +302,9 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
                             onPressed: _busy
                                 ? null
                                 : () => _perform(() => _exportVideo(task)),
-                            child: const Text('保存到本地文件'),
+                            child: Text(
+                              task.hasLocalPlaylist ? '导出分片 ZIP' : '保存到本地文件',
+                            ),
                           ),
                         ],
                         if (!task.running)
