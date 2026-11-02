@@ -14,8 +14,6 @@ import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
-import 'package:lume_box/core/source/kazumi_rule.dart';
-import 'package:lume_box/core/source/source_subscription_catalog.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/reading/source_bar.dart';
 import 'package:lume_box/features/source/video_source_picker.dart';
@@ -186,114 +184,46 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Kazumi与有声小说独立分类，旧源无需重新导入且普通页不混入', (tester) async {
+  testWidgets('TVBOX独立入口同时收纳采集、直播和Python条目', (tester) async {
     manager.sources.addAll(const [
       SourceDescriptor(
-        id: 'kazumi_fixture',
-        name: '动漫测试',
-        version: '8',
+        id: 'tvbox_cms',
+        name: 'TVBOX采集样例',
+        version: '1',
         enabled: true,
       ),
       SourceDescriptor(
-        id: 'book',
-        name: '听书测试',
+        id: 'tvbox_python',
+        name: 'TVBOX Python样例',
         version: '1',
         enabled: true,
-        group: '听书',
-      ),
-      SourceDescriptor(
-        id: 'podcast',
-        name: '明确音频',
-        version: '1',
-        enabled: true,
-        mediaKind: 'audio',
         runtimeKind: 'python',
       ),
     ]);
-    manager.selected = 'book';
-    await pump(tester, keepInitialType: true);
-    expect(
-      tester
-          .widget<ChoiceChip>(
-            find.byKey(const ValueKey('video-source-type-audio')),
-          )
-          .selected,
-      isTrue,
+    await pump(tester);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('video-source-type-tvbox')),
     );
-    expect(find.text('听书测试'), findsOneWidget);
-    expect(find.text('明确音频'), findsOneWidget);
-    expect(find.text('动漫测试'), findsNothing);
-    final tab = find.byKey(const ValueKey('video-source-type-kazumi'));
-    await tester.ensureVisible(tab);
-    await tester.tap(tab);
+    await tester.tap(find.byKey(const ValueKey('video-source-type-tvbox')));
     await tester.pumpAndSettle();
-    expect(find.text('动漫测试'), findsOneWidget);
-    expect(find.text('听书测试'), findsNothing);
-    final ordinary = find.byKey(const ValueKey('video-source-type-ordinary'));
-    await tester.ensureVisible(ordinary);
-    await tester.tap(ordinary);
-    await tester.pumpAndSettle();
-    expect(find.text('普通视频长名称测试'), findsOneWidget);
-    expect(find.text('动漫测试'), findsNothing);
-    expect(find.text('听书测试'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('有声小说汇集猫源和网页音频，保留选中状态且不混入普通影视', (tester) async {
-    service.subscriptions.add(
-      CatSubscription(
-        id: 'books',
-        name: '书库订阅',
-        url: 'https://fixture.test/books',
-        sites: const [
-          CatSite(
-            subscriptionId: 'books',
-            key: 'audio',
-            name: '猫源听书',
-            api: '/audio',
-          ),
-        ],
-      ),
-    );
-    final store = await WebHomeStore.open();
-    store.upsert(
-      WebHomeSource(
-        id: 'audio-home',
-        name: '网页听书',
-        url: 'https://fixture.test/audio',
-      ),
-    );
-    await pump(
-      tester,
-      keepInitialType: true,
-      showingCat: true,
-      currentCatId: 'books|video|audio',
-    );
-    expect(
-      tester
-          .widget<ChoiceChip>(
-            find.byKey(const ValueKey('video-source-type-audio')),
-          )
-          .selected,
-      isTrue,
-    );
-    expect(find.text('猫源听书'), findsOneWidget);
-    expect(find.text('网页听书'), findsOneWidget);
-    expect(find.text('猫源测试长名称站点'), findsNothing);
+    expect(find.text('TVBOX采集样例'), findsOneWidget);
+    expect(find.text('TVBOX Python样例'), findsOneWidget);
     expect(find.text('普通视频长名称测试'), findsNothing);
-    expect(VideoSourceType.values.map((s) => s.label).toList(), [
-      '全部',
-      'JS 源',
-      '猫源',
-      'PY',
-      '有声小说',
-      'Kazumi',
-      '模块',
-      '网页',
-    ]);
-    expect(tester.takeException(), isNull);
   });
-
+  testWidgets('视频模块不再提供已迁到漫画的有声和Kazumi分类', (tester) async {
+    await pump(tester);
+    expect(find.byKey(const ValueKey('video-source-type-audio')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('video-source-type-kazumi')),
+      findsNothing,
+    );
+    expect(find.byTooltip('调整分类顺序'), findsOneWidget);
+  });
+  testWidgets('视频模块保留独立的猫源和网页入口', (tester) async {
+    await pump(tester);
+    expect(find.byKey(const ValueKey('video-source-type-cat')), findsOneWidget);
+    expect(find.byKey(const ValueKey('video-source-type-web')), findsOneWidget);
+  });
   for (final runtime in ['javascript', 'python', 'module']) {
     testWidgets(
       'reopen locates the last $runtime source without changing source order',
@@ -635,49 +565,14 @@ void main() {
     }
   });
 
-  testWidgets('有声小说独立导入入口预填听书订阅，取消不写入源', (tester) async {
+  testWidgets('视频添加菜单不再重复提供有声与Kazumi入口', (tester) async {
     await pump(tester);
     await tester.tap(find.byTooltip('添加视频源'));
     await tester.pumpAndSettle();
-    final entry = find.text('有声小说源');
-    await tester.ensureVisible(entry);
-    await tester.tap(entry);
-    await tester.pumpAndSettle();
-    expect(find.text('导入有声小说源'), findsOneWidget);
-    expect(find.text(SubscriptionCatalog.audiobooksUrl), findsOneWidget);
-    await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
-    expect(manager.sources.length, 2);
-    expect(tester.takeException(), isNull);
+    expect(find.text('有声小说源'), findsNothing);
+    expect(find.text('Kazumi 源'), findsNothing);
+    expect(find.text('普通视频源'), findsOneWidget);
   });
-
-  testWidgets('有声小说筛选下仍可找到 HTML 导入入口', (tester) async {
-    await pump(tester);
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('video-source-type-audio')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('video-source-type-audio')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('video-import-html')), findsOneWidget);
-  });
-
-  testWidgets('Kazumi 独立入口预填官方订阅，取消不写入任何源', (tester) async {
-    await pump(tester);
-    await tester.tap(find.byTooltip('添加视频源'));
-    await tester.pumpAndSettle();
-    expect(find.text('Kazumi 源'), findsOneWidget);
-    await tester.tap(find.text('Kazumi 源'));
-    await tester.pumpAndSettle();
-    expect(find.text('导入 Kazumi 源'), findsOneWidget);
-    expect(find.text(KazumiRule.officialIndex), findsOneWidget);
-    expect(find.textContaining('部分规则没有首页推荐'), findsOneWidget);
-    await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
-    expect(manager.sources.length, 2);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('左滑先露出删除，取消保留，确认才删除且相邻卡片保留', (tester) async {
     manager.sources.add(
       const SourceDescriptor(

@@ -76,6 +76,40 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('屏内左右滑切换一级分类，边界不循环且短滑不误触', (tester) async {
+    final source = _DuplicateCategorySource();
+    await show(
+      tester,
+      FakeSourceManager(
+        sources: const [
+          SourceDescriptor(id: 'a', name: '测试源', version: '1', enabled: true),
+        ],
+        opened: {'a': source},
+      ),
+    );
+    final body = find.byKey(const ValueKey('source-category-swipe'));
+    Future<void> swipe(double travel) async {
+      final rect = tester.getRect(body);
+      await tester.dragFrom(
+        Offset(rect.left + rect.width * .55, rect.top + rect.height * .7),
+        Offset(travel, 0),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await swipe(-150);
+    expect(source.requests.last.$1, 'cid:22');
+    await swipe(-150);
+    expect(source.requests.last.$1, 'cid:23');
+    final count = source.requests.length;
+    await swipe(-150);
+    expect(source.requests.length, count);
+    await swipe(150);
+    expect(source.requests.last.$1, 'cid:22');
+    await swipe(25);
+    expect(source.requests.last.$1, 'cid:22');
+  });
+
   testWidgets('重复分类只保留上排，不同 id 表达方式仍能切换，保留独立筛选', (tester) async {
     final source = _DuplicateCategorySource();
     await show(

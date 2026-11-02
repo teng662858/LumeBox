@@ -154,7 +154,7 @@ void main() {
               name: '乙$i',
               version: '1',
               enabled: true,
-              group: groups.last.$2,
+              group: groups[1].$2,
             ),
         ],
       );
@@ -172,6 +172,22 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      if (section != Section.cat) {
+        final list = find.byKey(const ValueKey('picker-grouped-list'));
+        expect(
+          find.byKey(const ValueKey('picker-category-columns')),
+          findsNothing,
+        );
+        expect(
+          tester.getTopLeft(find.byKey(const ValueKey('picker-card-b39'))).dy,
+          closeTo(tester.getTopLeft(list).dy, 1),
+        );
+        await tester.enterText(find.byType(TextField), '甲0');
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('picker-source-a0')), findsOneWidget);
+        expect(manager.selectedIds, isEmpty);
+        return;
+      }
       final right = find.byKey(const PageStorageKey('picker-column-1'));
       expect(
         tester.getTopLeft(find.byKey(const ValueKey('picker-card-b39'))).dy,
@@ -201,7 +217,7 @@ void main() {
       ReadingLibrary.find(section)!
           .setSetting('source.picker.columns', 'false');
       final groups = SourcePickerGroups.forSection(section);
-      await SourcePreferences(pickerGroup: groups.last.$1).save(section, 'b');
+      await SourcePreferences(pickerGroup: groups[1].$1).save(section, 'b');
       final manager = FakeSourceManager(
         sources: const [
           SourceDescriptor(id: 'a', name: '甲源', version: '1', enabled: true),
@@ -222,14 +238,6 @@ void main() {
       );
       String? selected;
       await showBar(tester, section, manager, (value) => selected = value);
-      expect(
-        find.byKey(ValueKey('picker-group-${groups.first.$1}')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(ValueKey('picker-group-${groups.last.$1}')),
-        findsOneWidget,
-      );
       expect(find.text('停用源'), findsNothing);
       expect(find.byTooltip('切换为单列'), findsNothing);
       expect(find.byTooltip('切换为双列'), findsNothing);
@@ -237,7 +245,7 @@ void main() {
       expect(find.byType(GridView), findsNothing);
       expect(
         find.byKey(const ValueKey('picker-category-columns')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(find.byType(SourceIcon), findsNWidgets(2));
       for (final icon in tester.widgetList<SourceIcon>(
@@ -287,15 +295,23 @@ void main() {
       );
       final more = tester.getRect(find.byKey(const ValueKey('picker-more-a')));
       expect(tester.getRect(a).right - more.right, 4);
-      expect(tester.getTopLeft(a).dx, lessThan(tester.getTopLeft(b).dx));
-      expect(tester.getTopLeft(a).dy, tester.getTopLeft(b).dy);
       final panel = tester.getRect(
         find.byKey(const ValueKey('browse-right-drawer')),
       );
-      expect(tester.getRect(a).left, panel.left + 14);
-      expect(tester.getRect(b).right, panel.right - 14);
-      expect(tester.getRect(b).left - tester.getRect(a).right, 8);
-      expect(tester.getSize(a).width, (panel.width - 36) / 2);
+      if (section != Section.cat) {
+        expect(tester.getTopLeft(a).dx, tester.getTopLeft(b).dx);
+        expect(tester.getTopLeft(a).dy, lessThan(tester.getTopLeft(b).dy));
+        expect(tester.getSize(a).width, panel.width - 28);
+      } else {
+        expect(tester.getTopLeft(a).dx, lessThan(tester.getTopLeft(b).dx));
+        if (section != Section.comic) {
+          expect(tester.getTopLeft(a).dy, tester.getTopLeft(b).dy);
+        }
+        expect(tester.getRect(a).left, panel.left + 14);
+        expect(tester.getRect(b).right, panel.right - 14);
+        expect(tester.getRect(b).left - tester.getRect(a).right, 8);
+        expect(tester.getSize(a).width, (panel.width - 36) / 2);
+      }
       await tester.tap(find.byKey(const ValueKey('picker-more-b')));
       await tester.pumpAndSettle();
       for (final label in ['置顶此源', '源设置', '浏览', '测试连通性', '更新订阅源']) {
@@ -550,10 +566,12 @@ void main() {
     // before checking the dimensions of both cards and the pinned indicator.
     tester
         .state<ScrollableState>(
-          find.descendant(
-            of: find.byKey(const PageStorageKey('picker-column-0')),
-            matching: find.byType(Scrollable),
-          ),
+          find
+              .descendant(
+                of: find.byKey(const ValueKey('picker-grouped-list')),
+                matching: find.byType(Scrollable),
+              )
+              .first,
         )
         .position
         .jumpTo(0);
@@ -607,9 +625,7 @@ void main() {
     expect(SourcePreferences.read(Section.video, 'b').pickerGroup, 'movie');
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('picker-source-b'))).dx,
-      greaterThan(
-        tester.getBottomLeft(find.byKey(const ValueKey('picker-source-a'))).dx,
-      ),
+      tester.getBottomLeft(find.byKey(const ValueKey('picker-source-a'))).dx,
     );
     expect(find.byTooltip('切换为单列'), findsNothing);
     expect(find.byTooltip('切换为双列'), findsNothing);
@@ -653,13 +669,22 @@ void main() {
       tester.getTopLeft(second).dy,
       greaterThan(tester.getBottomLeft(first).dy),
     );
-    expect(tester.getTopLeft(movie).dx - tester.getTopRight(first).dx, 8);
-    expect(tester.getTopLeft(movie).dy, tester.getTopLeft(first).dy);
+    expect(tester.getTopLeft(movie).dx, tester.getTopLeft(first).dx);
+    expect(
+      tester.getTopLeft(movie).dy,
+      greaterThan(tester.getTopLeft(second).dy),
+    );
     await tester.enterText(find.byType(TextField), '影视甲');
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('picker-group-video')), findsOneWidget);
-    expect(find.text('暂无匹配的源'), findsOneWidget);
-    expect(find.byKey(const ValueKey('picker-group-movie')), findsOneWidget);
+    expect(
+      SourcePickerGroups.groupFor(Section.video, manager.sources.first),
+      'video',
+    );
+    expect(find.text('暂无匹配的源'), findsNothing);
+    expect(
+      SourcePickerGroups.groupFor(Section.video, manager.sources[1]),
+      'movie',
+    );
     expect(find.byType(SourceIcon), findsOneWidget);
   });
   testWidgets('隐藏仅影响抽屉，聚合搜索保留全部站点', (tester) async {
@@ -760,12 +785,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(refreshes, 1);
   });
-  testWidgets('设置提供六个独立显示开关', (tester) async {
+  testWidgets('设置按板块提供各分类独立显示开关', (tester) async {
     final controller = SourceContentVisibility();
     await tester.pumpWidget(
       MaterialApp(home: ContentVisibilityPage(controller: controller)),
     );
-    expect(find.byType(SwitchListTile), findsNWidgets(4));
+    for (final type in SourceContentVisibility.types) {
+      await tester.scrollUntilVisible(
+        find.byKey(ValueKey('content-visible-${type.$1}')),
+        180,
+      );
+      expect(
+        find.byKey(ValueKey('content-visible-${type.$1}')),
+        findsOneWidget,
+      );
+    }
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('content-visible-video')),
+    );
     await tester.tap(find.byKey(const ValueKey('content-visible-video')));
     await tester.pumpAndSettle();
     expect(controller.isVisible('video'), false);

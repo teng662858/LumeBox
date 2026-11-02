@@ -397,6 +397,44 @@ CREATE TABLE IF NOT EXISTS section_setting (
   void deleteSource(String id) =>
       _db.execute('DELETE FROM source WHERE id = ?', [id]);
 
+  /// Startup-only relocation. Copy every persisted column, including credentials,
+  /// disabled/broken state and the rollback revision. Never overwrite a different
+  /// source already installed under the same ID in the destination.
+  void copySourceTo(String id, SectionDatabase target) {
+    final rows = _db.select('SELECT * FROM source WHERE id=?', [id]);
+    if (rows.isEmpty) return;
+    final existing = target.source(id);
+    if (existing != null && existing.script != rows.single['script']) {
+      throw StateError('漫画板块已有不同版本的同名源 $id，迁移保留原数据');
+    }
+    target._db.execute('BEGIN IMMEDIATE');
+    try {
+      final row = rows.single;
+      final columns = row.keys.toList();
+      target._db.execute(
+        'INSERT OR IGNORE INTO source (${columns.join(',')}) VALUES (${List.filled(columns.length, '?').join(',')})',
+        [
+          for (final key in columns)
+            key == 'section' ? target._sectionId : row[key],
+        ],
+      );
+      for (final revision in _db.select(
+        'SELECT * FROM source_revision WHERE source_id=?',
+        [id],
+      )) {
+        final names = revision.keys.toList();
+        target._db.execute(
+          'INSERT OR IGNORE INTO source_revision (${names.join(',')}) VALUES (${List.filled(names.length, '?').join(',')})',
+          [for (final key in names) revision[key]],
+        );
+      }
+      target._db.execute('COMMIT');
+    } catch (_) {
+      target._db.execute('ROLLBACK');
+      rethrow;
+    }
+  }
+
   String? setting(String key) {
     final rows = _db.select('SELECT value FROM section_setting WHERE key = ?', [
       key,

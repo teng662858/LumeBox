@@ -310,7 +310,7 @@ class SourceRegistry {
       }
       // 板块归属校验：脚本自报的 category 必须与本板块一致，否则在解析阶段
       // 直接拒绝——跨板块混用图源在这里被拦下，不会落库、不会进入运行期。
-      final mismatch = metadata.sectionMismatch(section);
+      final mismatch = metadata.sectionMismatch(section, script: text);
       if (mismatch != null) {
         LumeLog.warn('[${section.id}] 拒绝跨板块源 ${metadata.id}：$mismatch');
         return SourceImportOutcome.failure(mismatch);

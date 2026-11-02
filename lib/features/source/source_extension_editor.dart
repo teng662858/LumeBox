@@ -259,6 +259,14 @@ class _SourceExtensionEditorState extends State<SourceExtensionEditor> {
       case 'text':
         return TextFormField(
           initialValue: '$value',
+          obscureText:
+              d.type == 'text' &&
+              RegExp(
+                r'password|passwd|secret|token|cookie|pwd',
+                caseSensitive: false,
+              ).hasMatch(d.key),
+          autocorrect: false,
+          enableSuggestions: false,
           decoration: InputDecoration(
             labelText: d.title,
             hintText: d.placeholder.isEmpty ? null : d.placeholder,

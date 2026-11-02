@@ -2,6 +2,11 @@
 /// flutter run -d emulator-5554 -t tool/source_picker_unified_preview.dart
 library;
 
+import 'package:flutter/services.dart';
+import 'package:lume_box/features/settings/content_visibility_page.dart';
+
+import 'danmaku_redesign_preview.dart';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -42,7 +47,9 @@ class _PreviewCats extends CatService {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final sandbox = Directory.systemTemp.createTempSync('lumebox-source-layout-');
+  final sandbox = Directory(
+    '${Directory.systemTemp.path}/lumebox-reading-layout-preview',
+  )..createSync(recursive: true);
   PathProviderPlatform.instance = _PreviewPaths(sandbox.path);
   await PrivacySettings.instance.boot(directory: sandbox);
   await PrivacySettings.instance.setShowAdult(true);
@@ -86,6 +93,28 @@ class _PreviewState extends State<SourcePickerUnifiedPreview> {
         ),
     ],
   )..selected = 'preview-comic-0';
+  late final readingExtras = [
+    const SourceDescriptor(
+      id: 'preview-novel',
+      name: '文字小说（示例源）',
+      version: '本地预览',
+      enabled: true,
+      mediaKind: 'novel',
+    ),
+    const SourceDescriptor(
+      id: 'preview-audio',
+      name: '有声小说（示例源）',
+      version: '本地预览',
+      enabled: true,
+      mediaKind: 'audio',
+    ),
+    const SourceDescriptor(
+      id: 'kazumi_preview',
+      name: 'Kazumi 动漫（示例源）',
+      version: '本地预览',
+      enabled: true,
+    ),
+  ];
   final video = FakeSourceManager(
     sources: [
       for (var i = 0; i < 12; i++)
@@ -109,7 +138,7 @@ class _PreviewState extends State<SourcePickerUnifiedPreview> {
   void openComic(BuildContext context) => showSourcePicker(
     context: context,
     section: Section.comic,
-    sources: comic.sources,
+    sources: [...comic.sources, ...readingExtras],
     currentId: comic.selected,
     manager: comic,
   );
@@ -132,7 +161,7 @@ class _PreviewState extends State<SourcePickerUnifiedPreview> {
     home: Builder(
       builder: (context) => Scaffold(
         appBar: AppBar(
-          title: const Text('源选择 · 统一布局预览'),
+          title: const Text('漫画 / 视频 · 分类排序预览'),
           actions: [
             IconButton(
               tooltip: '切换亮暗',
@@ -155,6 +184,35 @@ class _PreviewState extends State<SourcePickerUnifiedPreview> {
               FilledButton(
                 onPressed: () => openVideo(context),
                 child: const Text('预览视频源选择'),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.tonal(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ContentVisibilityPage(),
+                  ),
+                ),
+                child: const Text('内容分类显示'),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.tonal(
+                onPressed: () async {
+                  await SystemChrome.setPreferredOrientations([
+                    DeviceOrientation.landscapeLeft,
+                  ]);
+                  if (!context.mounted) return;
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const DanmakuRedesignPreview(),
+                    ),
+                  );
+                  await SystemChrome.setPreferredOrientations([
+                    DeviceOrientation.portraitUp,
+                  ]);
+                },
+                child: const Text('横屏弹幕与线路预览'),
               ),
               const SizedBox(height: 24),
               const Text(

@@ -23,6 +23,13 @@ abstract final class SourceMediaHints {
             return 'audio';
           }
           if (kind.isEmpty && data['category'] == 'audiobook') return 'audio';
+          if (['novel', 'text', 'html'].contains(kind) ||
+              data['category'] == 'novel') {
+            return 'novel';
+          }
+          if (['photo', 'comic'].contains(data['category'])) {
+            return '${data['category']}';
+          }
           if (kind == 'video') return 'video';
         }
       } catch (_) {

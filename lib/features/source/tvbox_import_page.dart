@@ -1,3 +1,6 @@
+import '../../core/source/source_subscription_sync.dart';
+import 'video_source_picker.dart';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -172,6 +175,9 @@ class _TvBoxImportPageState extends State<TvBoxImportPage> {
     await Future.wait(
       List.generate(targets.length.clamp(0, 4), (_) => worker()),
     );
+    if (mounted && _results.values.any((result) => result.startsWith('已导入'))) {
+      SourceSubscriptionSync.revision(Section.video).value++;
+    }
     if (mounted && _cancel) setState(() => _progress = '已停止；已完成的导入保留');
   });
 
@@ -215,7 +221,7 @@ class _TvBoxImportPageState extends State<TvBoxImportPage> {
               sliver: SliverList.list(
                 children: [
                   const Text(
-                    '导入到视频板块 · 支持采集 JSON/XML、Python Spider 和直播 M3U/TXT。导入成功不代表源站当前可用。',
+                    '导入后在「视频 → 源选择 → TVBOX」显示。支持采集 JSON/XML、Python Spider 和直播 M3U/TXT。导入成功不代表源站当前可用。',
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(
@@ -302,6 +308,28 @@ class _TvBoxImportPageState extends State<TvBoxImportPage> {
                     if (_results.isNotEmpty)
                       Text(
                         '导入成功 $successful 项 · 失败 ${_results.length - successful} 项',
+                      ),
+                    if (successful > 0 && !_busy)
+                      TextButton.icon(
+                        icon: const Icon(Icons.video_library_outlined),
+                        label: const Text('在视频 → TVBOX 中查看'),
+                        onPressed: () async {
+                          final selected =
+                              await Navigator.push<VideoSourceChoice>(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => VideoSourcePicker(
+                                    manager: _manager,
+                                    initialType: VideoSourceType.tvbox,
+                                  ),
+                                ),
+                              );
+                          if (selected?.sourceId != null) {
+                            await _manager.select(selected!.sourceId!);
+                            SourceSubscriptionSync.revision(Section.video)
+                                .value++;
+                          }
+                        },
                       ),
                     if (_progress.isNotEmpty) Text(_progress),
                     TextField(

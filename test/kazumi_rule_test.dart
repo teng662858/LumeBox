@@ -101,7 +101,7 @@ void main() {
           'chapterMode': 'xpath',
         }),
       );
-      expect(SourceMetadata.parseHeader(script)!.category, 'video');
+      expect(SourceMetadata.parseHeader(script)!.category, 'kazumi');
     });
   }
 
@@ -282,7 +282,7 @@ void main() {
       jsonEncode({...rule, 'version': '2', 'baseURL': 'https://mirror.test/'}),
       originUrl: 'https://rules.test/Example.json',
     );
-    expect(SourceMetadata.parseHeader(first)!.category, 'video');
+    expect(SourceMetadata.parseHeader(first)!.category, 'kazumi');
     expect(
       SourceMetadata.parseHeader(first)!.id,
       SourceMetadata.parseHeader(second)!.id,

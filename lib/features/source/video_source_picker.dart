@@ -1,3 +1,6 @@
+import 'tvbox_import_page.dart';
+import 'source_entry_order_sheet.dart';
+import '../../core/source/source_entry_order.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
 import '../../shared/widgets/source_picker_card.dart';
 import '../../shared/widgets/source_picker_header.dart';
@@ -46,6 +49,7 @@ enum VideoSourceType {
   ordinary('JS 源'),
   cat('猫源'),
   python('PY'),
+  tvbox('TVBOX'),
   audio('有声小说'),
   kazumi('Kazumi'),
   module('模块'),
@@ -54,7 +58,9 @@ enum VideoSourceType {
   const VideoSourceType(this.label);
   final String label;
 
-  static VideoSourceType forSource(SourceDescriptor source) => source.isAudio
+  static VideoSourceType forSource(SourceDescriptor source) => source.isTvBox
+      ? tvbox
+      : source.isAudio
       ? audio
       : source.isKazumi
       ? kazumi
@@ -111,9 +117,11 @@ class VideoSourcePicker extends StatefulWidget {
     this.currentWebId,
     this.showingCat = false,
     this.service,
+    this.initialType,
     this.onChanged,
   });
   final SourceManager manager;
+  final VideoSourceType? initialType;
   final String? currentCatId;
   final String? currentWebId;
   final bool showingCat;
@@ -165,6 +173,10 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
   void _chooseInitialType() {
     if (_initialTypeChosen) return;
     _initialTypeChosen = true;
+    if (widget.initialType != null) {
+      type = widget.initialType!;
+      return;
+    }
     if (!_locateCurrent) return;
     if (widget.currentWebId != null) {
       if (webHomes.any((home) => home.id == widget.currentWebId)) {
@@ -352,15 +364,6 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
-              ListTile(
-                leading: const LumeIcon(
-                  Icons.live_tv,
-                  slot: 'video_source_picker.add_kazumi',
-                ),
-                title: const Text('Kazumi 源'),
-                subtitle: const Text('导入规则 JSON 或订阅，已填入官方源地址'),
-                onTap: () => Navigator.pop(context, _VideoImportAction.kazumi),
-              ),
               for (final row in [
                 (
                   VideoSourceType.ordinary,
@@ -375,16 +378,16 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                   '管理订阅包与包内站点',
                 ),
                 (
+                  VideoSourceType.tvbox,
+                  Icons.playlist_add,
+                  'TVBOX 聚合配置',
+                  '导入采集 JSON/XML、Python 和直播列表',
+                ),
+                (
                   VideoSourceType.python,
                   Icons.terminal,
                   'Python 源',
                   '导入 Spider 脚本、ZIP 源包或订阅链接',
-                ),
-                (
-                  VideoSourceType.audio,
-                  Icons.headphones,
-                  '有声小说源',
-                  '导入听书源，已填入有声小说订阅地址',
                 ),
                 (
                   VideoSourceType.module,
@@ -430,10 +433,24 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
       await load();
       return;
     }
+    if (target == VideoSourceType.tvbox) {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TvBoxImportPage(manager: widget.manager),
+        ),
+      );
+      if (!mounted) return;
+      setState(() => type = VideoSourceType.tvbox);
+      await load();
+      widget.onChanged?.call();
+      return;
+    }
     if (target is! VideoSourceType) return;
     if ([
       VideoSourceType.ordinary,
       VideoSourceType.python,
+      VideoSourceType.tvbox,
       VideoSourceType.module,
       VideoSourceType.audio,
     ].contains(target)) {
@@ -958,6 +975,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
       VideoSourceType.all,
       VideoSourceType.ordinary,
       VideoSourceType.python,
+      VideoSourceType.tvbox,
       VideoSourceType.module,
       VideoSourceType.kazumi,
       VideoSourceType.audio,
@@ -1076,6 +1094,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
       if (entries.isEmpty) return const SizedBox.shrink();
       final title = switch (kind) {
         VideoSourceType.python => 'PY · Python 源',
+        VideoSourceType.tvbox => 'TVBOX · 聚合配置源',
         VideoSourceType.module => '模块 · ESM / CommonJS',
         VideoSourceType.kazumi => 'Kazumi · 动漫规则源',
         VideoSourceType.audio => '有声小说 · 音频源',
@@ -1152,6 +1171,31 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                       if (mounted) await load();
                     },
                     title: '选择视频源',
+                    extraActions: [
+                      IconButton(
+                        tooltip: '调整分类顺序',
+                        icon: const Icon(Icons.swap_vert),
+                        onPressed: () async {
+                          await showSourceEntryOrder(
+                            context,
+                            section: Section.video,
+                            settingKey: 'source.picker.typeOrder',
+                            entries: SourceEntryOrder.read(
+                              Section.video,
+                              'source.picker.typeOrder',
+                              [
+                                for (final type in VideoSourceType.values)
+                                  if (type != VideoSourceType.all &&
+                                      type != VideoSourceType.audio &&
+                                      type != VideoSourceType.kazumi)
+                                    (type.name, type.label),
+                              ],
+                            ),
+                          );
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    ],
                     onManage: () async {
                       await Navigator.push(
                         context,
@@ -1183,7 +1227,24 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
                       children: [
-                        for (final item in VideoSourceType.values)
+                        for (final item in [
+                          VideoSourceType.all,
+                          ...SourceEntryOrder.read(
+                            Section.video,
+                            'source.picker.typeOrder',
+                            [
+                              for (final type in VideoSourceType.values)
+                                if (type != VideoSourceType.all &&
+                                    type != VideoSourceType.audio &&
+                                    type != VideoSourceType.kazumi)
+                                  (type.name, type.label),
+                            ],
+                          ).map(
+                            (entry) => VideoSourceType.values.firstWhere(
+                              (type) => type.name == entry.$1,
+                            ),
+                          ),
+                        ])
                           Padding(
                             key: _tabKeys[item],
                             padding: const EdgeInsets.only(right: 8),
@@ -1474,8 +1535,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                                   ],
                                 if (type == VideoSourceType.all) ...[
                                   runtimeGroup(VideoSourceType.python),
-                                  runtimeGroup(VideoSourceType.audio),
-                                  runtimeGroup(VideoSourceType.kazumi),
+                                  runtimeGroup(VideoSourceType.tvbox),
                                   runtimeGroup(VideoSourceType.module),
                                 ],
                                 if (showWeb) ...[

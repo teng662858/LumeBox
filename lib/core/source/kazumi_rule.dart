@@ -125,7 +125,7 @@ class KazumiRule {
           'kazumi_${sha256.convert(utf8.encode(identity)).toString().substring(0, 24)}',
       'name': rule['name'],
       'version': '${rule['version'] ?? '1'}',
-      'category': 'video',
+      'category': 'kazumi',
       'mirrors': [rule['baseURL']],
     };
     return '// LumeSource: ${jsonEncode(metadata)}\nconst kazumiRule = ${jsonEncode(rule)};\n$_runtime';

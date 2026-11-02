@@ -1,3 +1,5 @@
+import 'package:lume_box/features/video/player_source_sheet.dart';
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -23,19 +25,19 @@ void main() async {
     MaterialApp(
       theme: LumeTheme.build(),
       debugShowCheckedModeBanner: false,
-      home: const _Preview(),
+      home: const DanmakuRedesignPreview(),
     ),
   );
 }
 
 /// Isolated interaction demo: fixture results, no saved credentials or progress.
-class _Preview extends StatefulWidget {
-  const _Preview();
+class DanmakuRedesignPreview extends StatefulWidget {
+  const DanmakuRedesignPreview({super.key});
   @override
-  State<_Preview> createState() => _PreviewState();
+  State<DanmakuRedesignPreview> createState() => _PreviewState();
 }
 
-class _PreviewState extends State<_Preview> {
+class _PreviewState extends State<DanmakuRedesignPreview> {
   final revision = ValueNotifier(0);
   DanmakuSettings settings = const DanmakuSettings();
   DanmakuTrack track = DanmakuTrack.empty;
@@ -193,6 +195,24 @@ class _PreviewState extends State<_Preview> {
                   style: TextStyle(color: Colors.white, fontSize: 20),
                 ),
                 const Spacer(),
+                IconButton(
+                  tooltip: '剧集线路',
+                  icon: const Icon(Icons.alt_route, color: Colors.white),
+                  onPressed: () => showDanmakuPanel<void>(
+                    context: context,
+                    builder: (_) => PlayerSourceSheet(
+                      address: 'https://preview.invalid/video.m3u8',
+                      fullBleed: true,
+                      initialTab: PlayerSourceTab.lines,
+                      loadLines: () async => const [
+                        PlayerSourceLine('默认线路', current: true),
+                        PlayerSourceLine('备用线路'),
+                        PlayerSourceLine('暂无本集的线路', available: false),
+                      ],
+                      onSelectLine: (_) async => true,
+                    ),
+                  ),
+                ),
                 IconButton(
                   tooltip: '弹幕',
                   onPressed: open,

@@ -49,8 +49,8 @@ void main() {
       for (final pair in [
         ('photo', Section.comic),
         ('美图', Section.comic),
-        ('audiobook', Section.video),
-        ('有声小说', Section.video),
+        ('audiobook', Section.comic),
+        ('有声小说', Section.comic),
       ]) {
         final metadata = SourceMetadata(
           id: 'a',
@@ -163,7 +163,7 @@ void main() {
     test('photo 和 audiobook 订阅导入及更新成功', () async {
       for (final pair in [
         ('photo', Section.comic),
-        ('audiobook', Section.video),
+        ('audiobook', Section.comic),
       ]) {
         final registry = await openRegistryFor(pair.$2);
         String script(String version) =>

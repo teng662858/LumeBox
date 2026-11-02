@@ -467,16 +467,28 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
         }
         final lines = snapshot.data ?? const <PlayerSourceLine>[];
         return ListView(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 20),
           children: [
             const ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text('剧集线路'),
+              title: Text(
+                '剧集线路',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              minVerticalPadding: 10,
               subtitle: Text('仅切换到对应集，保留当前进度和暂停状态'),
             ),
+            const Divider(height: 20),
             for (final line in lines)
               ListTile(
+                minVerticalPadding: 12,
+                titleAlignment: ListTileTitleAlignment.center,
                 contentPadding: EdgeInsets.zero,
-                title: Text(line.name),
+                title: Text(
+                  line.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 subtitle: line.current
                     ? const Text('当前线路')
                     : !line.available

@@ -70,6 +70,98 @@ CREATE TABLE IF NOT EXISTS reading_setting (
   final SectionScope _scope;
   final Database _db;
 
+  /// Copy first, then let the relocation coordinator remove the old source.
+  /// Destination checkpoints win when newer; source/item identity is unchanged.
+  void copySourceTo(String sourceId, ReadingStore target) {
+    target._db.execute('BEGIN IMMEDIATE');
+    try {
+      for (final table in [
+        'library_item',
+        'reading_progress',
+        'video_episode_progress',
+      ]) {
+        for (final row in _db.select('SELECT * FROM $table WHERE source_id=?', [
+          sourceId,
+        ])) {
+          final names = row.keys.toList();
+          final keys = [
+            'source_id',
+            'item_id',
+            if (table == 'video_episode_progress') 'chapter_id',
+          ];
+          final update = names
+              .where((key) => !keys.contains(key))
+              .map(
+                (key) => key == 'favorite'
+                    ? 'favorite=MAX($table.favorite,excluded.favorite)'
+                    : '$key=excluded.$key',
+              )
+              .join(',');
+          target._db.execute(
+            'INSERT INTO $table (${names.join(',')}) VALUES (${List.filled(names.length, '?').join(',')}) '
+            'ON CONFLICT(${keys.join(',')}) DO UPDATE SET $update WHERE excluded.updated_at >= $table.updated_at',
+            [
+              for (final key in names)
+                key == 'section' ? target.section.id : row[key],
+            ],
+          );
+        }
+      }
+      for (final row in _db.select('SELECT * FROM reading_setting')) {
+        final key = row['key'] as String;
+        if (key == 'source.preferences.$sourceId' ||
+            key == 'reader.chapterDescending.$sourceId' ||
+            key.startsWith('video.player.')) {
+          target._db.execute(
+            'INSERT OR IGNORE INTO reading_setting(key,value) VALUES (?,?)',
+            [key, row['value']],
+          );
+        }
+      }
+      final folders = setting('favorites.folders');
+      if (folders != null) {
+        final oldFolders = jsonDecode(folders) as Map;
+        final newFolders = Map<String, dynamic>.from(
+          jsonDecode(target.setting('favorites.folders') ?? '{}') as Map,
+        );
+        for (final entry in oldFolders.entries) {
+          final members = (entry.value as List)
+              .whereType<String>()
+              .where((id) => ReadingIdentity.decode(id)?.first == sourceId)
+              .toList();
+          if (members.isNotEmpty) {
+            newFolders['${entry.key}'] = {
+              ...(newFolders['${entry.key}'] as List? ?? []),
+              ...members,
+            }.toList();
+          }
+        }
+        target.setSetting('favorites.folders', jsonEncode(newFolders));
+      }
+      target._db.execute('COMMIT');
+    } catch (_) {
+      target._db.execute('ROLLBACK');
+      rethrow;
+    }
+  }
+
+  void removeRelocatedSource(String sourceId) {
+    _db.execute('BEGIN IMMEDIATE');
+    try {
+      for (final table in [
+        'library_item',
+        'reading_progress',
+        'video_episode_progress',
+      ]) {
+        _db.execute('DELETE FROM $table WHERE source_id=?', [sourceId]);
+      }
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+  }
+
   static final Map<String, ReadingStore> _opened = <String, ReadingStore>{};
   static final Map<String, Future<ReadingStore>> _opening = {};
 

@@ -56,6 +56,19 @@ void main() {
   String script(String id, int version) =>
       'var LumeSource = {id:"$id", name:"$id", version:"$version"};';
 
+  test('单个源设置声明错误不会中断后续源，错误定位到具体文件', () async {
+    remote[manifest] =
+        'https://repo.example/bad.js\nhttps://repo.example/good.js';
+    remote['https://repo.example/bad.js'] =
+        '// LumeSource: {"id":"bad","name":"坏源","version":"1","settings":[{"key":"password","type":"password","title":"密码"}]}\n${script('bad', 1)}';
+    remote['https://repo.example/good.js'] = script('good', 1);
+    final result = await service.sync(force: true);
+    expect(result.errors.join(), contains('https://repo.example/bad.js'));
+    expect(result.errors.join(), isNot(contains('$manifest:')));
+    expect(manager.sources.map((source) => source.id), contains('good'));
+    expect(result.removed, 0);
+  });
+
   test('旧 CDN 快照订阅迁移并合并成员与用户排除项', () async {
     const stable = '${SubscriptionCatalog.cdnBase}subscriptions/cdn/video.txt';
     service.subscriptions.clear();

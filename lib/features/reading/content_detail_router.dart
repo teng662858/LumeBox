@@ -1,3 +1,5 @@
+import '../../core/reading/reading_identity.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../core/source/source.dart';
@@ -17,6 +19,10 @@ Widget contentDetailPage({
   required ReadingTarget target,
   SourceManager? manager,
 }) {
+  library.setSetting(
+    'item.contentType.${ReadingIdentity.key(target.sourceId, target.itemId)}',
+    type.name,
+  );
   final bound = _BoundSourceManager(source, manager);
   return switch (type) {
     SourceContentType.novel => NovelDetailPage(

@@ -1,3 +1,6 @@
+import '../../core/source/kazumi_rule.dart';
+import '../../core/source/source_subscription_catalog.dart';
+
 import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
@@ -60,10 +63,49 @@ class AddSourceButton extends StatelessWidget {
   }
 
   Future<void> _open(BuildContext context, SourceManager target) async {
+    String? subscription;
+    String? title;
+    if (section == Section.comic) {
+      final kind = await showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final row in const [
+                ('comic', '漫画 / 美图源'),
+                ('novel', '文字小说源'),
+                ('audiobook', '有声小说源'),
+                ('kazumi', 'Kazumi 动漫规则源'),
+              ])
+                ListTile(
+                  title: Text(row.$2),
+                  onTap: () => Navigator.pop(context, row.$1),
+                ),
+            ],
+          ),
+        ),
+      );
+      if (kind == null || !context.mounted) return;
+      subscription = switch (kind) {
+        'audiobook' => SubscriptionCatalog.audiobooksUrl,
+        'kazumi' => KazumiRule.officialIndex,
+        _ => null,
+      };
+      title = switch (kind) {
+        'novel' => '导入文字小说源',
+        'audiobook' => '导入有声小说源',
+        'kazumi' => '导入 Kazumi 源',
+        _ => null,
+      };
+    }
     final imported = await runSourceImport(
       context,
       section: section,
       manager: target,
+      initialSubscription: subscription,
+      title: title,
       readLocalScripts: readLocalScripts,
       fetchSubscription: fetchSubscription,
     );

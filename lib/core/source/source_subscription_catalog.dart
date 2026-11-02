@@ -95,7 +95,7 @@ class SubscriptionCatalog {
       }
       if (prefix == cdnBase) {
         final snapshot = RegExp(
-          r'^subscriptions/cdn/(comic|comics|photo|movie|video|videos|audiobook)\.[0-9a-f]{8}\.txt$',
+          r'^subscriptions/cdn/(comic|comics|photo|novel|movie|video|videos|audiobook)\.[0-9a-f]{8}\.txt$',
         ).firstMatch(path);
         if (snapshot != null) {
           return '${cdnBase}subscriptions/cdn/${snapshot[1]}.txt';
@@ -103,7 +103,7 @@ class SubscriptionCatalog {
       }
       if (prefix == cdnBase &&
           RegExp(
-            r'^subscriptions/(?:all\.json|(?:comic|comics|photo|movie|video|videos|audiobook)\.txt)$',
+            r'^subscriptions/(?:all\.json|(?:comic|comics|photo|novel|movie|video|videos|audiobook)\.txt)$',
           ).hasMatch(path)) {
         return '$prefix${path.replaceFirst('subscriptions/', 'subscriptions/cdn/')}';
       }

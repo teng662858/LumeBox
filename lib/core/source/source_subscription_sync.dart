@@ -402,6 +402,7 @@ class SourceSubscriptionSync {
         }
         result.checked++;
         record.checkedAt = _clock();
+        final previousErrors = result.errors.length;
         try {
           final resolver = SourceSubscription(
             section: section.id,
@@ -427,60 +428,65 @@ class SourceSubscriptionSync {
           var complete = resolver.complete;
           var processed = 0;
           for (final ref in refs) {
-            processed++;
-            final declaredName =
-                SourceMetadata.parseHeader(ref.script)?.name ?? '源脚本';
-            progress(section).value =
-                '正在校验 $processed/${refs.length} · $declaredName';
-            // Yield to Flutter between scripts so the progress can be painted.
-            await Future<void>.delayed(Duration.zero);
-            final declaredId = SourceMetadata.parseHeader(ref.script)?.id;
-            if (record.excludedIds.contains(declaredId) ||
-                record.members.entries.any(
-                  (entry) =>
-                      record.excludedIds.contains(entry.key) &&
-                      entry.value == ref.url,
-                )) {
-              continue;
-            }
-            final old = before.values
-                .where(
-                  (s) =>
-                      SubscriptionCatalog.sameSourceUrl(s.originUrl, ref.url),
-                )
-                .firstOrNull;
-            if (old != null &&
-                await manager.exportScript(old.id) == ref.script) {
-              next[old.id] = ref.url;
-              result.unchanged++;
-              continue;
-            }
-            final imported = manager is SubscriptionImportManager
-                ? await (manager as SubscriptionImportManager)
-                      .importSubscription(ref.script, originUrl: ref.url)
-                : await manager.importScript(ref.script, originUrl: ref.url);
-            final descriptor = imported.descriptor;
-            if (descriptor == null) {
+            try {
+              processed++;
+              final declaredName =
+                  SourceMetadata.parseHeader(ref.script)?.name ?? '源脚本';
+              progress(section).value =
+                  '正在校验 $processed/${refs.length} · $declaredName';
+              // Yield to Flutter between scripts so the progress can be painted.
+              await Future<void>.delayed(Duration.zero);
+              final declaredId = SourceMetadata.parseHeader(ref.script)?.id;
+              if (record.excludedIds.contains(declaredId) ||
+                  record.members.entries.any(
+                    (entry) =>
+                        record.excludedIds.contains(entry.key) &&
+                        entry.value == ref.url,
+                  )) {
+                continue;
+              }
+              final old = before.values
+                  .where(
+                    (s) =>
+                        SubscriptionCatalog.sameSourceUrl(s.originUrl, ref.url),
+                  )
+                  .firstOrNull;
+              if (old != null &&
+                  await manager.exportScript(old.id) == ref.script) {
+                next[old.id] = ref.url;
+                result.unchanged++;
+                continue;
+              }
+              final imported = manager is SubscriptionImportManager
+                  ? await (manager as SubscriptionImportManager)
+                        .importSubscription(ref.script, originUrl: ref.url)
+                  : await manager.importScript(ref.script, originUrl: ref.url);
+              final descriptor = imported.descriptor;
+              if (descriptor == null) {
+                complete = false;
+                result.errors.add('${ref.url}: ${imported.message}');
+                continue;
+              }
+              next[descriptor.id] = ref.url;
+              if (before.containsKey(descriptor.id)) {
+                result.updated++;
+                changes.add({
+                  'id': descriptor.id,
+                  'name': descriptor.name,
+                  'status':
+                      '已更新 ${sourceVersionChange(before[descriptor.id]!.version, descriptor.version)}',
+                });
+              } else {
+                result.added++;
+                changes.add({
+                  'id': descriptor.id,
+                  'name': descriptor.name,
+                  'status': '已新增',
+                });
+              }
+            } catch (error) {
               complete = false;
-              result.errors.add('${ref.url}: ${imported.message}');
-              continue;
-            }
-            next[descriptor.id] = ref.url;
-            if (before.containsKey(descriptor.id)) {
-              result.updated++;
-              changes.add({
-                'id': descriptor.id,
-                'name': descriptor.name,
-                'status':
-                    '已更新 ${sourceVersionChange(before[descriptor.id]!.version, descriptor.version)}',
-              });
-            } else {
-              result.added++;
-              changes.add({
-                'id': descriptor.id,
-                'name': descriptor.name,
-                'status': '已新增',
-              });
+              result.errors.add('${ref.url}: $error');
             }
           }
           if (complete) {
@@ -516,7 +522,9 @@ class SourceSubscriptionSync {
           } else {
             record.members = {...record.members, ...next};
             record.error = '清单未完整同步，已保留旧源';
-            result.errors.add('${record.url}: ${record.error}');
+            if (result.errors.length == previousErrors) {
+              result.errors.add('${record.url}: ${record.error}');
+            }
           }
         } catch (error) {
           record.error = '$error';

@@ -147,6 +147,7 @@ class SourceDescriptor {
   ///
   /// 只在设置页做提示，不参与运行时决策（实际网络由 [network] 与全局设置决定）。
   final String networkMode;
+  bool get isTvBox => id.startsWith('tvbox_');
   bool get isKazumi => id.startsWith('kazumi_');
   bool get isAudio =>
       mediaKind == 'audio' ||

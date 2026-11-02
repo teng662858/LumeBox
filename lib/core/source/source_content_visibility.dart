@@ -19,8 +19,12 @@ class SourceContentVisibility extends ChangeNotifier {
   static const types = [
     ('comic', '漫画', '漫画作品'),
     ('photo', '美图', '网络美图与写真图库'),
+    ('novel', '小说', '文字小说与章节阅读'),
+    ('audiobook', '有声', '有声小说与听书'),
+    ('kazumi', 'Kazumi', '动漫规则源'),
     ('video', '视频', '网络小视频及现有泛视频源'),
     ('movie', '影视', '网络影视站'),
+    ('tvbox', 'TVBOX', 'TVBox 导入的采集接口、Python 和直播列表'),
   ];
   final Set<String> _hidden = {};
   File? _file;

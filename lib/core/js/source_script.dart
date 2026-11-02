@@ -1,3 +1,5 @@
+import '../source/source_media_hints.dart';
+
 import 'dart:convert';
 
 import '../session/section.dart';
@@ -296,10 +298,18 @@ class SourceMetadata {
   /// 才因为契约不符而莫名其妙地失败。
   ///
   /// 两者指向同一个板块，不该因此被误判成跨板块。
-  String? sectionMismatch(Section target) {
+  String? sectionMismatch(Section target, {String script = ''}) {
     final declared = category.trim();
-    if (declared.isEmpty) return null;
-    final normalized = _normalizeSection(declared);
+    final hint = SourceMediaHints.fromScript(script);
+    final reading =
+        id.startsWith('kazumi_') ||
+        hint == 'novel' ||
+        hint == 'audio' ||
+        (!id.startsWith('tvbox_') &&
+            hint != 'video' &&
+            SourceMediaHints.audioLabel('$name $id'));
+    if (declared.isEmpty && !reading) return null;
+    final normalized = reading ? Section.comic.id : _normalizeSection(declared);
     if (normalized == target.id) return null;
     if (normalized == null) {
       return '源声明的板块「$declared」不是有效板块：'
@@ -319,9 +329,18 @@ class SourceMetadata {
     final value = declared.trim().toLowerCase();
     // Repository content types share the existing reader/player sections;
     // they do not create separate databases or bypass cross-section checks.
-    if (const ['photo', '美图'].contains(value)) return Section.comic.id;
-    if (const ['audiobook', '有声小说', '有声'].contains(value)) {
-      return Section.video.id;
+    if (const [
+      'photo',
+      '美图',
+      'novel',
+      '小说',
+      'text',
+      'audiobook',
+      '有声小说',
+      '有声',
+      'kazumi',
+    ].contains(value)) {
+      return Section.comic.id;
     }
     for (final section in Section.values) {
       if (section.id.toLowerCase() == value) return section.id;

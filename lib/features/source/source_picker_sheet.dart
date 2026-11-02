@@ -1,3 +1,4 @@
+import 'source_entry_order_sheet.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
 import '../../shared/widgets/source_picker_card.dart';
 import '../../shared/widgets/source_picker_header.dart';
@@ -5,7 +6,6 @@ import '../../shared/widgets/source_picker_scroll_list.dart';
 
 import 'package:lume_box/shared/widgets/lume_icon.dart';
 
-import '../../shared/widgets/source_category_columns.dart';
 import '../../shared/widgets/drawer_geometry.dart';
 import '../../shared/widgets/browse_side_drawer.dart';
 import '../../core/source/source_subscription_sync.dart';
@@ -101,6 +101,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
             _ => false,
           });
   String query = '';
+  String contentGroup = 'all';
   final _currentSourceKey = GlobalKey();
   bool _locateCurrent = true;
   final busy = <String>{};
@@ -437,6 +438,9 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
         .where(
           (source) =>
               source.enabled &&
+              (contentGroup == 'all' ||
+                  SourcePickerGroups.groupFor(widget.section, source) ==
+                      contentGroup) &&
               SourceContentVisibility.instance.allows(widget.section, source) &&
               (source.name.toLowerCase().contains(query) ||
                   source.id.toLowerCase().contains(query) ||
@@ -555,7 +559,9 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
       return ListView.separated(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: EdgeInsets.symmetric(
+          horizontal: widget.section == Section.cat ? 16 : 14,
+        ),
         itemCount: entries.length,
         separatorBuilder: (_, _) => const SizedBox(height: 6),
         itemBuilder: tile,
@@ -632,34 +638,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
             ],
           );
 
-    final groupedList = columns && widget.section != Section.cat
-        ? SourceCategoryColumns(
-            key: ValueKey('picker-columns-${widget.section.id}'),
-            focusKey: focusKey,
-            initialSectionId: currentGroup,
-            initialChildIndex: currentIndex,
-            sections: [
-              for (final group in groupDefinitions)
-                SourceColumnSection(
-                  id: group.$1,
-                  title: group.$2,
-                  children: [
-                    for (final source in grouped[group.$1]!)
-                      SourceDragTile(
-                        key: ValueKey('picker-drag-${source.id}'),
-                        id: source.id,
-                        name: source.name,
-                        accepts: (id) =>
-                            grouped[group.$1]!.any((entry) => entry.id == id),
-                        onMove: (from, to) =>
-                            move(grouped[group.$1]!, from, to),
-                        child: swipeCard(source),
-                      ),
-                  ],
-                ),
-            ],
-          )
-        : singleList;
+    final groupedList = singleList;
 
     final content = SafeArea(
       top: false,
@@ -698,6 +677,19 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                 }),
                 extraActions: [
                   ...widget.extraActions,
+                  IconButton(
+                    tooltip: '调整分类顺序',
+                    icon: const Icon(Icons.swap_vert),
+                    onPressed: () async {
+                      await showSourceEntryOrder(
+                        context,
+                        section: widget.section,
+                        settingKey: SourcePickerGroups.orderKey,
+                        entries: SourcePickerGroups.forSection(widget.section),
+                      );
+                      if (mounted) setState(() {});
+                    },
+                  ),
                   if (widget.section == Section.cat)
                     IconButton(
                       tooltip: columns ? '切换为单列' : '切换为双列',
@@ -730,6 +722,32 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                       fontSize: LumeTypography.captionSize,
                       color: LumeTheme.muted,
                     ),
+                  ),
+                ),
+              if (widget.section == Section.comic)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      for (final group in [
+                        ('all', '全部'),
+                        ...SourceContentVisibility.instance.groups(
+                          widget.section,
+                        ),
+                      ])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text(group.$2),
+                            selected: contentGroup == group.$1,
+                            onSelected: (_) => setState(() {
+                              contentGroup = group.$1;
+                              _locateCurrent = false;
+                            }),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               Expanded(child: groupedList),

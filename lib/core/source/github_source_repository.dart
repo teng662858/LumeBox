@@ -74,6 +74,7 @@ class GithubSourceRepository {
   static const kinds = {
     'comic': '漫画',
     'photo': '美图',
+    'novel': '小说',
     'movie': '影视',
     'video': '视频与直播',
     'audiobook': '有声小说',
@@ -233,8 +234,12 @@ class GithubSourceRepository {
       throw const RepositoryFailure('源的 id、名称或版本无效');
     }
     final kind = path.split('/').first;
-    final category = kind == 'comic' || kind == 'photo' ? 'comic' : 'video';
-    if (!((category == 'comic' ? ['comic', 'photo'] : ['video', 'audiobook'])
+    final category = ['comic', 'photo', 'novel'].contains(kind)
+        ? 'comic'
+        : 'video';
+    if (!((category == 'comic'
+                ? ['comic', 'photo', 'novel']
+                : ['video', 'audiobook'])
             .contains(meta['category'])) ||
         !['movie', 'adult'].contains(meta['contentCategory'])) {
       throw const RepositoryFailure(
