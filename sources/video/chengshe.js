@@ -1,0 +1,626 @@
+// LumeSource: {"id":"chengshe_video","name":"橙涩视频","version":"1.0.0","category":"video","contentCategory":"adult","mirrors":["https://6s9b2f4hkmbh.xyz","https://qtrvqim.p04x0hyl.cc","https://qtrvqim.47svemtl.cc"],"network":"direct","icon":"https://6s9b2f4hkmbh.xyz/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页","url":"https://8if2pvzp.cc/","description":"站点换域名时先看这里；官方邮箱 chs8@pm.me 可索取最新地址"},{"key":"note","type":"info","title":"站点说明","description":"橙涩视频（H5，Vite 构建）：接口全量 AES 加密（请求 encData / 响应 encData），匿名 POST /user/tryLogin 拿 token 后即可全量取数。VIP/金币只是前端遮罩——详情接口对非会员同样下发 videoUrl+access，凭 access 换 m3u8 实测 200（canWatch=false 也照播）。线路：line 域名根路径返回 {result,pool} 给 API 域名池，源内自发现并缓存 12h。搜索接口参数未公开，本源不提供搜索。"}]}
+// LumeRuntime: javascript
+//
+// 站点：橙涩视频（当前 H5 入口 https://6s9b2f4hkmbh.xyz，随机域名，会换）。
+// 结构（2026-11-02 实测）：
+//   线路发现  GET https://<line 域名>/                → {"status":"success","result":"https://qtrvqim.xxxx.cc/","pool":"…"}
+//   健康检查  GET <apiDomain>/api/sys/findLive        → {"code":200,"data":{"client":"mobile","pt":"CS"}}
+//   匿名注册  POST <api>/user/tryLogin {deviceId}     → 明文 JSON：{userId,token,freeWatches,vipType…}（**不加密**）
+//   分类      GET  <api>/video/findClassifyList       → [{classifyId,classifyTitle,needVip,type}]
+//   排行/热门  GET  <api>/video/findRankList {page,pageSize}
+//   大库      POST <api>/video/library {page,pageSize,classifyId?}
+//   分类视频  POST <api>/video/findClassifyVideos {classifyId,page,pageSize}
+//   详情      GET  <api>/video/findVideoById {videoId} → videoUrl(/hls/xxx.m3u8)、access、coverImg、price、canWatch
+//   播放      GET  <api>/dec/m3u/ios/access.m3u8?encData=<AES({access,path,id})>&t=&s=&_timestamp=
+//             → 200 application/vnd.apple.mpegurl，内部分片带独立 access（AES-128 key + ts 实测 200）
+//   封面      https://pic.tbem.org + coverImg[0].coverImg（200，WEBP 字节）
+//   域名池    GET  <api>/sys/findDomain → imageCdn / mp4Cdn / videoCdnList
+//
+// 加密（前端 fetch 拦截器原样复刻）：
+//   请求：salt = 13 位毫秒时间戳 t；key = iv = t + "000"（16 字节）；AES-128-CBC/PKCS7；Base64
+//         header 另带 t、s = md5(t.slice(3,9))、app=cs、vn=2.6.0、deviceid、permissions=token
+//   响应：encData（Base64）用 key = iv = token.slice(2,18) 反转 16 字符解 AES-128-CBC
+//
+// VIP：站点 VIP/金币锁的是「下单/观影券/会员权益」这些交易动作；播放层不校验——
+//     canWatch=false、freeWatches=0 时 detail 照样给 access，access 换 m3u8 实测 200 且分片可取。
+//     即「页面层可绕，直接取地址」，本源不需要任何会员态，也不需要买券。
+// 限制：站点无公开搜索参数（/search/content 传 keyword 返回 400），本源搜索给可读错误。
+
+var SEEDS = [
+  'https://18rrqswd.cc', 'https://wby3n4sn.cc', 'https://646jlp2d.cc', 'https://k56y3zzo.cc',
+  'https://22oix9a5.cc', 'https://etigpe44.cc', 'https://12180rah.cc', 'https://fbm4kbea.cc',
+  'https://gtihydob.cc', 'https://xro89231.cc', 'https://c5hs0mhd.cc', 'https://uu61lo11.cc',
+  'https://fg6jn3j7.cc', 'https://djetrr1v.cc', 'https://dqhdp64b.cc', 'https://b603pe32.cc',
+  'https://6ys7yxf5.cc', 'https://zriiiylx.cc', 'https://iygrso11.cc', 'https://dk0cp4p7.cc',
+  'https://xb20l848.cc', 'https://w6i0l6vj.cc', 'https://802ivhl2.cc', 'https://32bfqtjy.cc',
+  'https://z3m5278f.cc', 'https://q79jtf5d.cc', 'https://vlstzfz.cc', 'https://5m76d0ji.cc',
+  'https://rszoiokv.cc', 'https://4e608owo.cc'
+];
+var FALLBACK_API = ['https://qtrvqim.p04x0hyl.cc', 'https://qtrvqim.47svemtl.cc'];
+var IMG_CDN = ['https://pic.tbem.org', 'https://pic.tqonth.com'];
+var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+var CACHE_KEY_API = 'chengshe.api';
+var CACHE_KEY_TOKEN = 'chengshe.token';
+var CACHE_KEY_CATS = 'chengshe.cats';
+
+var state = { api: '', token: '', deviceId: '' };
+var known = {};
+var CATS = [];
+
+function cfg(k) {
+  var c = LumeSource.config && LumeSource.config.commonSettings ? LumeSource.config.commonSettings : {};
+  return c && c[k] !== undefined ? c[k] : undefined;
+}
+// 桥接的 storage.get/set 是异步的（返回 Promise），必须 await
+async function st(k) {
+  try { return LumeSource.storage ? await LumeSource.storage.get(k) : null; } catch (e) { return null; }
+}
+async function stSet(k, v) {
+  try { if (LumeSource.storage) await LumeSource.storage.set(k, v); } catch (e) {}
+}
+function customDomain() {
+  var d = LumeSource.config && LumeSource.config.domain ? String(LumeSource.config.domain) : '';
+  return d ? d.replace(/\/+$/, '') : '';
+}
+async function deviceId() {
+  if (state.deviceId) return state.deviceId;
+  var saved = await st('chengshe.dev');
+  if (saved) { state.deviceId = String(saved); return state.deviceId; }
+  var hex = '';
+  for (var i = 0; i < 32; i++) hex += '0123456789abcdef'.charAt(Math.floor(Math.random() * 16));
+  var id = hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-4' + hex.slice(13, 16) + '-a' + hex.slice(17, 20) + '-' + hex.slice(20, 32);
+  state.deviceId = id;
+  await stSet('chengshe.dev', id);
+  return id;
+}
+
+// ---------------------------------------------------------------- HTTP 封装
+// 注意：桥接的 http.post 签名是 post(url, body, options)，body 在第二位；这里统一走 http.request。
+async function httpPost(url, headers, body) {
+  if (LumeSource.http.request) {
+    return await LumeSource.http.request({ url: url, method: 'POST', headers: headers || {}, body: body });
+  }
+  return await LumeSource.http.post(url, body, { headers: headers || {} });
+}
+
+async function probeApi(candidate) {
+  var base = String(candidate || '').replace(/\/+$/, '').replace(/\/api$/, '');
+  if (!base) return '';
+  try {
+    var res = await LumeSource.http.get(base + '/api/sys/findLive', { headers: { 'User-Agent': UA } });
+    if (res && res.status === 200 && String(res.body || '').indexOf('"code":200') >= 0) return base;
+  } catch (e) {}
+  return '';
+}
+
+async function resolveApi() {
+  if (state.api) return state.api;
+  var custom = customDomain();
+  if (custom) {
+    var ok = await probeApi(custom);
+    if (ok) { state.api = ok; return ok; }
+  }
+  var cached = st(CACHE_KEY_API);
+  if (cached) {
+    var c = await probeApi(String(cached));
+    if (c) { state.api = c; return c; }
+  }
+  for (var i = 0; i < SEEDS.length; i++) {
+    try {
+      var res = await LumeSource.http.get(SEEDS[i] + '/', { headers: { 'User-Agent': UA } });
+      var txt = String((res && res.body) || '');
+      if (txt.indexOf('"result"') < 0) continue;
+      var m = /"result"\s*:\s*"([^"]+)"/.exec(txt);
+      var pool = /"pool"\s*:\s*"([^"]+)"/.exec(txt);
+      var cands = [];
+      if (m && m[1]) cands.push(m[1]);
+      if (pool && pool[1]) pool[1].split(',').forEach(function (u) { if (u) cands.push(u); });
+      for (var k = 0; k < cands.length; k++) {
+        var api = await probeApi(cands[k]);
+        if (api) { state.api = api; await stSet(CACHE_KEY_API, api); return api; }
+      }
+    } catch (e) {}
+  }
+  for (var j = 0; j < FALLBACK_API.length; j++) {
+    var f = await probeApi(FALLBACK_API[j]);
+    if (f) { state.api = f; await stSet(CACHE_KEY_API, f); return f; }
+  }
+  throw new Error('线路全部不可用：line 分发接口没给出可用的 API 域名，稍后重试或换镜像');
+}
+
+function apiBase() { return (customDomain() || state.api || FALLBACK_API[0]).replace(/\/+$/, ''); }
+
+// ---------------------------------------------------------------- 请求/解密
+function ticket() {
+  var t = String(Date.now());
+  return { t: t, s: md5Hex(t.slice(3, 9)) };
+}
+
+async function apiHeaders(t, s) {
+  var h = {
+    'User-Agent': UA, app: 'cs', vn: '2.6.0', deviceid: await deviceId(),
+    Origin: 'https://6s9b2f4hkmbh.xyz', Referer: 'https://6s9b2f4hkmbh.xyz/',
+    Accept: 'application/json, text/plain, */*'
+  };
+  if (t) h.t = t;
+  if (s) h.s = s;
+  if (state.token) h.permissions = state.token;
+  return h;
+}
+
+function responseSalt() {
+  var tok = state.token || '';
+  if (tok.length <= 18) return '';
+  return tok.slice(2, 18).split('').reverse().join('');
+}
+
+function decryptEnvelope(text) {
+  var raw = String(text || '').trim();
+  if (!raw) throw new Error('接口空响应');
+  if (raw.charAt(0) !== '{' && raw.charAt(0) !== '[') throw new Error('接口返回非 JSON（可能被拦截）');
+  var j;
+  try { j = JSON.parse(raw); } catch (e) { throw new Error('接口 JSON 解析失败'); }
+  if (!j || j.encData === undefined) return j;
+  var salt = responseSalt();
+  if (!salt) throw new Error('缺少登录态，无法解密响应');
+  var json = aesCbcDecryptUtf8(String(j.encData), salt);
+  try { return JSON.parse(json); } catch (e) { throw new Error('响应解密后不是 JSON'); }
+}
+
+async function apiGet(path, params) {
+  await ensureToken();
+  var api = await resolveApi();
+  var tk = ticket();
+  var enc = aesCbcEncryptB64(JSON.stringify(params || {}), tk.t + '000');
+  var url = api + path + '?encData=' + encodeURIComponent(enc) + '&_timestamp=' + Date.now();
+  var res = await LumeSource.http.get(url, { headers: await apiHeaders(tk.t, tk.s) });
+  if (!res || res.status === 0) throw new Error('接口没有响应');
+  if (res.status === 403) throw new Error('站点 403：请求被拦，稍后再试或换镜像');
+  var data = decryptEnvelope(res.body);
+  if (data && data.code !== undefined && Number(data.code) !== 200) {
+    if (Number(data.code) === 1001 || Number(data.code) === 302 || Number(data.code) === 301) {
+      await stSet(CACHE_KEY_TOKEN, '');
+      state.token = '';
+      throw new Error('登录态失效（' + data.code + '），已清缓存，重试即可');
+    }
+    throw new Error('接口返回 ' + data.code + (data.msg ? '：' + data.msg : ''));
+  }
+  return data;
+}
+
+async function apiPost(path, body) {
+  await ensureToken();
+  var api = await resolveApi();
+  var tk = ticket();
+  var payload = JSON.stringify({ encData: aesCbcEncryptB64(JSON.stringify(body || {}), tk.t + '000') });
+  var h = await apiHeaders(tk.t, tk.s);
+  h['Content-Type'] = 'application/json';
+  var res = await httpPost(api + path, h, payload);
+  if (!res || res.status === 0) throw new Error('接口没有响应');
+  if (res.status === 403) throw new Error('站点 403：请求被拦，稍后再试或换镜像');
+  if (res.status >= 400 && String(res.body || '').charAt(0) === '{' && String(res.body).indexOf('encData') < 0) {
+    var err = JSON.parse(String(res.body));
+    throw new Error('接口 HTTP ' + res.status + (err && err.error ? '：' + err.error : ''));
+  }
+  var data = decryptEnvelope(res.body);
+  if (data && data.code !== undefined && Number(data.code) !== 200) {
+    throw new Error('接口返回 ' + data.code + (data.msg ? '：' + data.msg : ''));
+  }
+  return data;
+}
+
+// 匿名注册（明文响应）：拿 token，缓存 7 天
+async function ensureToken() {
+  if (state.token) return state.token;
+  var cached = await st(CACHE_KEY_TOKEN);
+  if (cached) { state.token = String(cached); return state.token; }
+  var api = await resolveApi();
+  var tk = ticket();
+  var body = JSON.stringify({ encData: aesCbcEncryptB64(JSON.stringify({ deviceId: await deviceId() }), tk.t + '000') });
+  var h = await apiHeaders(tk.t, tk.s);
+  h['Content-Type'] = 'application/json';
+  var res = await httpPost(api + '/api/user/tryLogin', h, body);
+  if (!res || res.status !== 200) throw new Error('匿名登录失败（HTTP ' + (res && res.status) + '）');
+  var j;
+  try { j = JSON.parse(String(res.body)); } catch (e) { throw new Error('登录响应解析失败'); }
+  var tok = j && j.data ? String(j.data.token || '') : '';
+  if (!tok) throw new Error('登录没有拿到 token');
+  state.token = tok;
+  await stSet(CACHE_KEY_TOKEN, tok);
+  return tok;
+}
+
+// ---------------------------------------------------------------- 数据映射
+function s(v) { return v === undefined || v === null ? '' : String(v); }
+function imgUrl(p) {
+  var x = s(p);
+  if (!x) return '';
+  if (/^https?:\/\//.test(x)) return x;
+  return IMG_CDN[0] + (x.charAt(0) === '/' ? '' : '/') + x;
+}
+function coverOf(v) {
+  var arr = v && v.coverImg;
+  if (arr && arr.length && arr[0] && arr[0].coverImg) return imgUrl(arr[0].coverImg);
+  return '';
+}
+function rowOf(v) {
+  var id = s(v && v.videoId);
+  if (!id) return null;
+  var title = s(v.title).trim();
+  if (!title) return null;
+  var bits = [];
+  var sec = Number(v.playTime || 0);
+  if (sec > 0) bits.push(Math.round(sec / 60) + ' 分钟');
+  if (v.price && Number(v.price) > 0) bits.push('¥' + v.price);
+  if (v.nickName) bits.push(s(v.nickName));
+  return { id: id, title: title, cover: coverOf(v), subtitle: bits.join(' · ') };
+}
+
+// ---------------------------------------------------------------- 分类
+async function loadCats() {
+  if (CATS.length) return CATS;
+  var cached = await st(CACHE_KEY_CATS);
+  if (cached) {
+    try {
+      var arr = JSON.parse(String(cached));
+      if (arr && arr.length) { CATS = arr; return CATS; }
+    } catch (e) {}
+  }
+  var data = await apiGet('/api/video/findClassifyList', {});
+  var list = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : []);
+  var out = [];
+  list.forEach(function (c) {
+    if (!c || c.classifyId === undefined) return;
+    var t = s(c.classifyTitle).trim();
+    if (!t) return;
+    out.push({ id: 'c' + c.classifyId, title: t, classifyId: Number(c.classifyId) });
+  });
+  if (!out.length) throw new Error('分类接口没有解析到分类');
+  CATS = out;
+  await stSet(CACHE_KEY_CATS, JSON.stringify(out));
+  return out;
+}
+
+var LumeSource = {
+  id: 'chengshe_video',
+  name: '橙涩视频',
+  version: '1.0.0',
+  category: 'video',
+
+  async categories() {
+    var cats = [];
+    try { cats = await loadCats(); } catch (e) { cats = []; }
+    return [{ id: 'hot', title: '热门' }, { id: 'all', title: '全部' }].concat(cats);
+  },
+
+  async filters() { return { groups: [] }; },
+
+  async home() { return (await this.list({ page: 1, categoryId: 'hot' })).items; },
+
+  async list(args) {
+    var a = args || {};
+    if (a.keyword) throw new Error('该站点搜索参数未公开（/search/content 需要额外签名），请用分类浏览');
+    var page = Math.max(1, Number(a.page) || 1);
+    var pageSize = Number(cfg('pageSize')) || 20;
+    var cat = s(a.categoryId) || 'hot';
+    var data, items;
+
+    if (cat === 'hot') {
+      data = await apiGet('/api/video/findRankList', { page: page, pageSize: pageSize });
+      items = data && (data.data || data.list) || [];
+    } else if (cat === 'all') {
+      data = await apiPost('/api/video/library', { page: page, pageSize: pageSize });
+      items = data && (data.data || data.list) || [];
+    } else if (cat.indexOf('c') === 0) {
+      var cid = Number(cat.slice(1));
+      data = await apiPost('/api/video/findClassifyVideos', { classifyId: cid, page: page, pageSize: pageSize });
+      items = data && (data.data || data.list) || [];
+    } else {
+      throw new Error('未知分类：' + cat);
+    }
+
+    if (!Array.isArray(items)) items = [];
+    var rows = [];
+    items.forEach(function (v) { var r = rowOf(v); if (r) rows.push(r); });
+    if (!rows.length) {
+      if (page > 1) return { items: [], hasMore: false };
+      throw new Error('这一页没有解析到条目');
+    }
+    return { items: rows, hasMore: items.length >= pageSize };
+  },
+
+  async detail(args) {
+    var id = s(args && args.id);
+    if (!id) return null;
+    var d = await apiGet('/api/video/findVideoById', { videoId: Number(id) || id });
+    var v = d && d.data ? d.data : d;
+    if (!v || (v.videoId === undefined && !v.title)) return null;
+    if (v.videoUrl) known[id] = { url: s(v.videoUrl), access: s(v.access), title: s(v.title) };
+    var tags = (v.tagTitles || []).filter(Boolean).map(String);
+    var desc = [];
+    if (v.nickName) desc.push('作者：' + s(v.nickName));
+    if (tags.length) desc.push('标签：' + tags.join('・'));
+    if (v.fakeWatchTimes) desc.push('播放：' + s(v.fakeWatchTimes));
+    return {
+      id: id,
+      title: s(v.title) || id,
+      cover: coverOf(v),
+      description: desc.join('\n'),
+      tags: tags
+    };
+  },
+
+  async chapters(args) {
+    var id = s(args && args.id);
+    return [{ id: id, title: '播放' }];
+  },
+
+  async content(args) {
+    var id = s(args && (args.id || args.chapterId));
+    if (!id) throw new Error('缺少条目 ID');
+    var row = known[id];
+    if (!row || !row.url) {
+      var d = await apiGet('/api/video/findVideoById', { videoId: Number(id) || id });
+      var v = d && d.data ? d.data : d;
+      if (!v || !v.videoUrl) throw new Error('这个条目没有解析到播放地址');
+      row = { url: s(v.videoUrl), access: s(v.access) };
+      known[id] = row;
+    }
+    var api = await resolveApi();
+    var tk = ticket();
+    var payload = { access: row.access, path: row.url, id: '' };
+    var enc = aesCbcEncryptB64(JSON.stringify(payload), tk.t + '000');
+    var url = api + '/api/dec/m3u/ios/access.m3u8?encData=' + encodeURIComponent(enc) +
+      '&t=' + tk.t + '&s=' + tk.s + '&_timestamp=' + Date.now();
+    var h = await apiHeaders(tk.t, tk.s);
+    h.Referer = 'https://6s9b2f4hkmbh.xyz/';
+    return { kind: 'video', url: url, headers: h };
+  }
+};
+
+// ---------------------------------------------------------------- 纯 JS：MD5
+function utf8Bytes(text) {
+  var out = [], str = String(text == null ? '' : text);
+  for (var i = 0; i < str.length; i++) {
+    var c = str.charCodeAt(i);
+    if (c < 0x80) out.push(c);
+    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {
+      var low = str.charCodeAt(i + 1);
+      if (low >= 0xdc00 && low <= 0xdfff) {
+        i++;
+        var pt = 0x10000 + ((c - 0xd800) << 10) + (low - 0xdc00);
+        out.push(0xf0 | (pt >> 18), 0x80 | ((pt >> 12) & 0x3f), 0x80 | ((pt >> 6) & 0x3f), 0x80 | (pt & 0x3f));
+        continue;
+      }
+      out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+    } else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+  }
+  return out;
+}
+
+function md5Hex(input) {
+  function add32(a, b) { return (a + b) & 0xffffffff; }
+  function rol(v, s2) { return (v << s2) | (v >>> (32 - s2)); }
+  var bytes = utf8Bytes(String(input == null ? '' : input));
+  var bitLen = bytes.length * 8;
+  var pad = bytes.slice();
+  pad.push(0x80);
+  while (pad.length % 64 !== 56) pad.push(0);
+  var hi = Math.floor(bitLen / 4294967296), lo = bitLen >>> 0;
+  pad.push(lo & 0xff, (lo >>> 8) & 0xff, (lo >>> 16) & 0xff, (lo >>> 24) & 0xff);
+  pad.push(hi & 0xff, (hi >>> 8) & 0xff, (hi >>> 16) & 0xff, (hi >>> 24) & 0xff);
+  var a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
+  var S = [7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+    5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+    4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+    6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21];
+  var K = [];
+  for (var k = 0; k < 64; k++) K[k] = Math.floor(Math.abs(Math.sin(k + 1)) * 4294967296) >>> 0;
+  for (var off = 0; off < pad.length; off += 64) {
+    var m = [];
+    for (var w = 0; w < 16; w++) {
+      m[w] = (pad[off + w * 4] | (pad[off + w * 4 + 1] << 8) | (pad[off + w * 4 + 2] << 16) | (pad[off + w * 4 + 3] << 24)) >>> 0;
+    }
+    var A = a0, B = b0, C = c0, D = d0;
+    for (var i = 0; i < 64; i++) {
+      var F, g;
+      if (i < 16) { F = (B & C) | (~B & D); g = i; }
+      else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
+      else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) % 16; }
+      else { F = C ^ (B | ~D); g = (7 * i) % 16; }
+      var tmp = D; D = C; C = B;
+      B = add32(B, rol(add32(add32(A, F & 0xffffffff), add32(K[i], m[g])), S[i]));
+      A = tmp;
+    }
+    a0 = add32(a0, A); b0 = add32(b0, B); c0 = add32(c0, C); d0 = add32(d0, D);
+  }
+  function hx(v) {
+    var o = '';
+    for (var j = 0; j < 4; j++) o += ('0' + ((v >>> (j * 8)) & 0xff).toString(16)).slice(-2);
+    return o;
+  }
+  return hx(a0) + hx(b0) + hx(c0) + hx(d0);
+}
+
+// ---------------------------------------------------------------- 纯 JS：AES-128-CBC + Base64
+var SBOX_HEX = '637c777bf26b6fc53001672bfed7ab76ca82c97dfa5947f0add4a2af9ca472c0b7fd9326363ff7cc34a5e5f171d8311504c723c31896059a071280e2eb27b27509832c1a1b6e5aa0523bd6b329e32f8453d100ed20fcb15b6acbbe394a4c58cfd0efaafb434d338545f9027f503c9fa851a3408f929d38f5bcb6da2110fff3d2cd0c13ec5f974417c4a77e3d645d197360814fdc222a908846eeb814de5e0bdbe0323a0a4906245cc2d3ac629195e479e7c8376d8dd54ea96c56f4ea657aae08ba78252e1ca6b4c6e8dd741f4bbd8b8a703eb5664803f60e613557b986c11d9ee1f8981169d98e949b1e87e9ce5528df8ca1890dbfe6426841992d0fb054bb16';
+var INV_SBOX_HEX = '52096ad53036a538bf40a39e81f3d7fb7ce339829b2fff87348e4344c4dee9cb547b9432a6c2233dee4c950b42fac34e082ea16628d924b2765ba2496d8bd12572f8f66486689816d4a45ccc5d65b6926c704850fdedb9da5e154657a78d9d8490d8ab008cbcd30af7e45805b8b34506d02c1e8fca3f0f02c1afbd0301138a6b3a9111414f67dcea97f2cfcef0b4e67396ac7422e7ad3585e2f937e81c75df6e47f11a711d29c5896fb7620eaa18be1bfc563e4bc6d279209adbc0fe78cd5af41fdda8338807c731b11210592780ec5f60517fa919b54a0d2de57a9f93c99cefa0e03b4dae2af5b0c8ebbb3c83539961172b047eba77d626e169146355210c7d';
+
+function hexToBytes2(hex) {
+  var out = [];
+  for (var i = 0; i < hex.length; i += 2) out.push(parseInt(hex.slice(i, i + 2), 16));
+  return out;
+}
+var SBOX = hexToBytes2(SBOX_HEX);
+var INV_SBOX = hexToBytes2(INV_SBOX_HEX);
+var MUL = (function () {
+  var m = { mul2: [], mul3: [], mul9: [], mul11: [], mul13: [], mul14: [] };
+  for (var i = 0; i < 256; i++) {
+    var x = i;
+    var x2 = ((x << 1) ^ (x & 0x80 ? 0x1b : 0)) & 0xff;
+    var x4 = ((x2 << 1) ^ (x2 & 0x80 ? 0x1b : 0)) & 0xff;
+    var x8 = ((x4 << 1) ^ (x4 & 0x80 ? 0x1b : 0)) & 0xff;
+    m.mul2[i] = x2; m.mul3[i] = (x2 ^ x) & 0xff;
+    m.mul9[i] = (x8 ^ x) & 0xff; m.mul11[i] = (x8 ^ x2 ^ x) & 0xff;
+    m.mul13[i] = (x8 ^ x4 ^ x) & 0xff; m.mul14[i] = (x8 ^ x4 ^ x2) & 0xff;
+  }
+  return m;
+})();
+
+function expandKey128(keyBytes) {
+  var nk = 4, nr = 10, w = [];
+  for (var i = 0; i < nk; i++) w.push(keyBytes.slice(4 * i, 4 * i + 4));
+  var rcon = 1;
+  for (var j = nk; j < 4 * (nr + 1); j++) {
+    var t = w[j - 1].slice();
+    if (j % nk === 0) {
+      t = [SBOX[t[1]] ^ rcon, SBOX[t[2]], SBOX[t[3]], SBOX[t[0]]];
+      rcon = MUL.mul2[rcon];
+    }
+    w.push([w[j - nk][0] ^ t[0], w[j - nk][1] ^ t[1], w[j - nk][2] ^ t[2], w[j - nk][3] ^ t[3]]);
+  }
+  return { w: w, nr: nr };
+}
+function keyBytesOf(str) {
+  var out = utf8Bytes(str);
+  var key = [], i;
+  for (i = 0; i < 16; i++) key.push(i < out.length ? out[i] : 0);
+  return key;
+}
+function addRoundKey(stateArr, ks, round) {
+  for (var c = 0; c < 4; c++) for (var r = 0; r < 4; r++) stateArr[4 * c + r] ^= ks.w[round * 4 + c][r];
+}
+function subBytes(stateArr) { for (var i = 0; i < 16; i++) stateArr[i] = SBOX[stateArr[i]]; }
+function invSubBytes(stateArr) { for (var i = 0; i < 16; i++) stateArr[i] = INV_SBOX[stateArr[i]]; }
+function shiftRows(stateArr) {
+  var t = stateArr.slice();
+  for (var r = 1; r < 4; r++) for (var c = 0; c < 4; c++) stateArr[4 * c + r] = t[4 * ((c + r) % 4) + r];
+}
+function invShiftRows(stateArr) {
+  var t = stateArr.slice();
+  for (var r = 1; r < 4; r++) for (var c = 0; c < 4; c++) stateArr[4 * c + r] = t[4 * ((c - r + 4) % 4) + r];
+}
+function mixColumns(stateArr) {
+  for (var c = 0; c < 4; c++) {
+    var a0 = stateArr[4 * c], a1 = stateArr[4 * c + 1], a2 = stateArr[4 * c + 2], a3 = stateArr[4 * c + 3];
+    stateArr[4 * c] = MUL.mul2[a0] ^ MUL.mul3[a1] ^ a2 ^ a3;
+    stateArr[4 * c + 1] = a0 ^ MUL.mul2[a1] ^ MUL.mul3[a2] ^ a3;
+    stateArr[4 * c + 2] = a0 ^ a1 ^ MUL.mul2[a2] ^ MUL.mul3[a3];
+    stateArr[4 * c + 3] = MUL.mul3[a0] ^ a1 ^ a2 ^ MUL.mul2[a3];
+  }
+}
+function invMixColumns(stateArr) {
+  for (var c = 0; c < 4; c++) {
+    var a0 = stateArr[4 * c], a1 = stateArr[4 * c + 1], a2 = stateArr[4 * c + 2], a3 = stateArr[4 * c + 3];
+    stateArr[4 * c] = MUL.mul14[a0] ^ MUL.mul11[a1] ^ MUL.mul13[a2] ^ MUL.mul9[a3];
+    stateArr[4 * c + 1] = MUL.mul9[a0] ^ MUL.mul14[a1] ^ MUL.mul11[a2] ^ MUL.mul13[a3];
+    stateArr[4 * c + 2] = MUL.mul13[a0] ^ MUL.mul9[a1] ^ MUL.mul14[a2] ^ MUL.mul11[a3];
+    stateArr[4 * c + 3] = MUL.mul11[a0] ^ MUL.mul13[a1] ^ MUL.mul9[a2] ^ MUL.mul14[a3];
+  }
+}
+function encryptBlock(block, ks) {
+  var st8 = block.slice();
+  addRoundKey(st8, ks, 0);
+  for (var round = 1; round < ks.nr; round++) {
+    subBytes(st8); shiftRows(st8); mixColumns(st8); addRoundKey(st8, ks, round);
+  }
+  subBytes(st8); shiftRows(st8); addRoundKey(st8, ks, ks.nr);
+  return st8;
+}
+function decryptBlock(block, ks) {
+  var st8 = block.slice();
+  addRoundKey(st8, ks, ks.nr);
+  for (var round = ks.nr - 1; round >= 1; round--) {
+    invShiftRows(st8); invSubBytes(st8); addRoundKey(st8, ks, round); invMixColumns(st8);
+  }
+  invShiftRows(st8); invSubBytes(st8); addRoundKey(st8, ks, 0);
+  return st8;
+}
+function pkcs7Pad(bytes) {
+  var n = 16 - (bytes.length % 16);
+  var out = bytes.slice();
+  for (var i = 0; i < n; i++) out.push(n);
+  return out;
+}
+function pkcs7Unpad(bytes) {
+  if (!bytes.length) return bytes;
+  var n = bytes[bytes.length - 1];
+  if (n < 1 || n > 16 || n > bytes.length) return bytes;
+  return bytes.slice(0, bytes.length - n);
+}
+function base64Encode(bytes) {
+  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  var out = '';
+  for (var i = 0; i < bytes.length; i += 3) {
+    var b0 = bytes[i], b1 = bytes[i + 1], b2 = bytes[i + 2];
+    out += chars.charAt(b0 >> 2);
+    out += chars.charAt(((b0 & 3) << 4) | ((b1 === undefined ? 0 : b1) >> 4));
+    out += b1 === undefined ? '=' : chars.charAt(((b1 & 15) << 2) | ((b2 === undefined ? 0 : b2) >> 6));
+    out += b2 === undefined ? '=' : chars.charAt(b2 & 63);
+  }
+  return out;
+}
+function base64Decode(str) {
+  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  // 保留 '=' 让 indexOf 返回 -1，尾部填充才不会多解出字节
+  var clean = String(str || '').replace(/[^A-Za-z0-9+/=]/g, '');
+  var out = [];
+  for (var i = 0; i < clean.length; i += 4) {
+    var c0 = chars.indexOf(clean.charAt(i));
+    var c1 = chars.indexOf(clean.charAt(i + 1));
+    var c2 = chars.indexOf(clean.charAt(i + 2));
+    var c3 = chars.indexOf(clean.charAt(i + 3));
+    out.push((c0 << 2) | (c1 >> 4));
+    if (c2 >= 0) out.push(((c1 & 15) << 4) | (c2 >> 2));
+    if (c3 >= 0) out.push(((c2 & 3) << 6) | c3);
+  }
+  return out;
+}
+function bytesToUtf8(bytes) {
+  var out = '', i = 0;
+  while (i < bytes.length) {
+    var b = bytes[i++];
+    if (b < 0x80) out += String.fromCharCode(b);
+    else if (b < 0xe0) out += String.fromCharCode(((b & 0x1f) << 6) | (bytes[i++] & 0x3f));
+    else if (b < 0xf0) out += String.fromCharCode(((b & 0x0f) << 12) | ((bytes[i++] & 0x3f) << 6) | (bytes[i++] & 0x3f));
+    else {
+      var cp = ((b & 0x07) << 18) | ((bytes[i++] & 0x3f) << 12) | ((bytes[i++] & 0x3f) << 6) | (bytes[i++] & 0x3f);
+      cp -= 0x10000;
+      out += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 0x3ff));
+    }
+  }
+  return out;
+}
+
+function aesCbcEncryptB64(plainText, keyStr) {
+  var ks = expandKey128(keyBytesOf(keyStr));
+  var iv = keyBytesOf(keyStr);
+  var data = pkcs7Pad(utf8Bytes(plainText));
+  var prev = iv.slice();
+  var out = [];
+  for (var off = 0; off < data.length; off += 16) {
+    var block = [];
+    for (var i = 0; i < 16; i++) block.push(data[off + i] ^ prev[i]);
+    var enc = encryptBlock(block, ks);
+    for (var j = 0; j < 16; j++) out.push(enc[j]);
+    prev = enc;
+  }
+  return base64Encode(out);
+}
+
+function aesCbcDecryptUtf8(b64, keyStr) {
+  var ks = expandKey128(keyBytesOf(keyStr));
+  var iv = keyBytesOf(keyStr);
+  var data = base64Decode(b64);
+  var prev = iv.slice();
+  var out = [];
+  for (var off = 0; off < data.length; off += 16) {
+    var block = [];
+    for (var i = 0; i < 16; i++) block.push(data[off + i]);
+    var dec = decryptBlock(block, ks);
+    for (var j = 0; j < 16; j++) out.push(dec[j] ^ prev[j]);
+    prev = block;
+  }
+  return bytesToUtf8(pkcs7Unpad(out));
+}

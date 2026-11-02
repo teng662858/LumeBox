@@ -1,3 +1,11 @@
+## 2026-11-02 橙涩视频（chengshe_video）
+
+成人视频 H5（随机域名，当前 `6s9b2f4hkmbh.xyz`，发布页 `8if2pvzp.cc`）：接口全量 AES-CBC 加密，
+匿名 `POST /user/tryLogin {deviceId}` 拿 token，请求 `encData`（key=iv=毫秒时间戳+000）/ 响应 `encData`
+（key=iv=token 第 3–18 位倒序）；播放走 `/api/dec/m3u/ios/access.m3u8` 换 HLS。
+**VIP 只锁交易（券/金币/会员），`canWatch:false` 时接口照常下发 videoUrl+access，换 m3u8 实测 200**，
+无需会员态。搜索参数未公开，本源不提供搜索。详见 [记录](../docs/2026-11-02_橙涩视频源-加密链路与VIP绕过.md)。
+
 ## 2026-11-02 稳定性与起播优化
 
 厂长资源 v1.0.3：明确识别网页校验并保留错误；详情与选集请求合并、复用 60 秒；连接失败时从官方发布页读取并验证新主地址。
