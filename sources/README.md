@@ -246,7 +246,8 @@ sources/video/
 ├── haijiao.js     海角（www.haijiao.com）Vue2 SPA + /api，三重 Base64；**匿名只给线路名不给地址** → 播放走 webplayer(/watch?id=)，填账号后可取原生地址
 ├── aido8.js       爱豆（ww15.aido8.icu）  /awsapi 加密 JSON；匿名整片；封面是反转 JPEG（占位图）
 ├── tangtoutiao.js 汤头条（p1.wgbqoiqv.com）Nuxt 壳 + 独立接口域，AES-256-CFB 签名；付费仅 ~2 分钟试看
-├── h4dh3.js       hxc（h4dh3.com）        **VIP 真破解**：getPreUrl 签名只覆盖路径，删 start/end 即整片
+├── h4dh3.js       hxc（壳域 jhqjg.com / 9zx3x.com）**VIP 真破解**：getPreUrl 签名只覆盖路径，删 start/end 即整片；接口主机从 H5 包 `VUE_APP_API_BASE_URL` 自发现
+├── lxxlxx.js      LXXLXX（zhs.lxxxxlxxx.com）繁中短片站；`/vjs` 三段链取 mp4；源站 2026-11-02 全球挂（CF 522），脚本按 mirrors 自动换台
 ├── cf3.js         Butterfly2（d17rhkrwip15vt.cloudfront.net）同 SDK 另一运营方；API 域与页面域分离
 ├── hentai2w.js    Hentai2W（hentai2w.com）**18+**，**需代理**，Inertia props + 自动过年龄门
 ├── zhilian-duanju.js 栀莲短剧（yklyo880.lldj1.xyz）短剧站，SPA + `/api/v1` JSON 接口；游客登录获取当前会话获准播放的地址，锁定集转源站网页

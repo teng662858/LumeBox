@@ -1,4 +1,4 @@
-// LumeSource: {"id":"lxxlxx_video","name":"LXXLXX","version":"1.0.1","category":"video","contentCategory":"adult","mirrors":["https://zhs.lxxxxlxxx.com","https://zhs.lxxlxx.com","https://www.lxxlxx.com"],"network":"direct"}
+// LumeSource: {"id":"lxxlxx_video","name":"LXXLXX","version":"1.1.0","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://zhs.lxxxxlxxx.com","https://zhs.lxxlxx.com","https://www.lxxlxx.com","https://hk.lxxlxx.com"],"network":"direct","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点（站方新域）","url":"https://zhs.lxxxxlxxx.com/","description":"站方自己的 301 目标：zhx./zhy.lxxlxx.com 都跳这里。源站恢复后从这里直接进站"},{"key":"note","type":"info","title":"站点说明","description":"LXXLXX（繁中成人短片）。2026-11-02 复测：zhs.lxxxxlxxx.com 与 lxxlxx.com 的 www./zhs./hk. 全系仍不可达（本机与第三方代理同为 Cloudflare 522，源站全球挂，不是脚本问题）；zhx./zhy.lxxlxx.com 还能回 301 指向新域。本源现在会**按 mirrors 依次自动换台**（每次请求最多试两台、总预算 8.5 秒），换到能开的那台会记住；全部打不通就明确报「源站不可达」，等站方恢复即可。"}]}
 //
 // 站点：https://zhs.lxxxxlxxx.com （繁中成人短片站；2026-11-01 复测：**站点改名换域了**）
 //
@@ -82,8 +82,52 @@ var H = {
     return String(r.body || '');
   },
   // App 单次调用预算 10s，而源站挂掉时 Cloudflare 要约 20s 才回 522 —— 干等只会得到「请求超时」。
-  // 这里给每个请求套一个 4.5s 软超时：超时立刻抛可读错误，并记 60 秒「本站不可达」，
-  // 期间再点重试直接失败，不重复等。
+  // 这里给每个请求套一个软超时：超时立刻换下一台镜像；两台都不行就抛可读错误，并记 60 秒
+  // 「本站不可达」，期间再点重试直接失败，不重复等。
+  totalBudgetMs: 8500,
+  hosts: function () {
+    var out = [];
+    function push(value) {
+      var text = String(value == null ? '' : value).replace(/\/+$/, '');
+      if (/^https?:\/\//i.test(text) && out.indexOf(text) < 0) out.push(text);
+    }
+    var c = (typeof LumeSource !== 'undefined' && LumeSource.config) || null;
+    push(c && c.domain);
+    push(this.base);
+    push(this.defaultBase);
+    var mirrors = (typeof LumeSource !== 'undefined' && LumeSource.mirrors) || [];
+    for (var i = 0; i < mirrors.length; i++) push(mirrors[i]);
+    return out;
+  },
+  // 单台取页（带软超时）：{ ok, text } / { reason } / { fatal }
+  attempt: async function (host, path, referer) {
+    var self = this;
+    var url = /^https?:\/\//i.test(path) ? path : host + path;
+    var budget = Math.max(1500, Math.min(self.softTimeoutMs, self.deadline - Date.now()));
+    var timer = null;
+    var raced = await Promise.race([
+      LumeSource.http.get(url, { headers: self.headers(referer) }).then(
+        function (reply) { return { reply: reply }; },
+        function (error) { return { failure: error }; }
+      ),
+      new Promise(function (resolve) {
+        timer = setTimeout(function () { resolve({ timeout: true }); }, budget);
+      })
+    ]);
+    if (timer) clearTimeout(timer);
+    if (raced.timeout) return { reason: budget + 'ms 内没有响应（' + host + '）' };
+    if (raced.failure) {
+      var message = String((raced.failure && raced.failure.message) || raced.failure);
+      return { reason: '连不上（' + host + '）：' + message };
+    }
+    try {
+      return { ok: true, text: self.response(raced.reply) };
+    } catch (error) {
+      var text = String((error && error.message) || '');
+      if (/NEED_WEBVIEW_VERIFY/.test(text)) return { fatal: error };
+      return { reason: text };
+    }
+  },
   down: function (reason) {
     var now = Date.now();
     if (this._downAt && now - this._downAt < this.downTtlMs) {
@@ -91,52 +135,59 @@ var H = {
     }
     this._downAt = now;
     this._downWhy = reason;
-    throw new Error(this.name + '：站点 ' + this.softTimeoutMs + 'ms 内没响应（' + reason + '）。' +
-      '源站可能正在换域名/宕机：稍后重试，或到「源设置 → 换网址」换一个镜像');
+    var hint = /52[0-7]/.test(reason)
+      ? '这是站方源站挂了（Cloudflare 5xx），不是脚本解析错'
+      : '已知镜像全都没响应，多半是源站宕机或正在换域';
+    throw new Error(this.name + '：站点源站当前不可达（' + reason + '）。' + hint +
+      '；等站方恢复即可，或到「源设置 → 换网址」换一台镜像再试');
   },
   get: async function (path, referer) {
     if (this._downAt && Date.now() - this._downAt < this.downTtlMs) {
       throw new Error(this.name + '：站点源站当前不可达（' + (this._downWhy || '无响应') + '），约 1 分钟后再试');
     }
-    var url = /^https?:\/\//i.test(path) ? path : this.base + path;
-    var alive = false;
-    var timer = null;
-    var deadline = new Promise(function (resolve) {
-      timer = setTimeout(function () { resolve({ __timeout: true }); }, H.softTimeoutMs);
-    });
-    var reply = await Promise.race([
-      LumeSource.http.get(url, { headers: this.headers(referer) }).then(function (r) {
-        alive = true;
-        return r;
-      }, function (e) {
-        alive = true;
-        throw e;
-      }),
-      deadline
-    ]);
-    if (timer) clearTimeout(timer);
-    if (reply && reply.__timeout) {
-      this.down('4.5 秒内没有响应');
+    var hosts = this.hosts();
+    var reasons = [];
+    this.deadline = Date.now() + this.totalBudgetMs;
+    for (var i = 0; i < hosts.length && i < 2; i++) {
+      if (Date.now() >= this.deadline) break;
+      var result = await this.attempt(hosts[i], path, referer);
+      if (result.fatal) throw result.fatal;
+      if (result.ok) {
+        this.base = hosts[i];
+        this._downAt = 0;
+        return result.text;
+      }
+      reasons.push(result.reason);
     }
-    try {
-      var text = this.response(reply);
-      this._downAt = 0;
-      return text;
-    } catch (error) {
-      var message = String((error && error.message) || '');
-      if (/Cloudflare 5\d\d/.test(message)) this._downAt = Date.now(), (this._downWhy = message);
-      throw error;
-    }
+    this.down(reasons.length ? reasons.join('；') : '没有可用镜像');
   }
 };
 
 var LumeSource = {
   id: 'lxxlxx_video',
   name: 'LXXLXX',
-  version: '1.0.1',
+  version: '1.1.0',
   category: 'video',
   contentCategory: 'adult',
-  mirrors: ['https://zhs.lxxxxlxxx.com', 'https://zhs.lxxlxx.com', 'https://www.lxxlxx.com'],
+  settingsApiVersion: 2,
+  requiresSettings: ['settingsActions'],
+  mirrors: ['https://zhs.lxxxxlxxx.com', 'https://zhs.lxxlxx.com', 'https://www.lxxlxx.com', 'https://hk.lxxlxx.com'],
+  settings: [
+    {
+      key: 'publishPage',
+      type: 'action',
+      action: 'openWebsite',
+      title: '打开站点（站方新域）',
+      url: 'https://zhs.lxxxxlxxx.com/',
+      description: '站方自己的 301 目标：zhx./zhy.lxxlxx.com 都跳这里；源站恢复后从这儿进站最稳',
+    },
+    {
+      key: 'note',
+      type: 'info',
+      title: '站点说明',
+      description: 'LXXLXX（繁中成人短片）。2026-11-02 复测：新域 zhs.lxxxxlxxx.com 与旧域 lxxlxx.com 的 www./zhs./hk. 全系仍回 Cloudflare 522 / 超时（本机与第三方代理一致，源站全球挂）；zhx./zhy.lxxlxx.com 还能 301 到新域。脚本现在会自动按 mirrors 换台（每次请求最多两台、总预算 8.5 秒），能开的那台会被记住；全挂时明确报「源站不可达」，等站方恢复即可。',
+    },
+  ],
 
   async home() {
     H.useDomain();

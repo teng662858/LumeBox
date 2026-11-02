@@ -1,4 +1,4 @@
-// LumeSource: {"id":"h4dh3_video","name":"hxc 18+","version":"1.0.3","category":"video","contentCategory":"adult","settingsApiVersion":2,"mirrors":["https://www.9zx3x.com","https://9zx3x.com","https://www.h4dh3.com","https://a84i.ux51l.com","https://a96u.t3nwc.com"],"network":"proxy","icon":"https://www.9zx3x.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"hxc（Fi11）：2026-10-30 起旧域名 h4dh3.com 只剩「马上停用」公告，新域名 www.9zx3x.com（同一套前端）。接口主机仍是 a84i.ux51l.com / a96u.t3nwc.com 两台，前端写死。国内需代理；手机上若报 TLS_HANDSHAKE_FAILED(-1200)，多半是当前网络/代理把这两台接口主机握手拦了，换线路或换代理再试。播放地址取 /videos/getPreUrl 的签名 m3u8 并去掉 30 秒试看区间（见脚本头注释）。"}]}
+// LumeSource: {"id":"h4dh3_video","name":"hxc 18+","version":"1.0.4","category":"video","contentCategory":"adult","settingsApiVersion":2,"mirrors":["https://www.jhqjg.com","https://www.9zx3x.com","https://9zx3x.com"],"network":"proxy","icon":"https://www.jhqjg.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"hxc（Fi11 / 含羞草）：壳域名 2026-11-02 起是 www.jhqjg.com（www.9zx3x.com 已 302 过去），旧域 h4dh3.com 只留停用公告。接口主机现在由脚本自己从站点前端（/h5/assets/js/app.<hash>.js 的 VUE_APP_API_BASE_URL）回读并缓存 6 小时，站方换主机不用改源；https 被拦成 HTML 时会自动用同一台的 http 再试一次。国内需代理；手机上若报 TLS_HANDSHAKE_FAILED(-1200) 或「接口返回的不是 JSON」，是当前网络/代理把接口主机拦了——到「源设置 → 站点网络」切代理线路再试。播放地址取 /videos/getPreUrl 的签名 m3u8 并去掉 30 秒试看区间（见脚本头注释）。"}]}
 //
 // ════════════════════════════════════════════════════════════════════════════
 // 一、站点与前端（2026-10-25 实测）
@@ -101,6 +101,11 @@
 //     并且 list()/search() 会过滤标题命中 萝莉/幼齿/学生/loli 等词的条目（见 __blocked）。
 //
 var DEFAULT_BASES = ['https://a84i.ux51l.com', 'https://a96u.t3nwc.com'];
+// 壳域名（前端页面）。2026-11-02 实测：www.9zx3x.com → 302 https://www.jhqjg.com/home
+// （title 含羞草）；接口主机仍由前端常量 VUE_APP_API_BASE_URL 给出，脚本会自己回读。
+var SHELL_HOSTS = ['https://www.jhqjg.com', 'https://www.9zx3x.com'];
+// 接口请求带的 Origin/Referer（站点自己的壳）
+var SHELL_ORIGIN = 'https://www.jhqjg.com';
 var AES_KEY = 'B77A9FF7F323B5404902102257503C2F';
 var AES_IV = 'B77A9FF7F323B5404902102257503C2F';
 var IMAGE_HOST = 'https://i04g.nasuiyile.com';
@@ -354,12 +359,101 @@ function siteEncrypt(text) {
 var UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
+// 站点的壳按 UA 分发：手机 UA 才会拿到 H5 包（接口主机常量在 H5 包里是明文）
+var MOBILE_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+
 var baseCache = '';
 var token = '';
+
+/* ─────── 接口主机自发现（2026-11-02 加） ───────
+ * 接口主机（a84i.ux51l.com / a96u.t3nwc.com）是站方自己换的，写死在源里就会跟丢。
+ * 站点前端把当前主机放在 H5 包的常量里：
+ *   shell /home  →  <script src="…/h5/assets/js/app.<hash>.js">
+ *   该包内  →  VUE_APP_API_BASE_URL:"https://a84i.ux51l.com,https://a96u.t3nwc.com"
+ * 所以壳域名不变时，接口主机换了脚本也能自己跟过去（缓存 6 小时）。
+ * 壳域名本身也在 mirrors 里，用户换壳后同样会重新回读。
+ */
+var BASES_FILE = 'bases.json';
+var BASES_TTL = 6 * 3600 * 1000;
+
+function readJson(file) {
+  return LumeSource.fs.readText(file).then(function (raw) {
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (error) { return null; }
+  }).catch(function () { return null; });
+}
+
+function writeJson(file, value) {
+  return LumeSource.fs.writeText(file, JSON.stringify(value)).catch(function () { return null; });
+}
 
 function customBase() {
   var config = LumeSource.config || {};
   return String(config.customDomain || '').trim().replace(/\/+$/, '');
+}
+
+async function readApiBaseUrl() {
+  var shells = [];
+  function pushShell(host) {
+    var text = String(host || '').trim().replace(/\/+$/, '');
+    if (/^https?:\/\//i.test(text) && shells.indexOf(text) < 0) shells.push(text);
+  }
+  pushShell(customBase());
+  for (var s = 0; s < SHELL_HOSTS.length; s++) pushShell(SHELL_HOSTS[s]);
+  var mirrors = (LumeSource && LumeSource.mirrors) || [];
+  for (var m = 0; m < mirrors.length; m++) pushShell(mirrors[m]);
+
+  var out = [];
+  function pushBase(base) {
+    var text = String(base || '').trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(text) || out.indexOf(text) >= 0) return false;
+    out.push(text);
+    return true;
+  }
+
+  for (var i = 0; i < shells.length && !out.length; i++) {
+    var html = '';
+    try {
+      // 壳按 UA 分发：手机 UA 给 H5（h5/，常量是明文），桌面 UA 给 PC（Vue 打包后混淆）
+      var page = await LumeSource.http.get(shells[i] + '/home', { headers: { 'User-Agent': MOBILE_UA } });
+      if (!page || page.status !== 200) continue;
+      html = String(page.body || '');
+    } catch (error) {
+      continue;
+    }
+    var script = /(https?:\/\/[^"'\s]+\/h5\/assets\/js\/app\.[0-9a-z.]+\.js)/i.exec(html);
+    if (!script) continue;
+    var bundle = '';
+    try {
+      var reply = await LumeSource.http.get(script[1], { headers: { 'User-Agent': MOBILE_UA } });
+      if (!reply || reply.status !== 200) continue;
+      bundle = String(reply.body || '');
+    } catch (error) {
+      continue;
+    }
+    var declared = /VUE_APP_API_BASE_URL\s*:\s*"([^"]+)"/.exec(bundle);
+    if (declared) {
+      String(declared[1]).split(',').forEach(function (item) { pushBase(item); });
+    }
+    if (!out.length) {
+      // 常量改名时的兜底：包里的 API 主机名形如 <随机4-8位>.<ux51l|t3nwc>.com
+      var hosts = bundle.match(/[a-z0-9]{2,8}\.(?:ux51l|t3nwc)\.[a-z]{2,6}/gi) || [];
+      for (var n = 0; n < hosts.length; n++) pushBase('https://' + String(hosts[n]).toLowerCase());
+    }
+  }
+  return out;
+}
+
+async function discoveredBases(force) {
+  var cached = await readJson(BASES_FILE);
+  if (!force && cached && cached.list && cached.list.length &&
+      Date.now() - Number(cached.at || 0) < BASES_TTL) {
+    return cached.list.slice();
+  }
+  var list = await readApiBaseUrl();
+  if (list.length) await writeJson(BASES_FILE, { at: Date.now(), list: list });
+  return list;
 }
 
 // ents = 站点自己的「本地墙上时间秒」（等价于首屏 timeStamp 差为 0 时的 vA()）
@@ -376,12 +470,12 @@ function headers() {
     Did: '1',
     source: '1',
     isShortChain: '',
-    Origin: 'https://www.h4dh3.com',
-    Referer: 'https://www.h4dh3.com/'
+    Origin: SHELL_ORIGIN,
+    Referer: SHELL_ORIGIN + '/'
   };
 }
 
-async function post(base, path, payload) {
+async function postOnce(base, path, payload) {
   var body = JSON.stringify({ endata: siteEncrypt(JSON.stringify(payload || {})), ents: entsValue() });
   var response;
   try {
@@ -398,7 +492,10 @@ async function post(base, path, payload) {
   try {
     parsed = JSON.parse(String((response && response.body) || ''));
   } catch (error) {
-    throw new Error('接口返回的不是 JSON：' + path);
+    // 200 却不是 JSON：多半是运营商/代理把接口主机拦成了自己的提示页
+    var intercepted = new Error('接口返回的不是 JSON：' + path + '（' + base + ' 被网络拦截了？）');
+    intercepted.intercepted = true;
+    throw intercepted;
   }
   return {
     code: parsed && parsed.code != null ? Number(parsed.code) : -1,
@@ -407,25 +504,64 @@ async function post(base, path, payload) {
   };
 }
 
+async function post(base, path, payload) {
+  try {
+    return await postOnce(base, path, payload);
+  } catch (error) {
+    // 有的线路只拦 443 的 SNI，同一台主机换成明文 80 还能过：给自己一次机会
+    if (error && error.intercepted && /^https:\/\//i.test(base)) {
+      return postOnce(base.replace(/^https:\/\//i, 'http://'), path, payload);
+    }
+    throw error;
+  }
+}
+
+// 探活顺序：用户手填 → 已知两台 → 从站点前端回读的当前主机（缓存 6 小时）
 async function pickBase(force) {
   if (!force && baseCache) return baseCache;
-  var custom = customBase();
-  var candidates = custom ? [custom].concat(DEFAULT_BASES.filter(function (item) { return item !== custom; })) : DEFAULT_BASES;
+  var list = [];
+  function push(base) {
+    var text = String(base || '').trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//i.test(text) || list.indexOf(text) >= 0) return;
+    list.push(text);
+  }
+  push(customBase());
+  for (var i = 0; i < DEFAULT_BASES.length; i++) push(DEFAULT_BASES[i]);
+  // 只用缓存：命中过的主机先试，别为了探活先发两跳前端请求
+  var cached = await readJson(BASES_FILE);
+  if (cached && cached.list && cached.list.length) {
+    for (var c = 0; c < cached.list.length; c++) push(cached.list[c]);
+  }
+
   var lastError = '';
-  for (var index = 0; index < candidates.length; index++) {
-    var base = candidates[index];
-    try {
-      var reply = await post(base, '/base/getTimeStamp', {});
-      if (reply.code === 0) {
-        baseCache = base;
-        return base;
+  for (var pass = 0; pass < 2; pass++) {
+    for (var index = 0; index < list.length; index++) {
+      var base = list[index];
+      try {
+        var reply = await post(base, '/base/getTimeStamp', {});
+        if (reply.code === 0) {
+          baseCache = base;
+          return base;
+        }
+        lastError = '探活没通过（code ' + reply.code + ' ' + reply.msg + '）';
+      } catch (error) {
+        lastError = (error && error.message) || '未知错误';
       }
-      lastError = '探活没通过（code ' + reply.code + ' ' + reply.msg + '）';
-    } catch (error) {
-      lastError = (error && error.message) || '未知错误';
+    }
+    if (pass === 0) {
+      // 已知主机全废才回读站点前端（两跳请求），拿到新主机再走一轮
+      var fresh = await discoveredBases(true).catch(function () { return []; });
+      var added = 0;
+      for (var f = 0; f < fresh.length; f++) {
+        if (list.indexOf(fresh[f]) < 0) {
+          push(fresh[f]);
+          added++;
+        }
+      }
+      if (!added) break;
     }
   }
-  throw new Error('接口线路都打不通（' + lastError + '）——两台接口主机都失败时，先确认手机网络/代理没有拦截 TLS 握手（-1200），或在「源设置 → 站点网络」换一条线路再试');
+  throw new Error('接口线路都打不通（' + lastError + '）——接口主机全部失败时，先确认手机网络/代理没有拦截 TLS 握手（-1200）或把接口域名换成了提示页；到「源设置 → 站点网络」切代理线路，或换个网络再试');
 }
 
 // 业务接口：code!==0 一律抛可读错误；线路失败换一台重试一次
@@ -508,9 +644,9 @@ async function fetchSearch(keyword, page) {
 var LumeSource = {
   id: 'h4dh3_video',
   name: 'hxc 18+',
-  version: '1.0.3',
+  version: '1.0.4',
   category: 'video',
-  mirrors: ['https://www.9zx3x.com', 'https://9zx3x.com', 'https://www.h4dh3.com', 'https://a84i.ux51l.com', 'https://a96u.t3nwc.com'],
+  mirrors: ['https://www.jhqjg.com', 'https://www.9zx3x.com', 'https://9zx3x.com'],
 
   async categories() {
     return CATEGORIES.slice();
