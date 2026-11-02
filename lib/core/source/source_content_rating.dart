@@ -208,6 +208,8 @@ class SourceContentRating {
     'itsacg_comic',
     // 夜社资源（yeshezy1.com，苹果CMS 综合站）：视频/有声/写真/漫画/小说七大类。
     'yeshezy_video',
+    // 黄色仓库资源站（hsckzy.vip，苹果CMS）：国产/AV/欧美/动漫/其他五区 36 个分类。
+    'hsckzy_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

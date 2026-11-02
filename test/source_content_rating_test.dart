@@ -31,6 +31,7 @@ void main() {
       'betareel_video',
       'itsacg_comic',
       'yeshezy_video',
+      'hsckzy_video',
       'gamebus_comic',
       'gamebus_video',
       'tanhua_video',
