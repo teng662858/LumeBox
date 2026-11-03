@@ -1,4 +1,4 @@
-// LumeSource: {"id":"dongpiandi_video","name":"懂片帝","version":"1.1.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://dongpiandi.ai"],"network":"direct","icon":"https://dongpiandi.ai/assets/app-icon-180.png","settings":[{"key":"lineMode","type":"select","title":"线路偏好","default":"direct","options":[{"value":"direct","title":"第三方直链优先（免费，推荐）"},{"value":"official","title":"官方线路优先（1080P/4K，扣站点额度）"}]},{"key":"checkAccount","type":"action","action":"source","title":"检查账号与额度"},{"key":"logout","type":"action","action":"source","title":"退出站点登录"},{"key":"note","type":"info","title":"站点说明","description":"懂片帝（dongpiandi.ai，AI 找片 + 片单 + 播放）：React SPA + 同源 /v1/* JSON 接口，全部请求要 HMAC 签名（源内用宿主原生 tools.hmac 算，失败自动退回纯 JS）。浏览/搜索/详情/选集/直链播放都不需要登录；要「官方线路优先」或看站内额度才需在「账号登入」里填站点账号密码。站点若换域名，在「源设置 → 换网址」里填新域名即可。"}]}
+// LumeSource: {"id":"dongpiandi_video","name":"懂片帝","version":"1.2.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://dongpiandi.ai"],"network":"direct","icon":"https://dongpiandi.ai/assets/app-icon-180.png","settings":[{"key":"lineMode","type":"select","title":"线路偏好","default":"direct","options":[{"value":"direct","title":"第三方直链优先（免费，推荐）"},{"value":"official","title":"官方线路优先（1080P/4K，扣站点额度）"}]},{"key":"checkAccount","type":"action","action":"source","title":"检查账号与额度"},{"key":"logout","type":"action","action":"source","title":"退出站点登录"},{"key":"adultConfirm","type":"action","action":"source","title":"确认已满 18 岁（站点账号）"},{"key":"midnightCheck","type":"action","action":"source","title":"查午夜剧场资格"},{"key":"note","type":"info","title":"站点说明","description":"懂片帝（dongpiandi.ai，AI 找片 + 片单 + 播放）：React SPA + 同源 /v1/* JSON 接口，全部请求要 HMAC 签名（源内用宿主原生 tools.hmac 算，失败自动退回纯 JS）。浏览/搜索/详情/选集/直链播放都不需要登录；要「官方线路优先」或看站内额度才需在「账号登入」里填站点账号密码。站点若换域名，在「源设置 → 换网址」里填新域名即可。"}]}
 // LumeRuntime: javascript
 //
 // 站点：懂片帝（dongpiandi.ai；懂片帝AI / 懂片AI）
@@ -385,9 +385,11 @@ async function doLogin() {
     body: { account: account, password: passwordOf() }
   });
   if (result.status !== 200 && result.status !== 201) {
-    var friendly = apiError(result);
-    if (result.status === 400 || result.status === 403) friendly = '账号或密码不正确（站点原话：' + friendly + '）';
-    throw new Error(friendly);
+    var code = (result.json && (result.json.code || (result.json.error && result.json.error.code))) || '';
+    if (result.status === 400 || result.status === 403) {
+      throw new Error('账号或密码不正确（站点回 ' + result.status + (code ? ' ' + code : '') + '）');
+    }
+    throw new Error(apiError(result));
   }
   var cookie = pickSessionCookie(result.headers);
   if (!cookie) throw new Error('登录成功但没拿到会话 Cookie，站点可能改了登录流程');
@@ -431,6 +433,80 @@ async function dropSession() {
   await LumeSource.fs.remove(SESSION_FILE).catch(function () { return null; });
 }
 
+// ── 午夜剧场（/v1/midnight-theater/*）：本源不接成片库，只做资格自查 ─────────
+// 它是站点自己那套「AI 生成今晚片单」的玩法，不是片库：POST /playlists 生成（超时 45 秒）
+// → 轮询 /generations/{id} → /playlists/{id}/play 拿播放请求 → 再进 /v1/playback。
+// 而且**要账号资格**：2026-11-03 用实测账号走完 18+ 确认（PUT /v1/users/me/preferences
+// {adult_confirmed:true} → 200）之后，GET /v1/midnight-theater/access 仍回
+// 403 {"code":"midnight_theater_not_eligible","message":"当前账号暂不符合开放条件"}
+// （练气1层不够；前端文案里还有「今日生成次数」「加速升级解锁」这类门槛）。
+// 没有资格就拿不到任何可验证的响应结构，硬写只能靠猜，所以本源只提供资格自查，
+// 等账号真的开放了再按上面那条流程接分类。
+var MIDNIGHT_REASON = {
+  midnight_session_required: '要先在「账号登入」里填站点账号密码（午夜剧场必须登录）',
+  midnight_confirmation_required: '要先在站点确认「已满 18 岁」（本源设置里有这个按钮）',
+  midnight_theater_not_eligible: '账号暂不符合开放条件（站点按等级/活跃度灰度，练气1层实测不开放）',
+  midnight_youth_mode_enabled: '账号开了青少年模式，先关掉才能进',
+  midnight_theater_disabled: '站点当前没有开放午夜剧场'
+};
+
+async function describeMidnightAccess() {
+  var account = accountOf();
+  if (!account) return '午夜剧场必须登录：请先在「账号登入」里填站点账号密码。';
+  var cookie = '';
+  try {
+    cookie = await sessionForAction();
+  } catch (error) {
+    return '登录失败：' + (error && error.message ? error.message : text(error));
+  }
+  if (!cookie) return '登录没有拿到会话，请检查「账号登入」里的账号密码。';
+
+  var access = await request('/v1/midnight-theater/access', { cookie: cookie });
+  var code = (access.json && (access.json.code || (access.json.error && access.json.error.code))) || '';
+  if (access.status === 200) {
+    var lines = ['午夜剧场：已对你开放。'];
+    var data = access.json || {};
+    if (data.daily_limit != null) lines.push('今日生成次数上限：' + data.daily_limit);
+    if (data.remaining != null) lines.push('今日剩余次数：' + data.remaining);
+    if (data.cost != null) lines.push('每次生成消耗：' + tokenText(data.cost) + ' 词元');
+    lines.push('本源目前不把午夜剧场做成片库（它是 AI 现生成的片单），要去站点网页里用。');
+    return lines.join('\n');
+  }
+  var reason = MIDNIGHT_REASON[code];
+  if (!reason) reason = apiError(access);
+  var detail = (access.json && (access.json.message || (access.json.error && access.json.error.message))) || '';
+  return '午夜剧场：暂不可用\n原因：' + reason + (code ? '\n站点返回：' + code + (detail ? '（' + detail + '）' : '') : '');
+}
+
+// 站点自己的「我已满 18 岁」复选框（PUT /v1/users/me/preferences）。用户点这个按钮才做。
+async function confirmAdult() {
+  var account = accountOf();
+  if (!account) return '要先在「账号登入」里填站点账号密码（成年确认是记在账号上的）。';
+  var cookie = '';
+  try {
+    cookie = await sessionForAction();
+  } catch (error) {
+    return '登录失败：' + (error && error.message ? error.message : text(error));
+  }
+  if (!cookie) return '登录没有拿到会话，请检查「账号登入」里的账号密码。';
+  var result = await request('/v1/users/me/preferences', {
+    method: 'PUT',
+    body: { adult_confirmed: true },
+    cookie: cookie
+  });
+  if (result.status !== 200) return '确认失败：' + apiError(result);
+  var at = (result.json && result.json.adult_confirmed_at) || '';
+  return '已在站点账号上完成「已满 18 岁」确认' + (at ? '（' + text(at) + '）' : '') + '。\n注意：这只解除成人内容门槛，午夜剧场本身还要账号资格（可用下面的「查午夜剧场资格」看）。';
+}
+
+
+// 设置页动作：已经有会话就直接用，没会话才强制登一次（这样连点两次不会重复登录）
+async function sessionForAction() {
+  var cookie = await ensureSession(false);
+  if (cookie) return cookie;
+  return await ensureSession(true);
+}
+
 // 设置页里的「检查账号与额度」：强制登录一次，把账号/等级/今日词元摊开给用户看。
 function tokenText(value) {
   var n = Number(value);
@@ -446,7 +522,7 @@ async function describeAccount() {
   }
   var cookie = '';
   try {
-    cookie = await ensureSession(true);
+    cookie = await sessionForAction();
   } catch (error) {
     return '登录失败：' + (error && error.message ? error.message : text(error));
   }
@@ -655,8 +731,8 @@ async function loadChapters(id) {
 // 实测常挂（403 或连不上）：ffzy / suoni / niuniu / dbzy / maotai / jinying。
 var STABLE_PROVIDERS = {
   hongniu: 300, xinlang: 300, jszy: 300, hhzy: 300, ikun: 300, subo: 300,
-  wsyzy: 280, mdzy: 280, xigua: 260, maoyan: 120, dytt: 120, zy360: 80,
-  liangzi: 60, zuida: 60, wujin: 40, jinying: 0, maotai: 0, dbzy: -60,
+  wsyzy: 280, mdzy: 280, xigua: 260, zy360: 80, liangzi: 60, zuida: 60, wujin: 40,
+  jinying: 0, maotai: 0, dbzy: -60, dytt: -100, maoyan: -100,
   ffzy: -260, suoni: -260, niuniu: -260
 };
 
@@ -697,6 +773,65 @@ function pickDirect(lines) {
     picked.push({ label: labelOf(ranked[i]), url: url });
   }
   return picked;
+}
+
+// 快速探活**只验前几条**，带硬时间盒：站点给的头几条偶尔是已经 403/404 的资源站
+// （实测 dytt-tvs 回 403、bfeng11 回 404），直接播会黑屏；而全量探活又会把 content
+// 拖到 16 秒。折中：单条最多 1 秒、总预算 2.2 秒，全都不通就交给官方票券，
+// 票券也没有再把第一条直链原样交出去（让播放器自己报错，总比不给地址好）。
+var PROBE_BUDGET_MS = 1000;
+var PROBE_MAX_TOTAL_MS = 2200;
+var PROBE_TRIES = 4;
+
+function quickProbe(url, budget) {
+  return new Promise(function (resolve) {
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      resolve(false);
+    }, budget);
+    function finish(value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    }
+    try {
+      LumeSource.http.request({
+        url: url,
+        method: 'GET',
+        headers: { 'User-Agent': UA, Range: 'bytes=0-2047' }
+      }).then(function (reply) {
+        var status = (reply && reply.status) || 0;
+        if (status !== 200 && status !== 206) return finish(false);
+        var body = reply && reply.body != null ? String(reply.body) : '';
+        var headers = headersOf(reply);
+        var type = text(headers['content-type']);
+        finish(body.indexOf('#EXTM3U') >= 0 || /mpegurl|video\/|octet-stream/i.test(type));
+      }).catch(function () { finish(false); });
+    } catch (error) {
+      finish(false);
+    }
+  });
+}
+
+// 从排序后的直链里挑一条能用的；验不通返回 null，让调用方去试票券。
+async function chooseDirect(picked) {
+  if (!picked.length) return null;
+  var started = Date.now();
+  var tries = Math.min(picked.length, PROBE_TRIES);
+  for (var i = 0; i < tries; i += 1) {
+    var used = Date.now() - started;
+    if (i > 0 && used > PROBE_MAX_TOTAL_MS) break;
+    var budget = Math.max(250, Math.min(PROBE_BUDGET_MS, PROBE_MAX_TOTAL_MS - used));
+    if (await quickProbe(picked[i].url, budget)) {
+      var head = picked[i];
+      var rest = picked.filter(function (entry) { return entry.url !== head.url; });
+      return { label: head.label, url: head.url, list: [head].concat(rest) };
+    }
+  }
+  return null;
 }
 
 // 票券线路：POST /v1/playback/resolve-line 换真地址。
@@ -740,7 +875,7 @@ async function resolveTickets(lines) {
 var LumeSource = {
   id: 'dongpiandi_video',
   name: '懂片帝',
-  version: '1.1.0',
+  version: '1.2.0',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
@@ -778,6 +913,20 @@ var LumeSource = {
       description: '清掉本源保存的会话 Cookie，之后按匿名身份换票券线路（匿名也能用，只是额度记不到账号上）。'
     },
     {
+      key: 'adultConfirm',
+      type: 'action',
+      action: 'source',
+      title: '确认已满 18 岁（站点账号）',
+      description: '调站点自己的成年确认（PUT /v1/users/me/preferences）。只解除成人内容门槛，不等于拿到午夜剧场资格。'
+    },
+    {
+      key: 'midnightCheck',
+      type: 'action',
+      action: 'source',
+      title: '查午夜剧场资格',
+      description: '午夜剧场是站点 AI 现生成的片单（要账号资格 + 扣大量词元），本源不把它做成片库；点这里看你的账号现在能不能进。'
+    },
+    {
       key: 'note',
       type: 'info',
       title: '站点说明',
@@ -789,6 +938,8 @@ var LumeSource = {
     var args = argument || {};
     var key = text(args.key);
     if (key === 'checkAccount') return await describeAccount();
+    if (key === 'adultConfirm') return await confirmAdult();
+    if (key === 'midnightCheck') return await describeMidnightAccess();
     if (key === 'logout') {
       await dropSession();
       return '已清除站点会话。下一部作品会按匿名身份换票券线路（匿名同样能播，只是额度不记到账号上）。';
@@ -970,6 +1121,22 @@ var LumeSource = {
     }
 
     if (picked.length) {
+      var chosen = await chooseDirect(picked);
+      if (chosen) {
+        return {
+          kind: 'video',
+          url: chosen.url,
+          headers: { 'User-Agent': UA },
+          qualities: chosen.list
+        };
+      }
+    }
+
+    var ticketed = await resolveTickets(tickets);
+    if (ticketed) return ticketed;
+
+    // 直链全验不通、票券也没换到：把第一条直链原样交出去，让播放器自己报错
+    if (picked.length) {
       return {
         kind: 'video',
         url: picked[0].url,
@@ -977,9 +1144,6 @@ var LumeSource = {
         qualities: picked
       };
     }
-
-    var ticketed = await resolveTickets(tickets);
-    if (ticketed) return ticketed;
 
     throw new Error('这一集暂时没有可用线路（第三方直链全部失效，官方票券也没换到地址）。可以在站点网页里播放，或换一集再试。');
   }

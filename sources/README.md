@@ -26,6 +26,22 @@ HMAC 在真 QuickJS 沙箱里逐字一致。
 存 `fs` 复用，401 重登一次，密码错只写 30 分钟 TTL 的 `login_fail.json` 不阻塞播放。
 另加 `lineMode`（直链优先 / 官方优先）与设置页两个动作「检查账号与额度」「退出站点登录」。
 
+**v1.2.0：午夜剧场没有接入**（有实测依据，不是省事）。它是站点「AI 现生成今晚片单」的玩法，
+不是片库：`POST /v1/midnight-theater/playlists`（前端超时 45 秒）→ 轮询
+`/generations/{id}` → `POST .../playlists/{id}/play` 拿播放请求 → 再进 `/v1/playback`，
+每次生成按次扣大量词元。更关键的是**这个账号没有资格**：走完站点自己的成年确认
+（`PUT /v1/users/me/preferences {"adult_confirmed":true}` → 200 返回 `adult_confirmed_at`）之后，
+`GET /v1/midnight-theater/access` 仍回
+`403 {"code":"midnight_theater_not_eligible","message":"当前账号暂不符合开放条件"}`，
+`discovery` 同 403，`eligibility` 是 `{eligible:false}`（前端文案提到「今日生成次数」「加速升级解锁」，
+是等级/灰度门槛）。没资格就拿不到任何可验证的响应结构，按写源规则不猜。所以只加了两个能验证的
+动作：「确认已满 18 岁（站点账号）」和「查午夜剧场资格」（把 5 种 code 翻成人话，实测输出
+「账号暂不符合开放条件（练气1层不开放）」）。资格一到，按上面那条流程接分类即可。
+
+v1.2.0 同时修了线路选择：站点给的头几条偶尔是 403/404 的资源站（实测 `dytt-tvs` 403、
+`bfeng11` 404），直接播黑屏。现在单条探活最多 1 秒、总预算 2.2 秒，只验前几条，命中就停，
+全不通转官方票券，票券也没有才把第一条直链原样交出去；`content` 仍在 2.5 秒内。
+
 
 ## 2026-11-03 爱丽丝书屋（`comic/alicesw.js`，详见 [源记录](../docs/2026-11-03_爱丽丝书屋源.md)）
 
