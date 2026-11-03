@@ -30,7 +30,7 @@ class NetworkWaitingView extends StatelessWidget {
                           vertical: 10,
                         ),
                         child: Text(
-                          '正在等待网络，恢复后继续…',
+                          '有请求正在等待网络连接，恢复后继续…',
                           textAlign: TextAlign.center,
                         ),
                       ),

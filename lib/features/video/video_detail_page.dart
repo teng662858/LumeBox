@@ -1998,6 +1998,10 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                         key: i == selected ? activeKey : null,
                         child: ListTile(
                           key: ValueKey('video-detail-picker-episode-$i'),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                          ),
+                          minTileHeight: 56,
                           selected: i == selected,
                           leading: Text('${i + 1}'),
                           title: Text(
@@ -2005,18 +2009,6 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          subtitle:
-                              VideoEpisodeCatalog.displayLabel(
-                                    chapters[i],
-                                    i,
-                                  ) !=
-                                  VideoEpisodeCatalog.labelOf(chapters[i])
-                              ? Text(
-                                  VideoEpisodeCatalog.labelOf(chapters[i]),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                )
-                              : null,
                           trailing: const Icon(Icons.play_circle_outline),
                           onTap: resolving
                               ? null
@@ -2027,7 +2019,14 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                         ),
                       ),
                       if (i != visible.last)
-                        const Divider(height: 1, indent: 48, endIndent: 24),
+                        Divider(
+                          height: 1,
+                          thickness: .5,
+                          indent: 48,
+                          endIndent: 24,
+                          color: Theme.of(sheetContext).colorScheme.onSurface
+                              .withValues(alpha: .18),
+                        ),
                     ],
                   ] else
                     episodeGrid(visible, modal: true, activeKey: activeKey),

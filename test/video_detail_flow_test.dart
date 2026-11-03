@@ -107,6 +107,15 @@ class MultiLineDetailSource extends DetailSource {
   ];
 }
 
+class NumericDetailSource extends DetailSource {
+  @override
+  Future<List<SourceChapter>> chapters(String id) async => const [
+    SourceChapter(id: 'e1', title: '01'),
+    SourceChapter(id: 'e2', title: '02'),
+    SourceChapter(id: 'e3', title: '03'),
+  ];
+}
+
 class LongDetailSource extends DetailSource {
   @override
   Future<List<SourceChapter>> chapters(String id) async => [
@@ -855,6 +864,49 @@ void main() {
     expect(state.lineResume.position, const Duration(minutes: 12, seconds: 36));
   });
 
+  testWidgets('列表选集不显示重复数字，每两集之间有可见分隔线', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(440, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VideoDetailPage(
+          source: NumericDetailSource(),
+          item: const SourceItem(id: 'numeric', title: '详情测试片'),
+          library: library,
+          onPlay: (_, _, _, _) async {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final open = find.byKey(const Key('video-detail-select-episodes'));
+    await tester.ensureVisible(open);
+    await tester.tap(open);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('列表显示').last);
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 3; i++) {
+      final tile = tester.widget<ListTile>(
+        find.byKey(ValueKey('video-detail-picker-episode-$i')),
+      );
+      expect(tile.subtitle, isNull);
+    }
+    final dividers = tester
+        .widgetList<Divider>(find.byType(Divider))
+        .where((d) => d.indent == 48 && d.endIndent == 24)
+        .toList();
+    expect(dividers, hasLength(2));
+    final first = tester.getRect(
+      find.byKey(const ValueKey('video-detail-picker-episode-0')),
+    );
+    final second = tester.getRect(
+      find.byKey(const ValueKey('video-detail-picker-episode-1')),
+    );
+    expect(first.height, 56);
+    expect(second.top - first.top, 57);
+    expect(dividers.every((d) => d.thickness == .5 && d.color!.a > .1), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('选集移除搜索和跳集，定位按钮回到当前集', (tester) async {
     await tester.binding.setSurfaceSize(const Size(440, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -935,6 +987,8 @@ void main() {
       position: Duration(seconds: 75),
       duration: Duration(minutes: 40),
     );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('更多恢复方式'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('换线路继续看'));
     await tester.runAsync(() async {

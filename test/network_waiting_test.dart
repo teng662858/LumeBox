@@ -126,15 +126,15 @@ void main() {
     NetworkActivity.setWaiting('a', true);
     NetworkActivity.setWaiting('b', true);
     await tester.pump();
-    expect(find.text('正在等待网络，恢复后继续…'), findsOneWidget);
+    expect(find.text('有请求正在等待网络连接，恢复后继续…'), findsOneWidget);
     await tester.tap(find.text('原页面'));
     expect(tapped, 1);
     NetworkActivity.setWaiting('a', false);
     await tester.pump();
-    expect(find.text('正在等待网络，恢复后继续…'), findsOneWidget);
+    expect(find.text('有请求正在等待网络连接，恢复后继续…'), findsOneWidget);
     NetworkActivity.setWaiting('b', false);
     await tester.pump();
-    expect(find.text('正在等待网络，恢复后继续…'), findsNothing);
+    expect(find.text('有请求正在等待网络连接，恢复后继续…'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }
