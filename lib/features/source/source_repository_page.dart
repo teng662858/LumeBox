@@ -41,6 +41,8 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
   bool _busy = false, _checking = false, _loading = true;
   bool _installing = false;
   String _kind = 'movie';
+  String _runtime = 'all';
+  int _installation = 0;
   String? _error;
   final Map<String, Section> _installed = {};
   SourceManager _manager(Section section) =>
@@ -259,9 +261,19 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     );
     final path = draft.path;
     final meta = draft.metadata;
+    await _refresh();
+    if (!mounted) return;
+    final existing = _snapshot!.sources
+        .where((s) => s.id == meta.id || s.paths.contains(path))
+        .firstOrNull;
+    if (existing != null || _snapshot!.files.containsKey(path)) {
+      throw RepositoryFailure(
+        '发布预览：仓库已存在同 ID 或路径的源${existing == null ? '' : '「${existing.name}」${existing.version}'}。本次不会覆盖或发布，请核对版本和文件名。',
+      );
+    }
     final accepted = await _confirm(
       '上传源到 GitHub',
-      '将新增「${meta.name}」${meta.version}\n自动分类：${GithubSourceRepository.kinds[path.split('/').first]}\n$path\n发布成功后会安装到本机；其他订阅用户也能获取。上传前请确认分类、搜索、封面和播放已实测。',
+      '本次操作：新增公共源（不覆盖已有文件）\n「${meta.name}」${meta.version}\n类型：${path.endsWith('.py') ? 'PY' : 'JS'}\n自动分类：${GithubSourceRepository.kinds[path.split('/').first]}\n$path\n发布成功后会安装到本机；其他订阅用户也能获取。上传前请确认分类、搜索、封面和播放已实测。',
     );
     if (!accepted || !mounted) return;
     setState(() {
@@ -379,6 +391,10 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
             .where(
               (s) =>
                   s.paths.first.startsWith('$_kind/') &&
+                  (_runtime == 'all' ||
+                      s.paths.any((path) => path.endsWith('.$_runtime'))) &&
+                  (_installation == 0 ||
+                      (_installed.containsKey(s.id) == (_installation == 1))) &&
                   '${s.name} ${s.id} ${s.paths.join(' ')}'
                       .toLowerCase()
                       .contains(_search.text.toLowerCase()),
@@ -397,6 +413,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
               '远端仓库：teng662858/LumeBox-Sources · main\n仓库列表是可安装的源，不代表已经安装到手机。仓库增删会修改公共订阅。',
             ),
             const SizedBox(height: 12),
+            const Text('本机安装', style: TextStyle(fontWeight: FontWeight.w600)),
             OutlinedButton.icon(
               onPressed: _busy ? null : _localImport,
               icon: const Icon(Icons.add_to_photos_outlined),
@@ -503,6 +520,10 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                     : (value) => setState(() => _kind = value!),
               ),
               const SizedBox(height: 12),
+              const Text(
+                '公共仓库发布',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               FilledButton.icon(
                 onPressed: _busy || _pending ? null : _upload,
                 icon: const Icon(Icons.upload_file),
@@ -512,6 +533,36 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                 controller: _search,
                 decoration: const InputDecoration(labelText: '搜索仓库源'),
                 onChanged: (_) => setState(() {}),
+              ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final (value, label) in [
+                    ('all', '全部类型'),
+                    ('py', 'PY'),
+                    ('js', 'JS'),
+                  ])
+                    ChoiceChip(
+                      label: Text(label),
+                      selected: _runtime == value,
+                      onSelected: (_) => setState(() => _runtime = value),
+                    ),
+                ],
+              ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final (value, label) in [
+                    (0, '全部安装状态'),
+                    (1, '已安装'),
+                    (2, '未安装'),
+                  ])
+                    ChoiceChip(
+                      label: Text(label),
+                      selected: _installation == value,
+                      onSelected: (_) => setState(() => _installation = value),
+                    ),
+                ],
               ),
               Text('当前分类 ${sources.length} 个源'),
               for (final source in sources)

@@ -1,5 +1,7 @@
 import '../../shared/widgets/native_glass_surfaces.dart';
 import '../../core/source/source_health.dart';
+import '../../core/source/source_capability_history.dart';
+import 'source_duplicates_page.dart';
 
 import 'package:lume_box/shared/widgets/lume_icon.dart';
 
@@ -317,6 +319,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
         ),
       ),
     );
+    if (mounted) await _reload();
   }
 
   Future<void> _restoreSource([SourceDescriptor? selected]) async {
@@ -662,6 +665,13 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                   onSelected: (action) {
                     if (action == 'health') {
                       _inspectSource();
+                    } else if (action == 'duplicates') {
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) =>
+                              SourceDuplicatesPage(manager: _manager),
+                        ),
+                      );
                     } else if (action == 'rollback') {
                       _restoreSource();
                     } else if (action == 'select') {
@@ -677,6 +687,10 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                     }
                   },
                   itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'duplicates',
+                      child: Text('重复源检查'),
+                    ),
                     PopupMenuItem(
                       value: 'health',
                       enabled: (_sources ?? []).isNotEmpty,
@@ -1387,6 +1401,15 @@ class _SourceTile extends StatelessWidget {
                         ),
                       ),
                     ],
+                    if (ReadingLibrary.find(section) case final library?)
+                      Text(
+                        SourceCapabilityHistory.summary(
+                          library,
+                          source.id,
+                          source.version,
+                        ),
+                        style: const TextStyle(fontSize: 11),
+                      ),
                     if (source.hasGroup) ...<Widget>[
                       Text(
                         source.group,

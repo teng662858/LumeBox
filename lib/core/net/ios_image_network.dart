@@ -5,6 +5,7 @@ import 'network_queue.dart';
 import 'ios_verified_webview.dart';
 import 'waf.dart';
 import 'network_activity.dart';
+import 'network_cancellation.dart';
 import 'ios_webkit_text_network.dart';
 import 'secure_connection_failure.dart';
 import '../js/source_web_runtime.dart';
@@ -30,27 +31,41 @@ class IosImageNetwork {
     request.cancellation?.check();
     final id = 'http-${_sequence++}';
     _active.add(id);
-    final remove = request.cancellation?.onCancel(() {
+    final local = NetworkCancellation();
+    final remove = request.cancellation?.onCancel(local.cancel);
+    final removeNative = local.onCancel(() {
       channel
           .invokeMethod<void>('cancel', {'requestId': id})
           .catchError((_) {});
     });
+    NetworkActivity.register(
+      id,
+      WaitingNetworkRequest(
+        label: request.source,
+        host: Uri.tryParse(request.url)?.host ?? '',
+        method: request.method,
+        cancel: local.cancel,
+      ),
+    );
     try {
-      final raw = await channel.invokeMapMethod<String, dynamic>('get', {
-        'requestId': id,
-        'url': request.url,
-        'headers': request.headers,
-        'method': request.method,
-        'followRedirects': request.followRedirects,
-        if (request.maxBytes != null) 'maxBytes': request.maxBytes,
-        if (request.bodyBytes != null)
-          'bodyBytes': Uint8List.fromList(request.bodyBytes!),
-        if (request.body != null) 'body': request.body,
-        if (request.reuseVerifiedSession) 'reuseVerification': true,
-        'timeoutSeconds':
-            (request.timeout ?? const Duration(seconds: 15)).inMilliseconds /
-            1000,
-      });
+      final raw = await local.guard(
+        channel.invokeMapMethod<String, dynamic>('get', {
+          'requestId': id,
+          'url': request.url,
+          'headers': request.headers,
+          'method': request.method,
+          'followRedirects': request.followRedirects,
+          if (request.maxBytes != null) 'maxBytes': request.maxBytes,
+          if (request.bodyBytes != null)
+            'bodyBytes': Uint8List.fromList(request.bodyBytes!),
+          if (request.body != null) 'body': request.body,
+          if (request.reuseVerifiedSession) 'reuseVerification': true,
+          'timeoutSeconds':
+              (request.timeout ?? const Duration(seconds: 15)).inMilliseconds /
+              1000,
+        }),
+      );
+      local.check();
       if (raw == null) throw StateError('图片网络未返回响应');
       final response = NetworkResponse(
         statusCode: raw['status'] as int,
@@ -78,6 +93,7 @@ class IosImageNetwork {
       }
       return response;
     } on PlatformException catch (error, stack) {
+      if (error.code == 'cancelled') throw const NetworkCancelled();
       // ATS 只约束 URLSession：明文 http 源站被拒发（NSURLErrorDomain -1022）。
       // 换 dart:io 通道重发同一请求，站点本身没问题时就能正常拿到数据。
       if (error.code == 'transport_security') {
@@ -98,8 +114,9 @@ class IosImageNetwork {
       }
     } finally {
       remove?.call();
+      removeNative();
       _active.remove(id);
-      NetworkActivity.setWaiting(id, false);
+      NetworkActivity.finish(id);
     }
   }
 }

@@ -73,7 +73,7 @@ void main() {
   test('完整体检只解析正文，不改变当前源', () async {
     final source = ProbeSource();
     final result = await check(source).run();
-    expect(result.length, 7);
+    expect(result.length, 8);
     expect(
       result.every((s) => s.issue == SourceHealthIssue.none && !s.running),
       true,
@@ -83,7 +83,8 @@ void main() {
   test('首分类失效继续检查第二分类，图片故障不阻塞详情', () async {
     final source = ProbeSource(failFirstCategory: true);
     final result = await check(source, status: 403).run();
-    expect(source.ids.length, 2);
+    expect(source.ids.length, 3);
+    expect(result.any((s) => s.title == '搜索接口'), isTrue);
     expect(
       result.singleWhere((s) => s.title == '封面图片').issue,
       SourceHealthIssue.image,

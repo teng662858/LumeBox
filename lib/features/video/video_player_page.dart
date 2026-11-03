@@ -908,9 +908,25 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   Stopwatch? _startupWatch;
   Stopwatch? _firstFrameWatch;
 
+  final _verifiedPlaybackSources = <String>{};
   void _onSnapshotChanged() {
     _syncPipPlaybackState();
     final snapshot = _player?.snapshot.value;
+    final verifiedSource = _target?.sourceId;
+    if (snapshot?.playing == true &&
+        _loaded &&
+        !snapshot!.buffering &&
+        snapshot.error == null &&
+        snapshot.position > Duration.zero &&
+        _library != null &&
+        _library!.setting('history.incognito') != 'true' &&
+        verifiedSource != null &&
+        _verifiedPlaybackSources.add(verifiedSource)) {
+      _library!.setSetting(
+        'source.playback.last.$verifiedSource',
+        DateTime.now().toIso8601String(),
+      );
+    }
     final startupWatch = _startupWatch;
     if (startupWatch != null && snapshot?.error != null) _startupWatch = null;
     if (startupWatch != null &&

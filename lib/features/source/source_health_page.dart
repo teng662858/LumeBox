@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/source/source_health.dart';
+import '../../core/source/source_capability_history.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/lume_icon.dart';
 
@@ -72,11 +73,13 @@ class _SourceHealthPageState extends State<SourceHealthPage> {
   Future<void> saveHistory(SourceHealthCheck check) async {
     try {
       final library = await ReadingLibrary.open(widget.section);
-      final record = jsonEncode({
-        'at': DateTime.now().toIso8601String(),
-        'issues': [for (final step in check.steps) step.issue.name],
-      });
-      library.setSetting(_historyKey, record);
+      SourceCapabilityHistory.save(
+        library,
+        widget.source.id,
+        widget.source.version,
+        check.steps,
+      );
+      final record = library.setting(_historyKey)!;
       if (mounted) setState(() => _lastChecked = record);
     } catch (_) {
       /* Reporting remains usable when history storage is unavailable. */
@@ -195,6 +198,11 @@ class _SourceHealthPageState extends State<SourceHealthPage> {
               const SizedBox(height: 8),
               Text(_running ? '正在逐项检查…' : '检查结束，请查看每项结果。'),
               Text(previousCheck),
+              const Text('地址解析通过不等于实际播放通过；本页不启动视频。'),
+              if (ReadingLibrary.find(widget.section) case final library?)
+                Text(
+                  '上次实际起播：${library.setting('source.playback.last.${widget.source.id}') ?? '尚未记录'}',
+                ),
               const SizedBox(height: 8),
               const Text('检查实际接口和少量图片数据，不会起播视频或下载整本内容。退出页面会停止本次体检。'),
             ],

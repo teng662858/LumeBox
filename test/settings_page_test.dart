@@ -91,6 +91,20 @@ void main() {
       await tester.tap(find.text(category));
       await tester.pumpAndSettle();
     }
+    final hub = label == '缓存管理'
+        ? '存储与缓存'
+        : ['运行日志', '错误报告'].contains(label)
+        ? '问题排查'
+        : null;
+    if (hub != null) {
+      await tester.scrollUntilVisible(
+        find.text(hub),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text(hub));
+      await tester.pumpAndSettle();
+    }
     await tester.scrollUntilVisible(
       find.text(label),
       260,

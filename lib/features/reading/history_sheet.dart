@@ -1,4 +1,5 @@
 import '../../core/reading/chapter_updates.dart';
+import '../../core/net/network_cancellation.dart';
 import '../../core/reading/browse_layout.dart';
 
 import 'package:lume_box/shared/widgets/lume_icon.dart';
@@ -116,6 +117,7 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
   );
   @override
   void dispose() {
+    _updateCancellation?.cancel();
     widget.library.revision.removeListener(_onLibraryChanged);
     pipeline.dispose();
     super.dispose();
@@ -132,6 +134,7 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
   String? folder;
   late final folders = FavoriteFolders(widget.library);
   bool checkingUpdates = false;
+  NetworkCancellation? _updateCancellation;
   String query = '';
   bool showSearch = false;
   @override
@@ -160,12 +163,18 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
   }
 
   Future<void> checkUpdates({bool quiet = false}) async {
+    final minutes =
+        int.tryParse(
+          widget.library.setting('favorites.autoCheckMinutes') ?? '',
+        ) ??
+        360;
+    if (quiet && minutes == 0) return;
     final last = DateTime.tryParse(
       widget.library.setting('favorites.lastCheck') ?? '',
     );
     if (quiet &&
         last != null &&
-        DateTime.now().difference(last) < const Duration(minutes: 10)) {
+        DateTime.now().difference(last) < Duration(minutes: minutes)) {
       return;
     }
     if (checkingUpdates) return;
@@ -175,31 +184,52 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
       DateTime.now().toIso8601String(),
     );
     final manager = LumeSources.manager(widget.section);
+    final token = _updateCancellation = NetworkCancellation();
+    final deadline = Timer(const Duration(minutes: 2), () => token.cancel());
     var changed = 0, failed = 0;
-    for (final item in widget.library.shelf()) {
-      try {
-        final source = await manager.open(item.sourceId);
-        if (source == null) {
-          failed++;
-          continue;
-        }
-        final chapters = await source.chapters(item.itemId);
-        if (ChapterUpdates.check(widget.library, item, chapters)) {
-          widget.library.setSetting(
-            'favorite.updated.${item.identity}',
-            'true',
+    try {
+      for (final item in widget.library.shelf()) {
+        if (!mounted || token.isCancelled) break;
+        try {
+          final source = await token
+              .run(() => token.guard(manager.open(item.sourceId)))
+              .timeout(const Duration(seconds: 10));
+          if (source == null) {
+            failed++;
+            continue;
+          }
+          final chapters = await token
+              .run(() => token.guard(source.chapters(item.itemId)))
+              .timeout(const Duration(seconds: 15));
+          if (chapters.isEmpty) {
+            failed++;
+            continue;
+          }
+          if (ChapterUpdates.check(widget.library, item, chapters)) {
+            widget.library.setSetting(
+              'favorite.updated.${item.identity}',
+              'true',
+            );
+            changed++;
+            widget.library.setSetting(
+              'favorite.newChapters.${item.identity}',
+              '${(chapters.length - item.chapterCount).clamp(0, chapters.length)}',
+            );
+          }
+          widget.library.syncChapters(
+            item.itemId,
+            chapters.length,
+            sourceId: item.sourceId,
           );
-          changed++;
+        } catch (_) {
+          failed++;
         }
-        widget.library.syncChapters(
-          item.itemId,
-          chapters.length,
-          sourceId: item.sourceId,
-        );
-      } catch (_) {
-        failed++;
+        if (!mounted) return;
       }
-      if (!mounted) return;
+    } finally {
+      deadline.cancel();
+      token.cancel();
+      if (identical(_updateCancellation, token)) _updateCancellation = null;
     }
     if (mounted) {
       setState(() => checkingUpdates = false);
@@ -277,6 +307,37 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         if (favorites) ...[
+                          PopupMenuButton<int>(
+                            tooltip: '收藏更新频率',
+                            icon: const Icon(Icons.schedule),
+                            onSelected: (minutes) => setState(
+                              () => widget.library.setSetting(
+                                'favorites.autoCheckMinutes',
+                                '$minutes',
+                              ),
+                            ),
+                            itemBuilder: (_) => [
+                              for (final (minutes, label) in [
+                                (0, '仅手动检查'),
+                                (60, '打开收藏时每小时检查'),
+                                (360, '打开收藏时每6小时检查'),
+                                (1440, '打开收藏时每天检查'),
+                              ])
+                                CheckedPopupMenuItem(
+                                  value: minutes,
+                                  checked:
+                                      (int.tryParse(
+                                            widget.library.setting(
+                                                  'favorites.autoCheckMinutes',
+                                                ) ??
+                                                '',
+                                          ) ??
+                                          360) ==
+                                      minutes,
+                                  child: Text(label),
+                                ),
+                            ],
+                          ),
                           IconButton(
                             tooltip: '管理收藏夹',
                             icon: const LumeIcon(
@@ -308,7 +369,9 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
                                       slot: 'history_sheet.3',
                                     ),
                                   ),
-                            onPressed: checkingUpdates ? null : checkUpdates,
+                            onPressed: checkingUpdates
+                                ? () => _updateCancellation?.cancel()
+                                : checkUpdates,
                           ),
                         ],
                         IconButton(
@@ -426,6 +489,17 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
                                     'favorite.updated.${item.identity}',
                                   ) ==
                                   'true',
+                              updateLabel:
+                                  (int.tryParse(
+                                            widget.library.setting(
+                                                  'favorite.newChapters.${item.identity}',
+                                                ) ??
+                                                '',
+                                          ) ??
+                                          0) >
+                                      0
+                                  ? '本次新增 ${widget.library.setting('favorite.newChapters.${item.identity}')} 个章节条目'
+                                  : '章节信息有更新',
                               item: item,
                               progress: widget.library.progress(
                                 item.itemId,
@@ -493,6 +567,7 @@ class HistoryEntryTile extends StatelessWidget {
     this.pipeline,
     this.headers = const {},
     this.updated = false,
+    this.updateLabel,
   });
 
   /// 三点菜单里「删除」那一项的文案（历史=删除记录 / 收藏=取消收藏）。
@@ -510,6 +585,7 @@ class HistoryEntryTile extends StatelessWidget {
   /// 封面请求头：猫源图床经常要求 Referer / UA，视频与阅读源一般不需要。
   final Map<String, String> headers;
   final bool updated;
+  final String? updateLabel;
 
   /// 进度条比例：只有算得出比例的形状才画（漫画是页位置，没有总页数）。
   static double? ratioOf(ReadingProgress progress) => switch (progress) {
@@ -583,12 +659,15 @@ class HistoryEntryTile extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: <Widget>[
                         if (updated)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 4),
-                            child: LumeIcon(
-                              Icons.fiber_new,
-                              slot: 'history_sheet.8',
-                              size: 16,
+                          Tooltip(
+                            message: updateLabel ?? '章节有更新',
+                            child: const Padding(
+                              padding: EdgeInsets.only(right: 4),
+                              child: LumeIcon(
+                                Icons.fiber_new,
+                                slot: 'history_sheet.8',
+                                size: 16,
+                              ),
                             ),
                           ),
                         Expanded(
@@ -629,6 +708,16 @@ class HistoryEntryTile extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 4),
+                    if (updated && updateLabel != null)
+                      Text(
+                        updateLabel!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: LumeTypography.descriptionSize,
+                          color: LumeTheme.accent,
+                        ),
+                      ),
                     Text(
                       progressLabel(saved),
                       maxLines: 1,

@@ -80,7 +80,9 @@ void main() {
     await session.pause();
     expect(session.playing, false);
     await session.release();
-    expect(settings.positions['book'], {'index': 1, 'position': 47000});
+    expect(settings.positions['book']!['index'], 1);
+    expect(settings.positions['book']!['position'], 47000);
+    expect(settings.positions['book']!['updatedAt'], greaterThan(0));
     await session.play();
     expect(session.current, 1);
     expect(session.position.inSeconds, 47);

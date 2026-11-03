@@ -629,6 +629,20 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('top-navigation-transparency')),
+      findsNothing,
+    );
+    await tester.tap(find.text('紧凑玻璃'));
+    await tester.pumpAndSettle();
+    expect(controller.settings.nativeNavigation.barHeight, 64);
+    await tester.tap(find.text('清晰实色'));
+    await tester.pumpAndSettle();
+    expect(controller.settings.nativeNavigation.opaqueBackground, isTrue);
+    await tester.tap(find.text('标准玻璃'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('高级外观'));
+    await tester.pumpAndSettle();
     final top = tester.widget<NativeGlassSlider>(
       find.byKey(const ValueKey('top-navigation-transparency')),
     );

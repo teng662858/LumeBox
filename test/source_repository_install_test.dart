@@ -79,6 +79,11 @@ void main() {
         );
         await tester.pumpAndSettle();
         if (!automatic) {
+          await tester.scrollUntilVisible(
+            find.textContaining('尚未安装到本机'),
+            200,
+            scrollable: find.byType(Scrollable).first,
+          );
           expect(find.textContaining('尚未安装到本机'), findsOneWidget);
           await tester.ensureVisible(find.byTooltip('安装到本机'));
           await tester.tap(find.byTooltip('安装到本机'));
@@ -86,6 +91,11 @@ void main() {
         }
         expect(video.imported, hasLength(1));
         expect(comic.imported, isEmpty);
+        await tester.scrollUntilVisible(
+          find.textContaining('已在本机 · 视频'),
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
         expect(find.textContaining('已在本机 · 视频'), findsOneWidget);
         if (automatic) {
           expect(

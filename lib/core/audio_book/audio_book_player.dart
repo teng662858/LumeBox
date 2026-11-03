@@ -45,6 +45,8 @@ class AudioBookSettings extends ChangeNotifier {
             if (entry.key is String && entry.value is Map) {
               final row = entry.value as Map;
               positions[entry.key as String] = {
+                if (row['updatedAt'] is int)
+                  'updatedAt': row['updatedAt'] as int,
                 'index': row['index'] is int
                     ? (row['index'] as int).clamp(0, 1000000)
                     : 0,
@@ -433,6 +435,7 @@ class AudioBookSession extends ChangeNotifier {
     settings.positions[id] = {
       'index': current,
       'position': position.inMilliseconds,
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
     };
     _savedAt = DateTime.now();
     unawaited(settings.save().catchError((_) {}));

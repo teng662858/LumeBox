@@ -113,6 +113,32 @@ void main() {
       await tester.tap(find.text('授权并读取仓库'));
       await pumpIoAndSettle(tester);
       expect(store.value['token'], 'test-token');
+      await tester.scrollUntilVisible(
+        find.text('远端测试源'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('远端测试源'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('PY'),
+        -200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('PY'));
+      await tester.pumpAndSettle();
+      expect(find.text('远端测试源'), findsNothing);
+      await tester.tap(find.text('JS'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('已安装'));
+      await tester.pumpAndSettle();
+      expect(find.text('远端测试源'), findsNothing);
+      await tester.tap(find.text('未安装'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('远端测试源'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('远端测试源'), findsOneWidget);
       await tester.ensureVisible(find.byTooltip('从 GitHub 删除源'));
       await tester.tap(find.byTooltip('从 GitHub 删除源'));

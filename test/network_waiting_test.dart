@@ -69,7 +69,7 @@ void main() {
     final future = IosImageNetwork.send(
       NetworkRequest(url: 'https://a.example', cancellation: token),
     );
-    final error = expectLater(future, throwsA(isA<PlatformException>()));
+    final error = expectLater(future, throwsA(isA<NetworkCancelled>()));
     await Future<void>.delayed(Duration.zero);
     final id = calls.first.arguments['requestId'] as String;
     await state(id, true);
@@ -77,6 +77,39 @@ void main() {
     await error;
     expect(calls.last.method, 'cancel');
     expect(calls.last.arguments['requestId'], id);
+    expect(NetworkActivity.waiting.value, isEmpty);
+  });
+  test('从等待详情取消单个请求，不影响另一个并行请求', () async {
+    final held = <String, Completer<Object?>>{};
+    messenger.setMockMethodCallHandler(IosImageNetwork.channel, (call) async {
+      final id = call.arguments['requestId'] as String;
+      if (call.method == 'cancel') {
+        held[id]!.completeError(PlatformException(code: 'cancelled'));
+        return null;
+      }
+      return (held[id] = Completer<Object?>()).future;
+    });
+    final first = IosImageNetwork.send(
+      const NetworkRequest(url: 'https://one.example', source: '甲源'),
+    );
+    final expected = expectLater(first, throwsA(isA<NetworkCancelled>()));
+    final second = IosImageNetwork.send(
+      const NetworkRequest(url: 'https://two.example', source: '乙源'),
+    );
+    await Future<void>.delayed(Duration.zero);
+    final ids = held.keys.toList();
+    await state(ids[0], true);
+    await state(ids[1], true);
+    NetworkActivity.cancel(ids[0]);
+    await expected;
+    expect(NetworkActivity.waiting.value, {ids[1]});
+    expect(NetworkActivity.request(ids[1])!.label, '乙源');
+    held[ids[1]]!.complete({
+      'status': 200,
+      'body': [1],
+      'headers': <String, String>{},
+    });
+    await second;
     expect(NetworkActivity.waiting.value, isEmpty);
   });
   test('取消备用 WebKit 读取释放同一原生网页会话', () async {

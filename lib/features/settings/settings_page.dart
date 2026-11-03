@@ -1,3 +1,4 @@
+import '../reading/continue_activity_page.dart';
 import 'performance_page.dart';
 import '../comic/download_center_page.dart';
 import '../video/player_settings_host.dart';
@@ -181,6 +182,12 @@ class SettingsPage extends StatelessWidget {
     ),
 
     const SettingsGroupTitle('阅读与播放'),
+    SettingsEntryCard(
+      icon: Icons.history,
+      title: '继续看／读／听',
+      subtitle: '汇总视频、漫画、小说与听书进度',
+      onTap: () => _push(context, const ContinueActivityPage()),
+    ),
     const ExperienceSettingsCard(),
     const SizedBox(height: 12),
     SettingsEntryCard(
@@ -297,16 +304,38 @@ class SettingsPage extends StatelessWidget {
       onTap: () => _push(context, const DownloadCenterPage()),
     ),
     SettingsEntryCard(
-      icon: Icons.downloading_outlined,
-      title: '预载与清理',
-      subtitle: '视频 / 图片 / 音频预载 · TMDB · 源图标 · 历史',
-      onTap: () => _push(context, const PreloadSettingsPage()),
-    ),
-    SettingsEntryCard(
-      icon: Icons.cleaning_services_outlined,
-      title: '缓存管理',
-      subtitle: '按板块清理磁盘缓存与内存缓存（漫画板块的图片缓存已关闭）',
-      onTap: () => _push(context, CacheSettingsPage(service: cacheService)),
+      icon: Icons.storage_outlined,
+      title: '存储与缓存',
+      subtitle: '预加载策略 · 空间占用 · 缓存清理',
+      searchTargets: {
+        '预载与清理': () => _push(context, const PreloadSettingsPage()),
+        '缓存管理': () => _push(context, CacheSettingsPage(service: cacheService)),
+      },
+      onTap: () => _push(
+        context,
+        SettingsCategoryPage(
+          category: SettingsCategory(
+            '存储与缓存',
+            '按需调整预载，查看和清理占用',
+            Icons.storage_outlined,
+            [
+              SettingsEntryCard(
+                icon: Icons.downloading_outlined,
+                title: '预载与清理',
+                subtitle: '视频 / 图片 / 音频预载与自动清理策略',
+                onTap: () => _push(context, const PreloadSettingsPage()),
+              ),
+              SettingsEntryCard(
+                icon: Icons.cleaning_services_outlined,
+                title: '缓存管理',
+                subtitle: '按板块统计和清理，不删除收藏及已保存内容',
+                onTap: () =>
+                    _push(context, CacheSettingsPage(service: cacheService)),
+              ),
+            ],
+          ),
+        ),
+      ),
     ),
     SettingsEntryCard(
       icon: Icons.privacy_tip_outlined,
@@ -323,10 +352,16 @@ class SettingsPage extends StatelessWidget {
 
     const SettingsGroupTitle('诊断与关于'),
     SettingsEntryCard(
-      icon: Icons.speed,
-      title: '流畅度采集',
-      subtitle: '长列表、翻页、切集与清理的帧耗时报告',
-      onTap: () => _push(context, const PerformancePage()),
+      icon: Icons.troubleshoot,
+      title: '问题排查',
+      subtitle: '加载耗时 · 流畅度 · 日志 · 导出诊断包',
+      searchTargets: {
+        '流畅度采集': () => _push(context, const PerformancePage()),
+        '运行日志': () => _push(context, LogViewerPage(exporter: exporter)),
+        '错误报告': () => _push(context, LogReportPage(exporter: exporter)),
+        '诊断包': () => _push(context, _diagnostics(context)),
+      },
+      onTap: () => _push(context, _diagnostics(context)),
     ),
     SettingsEntryCard(
       icon: Icons.menu_book_outlined,
@@ -362,24 +397,32 @@ class SettingsPage extends StatelessWidget {
         ),
       ),
     ),
-    SettingsEntryCard(
-      icon: Icons.receipt_long_outlined,
-      title: '运行日志',
-      subtitle: '查看本次运行的日志：信息 / 警告 / 错误',
-      onTap: () => _push(context, LogViewerPage(exporter: exporter)),
-    ),
-    SettingsEntryCard(
-      icon: Icons.file_upload_outlined,
-      title: '错误报告',
-      subtitle: '把错误与警告整理成报告，导出文件或复制全文',
-      onTap: () => _push(context, LogReportPage(exporter: exporter)),
-    ),
-
-    // 额外的诊断工具：放在用户点名的四项之后，不打断「沙箱 → 日志 →
-    // 错误报告 → 调试面板 → 关于」的顺序。
-    const DiagnosticExportTile(),
     const _BuildInfoRow(),
   ];
+
+  Widget _diagnostics(BuildContext context) => SettingsCategoryPage(
+    category: SettingsCategory('问题排查', '先查看加载耗时，必要时导出诊断包', Icons.troubleshoot, [
+      SettingsEntryCard(
+        icon: Icons.speed,
+        title: '流畅度采集',
+        subtitle: '源加载耗时与帧耗时报告',
+        onTap: () => _push(context, const PerformancePage()),
+      ),
+      SettingsEntryCard(
+        icon: Icons.receipt_long_outlined,
+        title: '运行日志',
+        subtitle: '本次与上次会话记录',
+        onTap: () => _push(context, LogViewerPage(exporter: exporter)),
+      ),
+      SettingsEntryCard(
+        icon: Icons.file_upload_outlined,
+        title: '错误报告',
+        subtitle: '整理错误与警告并导出',
+        onTap: () => _push(context, LogReportPage(exporter: exporter)),
+      ),
+      const DiagnosticExportTile(),
+    ]),
+  );
 
   void _push(BuildContext context, Widget page) {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
