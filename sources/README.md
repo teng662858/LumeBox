@@ -42,6 +42,24 @@ v1.2.0 同时修了线路选择：站点给的头几条偶尔是 403/404 的资�
 `bfeng11` 404），直接播黑屏。现在单条探活最多 1 秒、总预算 2.2 秒，只验前几条，命中就停，
 全不通转官方票券，票券也没有才把第一条直链原样交出去；`content` 仍在 2.5 秒内。
 
+**v1.3.0 把分类 / 筛选 / 排序补全**（2026-11-03 参数矩阵实测）：
+
+- 分类 17 个、全部出内容，15 个首条唯一（重复的两个是「今日热播 / 本周热播」——榜首都是
+  《嫁金钗》，站点数据本身重合，第 2 页起就不同）；分页 p1/p2/p5 三页互不相同。
+  kind 分类显式带 `sort=heat_desc`：实测「不带 sort」时站点按最新出，不显式给就和「最近更新」撞首屏。
+- 筛选组按分类给不同表：bootstrap 的 5 个 kind 走 `catalog_ui`；**documentary / sports
+  bootstrap 里没有，但参数照样生效**，补本地表（genre 从片库反查：纪录片/音乐/历史/传记…、
+  体育/体育赛事）；`all` 与两个热播分类给通用组（实测「不带 kind」时 area/year/genre 也生效）；
+  7 个榜单不给组 —— 实测榜单会丢附加参数（`hot_list_key + area` 的 area 不生效、`+ sort`
+  反而把榜单顶掉）。
+- **多选只有地区支持**：`area=中国大陆,中国香港` 会混出两地结果，而 `genre=喜剧,爱情`、
+  `language=国语,粤语` 都回 0 条。源里只对 `area` 做逗号拼接，其它组取第一个。
+- 排序只认 `updated_desc` / `heat_desc`（`sort=whatever` 被丢掉）+ 榜单专用 `trending` +
+  `window=day|week`；筛选里的「排序」组能覆盖分类默认（实测《空枪》→ 选「最新」变《半山腰的索玛花》）。
+- 没有的维度（实测静默忽略，不做假声明）：`rating_gte` / `score_gte` / `duration_lte` /
+  `is_finished` / `status` / `free` / `playable_only` / `actor` / `channel` / `region` / `lang`；
+  短剧的「状态」「形式」两行站点自己标了 `enabled:false`。
+
 
 ## 2026-11-03 爱丽丝书屋（`comic/alicesw.js`，详见 [源记录](../docs/2026-11-03_爱丽丝书屋源.md)）
 

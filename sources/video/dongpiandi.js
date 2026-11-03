@@ -1,4 +1,4 @@
-// LumeSource: {"id":"dongpiandi_video","name":"懂片帝","version":"1.2.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://dongpiandi.ai"],"network":"direct","icon":"https://dongpiandi.ai/assets/app-icon-180.png","settings":[{"key":"lineMode","type":"select","title":"线路偏好","default":"direct","options":[{"value":"direct","title":"第三方直链优先（免费，推荐）"},{"value":"official","title":"官方线路优先（1080P/4K，扣站点额度）"}]},{"key":"checkAccount","type":"action","action":"source","title":"检查账号与额度"},{"key":"logout","type":"action","action":"source","title":"退出站点登录"},{"key":"adultConfirm","type":"action","action":"source","title":"确认已满 18 岁（站点账号）"},{"key":"midnightCheck","type":"action","action":"source","title":"查午夜剧场资格"},{"key":"note","type":"info","title":"站点说明","description":"懂片帝（dongpiandi.ai，AI 找片 + 片单 + 播放）：React SPA + 同源 /v1/* JSON 接口，全部请求要 HMAC 签名（源内用宿主原生 tools.hmac 算，失败自动退回纯 JS）。浏览/搜索/详情/选集/直链播放都不需要登录；要「官方线路优先」或看站内额度才需在「账号登入」里填站点账号密码。站点若换域名，在「源设置 → 换网址」里填新域名即可。"}]}
+// LumeSource: {"id":"dongpiandi_video","name":"懂片帝","version":"1.3.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://dongpiandi.ai"],"network":"direct","icon":"https://dongpiandi.ai/assets/app-icon-180.png","settings":[{"key":"lineMode","type":"select","title":"线路偏好","default":"direct","options":[{"value":"direct","title":"第三方直链优先（免费，推荐）"},{"value":"official","title":"官方线路优先（1080P/4K，扣站点额度）"}]},{"key":"checkAccount","type":"action","action":"source","title":"检查账号与额度"},{"key":"logout","type":"action","action":"source","title":"退出站点登录"},{"key":"adultConfirm","type":"action","action":"source","title":"确认已满 18 岁（站点账号）"},{"key":"midnightCheck","type":"action","action":"source","title":"查午夜剧场资格"},{"key":"note","type":"info","title":"站点说明","description":"懂片帝（dongpiandi.ai，AI 找片 + 片单 + 播放）：React SPA + 同源 /v1/* JSON 接口，全部请求要 HMAC 签名（源内用宿主原生 tools.hmac 算，失败自动退回纯 JS）。浏览/搜索/详情/选集/直链播放都不需要登录；要「官方线路优先」或看站内额度才需在「账号登入」里填站点账号密码。站点若换域名，在「源设置 → 换网址」里填新域名即可。"}]}
 // LumeRuntime: javascript
 //
 // 站点：懂片帝（dongpiandi.ai；懂片帝AI / 懂片AI）
@@ -76,6 +76,7 @@ var CATS = [
   { id: 'kind=documentary', title: '纪录片' },
   { id: 'kind=sports', title: '体育' },
   { id: 'sort=trending&window=day', title: '今日热播' },
+  { id: 'sort=trending&window=week', title: '本周热播' },
   { id: 'hot_list_key=tv_domestic', title: '国产剧榜' },
   { id: 'hot_list_key=tv_korean', title: '韩剧榜' },
   { id: 'hot_list_key=tv_japanese', title: '日剧榜' },
@@ -629,17 +630,33 @@ function optionIdOf(params) {
   return parts.join('|');
 }
 
-// 组内多选时 App 用逗号连回传；站点不支持多值参数，取第一组。
-function parseOptionId(value) {
-  var first = text(value).split(',')[0] || '';
-  var pairs = first.split('|');
+// 组内多选时 App 把选中的 id 用英文逗号连回传。
+// 站点实测：**area 支持逗号多值**（`area=中国大陆,中国香港` 会混着出两地结果），
+// 而 genre / language / year 不支持（`genre=喜剧,爱情`、`language=国语,粤语` 都回 0 条），
+// 所以只有 area 做拼接，其它组取第一个。
+var MULTI_VALUE_KEYS = { area: true };
+
+function parseFilterGroup(groupId, rawValue) {
+  var pieces = text(rawValue).split(',');
+  var multi = MULTI_VALUE_KEYS[groupId] === true;
   var out = {};
-  for (var i = 0; i < pairs.length; i += 1) {
-    var at = pairs[i].indexOf(':');
-    if (at <= 0) continue;
-    var key = pairs[i].slice(0, at).trim();
-    var val = pairs[i].slice(at + 1).trim();
-    if (key && val) out[key] = val;
+  var values = {};
+  for (var i = 0; i < pieces.length; i += 1) {
+    var pairs = (pieces[i] || '').split('|');
+    for (var j = 0; j < pairs.length; j += 1) {
+      var at = pairs[j].indexOf(':');
+      if (at <= 0) continue;
+      var key = pairs[j].slice(0, at).trim();
+      var val = pairs[j].slice(at + 1).trim();
+      if (!key || !val) continue;
+      if (!multi && out[key] != null) continue;   // 单值组：同名参数取第一个
+      if (!values[key]) values[key] = [];
+      if (values[key].indexOf(val) < 0) values[key].push(val);
+    }
+  }
+  var keys = Object.keys(values);
+  for (var k = 0; k < keys.length; k += 1) {
+    out[keys[k]] = multi ? values[keys[k]].join(',') : values[keys[k]][0];
   }
   return out;
 }
@@ -663,6 +680,107 @@ function parseCategoryId(categoryId) {
 function kindOfCategory(categoryId) {
   var parsed = parseCategoryId(categoryId);
   return text(parsed.kind);
+}
+
+// ── 筛选表 ────────────────────────────────────────────────────────────────
+// 站点 `/v1/runtime/bootstrap` 的 `catalog_ui.catalogs` 只给 5 个 kind（movie / series /
+// anime / variety / short_drama）的筛选行；但 `kind=documentary` 和 `kind=sports` 实测
+// **同样吃 genre/area/language/year/sort**（见 2026-11-03 参数矩阵），所以这两个补本地表。
+// 短剧那两行「状态」「形式」站点整体标了 enabled:false，按规矩跳过。
+var AREA_OPTIONS = [
+  { id: 'area:中国大陆', title: '大陆' },
+  { id: 'area:中国香港', title: '香港' },
+  { id: 'area:中国台湾', title: '台湾' },
+  { id: 'area:日本', title: '日本' },
+  { id: 'area:韩国', title: '韩国' },
+  { id: 'area:欧美', title: '欧美' },
+  { id: 'area:英国', title: '英国' },
+  { id: 'area:泰国', title: '泰国' }
+];
+
+var LANGUAGE_OPTIONS = [
+  { id: 'language:国语', title: '国语' },
+  { id: 'language:粤语', title: '粤语' },
+  { id: 'language:英语', title: '英语' },
+  { id: 'language:韩语', title: '韩语' },
+  { id: 'language:日语', title: '日语' },
+  { id: 'language:西班牙语', title: '西班牙语' },
+  { id: 'language:法语', title: '法语' },
+  { id: 'language:德语', title: '德语' },
+  { id: 'language:意大利语', title: '意大利语' },
+  { id: 'language:泰国语', title: '泰国语' }
+];
+
+// 年份用 year / year_gte / year_lte 三个键拼，靠 optionIdOf 的 `|` 表达区间
+var YEAR_OPTIONS = [
+  { id: 'year:2026', title: '今年' },
+  { id: 'year:2025', title: '去年' },
+  { id: 'year_lte:2024', title: '更早' },
+  { id: 'year_gte:1990|year_lte:1999', title: '90年代' },
+  { id: 'year_gte:1980|year_lte:1989', title: '80年代' },
+  { id: 'year_lte:1979', title: '1980 年以前' }
+];
+
+// 站点 sort 只认 updated_desc / heat_desc（`sort=whatever` 会被丢掉）
+var SORT_OPTIONS = [
+  { id: 'sort:updated_desc', title: '最新' },
+  { id: 'sort:heat_desc', title: '最热' }
+];
+
+var EXTRA_KIND_GENRES = {
+  documentary: ['纪录片', '音乐', '历史', '犯罪', '剧情', '传记', '运动', '战争', '悬疑', '喜剧', '爱情', '真人秀', '短片'],
+  sports: ['体育', '体育赛事']
+};
+
+function genreOptionsOf(list) {
+  var out = [];
+  for (var i = 0; i < (list || []).length; i += 1) {
+    out.push({ id: 'genre:' + list[i], title: list[i] });
+  }
+  return out;
+}
+
+function localGroupsFor(kind) {
+  var genres = EXTRA_KIND_GENRES[kind];
+  if (!genres) return [];
+  return [
+    { id: 'genre', title: '分类', options: genreOptionsOf(genres) },
+    { id: 'area', title: '地区', options: AREA_OPTIONS.slice() },
+    { id: 'language', title: '语言', options: LANGUAGE_OPTIONS.slice() },
+    { id: 'year', title: '年份', options: YEAR_OPTIONS.slice() },
+    { id: 'sort', title: '排序', options: SORT_OPTIONS.slice() }
+  ];
+}
+
+// 没有 kind 的分类（最近更新 / 今日热播 / 本周热播）：实测 area / year / genre 在
+// 「不带 kind」时照样生效，所以给一套通用组（genre 跨类型太杂，只在有 kind 时给）。
+function genericGroups() {
+  return [
+    { id: 'area', title: '地区', options: AREA_OPTIONS.slice() },
+    { id: 'language', title: '语言', options: LANGUAGE_OPTIONS.slice() },
+    { id: 'year', title: '年份', options: YEAR_OPTIONS.slice() },
+    { id: 'sort', title: '排序', options: SORT_OPTIONS.slice() }
+  ];
+}
+
+function groupsFromCatalog(catalog) {
+  var rows = (catalog && catalog.rows) || [];
+  var groups = [];
+  for (var r = 0; r < rows.length; r += 1) {
+    var row = rows[r];
+    var options = [];
+    var list = row.options || [];
+    for (var o = 0; o < list.length; o += 1) {
+      var option = list[o];
+      if (!option || option.enabled === false) continue;
+      var id = optionIdOf(option.params || {});
+      if (!id) continue;
+      options.push({ id: id, title: text(option.label) || text(option.key) });
+    }
+    if (!options.length) continue;
+    groups.push({ id: text(row.key), title: text(row.label) || text(row.key), options: options });
+  }
+  return groups;
 }
 
 // 首页板块的「更多」→ 同一套 categoryId 编码（丢掉 page/limit，由 list 自己加）
@@ -875,7 +993,7 @@ async function resolveTickets(lines) {
 var LumeSource = {
   id: 'dongpiandi_video',
   name: '懂片帝',
-  version: '1.2.0',
+  version: '1.3.0',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
@@ -952,28 +1070,27 @@ var LumeSource = {
   },
 
   async filters(argument) {
-    var kind = kindOfCategory(argument && argument.categoryId);
-    if (!kind) return { groups: [] };
-    var bootstrap = await loadBootstrap();
-    var catalog = catalogOf(bootstrap, kind);
-    if (!catalog) return { groups: [] };
-    var rows = catalog.rows || [];
-    var groups = [];
-    for (var r = 0; r < rows.length; r += 1) {
-      var row = rows[r];
-      var options = [];
-      var list = row.options || [];
-      for (var o = 0; o < list.length; o += 1) {
-        var option = list[o];
-        if (!option || option.enabled === false) continue;
-        var id = optionIdOf(option.params || {});
-        if (!id) continue;
-        options.push({ id: id, title: text(option.label) || text(option.key) });
+    var parsed = parseCategoryId(argument && argument.categoryId);
+    var kind = text(parsed.kind);
+
+    // 榜单分类（hot_list_key）实测会丢掉其它筛选参数（`hot_list_key + area` 的 area
+    // 不生效、`+ sort` 反而把榜单顶掉），所以榜单下不给筛选组。
+    if (parsed.hot_list_key) return { groups: [] };
+
+    if (kind) {
+      var catalog = null;
+      try {
+        catalog = catalogOf(await loadBootstrap(), kind);
+      } catch (error) {
+        catalog = null;
       }
-      if (!options.length) continue;
-      groups.push({ id: text(row.key), title: text(row.label) || text(row.key), options: options });
+      var groups = catalog ? groupsFromCatalog(catalog) : [];
+      if (groups.length) return { groups: groups };
+      // documentary / sports（以及将来新增的 kind）走本地表
+      return { groups: localGroupsFor(kind) };
     }
-    return { groups: groups };
+
+    return { groups: genericGroups() };
   },
 
   async home() {
@@ -1013,15 +1130,22 @@ var LumeSource = {
       var fromCategory = parseCategoryId(categoryId);
       var keys = Object.keys(fromCategory);
       for (var i = 0; i < keys.length; i += 1) params[keys[i]] = fromCategory[keys[i]];
-      if (!params.sort && !params.hot_list_key && !params.q) params.sort = 'updated_desc';
+      // 排序：实测「不带 sort」时站点按最新（updated_desc）出，所以 kind 分类要显式给
+      // heat_desc（bootstrap 里 5 个 kind 的 default_sort 都是它），这样「电影」是热门、
+      // 「最近更新」是最新，两屏不重样；筛选里的「最新/最热」可以再覆盖。
+      if (!params.sort && !params.hot_list_key) {
+        params.sort = params.kind ? 'heat_desc' : 'updated_desc';
+      }
     }
 
     // 筛选：选项 id 里就是站点真实参数名（genre / area / language / year / sort）
+    // 筛选：选项 id 里就是站点真实参数名（genre / area / language / year / sort）
     var groupKeys = Object.keys(filters || {});
     for (var g = 0; g < groupKeys.length; g += 1) {
-      var parsed = parseOptionId(filters[groupKeys[g]]);
-      var pkeys = Object.keys(parsed);
-      for (var k = 0; k < pkeys.length; k += 1) params[pkeys[k]] = parsed[pkeys[k]];
+      var groupId = text(groupKeys[g]);
+      var picked = parseFilterGroup(groupId, filters[groupKeys[g]]);
+      var pkeys = Object.keys(picked);
+      for (var k = 0; k < pkeys.length; k += 1) params[pkeys[k]] = picked[pkeys[k]];
     }
 
     params.page = String(page);
