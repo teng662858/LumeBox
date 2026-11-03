@@ -428,10 +428,11 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
   }
 
   Widget _grouped(Map<String, List<SearchHit>> groups) {
-    if (_visibleSites.isEmpty) return _empty();
+    final visibleSites = _visibleSites;
+    if (visibleSites.isEmpty) return _empty();
     final sites = [
-      ..._visibleSites.where((site) => groups[site.id]?.isNotEmpty == true),
-      ..._visibleSites.where((site) => groups[site.id]?.isNotEmpty != true),
+      ...visibleSites.where((site) => groups[site.id]?.isNotEmpty == true),
+      ...visibleSites.where((site) => groups[site.id]?.isNotEmpty != true),
     ];
     return ListView.builder(
       key: const ValueKey('search-groups'),
