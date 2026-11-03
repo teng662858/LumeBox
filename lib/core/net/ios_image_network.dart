@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 
+import 'ats_fallback.dart';
 import 'network_queue.dart';
 import 'ios_verified_webview.dart';
 import 'waf.dart';
@@ -77,6 +78,11 @@ class IosImageNetwork {
       }
       return response;
     } on PlatformException catch (error, stack) {
+      // ATS 只约束 URLSession：明文 http 源站被拒发（NSURLErrorDomain -1022）。
+      // 换 dart:io 通道重发同一请求，站点本身没问题时就能正常拿到数据。
+      if (error.code == 'transport_security') {
+        return await sendWithoutAts(request);
+      }
       if (secureConnectionFailureOf(error) !=
               SecureConnectionFailure.handshake ||
           !IosWebKitTextNetwork.accepts(request)) {

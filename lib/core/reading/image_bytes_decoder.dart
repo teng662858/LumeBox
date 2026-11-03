@@ -138,6 +138,14 @@ Uint8List decodeSourceImage(Uint8List bytes, Map<String, String> headers) {
     }
     return reversed;
   }
+  // INS AV 的图床把真图整段包成 `data:image/jpeg;base64,…` 纯文本下发
+  //（响应头还写着 image/jpeg，直接当图片解会裂）。解出 data URI 即可，无密钥。
+  if (encoding == 'data-uri') {
+    if (_isPlainImage(bytes)) return bytes;
+    final inline = decodeImageDataUri(utf8.decode(bytes, allowMalformed: true));
+    if (inline != null) return inline;
+    throw const FormatException('Invalid data-uri source image');
+  }
   // 杏吧的图床在真图前面塞 16 字节随机头（其后才是 RIFF/JPEG）。
   // 只在「跳过 16 字节后是合法图片」时跳过，明文图原样返回。
   if (encoding == 'strip-prefix-16') {
