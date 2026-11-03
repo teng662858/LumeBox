@@ -855,7 +855,7 @@ void main() {
     expect(state.lineResume.position, const Duration(minutes: 12, seconds: 36));
   });
 
-  testWidgets('长剧集数字跳转只定位不播放，清除定位后恢复完整列表', (tester) async {
+  testWidgets('选集移除搜索和跳集，定位按钮回到当前集', (tester) async {
     await tester.binding.setSurfaceSize(const Size(440, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final source = LongDetailSource();
@@ -870,29 +870,24 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(VideoDetailPage));
+    state.selected = 202;
     await tester.ensureVisible(
       find.byKey(const Key('video-detail-select-episodes')),
     );
     await tester.tap(find.byKey(const Key('video-detail-select-episodes')));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('video-episode-jump')), '203');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    expect(find.text('搜索剧集名称'), findsNothing);
+    expect(find.text('跳转到第几集'), findsNothing);
+    await tester.tap(find.byTooltip('倒序排列').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('定位当前集').last);
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey('video-detail-picker-episode-202')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey('video-detail-picker-episode-0')),
-      findsNothing,
-    );
     expect(source.parses, 0);
-    await tester.tap(find.text('显示全部剧集'));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('video-detail-picker-episode-0')),
-      findsOneWidget,
-    );
     expect(tester.takeException(), isNull);
   });
 

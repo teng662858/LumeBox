@@ -1810,35 +1810,41 @@ class _VideoDetailPageState extends State<VideoDetailPage>
     );
   }
 
-  Widget episodeGrid(List<int> indexes, {bool modal = false}) => LayoutBuilder(
-    builder: (context, bounds) {
-      final count = !modal && !originalStyle
-          ? 3
-          : bounds.maxWidth < 340
-          ? 4
-          : 5;
-      final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
-      return GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.zero,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: count,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          mainAxisExtent: 44 * scale,
-        ),
-        itemCount: indexes.length,
-        itemBuilder: (_, i) => episodeButton(indexes[i], modal: modal),
+  Widget episodeGrid(List<int> indexes, {bool modal = false, Key? activeKey}) =>
+      LayoutBuilder(
+        builder: (context, bounds) {
+          final count = !modal && !originalStyle
+              ? 3
+              : bounds.maxWidth < 340
+              ? 4
+              : 5;
+          final scale = MediaQuery.textScalerOf(context)
+              .scale(1)
+              .clamp(1.0, 2.0);
+          return GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: count,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              mainAxisExtent: 44 * scale,
+            ),
+            itemCount: indexes.length,
+            itemBuilder: (_, i) => KeyedSubtree(
+              key: indexes[i] == selected ? activeKey : null,
+              child: episodeButton(indexes[i], modal: modal),
+            ),
+          );
+        },
       );
-    },
-  );
 
   Future<void> showEpisodes() async {
     if (chapters.isEmpty) return;
-    var page = selected ~/ 50, query = '';
-    int? jumpIndex;
-    var searchRevision = 0;
+    var page = (reversed ? chapters.length - 1 - selected : selected) ~/ 50;
+    final scroll = ScrollController();
+    final activeKey = GlobalKey();
     var listMode = chapters.any(
       (e) => VideoEpisodeCatalog.labelOf(e).length > 18,
     );
@@ -1854,15 +1860,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
             for (var i = 0; i < chapters.length; i++)
               reversed ? chapters.length - 1 - i : i,
           ];
-          final filtered = order
-              .where(
-                (i) => (jumpIndex == null
-                    ? VideoEpisodeCatalog.labelOf(chapters[i])
-                          .toLowerCase()
-                          .contains(query.toLowerCase())
-                    : i == jumpIndex),
-              )
-              .toList();
+          final filtered = order;
           final pages = (filtered.length / 50).ceil().clamp(1, 999999);
           page = page.clamp(0, pages - 1);
           final visible = filtered.skip(page * 50).take(50).toList();
@@ -1871,6 +1869,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
             child: FractionallySizedBox(
               heightFactor: .78,
               child: ListView(
+                controller: scroll,
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 children: [
                   Row(
@@ -1883,6 +1882,41 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                             fontWeight: FontWeight.w700,
                           ),
                         ),
+                      ),
+                      IconButton(
+                        tooltip: '定位当前集',
+                        icon: const Icon(Icons.my_location),
+                        onPressed: () {
+                          final position = reversed
+                              ? chapters.length - 1 - selected
+                              : selected;
+                          refresh(() => page = position ~/ 50);
+                          WidgetsBinding.instance.addPostFrameCallback((
+                            _,
+                          ) async {
+                            if (!scroll.hasClients) return;
+                            final count =
+                                (chapters.length - (position ~/ 50) * 50).clamp(
+                                  1,
+                                  50,
+                                );
+                            final fraction = count <= 1
+                                ? 0.0
+                                : (position % 50) / (count - 1);
+                            scroll.jumpTo(
+                              scroll.position.maxScrollExtent * fraction,
+                            );
+                            await WidgetsBinding.instance.endOfFrame;
+                            final target = activeKey.currentContext;
+                            if (target != null && target.mounted) {
+                              await Scrollable.ensureVisible(
+                                target,
+                                alignment: .25,
+                                duration: const Duration(milliseconds: 250),
+                              );
+                            }
+                          });
+                        },
                       ),
                       IconButton(
                         tooltip: '倒序排列',
@@ -1923,7 +1957,6 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                                         changeLine(line, allowMissing: true);
                                         refresh(() {
                                           page = 0;
-                                          jumpIndex = null;
                                         });
                                       },
                               ),
@@ -1932,54 +1965,6 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                       ),
                     ),
                   const SizedBox(height: 12),
-                  TextField(
-                    key: ValueKey('episode-search-$searchRevision'),
-                    decoration: const InputDecoration(
-                      hintText: '搜索剧集名称',
-                      prefixIcon: Icon(Icons.search),
-                    ),
-                    onChanged: (v) => refresh(() {
-                      query = v;
-                      jumpIndex = null;
-                      page = 0;
-                    }),
-                  ),
-                  TextField(
-                    key: const Key('video-episode-jump'),
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '跳转到第几集',
-                      prefixIcon: Icon(Icons.numbers),
-                    ),
-                    onSubmitted: (value) {
-                      final number = int.tryParse(value);
-                      if (number == null ||
-                          number < 1 ||
-                          number > chapters.length) {
-                        ScaffoldMessenger.of(sheetContext).showSnackBar(
-                          const SnackBar(content: Text('请输入有效集数')),
-                        );
-                        return;
-                      }
-                      refresh(() {
-                        jumpIndex = number - 1;
-                        query = '';
-                        searchRevision++;
-                        page = 0;
-                      });
-                      FocusScope.of(context).unfocus();
-                    },
-                  ),
-                  if (jumpIndex != null)
-                    TextButton(
-                      onPressed: () => refresh(() {
-                        jumpIndex = null;
-                        query = '';
-                        searchRevision++;
-                        page = 0;
-                      }),
-                      child: const Text('显示全部剧集'),
-                    ),
                   if (pages > 1)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -2008,35 +1993,44 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                       child: Text('没有匹配的剧集'),
                     )
                   else if (listMode) ...[
-                    for (final i in visible)
-                      ListTile(
-                        key: ValueKey('video-detail-picker-episode-$i'),
-                        selected: i == selected,
-                        leading: Text('${i + 1}'),
-                        title: Text(
-                          VideoEpisodeCatalog.displayLabel(chapters[i], i),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                    for (final i in visible) ...[
+                      KeyedSubtree(
+                        key: i == selected ? activeKey : null,
+                        child: ListTile(
+                          key: ValueKey('video-detail-picker-episode-$i'),
+                          selected: i == selected,
+                          leading: Text('${i + 1}'),
+                          title: Text(
+                            VideoEpisodeCatalog.displayLabel(chapters[i], i),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle:
+                              VideoEpisodeCatalog.displayLabel(
+                                    chapters[i],
+                                    i,
+                                  ) !=
+                                  VideoEpisodeCatalog.labelOf(chapters[i])
+                              ? Text(
+                                  VideoEpisodeCatalog.labelOf(chapters[i]),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              : null,
+                          trailing: const Icon(Icons.play_circle_outline),
+                          onTap: resolving
+                              ? null
+                              : () {
+                                  Navigator.pop(sheetContext);
+                                  chooseEpisode(i);
+                                },
                         ),
-                        subtitle:
-                            VideoEpisodeCatalog.displayLabel(chapters[i], i) !=
-                                VideoEpisodeCatalog.labelOf(chapters[i])
-                            ? Text(
-                                VideoEpisodeCatalog.labelOf(chapters[i]),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              )
-                            : null,
-                        trailing: const Icon(Icons.play_circle_outline),
-                        onTap: resolving
-                            ? null
-                            : () {
-                                Navigator.pop(sheetContext);
-                                chooseEpisode(i);
-                              },
                       ),
+                      if (i != visible.last)
+                        const Divider(height: 1, indent: 48, endIndent: 24),
+                    ],
                   ] else
-                    episodeGrid(visible, modal: true),
+                    episodeGrid(visible, modal: true, activeKey: activeKey),
                 ],
               ),
             ),
@@ -2044,6 +2038,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         },
       ),
     );
+    scroll.dispose();
   }
 
   Widget episodeSection({bool immersive = false}) {
