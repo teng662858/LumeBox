@@ -1,4 +1,4 @@
-// LumeSource: {"id":"dongpiandi_video","name":"懂片帝","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://dongpiandi.ai"],"network":"direct","icon":"https://dongpiandi.ai/assets/app-icon-180.png","settings":[{"key":"note","type":"info","title":"站点说明","description":"懂片帝（dongpiandi.ai，AI 找片 + 片单 + 播放）：React SPA + 同源 /v1/* JSON 接口，全部请求要 HMAC 签名（源内用宿主原生 tools.hmac 算，失败自动退回纯 JS）。浏览/搜索/详情/选集都不需要登录；播放优先用聚合资源站的 m3u8 直链（免费、不扣额度），官方 1080P 票券线路作为兜底。站点若换域名，在「源设置 → 换网址」里填新域名即可。"}]}
+// LumeSource: {"id":"dongpiandi_video","name":"懂片帝","version":"1.1.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://dongpiandi.ai"],"network":"direct","icon":"https://dongpiandi.ai/assets/app-icon-180.png","settings":[{"key":"lineMode","type":"select","title":"线路偏好","default":"direct","options":[{"value":"direct","title":"第三方直链优先（免费，推荐）"},{"value":"official","title":"官方线路优先（1080P/4K，扣站点额度）"}]},{"key":"checkAccount","type":"action","action":"source","title":"检查账号与额度"},{"key":"logout","type":"action","action":"source","title":"退出站点登录"},{"key":"note","type":"info","title":"站点说明","description":"懂片帝（dongpiandi.ai，AI 找片 + 片单 + 播放）：React SPA + 同源 /v1/* JSON 接口，全部请求要 HMAC 签名（源内用宿主原生 tools.hmac 算，失败自动退回纯 JS）。浏览/搜索/详情/选集/直链播放都不需要登录；要「官方线路优先」或看站内额度才需在「账号登入」里填站点账号密码。站点若换域名，在「源设置 → 换网址」里填新域名即可。"}]}
 // LumeRuntime: javascript
 //
 // 站点：懂片帝（dongpiandi.ai；懂片帝AI / 懂片AI）
@@ -21,14 +21,28 @@
 //   GET  /v1/catalog/{id}                 详情 + episodes[]（每条带 token）
 //   GET  /v1/playback/resolve/{token}     线路表 line_options[]
 //   POST /v1/playback/resolve-line        票券线路（resolve://）换真实地址，body {ticket}
-//   POST /v1/users/anonymous              游客会话（本源默认不用，只在票券线路回 401 时兜底）
+//   POST /v1/users/password/login         账号登入 {account, password}（可选，见下）
+//   GET  /v1/users/me/quota               站内每日额度（要会话）
+//   POST /v1/users/anonymous              游客会话（本源不用：匿名本来就够）
+//
+// ── 账号要不要填（2026-11-03 用真实账号实测）──────────────────────────────
+//   **不填也能用全部片库**：匿名就能拿 34 条线路（25 条直链 + 9 条官方票券），连
+//   「新4K-限时等级专属」「4K海外-官方C」这些票券线路匿名换也返回 201 + 真地址，
+//   登录前后线路表逐条一致（provider / 权重 / token_scenario 全同）。
+//   填账号之后多出来的只有站内那套：/v1/users/me/quota（会员每日 100 万 token 等级额度）、
+//   收藏、播放历史、午夜剧场（/v1/midnight-theater/*，还要先确认 18+）。
+//   所以本源把账号做成**可选**：填了就在换票券时带上会话（额度记到账号上），
+//   没填就匿名换（一样能播）；登录失败不会影响直链播放。
 //
 // ── 播放（两层线路）──────────────────────────────────────────────────────
 //   1) `resolve_mode:"direct"` 的线路（第三方聚合资源站，占绝大多数）：url 直接就是
-//      m3u8/mp4，实测 200/206 + #EXTM3U，**不需要登录、不扣额度** → 本源默认走这条，
-//      逐条探活挑能播的，并把多条可用线路放进 qualities 让用户自己切。
-//   2) `resolve://` 票券线路（官方 1080P/4K）：POST /v1/playback/resolve-line 换地址。
-//   3) 直链全挂时才会走 (2)，避免给站点白扣额度。
+//      m3u8/mp4，实测 200/206 + #EXTM3U，**不需要登录、不扣额度** → 本源默认走这条。
+//   2) `resolve://` 票券线路（官方 1080P/4K）：POST /v1/playback/resolve-line 换地址，
+//      画质更好但按站点额度计费。
+//   3) 默认「直链优先」，直链一条都没有才换票券；设置里可切成「官方优先」（先换票券，
+//      失败再回落直链，并把直链一起放进 qualities）。
+//   4) 线路**不逐条探活**（详见 pickDirect 上方注释），按站点权重 + 资源站稳定性排序后
+//      直接给地址，前 5 条进 qualities 供切换。
 //
 // ── 分类 / 筛选 ──────────────────────────────────────────────────────────
 //   分类 = 站点 kind（电影/电视剧/动漫/综艺/短剧/纪录片/体育）+ 榜单 hot_list_key +
@@ -304,6 +318,160 @@ async function request(pathAndQuery, options) {
   return await rawRequest(pathAndQuery, options);
 }
 
+// --------------------------------------------------------------- 账号登入（可选）
+// 浏览/搜索/详情/选集/直链播放**都不需要登录**（实测匿名就能换到含 4K 在内的全部
+// 票券线路）。只有两件事要登录：站点账号的每日额度（`/v1/users/me/quota`）和午夜剧场
+// （`/v1/midnight-theater/*`，且要先确认 18+）。所以登录只在「官方线路优先」模式
+// 或直链全挂要换票券时按需触发，账号密码走 App 的「源设置 → 账号登入」，源里不写死。
+//
+// 登录：POST /v1/users/password/login {account, password} → 201，Set-Cookie 里给
+// `ai_movie_session=ums2_…`（HttpOnly，有效期一年）。会话存 LumeSource.fs，按账号隔离。
+var SESSION_FILE = 'session.json';
+var LOGIN_FAIL_FILE = 'login_fail.json';
+var LOGIN_FAIL_TTL = 30 * 60 * 1000;   // 密码错了就半小时内别再白试
+var sessionCookie = '';
+var sessionLoading = null;
+
+function accountOf() {
+  var config = LumeSource.config || {};
+  return text(config.account).trim();
+}
+
+function passwordOf() {
+  var config = LumeSource.config || {};
+  return text(config.password);
+}
+
+async function readSession() {
+  var saved = await readJson(SESSION_FILE);
+  if (!saved || !saved.cookie) return null;
+  var account = accountOf();
+  if (saved.account && account && saved.account !== account) return null;
+  return saved;
+}
+
+// 账号密码的指纹（不落明文，只用来判断「用户是不是换了凭据」）
+async function credentialStamp() {
+  var account = accountOf();
+  if (!account) return '';
+  return (await signHex(SIGN_KEY, 'login:' + account + ':' + passwordOf())).slice(0, 20);
+}
+
+async function loginRecentlyFailed() {
+  var saved = await readJson(LOGIN_FAIL_FILE);
+  if (!saved || !saved.stamp) return false;
+  if (Date.now() - Number(saved.at || 0) > LOGIN_FAIL_TTL) return false;
+  return saved.stamp === (await credentialStamp());
+}
+
+async function markLoginFailed(reason) {
+  var stamp = await credentialStamp();
+  if (!stamp) return;
+  await writeJson(LOGIN_FAIL_FILE, { stamp: stamp, reason: text(reason).slice(0, 200), at: Date.now() });
+}
+
+function pickSessionCookie(headers) {
+  var raw = text(headers['set-cookie']);
+  var matched = /ai_movie_session=ums2_[^;,\s]+/.exec(raw);
+  return matched ? matched[0] : '';
+}
+
+async function doLogin() {
+  var account = accountOf();
+  if (!account) throw new Error('这个源不需要登录也能看；要用「官方线路优先」或查额度，请在「源设置 → 账号登入」里填站点账号密码');
+  if (!passwordOf()) throw new Error('请在「源设置 → 账号登入」里补上密码');
+  var result = await request('/v1/users/password/login', {
+    method: 'POST',
+    body: { account: account, password: passwordOf() }
+  });
+  if (result.status !== 200 && result.status !== 201) {
+    var friendly = apiError(result);
+    if (result.status === 400 || result.status === 403) friendly = '账号或密码不正确（站点原话：' + friendly + '）';
+    throw new Error(friendly);
+  }
+  var cookie = pickSessionCookie(result.headers);
+  if (!cookie) throw new Error('登录成功但没拿到会话 Cookie，站点可能改了登录流程');
+  sessionCookie = cookie;
+  await writeJson(SESSION_FILE, { account: account, cookie: cookie, at: Date.now() });
+  await LumeSource.fs.remove(LOGIN_FAIL_FILE).catch(function () { return null; });
+  return cookie;
+}
+
+// 已登录就返回 Cookie（空串＝匿名，不报错：直链本来就不需要会话）
+async function ensureSession(force) {
+  if (sessionLoading) return sessionLoading;
+  if (!force && sessionCookie) return sessionCookie;
+  sessionLoading = (async function () {
+    if (!force) {
+      var saved = await readSession();
+      if (saved) {
+        sessionCookie = text(saved.cookie);
+        return sessionCookie;
+      }
+    }
+    if (!accountOf()) return '';
+    if (!force && (await loginRecentlyFailed())) return '';
+    try {
+      return await doLogin();
+    } catch (error) {
+      if (force) throw error;
+      await markLoginFailed(error && error.message ? error.message : error);
+      return '';
+    }
+  })();
+  try {
+    return await sessionLoading;
+  } finally {
+    sessionLoading = null;
+  }
+}
+
+async function dropSession() {
+  sessionCookie = '';
+  await LumeSource.fs.remove(SESSION_FILE).catch(function () { return null; });
+}
+
+// 设置页里的「检查账号与额度」：强制登录一次，把账号/等级/今日词元摊开给用户看。
+function tokenText(value) {
+  var n = Number(value);
+  if (!isFinite(n)) return text(value);
+  if (n >= 10000) return Math.round(n / 1000) / 10 + ' 万';
+  return String(n);
+}
+
+async function describeAccount() {
+  var account = accountOf();
+  if (!account) {
+    return '还没填账号。本源不登录也能看全部片库（直链免费，官方票券匿名也能换）；想在这个面板看到站内额度，请在「账号登入」里填站点账号密码。';
+  }
+  var cookie = '';
+  try {
+    cookie = await ensureSession(true);
+  } catch (error) {
+    return '登录失败：' + (error && error.message ? error.message : text(error));
+  }
+  if (!cookie) return '登录没有拿到会话，请检查「账号登入」里的账号密码。';
+
+  var me = await request('/v1/users/me', { cookie: cookie });
+  var quota = await request('/v1/users/me/quota', { cookie: cookie });
+  var lines = [];
+  var profile = me.status === 200 && me.json ? me.json : null;
+  lines.push('账号：' + account + (profile && profile.display_name ? '（' + text(profile.display_name) + '）' : ''));
+  if (quota.status === 200 && quota.json) {
+    var q = quota.json;
+    if (q.level_title || q.role) {
+      lines.push('等级：' + text(q.level_title || q.role) + (q.role ? '（' + text(q.role) + '）' : ''));
+    }
+    lines.push('今日词元：已用 ' + tokenText(q.used_tokens) + ' / 上限 ' + tokenText(q.limit_tokens) + '，剩余 ' + tokenText(q.remaining_tokens));
+    if (q.reset_at) lines.push('额度重置：' + text(q.reset_at));
+  } else {
+    lines.push('额度：读取失败（' + apiError(quota) + '）');
+  }
+  lines.push('说明：直链播放不消耗词元；只有「官方线路优先」或直链全挂时才扣。');
+  return lines.join('\n');
+}
+
+
 function apiError(result) {
   var code = (result.json && (result.json.code || (result.json.error && result.json.error.code))) || '';
   var message = (result.json && (result.json.message || (result.json.error && result.json.error.message))) || '';
@@ -531,16 +699,29 @@ function pickDirect(lines) {
   return picked;
 }
 
-// 票券线路：POST /v1/playback/resolve-line 换真地址（匿名可用，但可能扣站点额度）
+// 票券线路：POST /v1/playback/resolve-line 换真地址。
+// 匿名也能换（实测连 4K 都能拿到），登录只是把额度记到账号上、并在会话有效时更稳，
+// 所以这里「有会话就带、401 就重登一次、拿不到会话就匿名继续」。
 async function resolveTickets(lines) {
   if (!lines.length) return null;
+  var session = await ensureSession(false);
   for (var i = 0; i < lines.length && i < TICKET_TRIES; i += 1) {
     var ticket = text(lines[i].url).replace(/^resolve:\/\//, '');
     if (!ticket) continue;
     var result = await request('/v1/playback/resolve-line?view=compact', {
       method: 'POST',
-      body: { ticket: ticket }
+      body: { ticket: ticket },
+      cookie: session
     });
+    if (result.status === 401 && session) {
+      await dropSession();
+      session = await ensureSession(true).catch(function () { return ''; });
+      result = await request('/v1/playback/resolve-line?view=compact', {
+        method: 'POST',
+        body: { ticket: ticket },
+        cookie: session
+      });
+    }
     if (result.status !== 200 && result.status !== 201) continue;
     var line = (result.json && result.json.line) || null;
     var url = line ? text(line.url) : '';
@@ -549,7 +730,7 @@ async function resolveTickets(lines) {
       kind: 'video',
       url: url,
       headers: { 'User-Agent': UA },
-      qualities: [{ label: text(line.display_label) || text(line.label) || '官方线路', url: url }]
+      qualities: [{ label: labelOf(line) || '官方线路', url: url }]
     };
   }
   return null;
@@ -559,7 +740,7 @@ async function resolveTickets(lines) {
 var LumeSource = {
   id: 'dongpiandi_video',
   name: '懂片帝',
-  version: '1.0.0',
+  version: '1.1.0',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
@@ -572,12 +753,48 @@ var LumeSource = {
   ],
   settings: [
     {
+      key: 'lineMode',
+      type: 'select',
+      title: '线路偏好',
+      default: 'direct',
+      options: [
+        { value: 'direct', title: '第三方直链优先（免费，推荐）' },
+        { value: 'official', title: '官方线路优先（1080P/4K，扣站点额度）' }
+      ],
+      description: '直链优先：先用聚合资源站的 m3u8（免费、不用登录）；官方优先：直接换官方票券线路（画质更好，按账号额度计费）。两种模式都会在失败时自动回落另一层。'
+    },
+    {
+      key: 'checkAccount',
+      type: 'action',
+      action: 'source',
+      title: '检查账号与额度',
+      description: '用「账号登入」里的账号密码登一次站点，显示昵称、等级和今天的词元用量（直链播放本身不扣额度）。'
+    },
+    {
+      key: 'logout',
+      type: 'action',
+      action: 'source',
+      title: '退出站点登录',
+      description: '清掉本源保存的会话 Cookie，之后按匿名身份换票券线路（匿名也能用，只是额度记不到账号上）。'
+    },
+    {
       key: 'note',
       type: 'info',
       title: '站点说明',
-      description: '懂片帝（dongpiandi.ai）：AI 找片 + 片单 + 播放，接口全部要 HMAC 签名（源内用宿主原生 tools.hmac）。浏览、搜索、选集都不需要登录；播放默认走聚合资源站的免费 m3u8 直链，官方 1080P 票券线路只在直链全挂时兜底。站点换域名时在「源设置 → 换网址」里填新域名。'
+      description: '懂片帝（dongpiandi.ai）：AI 找片 + 片单 + 播放，接口全部要 HMAC 签名（源内用宿主原生 tools.hmac）。浏览、搜索、选集、直链播放都不需要登录；要「官方线路优先」或看站内额度，才需要在「账号登入」里填站点账号密码（只存在本机这份源记录里）。站点换域名时在「源设置 → 换网址」里填新域名。'
     }
   ],
+
+  async settingsAction(argument) {
+    var args = argument || {};
+    var key = text(args.key);
+    if (key === 'checkAccount') return await describeAccount();
+    if (key === 'logout') {
+      await dropSession();
+      return '已清除站点会话。下一部作品会按匿名身份换票券线路（匿名同样能播，只是额度不记到账号上）。';
+    }
+    return '未知操作：' + key;
+  },
 
   async categories() {
     return CATS.slice();
@@ -736,8 +953,22 @@ var LumeSource = {
       else if (/^resolve:\/\//i.test(url) || line.resolve_required === true) tickets.push(line);
     }
     tickets = rankLines(tickets);
-
     var picked = pickDirect(direct);
+    var officialFirst = String(settingOf('lineMode', 'direct')) === 'official';
+
+    // 官方优先：先换票券（画质更高），换不到再回落直链
+    if (officialFirst && tickets.length) {
+      var official = await resolveTickets(tickets);
+      if (official) {
+        if (picked.length) {
+          official.qualities = official.qualities.concat(picked.map(function (entry) {
+            return { label: entry.label, url: entry.url };
+          }));
+        }
+        return official;
+      }
+    }
+
     if (picked.length) {
       return {
         kind: 'video',
