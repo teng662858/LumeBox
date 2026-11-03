@@ -114,6 +114,49 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('漫画源选择保留上次分类', (tester) async {
+    final manager = FakeSourceManager(
+      sources: const [
+        SourceDescriptor(id: 'comic', name: '漫画源', version: '1', enabled: true),
+        SourceDescriptor(
+          id: 'novel',
+          name: '小说源',
+          version: '1',
+          enabled: true,
+          mediaKind: 'novel',
+        ),
+      ],
+    );
+    Widget picker() => MaterialApp(
+      home: Scaffold(
+        body: SourcePickerSheet(
+          section: Section.comic,
+          sources: manager.sources,
+          manager: manager,
+          currentId: 'novel',
+        ),
+      ),
+    );
+    await tester.pumpWidget(picker());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('小说').first);
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(picker());
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('picker-source-novel')), findsOneWidget);
+    expect(find.byKey(const ValueKey('picker-source-comic')), findsNothing);
+    await tester.tap(find.text('全部').first);
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(picker());
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '全部')).selected,
+      isTrue,
+    );
+  });
+
   for (final columns in [false, true]) {
     testWidgets('猫源${columns ? '双列' : '单列'}定位末尾当前源', (tester) async {
       final manager = FakeSourceManager(

@@ -64,6 +64,7 @@ Future<String?> showSourcePicker({
 );
 
 class SourcePickerSheet extends StatefulWidget {
+  static const contentFilterKey = 'source.picker.contentFilter';
   const SourcePickerSheet({
     super.key,
     required this.section,
@@ -110,6 +111,14 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
   @override
   void initState() {
     super.initState();
+    if (widget.section == Section.comic) {
+      final groups = SourceContentVisibility.instance.groups(widget.section);
+      final saved = ReadingLibrary.find(widget.section)
+          ?.setting(SourcePickerSheet.contentFilterKey);
+      contentGroup = saved == 'all' || groups.any((group) => group.$1 == saved)
+          ? saved!
+          : 'all';
+    }
     SourceSubscriptionSync.revision(widget.section)
         .addListener(_subscriptionChanged);
     SourceContentVisibility.instance.addListener(_onVisibility);
@@ -736,10 +745,16 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                           child: ChoiceChip(
                             label: Text(group.$2),
                             selected: contentGroup == group.$1,
-                            onSelected: (_) => setState(() {
-                              contentGroup = group.$1;
-                              _locateCurrent = false;
-                            }),
+                            onSelected: (_) {
+                              setState(() {
+                                contentGroup = group.$1;
+                                _locateCurrent = false;
+                              });
+                              ReadingLibrary.find(widget.section)?.setSetting(
+                                SourcePickerSheet.contentFilterKey,
+                                group.$1,
+                              );
+                            },
                           ),
                         ),
                     ],
