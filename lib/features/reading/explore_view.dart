@@ -1,3 +1,5 @@
+import '../../core/util/source_load_profile.dart';
+
 import 'package:flutter/gestures.dart';
 
 import 'dart:convert';
@@ -372,8 +374,9 @@ class _ExploreViewState extends State<ExploreView>
     List<SourceDescriptor>? resolvedSources;
     SourceDescriptor? resolvedCurrent;
     try {
-      final sources = await _manager.list().timeout(
-        const Duration(seconds: 20),
+      final sources = await SourceLoadProfile.measure(
+        '${widget.section.label} · 读取源清单',
+        () => _manager.list().timeout(const Duration(seconds: 20)),
       );
       resolvedSources = sources;
       if (!mounted || bootstrapSeq != _bootstrapSeq) return;
@@ -410,9 +413,10 @@ class _ExploreViewState extends State<ExploreView>
         );
         return;
       }
-      final source = await _manager
-          .open(current.id)
-          .timeout(const Duration(seconds: 20));
+      final source = await SourceLoadProfile.measure(
+        '${widget.section.label} · 启动源',
+        () => _manager.open(current.id).timeout(const Duration(seconds: 20)),
+      );
       if (!mounted || bootstrapSeq != _bootstrapSeq) return;
       if (source == null) {
         _settle(
@@ -996,10 +1000,15 @@ class _ExploreViewState extends State<ExploreView>
     try {
       final result = await networkRequests.run(
         'browse',
-        () => source.list(
-          categoryId: _categoryId,
-          page: page,
-          filters: _facetFilters.isEmpty ? null : _facetFilters,
+        () => SourceLoadProfile.measure(
+          '${widget.section.label} · 列表请求',
+          () => source
+              .list(
+                categoryId: _categoryId,
+                page: page,
+                filters: _facetFilters.isEmpty ? null : _facetFilters,
+              )
+              .timeout(const Duration(seconds: 20)),
         ),
         timeout: const Duration(seconds: 20),
         timeoutError: () => const SourceException(

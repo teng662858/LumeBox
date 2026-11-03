@@ -61,7 +61,7 @@ void main() {
     expect(find.text('2.0.0'), findsOneWidget);
     expect(find.text('停用源'), findsOneWidget);
     // 停用的图源在管理页有明显标记，不只是开关状态。
-    expect(find.text('已停用'), findsOneWidget);
+    expect(find.text('已停用'), findsNWidgets(2));
     // 版本为空时回退到项目名。
     expect(find.text(LumeTheme.appName), findsWidgets);
   });

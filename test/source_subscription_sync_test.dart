@@ -47,7 +47,7 @@ void main() {
         );
       },
     );
-    await service.register([manifest]);
+    await service.register([manifest], autoInstallNew: true);
   });
   tearDown(() async {
     await SectionScope.closeAll();
@@ -55,6 +55,26 @@ void main() {
   });
   String script(String id, int version) =>
       'var LumeSource = {id:"$id", name:"$id", version:"$version"};';
+
+  test('新源默认待选择，批准后才安装并保持后续更新', () async {
+    final record = service.subscriptions.single;
+    record.autoInstallNew = false;
+    remote[manifest] = 'https://repo.example/new.js';
+    remote['https://repo.example/new.js'] = script('new', 1);
+    final pending = await service.sync(force: true);
+    expect(pending.pending, 1);
+    expect(manager.sources, isEmpty);
+    expect(record.pending.keys, contains('https://repo.example/new.js'));
+    await service.save();
+    await service.load();
+    final saved = service.subscriptions.single;
+    expect(saved.pending, isNotEmpty);
+    saved.approvedUrls.add('https://repo.example/new.js');
+    expect((await service.sync(force: true)).added, 1);
+    expect(saved.pending, isEmpty);
+    remote['https://repo.example/new.js'] = script('new', 2);
+    expect((await service.sync(force: true)).updated, 1);
+  });
 
   test('单个源设置声明错误不会中断后续源，错误定位到具体文件', () async {
     remote[manifest] =
@@ -98,7 +118,7 @@ void main() {
   test('旧版本成员表缺失时恢复官方归属并移除远端已下架源，保留手动与外部源', () async {
     final official = SubscriptionCatalog.sectionUrl(Section.video);
     service.subscriptions.clear();
-    await service.register([official]);
+    await service.register([official], autoInstallNew: true);
     manager.sources.addAll([
       const SourceDescriptor(
         id: 'retired',
@@ -233,7 +253,7 @@ void main() {
       Section.video,
       manager: manager,
     );
-    await stored.register([manifest]);
+    await stored.register([manifest], autoInstallNew: true);
     stored.subscriptions.single.checkedAt = DateTime.now();
     await stored.save();
     remote[manifest] = 'https://repo.example/a.js';
@@ -532,7 +552,14 @@ void main() {
     await tester.tap(find.text('订阅'));
     await settle();
     await tester.enterText(find.byType(TextField), manifest);
-    await tester.tap(find.text('添加订阅并导入'));
+    await tester.tap(find.text('添加订阅并检查可安装源'));
+    await settle();
+    expect(manager.sources, isEmpty);
+    await tester.tap(find.text('选择安装'));
+    await settle();
+    await tester.tap(find.text('全选'));
+    await settle();
+    await tester.tap(find.text('安装 1 个'));
     await settle();
     expect(manager.sources.single.version, '1');
     expect(find.text(manifest), findsOneWidget);

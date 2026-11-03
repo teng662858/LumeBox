@@ -106,6 +106,7 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
   Future<void> _change(
     SavedSourceSubscription record, {
     bool? enabled,
+    bool? autoInstallNew,
     bool remove = false,
   }) async {
     await SourceSubscriptionSync.waitForIdle(widget.section);
@@ -119,11 +120,90 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
       for (final saved in service.subscriptions.where(
         (s) => s.url == record.url,
       )) {
-        saved.enabled = enabled!;
+        if (enabled != null) saved.enabled = enabled;
+        if (autoInstallNew != null) saved.autoInstallNew = autoInstallNew;
       }
     }
     await service.save();
     if (mounted) setState(() => _service = service);
+  }
+
+  Future<void> _choosePending(SavedSourceSubscription record) async {
+    final selected = <String>{};
+    final install = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text('选择安装 · ${record.pending.length} 个源'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                CheckboxListTile(
+                  title: const Text('全选'),
+                  value: selected.length == record.pending.length,
+                  onChanged: (value) => update(() {
+                    selected.clear();
+                    if (value == true) selected.addAll(record.pending.keys);
+                  }),
+                ),
+                for (final entry in record.pending.entries)
+                  CheckboxListTile(
+                    title: Text(entry.value),
+                    subtitle: Text(
+                      entry.key,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    value: selected.contains(entry.key),
+                    onChanged: (value) => update(() {
+                      if (value == true) {
+                        selected.add(entry.key);
+                      } else {
+                        selected.remove(entry.key);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () => Navigator.pop(context, true),
+              child: Text('安装 ${selected.length} 个'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (install != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await SourceSubscriptionSync.waitForIdle(widget.section);
+      final service = await SourceSubscriptionSync.open(
+        widget.section,
+        manager: widget.manager,
+      );
+      final saved = service.subscriptions
+          .where((s) => s.url == record.url)
+          .firstOrNull;
+      if (saved == null) return;
+      saved.approvedUrls.addAll(selected.where(saved.pending.containsKey));
+      saved.checkedAt = null;
+      await service.save();
+      await _sync();
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -181,7 +261,7 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
             label: const Text('一键更新全部订阅'),
           ),
           const Text(
-            '订阅地址保存后，启动、回到前台和进入板块时会自动检查。正常间隔 6 小时，失败后 30 分钟可重试。同步新增、更新和移除，保留手动导入的源。',
+            '订阅自动检查已安装源的更新和移除。新发现的源进入待安装列表，勾选后才安装。正常间隔 6 小时，失败后 30 分钟可重试。保留手动导入的源。',
           ),
           const SizedBox(height: 16),
           TextField(
@@ -215,7 +295,7 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
           const SizedBox(height: 8),
           FilledButton(
             onPressed: _busy ? null : _add,
-            child: const Text('添加订阅并导入'),
+            child: const Text('添加订阅并检查可安装源'),
           ),
           if (_busy) const LinearProgressIndicator(),
           if (_error != null)
@@ -232,6 +312,16 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
               Card(
                 child: Column(
                   children: [
+                    if (record.pending.isNotEmpty)
+                      ListTile(
+                        title: Text('${record.pending.length} 个新源待选择安装'),
+                        trailing: TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => _choosePending(record),
+                          child: const Text('选择安装'),
+                        ),
+                      ),
                     SwitchListTile(
                       title: Text(
                         record.url,
@@ -261,6 +351,14 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
                           ? null
                           : () => _change(record, remove: true),
                       child: const Text('取消订阅（保留已导入源）'),
+                    ),
+                    SwitchListTile(
+                      title: const Text('自动安装此订阅的新源'),
+                      subtitle: const Text('默认关闭；开启后新发现的源会直接安装'),
+                      value: record.autoInstallNew,
+                      onChanged: _busy
+                          ? null
+                          : (value) => _change(record, autoInstallNew: value),
                     ),
                   ],
                 ),

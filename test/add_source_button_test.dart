@@ -62,6 +62,20 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> settleAndApprove(WidgetTester tester) async {
+    await tester.pumpAndSettle();
+    if (find.textContaining('选择导入 ·').evaluate().isNotEmpty) {
+      await tester.tap(find.text('全选'));
+      await tester.pumpAndSettle();
+      final button = find.descendant(
+        of: find.byType(AlertDialog).last,
+        matching: find.byType(FilledButton),
+      );
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+    }
+  }
+
   /// 模拟剪贴板里有 [text]，返回还原句柄（用完即撤）。
   void mockClipboard(String text) {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -100,7 +114,7 @@ void main() {
       expect(find.text('脚本'), findsOneWidget, reason: '选中当场就标出识别结论');
 
       await tester.tap(find.text('导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       final imported = manager.imported.single;
       expect(imported.startsWith('\uFEFF'), isFalse, reason: 'BOM 必须在导入前剥掉');
@@ -123,7 +137,7 @@ void main() {
       await tester.tap(find.text('选择本地文件'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(manager.imported.length, 2, reason: '两个文件各导入一条');
       expect(find.text('导入结果'), findsOneWidget);
@@ -159,7 +173,7 @@ void main() {
       expect(find.text('地址清单（2 个地址）'), findsOneWidget, reason: '选中就看出是清单');
 
       await tester.tap(find.text('导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(fetched, <String>[
         'https://example.com/a.js',
@@ -190,7 +204,7 @@ void main() {
       expect(find.text('校验值'), findsOneWidget, reason: '选择器允许 .md5，就要认得出它');
 
       await tester.tap(find.text('导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(find.textContaining('本机导入拿不到脚本地址'), findsOneWidget);
       expect(
@@ -222,7 +236,7 @@ void main() {
       expect(find.text('备份'), findsOneWidget);
 
       await tester.tap(find.text('导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(find.textContaining('恢复源'), findsOneWidget);
       expect(manager.imported, isEmpty, reason: '备份里带着脚本原文，但绝不能当脚本导入');
@@ -233,7 +247,7 @@ void main() {
 
       await openDialog(tester);
       await tester.tap(find.text('导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(find.text('请选择本地文件、粘贴脚本内容，或填写订阅地址'), findsOneWidget);
       expect(manager.imported, isEmpty);
@@ -252,7 +266,7 @@ void main() {
       expect(find.textContaining('已从剪贴板填入脚本'), findsOneWidget);
 
       await tester.tap(find.text('导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(manager.imported.single, contains('剪贴板源'));
       expect(importedCount, <int>[1]);
@@ -276,7 +290,7 @@ void main() {
       expect(find.text('拉取并导入'), findsOneWidget, reason: '自动切到订阅页签');
 
       await tester.tap(find.text('拉取并导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(find.text('已导入：新图源（订阅）'), findsOneWidget);
       expect(manager.importedOrigins.single, 'https://example.com/sub.js');
@@ -326,7 +340,7 @@ void main() {
         'https://example.com/sub.js',
       );
       await tester.tap(find.text('拉取并导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(manager.imported.single.startsWith('\uFEFF'), isFalse);
       expect(manager.imported.single, contains('订阅源'));
@@ -363,7 +377,7 @@ void main() {
         'https://example.com/sub.txt',
       );
       await tester.tap(find.text('拉取并导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(fetched, <String>[
         'https://example.com/sub.txt',
@@ -402,7 +416,7 @@ void main() {
         'https://example.com/a.js\nhttps://example.com/b.js',
       );
       await tester.tap(find.text('拉取并导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(fetched, <String>[
         'https://example.com/a.js',
@@ -434,7 +448,7 @@ void main() {
         'https://9280.kstore.vip/cat/index.js.md5',
       );
       await tester.tap(find.text('拉取并导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(fetched, <String>[
         'https://9280.kstore.vip/cat/index.js.md5',
@@ -465,7 +479,7 @@ void main() {
         'https://9280.kstore.vip/cat/index.js.md5',
       );
       await tester.tap(find.text('拉取并导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(find.textContaining('MD5 校验不一致'), findsOneWidget);
       expect(manager.imported, isEmpty);
@@ -496,7 +510,7 @@ void main() {
         'https://example.com/list.txt',
       );
       await tester.tap(find.text('拉取并导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(fetched, <String>[
         'https://example.com/list.txt',
@@ -521,7 +535,7 @@ void main() {
         'https://example.com/loop.txt',
       );
       await tester.tap(find.text('拉取并导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(find.text('订阅里没有可导入的源脚本'), findsOneWidget);
       expect(manager.imported, isEmpty);
@@ -541,7 +555,7 @@ void main() {
         'https://example.com/x.js',
       );
       await tester.tap(find.text('拉取并导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(find.textContaining('订阅拉取失败'), findsOneWidget);
       expect(manager.imported, isEmpty);
@@ -558,7 +572,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'not-a-url');
       await tester.tap(find.text('拉取并导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(find.textContaining('http:// 或 https://'), findsOneWidget);
       expect(manager.imported, isEmpty);
@@ -612,7 +626,7 @@ void main() {
         '${List<String>.generate(25, (i) => 'https://example.com/$i.js').join('\n')}',
       );
       await tester.tap(find.text('拉取并导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(
         fetched.length,
@@ -661,7 +675,7 @@ void main() {
       await tester.tap(find.text('选择本地文件'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(find.text('覆盖已有源？'), findsOneWidget);
       expect(find.textContaining('已存在源「新图源」（1.0.0 → 2.0.0）'), findsOneWidget);
@@ -706,7 +720,7 @@ void main() {
       await tester.tap(find.text('选择本地文件'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
       await tester.tap(find.text('覆盖'));
       await tester.pumpAndSettle();
 
@@ -744,7 +758,7 @@ void main() {
       await tester.tap(find.text('选择本地文件'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(find.text('覆盖已有源？'), findsNothing);
       expect(find.text('已导入：新图源'), findsOneWidget);
@@ -763,7 +777,7 @@ void main() {
       await tester.tap(find.text('选择本地文件'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('导入'));
-      await tester.pumpAndSettle();
+      await settleAndApprove(tester);
 
       expect(find.text('导入结果'), findsOneWidget, reason: '有失败就给能看清的弹窗');
       expect(find.text('导入失败：bad.js — 脚本载入失败：语法错误或运行异常'), findsOneWidget);

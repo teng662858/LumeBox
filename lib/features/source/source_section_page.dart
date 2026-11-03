@@ -78,6 +78,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
   String? _group;
   bool _compact = false;
   int _sourceFilter = 0;
+  String? _runtimeFilter;
   SourceContentCategory? _contentFilter;
   bool _selecting = false;
   bool _maintaining = false;
@@ -798,16 +799,22 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                       SourceContentCategories.forSource(source) !=
                           SourceContentCategory.adult) &&
                   (query.isEmpty ||
-                      '${source.name} ${source.id} ${source.group}'
+                      '${source.name} ${source.id} ${source.group} ${source.originUrl}'
                           .toLowerCase()
                           .contains(query)) &&
                   (_group == null || source.group == _group) &&
+                  (_runtimeFilter == null ||
+                      source.runtimeKind == _runtimeFilter) &&
                   (_contentFilter == null ||
                       (SourceContentCategories.appliesTo(source) &&
                           SourceContentCategories.forSource(source) ==
                               _contentFilter)) &&
                   (_sourceFilter == 0 ||
-                      (_sourceFilter == 1 ? source.enabled : source.broken)),
+                      (_sourceFilter == 1
+                          ? source.enabled
+                          : _sourceFilter == 3
+                          ? !source.enabled
+                          : source.broken)),
             )
             .toList()
           ..sort((a, b) {
@@ -835,6 +842,9 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
           key: const ValueKey('source-manager-header'),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text(
+              '已安装 ${sources.length} · 已启用 ${sources.where((s) => s.enabled).length} · 当前显示 ${visible.length}',
+            ),
             TextField(
               onChanged: (value) => setState(() => _sourceQuery = value),
               decoration: const InputDecoration(
@@ -842,14 +852,35 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                   Icons.search,
                   slot: 'source_section_page.5',
                 ),
-                hintText: '搜索源名称、ID 或分组',
+                hintText: '搜索源名称、ID、分组或来源地址',
               ),
             ),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: [
-                for (final (value, label) in [(0, '全部'), (1, '已启用'), (2, '异常')])
+                ChoiceChip(
+                  label: const Text('全部类型'),
+                  selected: _runtimeFilter == null,
+                  onSelected: (_) => setState(() => _runtimeFilter = null),
+                ),
+                for (final kind in sources.map((s) => s.runtimeKind).toSet())
+                  ChoiceChip(
+                    label: Text(kind == 'python' ? 'PY' : kind),
+                    selected: _runtimeFilter == kind,
+                    onSelected: (_) => setState(() => _runtimeFilter = kind),
+                  ),
+              ],
+            ),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (value, label) in [
+                  (0, '全部'),
+                  (1, '已启用'),
+                  (3, '已停用'),
+                  (2, '异常'),
+                ])
                   ChoiceChip(
                     label: Text(
                       label,
@@ -1368,7 +1399,7 @@ class _SourceTile extends StatelessWidget {
                     ],
                     if (source.subscribed) ...<Widget>[
                       Text(
-                        '订阅',
+                        '订阅 · ${Uri.tryParse(source.originUrl)?.host ?? '未知来源'}',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: LumeTypography.descriptionSize,

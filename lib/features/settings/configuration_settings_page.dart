@@ -114,25 +114,53 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
       password = await backupPassword();
       if (password == null || !mounted) return null;
     }
+    final preview = await backup.preview(text, password: password);
+    if (!mounted) return null;
+    final parts = ConfigurationRestorePart.values.toSet();
     final yes = await showGlassDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('恢复配置备份'),
-        content: const Text('备份中的同名配置和源将覆盖当前设置。恢复后请重新启动 App。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('预览并选择恢复内容'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '备份时间：${preview['createdAt'] ?? '未知'}\n全局配置：${(preview['files'] as Map).length} 项\n板块配置：${(preview['sections'] as Map).length} 组\n选中内容中的同名数据会覆盖当前数据。恢复后请重新启动 App。',
+                ),
+                for (final part in ConfigurationRestorePart.values)
+                  CheckboxListTile(
+                    title: Text(part.label),
+                    value: parts.contains(part),
+                    onChanged: (value) => update(() {
+                      if (value == true) {
+                        parts.add(part);
+                      } else {
+                        parts.remove(part);
+                      }
+                    }),
+                  ),
+              ],
+            ),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('恢复'),
-          ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: parts.isEmpty
+                  ? null
+                  : () => Navigator.pop(context, true),
+              child: const Text('恢复'),
+            ),
+          ],
+        ),
       ),
     );
     if (yes != true) return null;
-    await backup.restore(text, password: password);
+    await backup.restore(text, password: password, parts: parts);
     await preferences.boot();
     return '配置已恢复，请重新启动 App 以应用全部界面设置${backup.warnings.isEmpty ? '' : '；${backup.warnings.join('；')}'}';
   }

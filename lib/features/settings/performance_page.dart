@@ -1,3 +1,5 @@
+import '../../core/util/source_load_profile.dart';
+
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -29,6 +31,22 @@ class _PerformancePageState extends State<PerformancePage> {
     child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        ExpansionTile(
+          title: const Text('本次源加载耗时'),
+          subtitle: const Text('仅记录本次运行最近 30 次，不含站点地址'),
+          children: [
+            ValueListenableBuilder<List<String>>(
+              valueListenable: SourceLoadProfile.entries,
+              builder: (_, entries, _) => Column(
+                children: [
+                  if (entries.isEmpty)
+                    const ListTile(title: Text('暂无记录，打开板块首页后再查看')),
+                  for (final entry in entries) ListTile(title: Text(entry)),
+                ],
+              ),
+            ),
+          ],
+        ),
         const Text(
           '选择场景后开始采集，返回对应页面操作，再回来结束。采集在页面切换后继续；建议在 iPhone 的 Profile 构建上验收。',
         ),

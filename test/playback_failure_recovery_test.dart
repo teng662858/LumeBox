@@ -67,6 +67,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      expect(find.text('打开源站'), findsNothing);
+      await tester.tap(find.text('更多恢复方式'));
+      await tester.pumpAndSettle();
       expect(find.text('打开源站'), findsOneWidget);
       await tester.tap(find.text('更新源'));
       await tester.pumpAndSettle();
@@ -107,6 +110,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('源站要求会员或购买'), findsOneWidget);
+      expect(find.text('打开源站'), findsNothing);
+      await tester.tap(find.text('更多恢复方式'));
+      await tester.pumpAndSettle();
       expect(find.text('打开源站'), findsOneWidget);
       expect(find.text('更新源'), findsNothing);
     },

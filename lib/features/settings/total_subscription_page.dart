@@ -1,3 +1,4 @@
+import '../source/source_subscription_page.dart';
 import '../../core/source/source_subscription_sync.dart';
 import '../../core/session/section.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
@@ -61,7 +62,7 @@ class _TotalSubscriptionPageState extends State<TotalSubscriptionPage> {
       builder: (context) => AlertDialog(
         title: const Text('导入总订阅'),
         content: Text(
-          '${total.entries.entries.map((entry) => '${entry.key.label}：${entry.value.length} 个订阅').join('\n')}\n\n按板块保存并立即同步。保留其他订阅和手动导入的源；同名订阅源会更新。',
+          '${total.entries.entries.map((entry) => '${entry.key.label}：${entry.value.length} 个订阅').join('\n')}\n\n按板块保存并检查。已有源正常更新，新源先进入待安装列表，请勾选后安装。保留其他订阅和手动导入的源。',
         ),
         actions: [
           TextButton(
@@ -125,6 +126,24 @@ class _TotalSubscriptionPageState extends State<TotalSubscriptionPage> {
     child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (results != null)
+          for (final entry in results!.entries.where(
+            (e) => e.value.pending > 0,
+          ))
+            TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SourceSubscriptionPage(
+                    section: entry.key,
+                    manager: service.managers[entry.key],
+                    fetchSubscription: service.fetch,
+                  ),
+                ),
+              ),
+              child: Text(
+                '${entry.key.label} · 选择安装 ${entry.value.pending} 个新源',
+              ),
+            ),
         if (busy)
           for (final section in [Section.comic, Section.video])
             ValueListenableBuilder<String>(

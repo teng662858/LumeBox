@@ -433,7 +433,7 @@ void main() {
       await tester.tap(find.byTooltip('全屏'));
       await tester.pumpAndSettle();
       expect(find.byTooltip('记片头（长按查看标记）'), findsOneWidget);
-      await tester.tap(find.byTooltip('下一集'));
+      await tester.tap(find.byTooltip(RegExp(r'^下一集')));
       await tester.pumpAndSettle();
       expect(parsed, [12]);
       expect(players.last.media!.uri.path, '/13.m3u8');
@@ -556,7 +556,7 @@ void main() {
         560000,
       );
       expect(player.seeks, isEmpty, reason: '标记时不改变当前播放位置');
-      await tester.tap(find.byTooltip('下一集'));
+      await tester.tap(find.byTooltip(RegExp(r'^下一集')));
       await tester.pump();
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 100)),
@@ -936,6 +936,8 @@ void main() {
       );
       final address = players.single.media!.uri;
       players.single.emit(error: 'HTTP 403: Forbidden');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('更多恢复方式'));
       await tester.pumpAndSettle();
       expect(find.text('播放网页验证'), findsOneWidget);
       expect(players.single.media!.uri, address);

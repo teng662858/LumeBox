@@ -155,7 +155,13 @@ void main() {
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: AppShell(controller: ShellDockController(), desktopRail: false),
+      home: AppShell(
+        controller: ShellDockController(),
+        desktopRail: false,
+        pageBuilder: (id) => id == 'settings'
+            ? const SettingsPage(runtimeAvailable: true)
+            : const SizedBox.shrink(),
+      ),
     );
 
     /// 某段文字所在的（最近的）GlassCard 的实际底色。
@@ -274,7 +280,7 @@ void main() {
     await scrollTo(tester, '源总管理');
     expect(find.text('源总管理'), findsOneWidget);
     await tester.tap(find.text('源总管理'));
-    await tester.pumpAndSettle();
+    await pumpIoAndSettle(tester);
 
     expect(find.widgetWithText(AppBar, '源总管理'), findsOneWidget);
   });
@@ -287,7 +293,7 @@ void main() {
     await scrollTo(tester, '播放器设置');
     expect(find.text('播放器设置'), findsOneWidget);
     await tester.tap(find.text('播放器设置'));
-    await tester.pumpAndSettle();
+    await pumpIoAndSettle(tester);
     expect(find.widgetWithText(AppBar, '播放器设置'), findsOneWidget);
     expect(find.text('播放倍速'), findsOneWidget);
     expect(find.text('字幕'), findsOneWidget);
@@ -404,12 +410,12 @@ void main() {
     await tester.pumpAndSettle();
 
     const groups = <String>[
-      '个性与界面',
-      '导航与首页',
       '阅读与播放',
       '内容与订阅',
-      '网络与服务',
+      '个性与界面',
+      '导航与首页',
       '存储与安全',
+      '网络与服务',
       '诊断与关于',
     ];
     for (final group in groups) {

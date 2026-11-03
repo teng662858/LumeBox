@@ -4638,7 +4638,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             const SizedBox(width: 4),
             action(
               '下集',
-              '下一集',
+              '下一集 · ${_nextEpisodeBuffer.status}',
               Icons.skip_next,
               target == null || _advancing
                   ? null

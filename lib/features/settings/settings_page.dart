@@ -124,6 +124,18 @@ class SettingsPage extends StatelessWidget {
         groups.last.children.add(entry);
       }
     }
+    const priority = [
+      '阅读与播放',
+      '内容与订阅',
+      '个性与界面',
+      '导航与首页',
+      '存储与安全',
+      '网络与服务',
+      '诊断与关于',
+    ];
+    groups.sort(
+      (a, b) => priority.indexOf(a.title).compareTo(priority.indexOf(b.title)),
+    );
     return GlassScaffold(
       effectModule: GlassModule.settings,
       behindBar: true,
@@ -323,10 +335,32 @@ class SettingsPage extends StatelessWidget {
       onTap: () => _push(context, const UsageGuidePage()),
     ),
     SettingsEntryCard(
-      icon: Icons.hourglass_bottom_outlined,
-      title: '沙箱设置',
-      subtitle: '脚本执行超时与运行限制',
-      onTap: () => _push(context, const SandboxSettingsPage()),
+      icon: Icons.tune,
+      title: '高级设置',
+      subtitle: '沙箱执行限制 · 请求抓包 · JS 上下文统计',
+      searchTargets: {
+        '沙箱设置': () => _push(context, const SandboxSettingsPage()),
+        '调试面板': () => _push(context, const DebugPanelPage()),
+      },
+      onTap: () => _push(
+        context,
+        SettingsCategoryPage(
+          category: SettingsCategory('高级设置', '脚本执行与开发排查工具', Icons.tune, [
+            SettingsEntryCard(
+              icon: Icons.hourglass_bottom_outlined,
+              title: '沙箱设置',
+              subtitle: '脚本执行超时与运行限制',
+              onTap: () => _push(context, const SandboxSettingsPage()),
+            ),
+            SettingsEntryCard(
+              icon: Icons.bug_report_outlined,
+              title: '调试面板',
+              subtitle: '请求抓包与 JS 上下文统计；抓包默认关闭',
+              onTap: () => _push(context, const DebugPanelPage()),
+            ),
+          ]),
+        ),
+      ),
     ),
     SettingsEntryCard(
       icon: Icons.receipt_long_outlined,
@@ -340,12 +374,7 @@ class SettingsPage extends StatelessWidget {
       subtitle: '把错误与警告整理成报告，导出文件或复制全文',
       onTap: () => _push(context, LogReportPage(exporter: exporter)),
     ),
-    SettingsEntryCard(
-      icon: Icons.bug_report_outlined,
-      title: '调试面板',
-      subtitle: '请求抓包（方法 / 状态 / 耗时 / 来源）与 JS 上下文统计；抓包默认关闭',
-      onTap: () => _push(context, const DebugPanelPage()),
-    ),
+
     // 额外的诊断工具：放在用户点名的四项之后，不打断「沙箱 → 日志 →
     // 错误报告 → 调试面板 → 关于」的顺序。
     const DiagnosticExportTile(),

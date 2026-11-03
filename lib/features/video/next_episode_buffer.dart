@@ -36,6 +36,7 @@ class NextEpisodeBuffer {
   String? _key;
   PreparedEpisode? _ready;
   bool _preparing = false;
+  String status = '尚未预加载';
   Completer<void>? _finished;
   static const _maxAge = Duration(minutes: 5);
   static String _identity(VideoPlayTarget target, PlayerKernel kernel) =>
@@ -61,6 +62,7 @@ class NextEpisodeBuffer {
     final finished = _finished = Completer<void>();
     discard();
     _key = key;
+    status = '正在解析下一集';
     final revision = _revision;
     AbstractPlayer? player;
     bool stale() => revision != _revision;
@@ -84,6 +86,7 @@ class NextEpisodeBuffer {
       );
       final uri = chosen?.url ?? SourcePlayback.contentAddress(content);
       if (content == null || uri == null || stale()) return;
+      status = '地址已解析，正在准备播放器';
       player = create(settings.kernel);
       if (player == null) return;
       final instance = player;
@@ -119,12 +122,14 @@ class NextEpisodeBuffer {
           .timeout(const Duration(seconds: 8));
       await instance.pause();
       if (stale() || instance.snapshot.value.error != null) return;
+      status = '播放器已准备，实际缓冲量取决于内核';
       _ready = PreparedEpisode(chapter, index, content, instance);
       player = null; // owned by _ready
     } catch (error) {
       LumeLog.info('[player] 下一集预加载未完成，切集时正常重试：$error');
     } finally {
       if (player != null) await _dispose(player);
+      if (_ready == null && _key == key) status = '预加载未完成，切集时重试';
       _preparing = false;
       if (identical(_finished, finished)) _finished = null;
       if (!finished.isCompleted) finished.complete();
@@ -174,6 +179,7 @@ class NextEpisodeBuffer {
   Future<void> clear() async {
     _revision++;
     _key = null;
+    status = '尚未预加载';
     final ready = _ready;
     _ready = null;
     if (ready != null) await _dispose(ready.player);

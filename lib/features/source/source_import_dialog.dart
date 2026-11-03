@@ -1,3 +1,4 @@
+import 'source_import_selection.dart';
 import '../../core/source/source_subscription_catalog.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
 
@@ -858,10 +859,20 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
         return;
       }
       if (!mounted) return;
+      if (items.length > 1) {
+        setState(() {
+          _busy = false;
+          _progress = null;
+        });
+      }
+      final chosen = items.length > 1
+          ? await chooseSourceImports(context, items)
+          : items;
+      if (chosen == null || !mounted) return;
       Navigator.of(context).pop(
         SourceImportRequest(
           section: _section,
-          items: items,
+          items: chosen,
           contentCategory: _section == Section.video ? _contentCategory : '',
           skipped: skipped,
           notes: notes,

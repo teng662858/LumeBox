@@ -196,17 +196,25 @@ class _PlaybackFailurePanelState extends State<PlaybackFailurePanel> {
                 onPressed: busy ? null : () => run(widget.retry),
                 child: const Text('重试播放'),
               ),
-              if (site != null)
-                TextButton(
-                  onPressed: busy ? null : () => run(openSite),
-                  child: const Text('打开源站'),
+              SizedBox(
+                width: double.infinity,
+                child: ExpansionTile(
+                  title: const Text('更多恢复方式'),
+                  children: [
+                    if (site != null)
+                      TextButton(
+                        onPressed: busy ? null : () => run(openSite),
+                        child: const Text('打开源站'),
+                      ),
+                    if (failure.offerUpdate && source != null)
+                      TextButton(
+                        onPressed: busy ? null : () => run(update),
+                        child: const Text('更新源'),
+                      ),
+                    ...widget.extraActions,
+                  ],
                 ),
-              if (failure.offerUpdate && source != null)
-                TextButton(
-                  onPressed: busy ? null : () => run(update),
-                  child: const Text('更新源'),
-                ),
-              ...widget.extraActions,
+              ),
             ],
           ),
           if (busy) const LinearProgressIndicator(),

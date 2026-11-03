@@ -16,6 +16,17 @@ import '../cat/cat_service.dart';
 import 'section_scope.dart';
 import 'section.dart';
 
+enum ConfigurationRestorePart {
+  settings('界面与板块设置'),
+  reading('收藏、历史与阅读／播放进度'),
+  media('手工媒体条目'),
+  sources('已安装源'),
+  subscriptions('订阅与猫源配置');
+
+  const ConfigurationRestorePart(this.label);
+  final String label;
+}
+
 class ConfigurationBackup {
   ConfigurationBackup({CatService? catService})
     : _catService = catService ?? CatService.instance;
@@ -105,7 +116,7 @@ class ConfigurationBackup {
     });
   }
 
-  Future<void> restore(String text, {String? password}) async {
+  Future<Map<String, Object?>> preview(String text, {String? password}) async {
     final data = jsonDecode(
       await BackupCipher.decode(text, password: password),
     );
@@ -115,6 +126,50 @@ class ConfigurationBackup {
         data['files'] is! Map ||
         data['sections'] is! Map) {
       throw const FormatException('不是支持的 LumeBox 配置备份');
+    }
+    return Map<String, Object?>.from(data);
+  }
+
+  Future<void> restore(
+    String text, {
+    String? password,
+    Set<ConfigurationRestorePart>? parts,
+  }) async {
+    final data = jsonDecode(
+      await BackupCipher.decode(text, password: password),
+    );
+    if (data is! Map ||
+        data['format'] != 'lumebox-configuration' ||
+        ![1, 2].contains(data['version']) ||
+        data['files'] is! Map ||
+        data['sections'] is! Map) {
+      throw const FormatException('不是支持的 LumeBox 配置备份');
+    }
+    if (parts != null) {
+      if (parts.isEmpty) throw const FormatException('请选择要恢复的内容');
+      data['files'] = {
+        for (final entry in (data['files'] as Map).entries)
+          if (parts.contains(
+            entry.key == 'media_library.json'
+                ? ConfigurationRestorePart.media
+                : ConfigurationRestorePart.settings,
+          ))
+            entry.key: entry.value,
+      };
+      if (!parts.contains(ConfigurationRestorePart.settings)) {
+        data['sections'] = <String, Object?>{};
+      }
+      if (!parts.contains(ConfigurationRestorePart.reading)) {
+        data.remove('readingData');
+      }
+      if (!parts.contains(ConfigurationRestorePart.sources)) {
+        data.remove('sources');
+      }
+      if (!parts.contains(ConfigurationRestorePart.subscriptions)) {
+        data.remove('subscriptions');
+        data.remove('catData');
+        data.remove('catSubscriptions');
+      }
     }
     final incomingFiles = (data['files'] as Map).cast<String, dynamic>();
     if (incomingFiles.keys.any((name) => !files.contains(name))) {

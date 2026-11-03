@@ -88,13 +88,43 @@ void main() {
     root.deleteSync(recursive: true);
   });
 
+  Future<Map<Section, SubscriptionSyncResult>> importAndApprove(
+    TotalSubscription total,
+  ) async {
+    final results = await service.import(total);
+    for (final section in results.keys) {
+      if (results[section]!.pending == 0) continue;
+      final stored = await SourceSubscriptionSync.open(
+        section,
+        manager: managers[section],
+      );
+      for (final record in stored.subscriptions) {
+        record.approvedUrls.addAll(record.pending.keys);
+      }
+      await stored.save();
+      results[section] = await SourceSubscriptionSync.refresh(
+        section,
+        force: true,
+        manager: managers[section],
+        fetch: service.fetch,
+      );
+    }
+    return results;
+  }
+
+  test('总订阅新源保持待安装，不会直接写入源管理器', () async {
+    final results = await service.import(total);
+    expect(results[Section.video]!.pending, 1);
+    expect(managers[Section.video]!.sources, isEmpty);
+  });
+
   test('总订阅递归影视清单保留 Python 源和运行时', () async {
     const scriptUrl = 'https://repo.test/movie/gulu.py';
     remote[total.entries[Section.video]!.single.url] = scriptUrl;
     remote[scriptUrl] =
         '# LumeSource: {"id":"gulu_python_video","name":"咕噜咕噜","version":"1.0.1","category":"video","contentCategory":"movie"}\n'
         '# LumeRuntime: python\nclass Spider: pass\n';
-    final results = await service.import(
+    final results = await importAndApprove(
       await service.read(SubscriptionCatalog.totalUrl),
     );
     expect(results[Section.video]!.errors, isEmpty);
@@ -117,7 +147,7 @@ void main() {
         enabled: true,
       ),
     );
-    final results = await service.import(
+    final results = await importAndApprove(
       await service.read(SubscriptionCatalog.totalUrl),
     );
     for (final section in SubscriptionCatalog.sections) {
@@ -199,7 +229,7 @@ void main() {
 
   test('错误总订阅在写入前拒绝；单板块网络失败不阻止其他板块', () async {
     await expectLater(
-      service.import(
+      importAndApprove(
         TotalSubscription({
           Section.video: [(url: 'file:///bad', enabled: true)],
         }),
@@ -214,7 +244,7 @@ void main() {
       throwsFormatException,
     );
     remote.remove(total.entries[Section.comic]!.single.url);
-    final results = await service.import(total);
+    final results = await importAndApprove(total);
     expect(results[Section.comic]!.errors, isNotEmpty);
     expect(results[Section.video]!.added, 1);
     expect(results[Section.video]!.added, 1);
@@ -237,7 +267,9 @@ void main() {
     await tester.tap(find.text('导入总订阅'));
     await tester.pumpAndSettle();
     expect(
-      find.text('漫画：1 个订阅\n视频：1 个订阅\n\n按板块保存并立即同步。保留其他订阅和手动导入的源；同名订阅源会更新。'),
+      find.text(
+        '漫画：1 个订阅\n视频：1 个订阅\n\n按板块保存并检查。已有源正常更新，新源先进入待安装列表，请勾选后安装。保留其他订阅和手动导入的源。',
+      ),
       findsOneWidget,
     );
     await tester.tap(find.text('取消'));

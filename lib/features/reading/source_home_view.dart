@@ -1,3 +1,4 @@
+import '../../core/util/source_load_profile.dart';
 import '../../shared/widgets/network_owned_state.dart';
 
 import 'package:lume_box/shared/widgets/lume_icon.dart';
@@ -173,7 +174,12 @@ class _SourceHomeViewState extends State<SourceHomeView>
           SectionPreloader.takeWarmHome(source.section, sourceId: source.id) ??
           await networkRequests.run<SourceHome>(
             'home',
-            () => (source as HomeCapable).home(),
+            () => SourceLoadProfile.measure(
+              '${source.section.label} · 首页请求',
+              () => (source as HomeCapable).home().timeout(
+                const Duration(seconds: 20),
+              ),
+            ),
             timeout: const Duration(seconds: 20),
             timeoutError: () => const SourceException(
               SourceErrorKind.network,

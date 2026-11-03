@@ -46,6 +46,8 @@ class VideoResumeRequest {
   bool confident(SourceChapter chapter, {String workTitle = ''}) {
     final wanted = episode(chapterTitle);
     if (wanted == null) return chapter.title.trim() == chapterTitle.trim();
+    final found = episode(chapter.title);
+    if (found == null || found.episode != wanted.episode) return false;
     final desiredSeason = wanted.season ?? season(title);
     final actualSeason = episode(chapter.title)?.season ?? season(workTitle);
     return desiredSeason == null || actualSeason == desiredSeason;

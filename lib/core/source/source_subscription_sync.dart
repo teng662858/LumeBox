@@ -20,29 +20,41 @@ class SavedSourceSubscription {
     this.enabled = true,
     this.checkedAt,
     this.error = '',
+    this.autoInstallNew = false,
     Map<String, String>? members,
     Set<String>? excludedIds,
+    Map<String, String>? pending,
+    Set<String>? approvedUrls,
   }) : members = members ?? {},
+       pending = pending ?? {},
+       approvedUrls = approvedUrls ?? {},
        excludedIds = excludedIds ?? {};
   final String url;
   bool enabled;
   DateTime? checkedAt;
   String error;
+  bool autoInstallNew;
   Map<String, String> members;
   final Set<String> excludedIds;
+  final Map<String, String> pending;
+  final Set<String> approvedUrls;
   Map<String, Object?> toJson() => {
     'url': url,
     'enabled': enabled,
     'checkedAt': checkedAt?.toIso8601String(),
     'error': error,
+    'autoInstallNew': autoInstallNew,
     'members': members,
     'excludedIds': excludedIds.toList(),
+    'pending': pending,
+    'approvedUrls': approvedUrls.toList(),
   };
 }
 
 class SubscriptionSyncResult {
   int added = 0, updated = 0, removed = 0;
   int checked = 0, unchanged = 0, skipped = 0;
+  int pending = 0;
   String message = '';
   final List<String> errors = [];
   bool get changed => added + updated + removed > 0;
@@ -51,6 +63,7 @@ class SubscriptionSyncResult {
       : '${checked > 0 ? '已检查 $checked 个订阅 · ' : ''}'
             '新增 $added · 更新 $updated · 移除 $removed'
             '${unchanged > 0 ? ' · 无变化 $unchanged' : ''}'
+            '${pending > 0 ? ' · 待选择安装 $pending' : ''}'
             '${skipped > 0 ? ' · 未到检查时间 $skipped' : ''}'
             '${errors.isEmpty ? '' : ' · 失败 ${errors.length}'}';
 }
@@ -204,6 +217,20 @@ class SourceSubscriptionSync {
           !SubscriptionCatalog.validUrl(row['url'] as String) ||
           row['enabled'] != null && row['enabled'] is! bool ||
           row['error'] != null && row['error'] is! String ||
+          row['autoInstallNew'] != null && row['autoInstallNew'] is! bool ||
+          row['approvedUrls'] != null &&
+              (row['approvedUrls'] is! List ||
+                  (row['approvedUrls'] as List).any(
+                    (v) => v is! String || !_validUrl(v),
+                  )) ||
+          row['pending'] != null &&
+              (row['pending'] is! Map ||
+                  (row['pending'] as Map).entries.any(
+                    (e) =>
+                        e.key is! String ||
+                        !_validUrl(e.key) ||
+                        e.value is! String,
+                  )) ||
           row['excludedIds'] != null &&
               (row['excludedIds'] is! List ||
                   (row['excludedIds'] as List).any((v) => v is! String)) ||
@@ -234,6 +261,13 @@ class SourceSubscriptionSync {
         enabled: raw['enabled'] != false,
         checkedAt: DateTime.tryParse('${raw['checkedAt']}'),
         error: '${raw['error'] ?? ''}',
+        autoInstallNew: raw['autoInstallNew'] == true,
+        pending: (raw['pending'] as Map? ?? {}).map(
+          (key, value) => MapEntry('$key', '$value'),
+        ),
+        approvedUrls: (raw['approvedUrls'] as List? ?? [])
+            .whereType<String>()
+            .toSet(),
         excludedIds: (raw['excludedIds'] as List? ?? [])
             .whereType<String>()
             .toSet(),
@@ -248,6 +282,8 @@ class SourceSubscriptionSync {
       } else {
         normalized = true;
         existing.members.addAll(record.members);
+        existing.pending.addAll(record.pending);
+        existing.approvedUrls.addAll(record.approvedUrls);
         existing.excludedIds.addAll(record.excludedIds);
         existing.enabled = existing.enabled || record.enabled;
         existing.checkedAt = null;
@@ -270,7 +306,10 @@ class SourceSubscriptionSync {
     temp.renameSync(file.path);
   }
 
-  Future<void> register(Iterable<String> urls) async {
+  Future<void> register(
+    Iterable<String> urls, {
+    bool autoInstallNew = false,
+  }) async {
     for (final raw in urls) {
       final url = SubscriptionCatalog.canonical(raw.trim(), section);
       if (!_validUrl(url)) throw const FormatException('订阅地址须为完整 HTTP(S) 地址');
@@ -278,7 +317,9 @@ class SourceSubscriptionSync {
           .where((record) => record.url == url)
           .firstOrNull;
       if (existing == null) {
-        subscriptions.add(SavedSourceSubscription(url));
+        subscriptions.add(
+          SavedSourceSubscription(url, autoInstallNew: autoInstallNew),
+        );
       } else {
         existing.excludedIds.clear();
         existing.checkedAt = null;
@@ -451,6 +492,14 @@ class SourceSubscriptionSync {
                         SubscriptionCatalog.sameSourceUrl(s.originUrl, ref.url),
                   )
                   .firstOrNull;
+              final installed = old ?? before[declaredId];
+              if (installed == null &&
+                  !record.autoInstallNew &&
+                  !record.approvedUrls.contains(ref.url)) {
+                record.pending[ref.url] = declaredName;
+                result.pending++;
+                continue;
+              }
               if (old != null &&
                   await manager.exportScript(old.id) == ref.script) {
                 next[old.id] = ref.url;
@@ -468,6 +517,8 @@ class SourceSubscriptionSync {
                 continue;
               }
               next[descriptor.id] = ref.url;
+              record.pending.remove(ref.url);
+              record.approvedUrls.remove(ref.url);
               if (before.containsKey(descriptor.id)) {
                 result.updated++;
                 changes.add({
@@ -490,6 +541,9 @@ class SourceSubscriptionSync {
             }
           }
           if (complete) {
+            final available = refs.map((ref) => ref.url).toSet();
+            record.pending.removeWhere((url, _) => !available.contains(url));
+            record.approvedUrls.removeWhere((url) => !available.contains(url));
             for (final old in record.members.entries) {
               if (next.containsKey(old.key)) continue;
               if (subscriptions.any(

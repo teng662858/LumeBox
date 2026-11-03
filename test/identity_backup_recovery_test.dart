@@ -363,6 +363,42 @@ PRAGMA user_version = 4;
       expect(backup.warnings.single, contains('appearance_settings.json'));
     },
   );
+  test('选择恢复设置时保留未选中的订阅，并可预览备份内容', () async {
+    final backup = ConfigurationBackup(catService: CatService.testing());
+    final subscriptionFile = File(
+      '${root.path}/sections/video/subscriptions.json',
+    );
+    await subscriptionFile.parent.create(recursive: true);
+    final original = jsonEncode({
+      'subscriptions': [
+        {'url': 'https://keep.example/list', 'enabled': false},
+      ],
+    });
+    await subscriptionFile.writeAsString(original);
+    final text = jsonEncode({
+      'format': 'lumebox-configuration',
+      'version': 2,
+      'createdAt': '2026-11-03',
+      'files': {
+        'app_preferences.json': {'autoBackup': false},
+      },
+      'sections': {},
+      'subscriptions': {
+        'video': {'subscriptions': []},
+      },
+    });
+    expect((await backup.preview(text))['createdAt'], '2026-11-03');
+    await backup.restore(text, parts: {ConfigurationRestorePart.settings});
+    expect(await subscriptionFile.readAsString(), original);
+    expect(
+      jsonDecode(
+        await File('${root.path}/app_preferences.json').readAsString(),
+      ),
+      {'autoBackup': false},
+    );
+    await expectLater(backup.restore(text, parts: {}), throwsFormatException);
+  });
+
   test('malformed subscriptions and mismatched identities fail before any settings mutation', () async {
     final backup = ConfigurationBackup(catService: CatService.testing());
     final data =
