@@ -13,6 +13,13 @@ import 'package:lume_box/core/player/player_settings.dart';
 /// 用替身引擎驱动 [MpvPlayer]——libmpv 通过 [MpvEngine] 端口挡在外面，
 /// 因此没有原生库的机器（含 CI）也能把这条链路验完。
 void main() {
+  test('MPV 字幕位置使用范围内的整数百分比', () {
+    expect(MpvProperties.subtitlePosition(0), '100');
+    expect(MpvProperties.subtitlePosition(0.123), '98');
+    expect(MpvProperties.subtitlePosition(1), '80');
+    expect(MpvProperties.subtitlePosition(-1), '100');
+    expect(MpvProperties.subtitlePosition(10), '0');
+  });
   late _FakeMpvEngine engine;
   late MpvPlayer player;
 
@@ -56,16 +63,17 @@ void main() {
 
   test('applySettings：倍速与字幕开关都下发给引擎', () async {
     await player.applySettings(
-      const PlayerSettings(kernel: PlayerKernel.mpv, subtitlesEnabled: false)
-          .copyWith(speed: 1.5),
+      const PlayerSettings(
+        kernel: PlayerKernel.mpv,
+        subtitlesEnabled: false,
+      ).copyWith(speed: 1.5),
     );
 
     expect(engine.speed, 1.5);
     expect(engine.subtitleEnabled, isFalse);
 
     await player.applySettings(
-      const PlayerSettings(kernel: PlayerKernel.mpv)
-          .copyWith(speed: 2.0),
+      const PlayerSettings(kernel: PlayerKernel.mpv).copyWith(speed: 2.0),
     );
     expect(engine.speed, 2.0);
     expect(engine.subtitleEnabled, isTrue);
@@ -150,11 +158,9 @@ void main() {
     expect(player.stats.value.chips, contains('1280×720'));
 
     await player.load(PlayerMedia(uri: Uri.parse('https://example.com/b.mp4')));
-    expect(
-      player.stats.value.chips,
-      <String>['MPV'],
-      reason: '换片后旧参数必须消失，等引擎给出新参数再显示',
-    );
+    expect(player.stats.value.chips, <String>[
+      'MPV',
+    ], reason: '换片后旧参数必须消失，等引擎给出新参数再显示');
   });
 
   test('buildView：用引擎给的渲染面（上层不感知 media_kit）', () {
@@ -198,8 +204,12 @@ void main() {
         },
       );
       // 硬解
-      expect(MpvProperties.hardwareDecoding(true), <String, String>{'hwdec': 'auto'});
-      expect(MpvProperties.hardwareDecoding(false), <String, String>{'hwdec': 'no'});
+      expect(MpvProperties.hardwareDecoding(true), <String, String>{
+        'hwdec': 'auto',
+      });
+      expect(MpvProperties.hardwareDecoding(false), <String, String>{
+        'hwdec': 'no',
+      });
       // 延迟：libmpv 的单位是**秒**，可负
       expect(
         MpvProperties.subtitleDelay(const Duration(milliseconds: -1500)),
@@ -241,8 +251,11 @@ void main() {
         const PlayerSettings(kernel: PlayerKernel.mpv, hardwareDecoding: false),
       );
 
-      expect(engine.buffering, BufferingConfig.defaults,
-          reason: '缓冲配置照样下发到引擎端口（写不写得进去由引擎自己决定）');
+      expect(
+        engine.buffering,
+        BufferingConfig.defaults,
+        reason: '缓冲配置照样下发到引擎端口（写不写得进去由引擎自己决定）',
+      );
       expect(engine.hardwareDecoding, isFalse);
       expect(engine.opened, isNotNull);
     });
@@ -317,8 +330,7 @@ class _FakeMpvEngine implements MpvEngine {
   Duration? subtitleDelay;
 
   @override
-  Future<void> setSubtitleDelay(Duration delay) async =>
-      subtitleDelay = delay;
+  Future<void> setSubtitleDelay(Duration delay) async => subtitleDelay = delay;
 
   /// 硬件解码开关（引擎端口新增能力；假引擎只记录）。
   bool? hardwareDecoding;

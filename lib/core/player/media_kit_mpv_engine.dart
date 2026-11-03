@@ -518,7 +518,7 @@ class MediaKitMpvEngine
       'sub-back-color':
           '#${(style.backgroundOpacity * 255).round().toRadixString(16).padLeft(2, '0')}000000',
       'sub-shadow-offset': '${style.shadowStrength * 2.5}',
-      'sub-pos': '${(100 - style.offsetY * 20).clamp(0, 100)}',
+      'sub-pos': MpvProperties.subtitlePosition(style.offsetY),
       'sub-font': style.fontFamily.isEmpty ? 'sans-serif' : style.fontFamily,
     });
   }

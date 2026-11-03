@@ -192,6 +192,10 @@ class MpvProperties {
     'audio-delay': _seconds(delay),
   };
 
+  /// libmpv 的 sub-pos 是整数百分比，不能传入 100.0 一类浮点字符串。
+  static String subtitlePosition(double offsetY) =>
+      (100 - offsetY * 20).clamp(0, 100).round().toString();
+
   static String _seconds(Duration value) =>
       '${value.inMicroseconds / Duration.microsecondsPerSecond}';
 }
