@@ -17,6 +17,158 @@ TmdbSettings settings() => TmdbSettings()
   ..apiKey = 'fixture-key';
 
 void main() {
+  Future<void> settleController(TmdbDetailController controller) async {
+    for (var i = 0; i < 100 && controller.loading; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+  }
+
+  test('同源同作品重复进入先恢复已确认缓存，其他作品不复用', () async {
+    final config = settings();
+    var requests = 0;
+    TmdbClient createClient() => TmdbClient(
+      config,
+      client: MockClient((request) async {
+        requests++;
+        if (request.url.path.endsWith('/search/multi')) {
+          return json({
+            'results': [
+              {'id': 1, 'media_type': 'tv', 'name': '测试剧'},
+            ],
+          });
+        }
+        return json({
+          'name': '测试剧',
+          'images': {
+            'posters': [
+              {'file_path': '/poster.jpg'},
+            ],
+          },
+        });
+      }),
+    );
+    final first = TmdbDetailController(
+      '测试剧',
+      settings: config,
+      client: createClient(),
+      autoLoad: false,
+      cacheIdentity: 'source|item|测试剧',
+    );
+    first.updateTitles(['测试剧']);
+    await settleController(first);
+    await config.flush();
+    expect(first.metadata, isNotNull);
+    first.dispose();
+    final previous = requests;
+    final second = TmdbDetailController(
+      '测试剧',
+      settings: config,
+      client: createClient(),
+      autoLoad: false,
+      cacheIdentity: 'source|item|测试剧',
+    );
+    final other = TmdbDetailController(
+      '测试剧',
+      settings: config,
+      client: createClient(),
+      autoLoad: false,
+      cacheIdentity: 'other|item|测试剧',
+    );
+    await second.restoreCached();
+    await other.restoreCached();
+    expect(second.metadata!.posters.single, endsWith('/poster.jpg'));
+    expect(other.metadata, isNull);
+    expect(requests, previous);
+    second.dispose();
+    other.dispose();
+  });
+
+  test('空结果自动补试一次后恢复，不需要点击重新匹配', () async {
+    final config = settings();
+    var searches = 0;
+    final client = TmdbClient(
+      config,
+      client: MockClient((request) async {
+        if (request.url.path.endsWith('/search/multi')) {
+          searches++;
+          return json({
+            'results': searches == 1
+                ? []
+                : [
+                    {'id': 1, 'media_type': 'tv', 'name': '测试剧'},
+                  ],
+          });
+        }
+        return json({'name': '测试剧', 'images': {}});
+      }),
+    );
+    final controller = TmdbDetailController(
+      '测试剧',
+      settings: config,
+      client: client,
+      automaticRetryDelay: const Duration(milliseconds: 1),
+    );
+    for (var i = 0; i < 100 && controller.metadata == null; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(controller.metadata, isNotNull);
+    expect(searches, 2);
+    controller.dispose();
+  });
+
+  test('持续空结果只补试一次，同名歧义不自动重试', () async {
+    for (final ambiguous in [false, true]) {
+      final config = settings();
+      var searches = 0;
+      final client = TmdbClient(
+        config,
+        client: MockClient((request) async {
+          searches++;
+          return json({
+            'results': ambiguous
+                ? [
+                    {'id': 1, 'media_type': 'tv', 'name': '测试剧'},
+                    {'id': 2, 'media_type': 'movie', 'title': '测试剧'},
+                  ]
+                : [],
+          });
+        }),
+      );
+      final controller = TmdbDetailController(
+        '测试剧',
+        settings: config,
+        client: client,
+        automaticRetryDelay: const Duration(milliseconds: 1),
+      );
+      await settleController(controller);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(searches, ambiguous ? 1 : 2);
+      expect(controller.metadata, isNull);
+      controller.dispose();
+    }
+  });
+
+  test('离开详情页取消待执行的自动补试', () async {
+    final config = settings();
+    var searches = 0;
+    final controller = TmdbDetailController(
+      '测试剧',
+      settings: config,
+      client: TmdbClient(
+        config,
+        client: MockClient((_) async {
+          searches++;
+          return json({'results': []});
+        }),
+      ),
+      automaticRetryDelay: const Duration(milliseconds: 20),
+    );
+    await settleController(controller);
+    controller.dispose();
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    expect(searches, 1);
+  });
+
   test('重复标题请求合并，合并图片响应后冷加载只需搜索和详情两次请求', () async {
     final ready = Completer<void>();
     final paths = <String>[];

@@ -126,7 +126,17 @@ class VideoDetailPage extends StatefulWidget {
 
 class _VideoDetailPageState extends State<VideoDetailPage>
     with NetworkOwnedState<VideoDetailPage> {
-  late final tmdb = TmdbDetailController(widget.item.title, autoLoad: false);
+  late final tmdb = TmdbDetailController(
+    widget.item.title,
+    autoLoad: false,
+    cacheIdentity: (widget.source?.id ?? widget.sourceId) == null
+        ? null
+        : jsonEncode([
+            widget.source?.id ?? widget.sourceId,
+            widget.item.id,
+            widget.item.title,
+          ]),
+  );
   bool _initialChapterApplied = false;
   DataSource? _source;
   DataSource? _updatedSource;

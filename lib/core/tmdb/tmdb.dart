@@ -210,10 +210,20 @@ class TmdbSettings extends ChangeNotifier {
       }
     }());
     final value = _cache[key];
-    return value is Map<String, dynamic> ? TmdbMetadata.fromJson(value) : null;
+    if (value is! Map<String, dynamic>) return null;
+    try {
+      return TmdbMetadata.fromJson(value);
+    } catch (_) {
+      _cache.remove(key);
+      return null;
+    }
   }
 
-  Future<void> cache(String key, TmdbMetadata? value) async {
+  Future<void> cache(
+    String key,
+    TmdbMetadata? value, {
+    bool waitForDisk = true,
+  }) async {
     await cached(key);
     if (value == null) {
       _cache.remove(key);
@@ -225,14 +235,20 @@ class TmdbSettings extends ChangeNotifier {
       }
     }
     final snapshot = jsonEncode(_cache);
-    _cacheWrites = _cacheWrites.catchError((Object _) {}).then((_) async {
-      final file = _file;
-      if (file == null) return;
-      final target = File('${file.parent.path}/tmdb_metadata.json');
-      final temp = File('${target.path}.tmp');
-      await temp.writeAsString(snapshot, flush: true);
-      await temp.rename(target.path);
-    });
+    _cacheWrites = _cacheWrites
+        .catchError((Object _) {})
+        .then((_) async {
+          final file = _file;
+          if (file == null) return;
+          final target = File('${file.parent.path}/tmdb_metadata.json');
+          final temp = File('${target.path}.tmp');
+          await temp.writeAsString(snapshot, flush: true);
+          await temp.rename(target.path);
+        })
+        .catchError((Object _) {
+          // Cache persistence must not delay or fail the detail page.
+        });
+    if (!waitForDisk) return;
     try {
       await _cacheWrites;
     } catch (_) {
@@ -452,6 +468,7 @@ class TmdbClient {
   final _active = <http.Client>{};
   http.Client? _owned;
   final _pending = <String, Future<TmdbMetadata?>>{};
+  bool lastLookupRetryable = false;
   void _changed() {
     for (final client in _active.toList()) {
       client.close();
@@ -479,11 +496,11 @@ class TmdbClient {
       if (!head && settings.usesBearer) {
         request.headers['Authorization'] = 'Bearer ${settings.credential}';
       }
-      final stream = await client
-          .send(request)
-          .timeout(const Duration(seconds: 12));
-      final response = await http.Response.fromStream(stream)
-          .timeout(const Duration(seconds: 12));
+      // One budget covers connection, response headers and body together.
+      final response = await (() async {
+        final stream = await client.send(request);
+        return http.Response.fromStream(stream);
+      })().timeout(const Duration(seconds: 12));
       if (!settings.enabled || settings.revision != revision) {
         throw StateError('TMDB 已关闭或配置已改变');
       }
@@ -720,6 +737,7 @@ class TmdbClient {
     TmdbMatchCandidate? selected,
   }) async {
     lastError = null;
+    lastLookupRetryable = false;
     if (!settings.configured) return null;
     final revision = settings.revision;
     final cacheKey = settings.cacheKey(
@@ -839,7 +857,10 @@ class TmdbClient {
           break;
         }
       }
-      if (match == null) return null;
+      if (match == null) {
+        lastLookupRetryable = true;
+        return null;
+      }
       final type = match['media_type'], id = match['id'];
       final details =
           matchedDetails ??
@@ -984,12 +1005,18 @@ class TmdbClient {
             .where((name) => name.isNotEmpty)
             .toList(),
       );
-      await settings.cache(cacheKey, result);
+      await settings.cache(cacheKey, result, waitForDisk: false);
       return settings.configured && settings.revision == revision
           ? result
           : null;
     } catch (error) {
       // Do not expose URLs or API keys in UI or logs.
+      lastLookupRetryable =
+          error is TimeoutException ||
+          error is SocketException ||
+          error is http.ClientException ||
+          (error is StateError &&
+              RegExp(r'HTTP (429|5\d\d)').hasMatch(error.message));
       lastError = error is StateError
           ? error.message.toString()
           : error is FormatException

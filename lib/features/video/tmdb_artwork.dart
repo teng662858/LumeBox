@@ -2,6 +2,7 @@ import '../../shared/widgets/video_glass_surface.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -16,11 +17,47 @@ class TmdbDetailController extends ChangeNotifier {
     TmdbSettings? settings,
     TmdbClient? client,
     bool autoLoad = true,
+    this.cacheIdentity,
+    this.automaticRetryDelay = const Duration(seconds: 2),
   }) : settings = settings ?? TmdbSettings.instance {
     this.client = client ?? TmdbClient(this.settings);
     this.settings.addListener(refresh);
     if (autoLoad) unawaited(refresh());
+    if (!autoLoad && cacheIdentity != null) unawaited(restoreCached());
   }
+
+  /// Includes the source, item ID and listing title, never just a work title.
+  final String? cacheIdentity;
+  final Duration automaticRetryDelay;
+  Timer? _retryTimer;
+  int _automaticRetries = 0;
+  String? get _identityKey => cacheIdentity == null
+      ? null
+      : jsonEncode(['source-item-v1', settings.cacheKey(''), cacheIdentity]);
+
+  Future<void> restoreCached() async {
+    final key = _identityKey;
+    if (key == null || _closed || _started || !settings.configured) return;
+    final revision = settings.revision;
+    final result = await settings.cached(key);
+    if (_closed ||
+        _started ||
+        settings.revision != revision ||
+        !settings.configured ||
+        result == null) {
+      return;
+    }
+    metadata = result;
+    final preferred = result.posters.indexOf(result.preferredPoster ?? '');
+    index = preferred < 0 ? 0 : preferred;
+    notifyListeners();
+  }
+
+  Future<void> _cacheIdentity(TmdbMetadata? result) async {
+    final key = _identityKey;
+    if (key != null) await settings.cache(key, result, waitForDisk: false);
+  }
+
   String title;
 
   /// 列表标题与详情标题可能不一致（猫源尤其常见）；按顺序回退查询。
@@ -52,10 +89,12 @@ class TmdbDetailController extends ChangeNotifier {
       settings.cacheKey(title, year: _year, mediaType: _mediaType),
       metadata,
     );
+    await _cacheIdentity(metadata);
   }
 
   Future<bool> selectMatch(TmdbMatchCandidate candidate) async {
     if (_closed || !settings.configured) return false;
+    _retryTimer?.cancel();
     final sequence = ++_sequence;
     _timer?.cancel();
     loading = true;
@@ -92,6 +131,7 @@ class TmdbDetailController extends ChangeNotifier {
       );
     }
     notifyListeners();
+    unawaited(_cacheIdentity(result));
     return true;
   }
 
@@ -142,7 +182,12 @@ class TmdbDetailController extends ChangeNotifier {
   }
 
   Timer? _timer;
-  Future<void> refresh({bool force = false}) async {
+  Future<void> refresh({
+    bool force = false,
+    bool automaticRetry = false,
+  }) async {
+    _retryTimer?.cancel();
+    if (!automaticRetry) _automaticRetries = 0;
     _started = true;
     final sequence = ++_sequence;
     _timer?.cancel();
@@ -152,6 +197,8 @@ class TmdbDetailController extends ChangeNotifier {
     index = 0;
     if (!_closed) notifyListeners();
     if (!settings.configured) return;
+    if (force) await _cacheIdentity(null);
+    if (_closed || sequence != _sequence || !settings.configured) return;
     TmdbMetadata? result;
     for (final candidate in <String>[title, ..._alternateTitles]) {
       result = await client.lookup(
@@ -183,6 +230,17 @@ class TmdbDetailController extends ChangeNotifier {
       );
     }
     notifyListeners();
+    unawaited(_cacheIdentity(result));
+    if (result == null && client.lastLookupRetryable && _automaticRetries < 1) {
+      _automaticRetries++;
+      status = '暂未取得 TMDB 资料，将自动重试一次';
+      notifyListeners();
+      _retryTimer = Timer(automaticRetryDelay, () {
+        if (!_closed && sequence == _sequence && settings.configured) {
+          unawaited(refresh(automaticRetry: true));
+        }
+      });
+    }
   }
 
   void show(int value) {
@@ -197,6 +255,7 @@ class TmdbDetailController extends ChangeNotifier {
     _sequence++;
     _timer?.cancel();
     settings.removeListener(refresh);
+    _retryTimer?.cancel();
     client.dispose();
     super.dispose();
   }
