@@ -1,3 +1,4 @@
+import '../video/playback_entry_preparation.dart';
 import '../../core/media/playback_focus.dart';
 
 import 'package:flutter/material.dart';
@@ -33,15 +34,25 @@ Future<void> openMediaResource(
     await PlaybackFocus.acquire('video');
     final media = await service.resolve(entry, entry.episodes[index ?? 0]);
     if (!context.mounted) return;
+    final playback = PlayerMedia(
+      uri: media.url,
+      headers: media.headers,
+      title: entry.title,
+    );
+    final prepared = await preparePlaybackRoute(
+      playback,
+      stillActive: () => context.mounted,
+    );
+    if (!context.mounted) {
+      await prepared?.discard();
+      return;
+    }
     await Navigator.push(
       context,
       MaterialPageRoute<void>(
         builder: (_) => VideoPlayerPage(
-          media: PlayerMedia(
-            uri: media.url,
-            headers: media.headers,
-            title: entry.title,
-          ),
+          media: playback,
+          prelaunch: prepared,
           title: entry.title,
         ),
       ),

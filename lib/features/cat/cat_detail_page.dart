@@ -236,6 +236,8 @@ class _CatDetailPageState extends State<CatDetailPage>
         await preparePlaybackEntry(prelaunch, media, settings);
         if (!mounted) return;
       }
+      await applyPlaybackEntryOrientation(prelaunch);
+      if (!mounted) return;
       final transferred = prelaunch;
       openedPlayer = true;
       final opening = Navigator.push(

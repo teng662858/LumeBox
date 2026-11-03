@@ -1013,9 +1013,21 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('列表先详情，点击选集直接创建一个全屏实例，旋转复用，返回详情', (tester) async {
+  testWidgets('列表先详情，尺寸预备后直接横屏入场，复用一个实例并返回详情', (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
+    final entryDirections = <List<dynamic>>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'SystemChrome.setPreferredOrientations') {
+        entryDirections.add(call.arguments as List<dynamic>);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
     final players = <RoutePlayer>[];
     final loadGate = Completer<void>();
     addTearDown(() {
@@ -1067,8 +1079,8 @@ void main() {
     await tester.pump();
     expect(
       find.byType(VideoPlayerPage),
-      findsOneWidget,
-      reason: '解码器 load 仍未完成时，播放页就应已经打开',
+      findsNothing,
+      reason: '先在详情页等待同一个内核读取尺寸，避免先竖屏再横屏',
     );
     expect(loadGate.isCompleted, isFalse);
     loadGate.complete();
@@ -1076,6 +1088,10 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
     await tester.pumpAndSettle();
+    expect(entryDirections.first, [
+      'DeviceOrientation.landscapeLeft',
+      'DeviceOrientation.landscapeRight',
+    ]);
     expect(players.single.loads, 1, reason: '进入播放页只加载一次媒体');
     expect(source.parses, 1);
     expect(players.length, 1);

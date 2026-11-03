@@ -1,3 +1,4 @@
+import 'danmaku_models.dart';
 import '../../../shared/widgets/native_glass_controls.dart';
 import 'danmaku_panel.dart';
 
@@ -29,6 +30,7 @@ class DanmakuSettingsSheet extends StatefulWidget {
     this.publicCount = 0,
     this.loading = false,
     this.onClearMatch,
+    this.preview = const [],
   });
 
   final DanmakuSettings settings;
@@ -43,6 +45,7 @@ class DanmakuSettingsSheet extends StatefulWidget {
   final VoidCallback? onReload, onClearMatch;
   final String? videoTitle, episodeTitle, serviceLabel, matchLabel;
   final int sourceCount, publicCount;
+  final List<DanmakuItem> preview;
   final bool loading;
 
   @override
@@ -210,6 +213,47 @@ class _DanmakuSettingsSheetState extends State<DanmakuSettingsSheet> {
             fontSize: 12,
             height: 1.2,
             color: colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        DecoratedBox(
+          key: const ValueKey('danmaku-episode-preview'),
+          decoration: BoxDecoration(
+            color: colors.surface.withValues(alpha: .3),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '本集弹幕预览',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                if (widget.preview.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      widget.loading
+                          ? '正在读取本集弹幕…'
+                          : '本集暂无可预览的弹幕，可尝试手动匹配或更换弹幕服务。',
+                      style: TextStyle(color: colors.onSurfaceVariant),
+                    ),
+                  )
+                else
+                  for (final item in widget.preview.take(8))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        '${item.time.inMinutes.toString().padLeft(2, '0')}:${(item.time.inSeconds % 60).toString().padLeft(2, '0')}  ${item.text}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+              ],
+            ),
           ),
         ),
       ],

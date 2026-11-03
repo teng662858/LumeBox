@@ -6,6 +6,7 @@ import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/video/video_detail_page.dart';
+import 'package:lume_box/features/novel/novel_reader_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -107,4 +108,28 @@ class _PreviewSource implements DataSource {
       List.generate(12, (_) => paragraphs.join('\n\n')).join('\n\n'),
     );
   }
+}
+
+Future<void> openNovelReaderPreview(BuildContext context) async {
+  final library =
+      ReadingLibrary.find(Section.video) ??
+      await ReadingLibrary.open(Section.video);
+  final source = _PreviewSource();
+  final chapters = await source.chapters('mountain');
+  if (!context.mounted) return;
+  await Navigator.push<void>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => NovelReaderPage(
+        source: source,
+        library: library,
+        target: ReadingTarget(
+          sourceId: source.id,
+          itemId: 'mountain',
+          title: '山间来信（示例正文）',
+        ),
+        chapters: chapters,
+      ),
+    ),
+  );
 }

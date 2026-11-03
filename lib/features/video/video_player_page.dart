@@ -2434,6 +2434,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           status: _publicDanmakuStatus,
           sourceCount: _sourceDanmakuCount,
           publicCount: _publicDanmakuCount,
+          preview: _danmaku.items.take(8).toList(growable: false),
           loading: _publicDanmakuLoading,
           videoTitle: _target?.title,
           episodeTitle: _target?.chapterTitle,
@@ -4335,13 +4336,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   ),
                 ),
                 const SizedBox(width: 4),
-                if (!narrow) _buildPipButton(),
-                const SizedBox(width: 4),
+                if (!narrow) ...[_buildPipButton(), const SizedBox(width: 8)],
                 _topIcon(
                   icon: VideoPlayerPage.playerKernelIcon,
                   tooltip: '播放内核',
                   onPressed: _openKernelPicker,
                 ),
+                const SizedBox(width: 8),
                 _topIcon(
                   icon: Icons.more_horiz,
                   tooltip: '播放器设置',
@@ -4416,8 +4417,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       return Tooltip(
         message: tooltip,
         child: SizedBox(
-          width: 32,
-          height: 36,
+          width: 48,
+          height: 48,
           child: TextButton(
             onPressed: onPressed,
             style: TextButton.styleFrom(
@@ -5861,7 +5862,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   Widget _buildPipButton() {
     final session = _session;
     if (session == null) {
-      return _compactIcon(
+      return _topIcon(
         icon: Icons.picture_in_picture_alt,
         tooltip: '画中画：正在准备',
         onPressed: null,
@@ -5874,7 +5875,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         if (snapshot.state == PipState.unavailable) {
           return const SizedBox.shrink();
         }
-        return _compactIcon(
+        return _topIcon(
           icon: snapshot.isActive
               ? Icons.picture_in_picture
               : Icons.picture_in_picture_alt,

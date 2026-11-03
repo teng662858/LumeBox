@@ -8,6 +8,25 @@ import 'package:flutter/material.dart';
 import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
 
+/// Preserve every UTF-16 offset while giving blank paragraph lines a compact
+/// height. Pagination and painting must use this identical span tree.
+TextSpan novelBodySpan(String text, TextStyle style) {
+  final children = <InlineSpan>[];
+  var cursor = 0;
+  for (final match in RegExp(r'\n[ \t]*\n+').allMatches(text)) {
+    children.add(TextSpan(text: text.substring(cursor, match.start + 1)));
+    children.add(
+      TextSpan(
+        text: text.substring(match.start + 1, match.end),
+        style: style.copyWith(fontSize: (style.fontSize ?? 20) * .4, height: 1),
+      ),
+    );
+    cursor = match.end;
+  }
+  children.add(TextSpan(text: text.substring(cursor)));
+  return TextSpan(style: style, children: children);
+}
+
 /// Paginate actual body text using the same dimensions/scaler as the rendered
 /// page. Checkpoints are UTF-16 offsets, never screen-dependent page numbers.
 List<int> novelPageStarts(
@@ -26,10 +45,7 @@ List<int> novelPageStarts(
       // Bound layout work for long chapters; grow only when the page fits.
       var limit = (start + 4096).clamp(0, text.length);
       while (true) {
-        painter.text = TextSpan(
-          text: text.substring(start, limit),
-          style: style,
-        );
+        painter.text = novelBodySpan(text.substring(start, limit), style);
         painter.layout(maxWidth: size.width);
         if (painter.height > size.height || limit == text.length) break;
         limit = (limit + 4096).clamp(0, text.length);
@@ -86,7 +102,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   String _text = '';
   String? _error;
   bool _loading = true;
-  double _font = 20, _height = 1.8;
+  double _font = 20, _height = 1.5;
   int _theme = 0;
   List<int> _starts = [0];
   String? _layoutKey;
@@ -103,7 +119,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
             .clamp(14, 32);
     _height =
         (double.tryParse(widget.library.setting('novel.lineHeight') ?? '') ??
-                1.8)
+                1.5)
             .clamp(1.3, 2.3);
     _theme = (int.tryParse(widget.library.setting('novel.theme') ?? '') ?? 0)
         .clamp(0, 2);
@@ -337,7 +353,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
             : SafeArea(
                 top: false,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       final scaler = MediaQuery.textScalerOf(context);
@@ -395,14 +411,16 @@ class _NovelReaderPageState extends State<NovelReaderPage>
                         },
                         itemBuilder: (context, index) => Align(
                           alignment: Alignment.topLeft,
-                          child: Text(
-                            _text.substring(
-                              _starts[index],
-                              index + 1 < _starts.length
-                                  ? _starts[index + 1]
-                                  : _text.length,
+                          child: Text.rich(
+                            novelBodySpan(
+                              _text.substring(
+                                _starts[index],
+                                index + 1 < _starts.length
+                                    ? _starts[index + 1]
+                                    : _text.length,
+                              ),
+                              style,
                             ),
-                            style: style,
                             textScaler: scaler,
                             textDirection: direction,
                           ),

@@ -1,4 +1,4 @@
-// LumeSource: {"id":"alicesw_comic","name":"爱丽丝书屋","version":"1.1.1","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.alicesw.com","https://www.alicesw1.homes","https://www.alicesw.tw"],"network":"proxy","icon":"https://www.alicesw.com/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（alicesw.click）","url":"https://alicesw.click/","description":"官方发布页：海外永久地址 alicesw.com，大陆地址 alicesw.quest，大陆备用 alicesw1.homes，繁体站 alicesw.tw"},{"key":"note","type":"info","title":"站点说明","description":"爱丽丝书屋（成人小说站，全站 18+，diyquge 模板）：题材分类 /lists/{id}.html、总列表 /all/order/{排序}+desc.html、排行 /other/rank_hits/order/hits*.html、详情 /novel/{id}.html、目录 /other/chapters/id/{id}.html、正文 /book/{书号}/{章节}.html。正文是纯文本 <p> 段落。主站与镜像都在境外（解析到 38.46.217.x），源站会按 IP 拒美国 Utah，其他地区正常；本源走代理更稳。"}]}
+// LumeSource: {"id":"alicesw_comic","name":"爱丽丝书屋","version":"1.1.2","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.alicesw.com","https://www.alicesw1.homes","https://www.alicesw.tw"],"network":"proxy","icon":"https://www.alicesw.com/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（alicesw.click）","url":"https://alicesw.click/","description":"官方发布页：海外永久地址 alicesw.com，大陆地址 alicesw.quest，大陆备用 alicesw1.homes，繁体站 alicesw.tw"},{"key":"note","type":"info","title":"站点说明","description":"爱丽丝书屋（成人小说站，全站 18+，diyquge 模板）：题材分类 /lists/{id}.html、总列表 /all/order/{排序}+desc.html、排行 /other/rank_hits/order/hits*.html、详情 /novel/{id}.html、目录 /other/chapters/id/{id}.html、正文 /book/{书号}/{章节}.html。正文是纯文本 <p> 段落。主站与镜像都在境外（解析到 38.46.217.x），源站会按 IP 拒美国 Utah，其他地区正常；本源走代理更稳。"}]}
 // LumeRuntime: javascript
 //
 // 站点：爱丽丝书屋（https://www.alicesw.com，成人网络小说站，全站 18+）
@@ -50,11 +50,42 @@ var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605
 var PAGE_SIZE = 31; // 站点列表页实测 30–31 条/页
 
 // ---------------------------------------------------------------- 基础设施
+var KNOWN_BASES = ['https://www.alicesw.com', 'https://www.alicesw1.homes', 'https://www.alicesw.tw'];
+var activeBase = '', configuredBase = '', restoredBase = false;
+
 function base() {
   var domain = LumeSource.config && LumeSource.config.domain ? String(LumeSource.config.domain) : '';
   var text = String(domain || SEED).replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(text)) text = 'https://' + text;
-  return text;
+  if (configuredBase !== text) {
+    configuredBase = text;
+    activeBase = '';
+    restoredBase = false;
+  }
+  return activeBase || text;
+}
+
+async function restoreBase() {
+  base();
+  if (restoredBase) return;
+  restoredBase = true;
+  try {
+    var raw = await LumeSource.fs.readText('active-site.json');
+    var saved = raw ? JSON.parse(raw) : null;
+    if (saved && saved.configured === configuredBase &&
+        KNOWN_BASES.indexOf(saved.origin) >= 0 && Date.now() - saved.time < 12 * 3600000) {
+      activeBase = saved.origin;
+    }
+  } catch (_) {}
+}
+
+function isChallenge(reply) {
+  var body = String(reply && reply.body || '').toLowerCase();
+  var map = reply && reply.headers || {};
+  for (var key in map) {
+    if (key.toLowerCase() === 'cf-mitigated' && String(map[key]).toLowerCase() === 'challenge') return true;
+  }
+  return /just a moment|cf-chl-|__cf_chl|checking your browser/.test(body);
 }
 
 function abs(path) {
@@ -119,6 +150,7 @@ function headers(extra) {
 }
 
 async function getPage(path, extraHeaders) {
+  await restoreBase();
   var url = abs(path);
   var reply;
   try {
@@ -128,8 +160,33 @@ async function getPage(path, extraHeaders) {
   }
   var status = reply ? Number(reply.status) || 0 : 0;
   var html = String((reply && reply.body) || '');
-  if (status === 403 || status === 429 || status === 503) {
-    throw new Error('NEED_WEBVIEW_VERIFY：爱丽丝书屋返回 HTTP ' + status + '（可能触发了源站风控），请在网页视图里过一遍校验');
+  if (status === 403 && !isChallenge(reply) && KNOWN_BASES.indexOf(base()) >= 0 && !/^https?:/i.test(path)) {
+    // Plain 403 can be an IP/region denial, not a browser challenge.
+    // Try only the source's known same-content mirrors, never arbitrary hosts.
+    for (var n = 0; n < KNOWN_BASES.length; n++) {
+      var candidate = KNOWN_BASES[n];
+      if (candidate === base()) continue;
+      try {
+        var alternate = await LumeSource.http.get(candidate + path, { headers: headers({ Referer: candidate + '/' }) });
+        if (Number(alternate.status) !== 200 || isChallenge(alternate) || String(alternate.body || '').length < 400) continue;
+        activeBase = candidate;
+        reply = alternate;
+        status = 200;
+        html = String(reply.body || '');
+        url = candidate + path;
+        try { await LumeSource.fs.writeText('active-site.json', JSON.stringify({configured: configuredBase, origin: candidate, time: Date.now()})); } catch (_) {}
+        break;
+      } catch (_) {}
+    }
+  }
+  if (isChallenge(reply)) {
+    throw new Error('NEED_WEBVIEW_VERIFY：爱丽丝书屋确实返回网页挑战，请完成一次校验后重试：' + url);
+  }
+  if (status === 429 || status === 503) {
+    throw new Error('爱丽丝书屋限流或暂时不可用（HTTP ' + status + '），请稍后重试：' + url);
+  }
+  if (status === 403) {
+    throw new Error('爱丽丝书屋拒绝当前网络出口（HTTP 403），请检查代理或切换镜像；不是已确认的 CF 校验：' + url);
   }
   if (status === 404) return { html: '', url: url, status: status };
   if (status !== 200) throw new Error('爱丽丝书屋返回 HTTP ' + status + '：' + url);
@@ -517,7 +574,7 @@ function parseHomeSection(segment) {
 var LumeSource = {
   id: 'alicesw_comic',
   name: '爱丽丝书屋',
-  version: '1.1.1',
+  version: '1.1.2',
   category: 'comic',
   contentCategory: 'adult',
 

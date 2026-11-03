@@ -1056,6 +1056,27 @@ void main() {
       expect(find.byTooltip('画质'), findsNothing);
     });
 
+    testWidgets('返回与右上角图标至少48点击区域，按钮间保留8间距', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(932, 430));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pump(tester);
+      await tester.tap(find.byTooltip('全屏'));
+      await tester.pumpAndSettle();
+      final back = tester.getRect(find.byTooltip('退出全屏'));
+      final kernel = tester.getRect(find.byTooltip('播放内核'));
+      final settings = tester.getRect(find.byTooltip('播放器设置'));
+      expect(back.width, greaterThanOrEqualTo(48));
+      expect(back.height, greaterThanOrEqualTo(48));
+      expect(settings.left - kernel.right, greaterThanOrEqualTo(8));
+      await tester.tapAt(back.topLeft + const Offset(3, 3));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('fullscreen-controls')),
+        findsNothing,
+        reason: '点击箭头外围仍能返回，不要求点中细箭头',
+      );
+    });
+
     testWidgets('横屏按钮外移后左右边距为系统安全区加8，点击框至少44', (tester) async {
       await pump(tester);
       await tester.tap(find.byTooltip('全屏'));

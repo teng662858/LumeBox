@@ -7,6 +7,8 @@ import 'package:lume_box/core/security/local_cipher.dart';
 import 'package:lume_box/features/settings/content_visibility_page.dart';
 
 import 'danmaku_redesign_preview.dart';
+import 'novel_reader_preview.dart' show openNovelReaderPreview;
+import 'android_player_preview.dart' show AndroidPlayerPreview;
 
 import 'dart:io';
 
@@ -179,6 +181,21 @@ class _PreviewState extends State<SourcePickerUnifiedPreview> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text('使用生产面板组件，示例数据独立存储'),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => openNovelReaderPreview(context),
+                child: const Text('小说阅读（留白调整）'),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AndroidPlayerPreview(),
+                  ),
+                ),
+                child: const Text('播放器（横竖屏与按钮）'),
+              ),
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: () => openComic(context),

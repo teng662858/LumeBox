@@ -12,6 +12,89 @@ import 'js_sandbox/support/js_sandbox_support.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final available = installBridge();
+  for (final challenge in [false, true]) {
+    test('限流不会误报CF，真实挑战仍保留验证提示：challenge=$challenge', () async {
+      expect(available, isTrue);
+      enableEngineOnThisPlatform();
+      final engine = await LumeJsEngine.create(
+        sourceId: 'alice-challenge-$challenge',
+        section: Section.comic,
+        http: LumeHttp(
+          client: MockClient(
+            (_) async => http.Response(
+              challenge ? '<title>Just a moment</title>' : 'Too many requests',
+              challenge ? 403 : 429,
+              headers: {'content-type': 'text/html; charset=utf-8'},
+            ),
+          ),
+          source: 'alice-check',
+        ),
+      );
+      try {
+        expect(
+          await engine.loadScript(
+            File('sources/comic/alicesw.js').readAsStringSync(),
+          ),
+          isTrue,
+        );
+        final result = await engine.callResult('list', {'page': 1});
+        expect(result.isOk, isFalse);
+        expect(
+          result.error!.message.contains('NEED_WEBVIEW_VERIFY'),
+          challenge,
+        );
+      } finally {
+        engine.dispose();
+      }
+    });
+  }
+
+  test('普通403自动选择已知镜像并在下次请求复用，不要求点网页视图', () async {
+    expect(available, isTrue);
+    enableEngineOnThisPlatform();
+    var primary = 0;
+    final engine = await LumeJsEngine.create(
+      sourceId: 'alice-mirror',
+      section: Section.comic,
+      http: LumeHttp(
+        client: MockClient((request) async {
+          if (request.url.host == 'www.alicesw.com') {
+            primary++;
+            return http.Response('Access Denied'.padRight(500), 403);
+          }
+          final body = request.url.path.startsWith('/novel/')
+              ? '<h1>测试</h1><div class="imgbox"><img src="https://images.test/a.webp"></div>'
+              : '<li><span class="s2"><a href="/novel/123.html">测试</a></span></li>';
+          return http.Response(
+            body.padRight(500),
+            200,
+            headers: {'content-type': 'text/html; charset=utf-8'},
+          );
+        }),
+        source: 'alice-mirror',
+      ),
+    );
+    try {
+      expect(
+        await engine.loadScript(
+          File('sources/comic/alicesw.js').readAsStringSync(),
+        ),
+        isTrue,
+      );
+      for (var i = 0; i < 2; i++) {
+        final result = await engine.callResult('list', {'page': 1});
+        expect(result.isOk, isTrue, reason: result.error?.message);
+        expect(
+          (((result.value as Map)['items'] as List).single as Map)['cover'],
+          'https://images.test/a.webp',
+        );
+      }
+      expect(primary, 1);
+    } finally {
+      engine.dispose();
+    }
+  });
+
   test('真实QuickJS：慢详情仍回填封面，懒加载图片被解析且详情结果复用', () async {
     expect(available, isTrue);
     enableEngineOnThisPlatform();

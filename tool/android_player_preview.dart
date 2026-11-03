@@ -3,6 +3,9 @@ library;
 
 import 'dart:convert';
 
+import 'package:lume_box/core/player/player_kernel_launcher.dart';
+import 'package:lume_box/features/video/playback_entry_preparation.dart';
+
 import 'package:flutter/material.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/video/direct_video_source.dart';
@@ -38,18 +41,18 @@ Future<void> main() async {
     MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: LumeTheme.build(brightness: Brightness.light),
-      home: const _Home(),
+      home: const AndroidPlayerPreview(),
     ),
   );
 }
 
-class _Home extends StatefulWidget {
-  const _Home();
+class AndroidPlayerPreview extends StatefulWidget {
+  const AndroidPlayerPreview({super.key});
   @override
-  State<_Home> createState() => _HomeState();
+  State<AndroidPlayerPreview> createState() => AndroidPlayerPreviewState();
 }
 
-class _HomeState extends State<_Home> {
+class AndroidPlayerPreviewState extends State<AndroidPlayerPreview> {
   String _result = '测试媒体：原创测试画面／音调，含 OP、正片、ED 章节标记。';
   bool _busy = false;
   @override
@@ -58,7 +61,7 @@ class _HomeState extends State<_Home> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _open());
   }
 
-  void _open({bool portrait = false}) {
+  Future<void> _open({bool portrait = false}) async {
     final uri = portrait
         ? Uri.parse(fixtureURL).resolve('player-portrait-fixture.mp4')
         : Uri.parse(fixtureURL);
@@ -82,13 +85,33 @@ class _HomeState extends State<_Home> {
         return VideoContent(url: uri, qualities: qualities);
       },
     );
-    Navigator.push<void>(
+    final media = PlayerMedia(uri: uri, title: '山海之间 · 第1集');
+    final prelaunch = PlayerPrelaunch.start(
+      PlayerKernel.avplayer,
+      factory: (_) => AvPlayer(),
+    );
+    await preparePlaybackEntry(
+      prelaunch,
+      media,
+      const PlayerSettings(kernel: PlayerKernel.avplayer),
+    );
+    if (!mounted) {
+      await prelaunch.discard();
+      return;
+    }
+    await applyPlaybackEntryOrientation(prelaunch);
+    if (!mounted) {
+      await prelaunch.discard();
+      return;
+    }
+    await Navigator.push<void>(
       context,
       MaterialPageRoute(
         builder: (_) => VideoPlayerPage(
           catalog: const _AndroidPreviewCatalog(),
           playerFactory: (_) => AvPlayer(),
-          media: PlayerMedia(uri: uri, title: '山海之间 · 第1集'),
+          media: media,
+          prelaunch: prelaunch,
           title: '山海之间 · 播放器预览',
           source: source,
           qualities: qualities,

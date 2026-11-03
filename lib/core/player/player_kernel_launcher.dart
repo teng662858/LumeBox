@@ -237,6 +237,7 @@ class PlayerPrelaunch {
       final launch = await pending;
       if (launch == null) return null;
       final player = launch.player;
+      final watch = Stopwatch()..start();
       try {
         await (() async {
           if (settings != null) await player.applySettings(settings);
@@ -256,7 +257,10 @@ class PlayerPrelaunch {
           player.stats.addListener(changed);
           try {
             changed();
-            await ready.future.timeout(const Duration(milliseconds: 700));
+            final remaining = timeout - watch.elapsed;
+            if (remaining > Duration.zero) {
+              await ready.future.timeout(remaining);
+            }
           } on TimeoutException {
             // Keep the loaded player; unknown dimensions never force landscape.
           } finally {

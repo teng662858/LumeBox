@@ -120,6 +120,22 @@ void main() {
       throwsA(isA<SourceException>()),
     );
   });
+  test('压缩段落留白不改正文字符，排版高度确实减少', () {
+    const text = '第一段原文🌸。\n\n第二段原文。\n \n第三段原文。';
+    const style = TextStyle(fontSize: 20, height: 1.5);
+    final span = novelBodySpan(text, style);
+    expect(span.toPlainText(), text);
+    final compact = TextPainter(text: span, textDirection: TextDirection.ltr)
+      ..layout(maxWidth: 380);
+    final original = TextPainter(
+      text: const TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 380);
+    expect(compact.height, lessThan(original.height));
+    compact.dispose();
+    original.dispose();
+  });
+
   test('分页完整覆盖正文，支持大字体和表情，不切开代理对', () {
     final text = List.filled(150, '春风🌸吹过山岗。\n第二行还有文字。\n\n').join();
     for (final width in [220.0, 380.0]) {

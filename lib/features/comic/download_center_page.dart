@@ -1,3 +1,5 @@
+import '../video/playback_entry_preparation.dart';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -98,15 +100,22 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
             )).uri
           : file.uri;
       if (!mounted) return;
+      final media = PlayerMedia(
+        uri: uri,
+        title: '${task.title} · ${task.chapterTitle}',
+      );
+      final prepared = await preparePlaybackRoute(
+        media,
+        stillActive: () => mounted,
+      );
+      if (!mounted) {
+        await prepared?.discard();
+        return;
+      }
       await Navigator.push(
         context,
         MaterialPageRoute<void>(
-          builder: (_) => VideoPlayerPage(
-            media: PlayerMedia(
-              uri: uri,
-              title: '${task.title} · ${task.chapterTitle}',
-            ),
-          ),
+          builder: (_) => VideoPlayerPage(media: media, prelaunch: prepared),
         ),
       );
     } finally {

@@ -1,3 +1,4 @@
+import 'playback_entry_preparation.dart';
 import '../../core/source/source_content_type.dart';
 import '../reading/content_detail_router.dart';
 import '../download/download_selection.dart';
@@ -570,16 +571,22 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         return;
       }
       if (!mounted) return;
-      prepared = widget.prelaunch?.call();
+      final media = PlayerMedia(
+        uri: address,
+        title: '${widget.item.title} · ${VideoEpisodeCatalog.labelOf(chapter)}',
+        headers: SourcePlayback.contentHeaders(content, source: _source!),
+      );
+      prepared = await preparePlaybackRoute(
+        media,
+        library: widget.library,
+        prelaunch: widget.prelaunch?.call(),
+        stillActive: () => mounted,
+      );
+      if (!mounted) return;
       final transferred = prepared;
       prepared = null;
       await widget.onPlay(
-        PlayerMedia(
-          uri: address,
-          title:
-              '${widget.item.title} · ${VideoEpisodeCatalog.labelOf(chapter)}',
-          headers: SourcePlayback.contentHeaders(content, source: _source!),
-        ),
+        media,
         VideoPlayTarget(
           sourceId: _source!.id,
           itemId: widget.item.id,

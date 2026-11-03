@@ -1,3 +1,7 @@
+import 'package:flutter/services.dart';
+import 'package:lume_box/features/video/playback_entry_preparation.dart';
+import 'package:lume_box/core/player/playback_orientation.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -13,8 +17,50 @@ import 'package:lume_box/core/player/player_stats.dart';
 /// 内核启动器的验证（MPV 卡死修复的核心）：异步创建、8 秒超时、
 /// 失败丢弃实例并回退 AVPlayer、失败内核熔断。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => PlayerFactory.clearMpvInitFailure());
   tearDown(() => PlayerFactory.clearMpvInitFailure());
+
+  for (final portrait in [false, true]) {
+    test('入场方向采用迟到1.2秒的真实尺寸：portrait=$portrait', () async {
+      PlaybackOrientationController.instance.resetForTesting();
+      final directions = <List<dynamic>>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'SystemChrome.setPreferredOrientations') {
+          directions.add(call.arguments as List<dynamic>);
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+      final player = _DelayedDimensionsPlayer(portrait);
+      final prelaunch = PlayerPrelaunch.start(
+        PlayerKernel.avplayer,
+        factory: (_) => player,
+      );
+      final media = PlayerMedia(
+        uri: Uri.parse('https://example.test/orientation.mp4'),
+      );
+      await preparePlaybackEntry(prelaunch, media, null);
+      await applyPlaybackEntryOrientation(prelaunch);
+      expect(prelaunch.preparedStats?.width, portrait ? 720 : 1920);
+      expect(
+        directions.single,
+        portrait
+            ? ['DeviceOrientation.portraitUp']
+            : [
+                'DeviceOrientation.landscapeLeft',
+                'DeviceOrientation.landscapeRight',
+              ],
+      );
+      expect((await prelaunch.take())?.player, same(player));
+      expect(player.loads, 1);
+      await player.dispose();
+    });
+  }
 
   test('entry preflight reads portrait dimensions and transfers the same loaded player', () async {
     final player = _PreflightPlayer();
@@ -232,4 +278,27 @@ class _FakePlayer extends AbstractPlayer {
 
   @override
   Future<void> dispose() async => disposals += 1;
+}
+
+class _DelayedDimensionsPlayer extends _FakePlayer {
+  _DelayedDimensionsPlayer(this.portrait) : super(PlayerKernel.avplayer);
+  final bool portrait;
+  Timer? metadata;
+  int loads = 0;
+  @override
+  Future<void> load(PlayerMedia media) async {
+    loads++;
+    metadata = Timer(const Duration(milliseconds: 1200), () {
+      _stats.value = PlayerStats(
+        width: portrait ? 720 : 1920,
+        height: portrait ? 1280 : 1080,
+      );
+    });
+  }
+
+  @override
+  Future<void> dispose() async {
+    metadata?.cancel();
+    await super.dispose();
+  }
 }

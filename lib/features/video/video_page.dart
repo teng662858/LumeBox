@@ -1,3 +1,5 @@
+import 'playback_entry_preparation.dart';
+
 import 'package:lume_box/core/theme/lume_typography.dart';
 
 import '../../core/media/playback_focus.dart';
@@ -245,10 +247,15 @@ class _VideoPageState extends State<VideoPage> {
       return;
     }
     await PlaybackFocus.acquire('video');
-    // Media loading and size discovery belong to the visible player page.
-    // Waiting here duplicates loading and holds the detail page for seconds.
+    final entering =
+        prelaunch ??
+        await preparePlaybackRoute(
+          media,
+          library: _library,
+          stillActive: () => mounted,
+        );
     if (!mounted) {
-      _discardPrelaunch(prelaunch);
+      _discardPrelaunch(entering);
       return;
     }
     _playerRouteOpen = true;
@@ -269,7 +276,7 @@ class _VideoPageState extends State<VideoPage> {
             sourceManager: widget.sourceManager,
             library: _library,
             qualities: qualities,
-            prelaunch: prelaunch,
+            prelaunch: entering,
           ),
         ),
       );

@@ -1,9 +1,32 @@
+import 'package:lume_box/features/video/danmaku/danmaku_models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/features/video/danmaku/danmaku_settings.dart';
 import 'package:lume_box/features/video/danmaku/danmaku_settings_sheet.dart';
 
 void main() {
+  testWidgets('来源页提供本集弹幕预览和空结果说明', (tester) async {
+    Future<void> show(List<DanmakuItem> preview) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DanmakuSettingsSheet(
+            settings: const DanmakuSettings(),
+            onChanged: (_) {},
+            preview: preview,
+          ),
+        ),
+      ),
+    );
+    await show(const []);
+    await tester.pumpAndSettle();
+    expect(find.text('本集弹幕预览'), findsOneWidget);
+    expect(find.textContaining('本集暂无可预览的弹幕'), findsOneWidget);
+    await show(const [DanmakuItem(time: Duration(seconds: 65), text: '测试弹幕')]);
+    await tester.pumpAndSettle();
+    expect(find.text('01:05  测试弹幕'), findsOneWidget);
+    expect(find.textContaining('本集暂无可预览的弹幕'), findsNothing);
+  });
+
   testWidgets(
     'landscape source controls fit in one page and remain actionable',
     (tester) async {
