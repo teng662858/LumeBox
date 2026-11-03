@@ -36,6 +36,8 @@ class NextEpisodeBuffer {
   String? _key;
   PreparedEpisode? _ready;
   bool _preparing = false;
+  Completer<void>? _finished;
+  static const _maxAge = Duration(minutes: 5);
   static String _identity(VideoPlayTarget target, PlayerKernel kernel) =>
       '${target.sourceId}|${target.itemId}|${target.chapterId}|${kernel.id}';
 
@@ -43,12 +45,20 @@ class NextEpisodeBuffer {
     VideoPlayTarget target,
     PlayerSettings settings,
     Future<DataSource?> Function() openSource,
-    AbstractPlayer? Function(PlayerKernel) create,
-  ) async {
+    AbstractPlayer? Function(PlayerKernel) create, {
+    bool refreshNearEnd = false,
+  }) async {
     if (!MediaPreload.instance.video || MediaPreload.instance.clearing) return;
     final key = _identity(target, settings.kernel);
+    if (_key == key &&
+        _ready != null &&
+        DateTime.now().difference(_ready!.at) >
+            (refreshNearEnd ? const Duration(seconds: 30) : _maxAge)) {
+      discard();
+    }
     if (_key == key || _preparing) return;
     _preparing = true;
+    final finished = _finished = Completer<void>();
     discard();
     _key = key;
     final revision = _revision;
@@ -116,6 +126,8 @@ class NextEpisodeBuffer {
     } finally {
       if (player != null) await _dispose(player);
       _preparing = false;
+      if (identical(_finished, finished)) _finished = null;
+      if (!finished.isCompleted) finished.complete();
     }
   }
 
@@ -126,8 +138,7 @@ class NextEpisodeBuffer {
   ) {
     final ready = _ready;
     if (_key != _identity(target, kernel) || ready?.index != index) return null;
-    if (DateTime.now().difference(ready!.at) >
-        Duration(seconds: MediaPreload.instance.triggerSeconds + 30)) {
+    if (DateTime.now().difference(ready!.at) > _maxAge) {
       discard();
       return null;
     }
@@ -135,6 +146,25 @@ class NextEpisodeBuffer {
     _key = null;
     _revision++;
     return ready;
+  }
+
+  /// 若下一集正在准备，短暂等同一任务，避免并发重复解析。
+  Future<PreparedEpisode?> takeWhenReady(
+    VideoPlayTarget target,
+    int index,
+    PlayerKernel kernel,
+  ) async {
+    if (_key == _identity(target, kernel) && index == target.chapterIndex + 1) {
+      final pending = _finished;
+      if (pending != null) {
+        try {
+          await pending.future.timeout(const Duration(seconds: 3));
+        } on TimeoutException {
+          discard();
+        }
+      }
+    }
+    return take(target, index, kernel);
   }
 
   void discard() {

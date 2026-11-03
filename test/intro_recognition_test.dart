@@ -942,6 +942,16 @@ void main() {
     position: Duration(seconds: 10),
     duration: Duration(milliseconds: duration),
   );
+  testWidgets('零秒自动跳过且不显示倒计时', (tester) async {
+    final seeks = <Duration>[];
+    final controller = await ready(tester, seeks);
+    store.update({'countdown': 0});
+    controller.update(within, foreground: true);
+    await tester.pump();
+    expect(controller.prompt, isNull);
+    expect(seeks, [Duration(milliseconds: opening.endMs)]);
+    controller.dispose();
+  });
   testWidgets(
     'cancelling the prompt prevents the timer and repeated snapshots from skipping',
     (tester) async {

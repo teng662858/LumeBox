@@ -200,6 +200,28 @@ void main() {
     expect(buffer.take(target, 1, PlayerKernel.avplayer), isNull);
     expect(player.disposals, 1);
   });
+
+  test('手动下一集等待正在进行的预加载并接手同一个播放器', () async {
+    final buffer = NextEpisodeBuffer();
+    addTearDown(buffer.dispose);
+    final source = _Source();
+    final player = _Player()..loadGate = Completer<void>();
+    final preparing = buffer.prepare(
+      target,
+      const PlayerSettings(),
+      () async => source,
+      (_) => player,
+    );
+    await Future<void>.delayed(Duration.zero);
+    final take = buffer.takeWhenReady(target, 1, PlayerKernel.avplayer);
+    player.loadGate!.complete();
+    final ready = await take;
+    await preparing;
+    expect(ready?.player, same(player));
+    expect(ready?.chapter.id, 'e2');
+    expect(player.disposals, 0);
+    await player.dispose();
+  });
 }
 
 class _Source implements DataSource {

@@ -190,6 +190,19 @@ class _IntroEpisodeSheetState extends State<IntroEpisodeSheet> {
                 padding: EdgeInsets.symmetric(vertical: 12),
                 child: Text('播到片头结束或片尾开始时记住当前位置，后续各集自动沿用。'),
               ),
+              Text(
+                '自动跳过提示：${widget.controller.store.value.countdown == 0 ? '不显示' : '${widget.controller.store.value.countdown} 秒'}',
+              ),
+              Slider(
+                key: const ValueKey('intro-countdown-slider'),
+                value: widget.controller.store.value.countdown.toDouble(),
+                min: 0,
+                max: 5,
+                divisions: 5,
+                onChanged: (value) => widget.controller.store.update({
+                  'countdown': value.round(),
+                }),
+              ),
               FilledButton.icon(
                 key: const ValueKey('intro-remember-opening'),
                 onPressed: () => _rememberCurrent(intro: true),

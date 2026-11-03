@@ -121,7 +121,7 @@ class IntroOptions {
     );
   }
 
-  int get countdown => number('countdown', 5, 3, 15);
+  int get countdown => number('countdown', 5, 0, 5);
   int get scanSeconds => number('scanSeconds', 45, 5, 120);
   int get sampleEverySeconds => number('sampleEverySeconds', 3, 1, 10);
   int get maxSamples => number('maxSamples', 100, 10, 240);

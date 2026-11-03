@@ -221,6 +221,10 @@ class IntroController extends ChangeNotifier {
     if (candidate == null) return;
     prompt = candidate;
     secondsLeft = store.value.countdown;
+    if (store.value.autoSkip && secondsLeft == 0) {
+      unawaited(skipNow(remember: false));
+      return;
+    }
     _notify();
     if (!store.value.autoSkip) return;
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {

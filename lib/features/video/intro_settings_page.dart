@@ -250,7 +250,14 @@ class _IntroSettingsPageState extends State<IntroSettingsPage> {
                   value: options.autoSkip,
                   subtitle: '跳过前可取消；关闭后仅显示手动跳过',
                 ),
-                slider('countdown', '提示倒计时', options.countdown, 3, 15, ' 秒'),
+                slider(
+                  'countdown',
+                  '提示倒计时（0 秒不显示）',
+                  options.countdown,
+                  0,
+                  5,
+                  ' 秒',
+                ),
               ],
             ),
             PlayerSettingsSection(

@@ -430,6 +430,7 @@ void main() {
       );
       await tester.tap(find.byTooltip('全屏'));
       await tester.pumpAndSettle();
+      expect(find.byTooltip('片头片尾设置'), findsOneWidget);
       await tester.tap(find.byTooltip('下一集'));
       await tester.pumpAndSettle();
       expect(parsed, [12]);
@@ -1671,6 +1672,25 @@ void main() {
         isTrue,
       );
       await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('横屏播放时切集暂时没有尺寸保持横屏，直到新尺寸到达', (tester) async {
+      final calls = _captureOrientations(tester);
+      final players = await pump(tester, fullscreenOnly: true);
+      players.single.pushStats(const PlayerStats(width: 1920, height: 1080));
+      await tester.pumpAndSettle();
+      calls.clear();
+      players.single.pushStats(const PlayerStats());
+      await tester.pumpAndSettle();
+      expect(
+        calls.where(
+          (call) => call.method == 'SystemChrome.setPreferredOrientations',
+        ),
+        isEmpty,
+      );
+      players.single.pushStats(const PlayerStats(width: 720, height: 1280));
+      await tester.pumpAndSettle();
+      expect(_lastOrientations(calls), ['DeviceOrientation.portraitUp']);
     });
 
     testWidgets('全屏：竖屏短剧进竖屏全屏，横片进横屏全屏（用户要求）', (tester) async {

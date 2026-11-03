@@ -170,8 +170,10 @@ void main() {
       expect(find.byTooltip('上一集'), findsNothing);
       final play = tester.getRect(find.byTooltip('暂停'));
       final next = tester.getRect(find.byTooltip('下一集'));
+      final intro = tester.getRect(find.byTooltip('片头片尾设置'));
       final danmaku = tester.getRect(find.byTooltip('弹幕：开'));
       expect(next.left - play.right, closeTo(4, .1));
+      expect(intro.left - next.right, closeTo(4, .1));
       expect(play.center.dy, closeTo(danmaku.center.dy, 1));
       final slider = tester.getRect(find.byType(Slider));
       expect(

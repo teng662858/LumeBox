@@ -93,7 +93,7 @@ class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
         children: [
           SwitchListTile(
             title: const Text('视频下一集预载'),
-            subtitle: const Text('临近片尾提前解析下一集并准备播放缓冲'),
+            subtitle: const Text('当前播放稳定后准备下一集，临近片尾刷新较旧的预载'),
             value: policy.video,
             onChanged: busy ? null : (v) => policy.update(video: v),
           ),
@@ -110,7 +110,7 @@ class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
             onChanged: busy ? null : (v) => policy.update(audio: v),
           ),
           slider(
-            '提前准备下一集',
+            '片尾前刷新预载',
             policy.triggerSeconds,
             10,
             120,

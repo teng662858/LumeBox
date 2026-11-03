@@ -1048,8 +1048,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           _session?.state != PipState.active &&
           snapshot.position >= const Duration(seconds: 10) &&
           remaining >= const Duration(seconds: 5) &&
-          remaining <=
-              Duration(seconds: MediaPreload.instance.triggerSeconds) &&
           buffered >=
               Duration(seconds: _settings.kernel == PlayerKernel.mdk ? 3 : 8)) {
         unawaited(
@@ -1059,6 +1057,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             _openSource,
             widget.playerFactory ??
                 ((kernel) => PlayerFactory.create(kernel: kernel)),
+            refreshNearEnd:
+                remaining <=
+                Duration(seconds: MediaPreload.instance.triggerSeconds),
           ),
         );
       }
@@ -1926,7 +1927,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     try {
       final prepared = _session?.state == PipState.active
           ? null
-          : _nextEpisodeBuffer.take(target, index, _settings.kernel);
+          : await _nextEpisodeBuffer.takeWhenReady(
+              target,
+              index,
+              _settings.kernel,
+            );
+      if (!mounted) return false;
       final List<SourceChapter>? chapters;
       try {
         chapters = prepared == null
@@ -4033,6 +4039,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       case PlaybackOrientation.auto:
         // Unknown dimensions retain the entry direction instead of briefly
         // forcing a portrait short into landscape before metadata arrives.
+        if (!_hasVideoDimensions && _appliedOrientations != null) {
+          return _appliedOrientations!;
+        }
         return !_hasVideoDimensions || _isPortraitVideo
             ? const <DeviceOrientation>[DeviceOrientation.portraitUp]
             : const <DeviceOrientation>[
@@ -4591,6 +4600,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               target == null || _advancing
                   ? null
                   : () => _playEpisodeAt(target.chapterIndex + 1),
+            ),
+            const SizedBox(width: 4),
+            action(
+              '片头尾',
+              '片头片尾设置',
+              Icons.slow_motion_video,
+              _openOriginalIntro,
             ),
           ],
           const Spacer(),
