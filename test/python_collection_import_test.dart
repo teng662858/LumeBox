@@ -23,6 +23,7 @@ void main() {
       final resolver = SourceSubscription(
         onSkip: (url, error) => skipped.add("$url: $error"),
         section: section.id,
+        strictManifest: true,
         fetch: (url) async {
           final path = Uri.decodeComponent(
             Uri.parse(url).path.split('/main/').last,
