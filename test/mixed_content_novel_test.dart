@@ -74,6 +74,20 @@ class MixedSource extends FakeReadingDataSource {
   }
 }
 
+class ShortNovelSource extends MixedSource {
+  @override
+  Future<ChapterContent?> content({
+    required String itemId,
+    required String chapterId,
+  }) async {
+    reads++;
+    if (failBody) {
+      throw const SourceException(SourceErrorKind.network, '正文暂时不可用');
+    }
+    return const TextContent('第一句。第二句。');
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory root;
@@ -260,6 +274,37 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   }
+  testWidgets('小说朗读控制在窄屏显示', (tester) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final source = ShortNovelSource();
+    final backend = FakeNovelSpeech();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NovelReaderPage(
+          source: source,
+          library: library,
+          chapters: await source.chapters('novel'),
+          speechBackend: backend,
+          target: const ReadingTarget(
+            sourceId: 'fake.video',
+            itemId: 'novel',
+            title: '小说',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('朗读'));
+    await tester.pump();
+    expect(find.byTooltip('停止朗读'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await backend.controller.close();
+  });
+
   testWidgets('小说可朗读、暂停、继续并在切章时停止', (tester) async {
     final source = MixedSource();
     final backend = FakeNovelSpeech();
@@ -289,8 +334,101 @@ void main() {
     await tester.tap(find.byTooltip('朗读'));
     await tester.pump();
     expect(backend.resumes, 1);
+    await tester.tap(find.byTooltip('停止朗读'));
+    await tester.pump();
+    expect(backend.stops, greaterThan(0));
+    await tester.tap(find.byTooltip('朗读'));
+    await tester.pump();
     await tester.tap(find.text('下一章'));
     await tester.pumpAndSettle();
+    expect(backend.stops, greaterThan(0));
+    await tester.pumpWidget(const SizedBox());
+    await backend.controller.close();
+  });
+
+  testWidgets('小说朗读设置保存跟读和连听开关', (tester) async {
+    final source = ShortNovelSource();
+    final backend = FakeNovelSpeech();
+    final chapters = await source.chapters('novel');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NovelReaderPage(
+          source: source,
+          library: library,
+          chapters: chapters,
+          speechBackend: backend,
+          target: const ReadingTarget(
+            sourceId: 'fake.video',
+            itemId: 'novel',
+            title: '小说',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('朗读设置'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('语速'), findsOneWidget);
+    expect(find.textContaining('音量'), findsOneWidget);
+    await tester.tap(find.text('朗读跟随翻页'));
+    await tester.pump();
+    await tester.tap(find.text('读完自动下一章'));
+    await tester.pump();
+    expect(library.setting('novel.speech.autoNext'), 'false');
+    expect(
+      SpeechSettings.decode(library.setting(SpeechSettings.settingKey))
+          .followAlong,
+      false,
+    );
+    Navigator.of(tester.element(find.text('读完自动下一章'))).pop();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('朗读'));
+    await tester.pump();
+    backend.controller.add(const SpeechEvent(SpeechEventKind.finished));
+    await tester.pump();
+    await tester.pump();
+    expect(source.reads, 1, reason: '关闭连听后不会请求下一章');
+    await tester.pumpWidget(const SizedBox());
+    await backend.controller.close();
+  });
+
+  testWidgets('连听换章失败后重试恢复，手动换章不会意外续播', (tester) async {
+    final source = ShortNovelSource();
+    final backend = FakeNovelSpeech();
+    final chapters = await source.chapters('novel');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NovelReaderPage(
+          source: source,
+          library: library,
+          chapters: chapters,
+          speechBackend: backend,
+          target: const ReadingTarget(
+            sourceId: 'fake.video',
+            itemId: 'novel',
+            title: '小说',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('朗读'));
+    await tester.pump();
+    source.failBody = true;
+    backend.controller.add(const SpeechEvent(SpeechEventKind.finished));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('重试'), findsOneWidget);
+    expect(backend.spoken.length, 1);
+    source.failBody = false;
+    await tester.tap(find.text('重试'));
+    await tester.pump();
+    await tester.pump();
+    expect(backend.spoken.length, 2);
+    await tester.tap(find.text('上一章'));
+    await tester.pump();
+    await tester.pump();
+    expect(backend.spoken.length, 2);
     expect(backend.stops, greaterThan(0));
     await tester.pumpWidget(const SizedBox());
     await backend.controller.close();

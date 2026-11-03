@@ -1,6 +1,7 @@
 import '../media/playback_focus.dart';
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 
@@ -211,12 +212,19 @@ class AdvancedSpeechSource {
         if (generation == _generation) {
           await methods.invokeMethod<void>('streamFinish', {'token': token});
         }
-      } catch (_) {
+      } catch (error) {
         if (generation == _generation) {
+          final message = error is SpeechProviderException
+              ? error.message
+              : error is TimeoutException
+              ? '语音服务连接超时，请检查网络后重试'
+              : error is SocketException
+              ? '无法连接语音服务，请检查网络'
+              : '听书服务不可用，请检查接口、模型和音色配置';
           try {
             await methods.invokeMethod<void>('streamFail', {
               'token': token,
-              'message': '听书服务不可用，请检查接口、模型和音色配置',
+              'message': message,
             });
           } catch (_) {
             /* The platform may already be tearing down. */

@@ -116,6 +116,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   late SpeechSettings _speechSettings;
   late SpeechSession _speech;
   bool _continueSpeech = false;
+  bool _autoNext = true;
   void _speechChanged() {
     if (mounted) setState(() {});
   }
@@ -158,25 +159,71 @@ class _NovelReaderPageState extends State<NovelReaderPage>
         builder: (context, update) => SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
-            child: SpeechModesPanel(
-              settings: _speechSettings,
-              onChanged: (value) {
-                setState(() => _speechSettings = value);
-                update(() {});
-                widget.library.setSetting(
-                  SpeechSettings.settingKey,
-                  value.encode(),
-                );
-                final backend = _speech.backend;
-                if (backend is MethodChannelSpeechBackend) {
-                  backend.applySettings(value);
-                }
-              },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('语速 ${(_speechSettings.rate / .5).toStringAsFixed(1)} 倍'),
+                Slider(
+                  value: _speechSettings.rate,
+                  min: SpeechSettings.minRate,
+                  max: SpeechSettings.maxRate,
+                  onChanged: (value) {
+                    _setSpeechSettings(_speechSettings.copyWith(rate: value));
+                    update(() {});
+                  },
+                ),
+                Text('音量 ${(_speechSettings.volume * 100).round()}%'),
+                Slider(
+                  value: _speechSettings.volume,
+                  min: 0,
+                  max: 1,
+                  onChanged: (value) {
+                    _setSpeechSettings(_speechSettings.copyWith(volume: value));
+                    update(() {});
+                  },
+                ),
+                SwitchListTile(
+                  title: const Text('朗读跟随翻页'),
+                  value: _speechSettings.followAlong,
+                  onChanged: (value) {
+                    _setSpeechSettings(
+                      _speechSettings.copyWith(followAlong: value),
+                    );
+                    update(() {});
+                  },
+                ),
+                SwitchListTile(
+                  title: const Text('读完自动下一章'),
+                  value: _autoNext,
+                  onChanged: (value) {
+                    setState(() => _autoNext = value);
+                    widget.library.setSetting(
+                      'novel.speech.autoNext',
+                      '$value',
+                    );
+                    update(() {});
+                  },
+                ),
+                SpeechModesPanel(
+                  settings: _speechSettings,
+                  onChanged: (value) {
+                    _setSpeechSettings(value);
+                    update(() {});
+                  },
+                ),
+              ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  void _setSpeechSettings(SpeechSettings value) {
+    setState(() => _speechSettings = value);
+    widget.library.setSetting(SpeechSettings.settingKey, value.encode());
+    final backend = _speech.backend;
+    if (backend is MethodChannelSpeechBackend) backend.applySettings(value);
   }
 
   @override
@@ -186,6 +233,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     _speechSettings = SpeechSettings.decode(
       widget.library.setting(SpeechSettings.settingKey),
     );
+    _autoNext = widget.library.setting('novel.speech.autoNext') != 'false';
     _speech = SpeechSession(
       backend: widget.speechBackend ?? createPlatformSpeechBackend(),
       onPosition: _speechPosition,
@@ -197,9 +245,8 @@ class _NovelReaderPageState extends State<NovelReaderPage>
         }
       },
       onCompleted: () {
-        if (mounted && _chapter + 1 < widget.chapters.length) {
-          _continueSpeech = true;
-          _changeChapter(_chapter + 1);
+        if (mounted && _autoNext && _chapter + 1 < widget.chapters.length) {
+          _changeChapter(_chapter + 1, continueSpeech: true);
         }
       },
     );
@@ -304,12 +351,13 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     );
   }
 
-  void _changeChapter(int index) {
+  void _changeChapter(int index, {bool continueSpeech = false}) {
     if (index < 0 || index >= widget.chapters.length || index == _chapter) {
       return;
     }
     _saveTimer?.cancel();
-    if (!_continueSpeech) unawaited(_speech.stop());
+    _continueSpeech = continueSpeech;
+    if (!continueSpeech) unawaited(_speech.stop());
     _save();
     _chapter = index;
     _offset = 0;
@@ -421,6 +469,16 @@ class _NovelReaderPageState extends State<NovelReaderPage>
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
+            if (_speech.isActive || _speech.isPaused || _continueSpeech)
+              IconButton(
+                onPressed: () {
+                  _continueSpeech = false;
+                  unawaited(_speech.stop());
+                  setState(() {});
+                },
+                tooltip: '停止朗读',
+                icon: const Icon(Icons.stop),
+              ),
             IconButton(
               onPressed: _speechOptions,
               tooltip: '朗读设置',

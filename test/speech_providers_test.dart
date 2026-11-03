@@ -78,6 +78,41 @@ void main() {
     client.close();
   });
 
+  test(
+    'MiMo reports authentication, quota, rate and service errors safely',
+    () async {
+      const endpoint = 'https://api.xiaomimimo.com/v1';
+      endpoints['mimo'] = endpoint;
+      secrets['mimo'] = 'secret';
+      final config = SpeechCloudConfig();
+      await config.load();
+      config.ttsProvider = SpeechTtsProvider.mimo;
+      for (final item in {
+        401: '密钥无效',
+        402: '余额或额度',
+        403: '账号权限',
+        429: '过于频繁',
+        503: '暂时不可用',
+      }.entries) {
+        final client = SpeechCloudClient(
+          config,
+          client: MockClient((_) async => http.Response('secret', item.key)),
+        );
+        await expectLater(
+          client.audio('你好', '冰糖', 1).toList(),
+          throwsA(
+            isA<SpeechProviderException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains(item.value), isNot(contains('secret'))),
+            ),
+          ),
+        );
+        client.close();
+      }
+    },
+  );
+
   test('Azure Speech requests raw 24k PCM with escaped SSML', () async {
     endpoints['azure'] = 'eastasia';
     secrets['azure'] = 'azure-key';

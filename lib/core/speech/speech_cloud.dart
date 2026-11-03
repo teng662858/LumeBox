@@ -137,6 +137,11 @@ class SpeechCloudConfig {
   }
 }
 
+class SpeechProviderException implements Exception {
+  const SpeechProviderException(this.message);
+  final String message;
+}
+
 class SpeechCloudClient {
   SpeechCloudClient(this.config, {http.Client? client})
     : client = client ?? http.Client();
@@ -162,6 +167,17 @@ class SpeechCloudClient {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       // Do not copy provider bodies/headers: they may contain credentials.
       await response.stream.listen(null).cancel();
+      if (uri.host == 'api.xiaomimimo.com') {
+        final message = switch (response.statusCode) {
+          401 => 'MiMo 密钥无效，请检查 API Key',
+          403 => 'MiMo 拒绝访问，请检查账号权限',
+          402 => 'MiMo 账户余额或额度不足，请到平台核对',
+          429 => 'MiMo 请求过于频繁或额度受限，请稍后重试并检查额度',
+          >= 500 => 'MiMo 服务暂时不可用，请稍后重试',
+          _ => 'MiMo 请求失败（${response.statusCode}），请检查配置',
+        };
+        throw SpeechProviderException(message);
+      }
       throw HttpException('语音服务返回 ${response.statusCode}');
     }
     return response;

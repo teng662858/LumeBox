@@ -129,7 +129,9 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('下载 Kokoro 离线音色'),
-        content: const Text('首次使用需下载约 147 MB 模型并解压，完成后可离线使用。请确保网络和存储空间充足。'),
+        content: const Text(
+          '首次使用需下载约 147 MB 模型，安装期间建议预留至少 600 MiB 空间；安装后约占 205 MiB。完成后可离线使用。',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -144,13 +146,55 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
     );
     if (accepted != true || !mounted) return;
     final kokoro = KokoroModel.instance;
-    final installed = await kokoro.install();
+    final installed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _KokoroInstallDialog(),
+    );
     if (!mounted) return;
-    if (installed) {
+    if (installed == true) {
       _selectMode(SpeechMode.kokoro);
-    } else {
-      ScaffoldMessenger.maybeOf(context)
-          ?.showSnackBar(SnackBar(content: Text(kokoro.error ?? '安装失败')));
+    } else if (kokoro.error != null && kokoro.error != '已取消') {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(kokoro.error!),
+          action: SnackBarAction(label: '重试', onPressed: _installKokoro),
+        ),
+      );
+    }
+  }
+
+  Future<void> _removeKokoro() async {
+    final accepted = await showGlassDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除 Kokoro 音色包？'),
+        content: const Text('请先停止朗读。删除后再次使用需要重新下载；VITS 音色不受影响。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return;
+    try {
+      await KokoroModel.instance.remove();
+      if (!mounted) return;
+      if (widget.settings.mode == SpeechMode.kokoro) {
+        widget.onChanged(widget.settings.copyWith(mode: SpeechMode.system));
+      }
+      setState(() {});
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)
+            ?.showSnackBar(const SnackBar(content: Text('删除失败，请停止朗读后重试')));
+      }
     }
   }
 
@@ -275,6 +319,23 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
                 color: Theme.of(context).colorScheme.error,
               ),
             ),
+          ListenableBuilder(
+            listenable: KokoroModel.instance,
+            builder: (context, _) => KokoroModel.instance.present
+                ? ListTile(
+                    dense: true,
+                    title: Text(
+                      KokoroModel.instance.ready
+                          ? 'Kokoro 离线音色已安装'
+                          : 'Kokoro 音色包损坏，请删除后重新下载',
+                    ),
+                    trailing: TextButton(
+                      onPressed: _removeKokoro,
+                      child: const Text('删除'),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
           for (final role in ['旁白', '男声', '女声'])
             if (role == '旁白' ||
                 (!widget.singleSpeaker && widget.settings.autoDialogue))
@@ -345,6 +406,56 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
       ),
     );
   }
+}
+
+class _KokoroInstallDialog extends StatefulWidget {
+  const _KokoroInstallDialog();
+  @override
+  State<_KokoroInstallDialog> createState() => _KokoroInstallDialogState();
+}
+
+class _KokoroInstallDialogState extends State<_KokoroInstallDialog> {
+  final model = KokoroModel.instance;
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_run());
+  }
+
+  Future<void> _run() async {
+    final ok = await model.install();
+    if (mounted) Navigator.pop(context, ok);
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: false,
+    child: ListenableBuilder(
+      listenable: model,
+      builder: (context, _) => AlertDialog(
+        title: const Text('安装 Kokoro 音色'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(model.phase),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(value: model.progress),
+            if (model.progress != null)
+              Text('${(model.progress! * 100).floor()}%'),
+            const SizedBox(height: 8),
+            const Text('解压期间取消可能需要等待当前步骤结束。'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: model.phase == '正在取消' ? null : model.cancel,
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _CloudSettingsDialog extends StatefulWidget {
