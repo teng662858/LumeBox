@@ -9,7 +9,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show visibleForTesting, ValueNotifier;
+import 'package:flutter/foundation.dart'
+    show visibleForTesting, ValueNotifier, setEquals;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -472,17 +473,20 @@ class SectionImagePipeline {
   /// Already visible/in-flight images keep their shared request.
   void replacePreloads(Iterable<String> urls, {int? targetWidth}) {
     final window = urls.map(canonicalUrl).toSet();
-    final previous = _preloadWindows[targetWidth] ?? const <String>{};
-    _preloadWindows[targetWidth] = window;
-    _preloadWindow = _preloadWindows.values.expand((urls) => urls).toSet();
-    final keys = window.map((url) => key(url, targetWidth)).toSet();
-    _preloadQueue.removeWhere((entry) {
-      if (entry.width != targetWidth || keys.contains(entry.cacheKey)) {
-        return false;
-      }
-      _preloadKeys.remove(entry.cacheKey);
-      return true;
-    });
+    final previous = _preloadWindows[targetWidth];
+    final changed = previous == null || !setEquals(previous, window);
+    if (changed) {
+      _preloadWindows[targetWidth] = window;
+      _preloadWindow = _preloadWindows.values.expand((urls) => urls).toSet();
+      final keys = window.map((url) => key(url, targetWidth)).toSet();
+      _preloadQueue.removeWhere((entry) {
+        if (entry.width != targetWidth || keys.contains(entry.cacheKey)) {
+          return false;
+        }
+        _preloadKeys.remove(entry.cacheKey);
+        return true;
+      });
+    }
     _slots.removeWhere((entry) {
       if (_preloadWindow!.contains(entry.url) ||
           _isForeground(entry.url, entry.preload)) {
@@ -491,7 +495,12 @@ class SectionImagePipeline {
       entry.ready.complete(false);
       return true;
     });
-    preload(window.difference(previous), targetWidth: targetWidth);
+    if (changed) {
+      preload(
+        window.difference(previous ?? const <String>{}),
+        targetWidth: targetWidth,
+      );
+    }
   }
 
   void _drainPreloads() {
