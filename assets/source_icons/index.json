@@ -253,5 +253,96 @@
     "file": "theavporn_video.png",
     "url": "https://theavporn.com/favicon.ico",
     "sha256": "00c064a110e56c552c7d96d142b842e103a0f9f98dd5682aa31c52cd4da27438"
+  },
+  "bfzy_video": {
+    "name": "暴风资源",
+    "file": "bfzy_video.png",
+    "kind": "site",
+    "url": "https://bfzy.tv/favicon.ico",
+    "sha256": "c8ef24ed76c8a872fe0c1063e56c423d48d4e22f21cf8cfc48b0c2d2a758dfde"
+  },
+  "d9y1w_video": {
+    "name": "四色视频 18+",
+    "file": "d9y1w_video.png",
+    "kind": "site",
+    "url": "https://www.g7u0r.top/assets/images/theme/default/logo.png",
+    "sha256": "72056761a749b0dbdb298f4581f663c97ab152e221992058502df76fc65cc566"
+  },
+  "uaa_video": {
+    "name": "有爱爱 UAA",
+    "file": "uaa_video.png",
+    "kind": "site",
+    "url": "https://www.uaa002.com/api/web/image/logo.webp",
+    "sha256": "93015001b167c110c3579f3b9f57125f6540898d1023ebd5bfedd3c24242ea57"
+  },
+  "libvio_video": {
+    "name": "LIBVIO",
+    "kind": "label",
+    "labels": [
+      "LIBVIO"
+    ]
+  },
+  "czzy_video": {
+    "name": "厂长资源",
+    "kind": "label",
+    "labels": [
+      "厂长资源"
+    ]
+  },
+  "insav_video": {
+    "name": "INSAV",
+    "kind": "label",
+    "labels": [
+      "INSAV"
+    ]
+  },
+  "lao4j_video": {
+    "name": "火力视频",
+    "kind": "label",
+    "labels": [
+      "火力视频"
+    ]
+  },
+  "kpdz_video": {
+    "name": "看片视频",
+    "kind": "label",
+    "labels": [
+      "看片视频"
+    ]
+  },
+  "mitaovideo_video": {
+    "name": "蜜桃视频2",
+    "kind": "label",
+    "labels": [
+      "蜜桃视频2"
+    ]
+  },
+  "pypack_7b1edf6c0d807ee8": {
+    "name": "咕噜咕噜4K",
+    "kind": "label",
+    "labels": [
+      "咕噜咕噜4K"
+    ]
+  },
+  "pypack_7c5d7b6c5c77cf9d": {
+    "name": "LIBVIO",
+    "kind": "label",
+    "labels": [
+      "LIBVIO"
+    ]
+  },
+  "pypack_a18dcda29c60dcb9": {
+    "name": "厂长资源",
+    "kind": "label",
+    "labels": [
+      "厂长资源"
+    ]
+  },
+  "pypack_608941541d9f77a7": {
+    "name": "咕噜咕噜",
+    "kind": "label",
+    "labels": [
+      "咕噜咕噜"
+    ]
   }
 }

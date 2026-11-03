@@ -1,4 +1,4 @@
-// LumeSource: {"id":"bfzy_video","name":"暴风资源","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://bfzyapi.com"],"network":"direct","icon":"https://bfzyapi.com/favicon.ico"}
+// LumeSource: {"id":"bfzy_video","name":"暴风资源","version":"1.0.1","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://bfzyapi.com"],"network":"direct","icon":"https://bfzy.tv/favicon.ico"}
 // LumeRuntime: javascript
 //
 // 站点：暴风资源（资源站，接口域 bfzyapi.com；苹果CMS v10 标准 JSON 接口）。

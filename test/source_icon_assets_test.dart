@@ -69,12 +69,26 @@ void main() {
     expect(SourceFavicon.storedIcon(img.encodeIco(blank)), isNull);
   });
 
-  testWidgets('两段录屏的34个缺失或浅色图标离线可显示，真实图片均有来源和校验值', (tester) async {
+  testWidgets('内置图标离线可显示，真实图片均有来源和校验值', (tester) async {
     await tester.runAsync(() async {
       final index = jsonDecode(
         await rootBundle.loadString('assets/source_icons/index.json'),
       ) as Map;
-      expect(index, hasLength(34));
+      expect(
+        index.keys,
+        containsAll([
+          'libvio_video',
+          'czzy_video',
+          'bfzy_video',
+          'insav_video',
+          'd9y1w_video',
+          'uaa_video',
+          'lao4j_video',
+          'kpdz_video',
+          'mitaovideo_video',
+          'pypack_608941541d9f77a7',
+        ]),
+      );
       var requests = 0;
       final resolver = SourceFavicon(
         http: LumeHttp(
