@@ -1,3 +1,4 @@
+import '../../core/net/network_queue.dart';
 import '../../core/source/source_content_type.dart';
 import 'reader_interaction_surface.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
@@ -95,9 +96,13 @@ class ComicReaderPage extends StatefulWidget {
     this.imageTools,
     this.pageBytes,
     this.imageExporter,
+    this.imageRequestSender,
   });
 
   final ReadingLibrary library;
+
+  /// Optional image transport for deterministic reader verification.
+  final NetworkSender? imageRequestSender;
 
   /// Optional host export destination; defaults to the existing system share/save.
   final Future<bool> Function(Uint8List bytes, String name)? imageExporter;
@@ -424,6 +429,7 @@ class _ComicReaderPageState extends State<ComicReaderPage>
       },
       cacheDir: widget.library.imageCacheDir,
       network: widget.network,
+      requestSender: widget.imageRequestSender,
       // 漫画板块的图片缓存已按用户要求关闭（不读盘也不落盘）：翻页 / 预取照旧，
       // 只是这一话跨会话再看会重新下载（内存缓存与管线复用仍在）。
       diskCache: SectionImagePipeline.diskCacheFor(Section.comic),
@@ -747,14 +753,16 @@ class _ComicReaderPageState extends State<ComicReaderPage>
     ];
     final urls = <String>[for (final index in window) _images[index]];
     _pipeline.retain(urls, targetWidth: _decodeWidth);
+    // retain 只保护已有位图，并不会下载。必须先准备紧邻下一页，
+    // 再向外扩展；从 radius + 1 开始会漏掉最先要翻到的几页。
     final ahead = <String>[
       for (
-        int i = _page + radius + 1;
+        int i = _page + 1;
         i <= _page + radius * 2 && i < _images.length;
         i++
       )
         _images[i],
-      for (int i = _page - radius - 1; i >= _page - radius * 2 && i >= 0; i--)
+      for (int i = _page - 1; i >= _page - radius * 2 && i >= 0; i--)
         _images[i],
     ];
     _pipeline.preload(ahead, targetWidth: _decodeWidth);

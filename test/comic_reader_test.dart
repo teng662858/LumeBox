@@ -1,3 +1,5 @@
+import 'package:lume_box/core/net/network_queue.dart';
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -101,6 +103,51 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('单页阅读未翻页就预取紧邻两页，不跳到远页', (tester) async {
+    const ComicReaderSettings(mode: ComicReadingMode.single).save(library);
+    final requests = <String>[];
+    final png = await tester.runAsync(
+      () => pngBytes(12, 12, const Color(0xff112233)),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ComicReaderPage(
+          library: library,
+          dataSource: FakeReadingDataSource(
+            section: Section.comic,
+            imageCount: 10,
+          ),
+          target: target,
+          chapters: chapters(3),
+          initialChapterIndex: 0,
+          runtimeAvailable: true,
+          imageRequestSender: (request) async {
+            requests.add(request.url);
+            return NetworkResponse(
+              statusCode: 200,
+              body: png!,
+              headers: const {},
+            );
+          },
+        ),
+      ),
+    );
+    for (var i = 0; i < 12; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 15)),
+      );
+      await tester.pump(const Duration(milliseconds: 30));
+    }
+    final next = '${FakeReadingDataSource.imageHost}/item-1-c1/2.jpg';
+    final afterNext = '${FakeReadingDataSource.imageHost}/item-1-c1/3.jpg';
+    final far = '${FakeReadingDataSource.imageHost}/item-1-c1/4.jpg';
+    expect(requests, contains(next));
+    expect(requests, contains(afterNext));
+    expect(requests.indexOf(next), lessThan(requests.indexOf(far)));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
 
   /// 呼出工具栏（连带底部面板）。
   ///

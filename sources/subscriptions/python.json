@@ -1,0 +1,12 @@
+{
+  "format": "lume.total-subscription",
+  "version": 1,
+  "sections": {
+    "comic": [
+      "https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/subscriptions/python-comic.txt"
+    ],
+    "video": [
+      "https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/subscriptions/python-video.txt"
+    ]
+  }
+}
