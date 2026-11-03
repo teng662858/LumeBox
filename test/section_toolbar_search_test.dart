@@ -1244,6 +1244,19 @@ void main() {
       ], reason: '去重且必须含关键词');
     });
 
+    test('本地联想优先历史，去重后截取前十条', () {
+      final suggestions = SearchSuggestions(
+        source: null,
+        history: const ['影片 甲', '影片 乙'],
+        candidates: ['影片 甲', for (var i = 0; i < 20; i++) '影片 $i'],
+      );
+      expect(suggestions.localForKeyword('影片'), [
+        '影片 甲',
+        '影片 乙',
+        for (var i = 0; i < 8; i++) '影片 $i',
+      ]);
+    });
+
     test('搜索历史：去重、最新在前、上限 20 条', () async {
       final library = await ReadingLibrary.open(Section.cat);
       final store = SearchHistoryStore(Section.cat, library);

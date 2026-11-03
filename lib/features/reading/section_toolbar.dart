@@ -366,7 +366,7 @@ class SearchSuggestions {
             .suggest(text)
             .timeout(const Duration(seconds: 3));
         final cleaned = _dedupe(remote, text);
-        if (cleaned.isNotEmpty) return cleaned.take(maxEntries).toList();
+        if (cleaned.isNotEmpty) return cleaned;
       } catch (error) {
         LumeLog.info('[search] 联想接口失败，改用本地历史：$error');
       }
@@ -377,23 +377,21 @@ class SearchSuggestions {
 
   List<String> localForKeyword(String keyword) => keyword.trim().isEmpty
       ? history.take(maxEntries).toList()
-      : _dedupe([
-          ...history,
-          ...candidates,
-        ], keyword.trim()).take(maxEntries).toList();
+      : _dedupe(history.followedBy(candidates), keyword.trim());
 
   /// 去重 + 只留包含关键词的 + 去掉与关键词本身相同的那条。
-  static List<String> _dedupe(List<String> values, String keyword) {
+  static List<String> _dedupe(Iterable<String> values, String keyword) {
+    final query = SearchSettings.instance.prepare(keyword).toLowerCase();
     final seen = <String>{};
     final out = <String>[];
     for (final value in values) {
       final text = value.trim();
       if (text.isEmpty) continue;
       final normalized = SearchSettings.instance.prepare(text).toLowerCase();
-      final query = SearchSettings.instance.prepare(keyword).toLowerCase();
       if (!normalized.contains(query)) continue;
       if (!seen.add(normalized)) continue;
       out.add(text);
+      if (out.length == maxEntries) break;
     }
     return out;
   }
