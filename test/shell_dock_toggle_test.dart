@@ -445,13 +445,19 @@ void main() {
   // ==========================================================================
 
   group('壳层', () {
-    Future<void> pumpShell(WidgetTester tester) async {
+    Future<void> pumpShell(
+      WidgetTester tester, {
+      bool placeholderPages = false,
+    }) async {
       await tester.binding.setSurfaceSize(const Size(390, 844));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
         MaterialApp(
           theme: LumeTheme.build(),
-          home: const AppShell(desktopRail: false),
+          home: AppShell(
+            desktopRail: false,
+            pageBuilder: placeholderPages ? (id) => Text('page-$id') : null,
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -509,7 +515,7 @@ void main() {
     });
 
     testWidgets('隐藏一个页签：底部立刻少一个（实时生效，无需重启）', (tester) async {
-      await pumpShell(tester);
+      await pumpShell(tester, placeholderPages: true);
 
       await ShellSettingsController.instance.setVisible('comic', false);
       await tester.pumpAndSettle();
@@ -532,7 +538,7 @@ void main() {
     });
 
     testWidgets('当前页签被隐藏：自动落到仍可见的页签上', (tester) async {
-      await pumpShell(tester);
+      await pumpShell(tester, placeholderPages: true);
       await tester.tap(
         find.descendant(
           of: find.byKey(AppShell.dockKey),

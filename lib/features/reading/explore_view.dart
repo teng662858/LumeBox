@@ -369,8 +369,13 @@ class _ExploreViewState extends State<ExploreView>
       _title = null;
       _detail = null;
     });
+    List<SourceDescriptor>? resolvedSources;
+    SourceDescriptor? resolvedCurrent;
     try {
-      final sources = await _manager.list();
+      final sources = await _manager.list().timeout(
+        const Duration(seconds: 20),
+      );
+      resolvedSources = sources;
       if (!mounted || bootstrapSeq != _bootstrapSeq) return;
       final enabled = sources
           .where((source) => source.enabled)
@@ -392,7 +397,10 @@ class _ExploreViewState extends State<ExploreView>
         );
         return;
       }
-      final current = await _manager.current();
+      final current = await _manager.current().timeout(
+        const Duration(seconds: 20),
+      );
+      resolvedCurrent = current;
       if (!mounted || bootstrapSeq != _bootstrapSeq) return;
       if (current == null) {
         _settle(
@@ -402,7 +410,9 @@ class _ExploreViewState extends State<ExploreView>
         );
         return;
       }
-      final source = await _manager.open(current.id);
+      final source = await _manager
+          .open(current.id)
+          .timeout(const Duration(seconds: 20));
       if (!mounted || bootstrapSeq != _bootstrapSeq) return;
       if (source == null) {
         _settle(
@@ -483,6 +493,14 @@ class _ExploreViewState extends State<ExploreView>
         // Recheck once after it completes instead of waiting for a pull refresh.
         await _loadCategories();
       }
+    } on TimeoutException {
+      if (!mounted || bootstrapSeq != _bootstrapSeq) return;
+      _settle(
+        state: SourceStateKind.scriptError,
+        detail: '源启动超时，请重试或切换其他源',
+        sources: resolvedSources,
+        current: resolvedCurrent,
+      );
     } on NetworkCancelled {
       // A newer source load owns the page.
     } on SourceException catch (error) {
@@ -983,7 +1001,7 @@ class _ExploreViewState extends State<ExploreView>
           page: page,
           filters: _facetFilters.isEmpty ? null : _facetFilters,
         ),
-        timeout: const Duration(seconds: 40),
+        timeout: const Duration(seconds: 20),
         timeoutError: () => const SourceException(
           SourceErrorKind.network,
           '列表请求超时，请重试或检查网页验证会话',

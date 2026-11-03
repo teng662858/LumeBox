@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:lume_box/features/comic/comic_page.dart';
 import 'package:flutter/material.dart';
@@ -13,7 +15,7 @@ import 'package:lume_box/features/reading/compact_browse_header.dart';
 import 'package:lume_box/shared/widgets/dock_handle_button.dart';
 
 /// 主导航壳的验证：三页签的顺序与文案、移动端 Dock / 桌面端 NavigationRail
-/// 两种排布、切页签只保留当前页面，以及全屏页压栈时自动隐藏 Dock、出栈恢复。
+/// 两种排布、切页签保留页面状态，以及全屏页压栈时自动隐藏 Dock、出栈恢复。
 void main() {
   late ShellDockController controller;
 
@@ -292,7 +294,7 @@ void main() {
     }
   });
 
-  testWidgets('切页签只保留当前板块页面', (tester) async {
+  testWidgets('切页签仅显示当前板块页面', (tester) async {
     await pumpShell(tester, desktopRail: false);
 
     // 启动落在第一个页签：漫画。
@@ -305,6 +307,36 @@ void main() {
     await tester.tap(inDock('设置'));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(AppBar, '设置'), findsOneWidget);
+  });
+
+  testWidgets('切换页签保留已打开的页面及其进行中的加载', (tester) async {
+    final pending = Completer<String>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppShell(
+          controller: controller,
+          desktopRail: false,
+          pageBuilder: (id) => id == 'comic'
+              ? FutureBuilder<String>(
+                  future: pending.future,
+                  builder: (_, snapshot) => Text(snapshot.data ?? '漫画正在加载'),
+                )
+              : Text('page-$id'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final original = tester.element(find.text('漫画正在加载'));
+    await tester.tap(inDock('设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('漫画正在加载'), findsNothing);
+    expect(find.text('漫画正在加载', skipOffstage: false), findsOneWidget);
+    pending.complete('漫画内容');
+    await tester.pump();
+    await tester.tap(inDock('漫画'));
+    await tester.pumpAndSettle();
+    expect(find.text('漫画内容'), findsOneWidget);
+    expect(tester.element(find.text('漫画内容')), same(original));
   });
 
   testWidgets('全屏页压栈隐藏 Dock，出栈恢复', (tester) async {

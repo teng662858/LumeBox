@@ -10,6 +10,7 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/reading/explore_view.dart';
+import 'package:lume_box/features/shell/app_shell.dart';
 
 import 'support/fake_source_manager.dart';
 
@@ -92,6 +93,107 @@ void main() {
     );
   }
 
+  testWidgets('源初始化超时后给出可重试提示，重试可恢复', (tester) async {
+    final manager = _HangingManager();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ExploreView(
+            section: Section.comic,
+            manager: manager,
+            layout: ExploreLayout.list,
+            onOpenItem: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 21));
+    await tester.pump();
+    expect(find.textContaining('源启动超时'), findsOneWidget);
+    manager.pending.complete([]);
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(find.text('暂无源'), findsWidgets);
+  });
+
+  testWidgets('打开源超时时保留已选源名称', (tester) async {
+    final manager = _HangingOpenManager();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ExploreView(
+            section: Section.comic,
+            manager: manager,
+            layout: ExploreLayout.list,
+            onOpenItem: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 21));
+    await tester.pump();
+    expect(find.textContaining('源启动超时'), findsOneWidget);
+    expect(find.text('示例源'), findsOneWidget);
+    expect(find.text('未选择源'), findsNothing);
+    manager.pending.complete(null);
+  });
+
+  testWidgets('切换到设置时保留正在加载的真实浏览页，回来无需重新请求', (tester) async {
+    final source = _GatedSource(section: Section.comic);
+    final manager = FakeSourceManager(
+      sources: const [
+        SourceDescriptor(
+          id: 'source-a',
+          name: '示例源',
+          version: '1',
+          enabled: true,
+        ),
+      ],
+      opened: {'source-a': source},
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppShell(
+          desktopRail: false,
+          pageBuilder: (id) => id == 'comic'
+              ? ExploreView(
+                  section: Section.comic,
+                  manager: manager,
+                  layout: ExploreLayout.list,
+                  onOpenItem: (_) {},
+                )
+              : Text('page-$id'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('正在加载…'), findsOneWidget);
+    expect(source.calls, 1);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(AppShell.dockKey),
+        matching: find.text('设置'),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    source.release();
+    await tester.pump();
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(AppShell.dockKey),
+        matching: find.text('漫画'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('条目 1'), findsOneWidget);
+    expect(source.calls, 1);
+    expect(manager.openedIds, ['source-a']);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('Kazumi 无首页时提供明确搜索入口，不显示普通空列表重试提示', (tester) async {
     final source = _EmptySource(section: Section.comic);
     final pipeline = await openPipeline(Section.comic);
@@ -124,6 +226,20 @@ void main() {
     expect(find.text('暂无内容'), findsNothing);
   });
 
+  testWidgets('首屏请求超时后显示重试而不是一直加载', (tester) async {
+    final source = _GatedSource(section: Section.comic);
+    await pump(tester, source: source);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 21));
+    await tester.pump();
+    expect(find.textContaining('列表请求超时'), findsOneWidget);
+    expect(find.text('正在加载…'), findsNothing);
+    source.release();
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(find.text('条目 1'), findsOneWidget);
+  });
+
   testWidgets('请求真的返回空列表：空态照旧出现（别把真空态也藏了）', (tester) async {
     final source = _EmptySource(section: Section.comic);
     final pipeline = await openPipeline(Section.comic);
@@ -149,6 +265,29 @@ void main() {
   });
 }
 
+class _HangingManager extends FakeSourceManager {
+  final pending = Completer<List<SourceDescriptor>>();
+  @override
+  Future<List<SourceDescriptor>> list() => pending.future;
+}
+
+class _HangingOpenManager extends FakeSourceManager {
+  _HangingOpenManager()
+    : super(
+        sources: const [
+          SourceDescriptor(
+            id: 'source-a',
+            name: '示例源',
+            version: '1',
+            enabled: true,
+          ),
+        ],
+      );
+  final pending = Completer<DataSource?>();
+  @override
+  Future<DataSource?> open(String sourceId) => pending.future;
+}
+
 /// 首屏请求可以手动放行：用来停在「请求在飞」的那一瞬间。
 class _GatedSource implements DataSource {
   _GatedSource({required this.section});
@@ -157,6 +296,7 @@ class _GatedSource implements DataSource {
   final Section section;
 
   final Completer<void> _gate = Completer<void>();
+  int calls = 0;
 
   void release() => _gate.complete();
 
@@ -178,6 +318,7 @@ class _GatedSource implements DataSource {
     int page = 1,
     Map<String, String>? filters,
   }) async {
+    calls++;
     await _gate.future;
     return const SourceList(
       items: <SourceItem>[SourceItem(id: 'a1', title: '条目 1')],

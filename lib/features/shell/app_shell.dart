@@ -49,9 +49,8 @@ import '../../shared/widgets/dock_handle_button.dart';
 /// 拖拽排序（见 [ShellSettings]），下标会随着这两件事漂移。当前选中、可见性、
 /// 顺序全部按标识走，因此「把当前页签拖到别处」不会导致跳到别的板块。
 ///
-/// 资源纪律：**只把当前页签的页面挂在树上**，切走即销毁、切回重建。因此
-/// 板块的阅读库、图源运行时、sqlite 句柄都沿用「进板块打开、退出板块释放」
-/// 的既有口径，四个板块的资源不会同时驻留（这不是 IndexedStack 那种全挂载）。
+/// 页面按需创建，已访问的页面保留到壳层销毁；不可见页面关闭动画与交互。
+/// 这样快速切换不会反复关闭源运行时或丢弃仍在加载的首页。
 ///
 /// 全屏页（阅读器 / 播放器）压栈时 Dock 由 [ShellDockObserver] 自动隐藏，
 /// 出栈后恢复；视频页在播放中隐藏 Dock 走 [ShellDockScope] 的令牌。
@@ -107,6 +106,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   /// 当前页签的**标识**（不是下标：顺序会变、页签会隐藏）。
   String _activeId = _pageCatalog.first.id;
+  final Set<String> _visitedPages = {_pageCatalog.first.id};
   bool _scrollCollapsed = false;
   bool _systemNavigationAvailable = false;
   double _systemNavigationHeight = 64;
@@ -396,9 +396,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       // 却在底部找不到自己在哪里。桌面端 Rail 不过滤可见性（见 [_reachableTabs]），
       // 因此桌面端不会因为「隐藏」把用户从当前页面赶走。
       final reachable = _reachableTabs;
+      _visitedPages.removeWhere((id) => !reachable.any((tab) => tab.id == id));
       if (reachable.isNotEmpty &&
           !reachable.any((tab) => tab.id == _activeId)) {
         _activeId = reachable.first.id;
+        _visitedPages.add(_activeId);
       }
     });
   }
@@ -415,9 +417,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // 点下去、页面还没构建的那一小段，把板块运行时（阅读库 + 源引擎）与首页
     // 第一页提前拉起来；页面构建后能直接吃这口热饭。
     // 预热失败不影响任何事（页面照旧自己取），见 [SectionPreloader]。
-    unawaited(_warmUp(id));
+    if (!_visitedPages.contains(id)) unawaited(_warmUp(id));
     setState(() {
       _activeId = id;
+      _visitedPages.add(id);
       _scrollCollapsed = false;
     });
   }
@@ -848,23 +851,36 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   // -------------------------------------------------------------------- 页面
 
-  /// 当前页签的页面：只建当前这一个，切页签即热替换（旧页签资源随之释放）。
+  /// 首次访问时创建页面，切走时保留状态并停止其动画。
   ///
   /// Key 用页签**标识 + 主题身份**：
-  /// - 页签标识——同一页签在顺序变化时不该被重建（换了 key 会让板块的阅读库、
-  ///   滚动位置一起丢），而切到另一个页签必须重建（资源释放的既有口径）；
+  /// - 页签标识——同一页签在顺序变化或切换时保留状态和在途加载；
   /// - 主题身份——切亮暗 / 换主题色时**整页重建**，静态色名（`LumeTheme.*`）
   ///   才会重新取值。少了它，切主题后页面里只读静态色名的部件会留在旧配色上
   ///   （真机现象：设置页里两张**内容为 const 的分组卡**在深色下仍是白底、
   ///   文字却是深色主题的浅色，糊成一片）。代价：切主题会重建当前页签，
   ///   页内滚动位置等局部状态归零——这是静态色名架构下的取舍。
-  Widget _buildPage() => KeyedSubtree(
-    key: ValueKey<String>('$_activeId·${LumeTheme.themeId}'),
-    child: ModuleGlassScope(
-      module: GlassModule.fromId(_activeId),
-      child:
-          widget.pageBuilder?.call(_activeId) ?? _pageOf(_activeId).builder(),
-    ),
+  Widget _buildPage() => Stack(
+    fit: StackFit.expand,
+    children: [
+      for (final tab in _pageCatalog.where(
+        (tab) => _visitedPages.contains(tab.id),
+      ))
+        Offstage(
+          key: ValueKey('shell-page-${tab.id}'),
+          offstage: tab.id != _activeId,
+          child: TickerMode(
+            enabled: tab.id == _activeId,
+            child: KeyedSubtree(
+              key: ValueKey<String>('${tab.id}·${LumeTheme.themeId}'),
+              child: ModuleGlassScope(
+                module: GlassModule.fromId(tab.id),
+                child: widget.pageBuilder?.call(tab.id) ?? tab.builder(),
+              ),
+            ),
+          ),
+        ),
+    ],
   );
 }
 

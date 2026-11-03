@@ -174,7 +174,7 @@ class _SourceHomeViewState extends State<SourceHomeView>
           await networkRequests.run<SourceHome>(
             'home',
             () => (source as HomeCapable).home(),
-            timeout: const Duration(seconds: 40),
+            timeout: const Duration(seconds: 20),
             timeoutError: () => const SourceException(
               SourceErrorKind.network,
               '首页请求超时，请重试或检查网页验证会话',
