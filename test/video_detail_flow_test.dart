@@ -669,6 +669,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('video-detail-tmdb-status')), findsOneWidget);
     expect(find.text('示例演员'), findsOneWidget);
+    final castTitle = tester.getRect(
+      find.byKey(const Key('video-detail-cast-title')),
+    );
+    final avatar = tester.getRect(
+      find.byKey(const ValueKey('video-detail-cast-avatar-0')),
+    );
+    expect(avatar.width, 48);
+    expect(avatar.left, greaterThan(castTitle.right));
+    expect(avatar.center.dy, closeTo(castTitle.center.dy, .1));
     expect(find.text('TMDB · 已匹配'), findsOneWidget);
     expect(find.textContaining('2026 · 剧情'), findsOneWidget);
     expect(find.text('相似影片 · 全站找片'), findsNothing);

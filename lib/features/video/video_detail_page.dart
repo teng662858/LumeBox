@@ -6,6 +6,7 @@ import '../comic/download_center_page.dart';
 import 'video_download_center.dart';
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import '../../core/player/playback_diagnostics.dart';
 
@@ -1600,6 +1601,9 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   Widget castSection() {
     final metadata = tmdb.metadata;
     final nameSize = originalStyle ? 13.0 : 12.0;
+    final titleSize = originalStyle ? 18.0 : 17.0;
+    final scaler = MediaQuery.textScalerOf(context);
+    final portraitRowHeight = math.max(48.0, scaler.scale(titleSize) * 1.2);
     final people = metadata?.cast.isNotEmpty == true
         ? [
             for (var i = 0; i < metadata!.cast.length; i++)
@@ -1618,59 +1622,79 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       padding: EdgeInsets.only(
         top: originalStyle ? (metadata != null ? 16 : 24) : 20,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
+        key: const Key('video-detail-cast-row'),
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '演员',
-            style: TextStyle(
-              fontSize: originalStyle ? 18 : 17,
-              fontWeight: originalStyle ? FontWeight.w800 : FontWeight.w700,
+          SizedBox(
+            height: portraitRowHeight,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '演员',
+                key: const Key('video-detail-cast-title'),
+                style: TextStyle(
+                  fontSize: titleSize,
+                  height: 1.2,
+                  fontWeight: originalStyle ? FontWeight.w800 : FontWeight.w700,
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 68 + MediaQuery.textScalerOf(context).scale(nameSize) * 1.5,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: people.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (_, i) => SizedBox(
-                width: 68,
-                child: Column(
-                  children: [
-                    ClipOval(
-                      child: SizedBox.square(
-                        dimension: 60,
-                        child: people[i].avatar?.isNotEmpty == true
-                            ? PosterCover(
-                                pipeline: pipeline,
-                                url: people[i].avatar,
-                                title: people[i].name,
-                                headers: people[i].headers,
-                                width: 180,
-                                borderRadius: BorderRadius.zero,
-                              )
-                            : const ColoredBox(
-                                color: Color(0x22666666),
-                                child: Center(
-                                  child: Icon(Icons.person_outline, size: 28),
-                                ),
-                              ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: SizedBox(
+              height: portraitRowHeight + 6 + scaler.scale(nameSize) * 1.4 + 1,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: people.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (_, i) => SizedBox(
+                  width: 60,
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        height: portraitRowHeight,
+                        child: Center(
+                          child: ClipOval(
+                            child: SizedBox.square(
+                              key: ValueKey('video-detail-cast-avatar-$i'),
+                              dimension: 48,
+                              child: people[i].avatar?.isNotEmpty == true
+                                  ? PosterCover(
+                                      pipeline: pipeline,
+                                      url: people[i].avatar,
+                                      title: people[i].name,
+                                      headers: people[i].headers,
+                                      width: 144,
+                                      borderRadius: BorderRadius.zero,
+                                    )
+                                  : const ColoredBox(
+                                      color: Color(0x22666666),
+                                      child: Center(
+                                        child: Icon(
+                                          Icons.person_outline,
+                                          size: 24,
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      people[i].name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: nameSize,
-                        height: 1.4,
-                        fontWeight: originalStyle ? FontWeight.w600 : null,
+                      const SizedBox(height: 6),
+                      Text(
+                        people[i].name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: nameSize,
+                          height: 1.4,
+                          fontWeight: originalStyle ? FontWeight.w600 : null,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
