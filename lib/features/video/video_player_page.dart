@@ -3144,13 +3144,21 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     );
   }
 
-  /// 拖动中节流快 seek：每 150ms 一次，画面跟着手指走；松手再精确 seek。
+  /// 已缓冲区域可快速预览；网络流的未缓冲区域只在松手时请求目标。
   ///
   /// 串行 + 只保留最新目标：拖动时目标是连续变化的，中间那些落点没有一个是
   /// 用户要的，排队发出去只会让源端连开一路又一路 Range 请求。
   void _scrubSeekThrottled(Duration target) {
     final player = _player;
     if (player == null) return;
+    if (_media?.isNetwork == true) {
+      final position = player.snapshot.value.position;
+      final buffered = player.stats.value.buffered ?? Duration.zero;
+      if (target < position || target > position + buffered) {
+        _pendingScrubSeek = null;
+        return;
+      }
+    }
     _pendingScrubSeek = target;
     final now = DateTime.now();
     final last = _lastScrubSeek;
@@ -5500,7 +5508,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final slider = NativeGlassSlider(
       value: _fraction(shown, snapshot.duration),
       secondaryTrackValue: _fraction(
-        shown + (_player?.stats.value.buffered ?? Duration.zero),
+        snapshot.position + (_player?.stats.value.buffered ?? Duration.zero),
         snapshot.duration,
       ),
       onChangeStart: total == 0

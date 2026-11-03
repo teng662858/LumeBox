@@ -1779,11 +1779,14 @@ void main() {
       expect(find.byKey(VideoPlayerPage.controlPanelKey), findsOneWidget);
     });
 
-    testWidgets('进度条拖动：拖动中节流快 seek，松手精确 seek', (tester) async {
+    testWidgets('网络流拖出缓冲区时松手才跳转', (tester) async {
       final players = await pump(tester);
       players.single.emit(
         position: const Duration(minutes: 1),
         duration: const Duration(minutes: 10),
+      );
+      players.single.pushStats(
+        const PlayerStats(buffered: Duration(seconds: 30)),
       );
       await tester.pumpAndSettle();
 
@@ -1795,22 +1798,18 @@ void main() {
       await gesture.moveBy(const Offset(60, 0));
       await tester.pump();
       expect(find.textContaining('拖动到'), findsOneWidget);
-      // 拖动中会节流快 seek（150ms 一次），但不会每帧都发，也不进精确 seek。
       expect(
-        players.single.fastSeeks.length,
-        lessThanOrEqualTo(1),
-        reason: '拖动中节流，不每帧 seek',
+        tester.widget<Slider>(slider).secondaryTrackValue,
+        closeTo(.15, .001),
+        reason: '缓冲位置应以真实播放位置计算',
       );
+      expect(players.single.fastSeeks, isEmpty, reason: '未缓冲的位置不反复请求');
       expect(players.single.seeks, isEmpty, reason: '拖动中不做过精确跳转');
       for (var i = 0; i < 6; i++) {
         await gesture.moveBy(const Offset(30, 0));
         await tester.pump(const Duration(milliseconds: 40));
       }
-      expect(
-        players.single.fastSeeks.length,
-        lessThanOrEqualTo(4),
-        reason: '连续拖动也按 150ms 节流',
-      );
+      expect(players.single.fastSeeks, isEmpty);
 
       await gesture.up();
       await tester.pump();
@@ -1833,6 +1832,9 @@ void main() {
       players.single.emit(
         position: const Duration(minutes: 1),
         duration: const Duration(minutes: 10),
+      );
+      players.single.pushStats(
+        const PlayerStats(buffered: Duration(minutes: 10)),
       );
       await tester.pumpAndSettle();
 

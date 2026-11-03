@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
+import 'package:video_player/video_player.dart' show VideoPlayerValue;
 
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/av_player.dart';
@@ -20,6 +21,44 @@ import 'package:lume_box/core/player/player_settings.dart';
 /// 两者对照即可定位。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('AVPlayer 只统计当前位置连续的缓冲，不把远处片段算进去', () {
+    VideoPlayerValue value(List<DurationRange> ranges) => VideoPlayerValue(
+      duration: const Duration(minutes: 10),
+      position: const Duration(seconds: 10),
+      buffered: ranges,
+    );
+    expect(
+      AvPlayer.bufferedAhead(
+        value([
+          DurationRange(
+            const Duration(seconds: 30),
+            const Duration(seconds: 90),
+          ),
+        ]),
+      ),
+      isNull,
+    );
+    expect(
+      AvPlayer.bufferedAhead(
+        value([
+          DurationRange(
+            const Duration(seconds: 15),
+            const Duration(seconds: 25),
+          ),
+          DurationRange(
+            const Duration(seconds: 8),
+            const Duration(seconds: 15),
+          ),
+          DurationRange(
+            const Duration(seconds: 40),
+            const Duration(seconds: 90),
+          ),
+        ]),
+      ),
+      const Duration(seconds: 15),
+    );
+  });
 
   group('AVPlayer：缓冲参数走原生通道', () {
     late _FakeVideoPlayerPlatform platform;

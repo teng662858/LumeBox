@@ -769,21 +769,24 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
       engineLabel: 'AVPlayer',
       width: value.size.width > 0 ? value.size.width.round() : null,
       height: value.size.height > 0 ? value.size.height.round() : null,
-      buffered: _bufferedAhead(value),
+      buffered: bufferedAhead(value),
       buffering: value.isBuffering,
       downloadBytesPerSecond: _downloadBytesPerSecond,
     );
   }
 
-  /// 缓冲状态：当前位置**前方**已缓冲的时长（取最远的一段）。
-  static Duration? _bufferedAhead(VideoPlayerValue value) {
-    Duration? ahead;
-    for (final range in value.buffered) {
-      if (range.end <= value.position) continue;
-      final span = range.end - value.position;
-      if (ahead == null || span > ahead) ahead = span;
+  /// 只统计与当前位置连续的缓冲区，不能把远处的孤立片段算进去。
+  @visibleForTesting
+  static Duration? bufferedAhead(VideoPlayerValue value) {
+    final ranges = [...value.buffered]
+      ..sort((a, b) => a.start.compareTo(b.start));
+    var end = value.position;
+    for (final range in ranges) {
+      if (range.end <= end) continue;
+      if (range.start > end) break;
+      end = range.end;
     }
-    return ahead;
+    return end > value.position ? end - value.position : null;
   }
 
   void _emit(PlayerSnapshot next, {String? error}) {
