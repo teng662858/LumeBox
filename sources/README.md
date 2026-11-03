@@ -60,6 +60,16 @@ v1.2.0 同时修了线路选择：站点给的头几条偶尔是 403/404 的资�
   `is_finished` / `status` / `free` / `playable_only` / `actor` / `channel` / `region` / `lang`；
   短剧的「状态」「形式」两行站点自己标了 `enabled:false`。
 
+**v1.4.0 把午夜剧场接成第 18 个分类**（`midnight`）：走 `discovery → play → timeline` 而不是 catalog，
+`chapters()` 把 `timeline.segments` 展开成章节，`content()` 按段取 `media_sources[].url`，
+`play` 结果缓存 10 分钟避免重复扣词元。**请求侧已实测打通**：`play_request_id` 必须标准 UUID v4
+（纯随机 hex → `400 Invalid UUID`；改成 8-4-4-12、第三段首字符 `4`、第四段 `8/9/a/b` 后，
+`random/play`、`top/play`、`playlists/{id}/play` 三个都从「400 格式错」变成「403 资格拦截」，
+说明 body 形状被服务端接受）。**响应结构还没有真实样本**：账号练气1层走完成年确认后
+`access`/`discovery`/`play` 全 403 `midnight_theater_not_eligible`，结构取自
+`/assets/MidnightTheaterRoute-*.js` 的消费代码，解析全程防御式；资格放开后要拿一条真实片单复验。
+没资格时分类会明确回报原因（不会静默返回空）。
+
 
 ## 2026-11-03 爱丽丝书屋（`comic/alicesw.js`，详见 [源记录](../docs/2026-11-03_爱丽丝书屋源.md)）
 

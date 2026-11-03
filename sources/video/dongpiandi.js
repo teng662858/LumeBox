@@ -1,4 +1,4 @@
-// LumeSource: {"id":"dongpiandi_video","name":"懂片帝","version":"1.3.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://dongpiandi.ai"],"network":"direct","icon":"https://dongpiandi.ai/assets/app-icon-180.png","settings":[{"key":"lineMode","type":"select","title":"线路偏好","default":"direct","options":[{"value":"direct","title":"第三方直链优先（免费，推荐）"},{"value":"official","title":"官方线路优先（1080P/4K，扣站点额度）"}]},{"key":"checkAccount","type":"action","action":"source","title":"检查账号与额度"},{"key":"logout","type":"action","action":"source","title":"退出站点登录"},{"key":"adultConfirm","type":"action","action":"source","title":"确认已满 18 岁（站点账号）"},{"key":"midnightCheck","type":"action","action":"source","title":"查午夜剧场资格"},{"key":"note","type":"info","title":"站点说明","description":"懂片帝（dongpiandi.ai，AI 找片 + 片单 + 播放）：React SPA + 同源 /v1/* JSON 接口，全部请求要 HMAC 签名（源内用宿主原生 tools.hmac 算，失败自动退回纯 JS）。浏览/搜索/详情/选集/直链播放都不需要登录；要「官方线路优先」或看站内额度才需在「账号登入」里填站点账号密码。站点若换域名，在「源设置 → 换网址」里填新域名即可。"}]}
+// LumeSource: {"id":"dongpiandi_video","name":"懂片帝","version":"1.4.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["commonSettings","settingsActions"],"mirrors":["https://dongpiandi.ai"],"network":"direct","icon":"https://dongpiandi.ai/assets/app-icon-180.png","settings":[{"key":"lineMode","type":"select","title":"线路偏好","default":"direct","options":[{"value":"direct","title":"第三方直链优先（免费，推荐）"},{"value":"official","title":"官方线路优先（1080P/4K，扣站点额度）"}]},{"key":"checkAccount","type":"action","action":"source","title":"检查账号与额度"},{"key":"logout","type":"action","action":"source","title":"退出站点登录"},{"key":"adultConfirm","type":"action","action":"source","title":"确认已满 18 岁（站点账号）"},{"key":"midnightCheck","type":"action","action":"source","title":"查午夜剧场资格"},{"key":"note","type":"info","title":"站点说明","description":"懂片帝（dongpiandi.ai，AI 找片 + 片单 + 播放）：React SPA + 同源 /v1/* JSON 接口，全部请求要 HMAC 签名（源内用宿主原生 tools.hmac 算，失败自动退回纯 JS）。浏览/搜索/详情/选集/直链播放都不需要登录；要「官方线路优先」或看站内额度才需在「账号登入」里填站点账号密码。站点若换域名，在「源设置 → 换网址」里填新域名即可。"}]}
 // LumeRuntime: javascript
 //
 // 站点：懂片帝（dongpiandi.ai；懂片帝AI / 懂片AI）
@@ -58,6 +58,10 @@ var PAGE_SIZE = 20;      // 站点上限就是 20，传更大也会被截到 20
 var KEEP_LINES = 5;      // 排序后留几条直链进 qualities（用户可在播放器里切线路）
 var TICKET_TRIES = 3;    // 票券线路最多试几条（每条都可能扣额度）
 var DETAIL_TTL = 10 * 60 * 1000;
+var MT_CAT = 'midnight';       // 午夜剧场分类 id
+var MT_ITEM = 'mt:';           // 午夜剧场条目 id 前缀
+var MT_SEGMENT = 's:';         // 片单里第几段
+var MT_PLAY_TTL = 10 * 60 * 1000;
 
 var KIND_LABEL = {
   movie: '电影', series: '电视剧', anime: '动漫', variety: '综艺',
@@ -83,7 +87,8 @@ var CATS = [
   { id: 'hot_list_key=tv_american', title: '美剧榜' },
   { id: 'hot_list_key=movie_hot', title: '电影热播' },
   { id: 'hot_list_key=movie_high_score', title: '高分电影' },
-  { id: 'hot_list_key=movie_nowplaying', title: '院线热映' }
+  { id: 'hot_list_key=movie_nowplaying', title: '院线热映' },
+  { id: MT_CAT, title: '午夜剧场' }
 ];
 var CAT_IDS = {};
 for (var ci = 0; ci < CATS.length; ci += 1) CAT_IDS[CATS[ci].id] = true;
@@ -797,14 +802,18 @@ function browseUrlOf(section) {
 }
 
 // ------------------------------------------------------------------ 详情缓存
-function cacheKeyOf(id) {
+function hashOf(raw) {
   var hash = 2166136261;
-  var raw = text(id);
-  for (var i = 0; i < raw.length; i += 1) {
-    hash ^= raw.charCodeAt(i);
+  var value = text(raw);
+  for (var i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  return 'detail_' + (hash >>> 0).toString(36) + '.json';
+  return (hash >>> 0).toString(36);
+}
+
+function cacheKeyOf(id) {
+  return 'detail_' + hashOf(id) + '.json';
 }
 
 async function loadDetail(id) {
@@ -836,6 +845,197 @@ async function loadChapters(id) {
   if (!out.length) throw new Error('这一条在站点上还没有可播放的分集');
   return out;
 }
+
+// ============================================================== 午夜剧场
+// 站点那套「AI 现生成今晚片单」的玩法。它不是片库，一次 play 返回的是一整条
+// **时间线**（materials.items[].media_sources[].url + timeline.segments[]），
+// 本源把每个 timeline 段展开成一个「章节」，这样一条片单也能顺着看完。
+//
+// 结构来源：/assets/MidnightTheaterRoute-*.js 的消费代码（2026-11-03），**未在真实
+// 响应上验证** —— 实测账号（练气1层）走完成年确认后 access 仍回
+// 403 midnight_theater_not_eligible，discovery / play 同样 403，拿不到任何样本。
+// 所以这里全程防御式解析：字段缺了就降级，不编造；资格一旦放开即可直接用。
+//
+// 接口（都要登录会话）：
+//   GET  /v1/midnight-theater/access            资格；403 = 没资格/没确认/青少年模式
+//   GET  /v1/midnight-theater/discovery?history_limit=8&watching_limit=8[&*_cursor]
+//        → {history[], watching[], history_next_cursor, history_has_more,
+//           watching_next_cursor, watching_has_more}；卡片 {id,title,cover,author,created_at,cost}
+//   POST /v1/midnight-theater/playlists/{id}/play {play_request_id}   → 整条片单
+//   POST /v1/midnight-theater/playlists/random/play {play_request_id}
+//   POST /v1/midnight-theater/top/play {play_request_id}              ← 今日热门片单
+// 站点要标准 UUID v4（`crypto.randomUUID()` 那种）：8-4-4-4-12，且第三段首字符恒为
+// 4、第四段首字符只能是 8/9/a/b。注意本源 randomHex(n) 每单位出 **2** 个 hex 字符，
+// 所以按「字符数」再切一次；直接拼 randomHex(8)-… 会得到 16-8-8-24 位，被回
+// 400 `play_request_id: Invalid UUID`（实测）。
+function hexChars(count) {
+  var out = '';
+  while (out.length < count) out += randomHex(1);
+  return out.slice(0, count);
+}
+
+function uuidLike() {
+  var variant = '89ab'.charAt(Math.floor(Math.random() * 4));
+  return hexChars(8) + '-' + hexChars(4) + '-4' + hexChars(3) + '-' +
+    variant + hexChars(3) + '-' + hexChars(12);
+}
+
+var mtAccessCache = null;
+
+async function midnightSession() {
+  var cookie = await ensureSession(false);
+  if (!cookie) cookie = await ensureSession(true).catch(function () { return ''; });
+  if (!cookie) throw new Error('午夜剧场要站点账号：请在「源设置 → 账号登入」里填账号密码');
+  return cookie;
+}
+
+async function midnightAccess() {
+  if (mtAccessCache && Date.now() - mtAccessCache.at < 5 * 60 * 1000) return mtAccessCache;
+  var cookie = await midnightSession();
+  var result = await request('/v1/midnight-theater/access', { cookie: cookie });
+  if (result.status === 200) {
+    mtAccessCache = { at: Date.now(), ok: true, data: result.json || {} };
+    return mtAccessCache;
+  }
+  var code = (result.json && (result.json.code || (result.json.error && result.json.error.code))) || '';
+  var reason = MIDNIGHT_REASON[code];
+  if (!reason) reason = apiError(result);
+  var detail = (result.json && (result.json.message || (result.json.error && result.json.error.message))) || '';
+  throw new Error('午夜剧场打不开：' + reason + (code ? '（' + code + (detail ? '：' + detail : '') + '）' : ''));
+}
+
+function mtItemOf(card, source) {
+  var id = text(card && card.id);
+  if (!id) return null;
+  var bits = [];
+  if (source) bits.push(source);
+  if (text(card.author)) bits.push('来自 ' + text(card.author));
+  else if (text(card.created_at)) bits.push(text(card.created_at).slice(0, 10));
+  if (card.cost != null) bits.push('播放消耗 ' + tokenText(card.cost));
+  return {
+    id: MT_ITEM + id,
+    title: text(card.title) || '午夜片单',
+    cover: text(card.cover),
+    subtitle: bits.join(' · ')
+  };
+}
+
+async function midnightItemsOf(page) {
+  var cursorKey = 'mt_cursor_' + page + '.json';
+  var cookie = await midnightSession();
+  var query = '/v1/midnight-theater/discovery?history_limit=8&watching_limit=8';
+  if (page > 1) {
+    var saved = await readJson(cursorKey);
+    if (!saved || !saved.cursor) return { items: [], hasMore: false };
+    query += '&history_cursor=' + enc(saved.cursor) + '&watching_limit=0';
+  }
+  var result = await request(query, { cookie: cookie });
+  if (result.status !== 200 || !result.json) throw new Error(apiError(result));
+  var data = result.json;
+  var items = [];
+  var seen = {};
+  function push(card, source) {
+    var item = mtItemOf(card, source);
+    if (!item || seen[item.id]) return;
+    seen[item.id] = true;
+    items.push(item);
+  }
+  var watching = data.watching || [];
+  var history = data.history || [];
+  if (page === 1) {
+    for (var i = 0; i < watching.length; i += 1) push(watching[i], '大家都在看');
+    for (var j = 0; j < history.length; j += 1) push(history[j], '我生成过的');
+  } else {
+    for (var k = 0; k < history.length; k += 1) push(history[k], '我生成过的');
+  }
+  var hasMore = data.history_has_more === true && !!text(data.history_next_cursor);
+  if (hasMore) {
+    await writeJson(cursorKey, { cursor: text(data.history_next_cursor), at: Date.now() });
+  }
+  // 记住条目信息，detail() 不必再请求（片单没有单独的详情接口）
+  for (var n = 0; n < items.length; n += 1) {
+    await writeJson('mt_item_' + hashOf(items[n].id) + '.json', { item: items[n], at: Date.now() });
+  }
+  return { items: items, hasMore: hasMore };
+}
+
+async function midnightDetail(id) {
+  var cached = await readJson('mt_item_' + hashOf(id) + '.json');
+  if (cached && cached.item) {
+    var item = cached.item;
+    return {
+      id: item.id,
+      title: item.title,
+      cover: item.cover,
+      subtitle: item.subtitle,
+      mediaType: 'video',
+      description: '午夜剧场片单（站点 AI 现生成，播放按时间线顺序展开成分段）。\n' + (item.subtitle || '')
+    };
+  }
+  // 缓存没命中（例如从历史记录直接进来）：拿不到标题，返回一个可播放的占位
+  var playlistId = id.replace(MT_ITEM, '');
+  if (!playlistId) return null;
+  return {
+    id: id,
+    title: '午夜片单',
+    subtitle: '站点 AI 生成',
+    mediaType: 'video',
+    description: '午夜剧场片单。点开会向站点申请播放（按次计词元）。'
+  };
+}
+
+// 播放：一次 play 拿整条时间线，缓存 10 分钟；chapters/content 都从这里取。
+async function loadMidnightPlaylist(id) {
+  var playlistId = text(id).replace(MT_ITEM, '');
+  if (!playlistId) throw new Error('缺少片单 id');
+  await midnightAccess();   // 先过资格关，免得直接撞 403/400
+  var key = 'mt_play_' + hashOf(playlistId) + '.json';
+  var cached = await readJson(key);
+  if (cached && cached.data && Date.now() - Number(cached.at || 0) < MT_PLAY_TTL) {
+    return cached.data;
+  }
+  var cookie = await midnightSession();
+  var result = await request('/v1/midnight-theater/playlists/' + enc(playlistId) + '/play', {
+    method: 'POST',
+    body: { play_request_id: uuidLike() },
+    cookie: cookie
+  });
+  if (result.status !== 200 && result.status !== 201) {
+    var code = (result.json && (result.json.code || (result.json.error && result.json.error.code))) || '';
+    var reason = MIDNIGHT_REASON[code];
+    if (code === 'playback_token_insufficient' || result.status === 402) {
+      throw new Error('站点词元不够播放这条片单了（站点按次计费，明天额度重置后再试）');
+    }
+    throw new Error(reason ? '午夜剧场：' + reason : apiError(result));
+  }
+  await writeJson(key, { data: result.json, at: Date.now() });
+  return result.json;
+}
+
+function midnightSegmentsOf(playlist) {
+  var materials = (playlist && playlist.materials && playlist.materials.items) || [];
+  var timeline = (playlist && playlist.timeline) || {};
+  var segments = timeline.segments || [];
+  var out = [];
+  for (var i = 0; i < segments.length; i += 1) {
+    var segment = segments[i] || {};
+    var material = materials[segment.material_index] || null;
+    var sources = (material && material.media_sources) || [];
+    var source = sources[segment.media_source_index] || sources[0] || null;
+    var url = source ? text(source.url) : '';
+    if (!url) continue;
+    out.push({
+      index: i,
+      title: text(material && material.title) || ('第 ' + (out.length + 1) + ' 段'),
+      cover: text(material && material.cover_url),
+      duration: Number(segment.timeline_end) - Number(segment.timeline_start),
+      url: url,
+      format: text(source && source.format)
+    });
+  }
+  return out;
+}
+
 
 // ------------------------------------------------------- 直链线路排序（不探活）
 // 为什么不逐条探活：App 单次调用预算 3–5 秒，而聚合资源站的 CDN 里总有一两条
@@ -993,7 +1193,7 @@ async function resolveTickets(lines) {
 var LumeSource = {
   id: 'dongpiandi_video',
   name: '懂片帝',
-  version: '1.3.0',
+  version: '1.4.0',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
@@ -1070,7 +1270,9 @@ var LumeSource = {
   },
 
   async filters(argument) {
-    var parsed = parseCategoryId(argument && argument.categoryId);
+    var raw = text(argument && argument.categoryId).trim();
+    if (raw === MT_CAT) return { groups: [] };   // 午夜剧场是 AI 片单，没有筛选维度
+    var parsed = parseCategoryId(raw);
     var kind = text(parsed.kind);
 
     // 榜单分类（hot_list_key）实测会丢掉其它筛选参数（`hot_list_key + area` 的 area
@@ -1123,6 +1325,12 @@ var LumeSource = {
     var filters = args.filters || {};
     var limit = pageSize();
 
+    // 午夜剧场：走 discovery（大家都看 + 我生成过的），不是 browse
+    if (!keyword && categoryId === MT_CAT) {
+      await midnightAccess();
+      return await midnightItemsOf(page);
+    }
+
     var params = {};
     if (keyword) {
       params.q = keyword;
@@ -1138,7 +1346,6 @@ var LumeSource = {
       }
     }
 
-    // 筛选：选项 id 里就是站点真实参数名（genre / area / language / year / sort）
     // 筛选：选项 id 里就是站点真实参数名（genre / area / language / year / sort）
     var groupKeys = Object.keys(filters || {});
     for (var g = 0; g < groupKeys.length; g += 1) {
@@ -1168,6 +1375,7 @@ var LumeSource = {
   async detail(argument) {
     var id = text(argument && argument.id);
     if (!id) return null;
+    if (id.indexOf(MT_ITEM) === 0) return await midnightDetail(id);
     var data;
     try {
       data = await loadDetail(id);
@@ -1203,11 +1411,36 @@ var LumeSource = {
   async chapters(argument) {
     var id = text(argument && argument.id);
     if (!id) return [];
+    if (id.indexOf(MT_ITEM) === 0) {
+      // 片单 → 每个 timeline 段一个章节（一次 play 换回整条时间线，缓存 10 分钟）
+      var playlist = await loadMidnightPlaylist(id);
+      var segments = midnightSegmentsOf(playlist);
+      if (!segments.length) throw new Error('这条片单没有可播放的分段（站点返回的 timeline 为空）');
+      var chapters = [];
+      for (var s = 0; s < segments.length; s += 1) {
+        chapters.push({ id: MT_SEGMENT + s, title: segments[s].title });
+      }
+      return chapters;
+    }
     return await loadChapters(id);
   },
 
   async content(argument) {
     var args = argument || {};
+    if (text(args.id).indexOf(MT_ITEM) === 0 || text(args.chapterId).indexOf(MT_SEGMENT) === 0) {
+      var mtPlaylist = await loadMidnightPlaylist(text(args.id));
+      var mtSegments = midnightSegmentsOf(mtPlaylist);
+      if (!mtSegments.length) throw new Error('这条片单没有可播放的分段');
+      var wantIndex = Number(text(args.chapterId).replace(MT_SEGMENT, ''));
+      if (!isFinite(wantIndex) || wantIndex < 0 || wantIndex >= mtSegments.length) wantIndex = 0;
+      var mtSegment = mtSegments[wantIndex];
+      return {
+        kind: 'video',
+        url: mtSegment.url,
+        headers: { 'User-Agent': UA }
+      };
+    }
+
     var token = text(args.chapterId).replace(/^t:/, '');
     if (!token || !/^av_/.test(token)) {
       // 没有分集（例如从历史记录直接进来）：现取第 1 集
