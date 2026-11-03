@@ -191,27 +191,4 @@ extension _OriginalIntro on _VideoPlayerPageState {
       },
     );
   }
-
-  void _originalSkipNow() {
-    final controller = _intro;
-    if (controller?.prompt != null) {
-      unawaited(controller!.skipNow());
-      return;
-    }
-    final snapshot = _player?.snapshot.value;
-    if (snapshot == null) return;
-    final position = snapshot.position.inMilliseconds;
-    final segment = controller?.segments
-        .where((s) => position >= s.startMs && position < s.endMs)
-        .firstOrNull;
-    if (segment != null) {
-      unawaited(controller!.skipSegment(segment));
-      return;
-    }
-    if (controller == null && !_skipMarks.isEmpty) {
-      _maybeSkip(_skipMarks, snapshot.position, snapshot.duration);
-      return;
-    }
-    _markSkipFromQuick(snapshot);
-  }
 }

@@ -825,8 +825,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('player-category-intro')));
     await tester.pumpAndSettle();
-    expect(find.text('记片头'), findsOneWidget, reason: '离片尾还远：快捷按钮显示「记片头」');
-    await tapWithDetailPlay(tester, find.text('记片头'));
+    final markIntro = find.descendant(
+      of: find.byType(PlayerSettingsSheet),
+      matching: find.text('记片头'),
+    );
+    expect(markIntro, findsOneWidget, reason: '离片尾还远：快捷按钮显示「记片头」');
+    await tapWithDetailPlay(tester, markIntro);
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.textContaining('已记片头'), findsOneWidget);
     expect(created.last.seeks, isEmpty, reason: '记片头不会当场把当前片段跳走');
@@ -880,8 +884,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('player-category-intro')));
     await tester.pumpAndSettle();
-    expect(find.text('记片尾'), findsOneWidget, reason: '剩余不到片尾窗口：显示记片尾');
-    await tapWithDetailPlay(tester, find.text('记片尾'));
+    final markOutro = find.descendant(
+      of: find.byType(PlayerSettingsSheet),
+      matching: find.text('记片尾'),
+    );
+    expect(markOutro, findsOneWidget, reason: '剩余不到片尾窗口：显示记片尾');
+    await tapWithDetailPlay(tester, markOutro);
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.textContaining('已记片尾'), findsOneWidget);
     expect(

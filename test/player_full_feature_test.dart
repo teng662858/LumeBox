@@ -284,6 +284,7 @@ void main() {
       PlaybackSourceValidator? validator,
       bool fullscreenOnly = false,
       PlayerPrelaunch? prelaunch,
+      ReadingLibrary? library,
     }) async {
       final created = <_FakePlayer>[];
       await tester.binding.setSurfaceSize(const Size(900, 1600));
@@ -293,6 +294,7 @@ void main() {
           theme: LumeTheme.build(),
           home: VideoPlayerPage(
             fullscreenOnly: fullscreenOnly,
+            library: library,
             prelaunch: prelaunch,
             media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
             qualities: qualities,
@@ -430,11 +432,135 @@ void main() {
       );
       await tester.tap(find.byTooltip('全屏'));
       await tester.pumpAndSettle();
-      expect(find.byTooltip('片头片尾设置'), findsOneWidget);
+      expect(find.byTooltip('记片头（长按清除标记）'), findsOneWidget);
       await tester.tap(find.byTooltip('下一集'));
       await tester.pumpAndSettle();
       expect(parsed, [12]);
       expect(players.last.media!.uri.path, '/13.m3u8');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('短视频开头显示记片头，后半段显示记片尾', (tester) async {
+      final players = await pump(tester);
+      await tester.tap(find.byTooltip('全屏'));
+      await tester.pumpAndSettle();
+      players.single.emit(
+        position: const Duration(seconds: 5),
+        duration: const Duration(seconds: 90),
+        playing: true,
+      );
+      await tester.pump();
+      expect(find.byTooltip('记片头（长按清除标记）'), findsOneWidget);
+      players.single.emit(
+        position: const Duration(seconds: 60),
+        duration: const Duration(seconds: 90),
+        playing: true,
+      );
+      await tester.pump();
+      expect(find.byTooltip('记片尾（长按清除标记）'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('横屏直接记片头片尾并供下一集沿用', (tester) async {
+      final store = (await tester.runAsync(IntroStore.open))!;
+      store.update({
+        'active': true,
+        'autoSkip': true,
+        'manual': true,
+        'reuseManualSeason': true,
+        'countdown': 0,
+      });
+      final source = DirectVideoSource(
+        id: 'mark-fixture',
+        name: '测试源',
+        title: '测试剧',
+        uri: Uri.parse('https://fixture.invalid/1.mp4'),
+        episodes: const [
+          SourceChapter(id: 'e0', title: '第1集'),
+          SourceChapter(id: 'e1', title: '第2集'),
+        ],
+        resolveEpisode: (index) async => VideoContent(
+          url: Uri.parse('https://fixture.invalid/${index + 1}.mp4'),
+        ),
+      );
+      final players = await pump(
+        tester,
+        source: source,
+        library: await ReadingLibrary.open(Section.video),
+        target: const VideoPlayTarget(
+          sourceId: 'mark-fixture',
+          itemId: 'series',
+          title: '测试剧',
+          chapterIndex: 0,
+          chapterId: 'e0',
+          chapterTitle: '第1集',
+        ),
+      );
+      await tester.tap(find.byTooltip('全屏'));
+      await tester.pumpAndSettle();
+      final player = players.single;
+      player.emit(
+        position: const Duration(seconds: 60),
+        duration: const Duration(seconds: 600),
+        playing: true,
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.byTooltip('记片头（长按清除标记）'));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 80)),
+      );
+      await tester.pump();
+      player.emit(
+        position: const Duration(seconds: 540),
+        duration: const Duration(seconds: 600),
+        playing: true,
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.byTooltip('记片尾（长按清除标记）'));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 80)),
+      );
+      await tester.pump();
+      final marks = store.seriesMemory(
+        const EpisodeIdentity(series: 'mark-fixture:series', episode: 2),
+        620000,
+      );
+      expect(
+        marks
+            .singleWhere((segment) => segment.kind == SegmentKind.opening)
+            .endMs,
+        60000,
+      );
+      expect(
+        marks
+            .singleWhere((segment) => segment.kind == SegmentKind.ending)
+            .startMs,
+        560000,
+      );
+      expect(player.seeks, isEmpty, reason: '标记时不改变当前播放位置');
+      await tester.tap(find.byTooltip('下一集'));
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump();
+      player.emit(
+        position: const Duration(seconds: 5),
+        duration: const Duration(seconds: 620),
+        playing: true,
+      );
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump();
+      expect(
+        player.seeks,
+        contains(const Duration(seconds: 60)),
+        reason: '下一集从已记的片头结束位置继续',
+      );
       await tester.pumpWidget(const SizedBox());
     });
 
@@ -1131,7 +1257,7 @@ void main() {
       expect(find.text('选集'), findsOneWidget);
       expect(find.byTooltip('清晰度'), findsNothing);
       expect(find.byTooltip('播放内核'), findsOneWidget);
-      expect(find.byTooltip('记片头（长按清除标记）'), findsNothing);
+      expect(find.byTooltip('记片头（长按清除标记）'), findsOneWidget);
       expect(find.byTooltip('播放器设置'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -1988,7 +2114,7 @@ void main() {
       expect(episodes.dy, greaterThan(slider.bottom));
       expect(find.byTooltip('停止'), findsNothing);
       expect(find.byTooltip('线路 / 选集'), findsOneWidget);
-      expect(find.byTooltip('记片头（长按清除标记）'), findsNothing);
+      expect(find.byTooltip('记片头（长按清除标记）'), findsOneWidget);
       expect(find.byTooltip('弹幕：开'), findsOneWidget);
       expect(find.byTooltip('锁定（防误触）'), findsOneWidget);
       await tester.tap(find.byTooltip('播放器设置'));
@@ -2167,13 +2293,14 @@ void main() {
 
     testWidgets('播放页提示走顶部胶囊：1.6 秒、不排队、不再是黑条', (tester) async {
       await pump(tester);
+      final label = find.text('记片头');
       // 快捷记片头按钮在没有作品身份时会弹一句提示。
-      await tester.tap(find.text('记片头'));
+      await tester.tap(label);
       await tester.pumpAndSettle();
       expect(find.textContaining('从源条目起播才能记片头片尾'), findsOneWidget);
       expect(find.byType(SnackBar), findsNothing, reason: '播放页不再用黑条');
       // 新提示顶掉旧的：连着两条不会排队压两条（用户口径）。
-      await tester.tap(find.text('记片头'));
+      await tester.tap(label);
       await tester.pumpAndSettle();
       expect(
         find.textContaining('从源条目起播才能记片头片尾'),

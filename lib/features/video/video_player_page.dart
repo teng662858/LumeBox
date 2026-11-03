@@ -639,16 +639,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   /// 片头 / 片尾标记（用户口径：播放中「记一下」，下次自动跳过）。
   SkipMarks _skipMarks = SkipMarks.none;
 
-  /// 本次播放是否已经处理过片头（只在起播时判一次：用户拖回片头看时不再弹回去）。
-  bool _introHandled = false;
-
-  /// 本次播放是否已经处理过片尾（与片头同一条纪律，且是**死循环的守门人**）。
-  ///
-  /// 片尾的判定源是「位置 ≥ 标记」，而跳片尾恰恰把位置推到标记之后（跳到结尾）
-  /// ——没有这个标记，最后一集会在片尾之后**每个快照都重现处理一次**：换集请求
-  /// 与 seek 交替，永远停不下来（真机是每帧一次章节列表请求，用例里直接挂死）。
-  bool _outroHandled = false;
-
   /// 弹幕：设置 + 本集弹幕 + 内存缓存（换集时按 itemId/chapterId 取）。
   DanmakuSettings _danmakuSettings = DanmakuSettings.defaults;
   DanmakuTrack _danmaku = DanmakuTrack.empty;
@@ -1792,8 +1782,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     }
     // 换作品 / 换集：重新读这套片头片尾标记，并允许片头**与片尾**再判一次
     //（片尾那条同样必须复位：换集就是为了让新一集还能走到它自己的片尾）。
-    _introHandled = false;
-    _outroHandled = false;
     _loadSkipMarks(target);
     _introGeneration++;
     _introOpening = false;
@@ -2528,10 +2516,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       ).catchError((Object error) => LumeLog.warn('同剧跳过记忆保存失败：$error')),
     );
     setState(() => _skipMarks = next);
-    _introHandled = !intro && _introducedAlready;
-    // 「记片尾」记的就是**当前位置**：当场算作已处理，这一集不会被立刻跳走
-    //（用户还要看完这一段）。下次起播 / 换集重新判定，到时照跳。
-    if (!intro) _outroHandled = true;
     _showToast(
       intro
           ? '已记片头：${_format(position)}（下次从这里开始播）'
@@ -2567,7 +2551,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final total = snapshot.duration;
     if (total <= Duration.zero) return false;
     final scaled = total * _outroWindowFraction;
-    final window = scaled > _outroWindowMin ? scaled : _outroWindowMin;
+    final preferred = scaled > _outroWindowMin ? scaled : _outroWindowMin;
+    final window = preferred > total * .5 ? total * .5 : preferred;
     return total - snapshot.position <= window;
   }
 
@@ -2596,15 +2581,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   ///
   /// 文案随播放位置切换，不再需要用户自己判断「现在该记哪一头」；两个入口
   /// （全屏浮层与竖屏控制栏）读同一份判定，行为不会各说各话。
-  Widget _skipQuickButton({bool inPanel = false}) =>
+  Widget _skipQuickButton({bool inPanel = false, bool withIcon = false}) =>
       ValueListenableBuilder<PlayerSnapshot>(
         valueListenable: _player?.snapshot ?? _idleSnapshot,
         builder: (context, snapshot, _) => Tooltip(
           message: _skipQuickTooltip(snapshot),
           child: TextButton(
-            onPressed: () => _intro?.prompt != null
-                ? _originalSkipNow()
-                : _markSkipFromQuick(snapshot),
+            onPressed: () => _markSkipFromQuick(snapshot),
             onLongPress: _clearSkipMarksFromQuick,
             style: TextButton.styleFrom(
               minimumSize: const Size(56, 40),
@@ -2613,84 +2596,29 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   ? Colors.white
                   : LumeTheme.accent,
             ),
-            child: Text(
-              _skipQuickLabel(snapshot),
-              style: TextStyle(
-                fontSize: LumeTypography.bodySize + 1,
-                fontWeight: FontWeight.w600,
-                shadows: _fullscreen && !inPanel ? _controlShadows : null,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (withIcon) ...[
+                    const Icon(Icons.fast_forward_rounded, size: 17),
+                    const SizedBox(width: 3),
+                  ],
+                  Text(
+                    _skipQuickLabel(snapshot),
+                    style: TextStyle(
+                      fontSize: LumeTypography.bodySize + 1,
+                      fontWeight: FontWeight.w600,
+                      shadows: _fullscreen && !inPanel ? _controlShadows : null,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
       );
-
-  /// 起播时是否已经走过片头（用来判断「记片尾」后要不要重新判片头）。
-  bool get _introducedAlready {
-    final snapshot = _player?.snapshot.value;
-    final intro = _skipMarks.intro;
-    if (snapshot == null || intro == null) return false;
-    return snapshot.position >= intro;
-  }
-
-  /// 每次快照变化时判一次：该跳片头就跳、到片尾就进下一集。
-  ///
-  /// 只在「从源条目起播」且这一集有标记时生效；手动贴地址没有作品身份，不跳。
-  void _maybeSkip(SkipMarks marks, Duration position, Duration duration) {
-    final target = _target;
-    final player = _player;
-    if (target == null || player == null) return;
-    final outcome = SkipDecision.resolve(
-      marks: marks,
-      position: position,
-      duration: duration,
-      introEnabled: true,
-      outroEnabled: true,
-      introHandled: _introHandled,
-      outroHandled: _outroHandled,
-      hasNext: _autoNext && target.chapterIndex >= 0,
-    );
-    // 片尾只处理一次：位置已经越过片尾标记就等于「这一集的片尾已经管过了」，
-    // 任何一次动作之后都不能再判（否则跳到结尾 / 换集失败之后位置仍在标记之后，
-    // 每个快照都会再来一轮——见 SkipDecision 的第 2 条边界）。
-    if (outcome.action != SkipAction.none &&
-        marks.outro != null &&
-        position >= marks.outro!) {
-      _outroHandled = true;
-    }
-    switch (outcome.action) {
-      case SkipAction.none:
-        return;
-      case SkipAction.seek:
-        final to = outcome.position!;
-        _introHandled = true;
-        unawaited(player.seek(to));
-        _showToast(
-          to >= duration && duration > Duration.zero ? '已跳过片尾' : '已跳过片头',
-        );
-      case SkipAction.advance:
-        _introHandled = true;
-        // 有没有下一集要**问过才知道**（单集作品 / 最后一集都没有），
-        // 因此先试着换集：换成了才说「进入下一集」，换不成跳到结尾。
-        unawaited(_skipOutroTo(target, duration));
-    }
-  }
-
-  /// 片尾到点：有下一集就连播，没有就跳到结尾（用户口径：片尾「到点自动跳」）。
-  ///
-  /// 以前这里直接判「有下一集」（只按 `_autoNext` 猜），单集作品的片尾于是**什么
-  /// 都没发生**——越界换集被静默吃掉，用户等不到「跳到结尾」。
-  Future<void> _skipOutroTo(VideoPlayTarget target, Duration duration) async {
-    final switched = await _playEpisodeAt(target.chapterIndex + 1, auto: true);
-    if (switched) {
-      _showToast('已跳过片尾，进入下一集');
-      return;
-    }
-    final player = _player;
-    if (player == null || !mounted) return;
-    if (duration > Duration.zero) await player.seek(duration);
-    _showToast('已跳过片尾');
-  }
 
   /// 保存当前播放进度（集数 + 时间点）。
   ///
@@ -4610,11 +4538,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   : () => _playEpisodeAt(target.chapterIndex + 1),
             ),
             const SizedBox(width: 4),
-            action(
-              '片头尾',
-              '片头片尾设置',
-              Icons.slow_motion_video,
-              _openOriginalIntro,
+            SizedBox(
+              width: 82,
+              height: _box,
+              child: _skipQuickButton(withIcon: true),
             ),
           ],
           const Spacer(),
