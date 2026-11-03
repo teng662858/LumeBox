@@ -1,4 +1,5 @@
 import '../media/playback_focus.dart';
+
 import 'dart:async';
 
 import 'package:flutter/services.dart';
@@ -67,6 +68,10 @@ class AdvancedSpeechSource {
         !await SpeechLocalModel.instance.check()) {
       throw const FormatException('离线模型缺失或损坏，请先准备模型');
     }
+    if (settings.mode == SpeechMode.kokoro &&
+        !await KokoroModel.instance.check()) {
+      throw const FormatException('Kokoro 模型未安装');
+    }
     if (generation != _generation) return;
     final sampleRate = settings.mode == SpeechMode.local ? 8000 : 24000;
     await methods.invokeMethod<void>('streamBegin', {
@@ -117,8 +122,11 @@ class AdvancedSpeechSource {
           // AI failed before any audio was queued: use the complete simple-mode
           // profile, including its native pitch/volume, without altering storage.
           await methods.invokeMethod<void>('streamBegin', {
-            'token':token,'sampleRate':sampleRate,'pitch':effective.pitch,
-            'volume':effective.volume,'background':effective.backgroundPlayback,
+            'token': token,
+            'sampleRate': sampleRate,
+            'pitch': effective.pitch,
+            'volume': effective.volume,
+            'background': effective.backgroundPlayback,
           });
         }
         for (final turn in turns) {
@@ -139,16 +147,21 @@ class AdvancedSpeechSource {
               'pitch': effective.pitch,
               'volume': effective.volume,
             });
-          } else if (effective.mode == SpeechMode.local) {
-            final model = SpeechLocalModel.instance;
-            if (!model.ready || model.directory == null) {
+          } else if (effective.mode == SpeechMode.local ||
+              effective.mode == SpeechMode.kokoro) {
+            final kokoro = effective.mode == SpeechMode.kokoro;
+            final directory = kokoro
+                ? KokoroModel.instance.directory
+                : SpeechLocalModel.instance.directory;
+            if (directory == null) {
               throw const FormatException('离线模型尚未就绪');
             }
             await for (final bytes in _local.synthesize(
               turn.text,
-              model.directory!.path,
+              directory.path,
               int.tryParse(voice) ?? 0,
               effective.rate / .5,
+              kokoro: kokoro,
             )) {
               for (var offset = 0; offset < bytes.length; offset += 8000) {
                 if (generation != _generation) return;

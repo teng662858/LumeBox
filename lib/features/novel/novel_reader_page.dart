@@ -6,6 +6,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/reading/reading.dart';
+import '../../core/speech/speech.dart';
+import '../reading/speech_modes_panel.dart';
 import '../../core/source/source.dart';
 
 /// Preserve every UTF-16 offset while giving blank paragraph lines a compact
@@ -85,12 +87,14 @@ class NovelReaderPage extends StatefulWidget {
     required this.target,
     required this.chapters,
     this.initialChapterIndex = 0,
+    this.speechBackend,
   });
   final DataSource source;
   final ReadingLibrary library;
   final ReadingTarget target;
   final List<SourceChapter> chapters;
   final int initialChapterIndex;
+  final SpeechBackend? speechBackend;
   @override
   State<NovelReaderPage> createState() => _NovelReaderPageState();
 }
@@ -109,10 +113,97 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   PageController? _controller;
   Timer? _saveTimer;
   final _pageLabel = ValueNotifier<String>('');
+  late SpeechSettings _speechSettings;
+  late SpeechSession _speech;
+  bool _continueSpeech = false;
+  void _speechChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _speechPosition(int offset) {
+    if (!mounted || !_speechSettings.followAlong || _starts.isEmpty) return;
+    final page = _starts.lastIndexWhere((start) => start <= offset);
+    if (page >= 0 && page != _page && (_controller?.hasClients ?? false)) {
+      _controller!.jumpToPage(page);
+    }
+  }
+
+  Future<void> _startSpeech() async {
+    if (_loading || _error != null || _text.isEmpty) return;
+    final backend = _speech.backend;
+    if (backend is MethodChannelSpeechBackend) {
+      backend.applySettings(_speechSettings);
+    }
+    final segments = SpeechSegments.split(
+      _text,
+      fromOffset: _offset,
+      maxChars: _speechSettings.maxCharsPerSegment,
+    );
+    await _speech.setNowPlaying(
+      title: widget.target.title,
+      subtitle: widget.chapters[_chapter].title,
+    );
+    final error = await _speech.start(segments);
+    if (mounted && error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  void _speechOptions() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: SpeechModesPanel(
+              settings: _speechSettings,
+              onChanged: (value) {
+                setState(() => _speechSettings = value);
+                update(() {});
+                widget.library.setSetting(
+                  SpeechSettings.settingKey,
+                  value.encode(),
+                );
+                final backend = _speech.backend;
+                if (backend is MethodChannelSpeechBackend) {
+                  backend.applySettings(value);
+                }
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _speechSettings = SpeechSettings.decode(
+      widget.library.setting(SpeechSettings.settingKey),
+    );
+    _speech = SpeechSession(
+      backend: widget.speechBackend ?? createPlatformSpeechBackend(),
+      onPosition: _speechPosition,
+      onEvent: (event) {
+        if (mounted && event.kind == SpeechEventKind.failed) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(event.message ?? '朗读失败，请检查语音设置')),
+          );
+        }
+      },
+      onCompleted: () {
+        if (mounted && _chapter + 1 < widget.chapters.length) {
+          _continueSpeech = true;
+          _changeChapter(_chapter + 1);
+        }
+      },
+    );
+    _speech.state.addListener(_speechChanged);
     _chapter = widget.initialChapterIndex.clamp(0, widget.chapters.length - 1);
     _font =
         (double.tryParse(widget.library.setting('novel.fontSize') ?? '') ?? 20)
@@ -141,6 +232,8 @@ class _NovelReaderPageState extends State<NovelReaderPage>
 
   @override
   void dispose() {
+    _speech.state.removeListener(_speechChanged);
+    unawaited(_speech.dispose());
     _pageLabel.dispose();
     _revision++;
     _saveTimer?.cancel();
@@ -179,6 +272,10 @@ class _NovelReaderPageState extends State<NovelReaderPage>
         _layoutKey = null;
       });
       _save();
+      if (_continueSpeech) {
+        _continueSpeech = false;
+        await _startSpeech();
+      }
     } catch (error) {
       if (mounted && revision == _revision) {
         setState(() {
@@ -212,6 +309,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       return;
     }
     _saveTimer?.cancel();
+    if (!_continueSpeech) unawaited(_speech.stop());
     _save();
     _chapter = index;
     _offset = 0;
@@ -323,6 +421,26 @@ class _NovelReaderPageState extends State<NovelReaderPage>
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
+            IconButton(
+              onPressed: _speechOptions,
+              tooltip: '朗读设置',
+              icon: const Icon(Icons.record_voice_over_outlined),
+            ),
+            IconButton(
+              onPressed: _loading
+                  ? null
+                  : () async {
+                      if (_speech.isActive) {
+                        await _speech.pause();
+                      } else if (_speech.isPaused) {
+                        await _speech.resume();
+                      } else {
+                        await _startSpeech();
+                      }
+                    },
+              tooltip: _speech.isActive ? '暂停朗读' : '朗读',
+              icon: Icon(_speech.isActive ? Icons.pause : Icons.headphones),
+            ),
             IconButton(
               onPressed: _directory,
               tooltip: '目录',

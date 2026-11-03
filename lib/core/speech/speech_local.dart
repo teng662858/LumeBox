@@ -192,6 +192,131 @@ class SpeechLocalModel extends ChangeNotifier {
   }
 }
 
+/// Kokoro is installed separately from the bundled VITS voice.
+class KokoroModel extends ChangeNotifier {
+  static final instance = KokoroModel();
+  static const url =
+      'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2';
+  static const digest =
+      '259c9c8bc906d6078e4e0570421885dabb68b539c2f970fcbb890a58eeaf3e9c';
+  bool ready = false, preparing = false;
+  String? error;
+  Directory? directory;
+
+  Future<bool> check() async {
+    final support = await getApplicationSupportDirectory();
+    directory = Directory('${support.path}/speech/kokoro');
+    ready =
+        await File('${directory!.path}/.ready').exists() &&
+        await File('${directory!.path}/model.int8.onnx').exists() &&
+        await File('${directory!.path}/voices.bin').exists();
+    notifyListeners();
+    return ready;
+  }
+
+  Future<bool> install() async {
+    if (preparing) return false;
+    preparing = true;
+    error = null;
+    notifyListeners();
+    Directory? stage;
+    final client = HttpClient();
+    try {
+      final support = await getApplicationSupportDirectory();
+      final parent = Directory('${support.path}/speech');
+      await parent.create(recursive: true);
+      stage = await parent.createTemp('kokoro-');
+      final archive = File('${stage.path}/model.tar.bz2');
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close();
+      if (response.statusCode != 200) throw const FormatException('下载模型失败');
+      final sink = archive.openWrite();
+      var count = 0;
+      try {
+        await for (final bytes in response.timeout(
+          const Duration(seconds: 45),
+        )) {
+          count += bytes.length;
+          if (count > 200 * 1024 * 1024) throw const FormatException('模型文件过大');
+          sink.add(bytes);
+        }
+      } finally {
+        await sink.close();
+      }
+      if ((await sha256.bind(archive.openRead()).first).toString() != digest) {
+        throw const FormatException('模型校验失败');
+      }
+      final path = stage.path;
+      await Isolate.run(() {
+        final input = InputFileStream('$path/model.tar.bz2');
+        final output = OutputFileStream('$path/model.tar');
+        try {
+          BZip2Decoder().decodeStream(input, output);
+        } finally {
+          input.closeSync();
+          output.closeSync();
+        }
+        final tar = InputFileStream('$path/model.tar');
+        try {
+          final entries = TarDecoder().decodeStream(tar);
+          const prefix = 'kokoro-int8-multi-lang-v1_1/';
+          for (final entry in entries) {
+            if (!entry.isFile ||
+                entry.isSymbolicLink ||
+                !entry.name.startsWith(prefix)) {
+              continue;
+            }
+            final relative = entry.name.substring(prefix.length);
+            if (relative.isEmpty ||
+                relative.contains('..') ||
+                relative.contains('\\') ||
+                relative.startsWith('/')) {
+              throw const FormatException('模型文件路径无效');
+            }
+            final file = File('$path/data/$relative');
+            file.parent.createSync(recursive: true);
+            final target = OutputFileStream(file.path);
+            try {
+              entry.writeContent(target);
+            } finally {
+              target.closeSync();
+            }
+          }
+        } finally {
+          tar.closeSync();
+        }
+        for (final name in [
+          'model.int8.onnx',
+          'voices.bin',
+          'tokens.txt',
+          'lexicon-us-en.txt',
+          'lexicon-zh.txt',
+        ]) {
+          if (!File('$path/data/$name').existsSync()) {
+            throw const FormatException('模型文件不完整');
+          }
+        }
+      });
+      final target = Directory('${parent.path}/kokoro');
+      if (await target.exists()) await target.delete(recursive: true);
+      directory = await Directory('${stage.path}/data').rename(target.path);
+      await File('${target.path}/.ready').writeAsString(digest, flush: true);
+      ready = true;
+      return true;
+    } catch (e) {
+      error = e is FormatException ? e.message : '模型下载或安装失败，请检查网络与存储空间';
+      return false;
+    } finally {
+      client.close(force: true);
+      if (stage != null && await stage.exists()) {
+        await stage.delete(recursive: true);
+      }
+      preparing = false;
+      notifyListeners();
+    }
+  }
+}
+
 /// A cancellable per-playback worker. The native callback delivers generated
 /// chunks without blocking Flutter's UI isolate. No network or LLM is involved.
 class SpeechLocalVoice {
@@ -208,9 +333,13 @@ class SpeechLocalVoice {
     String text,
     String path,
     int voice,
-    double speed,
-  ) async* {
-    final worker = await (_worker ??= _LocalSpeechWorker.create(path));
+    double speed, {
+    bool kokoro = false,
+  }) async* {
+    final worker = await (_worker ??= _LocalSpeechWorker.create(
+      path,
+      kokoro: kokoro,
+    ));
     if (worker.closed) return;
     worker.commands.send([text, voice, speed]);
     while (!worker.closed && await worker.messages.moveNext()) {
@@ -230,27 +359,46 @@ class SpeechLocalVoice {
     try {
       sherpa.initBindings();
       final path = args[1] as String;
+      final kokoro = args.length > 2 && args[2] == true;
       tts = sherpa.OfflineTts(
         sherpa.OfflineTtsConfig(
           model: sherpa.OfflineTtsModelConfig(
             numThreads: 2,
             debug: false,
-            vits: sherpa.OfflineTtsVitsModelConfig(
-              model: '$path/vits-aishell3.onnx',
-              lexicon: '$path/lexicon.txt',
-              tokens: '$path/tokens.txt',
-            ),
+            vits: kokoro
+                ? const sherpa.OfflineTtsVitsModelConfig()
+                : sherpa.OfflineTtsVitsModelConfig(
+                    model: '$path/vits-aishell3.onnx',
+                    lexicon: '$path/lexicon.txt',
+                    tokens: '$path/tokens.txt',
+                  ),
+            kokoro: kokoro
+                ? sherpa.OfflineTtsKokoroModelConfig(
+                    model: '$path/model.int8.onnx',
+                    voices: '$path/voices.bin',
+                    tokens: '$path/tokens.txt',
+                    dataDir: '$path/espeak-ng-data',
+                    dictDir: '$path/dict',
+                    lexicon: '$path/lexicon-us-en.txt,$path/lexicon-zh.txt',
+                  )
+                : const sherpa.OfflineTtsKokoroModelConfig(),
           ),
-          ruleFsts: [
-            'date',
-            'number',
-            'new_heteronym',
-            'phone',
-          ].map((n) => '$path/$n.fst').join(','),
+          ruleFsts: kokoro
+              ? [
+                  '$path/date-zh.fst',
+                  '$path/number-zh.fst',
+                  '$path/phone-zh.fst',
+                ].join(',')
+              : [
+                  'date',
+                  'number',
+                  'new_heteronym',
+                  'phone',
+                ].map((n) => '$path/$n.fst').join(','),
           maxNumSenetences: 1,
         ),
       );
-      if (tts.sampleRate != 8000 || tts.numSpeakers < 1) {
+      if (tts.sampleRate != (kokoro ? 24000 : 8000) || tts.numSpeakers < 1) {
         throw const FormatException('模型音频格式无效');
       }
       send.send(commands.sendPort);
@@ -293,10 +441,17 @@ class _LocalSpeechWorker {
   final StreamIterator<dynamic> messages;
   final SendPort commands;
   bool closed = false;
-  static Future<_LocalSpeechWorker> create(String path) async {
+  static Future<_LocalSpeechWorker> create(
+    String path, {
+    bool kokoro = false,
+  }) async {
     final port = ReceivePort();
     final messages = StreamIterator(port);
-    await Isolate.spawn(SpeechLocalVoice.generate, [port.sendPort, path]);
+    await Isolate.spawn(SpeechLocalVoice.generate, [
+      port.sendPort,
+      path,
+      kokoro,
+    ]);
     if (!await messages.moveNext() || messages.current is! SendPort) {
       port.close();
       await messages.cancel();

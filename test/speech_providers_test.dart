@@ -46,6 +46,38 @@ void main() {
     );
   });
 
+  test('MiMo streams base64 PCM from chat completions', () async {
+    const endpoint = 'https://api.xiaomimimo.com/v1';
+    endpoints['mimo'] = endpoint;
+    secrets['mimo'] = 'secret';
+    final config = SpeechCloudConfig();
+    await config.load();
+    config.ttsProvider = SpeechTtsProvider.mimo;
+    final client = SpeechCloudClient(
+      config,
+      client: MockClient((request) async {
+        expect(request.url.toString(), '$endpoint/chat/completions');
+        expect(request.headers['Authorization'], 'Bearer secret');
+        final body = jsonDecode(request.body) as Map;
+        expect(body['model'], 'mimo-v2.5-tts');
+        expect(body['audio']['voice'], '白桦');
+        expect(body['audio']['format'], 'pcm16');
+        expect(body['messages'].last['content'], '你好');
+        return http.Response(
+          'data: {"choices":[{"delta":{"audio":{"data":"AQIDBA=="}}}]}\n\ndata: [DONE]\n\n',
+          200,
+        );
+      }),
+    );
+    expect(await client.audio('你好', '白桦', 1).expand((part) => part).toList(), [
+      1,
+      2,
+      3,
+      4,
+    ]);
+    client.close();
+  });
+
   test('Azure Speech requests raw 24k PCM with escaped SSML', () async {
     endpoints['azure'] = 'eastasia';
     secrets['azure'] = 'azure-key';

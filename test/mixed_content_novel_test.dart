@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'dart:async';
+
+import 'package:lume_box/core/speech/speech.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +18,35 @@ import 'package:lume_box/features/novel/novel_reader_page.dart';
 import 'package:lume_box/features/video/video_detail_page.dart';
 
 import 'support/fake_reading_source.dart';
+
+class FakeNovelSpeech implements SpeechBackend {
+  final controller = StreamController<SpeechEvent>.broadcast();
+  final spoken = <String>[];
+  int pauses = 0, resumes = 0, stops = 0;
+  @override
+  Stream<SpeechEvent> get events => controller.stream;
+  @override
+  Future<bool> isSupported() async => true;
+  @override
+  Future<void> speak(String text) async {
+    spoken.add(text);
+  }
+
+  @override
+  Future<void> pause() async {
+    pauses++;
+  }
+
+  @override
+  Future<void> resume() async {
+    resumes++;
+  }
+
+  @override
+  Future<void> stop() async {
+    stops++;
+  }
+}
 
 class MixedSource extends FakeReadingDataSource {
   MixedSource() : super(section: Section.video);
@@ -228,6 +260,42 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   }
+  testWidgets('小说可朗读、暂停、继续并在切章时停止', (tester) async {
+    final source = MixedSource();
+    final backend = FakeNovelSpeech();
+    final chapters = await source.chapters('novel');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NovelReaderPage(
+          source: source,
+          library: library,
+          chapters: chapters,
+          speechBackend: backend,
+          target: const ReadingTarget(
+            sourceId: 'fake.video',
+            itemId: 'novel',
+            title: '小说',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('朗读'));
+    await tester.pump();
+    expect(backend.spoken, isNotEmpty);
+    await tester.tap(find.byTooltip('暂停朗读'));
+    await tester.pump();
+    expect(backend.pauses, 1);
+    await tester.tap(find.byTooltip('朗读'));
+    await tester.pump();
+    expect(backend.resumes, 1);
+    await tester.tap(find.text('下一章'));
+    await tester.pumpAndSettle();
+    expect(backend.stops, greaterThan(0));
+    await tester.pumpWidget(const SizedBox());
+    await backend.controller.close();
+  });
+
   testWidgets('小说翻页记忆字符位置，换章、字号、重进均可用', (tester) async {
     final source = MixedSource();
     final chapters = await source.chapters('novel');

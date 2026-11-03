@@ -12,6 +12,7 @@ import 'speech_turns.dart';
 /// 在线 TTS 服务商。对话/停顿规划仍走 OpenAI 兼容的大模型接口。
 enum SpeechTtsProvider {
   openai('OpenAI 兼容'),
+  mimo('小米 MiMo'),
   azure('Azure Speech'),
   volcengine('火山引擎');
 
@@ -209,11 +210,58 @@ class SpeechCloudClient {
     switch (config.ttsProvider) {
       case SpeechTtsProvider.openai:
         yield* _openAiAudio(text, voice, speed);
+      case SpeechTtsProvider.mimo:
+        yield* _mimoAudio(text, voice, speed);
       case SpeechTtsProvider.azure:
         yield* _azureAudio(text, voice, speed);
       case SpeechTtsProvider.volcengine:
         yield* _volcengineAudio(text, voice, speed);
     }
+  }
+
+  Stream<List<int>> _mimoAudio(String text, String voice, double speed) async* {
+    const base = 'https://api.xiaomimimo.com/v1';
+    final key = await config.key('mimo', forEndpoint: base);
+    if (key.isEmpty) throw const FormatException('请填写 MiMo API Key');
+    const voices = {'冰糖', '茉莉', '苏打', '白桦', 'Mia', 'Chloe', 'Milo', 'Dean'};
+    final selected = voices.contains(voice) ? voice : '冰糖';
+    final response = await _post(Uri.parse('$base/chat/completions'), key, {
+      'model': 'mimo-v2.5-tts',
+      'stream': true,
+      'messages': [
+        {'role': 'user', 'content': '请以自然的旁白风格朗读，语速倍率约 ${speed.clamp(.5, 2)}。'},
+        {'role': 'assistant', 'content': text},
+      ],
+      'audio': {'format': 'pcm16', 'voice': selected},
+    });
+    var found = false;
+    await for (final line
+        in response.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .timeout(const Duration(seconds: 30))) {
+      if (!line.startsWith('data:')) continue;
+      final payload = line.substring(5).trim();
+      if (payload.isEmpty || payload == '[DONE]') continue;
+      final value = jsonDecode(payload);
+      if (value is! Map || value['choices'] is! List) {
+        throw const FormatException('MiMo 响应格式无效');
+      }
+      for (final choice in value['choices'] as List) {
+        if (choice is! Map) continue;
+        final delta = choice['delta'];
+        if (delta is! Map || delta['audio'] is! Map) continue;
+        final data = (delta['audio'] as Map)['data'];
+        if (data is String && data.isNotEmpty) {
+          final bytes = base64Decode(data);
+          if (bytes.isNotEmpty) {
+            found = true;
+            yield bytes;
+          }
+        }
+      }
+    }
+    if (!found) throw const FormatException('MiMo 未返回音频');
   }
 
   Stream<List<int>> _openAiAudio(

@@ -44,7 +44,10 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
   void initState() {
     super.initState();
     // Tests/unsupported devices may have no platform path provider.
-    if (!widget.optionsOnly) unawaited(model.check().catchError((_) => false));
+    if (!widget.optionsOnly) {
+      unawaited(model.check().catchError((_) => false));
+      unawaited(KokoroModel.instance.check().catchError((_) => false));
+    }
     if (widget.settings.mode == SpeechMode.system) {
       unawaited(_loadVoiceLabels());
     }
@@ -101,6 +104,11 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
   }
 
   void _selectMode(SpeechMode value) {
+    if (value == SpeechMode.kokoro && !KokoroModel.instance.ready) {
+      setState(() => _selectionGeneration++);
+      unawaited(_installKokoro());
+      return;
+    }
     if (value == SpeechMode.local && !model.ready) {
       // The form field otherwise displays its just-picked value while the
       // installation dialog is cancelled, despite retaining the system engine.
@@ -114,6 +122,36 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
         autoDialogue: widget.singleSpeaker ? false : null,
       ),
     );
+  }
+
+  Future<void> _installKokoro() async {
+    final accepted = await showGlassDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('下载 Kokoro 离线音色'),
+        content: const Text('首次使用需下载约 147 MB 模型并解压，完成后可离线使用。请确保网络和存储空间充足。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('下载'),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return;
+    final kokoro = KokoroModel.instance;
+    final installed = await kokoro.install();
+    if (!mounted) return;
+    if (installed) {
+      _selectMode(SpeechMode.kokoro);
+    } else {
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(kokoro.error ?? '安装失败')));
+    }
   }
 
   Future<void> _installOffline({bool selectWhenReady = false}) async {
@@ -317,6 +355,7 @@ class _CloudSettingsDialog extends StatefulWidget {
 
 class _CloudSettingsDialogState extends State<_CloudSettingsDialog> {
   final config = SpeechCloudConfig.instance;
+  final mimoKey = TextEditingController();
   final ttsUrl = TextEditingController();
   final ttsModel = TextEditingController();
   final ttsKey = TextEditingController();
@@ -359,6 +398,7 @@ class _CloudSettingsDialogState extends State<_CloudSettingsDialog> {
         _key('llm', config.llmUrl),
         _key('azure', config.azureRegion.trim()),
         _key('volc', config.volcAppId.trim()),
+        _key('mimo', 'https://api.xiaomimimo.com/v1'),
       ]);
       if (!mounted) return;
       provider = config.ttsProvider;
@@ -373,6 +413,7 @@ class _CloudSettingsDialogState extends State<_CloudSettingsDialog> {
       volcAppId.text = config.volcAppId;
       volcToken.text = values[3];
       volcCluster.text = config.volcCluster;
+      mimoKey.text = values[4];
       setState(() => loaded = true);
     } catch (_) {
       if (mounted) setState(() => error = '无法读取本机接口配置');
@@ -382,6 +423,7 @@ class _CloudSettingsDialogState extends State<_CloudSettingsDialog> {
   @override
   void dispose() {
     for (final field in [
+      mimoKey,
       ttsUrl,
       ttsModel,
       ttsKey,
@@ -415,6 +457,14 @@ class _CloudSettingsDialogState extends State<_CloudSettingsDialog> {
         config.ttsModel = ttsModel.text.trim();
         if (ttsKey.text.trim().isNotEmpty) {
           await config.setKey('tts', ttsKey.text.trim(), forEndpoint: url);
+        }
+      } else if (selected == SpeechTtsProvider.mimo) {
+        const endpoint = 'https://api.xiaomimimo.com/v1';
+        final typed = mimoKey.text.trim();
+        if (typed.isNotEmpty) {
+          await config.setKey('mimo', typed, forEndpoint: endpoint);
+        } else if ((await _key('mimo', endpoint)).isEmpty) {
+          throw const FormatException('请填写 MiMo API Key');
         }
       } else if (selected == SpeechTtsProvider.azure) {
         final region = azureRegion.text.trim().toLowerCase();
@@ -524,6 +574,11 @@ class _CloudSettingsDialogState extends State<_CloudSettingsDialog> {
               _field(ttsUrl, 'TTS 地址', hint: 'https://…/v1'),
               _field(ttsModel, 'TTS 模型'),
               _field(ttsKey, 'TTS API-Key', secret: true),
+            ] else if (provider == SpeechTtsProvider.mimo) ...[
+              _field(mimoKey, 'MiMo API Key', secret: true),
+              const Text(
+                '音色填写：冰糖、茉莉、苏打、白桦、Mia、Chloe、Milo 或 Dean。正文会发送到小米进行语音合成。',
+              ),
             ] else if (provider == SpeechTtsProvider.azure) ...[
               _field(
                 azureRegion,
@@ -624,8 +679,38 @@ class _SpeechVoiceDialogState extends State<_SpeechVoiceDialog> {
   void initState() {
     super.initState();
     if (widget.mode == SpeechMode.system) unawaited(_load());
-    if (widget.mode == SpeechMode.local) {
-      voices = [for (var i = 0; i < 174; i++) ('$i', '音色 $i')];
+    if ((widget.mode == SpeechMode.cloud ||
+            widget.mode == SpeechMode.cloudAi) &&
+        SpeechCloudConfig.instance.ttsProvider == SpeechTtsProvider.mimo) {
+      voices = [
+        for (final voice in [
+          '冰糖',
+          '茉莉',
+          '苏打',
+          '白桦',
+          'Mia',
+          'Chloe',
+          'Milo',
+          'Dean',
+        ])
+          (voice, voice),
+      ];
+      if (!voices.any((v) => v.$1 == controller.text)) controller.text = '冰糖';
+    }
+    if (widget.mode == SpeechMode.local || widget.mode == SpeechMode.kokoro) {
+      voices = [
+        for (var i = 0; i < (widget.mode == SpeechMode.kokoro ? 103 : 174); i++)
+          (
+            '$i',
+            widget.mode == SpeechMode.kokoro
+                ? (i < 3
+                      ? '英文音色 $i'
+                      : i < 58
+                      ? '中文女声 $i'
+                      : '中文男声 $i')
+                : '音色 $i',
+          ),
+      ];
       if (controller.text.isEmpty) controller.text = '0';
     }
   }

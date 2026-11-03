@@ -91,7 +91,9 @@ class SpeechSettings {
     final saved = {...profiles, this.mode.name: _profile};
     if (target != this.mode) {
       final profile = saved[target.name] ?? {};
-      final defaults = target == SpeechMode.local
+      final defaults = target == SpeechMode.kokoro
+          ? ['3', '58', '3']
+          : target == SpeechMode.local
           ? ['66', '0', '66']
           : target == SpeechMode.system
           ? ['', '', '']

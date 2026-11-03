@@ -54,7 +54,7 @@ void main() {
       final selector = tester.widget<DropdownButton<SpeechMode>>(
         find.byType(DropdownButton<SpeechMode>),
       );
-      expect(selector.items!.length, 4);
+      expect(selector.items!.length, 5);
       expect(
         selector.items!
             .singleWhere((item) => item.value == SpeechMode.local)

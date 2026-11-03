@@ -166,7 +166,7 @@ final class SpeechStream: NSObject, AVSpeechSynthesizerDelegate {
   }
   private func secret(_ method:String, _ args:[String:Any], _ result:FlutterResult) {
     guard let kind = args["kind"] as? String,
-      ["tts","llm","azure","volc","bangumi"].contains(kind) else {
+      ["tts","llm","azure","volc","mimo","bangumi"].contains(kind) else {
       result(FlutterError(code:"key",message:"未知密钥类型",details:nil)); return
     }
     let query:[String:Any] = [kSecClass as String:kSecClassGenericPassword,
