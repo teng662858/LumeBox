@@ -155,6 +155,7 @@ class AggregateSearch {
               (sourceIds == null || sourceIds.contains(source.id)),
         )
         .toList();
+    final matchesTitle = SearchSettings.instance.aggregateMatcher(keyword);
     final parent = NetworkCancellation.current;
     final results = List<List<SearchHit>?>.filled(enabled.length, null);
     var next = 0;
@@ -211,12 +212,7 @@ class AggregateSearch {
             results[index] = [
               for (final item
                   in list.items
-                      .where(
-                        (item) => SearchSettings.instance.acceptsAggregate(
-                          item.title,
-                          keyword,
-                        ),
-                      )
+                      .where((item) => matchesTitle(item.title))
                       .where((item) => seen.add(item.id))
                       .take(limitPerSource))
                 SearchHit(

@@ -80,31 +80,47 @@ class SearchSettings extends ChangeNotifier {
 
   /// Some sites return their homepage/recommendations when search has no hits.
   /// Aggregate results must have title evidence even with exact mode disabled.
-  bool acceptsAggregate(String title, String query) {
+  bool acceptsAggregate(String title, String query) =>
+      aggregateMatcher(query)(title);
+
+  /// Prepare the query once for a batch of results from multiple sources.
+  bool Function(String) aggregateMatcher(String query) {
+    final useSimplified = simplify;
+    final useExact = exact;
     String normalize(String value) {
+      final trimmed = value.trim();
+      final prepared = useSimplified ? toSimplified(trimmed) : trimmed;
       final width = String.fromCharCodes(
-        prepare(value).runes.map(
+        prepared.runes.map(
           (rune) => rune >= 0xFF01 && rune <= 0xFF5E ? rune - 0xFEE0 : rune,
         ),
       );
-      return width
-          .toLowerCase()
-          .replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ')
-          .trim();
+      return width.toLowerCase().replaceAll(_aggregateSeparators, ' ').trim();
     }
 
     final needle = normalize(query);
-    final candidate = normalize(title);
-    if (needle.isEmpty || candidate.isEmpty) return false;
-    if (exact) return candidate == needle;
-    final compact = candidate.replaceAll(' ', '');
-    return needle.split(' ').every((term) {
-      // Short Latin words must not match the middle of unrelated words.
-      if (RegExp(r'^[a-z0-9]+$').hasMatch(term)) {
-        return RegExp('(^|[^a-z0-9])${RegExp.escape(term)}(?=\$|[^a-z0-9])')
-            .hasMatch(candidate);
+    final terms = needle.split(' ');
+    final patterns = [
+      for (final term in terms)
+        _latinTerm.hasMatch(term)
+            ? RegExp('(^|[^a-z0-9])${RegExp.escape(term)}(?=\$|[^a-z0-9])')
+            : null,
+    ];
+    return (title) {
+      if (needle.isEmpty) return false;
+      final candidate = normalize(title);
+      if (candidate.isEmpty) return false;
+      if (useExact) return candidate == needle;
+      final compact = candidate.replaceAll(' ', '');
+      for (var i = 0; i < terms.length; i++) {
+        if (!(patterns[i]?.hasMatch(candidate) ?? compact.contains(terms[i]))) {
+          return false;
+        }
       }
-      return compact.contains(term);
-    });
+      return true;
+    };
   }
+
+  static final _aggregateSeparators = RegExp(r'[^\p{L}\p{N}]+', unicode: true);
+  static final _latinTerm = RegExp(r'^[a-z0-9]+$');
 }
