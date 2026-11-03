@@ -1,4 +1,4 @@
-# LumeSource: {"id":"fourkyingshi_python_video","name":"4K影视（4kyingshi.net）","version":"1.0.1","category":"video","contentCategory":"movie","mirrors":["https://www.4kyingshi.net"],"settings":[{"key":"status","type":"info","title":"站点当前拒绝访问","description":"2026-11-03 实测首页和分类均 HTTP 403。修复版明确报错并支持自定义域名；未确认可用镜像，暂不加入总订阅。与现有 4kvms.org 源是不同站点。"}]}
+# LumeSource: {"id":"fourkyingshi_python_video","name":"4K影视（4kyingshi.net）","version":"1.0.2","category":"video","contentCategory":"movie","mirrors":["https://www.4kyingshi.net"],"settings":[{"key":"status","type":"info","title":"站点已停站","description":"2026-11-03 复测：4kyingshi.net / .com 已到期并被停放（ParkLogic 出售页，标题 Redirecting…）；4kyingshi.cc 是同名的另一家成人站，结构与本站无关，不能沿用。本源仅作档案保留，不再订阅；要 4K 影视类内容请用 video/4k影视.js（4kvms.org 系）。"}]}
 # LumeRuntime: python
 # -*- coding: utf-8 -*-
 """

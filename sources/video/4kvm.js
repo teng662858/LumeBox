@@ -1,15 +1,22 @@
-// LumeSource: {"id":"fourk_video","name":"4k影视","version":"1.0.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.4kvms.org","https://www.4kvm.org","https://www.4kvm.tv","https://www.4kvms.com","https://www.4kvm.top","https://www.4kvm.net","https://www.4kvm.cc","https://www.4kvm.me","https://www.4kvm.pro"],"network":"direct","icon":"https://www.4kvms.org/ico.png"}
+// LumeSource: {"id":"fourk_video","name":"4k影视","version":"1.1.0","category":"video","contentCategory":"movie","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.4kvms.org","https://www.4kvm.org","https://www.4kvm.tv","https://www.4kvms.com","https://www.4kvm.top","https://www.4kvm.net","https://www.4kvm.cc","https://www.4kvm.me","https://www.4kvm.pro"],"network":"direct","icon":"https://www.4kvms.org/ico.png"}
 // LumeRuntime: javascript
 //
-// 站点：4k影视（发布页 4kvm.site；9 个域名实测同内容：4kvms.org / 4kvm.org / 4kvm.tv /
-//       4kvms.com / 4kvm.top / 4kvm.net / 4kvm.cc / 4kvm.me / 4kvm.pro；4kvm.com 已不通）
-// 形态：Alpine.js 服务端渲染 HTML（首页 716 KB）。分类 /movie /tv /anime，全量片库 /filter?page=N
-//       （30 条/页，实测到第 300 页为空），搜索 /search?q=<词>，详情/播放页 /play/<slug>。
+// 站点：4k影视（发布页 4kvm.site；9 个域名实测同内容、2026-11-03 复测全部 200：
+//       4kvms.org / 4kvm.org / 4kvm.tv / 4kvms.com / 4kvm.top / 4kvm.net /
+//       4kvm.cc / 4kvm.me / 4kvm.pro；4kvm.com 已不通）
+// 形态：Alpine.js 服务端渲染 HTML（首页 ~700 KB）。
+//   分类：/filter?classify=1 电影 / 2 电视剧 / 3 动漫 / 4 综艺（综艺当前为空表）；
+//         /filter 不带 classify = 全量片库，**真分页**（30 条/页，实测第 184 页还有内容）。
+//   筛选：/filter 同一套查询串支持 types=（30 个类型）/ areas=（44 个地区）/ years=（79 个年份），
+//         实测可组合（classify+types+areas+years+page 一起拼）。
+//   搜索：/search?q=<词>；详情/播放页：/play/<slug>。
+//   （旧版本把 /movie /tv /anime 当分类，那三页服务端只有固定一页、页码不生效；
+//     现在统一走 /filter，翻页与筛选才真的能用。）
 //
 // ── 播放：交给 App 的网页播放器（本源有意不猜地址）──
-//   站点的播放地址不是明文：/play 页里每个分集给一个 dataid，前端调
-//   /static/wasm/nbmovie_wasm.js 的 build_play_url(dataid, slug, 清晰度, userlink)
-//   生成带签名的 /video/play?p=&v=&q=&s=&t=&k= 再请求，响应里才是 m3u8。
+//   /play 页里每个分集给一个 dataid，前端调 /static/wasm/nbmovie_wasm.js 的
+//   build_play_url(dataid, slug, 清晰度, userlink) 生成带签名的
+//   /video/play?p=&v=&q=&s=&t=&k=，响应里才是 m3u8。
 //   实测（Chrome + CDP 钩 fetch）：
 //     · s = 32 位 hex，只随 (dataid, slug, t) 变；改 s 任意一位 → 403「你没有权限」；
 //     · k 是 userlink 的双层编码：base64(xor(salt, base64(xor(salt, "时间戳:vodID=…"))))，
@@ -19,8 +26,8 @@
 //   → 所以本源把「播放」交给网页播放器：App 打开源站的 /play/<slug>，由站点自己的 wasm
 //     算签名、拉 m3u8（实测 m3u8 200 + #EXTM3U）。不编造、也不假装能直连。
 //
-// 限制：分类页（/movie /tv /anime）服务端只有一页（?page= 不换内容），全量分页在 /filter；
-//       分集没有 URL 参数（站点用前端切换），所以章节给的是「网页播放」这一项，选集在播放器里点。
+// 限制：分集没有 URL 参数（站点用前端切换），所以章节只给「网页播放」一项，选集在播放器里点。
+//       与另一家同名站 4kyingshi.net 无关（那家域名已到期被停放，源已停用）。
 
 var HOST = 'https://www.4kvms.org';
 var MIRRORS = [
@@ -28,15 +35,33 @@ var MIRRORS = [
   'https://www.4kvms.com', 'https://www.4kvm.top', 'https://www.4kvm.net',
   'https://www.4kvm.cc', 'https://www.4kvm.me', 'https://www.4kvm.pro'
 ];
-var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 var PAGE_SIZE = 30;
 
-// 分类：前三个是站点的栏目（服务端单页），最后一个是全量片库（真分页）
+// 分类：分类名与站点 /filter?classify=N 一一对应（classify=0 = 全量）
 var CATS = [
-  { id: 'filter', title: '全部影片', path: '/filter' },
-  { id: 'movie', title: '电影', path: '/movie' },
-  { id: 'tv', title: '剧集', path: '/tv' },
-  { id: 'anime', title: '动漫', path: '/anime' }
+  { id: 'filter', title: '全部影片', classify: 0 },
+  { id: 'movie', title: '电影', classify: 1 },
+  { id: 'tv', title: '电视剧', classify: 2 },
+  { id: 'anime', title: '动漫', classify: 3 }
+];
+
+// 筛选选项：id 是站点查询串里的数字，标题是站点页面上的原文（2026-11-03 从 /filter 抓取）
+var TYPES = [
+  ['1', '剧情'], ['2', '悬疑'], ['3', '恐怖'], ['4', '惊悚'], ['5', '喜剧'],
+  ['6', '爱情'], ['9', '犯罪'], ['10', '动作'], ['11', '动画'], ['12', '奇幻'],
+  ['13', '音乐'], ['14', '科幻'], ['15', '历史'], ['16', '战争'], ['18', '冒险'],
+  ['19', '家庭'], ['20', '纪录'], ['27', '古装'], ['29', '同性'], ['31', '武侠'],
+  ['35', '短片']
+];
+var AREAS = [
+  ['7', '中国'], ['52', '中国大陆'], ['14', '中国香港'], ['21', '中国台湾'],
+  ['5', '美国'], ['11', '日本'], ['12', '韩国'], ['30', '英国'], ['33', '泰国'],
+  ['34', '印度'], ['6', '法国'], ['18', '德国'], ['24', '西班牙'], ['78', '其他']
+];
+var YEARS = [
+  ['78', '2027'], ['1', '2026'], ['3', '2025'], ['4', '2024'], ['56', '2023'],
+  ['13', '2022'], ['2', '2021'], ['6', '2020'], ['8', '2019'], ['9', '2018']
 ];
 
 function base() {
@@ -56,9 +81,7 @@ function clean(text) {
   return unescapeHtml(String(text == null ? '' : text).replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 }
 function get(path) {
-  return LumeSource.http.request({
-    url: base() + path,
-    method: 'GET',
+  return LumeSource.http.get(base() + path, {
     headers: {
       'User-Agent': UA,
       'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
@@ -75,8 +98,8 @@ function get(path) {
 }
 
 // ------------------------------------------------------------------ HTML 解析
-// 卡片形如：<div ... movie-card ... data-vod-id="x"><a href="/play/<slug>" data-vod="y">…<img data-src="封面" alt="标题">
-// 按「下一个 /play 链接」切段解析（不依赖 </a> 的位置：搜索页的卡片块比列表页长得多）
+// 卡片形如：<a href="/play/<slug>" ...><img data-src="封面" alt="标题">…</a>
+// 按「下一个 /play 链接」切段解析（不依赖 </a> 位置：搜索页的卡片块比列表页长得多）
 function parseCards(html) {
   var source = String(html || '');
   var items = [];
@@ -146,11 +169,23 @@ function parseEpisodes(html) {
   return out;
 }
 
+// 单选筛选：App 组内多选时会回传逗号串，站点只认一个值，取第一个并写在这里
+function pick(value) {
+  var text = String(value == null ? '' : value).split(',')[0].trim();
+  return text;
+}
+
+function categoryOf(id) {
+  var key = String(id == null || id === '' ? 'filter' : id);
+  for (var i = 0; i < CATS.length; i++) if (CATS[i].id === key) return CATS[i];
+  return CATS[0];
+}
+
 // ------------------------------------------------------------------ 五入口
 var LumeSource = {
   id: 'fourk_video',
   name: '4k影视',
-  version: '1.0.0',
+  version: '1.1.0',
   category: 'video',
   contentCategory: 'movie',
   settingsApiVersion: 2,
@@ -171,7 +206,7 @@ var LumeSource = {
       key: 'note',
       type: 'info',
       title: '站点说明',
-      description: '4k影视（4kvms.org，另有 8 个同内容域名）。列表/详情都是普通网页；播放地址由站点的 wasm 在浏览器里现算签名，本源不复制签名逻辑，播放走 App 的网页播放器（选集也在播放器里点）。'
+      description: '4k影视（4kvms.org，另有 8 个同内容域名）。列表/筛选/详情都是普通网页（分类与筛选走 /filter 的真分页）；播放地址由站点的 wasm 在浏览器里现算签名，本源不复制签名逻辑，播放走 App 的网页播放器（选集也在播放器里点）。注意：这家与已停站的 4kyingshi.net 不是同一个站。'
     }
   ],
 
@@ -180,14 +215,23 @@ var LumeSource = {
   },
 
   async filters() {
-    // 站点的「筛选」是 Alpine 前端交互，参数不进 URL（/filter?page=N 以外没有可拼的查询串），
-    // 所以这里如实返回空组：不硬编一套看起来能用、实际不生效的标签。
-    return { groups: [] };
+    function group(key, title, list) {
+      return {
+        key: key, title: title, multiple: false,
+        options: list.map(function (pair) { return { id: pair[0], title: pair[1] }; })
+      };
+    }
+    return {
+      groups: [
+        group('types', '类型', TYPES),
+        group('areas', '地区', AREAS),
+        group('years', '年份', YEARS)
+      ]
+    };
   },
 
   async home() {
-    var html = await get('/');
-    var items = parseCards(html);
+    var items = parseCards(await get('/'));
     if (!items.length) return [];
     return [{ title: '最近更新', items: items.slice(0, 24) }];
   },
@@ -197,32 +241,32 @@ var LumeSource = {
     var page = Number(args.page || 1);
     if (!page || page < 1) page = 1;
     var keyword = String(args.keyword == null ? '' : args.keyword).trim();
-    var category = String(args.categoryId == null ? '' : args.categoryId).trim();
-    if (!category) category = 'filter';
+    var category = categoryOf(args.categoryId);
+    var filters = args.filters || {};
 
-    var path;
     if (keyword) {
-      path = '/search?q=' + enc(keyword);
-    } else {
-      var cat = null;
-      for (var i = 0; i < CATS.length; i++) {
-        if (CATS[i].id === category) { cat = CATS[i]; break; }
+      var path = '/search?q=' + enc(keyword);
+      var hits = parseCards(await get(path));
+      // 站点的搜索页要先有会话 Cookie（首个请求直接搜会返回 0 条）：空结果时先摸一次首页再重搜。
+      if (!hits.length) {
+        try { await get('/'); } catch (error) { /* 首页打不开就按空结果返回 */ }
+        hits = parseCards(await get(path));
       }
-      if (!cat) cat = CATS[0];
-      // 只有「全部影片」是真分页；/movie /tv /anime 服务端固定一页
-      if (cat.id === 'filter') path = cat.path + '?page=' + page;
-      else path = page === 1 ? cat.path : '';
+      return { items: hits, hasMore: false };
     }
-    if (!path) return { items: [], hasMore: false };
 
-    var items = parseCards(await get(path));
-    // 站点的搜索页要先有会话 Cookie（首个请求直接搜会返回 0 条）：空结果时先摸一次首页再重搜。
-    if (keyword && !items.length) {
-      try { await get('/'); } catch (e) { /* 首页打不开就按空结果返回 */ }
-      items = parseCards(await get(path));
-    }
-    var paginated = !keyword && category === 'filter';
-    return { items: items, hasMore: paginated && items.length >= PAGE_SIZE - 5 };
+    var query = [];
+    if (category.classify) query.push('classify=' + category.classify);
+    var types = pick(filters.types);
+    var areas = pick(filters.areas);
+    var years = pick(filters.years);
+    if (types) query.push('types=' + enc(types));
+    if (areas) query.push('areas=' + enc(areas));
+    if (years) query.push('years=' + enc(years));
+    query.push('page=' + page);
+
+    var items = parseCards(await get('/filter?' + query.join('&')));
+    return { items: items, hasMore: items.length >= PAGE_SIZE - 5 };
   },
 
   async detail(argument) {
