@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:isolate';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pointycastle/export.dart';
 
@@ -17,6 +18,14 @@ class LocalCipher {
   final Uint8List _key;
   static const prefix = 'LUMESEC1:';
   static final Map<String, Future<LocalCipher>> _pending = {};
+
+  /// Isolated sample previews may supply a disposable key in debug builds only.
+  @visibleForTesting
+  static void configurePreview(String directory, Uint8List key) {
+    if (!kDebugMode) throw StateError('Preview keys require a debug build');
+    _pending[directory] = Future.value(LocalCipher(key));
+  }
+
   static Uint8List random(int length) {
     final rng = Random.secure();
     return Uint8List.fromList(List.generate(length, (_) => rng.nextInt(256)));

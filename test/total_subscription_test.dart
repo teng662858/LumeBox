@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/js/source_script.dart';
+import 'package:lume_box/core/source/source_package.dart';
 import 'package:lume_box/core/net/source_subscription.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
@@ -85,6 +86,26 @@ void main() {
   tearDown(() async {
     await SectionScope.closeAll();
     root.deleteSync(recursive: true);
+  });
+
+  test('总订阅递归影视清单保留 Python 源和运行时', () async {
+    const scriptUrl = 'https://repo.test/movie/gulu.py';
+    remote[total.entries[Section.video]!.single.url] = scriptUrl;
+    remote[scriptUrl] =
+        '# LumeSource: {"id":"gulu_python_video","name":"咕噜咕噜","version":"1.0.1","category":"video","contentCategory":"movie"}\n'
+        '# LumeRuntime: python\nclass Spider: pass\n';
+    final results = await service.import(
+      await service.read(SubscriptionCatalog.totalUrl),
+    );
+    expect(results[Section.video]!.errors, isEmpty);
+    expect(results[Section.video]!.added, 1);
+    final manager = managers[Section.video]!;
+    expect(manager.sources.single.id, 'gulu_python_video');
+    expect(
+      SourcePackage.kindOf(manager.scripts['gulu_python_video']!),
+      SourcePackageKind.python,
+    );
+    expect(manager.sources.single.originUrl, scriptUrl);
   });
 
   test('总地址分配三个版块、保留手动源，导出保留地址和停用状态', () async {

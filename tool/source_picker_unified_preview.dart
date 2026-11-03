@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter/services.dart';
+import 'package:lume_box/core/security/local_cipher.dart';
 import 'package:lume_box/features/settings/content_visibility_page.dart';
 
 import 'danmaku_redesign_preview.dart';
@@ -51,6 +52,9 @@ Future<void> main() async {
     '${Directory.systemTemp.path}/lumebox-reading-layout-preview',
   )..createSync(recursive: true);
   PathProviderPlatform.instance = _PreviewPaths(sandbox.path);
+  // Disposable data and key belong solely to this debug preview sandbox.
+  // ignore: invalid_use_of_visible_for_testing_member
+  LocalCipher.configurePreview(sandbox.path, LocalCipher.random(32));
   await PrivacySettings.instance.boot(directory: sandbox);
   await PrivacySettings.instance.setShowAdult(true);
   await SourceContentVisibility.instance.boot(
