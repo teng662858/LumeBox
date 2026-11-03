@@ -1,5 +1,7 @@
 # Lume Box 待办清单
 
+> 2026-11-03 整理：本文含大量历史轮次记录，时间、验收状态和实现细节不代表当前版本；实施前以代码和测试为准。下文已修正本次核实的过期项。安装包与存储评估见 [iOS 安装包与存储评估](docs/ios-storage-assessment.md)。
+
 ## 已完成
 - [✓] 移除卡片仪表盘首页，实现移动端底部悬浮Dock Tab导航，Windows侧边栏NavigationRail
 - [✓] UI文字“自定义视频”改为“视频”，底层id、数据库、缓存不变
@@ -869,26 +871,9 @@
   3. 仅当确有「只依赖 dns 解析」的猫源脚本时，再考虑加 dns 垫片
      （InternetAddress.lookup）——本轮未加，因为已定性的两份都不是这种情况。
 
-### media_kit 未开放写通道 → 字幕延迟 / 硬件解码暂不生效（本轮已定性）
-- **现状**：`sub-delay` 与 `hwdec` 是 libmpv 的解码链属性，而 media_kit 1.2.6 的
-  公开 Dart API 没有暴露写属性的通道（`Player` 只开放轨道选择 / 倍速这类高层方法，
-  `setProperty` 是私有的；`PlayerConfiguration` 里也没有 hwdec 项）。
-- **已就位**：设置项、落库、引擎端口与调用链全部打通，值会正常保存。
-- **待通道**（按代价从低到高）：
-  1. 等 media_kit 上游开放 `setProperty` / 增加 `hwdec` 配置项；
-  2. fork media_kit 暴露一个受控的属性写入口（改动小，但要跟上游）；
-  3. 自研 MPV 渲染与字幕层（能顺带解决字幕的 ASS 样式与「真·推流式帧回调」）。
-- **字幕字号 / 颜色 / 描边不受此限**：那三项走 media_kit 的 Flutter 字幕层
-  （`SubtitleViewConfiguration` 收完整 TextStyle），**已真实生效**。
-
-### Venera 兼容层的未接入项（有真实需求再补）
-- [ ] `Convert.sha1/sha256/sha512/hmac`（需要把摘要实现从猫源垫片里抽成共享件，
-      或由宿主再实现一份；当前只接了 md5，其余调用即报「尚未接入」）
-- [ ] `Convert.decryptAes*/decryptRsa`（网盘类源常用；需要 AES/RSA 实现）
-- [ ] 账号登录 / 收藏夹 / 评论 / 排序点赞（需要 UI 与账号体系，Phase1~3 均未规划）
-- [ ] 图片级自定义请求头（`onImageLoad` 返回的 headers 现在被丢弃；
-      要透传得让图片管线支持逐图请求头）
-- [ ] HTML 伪类与兄弟选择器（当前明确报错；要支持得写更完整的 CSS 选择器引擎）
+### MPV 属性与 Venera 兼容现状（2026-11-03 核对）
+- MPV 已通过 `MediaKitMpvEngine` 的 libmpv FFI 属性通道写入字幕延迟与硬件解码设置；硬解对随后打开的媒体生效。实际设备行为仍需按内核和设备验证。
+- Venera 已支持常用 HTML 选择器、md5 / sha1 / sha256 / HMAC，并将 `onImageLoad` 图片请求头传入图片管线。仍未接入 sha512、AES/RSA、账号登录、收藏夹、评论、排序点赞及 HTML 伪类和兄弟选择器；具体边界以 `lib/core/js/venera_bridge.dart` 为准。
 
 ## 预留扩展（暂不开发）
 - 漫画：追踪同步（Phase2 本期不实现）
@@ -896,9 +881,7 @@
 - 沙盒文件IO持久化（当前为按图源隔离的进程内存储，重启即清空）
 
 ### 图源生成器（可视化爬虫模块）—— 本轮只搭骨架，能力待后续迭代
-- **现状**：设置页入口「图源生成器（开发中）」+ 静态占位页（`source_generator_page.dart`）
-  + 预留数据表（`crawler_config`，见 `lib/core/generator/generator_database.dart`）。
-  所有交互按钮点击弹「功能开发中」，**没有任何爬虫业务逻辑**。
+- **现状（2026-11-03）**：保留了 `lib/core/generator/generator_database.dart` 中的预留存储；当前代码中未找到此前记录的设置入口和占位页。生成器业务仍需重新核实和规划。
 - **本轮已定死的三条边界**（后续迭代请沿用，别绕开）：
   1. 入口留在**全局设置页**，不新增底部 Tab（底部 5 个主 Tab 不变）；
   2. 生成器库 `generator.db` 落在应用支持目录**根部**，不进 `sections/<id>/`
@@ -916,23 +899,11 @@
 
 ## 未完成 / 待评估
 
-- **Venera 源支持**：`venera-configs` 那批源需要 DOM 垫片（querySelectorAll /
-  cheerio / innerHTML）。当前只在错误卡里如实说明；要真正支持得在沙箱里补一套
-  HTML 解析（或让脚本改用 JSON 接口）。已评估：工作量不小，先不做。
-- **WAF 静默校验的真机验证**：自动静默路径（小悬浮窗 + 自动重试）需要真机跑一次
-  Cloudflare 站点确认；本机只有单元测试覆盖（钩子 / 去重 / 重试一次）。
-- **全量 flutter test 的稳定性（本轮定位到具体文件）**：以前只知道「跑到 1300+
-  例会掉内存」，本轮复现并定位了：**`test/video_progress_test.dart` 的第 8 例
-  「片头片尾：从源条目播时记一下，片尾到点自动跳」**会卡在某个 `pumpAndSettle`
-  上（无界动画 / 假播放器的缓冲态没收敛），一帧一帧累积把内存吃到十几 GB、
-  直到 `pumpAndSettle` 的 10 分钟超时才报 did not complete。
-  证据：**改动前的基线代码**单跑这个文件同样卡住（`timeout 300` 退出码 124，
-  同一例 did not complete）——与本次改动无关。修法在测试侧（假播放器补上
-  缓冲收敛，或在用例里改用定长 `pump`），下一轮处理。
-  **排除这一个文件后，全量 1327 例全绿**（`flutter test $(ls test/*.dart |
-  grep -v video_progress) `）。
+- **Venera 源支持**：已有常用 HTML 选择器子集，尚未覆盖所有 Venera API；以实际源和上面的兼容边界评估缺口。
+- **WAF 静默校验的真机验证**：自动静默路径需要在 iOS 真机上用实际站点核对；现有记录不能替代当前版本的真机验收。
+- **全量测试**：旧版 `video_progress_test.dart` 的卡住记录已过期，相关用例已变化；当前质量脚本要求完整测试，不应继续沿用排除该文件的历史结论。运行结果以当次验证为准。
 
-## 瓜子影视（gztv5.com）：要「做全」必须先复刻它的入参编码（已定性，未完成）
+## 瓜子影视（gztv5.com）：历史接口调查（入参问题已解决）
 
 用内置浏览器（能直连，站点**没有** CF 挑战）实测到的真实接口面：
 
