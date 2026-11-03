@@ -432,7 +432,7 @@ void main() {
       );
       await tester.tap(find.byTooltip('全屏'));
       await tester.pumpAndSettle();
-      expect(find.byTooltip('记片头（长按清除标记）'), findsOneWidget);
+      expect(find.byTooltip('记片头（长按查看标记）'), findsOneWidget);
       await tester.tap(find.byTooltip('下一集'));
       await tester.pumpAndSettle();
       expect(parsed, [12]);
@@ -450,14 +450,14 @@ void main() {
         playing: true,
       );
       await tester.pump();
-      expect(find.byTooltip('记片头（长按清除标记）'), findsOneWidget);
+      expect(find.byTooltip('记片头（长按查看标记）'), findsOneWidget);
       players.single.emit(
         position: const Duration(seconds: 60),
         duration: const Duration(seconds: 90),
         playing: true,
       );
       await tester.pump();
-      expect(find.byTooltip('记片尾（长按清除标记）'), findsOneWidget);
+      expect(find.byTooltip('记片尾（长按查看标记）'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
 
@@ -505,24 +505,40 @@ void main() {
         playing: true,
       );
       await tester.pump(const Duration(milliseconds: 100));
-      await tester.tap(find.byTooltip('记片头（长按清除标记）'));
+      await tester.tap(find.byTooltip('记片头（长按查看标记）'));
       await tester.pump(const Duration(milliseconds: 100));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 80)),
       );
       await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byTooltip('记片头（长按查看标记）'),
+          matching: find.text('01:00'),
+        ),
+        findsOneWidget,
+        reason: '按钮显示已记片头',
+      );
       player.emit(
         position: const Duration(seconds: 540),
         duration: const Duration(seconds: 600),
         playing: true,
       );
       await tester.pump(const Duration(milliseconds: 100));
-      await tester.tap(find.byTooltip('记片尾（长按清除标记）'));
+      await tester.tap(find.byTooltip('记片尾（长按查看标记）'));
       await tester.pump(const Duration(milliseconds: 100));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 80)),
       );
       await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byTooltip('记片尾（长按查看标记）'),
+          matching: find.text('09:00'),
+        ),
+        findsOneWidget,
+        reason: '按钮显示已记片尾',
+      );
       final marks = store.seriesMemory(
         const EpisodeIdentity(series: 'mark-fixture:series', episode: 2),
         620000,
@@ -561,6 +577,37 @@ void main() {
         contains(const Duration(seconds: 60)),
         reason: '下一集从已记的片头结束位置继续',
       );
+      player.emit(
+        position: const Duration(seconds: 560),
+        duration: const Duration(seconds: 620),
+        playing: false,
+      );
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byTooltip('记片尾（长按查看标记）'),
+          matching: find.text('09:20'),
+        ),
+        findsOneWidget,
+        reason: '片尾随新一集时长换算',
+      );
+      await tester.longPress(find.byTooltip('记片尾（长按查看标记）'));
+      await tester.pumpAndSettle();
+      expect(find.text('片头片尾标记'), findsOneWidget);
+      expect(find.text('01:00'), findsWidgets);
+      expect(find.text('09:20'), findsWidgets);
+      final headRow = find.widgetWithText(ListTile, '片头结束');
+      await tester.tap(find.descendant(of: headRow, matching: find.text('清除')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: headRow, matching: find.text('未设置')),
+        findsOneWidget,
+      );
+      final remaining = store.seriesMemory(
+        const EpisodeIdentity(series: 'mark-fixture:series', episode: 2),
+        620000,
+      );
+      expect(remaining.single.kind, SegmentKind.ending, reason: '分别清除不能删掉片尾');
       await tester.pumpWidget(const SizedBox());
     });
 
@@ -1257,7 +1304,7 @@ void main() {
       expect(find.text('选集'), findsOneWidget);
       expect(find.byTooltip('清晰度'), findsNothing);
       expect(find.byTooltip('播放内核'), findsOneWidget);
-      expect(find.byTooltip('记片头（长按清除标记）'), findsOneWidget);
+      expect(find.byTooltip('记片头（长按查看标记）'), findsOneWidget);
       expect(find.byTooltip('播放器设置'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -2114,7 +2161,7 @@ void main() {
       expect(episodes.dy, greaterThan(slider.bottom));
       expect(find.byTooltip('停止'), findsNothing);
       expect(find.byTooltip('线路 / 选集'), findsOneWidget);
-      expect(find.byTooltip('记片头（长按清除标记）'), findsOneWidget);
+      expect(find.byTooltip('记片头（长按查看标记）'), findsOneWidget);
       expect(find.byTooltip('弹幕：开'), findsOneWidget);
       expect(find.byTooltip('锁定（防误触）'), findsOneWidget);
       await tester.tap(find.byTooltip('播放器设置'));

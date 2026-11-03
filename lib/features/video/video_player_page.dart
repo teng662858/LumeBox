@@ -2523,23 +2523,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     );
   }
 
-  /// 清掉这套作品的片头片尾标记。
-  void _clearSkipMarks() {
-    final target = _target;
-    final library = _library;
-    if (target == null || library == null) return;
-    SkipMarksStore(library).clear(target.identity);
-    unawaited(
-      rememberPlayerSkip(
-        target,
-        SkipMarks.none,
-        _player?.snapshot.value.duration ?? Duration.zero,
-      ).catchError((Object error) => LumeLog.warn('同剧跳过记忆清除失败：$error')),
-    );
-    setState(() => _skipMarks = SkipMarks.none);
-    _showToast('已清除片头片尾标记');
-  }
-
   /// 片尾区间：剩余时间进到这里就算「在片尾」，快捷按钮随之变成「记片尾」。
   ///
   /// 取「2 分钟」与「总时长 8%」里**较大**的那个：十几分钟的短剧最后两分钟就能记，
@@ -2562,19 +2545,119 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
   /// 快捷按钮的提示：把「这一下记的是哪一头、长按能清」说清楚。
   String _skipQuickTooltip(PlayerSnapshot snapshot) =>
-      '${_skipQuickLabel(snapshot)}（长按清除标记）';
+      '${_skipQuickLabel(snapshot)}（长按查看标记）';
 
   /// 快捷按钮按下去：按当前所处的区间记对应的一头。
   void _markSkipFromQuick(PlayerSnapshot snapshot) =>
       _markSkip(intro: !_inOutroRegion(snapshot));
 
-  /// 长按快捷按钮清标记；没记过时如实说明，别让长按像没反应。
-  void _clearSkipMarksFromQuick() {
-    if (_skipMarks.isEmpty) {
-      _showToast('还没有记过片头片尾');
+  SkipMarks _visibleSkipMarks(PlayerSnapshot snapshot) {
+    final target = _target;
+    final controller = _intro;
+    final request = controller?.request;
+    if (target == null ||
+        request == null ||
+        request.episode.series != '${target.sourceId}:${target.itemId}' ||
+        request.episode.episode != target.chapterIndex + 1) {
+      return SkipMarks.none;
+    }
+    if (!controller!.store.hasSeriesMemory(request.episode)) return _skipMarks;
+    final segments = controller.store.seriesMemory(
+      request.episode,
+      snapshot.duration.inMilliseconds,
+      includeDisabled: true,
+    );
+    final opening = segments
+        .where((segment) => segment.kind == SegmentKind.opening)
+        .firstOrNull;
+    final ending = segments
+        .where((segment) => segment.kind == SegmentKind.ending)
+        .firstOrNull;
+    return SkipMarks(
+      intro: opening == null ? null : Duration(milliseconds: opening.endMs),
+      outro: ending == null ? null : Duration(milliseconds: ending.startMs),
+    );
+  }
+
+  Future<void> _clearSkipKind(bool intro) async {
+    final target = _target;
+    final library = _library;
+    if (target == null || library == null) return;
+    await clearPlayerSkipKind(
+      target,
+      intro ? SegmentKind.opening : SegmentKind.ending,
+      controller: _intro,
+    );
+    if (!mounted || _target?.isSameEpisode(target) != true) return;
+    final next = _skipMarks.copyWith(clearIntro: intro, clearOutro: !intro);
+    SkipMarksStore(library).save(target.identity, next);
+    setState(() => _skipMarks = next);
+    _showToast(intro ? '已清除片头标记' : '已清除片尾标记');
+  }
+
+  Future<void> _showSkipMarks() async {
+    if (_target == null) {
+      _showToast('从源条目起播才能记片头片尾');
       return;
     }
-    _clearSkipMarks();
+    _cancelAutoHide();
+    await showPlayerSettingsPanel<void>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (panelContext, refresh) {
+          final marks = _visibleSkipMarks(
+            _player?.snapshot.value ?? const PlayerSnapshot(),
+          );
+          Widget row(String name, Duration? at, bool intro) => ListTile(
+            title: Text(name),
+            subtitle: Text(at == null ? '未设置' : _format(at)),
+            trailing: TextButton(
+              onPressed: at == null
+                  ? null
+                  : () async {
+                      try {
+                        await _clearSkipKind(intro);
+                        if (panelContext.mounted) refresh(() {});
+                      } catch (_) {
+                        if (mounted) _showToast('清除标记失败，请重试');
+                      }
+                    },
+              child: const Text('清除'),
+            ),
+          );
+          return PlayerSettingsScaffold(
+            title: '片头片尾标记',
+            body: ListView(
+              children: [
+                row('片头结束', marks.intro, true),
+                row('片尾开始', marks.outro, false),
+                ListTile(
+                  title: const Text('片头片尾详细设置'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push<void>(
+                    panelContext,
+                    MaterialPageRoute(
+                      builder: (_) => IntroEpisodeSheet(
+                        controller: _intro!,
+                        position: () =>
+                            _player?.snapshot.value.position ?? Duration.zero,
+                        onRebind: () {
+                          _introMedia = null;
+                          final snapshot = _player?.snapshot.value;
+                          if (snapshot != null) _syncOriginalIntro(snapshot);
+                        },
+                      ),
+                    ),
+                  ),
+                  enabled: _intro != null,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    if (mounted) _scheduleAutoHide();
   }
 
   /// 快捷智能「记片头 / 记片尾」（用户口径：就放在播放页控制栏上）。
@@ -2584,40 +2667,64 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   Widget _skipQuickButton({bool inPanel = false, bool withIcon = false}) =>
       ValueListenableBuilder<PlayerSnapshot>(
         valueListenable: _player?.snapshot ?? _idleSnapshot,
-        builder: (context, snapshot, _) => Tooltip(
-          message: _skipQuickTooltip(snapshot),
-          child: TextButton(
-            onPressed: () => _markSkipFromQuick(snapshot),
-            onLongPress: _clearSkipMarksFromQuick,
-            style: TextButton.styleFrom(
-              minimumSize: const Size(56, 40),
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              foregroundColor: _fullscreen && !inPanel
-                  ? Colors.white
-                  : LumeTheme.accent,
-            ),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (withIcon) ...[
-                    const Icon(Icons.fast_forward_rounded, size: 17),
-                    const SizedBox(width: 3),
-                  ],
-                  Text(
-                    _skipQuickLabel(snapshot),
-                    style: TextStyle(
-                      fontSize: LumeTypography.bodySize + 1,
-                      fontWeight: FontWeight.w600,
-                      shadows: _fullscreen && !inPanel ? _controlShadows : null,
+        builder: (context, snapshot, _) {
+          final marks = _visibleSkipMarks(snapshot);
+          final mark = _inOutroRegion(snapshot) ? marks.outro : marks.intro;
+          return Tooltip(
+            message: _skipQuickTooltip(snapshot),
+            child: TextButton(
+              onPressed: () => _markSkipFromQuick(snapshot),
+              onLongPress: _showSkipMarks,
+              style: TextButton.styleFrom(
+                minimumSize: const Size(56, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                foregroundColor: _fullscreen && !inPanel
+                    ? Colors.white
+                    : LumeTheme.accent,
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (withIcon) ...[
+                      const Icon(Icons.fast_forward_rounded, size: 17),
+                      const SizedBox(width: 3),
+                    ],
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _skipQuickLabel(snapshot),
+                          style: TextStyle(
+                            fontSize: LumeTypography.bodySize + 1,
+                            fontWeight: FontWeight.w600,
+                            height: 1.1,
+                            shadows: _fullscreen && !inPanel
+                                ? _controlShadows
+                                : null,
+                          ),
+                        ),
+                        if (mark != null)
+                          Text(
+                            _format(mark),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              height: 1.1,
+                              shadows: _fullscreen && !inPanel
+                                  ? _controlShadows
+                                  : null,
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       );
 
   /// 保存当前播放进度（集数 + 时间点）。

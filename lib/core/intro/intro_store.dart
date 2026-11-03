@@ -173,9 +173,14 @@ class IntroStore extends ValueNotifier<IntroOptions> {
     ]);
   }
 
-  List<SkipSegment> seriesMemory(EpisodeIdentity episode, int duration) {
-    if (!value.enabled('reuseManualSeason') ||
-        !value.enabled('manual') ||
+  List<SkipSegment> seriesMemory(
+    EpisodeIdentity episode,
+    int duration, {
+    bool includeDisabled = false,
+  }) {
+    if ((!includeDisabled &&
+            (!value.enabled('reuseManualSeason') ||
+                !value.enabled('manual'))) ||
         duration <= 0) {
       return [];
     }
@@ -232,6 +237,55 @@ class IntroStore extends ValueNotifier<IntroOptions> {
     db.execute('DELETE FROM segments WHERE season=? AND manual=1', [
       episode.seasonKey,
     ]);
+  }
+
+  /// Clear only one remembered kind, including older per-episode manual rows.
+  void clearSeriesMemoryKind(EpisodeIdentity episode, SegmentKind kind) {
+    if (kind != SegmentKind.opening && kind != SegmentKind.ending) {
+      throw ArgumentError('Only opening and ending marks can be cleared');
+    }
+    final key = 'series-skip:${episode.seasonKey}';
+    final rows = db.select('SELECT value FROM preferences WHERE id=?', [key]);
+    final profile = <String, Object?>{};
+    if (rows.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rows.first['value'] as String);
+        if (decoded is Map) profile.addAll(Map<String, Object?>.from(decoded));
+      } catch (_) {
+        /* Preserve an empty profile to prevent legacy reimport. */
+      }
+    }
+    profile.remove(kind.name);
+    final manualRows = db.select(
+      'SELECT episode, value FROM segments WHERE season=? AND manual=1',
+      [episode.seasonKey],
+    );
+    db.execute('BEGIN');
+    try {
+      db.execute('INSERT OR REPLACE INTO preferences VALUES (?, ?)', [
+        key,
+        jsonEncode(profile),
+      ]);
+      for (final row in manualRows) {
+        try {
+          final values = jsonDecode(row['value'] as String);
+          if (values is! List) continue;
+          values.removeWhere(
+            (entry) => entry is Map && entry['kind'] == kind.name,
+          );
+          db.execute('UPDATE segments SET value=? WHERE episode=?', [
+            jsonEncode(values),
+            row['episode'],
+          ]);
+        } catch (_) {
+          /* A damaged row cannot yield a valid mark. */
+        }
+      }
+      db.execute('COMMIT');
+    } catch (_) {
+      db.execute('ROLLBACK');
+      rethrow;
+    }
   }
 
   void saveSegments(

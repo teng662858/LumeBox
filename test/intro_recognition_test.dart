@@ -289,6 +289,36 @@ void main() {
     expect(later.single.kind, SegmentKind.ending);
   });
 
+  test('分别清除片头或片尾保留另一项，且旧逐集标记不再恢复', () {
+    const tail = SkipSegment(
+      kind: SegmentKind.ending,
+      startMs: duration - 90000,
+      endMs: duration,
+      confidence: 1,
+      source: 'manual',
+    );
+    store.saveSegments(episode, duration, [opening, tail], manual: true);
+    store.clearSeriesMemoryKind(episode, SegmentKind.opening);
+    expect(
+      store.seriesMemory(episode, duration).single.kind,
+      SegmentKind.ending,
+    );
+    expect(store.manual(episode, duration).single.kind, SegmentKind.ending);
+    store.update({'manual': false});
+    expect(store.seriesMemory(episode, duration), isEmpty);
+    expect(
+      store.seriesMemory(episode, duration, includeDisabled: true).single.kind,
+      SegmentKind.ending,
+    );
+    store.clearSeriesMemoryKind(episode, SegmentKind.ending);
+    expect(store.hasSeriesMemory(episode), isTrue);
+    expect(
+      store.seriesMemory(episode, duration, includeDisabled: true),
+      isEmpty,
+    );
+    expect(store.manual(episode, duration), isEmpty);
+  });
+
   test('priority reorder deduplicates and retains every scheme', () {
     final options = IntroOptions({
       'order': ['ai', 'manual', 'ai', 'unknown'],

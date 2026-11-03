@@ -56,3 +56,23 @@ Future<void> rememberPlayerSkip(
     );
   }
 }
+
+Future<void> clearPlayerSkipKind(
+  VideoPlayTarget target,
+  SegmentKind kind, {
+  IntroController? controller,
+}) async {
+  final store = controller?.store ?? await IntroStore.open();
+  final series = '${target.sourceId}:${target.itemId}';
+  final identity = store.identity(series);
+  final episode = EpisodeIdentity(
+    series: series,
+    episode: target.chapterIndex + 1,
+    season: (identity['season'] as num?)?.toInt() ?? 1,
+    movie: identity['movie'] == true,
+  );
+  store.clearSeriesMemoryKind(episode, kind);
+  if (controller?.request?.episode.key == episode.key) {
+    controller!.refreshSeriesMemory();
+  }
+}
