@@ -1,3 +1,4 @@
+import '../reading/section_image.dart';
 import '../../shared/widgets/network_owned_state.dart';
 
 import 'package:flutter/material.dart';
@@ -12,17 +13,32 @@ class NovelDetailPage extends StatefulWidget {
     required this.source,
     required this.library,
     required this.target,
+    this.imagePipeline,
   });
   final DataSource source;
   final ReadingLibrary library;
   final ReadingTarget target;
+  final SectionImagePipeline? imagePipeline;
   @override
   State<NovelDetailPage> createState() => _NovelDetailPageState();
 }
 
 class _NovelDetailPageState extends State<NovelDetailPage>
     with NetworkOwnedState<NovelDetailPage> {
+  late final SectionImagePipeline _pipeline;
   SourceDetail? _detail;
+  String get _cover {
+    final detailCover = _detail?.cover?.trim() ?? '';
+    return detailCover.isNotEmpty
+        ? detailCover
+        : widget.target.cover?.trim() ?? '';
+  }
+
+  Map<String, String> get _coverHeaders =>
+      _detail?.cover?.trim().isNotEmpty == true
+      ? _detail!.coverHeaders
+      : const {};
+
   List<SourceChapter> _chapters = [];
   String? _error;
   bool _loading = true, _reversed = false;
@@ -34,7 +50,22 @@ class _NovelDetailPageState extends State<NovelDetailPage>
   @override
   void initState() {
     super.initState();
+    _pipeline =
+        widget.imagePipeline ??
+        SectionImagePipeline(
+          cacheDir: widget.library.imageCacheDir,
+          maxConcurrent: SectionImagePipeline.coverConcurrency,
+          diskCache: SectionImagePipeline.diskCacheFor(widget.source.section),
+        );
+    _pipeline.bindSource(widget.source);
+    _pipeline.bindSession(widget.source.section, widget.source.id);
     _load();
+  }
+
+  @override
+  void dispose() {
+    if (widget.imagePipeline == null) _pipeline.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -63,7 +94,7 @@ class _NovelDetailPageState extends State<NovelDetailPage>
         sourceId: widget.target.sourceId,
         itemId: widget.target.itemId,
         title: _title,
-        cover: detail?.cover ?? widget.target.cover,
+        cover: _cover.isEmpty ? null : _cover,
         subtitle: detail?.subtitle ?? widget.target.subtitle,
         chapterCount: chapters.length,
       );
@@ -106,7 +137,7 @@ class _NovelDetailPageState extends State<NovelDetailPage>
         sourceId: target.sourceId,
         itemId: target.itemId,
         title: _title,
-        cover: _detail?.cover ?? target.cover,
+        cover: _cover.isEmpty ? null : _cover,
         subtitle: _detail?.subtitle ?? target.subtitle,
         chapterCount: _chapters.length,
       );
@@ -159,12 +190,44 @@ class _NovelDetailPageState extends State<NovelDetailPage>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          _title,
-                          style: Theme.of(context).textTheme.headlineSmall,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: 100,
+                              height: 148,
+                              child: SectionImage(
+                                key: const ValueKey('novel-detail-cover'),
+                                pipeline: _pipeline,
+                                url: _cover,
+                                headers: _coverHeaders,
+                                targetWidth:
+                                    (100 *
+                                            MediaQuery.devicePixelRatioOf(
+                                              context,
+                                            ))
+                                        .round(),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _title,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineSmall,
+                                  ),
+                                  if (_detail?.author?.isNotEmpty == true)
+                                    Text('作者：${_detail!.author}'),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                        if (_detail?.author?.isNotEmpty == true)
-                          Text('作者：${_detail!.author}'),
                         const SizedBox(height: 12),
                         if (_detail?.description?.isNotEmpty == true)
                           SelectableText(

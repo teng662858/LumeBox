@@ -1,4 +1,4 @@
-// LumeSource: {"id":"antbyw_comic","name":"蚂蚁搬运","version":"1.0.0","category":"comic","mirrors":["http://www.antbyw.com"]}
+// LumeSource: {"id":"antbyw_comic","name":"蚂蚁搬运","version":"1.0.1","category":"comic","mirrors":["http://www.antbyw.com"],"icon":"https://www.antbyw.com/favicon.ico"}
 //
 // 站点：蚂蚁搬运网 / ant搬运网（Discuz! X + jameson_manhua 插件，服务端渲染，全程免登录，2026-10-25 实测）
 //
@@ -288,7 +288,8 @@ async function mapLimit(list, limit, worker) {
 var LumeSource = {
   id: 'antbyw_comic',
   name: '蚂蚁搬运',
-  version: '1.0.0',
+  version: '1.0.1',
+  icon: 'https://www.antbyw.com/favicon.ico',
   category: 'comic',
   mirrors: ['http://www.antbyw.com'],
 
