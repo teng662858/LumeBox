@@ -1,16 +1,30 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/source/github_source_repository.dart';
+import '../../core/source/source.dart';
+import '../../core/source/source_import_routing.dart';
+import '../../core/source/source_content_category.dart';
+import '../../core/source/source_subscription_sync.dart';
+import '../../core/session/section.dart';
+import 'source_import_dialog.dart';
+import 'source_import_flow.dart';
 import '../../shared/widgets/glass_card.dart';
 
 class SourceRepositoryPage extends StatefulWidget {
-  const SourceRepositoryPage({super.key, this.store, this.clientFactory});
+  const SourceRepositoryPage({
+    super.key,
+    this.store,
+    this.clientFactory,
+    this.managers = const {},
+  });
   final RepositoryCredentialStore? store;
   final GithubSourceRepository Function(String)? clientFactory;
+  final Map<Section, SourceManager> managers;
   @override
   State<SourceRepositoryPage> createState() => _SourceRepositoryPageState();
 }
@@ -25,8 +39,12 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
   RepositoryPublication? _publication;
   Timer? _poll;
   bool _busy = false, _checking = false, _loading = true;
+  bool _installing = false;
   String _kind = 'movie';
   String? _error;
+  final Map<String, Section> _installed = {};
+  SourceManager _manager(Section section) =>
+      widget.managers[section] ?? LumeSources.manager(section);
 
   @override
   void initState() {
@@ -65,6 +83,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
   }
 
   Future<void> _run(Future<void> Function() task) async {
+    if (_busy || _installing) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -76,7 +95,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     } catch (_) {
       if (mounted) setState(() => _error = '操作未完成，请刷新仓库核对结果后重试');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && !_installing) setState(() => _busy = false);
     }
   }
 
@@ -85,6 +104,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     try {
       await repo.connect();
       final snapshot = await repo.snapshot();
+      await _readInstalled();
       await _store.save({'token': repo.token});
       if (!mounted) {
         repo.close();
@@ -104,6 +124,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
 
   Future<void> _refresh() async {
     final snapshot = await _repo!.snapshot();
+    await _readInstalled();
     if (mounted) setState(() => _snapshot = snapshot);
   }
 
@@ -128,6 +149,31 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
       if (result.finished) {
         _poll?.cancel();
         await _refresh();
+        if (result.succeeded && operation.installPaths.isNotEmpty && mounted) {
+          setState(() {
+            _installing = true;
+            _busy = true;
+          });
+          final sources = _snapshot!.sources
+              .where((s) => s.paths.any(operation.installPaths.contains))
+              .toList();
+          if (sources.isEmpty) {
+            throw const RepositoryFailure('发布已完成，但新源尚未出现在最新仓库清单中。请刷新后重试安装。');
+          }
+          for (final source in sources) {
+            if (!mounted) return;
+            await _install(source);
+          }
+          final completed = RepositoryOperation(
+            operation.branch,
+            operation.commit,
+          );
+          _operation = completed;
+          await _store.save({
+            'token': repo.token,
+            'operation': completed.toJson(),
+          });
+        }
       }
     } on RepositoryFailure catch (error) {
       _poll?.cancel();
@@ -137,6 +183,12 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
       if (mounted) setState(() => _error = '无法查询发布结果，请手动刷新');
     } finally {
       _checking = false;
+      if (_installing && mounted) {
+        setState(() {
+          _installing = false;
+          _busy = false;
+        });
+      }
     }
   }
 
@@ -168,16 +220,118 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
       throw const RepositoryFailure('源文件不能超过 4MB');
     }
     final bytes = await file.readAsBytes();
-    final path = '$_kind/${file.name}';
-    final meta = GithubSourceRepository.validateUpload(path, bytes);
+    if (!mounted) return;
+    final text = utf8.decode(bytes);
+    if (!RegExp(r'(?://|#)\s*@?LumeSource\s*[:=]').hasMatch(text)) {
+      throw const RepositoryFailure('此文件没有仓库源声明；REX 等模块请使用“添加到本机”，无需上传 GitHub');
+    }
+    final inferred = SourceImportRouting.repositoryKind(text, fallback: _kind);
+    String? contentCategory;
+    if (['movie', 'video'].contains(inferred) &&
+        SourceContentCategories.fromScript(text).isEmpty) {
+      contentCategory = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('确认内容分类'),
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('文件没有声明内容分类，请选择一次；下次会自动识别。'),
+            ),
+            for (final kind in [
+              SourceContentCategory.movie,
+              SourceContentCategory.adult,
+            ])
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, kind.id),
+                child: Text(kind.label),
+              ),
+          ],
+        ),
+      );
+      if (contentCategory == null || !mounted) return;
+    }
+    final draft = GithubSourceRepository.prepareUpload(
+      file.name,
+      bytes,
+      fallbackKind: _kind,
+      contentCategory: contentCategory,
+    );
+    final path = draft.path;
+    final meta = draft.metadata;
     final accepted = await _confirm(
       '上传源到 GitHub',
-      '将新增「${meta.name}」${meta.version}\n$path\n发布成功后，所有使用该仓库订阅的用户都能获取。上传前请确认分类、搜索、封面和播放已实测。',
+      '将新增「${meta.name}」${meta.version}\n自动分类：${GithubSourceRepository.kinds[path.split('/').first]}\n$path\n发布成功后会安装到本机；其他订阅用户也能获取。上传前请确认分类、搜索、封面和播放已实测。',
     );
     if (!accepted || !mounted) return;
+    setState(() {
+      _kind = path.split('/').first;
+      _search.clear();
+    });
     await _refresh();
     if (!mounted) return;
-    await _submitted(await _repo!.add(_snapshot!, path, bytes));
+    await _submitted(await _repo!.add(_snapshot!, path, draft.bytes));
+  });
+
+  Future<void> _readInstalled() async {
+    _installed.clear();
+    for (final section in [Section.comic, Section.video]) {
+      for (final source in await _manager(section).list()) {
+        _installed[source.id] = section;
+      }
+    }
+  }
+
+  Future<void> _install(RepositorySource source) async {
+    final text = await _repo!.readSource(_snapshot!, source);
+    final section = SourceImportRouting.section(text);
+    if (!mounted) return;
+    final installed = await importSources(
+      context,
+      manager: _manager(section),
+      section: section,
+      items: [
+        SourceImportItem(
+          script: text,
+          label: source.name,
+          originUrl:
+              'https://raw.githubusercontent.com/${GithubSourceRepository.repository}/main/${source.paths.first}',
+        ),
+      ],
+    );
+    if (installed) await _readInstalled();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _localImport() => _run(() async {
+    final request = await showDialog<SourceImportRequest>(
+      context: context,
+      builder: (_) => const SourceImportDialog(
+        sections: [Section.comic, Section.video],
+        initialSection: Section.video,
+      ),
+    );
+    if (request == null || !mounted) return;
+    await importSources(
+      context,
+      manager: _manager(request.section),
+      section: request.section,
+      items: request.items,
+      skipped: request.skipped,
+      notes: request.notes,
+      managers: {
+        for (final s in [Section.comic, Section.video]) s: _manager(s),
+      },
+    );
+    if (request.subscriptionUrls.isNotEmpty) {
+      await SourceSubscriptionSync.remember(
+        request.subscriptionSection,
+        request.subscriptionUrls,
+        manager: _manager(request.subscriptionSection),
+      );
+    }
+    await _readInstalled();
+    if (mounted) setState(() {});
   });
 
   Future<bool> _confirm(String title, String text) async =>
@@ -240,9 +394,14 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
           padding: const EdgeInsets.all(16),
           children: [
             const Text(
-              '远端仓库：teng662858/LumeBox-Sources · main\n这里的增删会真实修改 GitHub 文件和公共订阅。',
+              '远端仓库：teng662858/LumeBox-Sources · main\n仓库列表是可安装的源，不代表已经安装到手机。仓库增删会修改公共订阅。',
             ),
             const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _localImport,
+              icon: const Icon(Icons.add_to_photos_outlined),
+              label: const Text('添加到本机（不上传 GitHub）'),
+            ),
             if (_loading || _busy) const LinearProgressIndicator(),
             if (_error != null)
               Padding(
@@ -327,8 +486,11 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                   ),
                 ),
               DropdownButtonFormField<String>(
+                key: ValueKey('repository-kind-$_kind'),
                 initialValue: _kind,
-                decoration: const InputDecoration(labelText: '仓库内容分类'),
+                decoration: const InputDecoration(
+                  labelText: '默认分类（文件可识别时自动归类）',
+                ),
                 items: [
                   for (final entry in GithubSourceRepository.kinds.entries)
                     DropdownMenuItem(
@@ -344,7 +506,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
               FilledButton.icon(
                 onPressed: _busy || _pending ? null : _upload,
                 icon: const Icon(Icons.upload_file),
-                label: const Text('选择文件并新增到 GitHub'),
+                label: const Text('发布到 GitHub 并安装本机'),
               ),
               TextField(
                 controller: _search,
@@ -356,13 +518,27 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                 Card(
                   child: ListTile(
                     title: Text(source.name),
-                    subtitle: Text('${source.version} · ${source.paths.first}'),
-                    trailing: IconButton(
-                      tooltip: '从 GitHub 删除源',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: _busy || _pending
-                          ? null
-                          : () => _delete(source),
+                    subtitle: Text(
+                      '${source.version} · ${source.paths.first}\n${_installed[source.id] == null ? '尚未安装到本机' : '已在本机 · ${_installed[source.id]!.label}'}',
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: '安装到本机',
+                          icon: const Icon(Icons.download_outlined),
+                          onPressed: _busy
+                              ? null
+                              : () => _run(() => _install(source)),
+                        ),
+                        IconButton(
+                          tooltip: '从 GitHub 删除源',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: _busy || _pending
+                              ? null
+                              : () => _delete(source),
+                        ),
+                      ],
                     ),
                   ),
                 ),

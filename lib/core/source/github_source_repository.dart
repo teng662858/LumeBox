@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../js/source_script.dart';
+import 'source_import_routing.dart';
 
 class RepositoryFailure implements Exception {
   const RepositoryFailure(this.message);
@@ -43,14 +44,30 @@ class RepositorySnapshot {
 }
 
 class RepositoryOperation {
-  const RepositoryOperation(this.branch, this.commit);
+  const RepositoryOperation(
+    this.branch,
+    this.commit, {
+    this.installPaths = const [],
+  });
   final String branch, commit;
-  Map<String, String> toJson() => {'branch': branch, 'commit': commit};
+  final List<String> installPaths;
+  Map<String, Object> toJson() => {
+    'branch': branch,
+    'commit': commit,
+    if (installPaths.isNotEmpty) 'installPaths': installPaths,
+  };
   static RepositoryOperation? parse(Object? value) =>
       value is Map && value['branch'] is String && value['commit'] is String
       ? RepositoryOperation(
           value['branch'] as String,
           value['commit'] as String,
+          installPaths:
+              (value['installPaths'] is List
+                      ? value['installPaths'] as List
+                      : const [])
+                  .whereType<String>()
+                  .where(GithubSourceRepository.validPath)
+                  .toList(),
         )
       : null;
 }
@@ -60,9 +77,18 @@ class RepositoryPublication {
     this.status, {
     this.url = '',
     this.finished = false,
+    this.succeeded = false,
   });
   final String status, url;
   final bool finished;
+  final bool succeeded;
+}
+
+class RepositoryUpload {
+  const RepositoryUpload(this.path, this.bytes, this.metadata);
+  final String path;
+  final Uint8List bytes;
+  final SourceMetadata metadata;
 }
 
 /// Only the official source repository and API host receive this token.
@@ -234,14 +260,20 @@ class GithubSourceRepository {
       throw const RepositoryFailure('源的 id、名称或版本无效');
     }
     final kind = path.split('/').first;
-    final category = ['comic', 'photo', 'novel'].contains(kind)
+    final category = ['comic', 'photo', 'novel', 'audiobook'].contains(kind)
         ? 'comic'
         : 'video';
     if (!((category == 'comic'
-                ? ['comic', 'photo', 'novel']
+                ? [
+                    'comic',
+                    'photo',
+                    'novel',
+                    if (kind == 'audiobook') ...['audiobook', 'video'],
+                  ]
                 : ['video', 'audiobook'])
             .contains(meta['category'])) ||
-        !['movie', 'adult'].contains(meta['contentCategory'])) {
+        category == 'video' &&
+            !['movie', 'adult'].contains(meta['contentCategory'])) {
       throw const RepositoryFailure(
         '请补齐与所选目录相符的 category 和 contentCategory（movie/adult）',
       );
@@ -258,6 +290,69 @@ class GithubSourceRepository {
     return parsed;
   }
 
+  static RepositoryUpload prepareUpload(
+    String name,
+    Uint8List bytes, {
+    String fallbackKind = 'video',
+    String? contentCategory,
+  }) {
+    if (bytes.length > 4 * 1024 * 1024) {
+      throw const RepositoryFailure('源文件不能超过 4MB');
+    }
+    final text = utf8.decode(bytes);
+    final match = RegExp(
+      r'^\s*(?://|#)\s*@?LumeSource\s*[:=]\s*(\{[^\n]+\})',
+      multiLine: true,
+    ).firstMatch(text);
+    if (match == null) {
+      throw const RepositoryFailure('此文件没有仓库源声明；REX 等模块请使用“添加到本机”，无需上传 GitHub');
+    }
+    final meta = Map<String, dynamic>.from(jsonDecode(match[1]!) as Map);
+    var kind = SourceImportRouting.repositoryKind(text, fallback: fallbackKind);
+    meta['category'] = switch (kind) {
+      'audiobook' => 'comic',
+      'photo' => 'photo',
+      'novel' => 'novel',
+      'comic' => 'comic',
+      _ => 'video',
+    };
+    if (kind == 'audiobook') meta['mediaType'] = 'audio';
+    if (!['movie', 'adult'].contains(meta['contentCategory']) &&
+        contentCategory != null) {
+      meta['contentCategory'] = contentCategory;
+    }
+    if (kind == 'video' && meta['contentCategory'] == 'movie') kind = 'movie';
+    final start = text.indexOf(match[1]!, match.start);
+    final prepared = text.replaceRange(
+      start,
+      start + match[1]!.length,
+      jsonEncode(meta),
+    );
+    final path = '$kind/$name';
+    final encoded = Uint8List.fromList(utf8.encode(prepared));
+    return RepositoryUpload(path, encoded, validateUpload(path, encoded));
+  }
+
+  Future<String> readSource(
+    RepositorySnapshot snapshot,
+    RepositorySource source,
+  ) async {
+    final path = source.paths.first;
+    if (!validPath(path) || !snapshot.files.containsKey(path)) {
+      throw const RepositoryFailure('请刷新仓库后重试');
+    }
+    final blob = await _api('GET', 'git/blobs/${snapshot.files[path]}');
+    try {
+      final bytes = base64Decode(
+        '${blob['content']}'.replaceAll(RegExp(r'\s'), ''),
+      );
+      if (bytes.length > 4 * 1024 * 1024) throw const FormatException();
+      return utf8.decode(bytes);
+    } catch (_) {
+      throw const RepositoryFailure('仓库源文件格式无效或超过 4MB');
+    }
+  }
+
   Future<RepositoryOperation> add(
     RepositorySnapshot snapshot,
     String path,
@@ -272,9 +367,14 @@ class GithubSourceRepository {
       'content': base64Encode(bytes),
       'encoding': 'base64',
     });
-    return _candidate(snapshot, [
-      {'path': path, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']},
-    ], '新增 ${meta.name}');
+    return _candidate(
+      snapshot,
+      [
+        {'path': path, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']},
+      ],
+      '新增 ${meta.name}',
+      installPaths: [path],
+    );
   }
 
   Future<RepositoryOperation> remove(
@@ -294,8 +394,9 @@ class GithubSourceRepository {
   Future<RepositoryOperation> _candidate(
     RepositorySnapshot snapshot,
     List<Map<String, Object?>> entries,
-    String message,
-  ) async {
+    String message, {
+    List<String> installPaths = const [],
+  }) async {
     final tree = await _api('POST', 'git/trees', {
       'base_tree': snapshot.tree,
       'tree': entries,
@@ -308,7 +409,11 @@ class GithubSourceRepository {
     final random = Random.secure();
     final branch =
         'lumebox/manage-${List.generate(12, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join()}';
-    final operation = RepositoryOperation(branch, commit['sha'] as String);
+    final operation = RepositoryOperation(
+      branch,
+      commit['sha'] as String,
+      installPaths: installPaths,
+    );
     await _api('POST', 'git/refs', {
       'ref': 'refs/heads/$branch',
       'sha': operation.commit,
@@ -336,6 +441,7 @@ class GithubSourceRepository {
           : '发布未完成，请查看 GitHub 流程；main 可能已更新，先刷新核对再重试',
       url: url,
       finished: true,
+      succeeded: run['conclusion'] == 'success',
     );
   }
 }

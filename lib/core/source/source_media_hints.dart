@@ -9,7 +9,7 @@ abstract final class SourceMediaHints {
 
   static String fromScript(String script) {
     final header = RegExp(
-      r'^//\s*@?LumeSource:\s*(\{[^\n]+\})',
+      r'^\s*(?://|#)\s*@?LumeSource\s*[:=]\s*(\{[^\n]+\})',
       multiLine: true,
     ).firstMatch(script);
     if (header != null) {

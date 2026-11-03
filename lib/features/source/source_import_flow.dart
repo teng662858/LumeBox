@@ -8,6 +8,9 @@ import '../../core/js/source_script.dart';
 import '../../core/source/source.dart';
 import '../../core/source/source_content_category.dart';
 import '../../core/source/source_preferences.dart';
+import '../../core/source/source_import_routing.dart';
+import '../../core/source/source_subscription_sync.dart';
+import '../../core/source/source_content_visibility.dart';
 import '../../core/session/section.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
@@ -224,18 +227,40 @@ Future<bool> importSources(
   String? sectionLabel,
   Section? section,
   String contentCategory = '',
+  Map<Section, SourceManager>? managers,
 }) async {
   if (items.isEmpty && skipped.isEmpty) return false;
+  final importNotes = List<String>.of(notes);
 
-  final existing = await existingSources(manager);
-  if (!context.mounted) return false;
-  if (!await confirmOverwrite(context, items: items, existing: existing)) {
-    // 取消也要有回音：否则弹窗关了、什么都没发生，用户不知道是没导入还是失败了。
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('已取消导入：没有写入任何源')));
+  final grouped = <Section?, List<SourceImportItem>>{};
+  for (final item in items) {
+    final target = section == null || section == Section.cat
+        ? section
+        : SourceImportRouting.section(item.script, fallback: section);
+    grouped.putIfAbsent(target, () => []).add(item);
+  }
+  final targets = <Section?, SourceManager>{};
+  final previous = <Section?, Map<String, SourceDescriptor>>{};
+  for (final entry in grouped.entries) {
+    final target = entry.key;
+    final destination = target == section
+        ? manager
+        : managers?[target] ?? LumeSources.manager(target!);
+    targets[target] = destination;
+    previous[target] = await existingSources(destination);
+    if (!context.mounted) return false;
+    if (!await confirmOverwrite(
+      context,
+      items: entry.value,
+      existing: previous[target]!,
+    )) {
+      // 取消也要有回音：否则弹窗关了、什么都没发生，用户不知道是没导入还是失败了。
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('已取消导入：没有写入任何源')));
+      }
+      return false;
     }
-    return false;
   }
   if (!context.mounted) return false;
 
@@ -249,11 +274,16 @@ Future<bool> importSources(
   ];
   var succeeded = false;
   for (final item in items) {
+    final target = grouped.entries
+        .firstWhere((e) => e.value.contains(item))
+        .key;
+    final destination = targets[target]!;
+    final existing = previous[target]!;
     // 逐条兜住异常：批量导入里一条出意外，不该把后面几条一起丢掉
     // （端口约定是「失败也返回结果」，但落库 / 引擎侧的意外不该由用户买单）。
     final SourceImportResult result;
     try {
-      result = await manager.importScript(
+      result = await destination.importScript(
         stripScriptBom(item.script),
         originUrl: item.originUrl,
       );
@@ -286,7 +316,7 @@ Future<bool> importSources(
     succeeded = true;
     final category = SourceContentCategory.fromId(contentCategory);
     var categoryNote = '';
-    if (section == Section.video &&
+    if (target == Section.video &&
         category != null &&
         category != SourceContentCategory.all &&
         SourceContentCategories.appliesTo(descriptor)) {
@@ -299,6 +329,24 @@ Future<bool> importSources(
         categoryNote = '源已导入，分类未保存；可在源设置中重新归类。';
       }
     }
+    if (target != null) {
+      SourceSubscriptionSync.recordChange(
+        target,
+        descriptor.id,
+        descriptor.name,
+        existing.containsKey(descriptor.id) ? '已更新' : '已添加',
+      );
+      SourceSubscriptionSync.revision(target).value++;
+      if (target != section) {
+        importNotes.add(
+          '已自动归入${target.label}板块${descriptor.isAudio ? ' · 有声' : ''}',
+        );
+      }
+      if (!SourceContentVisibility.instance.allows(target, descriptor)) {
+        importNotes.add('源已安装，但被当前内容显示设置隐藏；请到设置中检查分类显示。');
+      }
+    }
+    if (!descriptor.enabled) importNotes.add('此源当前已停用，启用后才会出现在源选择中。');
     outcomes.add(
       SourceImportOutcome(
         label: item.label,
@@ -325,7 +373,7 @@ Future<bool> importSources(
   await _report(
     context,
     outcomes: outcomes,
-    notes: notes,
+    notes: importNotes,
     sectionLabel: sectionLabel,
   );
   return succeeded;

@@ -283,18 +283,21 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
       section: request.section,
       contentCategory: request.contentCategory,
       sectionLabel: section.label,
+      managers: _managers,
     );
     if (!mounted) return;
     if (imported) {
       if (request.subscriptionUrls.isNotEmpty &&
           _managers[section] is SubscriptionImportManager) {
         await SourceSubscriptionSync.remember(
-          section,
+          request.subscriptionSection,
           request.subscriptionUrls,
-          manager: _managers[section],
+          manager: _managers[request.subscriptionSection],
         );
       }
-      await _reloadSection(section);
+      for (final target in Section.values) {
+        await _reloadSection(target);
+      }
     }
   }
 
