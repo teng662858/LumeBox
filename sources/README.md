@@ -1,3 +1,23 @@
+## 2026-11-03 懂片帝（`video/dongpiandi.js`，详见 [源记录](../docs/2026-11-03_懂片帝源.md)）
+
+AI 找片 + 片单 + 播放的聚合前端（`dongpiandi.ai`，标题「懂片帝AI」）：React SPA + 同源 `/v1/*` JSON 接口，
+首页 HTML 只有 4 KB，所有数据走接口。**每个请求都要 HMAC-SHA256 签名**
+（`x-ai-movie-timestamp/nonce/signature`，msg = `METHOD\npath?query\nts\nnonce`，key 取自
+`/assets/movie-card-runtime-*.js` 的 `Jo="…"`）；实测只校验这三个头，不校验客户端版本号，
+站点换前端版本不影响本源。源里用宿主原生 `tools.hmac` 算，失败自动退回纯 JS 实现，
+并对设备时钟偏差按响应 `Date` 做一次校正重试。
+
+交付形态：板块 `video`，`contentCategory: movie`（同架构的看剧AI 源同口径）。分类 id 直接用站点查询串
+（`kind=movie` / `sort=trending&window=day` / `hot_list_key=tv_korean` …），首页板块的「更多」由
+`section.browse.params` 转成同一套编码；筛选组从 `/v1/runtime/bootstrap` 的 `catalog_ui` 实时取
+（分类/地区/语言/年份/排序，短剧多「状态」「形式」两行且站点自己标了不可用）；genre 不支持多选，取第一个。
+
+播放**不逐条探活**：站点 32 条线路里总有一两条 CDN 已挂、要等宿主 6 秒超时，串行探活会把 `content`
+拖到 16 秒被判超时。改成按「站点权重 + 资源站实测稳定性」排序后直接给地址，前 5 条进 `qualities`
+供切换，默认走第三方直链（`resolve_mode:"direct"`，免费不扣额度），官方 `resolve://` 票券线路
+只在直链一条都没有时兜底。实测 `content` 213–899 ms、直链 206 + `#EXTM3U`，签名头与 Dart 侧
+HMAC 在真 QuickJS 沙箱里逐字一致。
+
 ## 2026-11-03 爱丽丝书屋（`comic/alicesw.js`，详见 [源记录](../docs/2026-11-03_爱丽丝书屋源.md)）
 
 成人网络小说站 `alicesw.com`（全站 18+，diyquge 模板的静态 HTML，无接口无加密；发布页 `alicesw.click`，
