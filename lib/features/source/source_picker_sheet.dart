@@ -520,31 +520,29 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
       if (entries.isEmpty) {
         return Center(child: Text(query.isEmpty ? '暂无源' : '没有匹配的源'));
       }
-      // 猫源双列：两列等宽卡片，列间 10px；用“每行两张”的列表保住
-      // 长按拖拽的手势路径（与单列列表同一种滚动结构）。
-      if (widget.section == Section.cat && columns) {
-        Widget slot(int index) {
-          if (index >= entries.length) return const SizedBox.shrink();
-          final source = entries[index];
-          return SourceDragTile(
-            key: ValueKey('picker-drag-${source.id}'),
-            id: source.id,
-            name: source.name,
-            accepts: (id) => entries.any((entry) => entry.id == id),
-            onMove: (from, to) => move(entries, from, to),
-            child: catCard(source),
-          );
-        }
+      // 与视频源一致，每行两张等宽卡片；保留长按拖拽和左滑操作。
+      if (columns) {
+        Widget slot(int index) => index < entries.length
+            ? tile(context, index)
+            : const SizedBox.shrink();
 
         return ListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.symmetric(
+            horizontal: widget.section == Section.cat ? 16 : 14,
+          ),
           itemCount: (entries.length + 1) ~/ 2,
           itemBuilder: (context, row) => Padding(
-            padding: const EdgeInsets.only(bottom: 6),
+            padding: EdgeInsets.only(
+              bottom: widget.section == Section.cat
+                  ? 6
+                  : SourceCardMetrics.rowGap,
+            ),
             child: SizedBox(
-              height: CatSiteTile.compactHeight,
+              height: widget.section == Section.cat
+                  ? CatSiteTile.compactHeight
+                  : SourceCardMetrics.height,
               child: Row(
                 children: [
                   Expanded(child: slot(row * 2)),
@@ -592,7 +590,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
         : null;
     final rowHeight = widget.section == Section.cat
         ? CatSiteTile.compactHeight + 6
-        : SourceCardMetrics.height + 6;
+        : SourceCardMetrics.height + SourceCardMetrics.rowGap;
     final initialOffset = currentGroup == null
         ? 0.0
         : (groupDefinitions
@@ -601,16 +599,13 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                     0,
                     (offset, group) =>
                         offset +
-                        ((widget.section == Section.cat && columns)
+                        (columns
                                 ? (grouped[group.$1]!.length + 1) ~/ 2
                                 : grouped[group.$1]!.length) *
                             rowHeight +
                         60,
                   ) +
-              ((widget.section == Section.cat && columns)
-                      ? currentIndex ~/ 2
-                      : currentIndex) *
-                  rowHeight);
+              (columns ? currentIndex ~/ 2 : currentIndex) * rowHeight);
     final singleList = visible.isEmpty
         ? Center(child: Text(query.isEmpty ? '暂无源' : '没有匹配的源'))
         : SourcePickerScrollList(

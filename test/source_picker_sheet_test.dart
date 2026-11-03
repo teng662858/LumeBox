@@ -94,6 +94,26 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('漫画源同分类固定两列，奇数末行保留半宽', (tester) async {
+    final manager = FakeSourceManager(
+      sources: const [
+        SourceDescriptor(id: 'a', name: '甲源', version: '1', enabled: true),
+        SourceDescriptor(id: 'b', name: '乙源', version: '1', enabled: true),
+        SourceDescriptor(id: 'c', name: '丙源', version: '1', enabled: true),
+      ],
+    );
+    await showBar(tester, Section.comic, manager, (_) {});
+    final a = tester.getRect(find.byKey(const ValueKey('picker-source-a')));
+    final b = tester.getRect(find.byKey(const ValueKey('picker-source-b')));
+    final c = tester.getRect(find.byKey(const ValueKey('picker-source-c')));
+    expect(a.top, b.top);
+    expect(b.left - a.right, SourceCardMetrics.columnGap);
+    expect(c.left, a.left);
+    expect(c.width, a.width);
+    expect(c.top - a.bottom, SourceCardMetrics.rowGap);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final columns in [false, true]) {
     testWidgets('猫源${columns ? '双列' : '单列'}定位末尾当前源', (tester) async {
       final manager = FakeSourceManager(
@@ -301,7 +321,7 @@ void main() {
       if (section != Section.cat) {
         expect(tester.getTopLeft(a).dx, tester.getTopLeft(b).dx);
         expect(tester.getTopLeft(a).dy, lessThan(tester.getTopLeft(b).dy));
-        expect(tester.getSize(a).width, panel.width - 28);
+        expect(tester.getSize(a).width, (panel.width - 36) / 2);
       } else {
         expect(tester.getTopLeft(a).dx, lessThan(tester.getTopLeft(b).dx));
         if (section != Section.comic) {
@@ -511,11 +531,11 @@ void main() {
     final first = find.byKey(const ValueKey('picker-source-v1'));
     final second = find.byKey(const ValueKey('picker-source-v2'));
     expect(
-      tester.getTopLeft(second).dy,
-      greaterThan(tester.getTopLeft(first).dy),
+      tester.getTopLeft(second).dx,
+      greaterThan(tester.getTopLeft(first).dx),
     );
     await longPressDrag(tester, first, second);
-    expect(tester.getTopLeft(second).dy, lessThan(tester.getTopLeft(first).dy));
+    expect(tester.getTopLeft(second).dx, lessThan(tester.getTopLeft(first).dx));
   });
   testWidgets('固定 55 高：18 角标不撑高，窄屏两列不溢出', (tester) async {
     await SourcePreferences(pinned: true).save(Section.video, 'plain');
@@ -634,7 +654,7 @@ void main() {
     expect(find.byKey(const ValueKey('picker-source-a')), findsNothing);
     expect(find.byKey(const ValueKey('picker-source-b')), findsOneWidget);
   });
-  testWidgets('分类左右独立：组内纵向排列，搜索保留分类位置', (tester) async {
+  testWidgets('分类纵向分组：组内两列排列，搜索保留分类位置', (tester) async {
     final manager = FakeSourceManager(
       sources: const [
         SourceDescriptor(
@@ -664,10 +684,10 @@ void main() {
     final first = find.byKey(const ValueKey('picker-source-v1'));
     final second = find.byKey(const ValueKey('picker-source-v2'));
     final movie = find.byKey(const ValueKey('picker-source-m1'));
-    expect(tester.getTopLeft(first).dx, tester.getTopLeft(second).dx);
+    expect(tester.getTopLeft(first).dy, tester.getTopLeft(second).dy);
     expect(
-      tester.getTopLeft(second).dy,
-      greaterThan(tester.getBottomLeft(first).dy),
+      tester.getTopLeft(second).dx,
+      greaterThan(tester.getTopRight(first).dx),
     );
     expect(tester.getTopLeft(movie).dx, tester.getTopLeft(first).dx);
     expect(
