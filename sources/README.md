@@ -1,3 +1,16 @@
+## 2026-11-04 草榴小说视频（`video/mycall.js`，详见 [源记录](../docs/2026-11-04_草榴小说视频源.md)）
+
+`mycall_video`：**综合站**（mycall.biz，小说 / 视频 / 图集三形态混在一个源里）。
+小说频道 `/threadlist?group=RecentThread|PopularThread|HotThread` + 7 个分类（诱骗/改编/变身/乱伦/
+古典情色/武侠/玄幻）；视频 `/category/6095467d69deb6073dc6d6d7?sort=`；图片 `/images?sort=`；
+搜索 `/search?type=all|novel|video&q=`。排序做成筛选（最新/最多浏览/最多点赞），小说换 `group=`、
+视频与图片换 `?sort=`，三处实测都生效。
+帖子按 `<body class>` 分派：`novel-reader` 用 `?chapter=N` 取 `#chapter-content` 纯文本（实测 957 章）；
+`video-watch-page` 走 `GET /api/v1/video/thread/{id}/play` → `manifest/master.m3u8`（200 + `#EXTM3U`）；
+`image-viewer-page` 取 `data-gallery-preview` 的 960 预览图（20 张，首图 200 image/jpeg）。
+⚠ 站点全站列表**单页 24 条、没有翻页参数**（`page=`/`p=` 实测被忽略）→ `hasMore` 恒 false；
+小说帖子页没有封面图。
+
 ## 2026-11-04 八叉书库（`comic/8csk.js`，详见 [源记录](../docs/2026-11-04_八叉书库源.md)）
 
 `8csk_comic`：8xsk 字站的成人小说（`8csk.org`，发布页 `8csk.xyz` 给 18 个同内容域名，全实测 200）。

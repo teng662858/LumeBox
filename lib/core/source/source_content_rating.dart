@@ -317,6 +317,9 @@ class SourceContentRating {
     // 八叉书库（8csk.org，8xsk 字站，公告 18 个同内容域名）：全站成人小说，
     // 正文走 POST /conapi.php 的一次性令牌，源里已复刻；归漫画板块的「小说」分类。
     '8csk_comic',
+    // 草榴小说视频（mycall.biz，综合站）：小说 / 视频 / 图集三形态，
+    // 视频走 /api/v1/video/thread/{id}/play 的 HLS，小说按 ?chapter=N 翻页。
+    'mycall_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
