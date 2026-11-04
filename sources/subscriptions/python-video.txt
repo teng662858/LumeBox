@@ -1,7 +1,6 @@
 # PY 合集 · video
 # 自动生成；修改脚本后运行 python tools/build_catalog.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-[影]1234影视-fc2c0a00.py
-https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-[短]28短剧-075a888b.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-[影]37电影网-3a2a3605.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-[影]555影视-8a783ce7.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-555电影-优化分页和播放速度-c2e8a609.py
@@ -15,7 +14,6 @@ https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-[影]
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-91短剧-f300aebc.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-[影]bilibili-4a177eab.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-[影]CNFLIX-d1c1c44f.py
-https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-[影]E佬苹果-864dc0b1.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-[影]FoFo影院-15922436.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-freeok-2d1b7300.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/movie/PY-freeok_t4-9e13d89f.py
@@ -264,7 +262,6 @@ https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/video/PY-玩�
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/video/PY-玩物社区_T3v1.5-8fbe64db.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/video/PY-白嫖之王-封面修复第二版-5dff15c2.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/video/PY-[瑟]神秘电影-10d4e6c2.py
-https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/video/PY-章鱼-19124210.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/video/PY-红裹视频-9fb3f055.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/video/PY-美不胜收（免翻）-a8ee89e5.py
 https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main/video/PY-花街影院-a150d735.py

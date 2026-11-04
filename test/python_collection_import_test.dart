@@ -47,6 +47,6 @@ void main() {
       expect(resolver.complete, isTrue, reason: skipped.join("\n"));
     }
     expect(ids, published.map((r) => r['id']).toSet());
-    expect(ids.length, 294);
+    expect(ids.length, 291);
   });
 }

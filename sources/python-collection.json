@@ -2,14 +2,14 @@
   "format": "lume.python-collection",
   "version": 1,
   "provenance": "User supplied D:/PY源合集包; byte-identical copies deduplicated. Third-party scripts retain their original comments.",
-  "verification": "2026-11-04: retired 7 default-config sources after three bounded live checks found no homepage, first three categories or search results. Remaining scripts are not all verified playable; network, verification and native dependencies remain limitations. Removed 3 additional sources with identical executable Python syntax trees to retained sources.",
+  "verification": "2026-11-04: retired 7 default-config sources after three bounded live checks found no homepage, first three categories or search results. Remaining scripts are not all verified playable; network, verification and native dependencies remain limitations. Removed 3 additional sources with identical executable Python syntax trees to retained sources. Two additional near-identical implementations of the same sites were consolidated after code and live-result comparison. One additional source was retired after repeated HTTP 404 responses across homepage, categories and search.",
   "counts": {
-    "published": 294,
+    "published": 291,
     "pending-load": 13,
     "excluded-demo": 1,
     "excluded-tool": 3,
-    "removed-live": 7,
-    "removed-duplicate": 3
+    "removed-live": 8,
+    "removed-duplicate": 5
   },
   "sources": [
     {
@@ -2388,9 +2388,9 @@
         "PY合集/章鱼.py"
       ],
       "originalSha256": "d116f4f8c0e3d6c81d1eb08c581e6d9ef54c455834ad3ed4695830dda5a06ae4",
-      "path": "video/PY-章鱼-19124210.py",
+      "path": null,
       "kind": "video",
-      "status": "published",
+      "status": "removed-live",
       "rating": "18+",
       "loadCheck": {
         "ok": true,
@@ -2411,7 +2411,9 @@
           "count": 5
         }
       },
-      "bodySha256": "d116f4f8c0e3d6c81d1eb08c581e6d9ef54c455834ad3ed4695830dda5a06ae4"
+      "bodySha256": "d116f4f8c0e3d6c81d1eb08c581e6d9ef54c455834ad3ed4695830dda5a06ae4",
+      "formerPath": "video/PY-章鱼-19124210.py",
+      "liveAudit": "Two rounds: homepage, search and sampled categories returned no items; all 9 requests returned HTTP 404."
     },
     {
       "id": "pypack_ea52afa4592bad5f",
@@ -5328,9 +5330,9 @@
         "影视/[影]E佬苹果.py"
       ],
       "originalSha256": "b741d249c8abe63d5b9ac9e467449a596b9e0d722b67ae20c3122a1ca0157beb",
-      "path": "movie/PY-[影]E佬苹果-864dc0b1.py",
+      "path": null,
       "kind": "movie",
-      "status": "published",
+      "status": "removed-duplicate",
       "rating": "unknown",
       "loadCheck": {
         "ok": true,
@@ -5354,7 +5356,10 @@
           }
         }
       },
-      "bodySha256": "b741d249c8abe63d5b9ac9e467449a596b9e0d722b67ae20c3122a1ca0157beb"
+      "bodySha256": "b741d249c8abe63d5b9ac9e467449a596b9e0d722b67ae20c3122a1ca0157beb",
+      "formerPath": "movie/PY-[影]E佬苹果-864dc0b1.py",
+      "duplicateOf": "pypack_0c17f49b1c641032",
+      "duplicateReason": "Same site and overlapping functionality; retained alternative."
     },
     {
       "id": "pypack_6f04cdd515922436",
@@ -9505,9 +9510,9 @@
         "短剧/[短]28短剧.py"
       ],
       "originalSha256": "0031beeb3d3cced80a8097da054226efd661b0ab391d7295693f16929eb0724e",
-      "path": "movie/PY-[短]28短剧-075a888b.py",
+      "path": null,
       "kind": "movie",
-      "status": "published",
+      "status": "removed-duplicate",
       "rating": "unknown",
       "loadCheck": {
         "ok": true,
@@ -9528,7 +9533,10 @@
           "count": 6
         }
       },
-      "bodySha256": "0031beeb3d3cced80a8097da054226efd661b0ab391d7295693f16929eb0724e"
+      "bodySha256": "0031beeb3d3cced80a8097da054226efd661b0ab391d7295693f16929eb0724e",
+      "formerPath": "movie/PY-[短]28短剧-075a888b.py",
+      "duplicateOf": "pypack_aa02e1aa6c9d43a6",
+      "duplicateReason": "Same site and overlapping functionality; retained alternative."
     },
     {
       "id": "pypack_871b4f0a5d79a4d1",
