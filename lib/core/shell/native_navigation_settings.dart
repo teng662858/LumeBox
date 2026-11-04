@@ -3,6 +3,7 @@ class NativeNavigationSettings {
   const NativeNavigationSettings({
     this.enabled = true,
     this.showLabels = true,
+    this.solidIcons = false,
     this.followThemeColor = true,
     this.tintColor = 0xFF7C5CFF,
     this.iconSize = 22,
@@ -15,6 +16,9 @@ class NativeNavigationSettings {
 
   final bool enabled;
   final bool showLabels;
+
+  /// Optional monochrome solid icons; old configurations keep the original style.
+  final bool solidIcons;
   final bool followThemeColor;
   final int tintColor;
   final double iconSize;
@@ -35,6 +39,7 @@ class NativeNavigationSettings {
   NativeNavigationSettings copyWith({
     bool? enabled,
     bool? showLabels,
+    bool? solidIcons,
     bool? followThemeColor,
     int? tintColor,
     double? iconSize,
@@ -47,6 +52,7 @@ class NativeNavigationSettings {
     ...toJson(),
     'enabled': ?enabled,
     'showLabels': ?showLabels,
+    'solidIcons': ?solidIcons,
     'followThemeColor': ?followThemeColor,
     'tintColor': ?tintColor,
     'iconSize': ?iconSize,
@@ -60,6 +66,7 @@ class NativeNavigationSettings {
   Map<String, Object> toJson() => {
     'enabled': enabled,
     'showLabels': showLabels,
+    'solidIcons': solidIcons,
     'followThemeColor': followThemeColor,
     'tintColor': tintColor,
     'iconSize': iconSize,
@@ -85,6 +92,7 @@ class NativeNavigationSettings {
       showLabels: value['showLabels'] is bool
           ? value['showLabels'] as bool
           : true,
+      solidIcons: value['solidIcons'] == true,
       followThemeColor: value['followThemeColor'] is bool
           ? value['followThemeColor'] as bool
           : true,
@@ -105,6 +113,7 @@ class NativeNavigationSettings {
       other is NativeNavigationSettings &&
       enabled == other.enabled &&
       showLabels == other.showLabels &&
+      solidIcons == other.solidIcons &&
       followThemeColor == other.followThemeColor &&
       tintColor == other.tintColor &&
       iconSize == other.iconSize &&
@@ -118,6 +127,7 @@ class NativeNavigationSettings {
   int get hashCode => Object.hash(
     enabled,
     showLabels,
+    solidIcons,
     followThemeColor,
     tintColor,
     iconSize,

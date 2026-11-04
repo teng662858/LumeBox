@@ -136,11 +136,17 @@ class _SystemTabBarViewState extends State<_SystemTabBarView> {
       'activeId': bar.activeId,
       'brightness': Theme.of(context).brightness.name,
       'showLabels': bar.settings.showLabels,
+      'solidIcons': bar.settings.solidIcons,
       'iconSize': bar.settings.iconSize,
       'barHeight': bar.settings.barHeight,
       'materialOpacity': bar.settings.materialOpacity,
       'opaqueBackground': bar.settings.opaqueBackground,
-      'tintColor': bar.settings.followThemeColor
+      'tintColor': bar.settings.solidIcons
+          ? (Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFFFFFFFF)
+                    : const Color(0xFF161616))
+                .toARGB32()
+          : bar.settings.followThemeColor
           ? LumeTheme.accent.toARGB32()
           : bar.settings.tintColor,
     };

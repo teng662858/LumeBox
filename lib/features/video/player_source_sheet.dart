@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/source/source.dart';
+import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/video_glass_surface.dart';
 import 'player_layout.dart';
 import 'danmaku/danmaku_panel.dart';
@@ -408,10 +409,10 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
                     labelStyle: TextStyle(
                       fontSize: 13,
                       color: current
-                          ? Theme.of(context).colorScheme.onPrimary
+                          ? LumeTheme.onAccentFillOf(context)
                           : Theme.of(context).colorScheme.onSurface,
                     ),
-                    selectedColor: Theme.of(context).colorScheme.primary,
+                    selectedColor: LumeTheme.accentFillOf(context),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),

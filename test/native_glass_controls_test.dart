@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/shared/widgets/native_glass_controls.dart';
 
 void main() {
@@ -36,6 +37,7 @@ void main() {
     final changes = <Object>[];
     var ends = 0;
     Widget scene(double value) => MaterialApp(
+      theme: LumeTheme.build(customAccent: const Color(0xFFFF2D55)),
       home: Scaffold(
         body: Column(
           children: [
@@ -61,6 +63,7 @@ void main() {
     await tester.pumpWidget(scene(20));
     await tester.pumpAndSettle();
     expect(creations.map((m) => m['control']), ['switch', 'slider']);
+    expect(creations.map((m) => m['tintColor']), everyElement(0xFFFF2D55));
     Future<void> emit(Map control, String name, Object value) async {
       await messenger.handlePlatformMessage(
         'lumebox/glass_control_${control['id']}',
@@ -78,7 +81,7 @@ void main() {
     await tester.pumpWidget(scene(80));
     await tester.pumpAndSettle();
     expect(creations.length, 2);
-    expect(updates.last['value'], 80.0);
+    expect(updates.where((m) => m['control'] == 'slider').last['value'], 80.0);
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 }

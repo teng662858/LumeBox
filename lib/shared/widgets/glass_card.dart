@@ -704,12 +704,12 @@ class _SettingsBackplane extends StatelessWidget {
                 end: Alignment.bottomRight,
                 colors: [
                   Color.alphaBlend(
-                    LumeTheme.accent.withValues(alpha: .055),
+                    LumeTheme.accentFillOf(context).withValues(alpha: .055),
                     LumeTheme.base,
                   ),
                   LumeTheme.base,
                   Color.alphaBlend(
-                    LumeTheme.accent.withValues(alpha: .025),
+                    LumeTheme.accentFillOf(context).withValues(alpha: .025),
                     LumeTheme.base,
                   ),
                 ],

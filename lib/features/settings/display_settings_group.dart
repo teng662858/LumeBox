@@ -191,7 +191,10 @@ class AppearancePalettePage extends StatelessWidget {
                               ? Icons.check_circle
                               : Icons.circle_outlined,
                           color: c.settings.background == bg
-                              ? accent
+                              ? LumeTheme.readableForeground(
+                                  accent,
+                                  LumeTheme.surface,
+                                )
                               : LumeTheme.muted,
                         ),
                       ],
@@ -300,12 +303,18 @@ class _AppearancePreview extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(Icons.auto_awesome, color: accent),
+              Icon(
+                Icons.auto_awesome,
+                color: LumeTheme.readableForeground(accent, Colors.white),
+              ),
               const SizedBox(width: 12),
               const Expanded(
                 child: Text('内容与灵感', style: TextStyle(color: Colors.black87)),
               ),
-              Icon(Icons.check_circle, color: accent),
+              Icon(
+                Icons.check_circle,
+                color: LumeTheme.readableForeground(accent, Colors.white),
+              ),
             ],
           ),
         ),
@@ -316,7 +325,12 @@ class _AppearancePreview extends StatelessWidget {
           children: [
             for (final label in ['推荐', '收藏', '发现'])
               Chip(
-                label: Text(label, style: TextStyle(color: accent)),
+                label: Text(
+                  label,
+                  style: TextStyle(
+                    color: LumeTheme.readableForeground(accent, Colors.white),
+                  ),
+                ),
                 backgroundColor: accent.withValues(alpha: .09),
               ),
           ],

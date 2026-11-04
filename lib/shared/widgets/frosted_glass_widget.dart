@@ -123,7 +123,7 @@ class _FrostedGlassWidgetState extends State<FrostedGlassWidget> {
       final base = widget.color ?? LumeTheme.surface;
       final tint = Color.lerp(
         base,
-        LumeTheme.accent,
+        LumeTheme.accentFillOf(context),
         widget.neutralTint ? 0 : style.value(GlassParameter.tint),
       )!;
       final alpha = widget.translucentOverlay

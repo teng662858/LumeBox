@@ -13,30 +13,32 @@ import '../../core/theme/lume_theme.dart';
 
 const _filterIdleBackground = Color(0xFFF2F2F7);
 const _filterIdleForeground = Color(0xFF333333);
-const _filterSelectedBackground = Color(0xFF6C5CE7);
-
-ChoiceChip _filterChip({
+ChoiceChip _filterChip(
+  BuildContext context, {
   required String label,
   required bool selected,
   required ValueChanged<bool> onSelected,
-}) => ChoiceChip(
-  label: SourceText(
-    label,
-    style: TextStyle(color: selected ? Colors.white : _filterIdleForeground),
-  ),
-  labelStyle: TextStyle(color: selected ? Colors.white : _filterIdleForeground),
-  backgroundColor: _filterIdleBackground,
-  selectedColor: _filterSelectedBackground,
-  color: WidgetStateProperty.resolveWith(
-    (states) => states.contains(WidgetState.selected)
-        ? _filterSelectedBackground
-        : _filterIdleBackground,
-  ),
-  checkmarkColor: Colors.white,
-  showCheckmark: true,
-  selected: selected,
-  onSelected: onSelected,
-);
+}) {
+  final fill = LumeTheme.accentFillOf(context);
+  final foreground = LumeTheme.onAccentFillOf(context);
+  return ChoiceChip(
+    label: SourceText(
+      label,
+      style: TextStyle(color: selected ? foreground : _filterIdleForeground),
+    ),
+    labelStyle: TextStyle(color: selected ? foreground : _filterIdleForeground),
+    backgroundColor: _filterIdleBackground,
+    selectedColor: fill,
+    color: WidgetStateProperty.resolveWith(
+      (states) =>
+          states.contains(WidgetState.selected) ? fill : _filterIdleBackground,
+    ),
+    checkmarkColor: foreground,
+    showCheckmark: true,
+    selected: selected,
+    onSelected: onSelected,
+  );
+}
 
 /// Long horizontal choices keep a fixed, searchable access point.
 class BrowseChoiceAccess extends StatelessWidget {
@@ -213,10 +215,10 @@ class _ChoiceSheetState extends State<_ChoiceSheet> {
                         return TextButton(
                           style: TextButton.styleFrom(
                             foregroundColor: selected
-                                ? Colors.white
+                                ? LumeTheme.onAccentFillOf(context)
                                 : _filterIdleForeground,
                             backgroundColor: selected
-                                ? _filterSelectedBackground
+                                ? LumeTheme.accentFillOf(context)
                                 : _filterIdleBackground,
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             shape: RoundedRectangleBorder(
@@ -291,6 +293,7 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
               children: [
                 if (!options.any((o) => o.title == '全部'))
                   _filterChip(
+                    context,
                     label: '全部',
                     selected: selected == null,
                     onSelected: (_) => setPanelState(() => choose(null)),
@@ -301,6 +304,7 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                       .contains(query.toLowerCase()),
                 ))
                   _filterChip(
+                    context,
                     label: sourceLabel(option.title),
                     selected: selected == option.id,
                     onSelected: (_) => setPanelState(() => choose(option.id)),
@@ -452,9 +456,12 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                                   const Spacer(),
                                   FilledButton(
                                     style: FilledButton.styleFrom(
-                                      backgroundColor:
-                                          _filterSelectedBackground,
-                                      foregroundColor: Colors.white,
+                                      backgroundColor: LumeTheme.accentFillOf(
+                                        context,
+                                      ),
+                                      foregroundColor: LumeTheme.onAccentFillOf(
+                                        context,
+                                      ),
                                     ),
                                     onPressed: () => Navigator.pop(context, (
                                       category: chosenCategory,

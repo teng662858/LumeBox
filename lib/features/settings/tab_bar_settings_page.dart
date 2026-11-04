@@ -30,6 +30,7 @@ class DockAppearancePreview extends StatefulWidget {
     super.key,
     this.maxHeight,
     this.reference = false,
+    this.solidIcons = false,
     required this.appearance,
     required this.entries,
   });
@@ -37,6 +38,7 @@ class DockAppearancePreview extends StatefulWidget {
   final DockAppearance appearance;
   final double? maxHeight;
   final bool reference;
+  final bool solidIcons;
 
   /// 当前可见的页签（顺序与真实 Dock 一致，至少 1 项）。
   final List<ShellDockEntry> entries;
@@ -92,6 +94,7 @@ class DockAppearancePreviewState extends State<DockAppearancePreview> {
                         }
                       },
                       appearance: appearance,
+                      solidIcons: widget.solidIcons,
                       applyViewPadding: false,
                       bottomMargin: appearance.bottomFor(10),
                     ),

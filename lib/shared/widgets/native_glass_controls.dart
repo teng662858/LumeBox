@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../features/shell/dock_native_glass.dart';
+import '../../core/theme/lume_theme.dart';
 
 class NativeGlassControl extends StatefulWidget {
   const NativeGlassControl({
@@ -36,7 +37,7 @@ class _NativeGlassControlState extends State<NativeGlassControl> {
     'min': widget.min,
     'max': widget.max,
     'dark': Theme.of(context).brightness == Brightness.dark,
-    'tintColor': Theme.of(context).colorScheme.primary.toARGB32(),
+    'tintColor': LumeTheme.accentFillOf(context).toARGB32(),
   };
   Future<void> update() async {
     try {
@@ -152,9 +153,7 @@ class NativeSwitchListTile extends StatelessWidget {
         isThreeLine: isThreeLine,
         selected: selected,
         activeTrackColor:
-            activeTrackColor ??
-            activeColor ??
-            Theme.of(context).colorScheme.primary,
+            activeTrackColor ?? activeColor ?? LumeTheme.accentFillOf(context),
         controlAffinity: controlAffinity,
       );
     }

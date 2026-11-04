@@ -905,7 +905,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                       label,
                       style: TextStyle(
                         color: _sourceFilter == value
-                            ? Colors.white
+                            ? LumeTheme.onAccentFill
                             : LumeTheme.chipIdleForeground,
                       ),
                     ),

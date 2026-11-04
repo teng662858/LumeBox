@@ -17,6 +17,7 @@ import 'package:lume_box/features/shell/shell_dock.dart';
 import 'package:lume_box/features/shell/shell_dock_bar.dart';
 import 'package:lume_box/features/shell/system_dock_bar.dart';
 import 'package:lume_box/shared/widgets/dock_handle_button.dart';
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 
 const entries = [
   ShellDockEntry(
@@ -126,6 +127,80 @@ void main() {
     directory.deleteSync(recursive: true);
   });
 
+  testWidgets('原生导航默认图标随深浅模式使用黑白色', (tester) async {
+    final harness = NativeHarness(tester)..install();
+    Widget scene(Brightness brightness) => MaterialApp(
+      theme: ThemeData(brightness: brightness),
+      themeAnimationDuration: Duration.zero,
+      home: Align(
+        alignment: Alignment.bottomCenter,
+        child: SystemDockBar(
+          entries: entries,
+          activeId: 'comic',
+          onSelect: (_) {},
+          settings: const NativeNavigationSettings(solidIcons: true),
+          height: 64,
+          bottomMargin: 0,
+          onHeightChanged: (_) {},
+          onUnavailable: () {},
+        ),
+      ),
+    );
+    await tester.pumpWidget(scene(Brightness.light));
+    await tester.pumpAndSettle();
+    expect(harness.updates.last['tintColor'], 0xFF161616);
+    await tester.pumpWidget(scene(Brightness.dark));
+    await tester.pumpAndSettle();
+    expect(harness.updates.last['tintColor'], 0xFFFFFFFF);
+    await tester.pumpWidget(const SizedBox());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('兼容导航可切换原图标和黑色实心图标', (tester) async {
+    const items = [
+      ShellDockEntry(
+        id: 'comic',
+        label: '漫画',
+        icon: Icons.book_outlined,
+        selectedIcon: Icons.book,
+      ),
+      ShellDockEntry(
+        id: 'video',
+        label: '视频',
+        icon: Icons.play_circle_outline,
+        selectedIcon: Icons.play_circle_fill,
+      ),
+    ];
+    Widget scene(bool solid, Brightness brightness) => MaterialApp(
+      theme: LumeTheme.build(brightness: brightness),
+      themeAnimationDuration: Duration.zero,
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: ShellDockBar(
+            entries: items,
+            activeId: 'video',
+            onSelect: (_) {},
+            appearance: DockAppearance.defaults,
+            solidIcons: solid,
+          ),
+        ),
+      ),
+    );
+    Finder comic() => find.byWidgetPredicate(
+      (w) => w is LumeIcon && w.slot == 'dock.comic.normal',
+    );
+    await tester.pumpWidget(scene(false, Brightness.light));
+    await tester.pumpAndSettle();
+    expect(tester.widget<LumeIcon>(comic()).icon, Icons.book_outlined);
+    await tester.pumpWidget(scene(true, Brightness.light));
+    await tester.pumpAndSettle();
+    expect(tester.widget<LumeIcon>(comic()).icon, Icons.book);
+    expect(tester.widget<LumeIcon>(comic()).color, const Color(0xFF161616));
+    await tester.pumpWidget(scene(true, Brightness.dark));
+    await tester.pumpAndSettle();
+    expect(tester.widget<LumeIcon>(comic()).color, Colors.white);
+  });
+
   test('导航默认值采用用户截图参数，明确保存的系统高度和零留白仍保留', () {
     const defaults = NativeNavigationSettings();
     expect(defaults.barHeight, 85);
@@ -135,6 +210,12 @@ void main() {
     expect(defaults.materialOpacity, .62);
     expect(defaults.opaqueBackground, isFalse);
     expect(defaults.showLabels && defaults.followThemeColor, isTrue);
+    expect(defaults.solidIcons, isFalse);
+    final solid = defaults.copyWith(solidIcons: true);
+    expect(
+      NativeNavigationSettings.fromJson(solid.toJson()).solidIcons,
+      isTrue,
+    );
     expect(NativeNavigationSettings.fromJson({}), defaults);
     final saved = NativeNavigationSettings.fromJson({
       'barHeight': 0,
@@ -629,6 +710,17 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    final solidToggle = find.byKey(const ValueKey('navigation-solid-icons'));
+    await tester.tap(solidToggle);
+    await tester.pumpAndSettle();
+    expect(controller.settings.nativeNavigation.solidIcons, isTrue);
+    expect(
+      (await ShellSettingsStore.open()).load().nativeNavigation.solidIcons,
+      isTrue,
+    );
+    await tester.tap(solidToggle);
+    await tester.pumpAndSettle();
+    expect(controller.settings.nativeNavigation.solidIcons, isFalse);
     expect(
       find.byKey(const ValueKey('top-navigation-transparency')),
       findsNothing,

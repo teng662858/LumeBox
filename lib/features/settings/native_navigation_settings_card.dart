@@ -96,10 +96,19 @@ class _NativeNavigationSettingsCardState
           value: settings.enabled,
           onChanged: (value) => _change(settings.copyWith(enabled: value)),
         ),
+        NativeSwitchListTile.adaptive(
+          key: const ValueKey('navigation-solid-icons'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text('黑色实心图标'),
+          subtitle: const Text('保留原有图标样式；开启后使用实心图标，深色模式自动变白。'),
+          value: settings.solidIcons,
+          onChanged: (value) => _change(settings.copyWith(solidIcons: value)),
+        ),
         if (!settings.enabled) ...[
           const SettingsFooterNote('当前使用兼容布局；开启后可调原生导航栏的高度和位置。'),
           DockAppearancePreview(
             appearance: widget.controller.appearance,
+            solidIcons: settings.solidIcons,
             entries: widget.entries,
             maxHeight: 200,
           ),
@@ -265,15 +274,16 @@ class _NativeNavigationSettingsCardState
               onChanged: (value) =>
                   _change(settings.copyWith(showLabels: value)),
             ),
-            NativeSwitchListTile.adaptive(
-              key: const ValueKey('native-navigation-theme-tint'),
-              contentPadding: EdgeInsets.zero,
-              title: const Text('强调色跟随主题'),
-              value: settings.followThemeColor,
-              onChanged: (value) =>
-                  _change(settings.copyWith(followThemeColor: value)),
-            ),
-            if (!settings.followThemeColor)
+            if (!settings.solidIcons)
+              NativeSwitchListTile.adaptive(
+                key: const ValueKey('native-navigation-theme-tint'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('强调色跟随主题'),
+                value: settings.followThemeColor,
+                onChanged: (value) =>
+                    _change(settings.copyWith(followThemeColor: value)),
+              ),
+            if (!settings.solidIcons && !settings.followThemeColor)
               Wrap(
                 spacing: 8,
                 children: [

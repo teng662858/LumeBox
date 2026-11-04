@@ -11,6 +11,26 @@ import 'interface_typography.dart';
 export 'lume_typography.dart';
 export 'interface_typography.dart' show interfaceFontWeight;
 
+/// Unmodified user-selected fill and its readable foreground for controls.
+class LumeAccentColors extends ThemeExtension<LumeAccentColors> {
+  const LumeAccentColors({required this.fill, required this.onFill});
+  final Color fill;
+  final Color onFill;
+
+  @override
+  LumeAccentColors copyWith({Color? fill, Color? onFill}) =>
+      LumeAccentColors(fill: fill ?? this.fill, onFill: onFill ?? this.onFill);
+
+  @override
+  LumeAccentColors lerp(covariant LumeAccentColors? other, double t) =>
+      other == null
+      ? this
+      : LumeAccentColors(
+          fill: Color.lerp(fill, other.fill, t)!,
+          onFill: Color.lerp(onFill, other.onFill, t)!,
+        );
+}
+
 /// 全局主题色板：**浅色与深色两套值**，由 [LumeTheme.of] 按当前亮度取用。
 ///
 /// ## 为什么是「色板对象 + 静态转发」而不是直接换成 ThemeExtension
@@ -235,18 +255,21 @@ class LumeTheme {
 
   static const chipIdleBackground = Color(0xFFF2F2F7);
   static const chipIdleForeground = Color(0xFF333333);
-  static const chipSelectedBackground = Color(0xFF6C5CE7);
+  static Color get chipSelectedBackground => accentFill;
 
   /// RawChip resolves stateful Color after merging TextStyle, not TextStyle itself.
-  static TextStyle get chipLabelStyle => TextStyle(
-    fontSize: LumeTypography.descriptionSize,
-    fontWeight: FontWeight.w600,
-    color: WidgetStateColor.resolveWith(
-      (states) => states.contains(WidgetState.selected)
-          ? Colors.white
-          : chipIdleForeground,
-    ),
-  );
+  static TextStyle get chipLabelStyle {
+    final selectedForeground = onAccentFill;
+    return TextStyle(
+      fontSize: LumeTypography.descriptionSize,
+      fontWeight: FontWeight.w600,
+      color: WidgetStateColor.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? selectedForeground
+            : chipIdleForeground,
+      ),
+    );
+  }
 
   /// App 内所有标题与页面文字统一使用项目名称。
   static const String appName = 'Lume Box';
@@ -296,6 +319,23 @@ class LumeTheme {
 
   /// 品牌紫（低饱和）：按钮、高亮、交互元素专用。
   static Color get accent => palette.accent;
+
+  /// The user's exact opaque color, for solid fills and selected controls.
+  static Color get accentFill => _customAccent ?? Color(_accent.argb);
+
+  /// Choose the more legible neutral foreground for the unmodified fill.
+  static Color get onAccentFill =>
+      contrast(Colors.black, accentFill) >= contrast(Colors.white, accentFill)
+      ? Colors.black
+      : Colors.white;
+
+  static Color accentFillOf(BuildContext context) =>
+      Theme.of(context).extension<LumeAccentColors>()?.fill ??
+      Theme.of(context).colorScheme.primary;
+
+  static Color onAccentFillOf(BuildContext context) =>
+      Theme.of(context).extension<LumeAccentColors>()?.onFill ??
+      Theme.of(context).colorScheme.onPrimary;
 
   /// 页面最底层。
   static Color get base => palette.base;
@@ -429,6 +469,11 @@ class LumeTheme {
     applyBackground(background);
     // 局部别名：下面所有裸 `accent` 要的都是**颜色**，而参数是档位。
     final accentColor = palette.accent;
+    final fillColor = accentFill;
+    final onFill = onAccentFill;
+    final switchThumb = contrast(Colors.white, fillColor) >= 3
+        ? Colors.white
+        : Colors.black;
     final isDark = brightness == Brightness.dark;
     final scheme =
         ColorScheme.fromSeed(
@@ -447,6 +492,7 @@ class LumeTheme {
     final theme = ThemeData(
       useMaterial3: true,
       brightness: brightness,
+      extensions: [LumeAccentColors(fill: fillColor, onFill: onFill)],
       colorScheme: scheme,
       cupertinoOverrideTheme: CupertinoThemeData(
         primaryColor: accentColor,
@@ -540,31 +586,31 @@ class LumeTheme {
         ),
       ),
       iconTheme: IconThemeData(color: textPrimary),
-      progressIndicatorTheme: ProgressIndicatorThemeData(color: accentColor),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: fillColor),
       sliderTheme: SliderThemeData(
-        activeTrackColor: accentColor,
-        thumbColor: accentColor,
+        activeTrackColor: fillColor,
+        thumbColor: fillColor,
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.disabled)
               ? (isDark ? const Color(0xFFB8B8C0) : Colors.white)
               : states.contains(WidgetState.selected)
-              ? onAccent
+              ? switchThumb
               : Colors.white,
         ),
         trackColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.disabled)
               ? (isDark ? const Color(0xFF494952) : const Color(0xFFC7C7CF))
               : states.contains(WidgetState.selected)
-              ? accentColor
+              ? fillColor
               : (isDark ? const Color(0xFF70707A) : const Color(0xFF85858F)),
         ),
         trackOutlineColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.disabled)
               ? (isDark ? const Color(0xFF777781) : const Color(0xFF9999A3))
               : states.contains(WidgetState.selected)
-              ? accentColor
+              ? fillColor
               : const Color(0xFF90909A),
         ),
       ),
@@ -576,8 +622,8 @@ class LumeTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          backgroundColor: accentColor,
-          foregroundColor: onAccent,
+          backgroundColor: fillColor,
+          foregroundColor: onFill,
           disabledForegroundColor: textPrimary,
           disabledBackgroundColor: surfaceAlt,
         ),
@@ -601,7 +647,7 @@ class LumeTheme {
         side: BorderSide(color: inputBorder),
         labelStyle: chipLabelStyle,
         secondaryLabelStyle: chipLabelStyle,
-        checkmarkColor: Colors.white,
+        checkmarkColor: onFill,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -677,7 +723,7 @@ class LumeTheme {
           ),
           backgroundColor: WidgetStateProperty.resolveWith(
             (states) => states.contains(WidgetState.selected)
-                ? accentColor.withValues(alpha: isDark ? .18 : .12)
+                ? fillColor.withValues(alpha: isDark ? .18 : .12)
                 : (isDark ? surfaceAlt : Colors.white),
           ),
           // hairline 在浅色下是透明色，会让整个切换器没有边界；这里统一用
@@ -691,7 +737,7 @@ class LumeTheme {
         labelColor: accentColor,
         unselectedLabelColor: textSecondary,
         dividerColor: Colors.transparent,
-        indicatorColor: accentColor,
+        indicatorColor: fillColor,
       ),
     );
     return interfaceTypography(

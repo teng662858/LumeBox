@@ -83,6 +83,7 @@ class ShellDockBar extends StatefulWidget {
     this.applyViewPadding = true,
     this.trailingWidth = 0,
     this.materialOpacity = 1,
+    this.solidIcons = false,
   });
 
   /// 水滴（选中底座）的定位键（测试与截图预览按它量位置 / 宽度）。
@@ -105,6 +106,7 @@ class ShellDockBar extends StatefulWidget {
 
   /// 尺寸 / 玻璃边缘 / 投影 / 动效（设置页实时改）。
   final DockAppearance appearance;
+  final bool solidIcons;
 
   /// 胶囊**内部**给系统手势条让出的高度：外框照样画到底，只是里面的
   /// 图标与文字往上缩这一段。
@@ -1279,6 +1281,7 @@ class _ShellDockBarState extends State<ShellDockBar>
                     Expanded(
                       child: _DockItem(
                         entry: entries[index],
+                        solidIcons: widget.solidIcons,
                         selected: index == activeIndex,
                         onTap: () => _onItemTap(index),
                         verticalPadding: ((widget.appearance.height - 42) / 2)
@@ -1740,6 +1743,7 @@ class _LiquidDropBorderPainter extends CustomPainter {
 class _DockItem extends StatelessWidget {
   const _DockItem({
     required this.entry,
+    required this.solidIcons,
     required this.selected,
     required this.onTap,
     required this.verticalPadding,
@@ -1748,6 +1752,7 @@ class _DockItem extends StatelessWidget {
   });
 
   final ShellDockEntry entry;
+  final bool solidIcons;
   final bool selected;
   final VoidCallback onTap;
 
@@ -1769,7 +1774,11 @@ class _DockItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? LumeTheme.accent : LumeTheme.textSecondary;
+    final color = solidIcons
+        ? (Theme.of(context).brightness == Brightness.dark
+              ? Colors.white
+              : const Color(0xFF161616))
+        : (selected ? LumeTheme.accent : LumeTheme.textSecondary);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
@@ -1784,7 +1793,7 @@ class _DockItem extends StatelessWidget {
               child: Stack(
                 alignment: Alignment.center,
                 children: <Widget>[
-                  // 图标：颜色平滑过渡，实心 / 线框之间交叉淡入；选中时轻微放大，
+                  // 图标保持实心；选中时轻微放大，
                   // 给滑动水滴一个落点反馈（水滴负责位移，图标只负责「弹」）。
                   TweenAnimationBuilder<Color?>(
                     tween: ColorTween(end: color),
@@ -1810,7 +1819,9 @@ class _DockItem extends StatelessWidget {
                               ),
                             ),
                         child: LumeIcon(
-                          selected ? entry.selectedIcon : entry.icon,
+                          selected || solidIcons
+                              ? entry.selectedIcon
+                              : entry.icon,
                           slot:
                               'dock.${entry.id}.${selected ? 'selected' : 'normal'}',
                           label: '${entry.label} · ${selected ? '选中' : '未选中'}',

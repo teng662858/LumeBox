@@ -101,12 +101,10 @@ class AppearanceSettings {
 
   Color? get customAccent => useCustomAccent ? Color(customAccentArgb) : null;
   String get accentLabel => useCustomAccent ? '自定义颜色' : accent.label;
+
+  /// Color shown in the settings preview matches the unmodified control fill.
   Color accentColorFor(Brightness brightness) {
-    final custom = customAccent;
-    if (custom == null) return accent.colorFor(brightness);
-    return brightness == Brightness.dark
-        ? Color.lerp(custom, Colors.white, .22)!
-        : custom;
+    return customAccent ?? Color(accent.argb);
   }
 
   static const AppearanceSettings defaults = AppearanceSettings();
