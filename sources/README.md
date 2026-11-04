@@ -1,3 +1,21 @@
+## 2026-11-04 91大事件（`video/91dasj.js`）· 西瓜书屋（`comic/xiguashuwu.js`）
+
+详见 [源记录](../docs/2026-11-04_91大事件与西瓜书屋源.md)。
+
+`91dasj_video`：Typecho + Mirages + DPlayer 的吃瓜爆料站（用户给的入口 `campus.ravwriau.cc`，
+canonical 指 `91dasj.com`，同内容直连 200）。12 分类 + 24 个「标签」筛选 + 站内搜索（`/search/{词}/{N}/`
+实测 12 页）；帖子详情里 1–3 个 DPlayer 的 `data-config` 直给原生 m3u8（`op.udhhzr.cn`，实测 206 +
+`#EXTM3U`），多段视频全展开成章节；封面是 **AES-128-CBC 密文**（key `f5d965df75336270` /
+iv `97b60394abc2fbe1`，与 91吃瓜同源），交 App 原生解密。站点没有排序参数，源里不放假选项。
+
+`xiguashuwu_comic`：成人小说站（`www.xiguashuwu2.com`，原 simishuwu）。分类 16 个（0–15）、
+筛选「默认 / 完本 / VIP」、排序「总榜 / 周榜 / 月榜」，三类实测首条互不相同；详情 `/book/{id}/`、
+目录 `/book/{id}/catalog/{页}.html`（100 章/页）、正文 `/book/{id}/{章节}.html`（长章节再拆 `_2.html`，
+源里顺着接起来）。**VIP 书（vipok 角标 / `isvip=1`）正文照样全量下发**，4 本书首中末章各 1.1–1.8 千字，
+按普通书读。唯一缺口：第二分页的敏感词是 30×30 位图字（`/wzbodyimg/{hash}.png`，文件名与字无推导关系、
+站上无字典），源里跳过这些图片字，正文主干完整。搜索 `/search/{词}` 在 Cloudflare managed challenge 后面，
+挡到抛 `NEED_WEBVIEW_VERIFY`，并用浏览过程攒下的本地索引先顶着。
+
 ## 2026-11-03 懂片帝（`video/dongpiandi.js`，详见 [源记录](../docs/2026-11-03_懂片帝源.md)）
 
 AI 找片 + 片单 + 播放的聚合前端（`dongpiandi.ai`，标题「懂片帝AI」）：React SPA + 同源 `/v1/*` JSON 接口，

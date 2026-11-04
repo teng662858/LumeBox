@@ -308,6 +308,12 @@ class SourceContentRating {
     // 爱丽丝书屋（alicesw.com，成人网络小说站）：全属性色情小说，纯文本正文，
     // 与 alicesw1.homes / alicesw.tw 同源；归漫画板块的「小说」分类。
     'alicesw_comic',
+    // 91大事件（campus.ravwriau.cc / 91dasj.com，Typecho Mirages + DPlayer）：吃瓜爆料短视频，
+    // 帖子里直接给 HLS；封面是 AES-CBC 密文，走 App 原生解密。
+    '91dasj_video',
+    // 西瓜书屋（xiguashuwu2.com，成人网络小说站）：VIP 角标书正文照样全量下发，
+    // 长章节第二分页的敏感词是图片字（图片字跳过，正文主干完整）；归漫画板块的「小说」分类。
+    'xiguashuwu_comic',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
