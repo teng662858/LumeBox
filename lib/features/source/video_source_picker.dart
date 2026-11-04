@@ -298,6 +298,9 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
               (active != null && SourceContentCategories.appliesTo(active)
                   ? SourceContentCategories.forSource(active)
                   : available.firstOrNull ?? SourceContentCategory.movie);
+          if (content == SourceContentCategory.unclassified) {
+            content = SourceContentCategory.all;
+          }
           if (!PrivacySettings.instance.showAdult &&
               content == SourceContentCategory.adult) {
             content = SourceContentCategory.movie;
@@ -923,6 +926,10 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
             )
             .length,
     };
+    final allContentCount = contentCounts.values.fold<int>(
+      0,
+      (sum, value) => sum + value,
+    );
     if (type == VideoSourceType.ordinary &&
         content != SourceContentCategory.all) {
       ordinary.removeWhere(
@@ -1285,7 +1292,8 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                           padding: const EdgeInsets.all(4),
                           child: LayoutBuilder(
                             builder: (context, constraints) {
-                              final categories = SourceContentCategory.values
+                              final categories = SourceContentCategory
+                                  .pickerGroups
                                   .where(
                                     (category) =>
                                         category !=
@@ -1350,7 +1358,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                                               ),
                                               const SizedBox(width: 4),
                                               Text(
-                                                '${category == SourceContentCategory.all ? contentCounts.values.fold<int>(0, (sum, value) => sum + value) : contentCounts[category] ?? 0}',
+                                                '${category == SourceContentCategory.all ? allContentCount : contentCounts[category] ?? 0}',
                                                 style: const TextStyle(
                                                   fontSize: 11,
                                                 ),

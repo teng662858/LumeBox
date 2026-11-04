@@ -60,8 +60,10 @@ class SourceContentVisibility extends ChangeNotifier {
       (section != Section.video ||
           !SourceContentCategories.appliesTo(source) ||
           PrivacySettings.instance.showAdult ||
-          SourceContentCategories.forSource(source) !=
-              SourceContentCategory.adult);
+          (source.contentCategory != 'adult' &&
+              source.group != '成人' &&
+              SourceContentCategories.forSource(source) !=
+                  SourceContentCategory.adult));
   Future<void> boot({File? file}) async {
     try {
       _file =

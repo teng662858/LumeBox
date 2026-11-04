@@ -29,6 +29,51 @@ class ContentPickerService extends CatService {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('综合源声明与隐私分级互不覆盖', () async {
+    const script =
+        '// LumeSource: {"id":"x","name":"X","category":"video","contentCategory":"adult","contentTypes":["video","novel","comic"]}';
+    expect(SourceContentCategories.mixedFromScript(script), isTrue);
+    expect(
+      SourceContentCategories.mixedFromScript(
+        '// LumeSource: {"contentTypes":["video","video"]}',
+      ),
+      isFalse,
+    );
+    const source = SourceDescriptor(
+      id: 'test_mixed',
+      name: '综合站',
+      version: '1',
+      enabled: true,
+      contentCategory: 'adult',
+      mixedContent: true,
+    );
+    expect(
+      SourceContentCategories.automatic(source),
+      SourceContentCategory.mixed,
+    );
+    await PrivacySettings.instance.setShowAdult(false);
+    expect(
+      SourceContentVisibility.instance.allows(Section.video, source),
+      isFalse,
+    );
+    await PrivacySettings.instance.setShowAdult(true);
+    expect(
+      SourceContentVisibility.instance.allows(Section.video, source),
+      isTrue,
+    );
+    await PrivacySettings.instance.setShowAdult(false);
+    expect(
+      SourceContentCategories.automatic(
+        const SourceDescriptor(
+          id: 'uaa_video',
+          name: 'UAA',
+          version: '1',
+          enabled: true,
+        ),
+      ),
+      SourceContentCategory.mixed,
+    );
+  });
   test('截图中的四个旧源无需手动设置即可归类', () {
     for (final entry in [
       ('asmrba_video', SourceContentCategory.adult),
@@ -235,44 +280,52 @@ void main() {
     },
   );
 
-  testWidgets(
-    'JS filters separate movies, adult and unknown, and all keeps headings',
-    (tester) async {
-      await pump(tester);
-      expect(find.text('360资源站'), findsOneWidget);
-      expect(find.text('成人示例源'), findsNothing);
-      expect(find.text('新导入源'), findsNothing);
+  testWidgets('JS 分类区分综合与未知源，全部仍能找到未知源', (tester) async {
+    manager.sources.add(
+      const SourceDescriptor(
+        id: 'mixed',
+        name: '综合示例源',
+        version: '1',
+        enabled: true,
+        mixedContent: true,
+      ),
+    );
+    await pump(tester);
+    expect(find.text('360资源站'), findsOneWidget);
+    expect(find.text('成人示例源'), findsNothing);
+    expect(find.text('新导入源'), findsNothing);
+    expect(
+      tester.getTopLeft(find.text('置顶影视源')).dx,
+      lessThan(tester.getTopLeft(find.text('360资源站')).dx),
+    );
+    expect(tester.widget<Text>(find.text('360资源站')).maxLines, 2);
+    expect(
+      find.byKey(const ValueKey('video-source-content-heading-movie')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('video-source-content-filter')))
+          .height,
+      lessThanOrEqualTo(46),
+    );
+    await category(tester, 'adult');
+    expect(find.text('成人示例源'), findsOneWidget);
+    expect(find.text('360资源站'), findsNothing);
+    await category(tester, 'mixed');
+    expect(find.text('综合示例源'), findsOneWidget);
+    expect(find.text('新导入源'), findsNothing);
+    await category(tester, 'all');
+    expect(find.text('新导入源'), findsOneWidget);
+    for (final id in ['movie', 'adult', 'mixed', 'unclassified']) {
       expect(
-        tester.getTopLeft(find.text('置顶影视源')).dx,
-        lessThan(tester.getTopLeft(find.text('360资源站')).dx),
+        find.byKey(ValueKey('video-source-content-heading-$id')),
+        findsOneWidget,
       );
-      expect(tester.widget<Text>(find.text('360资源站')).maxLines, 2);
-      expect(
-        find.byKey(const ValueKey('video-source-content-heading-movie')),
-        findsNothing,
-      );
-      expect(
-        tester
-            .getSize(find.byKey(const ValueKey('video-source-content-filter')))
-            .height,
-        lessThanOrEqualTo(46),
-      );
-      await category(tester, 'adult');
-      expect(find.text('成人示例源'), findsOneWidget);
-      expect(find.text('360资源站'), findsNothing);
-      await category(tester, 'unclassified');
-      expect(find.text('新导入源'), findsOneWidget);
-      await category(tester, 'all');
-      for (final id in ['movie', 'adult', 'unclassified']) {
-        expect(
-          find.byKey(ValueKey('video-source-content-heading-$id')),
-          findsOneWidget,
-        );
-      }
-      expect(find.text('Python 示例'), findsNothing);
-      expect(tester.takeException(), isNull);
-    },
-  );
+    }
+    expect(find.text('Python 示例'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'category is remembered across reopening and search applies within the category',
@@ -456,7 +509,7 @@ void main() {
       tester,
     ) async {
       await pump(tester, width: width, scale: 2);
-      await category(tester, 'unclassified');
+      await category(tester, 'all');
       expect(find.text('新导入源'), findsOneWidget);
       expect(tester.takeException(), isNull);
       final cards = tester.widgetList<SourcePickerCard>(

@@ -12,11 +12,13 @@ class SourceScriptPresentation {
     required this.runtimeKind,
     required this.mediaKind,
     required this.contentCategory,
+    this.mixedContent = false,
     required this.siteUrl,
     required this.iconUrl,
     this.network = '',
   });
   final String runtimeKind, mediaKind, contentCategory, siteUrl, iconUrl;
+  final bool mixedContent;
 
   /// 脚本声明的站点网络要求（direct / proxy / 空）。
   final String network;
@@ -26,6 +28,7 @@ class SourceScriptPresentation {
         runtimeKind: SourcePackage.kindOf(script).name,
         mediaKind: SourceMediaHints.fromScript(script),
         contentCategory: SourceContentCategories.fromScript(script),
+        mixedContent: SourceContentCategories.mixedFromScript(script),
         siteUrl: siteUrlFromScript(script),
         iconUrl: _iconUrl(script),
         network: (SourceMetadata.parseHeader(script)?.network ?? '').trim(),

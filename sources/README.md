@@ -734,7 +734,7 @@ dart run tools/site_reachability.dart
 
 ### 综合源的文字小说与类型分流
 
-综合站可以在同一源里返回小说、漫画、视频。列表/详情应提供 `mediaType: "novel" | "comic" | "video"`，章节分别返回 `text` / `images` / `video` 载荷；缺少明确类型时 App 按实际章节内容识别。小说必须提供目录和正文，不得把简介或网页链接当正文。源的存储归属仍是现有 `video` / `comic`，不新增 `novel` 板块标识。见 [小说与综合源说明](../docs/2026-11-02_小说阅读与综合源类型识别.md)。
+综合站可以在同一源里返回小说、漫画、视频。身份头使用 `contentTypes` 数组声明实际支持的两种或更多内容类型（`video`、`comic`、`novel`、`photo`、`audio`）；成人综合源仍须保留 `contentCategory: "adult"`。已验证的综合源还需登记源仓库 `metadata/mixed-sources.json`，生成独立综合订阅，同时保留在原有视频订阅中。列表/详情应提供 `mediaType: "novel" | "comic" | "video"`，章节分别返回 `text` / `images` / `video` 载荷；缺少明确类型时 App 按实际章节内容识别。小说必须提供目录和正文，不得把简介或网页链接当正文。源的存储归属仍是现有 `video` / `comic`，不新增 `novel` 板块标识。见 [小说与综合源说明](../docs/2026-11-02_小说阅读与综合源类型识别.md)。
 
 ## 2026-11-03 阅读归类与声明修复
 

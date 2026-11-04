@@ -19,6 +19,8 @@ class SubscriptionCatalog {
   static const totalUrl = '${base}subscriptions/all.json';
   static const totalCdnUrl = '${cdnBase}subscriptions/cdn/all.json';
   static const audiobooksUrl = '${base}subscriptions/audiobook.txt';
+  static String mixedFor(SubscriptionRoute route) =>
+      _routeUrl('subscriptions/mixed.txt', route);
   static const sections = [Section.comic, Section.video];
   static const names = {
     Section.comic: 'subscriptions/comics.txt',
@@ -95,7 +97,7 @@ class SubscriptionCatalog {
       }
       if (prefix == cdnBase) {
         final snapshot = RegExp(
-          r'^subscriptions/cdn/(comic|comics|photo|novel|movie|video|videos|audiobook)\.[0-9a-f]{8}\.txt$',
+          r'^subscriptions/cdn/(comic|comics|photo|novel|movie|video|videos|audiobook|mixed)\.[0-9a-f]{8}\.txt$',
         ).firstMatch(path);
         if (snapshot != null) {
           return '${cdnBase}subscriptions/cdn/${snapshot[1]}.txt';
@@ -103,7 +105,7 @@ class SubscriptionCatalog {
       }
       if (prefix == cdnBase &&
           RegExp(
-            r'^subscriptions/(?:all\.json|(?:comic|comics|photo|novel|movie|video|videos|audiobook)\.txt)$',
+            r'^subscriptions/(?:all\.json|(?:comic|comics|photo|novel|movie|video|videos|audiobook|mixed)\.txt)$',
           ).hasMatch(path)) {
         return '$prefix${path.replaceFirst('subscriptions/', 'subscriptions/cdn/')}';
       }

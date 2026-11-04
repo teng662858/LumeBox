@@ -9,12 +9,14 @@ import 'source_preferences.dart';
 enum SourceContentCategory {
   movie('movie', '影视'),
   adult('adult', '成人'),
+  mixed('mixed', '综合'),
   unclassified('unclassified', '待分类'),
   all('all', '全部');
 
   const SourceContentCategory(this.id, this.label);
   final String id, label;
-  static const groups = [movie, adult, unclassified];
+  static const groups = [movie, adult, mixed, unclassified];
+  static const pickerGroups = [movie, adult, mixed, all];
   static SourceContentCategory? fromId(String id) =>
       values.where((value) => value.id == id).firstOrNull;
 }
@@ -41,7 +43,40 @@ abstract final class SourceContentCategories {
     }
   }
 
+  // Established multi-media sources already installed before metadata support.
+  static const knownMixedIds = {'uaa_video', 'yeshezy_video'};
+
+  static bool mixedFromScript(String script) {
+    final header = RegExp(
+      r'^\s*(?://|#)\s*@?LumeSource\s*[:=]\s*(\{[^\n]+\})',
+      multiLine: true,
+    ).firstMatch(script);
+    if (header == null) return false;
+    try {
+      final data = jsonDecode(header[1]!);
+      if (data is! Map || data['contentTypes'] is! List) return false;
+      final types = (data['contentTypes'] as List)
+          .whereType<String>()
+          .where(
+            (type) => const {
+              'video',
+              'comic',
+              'novel',
+              'photo',
+              'audio',
+            }.contains(type),
+          )
+          .toSet();
+      return types.length >= 2;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static SourceContentCategory automatic(SourceDescriptor source) {
+    if (source.mixedContent || knownMixedIds.contains(source.id)) {
+      return SourceContentCategory.mixed;
+    }
     if (SourceContentRating.isAdult(source.id, source.name)) {
       return SourceContentCategory.adult;
     }

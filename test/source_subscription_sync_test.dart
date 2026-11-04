@@ -551,6 +551,18 @@ void main() {
     expect(find.text('订阅管理 · 添加订阅链接'), findsNothing);
     await tester.tap(find.text('订阅'));
     await settle();
+    await tester.tap(find.text('综合源订阅'));
+    await settle();
+    for (final route in SubscriptionRoute.values) {
+      await tester.tap(find.text(route.label));
+      await settle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        SubscriptionCatalog.mixedFor(route),
+      );
+    }
+    await tester.tap(find.text('全部视频订阅'));
+    await settle();
     await tester.enterText(find.byType(TextField), manifest);
     await tester.tap(find.text('添加订阅并检查可安装源'));
     await settle();

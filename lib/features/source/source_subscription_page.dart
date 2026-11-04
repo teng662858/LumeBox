@@ -32,6 +32,7 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
   String? _error;
   String? _syncStatus;
   List<String> _syncErrors = [];
+  bool _mixedSubscription = false;
   @override
   void initState() {
     super.initState();
@@ -280,6 +281,35 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
             ),
             keyboardType: TextInputType.url,
           ),
+          if (widget.section == Section.video) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('全部视频订阅'),
+                  selected: !_mixedSubscription,
+                  onSelected: _busy
+                      ? null
+                      : (_) => setState(() {
+                          _mixedSubscription = false;
+                          _url.clear();
+                        }),
+                ),
+                ChoiceChip(
+                  label: const Text('综合源订阅'),
+                  selected: _mixedSubscription,
+                  onSelected: _busy
+                      ? null
+                      : (_) => setState(() {
+                          _mixedSubscription = true;
+                          _url.clear();
+                        }),
+                ),
+              ],
+            ),
+            if (_mixedSubscription) const Text('综合源包含多种内容；成人内容仍受隐私设置控制。'),
+          ],
           if (widget.section == Section.comic ||
               widget.section == Section.video)
             Wrap(
@@ -291,10 +321,14 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
                     onPressed: _busy
                         ? null
                         : () => setState(() {
-                            _url.text = SubscriptionCatalog.sectionUrl(
-                              widget.section,
-                              route: route,
-                            );
+                            _url.text =
+                                _mixedSubscription &&
+                                    widget.section == Section.video
+                                ? SubscriptionCatalog.mixedFor(route)
+                                : SubscriptionCatalog.sectionUrl(
+                                    widget.section,
+                                    route: route,
+                                  );
                           }),
                   ),
               ],

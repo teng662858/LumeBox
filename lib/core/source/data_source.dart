@@ -133,6 +133,7 @@ class SourceDescriptor {
     this.runtimeKind = 'javascript',
     this.mediaKind = '',
     this.contentCategory = '',
+    this.mixedContent = false,
     this.networkMode = '',
   });
 
@@ -142,6 +143,9 @@ class SourceDescriptor {
   final String runtimeKind;
   final String mediaKind;
   final String contentCategory;
+
+  /// Source explicitly provides more than one media kind.
+  final bool mixedContent;
 
   /// 脚本自报的站点网络要求：`direct` 直连可访问 / `proxy` 需要代理 / 空未标注。
   ///
