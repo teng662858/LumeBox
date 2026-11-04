@@ -2203,17 +2203,38 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       key: _episodesKey,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: translationDownloadActions(),
-        ),
-        Row(
-          children: [
-            if (MediaQuery.textScalerOf(context).scale(1) > 1.3)
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 84),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        LayoutBuilder(
+          builder: (context, bounds) => Row(
+            children: [
+              if (bounds.maxWidth < 370 ||
+                  MediaQuery.textScalerOf(context).scale(1) > 1.3)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 84),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '选集',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      Text(
+                        '共 ${chapters.length} 集',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text(
                       '选集',
@@ -2222,10 +2243,9 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                         fontWeight: FontWeight.w700,
                       ),
                     ),
+                    const SizedBox(width: 8),
                     Text(
                       '共 ${chapters.length} 集',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 11,
                         color: colors.onSurfaceVariant,
@@ -2233,134 +2253,134 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                     ),
                   ],
                 ),
-              )
-            else
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    '选集',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              const SizedBox(width: 8),
+              Expanded(
+                child: PopupMenuButton<String>(
+                  key: const Key('video-compact-line-selector'),
+                  tooltip: '选择播放线路',
+                  enabled: !resolving && lines.isNotEmpty,
+                  position: PopupMenuPosition.under,
+                  constraints: const BoxConstraints(
+                    minWidth: 180,
+                    maxWidth: 320,
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '共 ${chapters.length} 集',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: colors.onSurfaceVariant,
-                    ),
+                  color: Colors.transparent,
+                  menuPadding: EdgeInsets.zero,
+                  surfaceTintColor: Colors.transparent,
+                  shadowColor: Colors.transparent,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                ],
-              ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: PopupMenuButton<String>(
-                key: const Key('video-compact-line-selector'),
-                tooltip: '选择播放线路',
-                enabled: !resolving && lines.isNotEmpty,
-                position: PopupMenuPosition.under,
-                constraints: const BoxConstraints(minWidth: 180, maxWidth: 320),
-                color: Colors.transparent,
-                menuPadding: EdgeInsets.zero,
-                surfaceTintColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                onSelected: (line) => changeLine(line),
-                itemBuilder: (_) => videoGlassMenuEntries<String>([
-                  for (final line in lines.keys)
-                    PopupMenuItem<String>(
-                      key: ValueKey('video-compact-line-$line'),
-                      value: line,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '$line · ${lines[line]!.length} 集',
-                              style: TextStyle(
-                                color: line == currentLine
-                                    ? _compactAccent
-                                    : const Color(0xFF26272C),
+                  onSelected: (line) => changeLine(line),
+                  itemBuilder: (_) => videoGlassMenuEntries<String>([
+                    for (final line in lines.keys)
+                      PopupMenuItem<String>(
+                        key: ValueKey('video-compact-line-$line'),
+                        value: line,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '$line · ${lines[line]!.length} 集',
+                                style: TextStyle(
+                                  color: line == currentLine
+                                      ? _compactAccent
+                                      : const Color(0xFF26272C),
+                                ),
                               ),
                             ),
-                          ),
-                          if (line == currentLine)
-                            const Icon(
-                              Icons.check_rounded,
-                              color: _compactAccent,
-                              size: 18,
-                            ),
-                        ],
-                      ),
-                    ),
-                ]),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          currentLine.isEmpty ? '选择线路' : currentLine,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: _compactAccent,
-                          ),
+                            if (line == currentLine)
+                              const Icon(
+                                Icons.check_rounded,
+                                color: _compactAccent,
+                                size: 18,
+                              ),
+                          ],
                         ),
                       ),
-                      const Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 16,
-                        color: _compactAccent,
-                      ),
-                    ],
+                  ]),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            currentLine.isEmpty ? '选择线路' : currentLine,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _compactAccent,
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 16,
+                          color: _compactAccent,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            IconButton(
-              tooltip: reversed ? '恢复正序' : '倒序排列',
-              onPressed: chapters.isEmpty
-                  ? null
-                  : () => setState(() {
-                      reversed = !reversed;
-                      compactEpisodeStart = 0;
-                    }),
-              icon: const Icon(Icons.swap_vert, size: 20),
-            ),
-            if (MediaQuery.sizeOf(context).width < 360 ||
-                MediaQuery.textScalerOf(context).scale(1) > 1.3)
-              IconButton(
-                key: const Key('video-detail-select-episodes'),
-                tooltip: '选集工具',
-                onPressed: chapters.isEmpty ? null : showEpisodes,
-                icon: const Icon(Icons.tune),
-              )
-            else
-              OutlinedButton.icon(
-                key: const Key('video-detail-select-episodes'),
-                onPressed: chapters.isEmpty ? null : showEpisodes,
-                icon: const Icon(Icons.tune, size: 16),
-                label: const Text('选集工具'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _compactAccent,
-                  side: BorderSide(
-                    color: colors.onSurface.withValues(alpha: .1),
+              IconButtonTheme(
+                data: IconButtonThemeData(
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(36, 44),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  backgroundColor: colors.surface.withValues(alpha: .35),
-                  shape: const StadiumBorder(),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ...translationDownloadActions(),
+                    IconButton(
+                      tooltip: reversed ? '恢复正序' : '倒序排列',
+                      onPressed: chapters.isEmpty
+                          ? null
+                          : () => setState(() {
+                              reversed = !reversed;
+                              compactEpisodeStart = 0;
+                            }),
+                      icon: const Icon(Icons.swap_vert, size: 20),
+                    ),
+                  ],
                 ),
               ),
-          ],
+              if (bounds.maxWidth < 470 ||
+                  MediaQuery.textScalerOf(context).scale(1) > 1.3)
+                IconButton(
+                  key: const Key('video-detail-select-episodes'),
+                  tooltip: '选集工具',
+                  onPressed: chapters.isEmpty ? null : showEpisodes,
+                  icon: const Icon(Icons.tune),
+                )
+              else
+                OutlinedButton.icon(
+                  key: const Key('video-detail-select-episodes'),
+                  onPressed: chapters.isEmpty ? null : showEpisodes,
+                  icon: const Icon(Icons.tune, size: 16),
+                  label: const Text('选集工具'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _compactAccent,
+                    side: BorderSide(
+                      color: colors.onSurface.withValues(alpha: .1),
+                    ),
+                    backgroundColor: colors.surface.withValues(alpha: .35),
+                    shape: const StadiumBorder(),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                ),
+            ],
+          ),
         ),
         if (chapters.isNotEmpty) ...[
           SingleChildScrollView(

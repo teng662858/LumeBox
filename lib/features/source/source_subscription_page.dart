@@ -173,6 +173,13 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
               onPressed: () => Navigator.pop(context, false),
               child: const Text('取消'),
             ),
+            TextButton(
+              onPressed: () {
+                selected.addAll(record.pending.keys);
+                Navigator.pop(context, true);
+              },
+              child: const Text('全部导入'),
+            ),
             FilledButton(
               onPressed: selected.isEmpty
                   ? null

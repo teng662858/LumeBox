@@ -244,6 +244,17 @@ void main() {
             .abs(),
         lessThan(1),
       );
+      if (compact) {
+        final sort = find.byTooltip('倒序排列');
+        expect(
+          tester.getCenter(sort).dx,
+          greaterThan(tester.getCenter(download).dx),
+        );
+        expect(
+          (tester.getCenter(sort).dy - tester.getCenter(download).dy).abs(),
+          lessThan(1),
+        );
+      }
       expect(tester.takeException(), isNull);
       await tester.tap(download);
       await tester.pumpAndSettle();

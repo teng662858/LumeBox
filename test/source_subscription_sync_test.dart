@@ -557,9 +557,7 @@ void main() {
     expect(manager.sources, isEmpty);
     await tester.tap(find.text('选择安装'));
     await settle();
-    await tester.tap(find.text('全选'));
-    await settle();
-    await tester.tap(find.text('安装 1 个'));
+    await tester.tap(find.text('全部导入'));
     await settle();
     expect(manager.sources.single.version, '1');
     expect(find.text(manifest), findsOneWidget);
