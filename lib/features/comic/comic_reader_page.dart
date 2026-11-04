@@ -250,6 +250,7 @@ class _ComicReaderPageState extends State<ComicReaderPage>
   bool _speechContinuous = false;
   int _speechPage = 0;
   bool _speechWorking = false;
+  bool _speechAdvancePending = false;
   int _speechGeneration = 0;
   bool _speechPanelOpened = false;
   ComicSpeechText? _speechText;
@@ -1658,7 +1659,11 @@ class _ComicReaderPageState extends State<ComicReaderPage>
       _speechStatus.value = '本页读完';
       return;
     }
-    unawaited(_advanceComicSpeechPage());
+    if (_speechWorking) {
+      _speechAdvancePending = true;
+    } else {
+      unawaited(_advanceComicSpeechPage());
+    }
   }
 
   void _onComicSpeechEvent(SpeechEvent event) {
@@ -1684,7 +1689,9 @@ class _ComicReaderPageState extends State<ComicReaderPage>
     final session = _speech;
     if (session == null || _speechWorking) return;
     if (index < 0 || index >= _images.length) return;
-    if (_speechSettings.followAlong && index != _page) _goToPage(index);
+    if ((_speechContinuous || _speechSettings.followAlong) && index != _page) {
+      _goToPage(index);
+    }
     final generation = _speechGeneration;
     _speechWorking = true;
     _speechStatus.value = '正在识别第 ${index + 1}/${_images.length} 页…';
@@ -1732,7 +1739,13 @@ class _ComicReaderPageState extends State<ComicReaderPage>
       _speechContinuous = false;
       _speechStatus.value = '漫画朗读失败：$error';
     } finally {
-      if (generation == _speechGeneration) _speechWorking = false;
+      if (generation == _speechGeneration) {
+        _speechWorking = false;
+        if (_speechAdvancePending && _speechContinuous) {
+          _speechAdvancePending = false;
+          unawaited(_advanceComicSpeechPage());
+        }
+      }
     }
   }
 
@@ -1747,6 +1760,7 @@ class _ComicReaderPageState extends State<ComicReaderPage>
     _speechUrl = null;
     _speechGeneration++;
     _speechWorking = false;
+    _speechAdvancePending = false;
     _speechContinuous = continuous;
     _speechPage = _page.clamp(0, _images.length - 1);
     await _speakComicPage(_speechPage);
@@ -1829,7 +1843,7 @@ class _ComicReaderPageState extends State<ComicReaderPage>
                                         await session.pause();
                                       } else {
                                         await _startComicSpeech(
-                                          continuous: false,
+                                          continuous: true,
                                         );
                                       }
                                       if (context.mounted) setSheetState(() {});
@@ -1848,7 +1862,7 @@ class _ComicReaderPageState extends State<ComicReaderPage>
                                     ? '暂停'
                                     : paused
                                     ? '继续'
-                                    : '朗读本页',
+                                    : '连续朗读',
                               ),
                             ),
                           ),
@@ -1857,10 +1871,10 @@ class _ComicReaderPageState extends State<ComicReaderPage>
                             onPressed: unavailable
                                 ? null
                                 : () async {
-                                    await _startComicSpeech(continuous: true);
+                                    await _startComicSpeech(continuous: false);
                                     if (context.mounted) setSheetState(() {});
                                   },
-                            child: const Text('读到本章末'),
+                            child: const Text('仅读本页'),
                           ),
                         ],
                       ),

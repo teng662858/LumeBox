@@ -323,6 +323,20 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
                 widget.settings.copyWith(autoDialogue: value),
               ),
             ),
+          if (!widget.singleSpeaker)
+            const ExpansionTile(
+              title: Text('多人音色怎么设置？'),
+              childrenPadding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+              children: [
+                Text(
+                  '1. 选择听书模式；离线模式首次使用需先下载音色包。\n'
+                  '2. 打开“自动识别对话并切换音色”。\n'
+                  '3. 分别点“旁白音色”“男声音色”“女声音色”，为三个角色选择不同声音。\n'
+                  '4. 返回阅读页开始朗读，语速、音调与音量也可分别调整。\n\n'
+                  '普通识别主要处理“角色名：台词”格式，其他对话可能仍由旁白朗读；AI 增强需配置在线接口，判断也可能出错。当前最多区分旁白、男声、女声三类，不能为四个具体人物分别指定音色。',
+                ),
+              ],
+            ),
           if (!model.ready)
             TextButton.icon(
               onPressed: model.preparing ? null : _installOffline,

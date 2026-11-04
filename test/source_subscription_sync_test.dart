@@ -4,13 +4,15 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/features/source/source_subscription_page.dart';
 
 import 'dart:convert';
+
+import 'package:lume_box/core/source/source_subscription_catalog.dart';
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/source/source_subscription_sync.dart';
-import 'package:lume_box/core/source/source_subscription_catalog.dart';
 import 'package:lume_box/core/net/source_subscription.dart';
 import 'package:lume_box/core/net/network_settings.dart';
 
@@ -509,6 +511,52 @@ void main() {
     expect(manager.sources.single.version, '2');
   });
 
+  testWidgets('官方综合订阅选择线路后直接添加，自定义地址保留', (tester) async {
+    final official = SubscriptionCatalog.mixedFor(SubscriptionRoute.cdn);
+    remote[official] = 'https://repo.example/mixed.js';
+    remote['https://repo.example/mixed.js'] = script('mixed', 1);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SourceSubscriptionPage(
+          section: Section.video,
+          manager: manager,
+          fetchSubscription: service.fetch,
+        ),
+      ),
+    );
+    Future<void> settle() async {
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+      }
+      await tester.pumpAndSettle();
+    }
+
+    await settle();
+    await tester.enterText(
+      find.byType(TextField),
+      'https://custom.example/list.txt',
+    );
+    await tester.tap(find.text('综合源订阅'));
+    await settle();
+    await tester.tap(find.text('国内 CDN'));
+    await settle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'https://custom.example/list.txt',
+    );
+    final stored = await tester.runAsync(
+      () => SourceSubscriptionSync.open(Section.video, manager: manager),
+    );
+    expect(
+      stored!.subscriptions.map((record) => record.url),
+      contains(official),
+    );
+    expect(find.textContaining('个新源待选择安装'), findsOneWidget);
+  });
+
   testWidgets('常驻订阅入口：添加一次、返回重进保留链接、无需粘贴即可更新', (tester) async {
     await tester.runAsync(
       () => SourceSubscriptionSync.open(Section.video, manager: manager),
@@ -551,18 +599,15 @@ void main() {
     expect(find.text('订阅管理 · 添加订阅链接'), findsNothing);
     await tester.tap(find.text('订阅'));
     await settle();
+    await tester.enterText(find.byType(TextField), manifest);
     await tester.tap(find.text('综合源订阅'));
     await settle();
-    for (final route in SubscriptionRoute.values) {
-      await tester.tap(find.text(route.label));
-      await settle();
-      expect(
-        tester.widget<TextField>(find.byType(TextField)).controller!.text,
-        SubscriptionCatalog.mixedFor(route),
-      );
-    }
     await tester.tap(find.text('全部视频订阅'));
     await settle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      manifest,
+    );
     await tester.enterText(find.byType(TextField), manifest);
     await tester.tap(find.text('添加订阅并检查可安装源'));
     await settle();

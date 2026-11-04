@@ -57,6 +57,12 @@ class SubscriptionSyncResult {
   int pending = 0;
   String message = '';
   final List<String> errors = [];
+
+  /// Previously removed sources intentionally skipped by an explicit bulk import.
+  final Map<String, String> excluded = {};
+
+  /// Subscription records that need retry after incomplete synchronization.
+  final Set<String> failedSubscriptions = {};
   bool get changed => added + updated + removed > 0;
   String get summary => message.isNotEmpty
       ? message
@@ -64,6 +70,7 @@ class SubscriptionSyncResult {
             '新增 $added · 更新 $updated · 移除 $removed'
             '${unchanged > 0 ? ' · 无变化 $unchanged' : ''}'
             '${pending > 0 ? ' · 待选择安装 $pending' : ''}'
+            '${excluded.isNotEmpty ? ' · 已跳过 ${excluded.length}' : ''}'
             '${skipped > 0 ? ' · 未到检查时间 $skipped' : ''}'
             '${errors.isEmpty ? '' : ' · 失败 ${errors.length}'}';
 }
@@ -416,6 +423,7 @@ class SourceSubscriptionSync {
   Future<SubscriptionSyncResult> sync({
     bool force = false,
     Set<String> installNewFor = const {},
+    Set<String>? onlyUrls,
   }) async {
     final result = SubscriptionSyncResult();
     final changes = <Map<String, String>>[];
@@ -434,7 +442,9 @@ class SourceSubscriptionSync {
         (String url) =>
             SourceSubscription.fetchSubscription(http, url, force: force);
     try {
-      for (final record in subscriptions.where((s) => s.enabled)) {
+      for (final record in subscriptions.where(
+        (s) => s.enabled && (onlyUrls == null || onlyUrls.contains(s.url)),
+      )) {
         final interval = record.error.isEmpty
             ? const Duration(hours: 6)
             : const Duration(minutes: 30);
@@ -481,12 +491,23 @@ class SourceSubscriptionSync {
               // Yield to Flutter between scripts so the progress can be painted.
               await Future<void>.delayed(Duration.zero);
               final declaredId = SourceMetadata.parseHeader(ref.script)?.id;
-              if (record.excludedIds.contains(declaredId) ||
-                  record.members.entries.any(
-                    (entry) =>
-                        record.excludedIds.contains(entry.key) &&
-                        entry.value == ref.url,
-                  )) {
+              final excludedId = record.excludedIds.contains(declaredId)
+                  ? declaredId
+                  : record.members.entries
+                        .where(
+                          (entry) =>
+                              record.excludedIds.contains(entry.key) &&
+                              SubscriptionCatalog.sameSourceUrl(
+                                entry.value,
+                                ref.url,
+                              ),
+                        )
+                        .map((entry) => entry.key)
+                        .firstOrNull;
+              if (excludedId != null) {
+                if (installNewFor.contains(record.url)) {
+                  result.excluded[excludedId] = declaredName;
+                }
                 continue;
               }
               final old = before.values
@@ -507,6 +528,8 @@ class SourceSubscriptionSync {
               if (old != null &&
                   await manager.exportScript(old.id) == ref.script) {
                 next[old.id] = ref.url;
+                record.pending.remove(ref.url);
+                record.approvedUrls.remove(ref.url);
                 result.unchanged++;
                 continue;
               }
@@ -580,11 +603,13 @@ class SourceSubscriptionSync {
           } else {
             record.members = {...record.members, ...next};
             record.error = '清单未完整同步，已保留旧源';
+            result.failedSubscriptions.add(record.url);
             if (result.errors.length == previousErrors) {
               result.errors.add('${record.url}: ${record.error}');
             }
           }
         } catch (error) {
+          result.failedSubscriptions.add(record.url);
           record.error = '$error';
           result.errors.add('${record.url}: $error');
         }

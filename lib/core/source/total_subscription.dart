@@ -172,4 +172,95 @@ class TotalSubscriptionService {
     }
     return results;
   }
+
+  /// Re-enable only the selected exclusions from this total, preserving others.
+  Future<Map<Section, SubscriptionSyncResult>> restoreExcluded(
+    TotalSubscription total,
+    Map<Section, Set<String>> selected,
+  ) async {
+    final results = <Section, SubscriptionSyncResult>{};
+    for (final entry in selected.entries) {
+      if (entry.value.isEmpty) continue;
+      try {
+        results[entry.key] = await SourceSubscriptionSync.maintenance(
+          entry.key,
+          () async {
+            final stored = await SourceSubscriptionSync.open(
+              entry.key,
+              manager: managers[entry.key],
+            );
+            final urls = (total.entries[entry.key] ?? const [])
+                .where((item) => item.enabled)
+                .map((item) => item.url)
+                .toSet();
+            for (final record in stored.subscriptions.where(
+              (record) => urls.contains(record.url),
+            )) {
+              record.excludedIds.removeAll(entry.value);
+            }
+            await stored.save();
+            final service = SourceSubscriptionSync(
+              section: entry.key,
+              manager: stored.manager,
+              file: stored.file,
+              fetch: fetch,
+            );
+            await service.load();
+            return service.sync(
+              force: true,
+              installNewFor: urls,
+              onlyUrls: urls,
+            );
+          },
+        );
+      } catch (error) {
+        results[entry.key] = SubscriptionSyncResult()..errors.add('$error');
+      }
+    }
+    return results;
+  }
+
+  Future<Map<Section, SubscriptionSyncResult>> retryFailed(
+    TotalSubscription total,
+    Map<Section, SubscriptionSyncResult> previous,
+  ) async {
+    final results = <Section, SubscriptionSyncResult>{};
+    for (final entry in previous.entries.where(
+      (entry) => entry.value.errors.isNotEmpty,
+    )) {
+      try {
+        results[entry.key] = await SourceSubscriptionSync.maintenance(
+          entry.key,
+          () async {
+            final stored = await SourceSubscriptionSync.open(
+              entry.key,
+              manager: managers[entry.key],
+            );
+            final originalUrls = (total.entries[entry.key] ?? const [])
+                .where((item) => item.enabled)
+                .map((item) => item.url)
+                .toSet();
+            final failed = entry.value.failedSubscriptions.isEmpty
+                ? originalUrls
+                : entry.value.failedSubscriptions;
+            final service = SourceSubscriptionSync(
+              section: entry.key,
+              manager: stored.manager,
+              file: stored.file,
+              fetch: fetch,
+            );
+            await service.load();
+            return service.sync(
+              force: true,
+              installNewFor: originalUrls,
+              onlyUrls: failed,
+            );
+          },
+        );
+      } catch (error) {
+        results[entry.key] = SubscriptionSyncResult()..errors.add('$error');
+      }
+    }
+    return results;
+  }
 }

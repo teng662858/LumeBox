@@ -75,6 +75,7 @@ extension _ComicReaderChrome on _ComicReaderPageState {
     _speechContinuous = false;
     _speechGeneration++;
     _speechWorking = false;
+    _speechAdvancePending = false;
     _speechText = null;
     _speechUrl = null;
     _speechCursor.value = null;

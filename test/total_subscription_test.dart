@@ -129,6 +129,69 @@ void main() {
     expect(stored.subscriptions.single.autoInstallNew, isFalse);
   });
 
+  test('批量导入报告排除项，仅恢复用户选择的源', () async {
+    await service.import(total, installAll: true);
+    final stored = await SourceSubscriptionSync.open(
+      Section.video,
+      manager: managers[Section.video],
+    );
+    final original = managers[Section.video]!.sources.single;
+    await stored.markRemoved([original]);
+    await managers[Section.video]!.remove(original.id);
+    final result = await service.import(total, installAll: true);
+    expect(
+      result[Section.video]!.excluded,
+      containsPair(original.id, original.name),
+    );
+    expect(managers[Section.video]!.sources, isEmpty);
+    final restored = await service.restoreExcluded(total, {
+      Section.video: {original.id},
+    });
+    expect(restored[Section.video]!.added, 1);
+    expect(managers[Section.video]!.sources.single.id, original.id);
+  });
+
+  test('重试仅重新检查失败的订阅，已成功的订阅不再下载', () async {
+    const first = 'https://repo.test/first.txt';
+    const second = 'https://repo.test/second.txt';
+    const a = 'https://repo.test/a.js';
+    const b = 'https://repo.test/b.js';
+    final custom = TotalSubscription({
+      Section.video: [
+        (url: first, enabled: true),
+        (url: second, enabled: true),
+      ],
+    });
+    remote[first] = a;
+    remote[second] = b;
+    remote[a] = '// LumeSource: {"id":"a","name":"A","version":"1","category":"video"}\nvar LumeSource={};';
+    var calls = <String>[];
+    final injected = TotalSubscriptionService(
+      managers: managers,
+      fetch: (url) async {
+        calls.add(url);
+        if (!remote.containsKey(url)) throw StateError('HTTP 503');
+        final text = remote[url]!;
+        return SourceFetchResult(
+          bytes: Uint8List.fromList(utf8.encode(text)),
+          text: text,
+        );
+      },
+    );
+    final firstRun = await injected.import(custom, installAll: true);
+    expect(firstRun[Section.video]!.failedSubscriptions, contains(second));
+    remote[b] = '// LumeSource: {"id":"b","name":"B","version":"1","category":"video"}\nvar LumeSource={};';
+    calls = [];
+    final retry = await injected.retryFailed(custom, firstRun);
+    expect(retry[Section.video]!.errors, isEmpty);
+    expect(calls, contains(second));
+    expect(calls, isNot(contains(first)));
+    expect(
+      managers[Section.video]!.sources.map((source) => source.id),
+      containsAll(['a', 'b']),
+    );
+  });
+
   test('总订阅递归影视清单保留 Python 源和运行时', () async {
     const scriptUrl = 'https://repo.test/movie/gulu.py';
     remote[total.entries[Section.video]!.single.url] = scriptUrl;

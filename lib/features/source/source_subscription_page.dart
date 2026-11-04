@@ -78,6 +78,27 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
     }
   }
 
+  Future<void> _addOfficial(SubscriptionRoute route) async {
+    if (_service == null || _busy) return;
+    final url = _mixedSubscription && widget.section == Section.video
+        ? SubscriptionCatalog.mixedFor(route)
+        : SubscriptionCatalog.sectionUrl(widget.section, route: route);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await SourceSubscriptionSync.remember(widget.section, [
+        url,
+      ], manager: widget.manager);
+      await _sync();
+    } catch (error) {
+      if (mounted) setState(() => _error = '$error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _sync() async {
     setState(() {
       _busy = true;
@@ -272,6 +293,47 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
             '订阅自动检查已安装源的更新和移除。新发现的源进入待安装列表，勾选后才安装。正常间隔 6 小时，失败后 30 分钟可重试。保留手动导入的源。',
           ),
           const SizedBox(height: 16),
+          if (widget.section == Section.comic ||
+              widget.section == Section.video) ...[
+            const Text('官方订阅', style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text('选择分类和线路后立即添加并检查可安装的源。'),
+            if (widget.section == Section.video) ...[
+              Wrap(
+                spacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('全部视频订阅'),
+                    selected: !_mixedSubscription,
+                    onSelected: _busy
+                        ? null
+                        : (_) => setState(() => _mixedSubscription = false),
+                  ),
+                  ChoiceChip(
+                    label: const Text('综合源订阅'),
+                    selected: _mixedSubscription,
+                    onSelected: _busy
+                        ? null
+                        : (_) => setState(() => _mixedSubscription = true),
+                  ),
+                ],
+              ),
+              if (_mixedSubscription) const Text('综合源包含多种内容；成人内容仍受隐私设置控制。'),
+            ],
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final route in SubscriptionRoute.values)
+                  ActionChip(
+                    label: Text(route.label),
+                    onPressed: _busy || service == null
+                        ? null
+                        : () => _addOfficial(route),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+          const Text('自定义订阅', style: TextStyle(fontWeight: FontWeight.w600)),
           TextField(
             controller: _url,
             enabled: !_busy,
@@ -281,58 +343,6 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
             ),
             keyboardType: TextInputType.url,
           ),
-          if (widget.section == Section.video) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Text('全部视频订阅'),
-                  selected: !_mixedSubscription,
-                  onSelected: _busy
-                      ? null
-                      : (_) => setState(() {
-                          _mixedSubscription = false;
-                          _url.clear();
-                        }),
-                ),
-                ChoiceChip(
-                  label: const Text('综合源订阅'),
-                  selected: _mixedSubscription,
-                  onSelected: _busy
-                      ? null
-                      : (_) => setState(() {
-                          _mixedSubscription = true;
-                          _url.clear();
-                        }),
-                ),
-              ],
-            ),
-            if (_mixedSubscription) const Text('综合源包含多种内容；成人内容仍受隐私设置控制。'),
-          ],
-          if (widget.section == Section.comic ||
-              widget.section == Section.video)
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final route in SubscriptionRoute.values)
-                  ActionChip(
-                    label: Text(route.label),
-                    onPressed: _busy
-                        ? null
-                        : () => setState(() {
-                            _url.text =
-                                _mixedSubscription &&
-                                    widget.section == Section.video
-                                ? SubscriptionCatalog.mixedFor(route)
-                                : SubscriptionCatalog.sectionUrl(
-                                    widget.section,
-                                    route: route,
-                                  );
-                          }),
-                  ),
-              ],
-            ),
           const SizedBox(height: 8),
           FilledButton(
             onPressed: _busy ? null : _add,

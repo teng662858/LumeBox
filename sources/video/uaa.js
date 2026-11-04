@@ -1,4 +1,4 @@
-// LumeSource: {"id":"uaa_video","name":"有爱爱 UAA","version":"1.0.1","category":"video","contentCategory":"adult","mirrors":["https://www.uaa002.com","https://www.uaa001.com","https://www.uaa003.com","https://www.uaa004.com","https://www.uaa005.com","https://www.uaa006.com","https://www.uaa007.com","https://www.uaa008.com","https://www.uaa009.com","https://www.uaa010.com","https://www.uaa2601.com","https://www.uaa2602.com","https://www.uaa2603.com","https://www.uaa2604.com","https://www.uaa2605.com","https://www.uaa2606.com","https://www.uaa2607.com","https://www.uaa2608.com","https://www.uaa2609.com","https://www.uaa2610.com"],"network":"direct","icon":"https://www.uaa002.com/api/web/image/logo.webp","settings":[{"key":"note","type":"info","title":"站点说明","description":"有爱爱 UAA（uaa.com 站群，uaa001–uaa010 / uaa2601–uaa2610 同内容）：视频 / 有声 / 漫画 / 小说 四大库一个源全包，全部匿名可看。网页版被 Cloudflare 人机校验挡着，但 /api/web/* 这条服务端渲染路径不过校验，本源全程走它（列表、详情、章节页），视频/有声的取流走 /api/video|audio/app/*。站点的 VIP / U币 只在前端拦：视频 60 秒试看、每天 10 部/话免费额度、付费章节提示，接口照样下发完整 m3u8 / mp3 / 图片 / 正文（实测见 docs/2026-11-02_UAA有爱爱综合源-VIP绕行.md）。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页","url":"https://www.uaadizhi.com","description":"站点换域名时先看这里（官方永久域名 uaa.com）"}]}
+// LumeSource: {"id":"uaa_video","name":"有爱爱 UAA","version":"1.0.2","category":"video","contentCategory":"adult","mirrors":["https://www.uaa002.com","https://www.uaa001.com","https://www.uaa003.com","https://www.uaa004.com","https://www.uaa005.com","https://www.uaa006.com","https://www.uaa007.com","https://www.uaa008.com","https://www.uaa009.com","https://www.uaa010.com","https://www.uaa2601.com","https://www.uaa2602.com","https://www.uaa2603.com","https://www.uaa2604.com","https://www.uaa2605.com","https://www.uaa2606.com","https://www.uaa2607.com","https://www.uaa2608.com","https://www.uaa2609.com","https://www.uaa2610.com"],"network":"direct","icon":"https://www.uaa002.com/api/web/image/logo.webp","settings":[{"key":"note","type":"info","title":"站点说明","description":"有爱爱 UAA（uaa.com 站群，uaa001–uaa010 / uaa2601–uaa2610 同内容）：视频 / 有声 / 漫画 / 小说 四大库一个源全包，全部匿名可看。网页版被 Cloudflare 人机校验挡着，但 /api/web/* 这条服务端渲染路径不过校验，本源全程走它（列表、详情、章节页），视频/有声的取流走 /api/video|audio/app/*。站点的 VIP / U币 只在前端拦：视频 60 秒试看、每天 10 部/话免费额度、付费章节提示，接口照样下发完整 m3u8 / mp3 / 图片 / 正文（实测见 docs/2026-11-02_UAA有爱爱综合源-VIP绕行.md）。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页","url":"https://www.uaadizhi.com","description":"站点换域名时先看这里（官方永久域名 uaa.com）"}],"contentTypes":["video","audio","comic","novel"]}
 // LumeRuntime: javascript
 //
 // 站点：有爱爱 UAA（www.uaa002.com 等站群；官方永久域名 uaa.com，发布页 uaadizhi.com）
@@ -420,7 +420,7 @@ function mediaListPath(kind, category, page) {
 var LumeSource = {
   id: 'uaa_video',
   name: '有爱爱 UAA',
-  version: '1.0.0',
+  version: '1.0.2',
   category: 'video',
   contentCategory: 'adult',
   mirrors: MIRRORS,

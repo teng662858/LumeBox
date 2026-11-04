@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/net/source_subscription.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
+import 'package:lume_box/core/source/source_subscription_sync.dart';
+import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/total_subscription.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/source/global_source_page.dart';
@@ -102,8 +105,96 @@ void main() {
       await tester.tap(find.text(route.label));
       await tester.pumpAndSettle();
       expect(requests.last, SubscriptionCatalog.totalFor(route));
+      await tester.tap(find.text('关闭').last);
+      await tester.pumpAndSettle();
     }
     expect(requests, hasLength(3));
+  });
+
+  testWidgets('一键导入显示跳过项并可按选择恢复', (tester) async {
+    final root = Directory.systemTemp.createTempSync('bulk-ui-');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (_) async => root.path,
+    );
+    final managers = fakeManagers();
+    managers[Section.video]!.importDescriptor = const SourceDescriptor(
+      id: 'recovered',
+      name: '之前移除的源',
+      version: '1',
+      enabled: true,
+    );
+    const manifest = 'https://fixture.test/list.txt';
+    const source = 'https://fixture.test/a.js';
+    final total = TotalSubscription({
+      Section.video: [(url: manifest, enabled: true)],
+    });
+    final stored = await tester.runAsync(
+      () => SourceSubscriptionSync.open(
+        Section.video,
+        manager: managers[Section.video],
+      ),
+    );
+    stored!.subscriptions.add(
+      SavedSourceSubscription(
+        manifest,
+        excludedIds: {'recovered'},
+        members: {'recovered': source},
+      ),
+    );
+    await tester.runAsync(() => stored.save());
+    final values = {
+      SubscriptionCatalog.totalUrl: total.encode(),
+      manifest: source,
+      source: '// LumeSource: {"id":"recovered","name":"之前移除的源","version":"1","category":"video"}\nvar LumeSource = {};',
+    };
+    Future<void> settle() async {
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 15)),
+        );
+      }
+      await tester.pumpAndSettle();
+    }
+
+    try {
+      await pumpPage(
+        tester,
+        managers,
+        fetchSubscription: (url) async {
+          final text = values[url]!;
+          return SourceFetchResult(
+            bytes: Uint8List.fromList(utf8.encode(text)),
+            text: text,
+          );
+        },
+      );
+      await tester.tap(find.byTooltip('一键导入全部订阅源'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('GitHub 原站'));
+      await settle();
+      expect(find.text('订阅导入结果'), findsOneWidget);
+      expect(find.text('之前移除的源'), findsOneWidget);
+      expect(managers[Section.video]!.sources, isEmpty);
+      await tester.tap(find.byType(CheckboxListTile));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('恢复选中源'));
+      await settle();
+      expect(managers[Section.video]!.sources.single.id, 'recovered');
+      await tester.tap(find.text('关闭').last);
+      await tester.pumpAndSettle();
+    } finally {
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(() => SectionScope.closeAll());
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      root.deleteSync(recursive: true);
+    }
   });
 
   testWidgets('全局管理运行类型筛选保留板块隔离', (tester) async {

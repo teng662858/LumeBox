@@ -372,12 +372,12 @@ void main() {
     await pumpReader(tester, speech: speech, tools: tools, size: size);
     await menu(tester, '朗读');
     await tester.scrollUntilVisible(
-      find.text('朗读本页'),
+      find.text('连续朗读'),
       100,
       scrollable: find.byType(Scrollable).last,
     );
     await settle(tester);
-    await tester.tap(find.text('朗读本页'));
+    await tester.tap(find.text('连续朗读'));
     await settle(tester);
     Navigator.of(tester.element(find.byType(BottomSheet).last)).pop();
     await settle(tester);

@@ -1,4 +1,4 @@
-// LumeSource: {"id":"yeshezy_video","name":"夜社资源","version":"1.0.0","category":"video","contentCategory":"adult","mirrors":["https://yeshezy1.com"],"network":"direct","icon":"https://yeshezy1.com/template/panghu/images/ico/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"夜社资源（yeshezy1.com，苹果CMS + panghu 模板）是综合成人资源站：视频 / 有声 / 写真 / 漫画 / 小说 / 夜生活 / 影视 七大类。列表与详情页都是匿名 GET，视频与有声在详情页直接内联 m3u8（实测 200 + #EXTM3U，分片可取），写真与漫画内联图片直链，小说章节是正文页。本源把七大类都收进来：视频/有声走原生播放，写真/漫画与小说走内嵌网页阅读（App 视频板块不渲染图片与文本）。站点给站长采集用的 /api.php/provide/vod 需要授权域名，本源不用它。"}]}
+// LumeSource: {"id":"yeshezy_video","name":"夜社资源","version":"1.0.1","category":"video","contentCategory":"adult","mirrors":["https://yeshezy1.com"],"network":"direct","icon":"https://yeshezy1.com/template/panghu/images/ico/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"夜社资源（yeshezy1.com，苹果CMS + panghu 模板）是综合成人资源站：视频 / 有声 / 写真 / 漫画 / 小说 / 夜生活 / 影视 七大类。列表与详情页都是匿名 GET，视频与有声在详情页直接内联 m3u8（实测 200 + #EXTM3U，分片可取），写真与漫画内联图片直链，小说章节是正文页。本源把七大类都收进来：视频/有声走原生播放，写真/漫画与小说走内嵌网页阅读（App 视频板块不渲染图片与文本）。站点给站长采集用的 /api.php/provide/vod 需要授权域名，本源不用它。"}],"contentTypes":["video","audio","photo","comic","novel"]}
 // LumeRuntime: javascript
 //
 // 站点：夜社资源（https://yeshezy1.com）—— 苹果CMS（maccms）+ panghu 模板的**综合**成人资源站。
@@ -330,7 +330,7 @@ function splitId(raw) {
 var LumeSource = {
   id: 'yeshezy_video',
   name: '夜社资源',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'video',
   contentCategory: 'adult',
   mirrors: MIRRORS,

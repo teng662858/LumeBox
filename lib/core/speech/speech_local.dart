@@ -12,12 +12,18 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 class SpeechLocalModel extends ChangeNotifier {
-  SpeechLocalModel({Future<XFile?> Function()? pickArchive, Uri? downloadUri})
-    : _pickArchive = pickArchive ?? _selectArchive,
-      _downloadUri = downloadUri ?? Uri.parse(url);
+  SpeechLocalModel({
+    Future<XFile?> Function()? pickArchive,
+    Uri? downloadUri,
+    Map<String, dynamic>? manifest,
+  }) : _pickArchive = pickArchive ?? _selectArchive,
+       _downloadUri = downloadUri ?? Uri.parse(url),
+       _manifestOverride = manifest;
 
   final Future<XFile?> Function() _pickArchive;
   final Uri _downloadUri;
+  final Map<String, dynamic>? _manifestOverride;
+  String? _checkedSignature;
   static const url =
       'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-zh-aishell3.tar.bz2';
   static const archiveBytes = 146922607;
@@ -37,9 +43,13 @@ class SpeechLocalModel extends ChangeNotifier {
 
   Future<void> remove() async {
     if (preparing) return;
+    if (_checking != null) await _checking;
     final support = await getApplicationSupportDirectory();
     directory = Directory('${support.path}/speech/vits_aishell3');
     if (await directory!.exists()) await directory!.delete(recursive: true);
+    final backup = Directory('${directory!.path}.backup');
+    if (await backup.exists()) await backup.delete(recursive: true);
+    _checkedSignature = null;
     ready = false;
     present = false;
     error = null;
@@ -55,6 +65,7 @@ class SpeechLocalModel extends ChangeNotifier {
   Directory? directory;
   Future<bool>? _checking;
   Future<Map<String, dynamic>> get _manifest async =>
+      _manifestOverride ??
       jsonDecode(await rootBundle.loadString('$assets/manifest.json'))
           as Map<String, dynamic>;
   Future<bool> check() {
@@ -65,12 +76,36 @@ class SpeechLocalModel extends ChangeNotifier {
   Future<bool> _check() async {
     final support = await getApplicationSupportDirectory();
     directory = Directory('${support.path}/speech/vits_aishell3');
+    final backup = Directory('${directory!.path}.backup');
+    if (!await directory!.exists() && await backup.exists()) {
+      await backup.rename(directory!.path);
+    }
+    final wasReady = ready, wasPresent = present;
     present = await directory!.exists();
     final manifest = await _manifest;
-    final path = directory!.path;
-    final valid = await Isolate.run(() => _valid(path, manifest));
+    final signature = StringBuffer();
+    var valid = present;
+    if (valid) {
+      for (final item in manifest['files'] as List) {
+        final stat = await File('${directory!.path}/${item['name']}').stat();
+        if (stat.type != FileSystemEntityType.file ||
+            stat.size != item['bytes']) {
+          valid = false;
+          break;
+        }
+        signature.write(
+          '${item['name']}:${stat.size}:${stat.modified.microsecondsSinceEpoch};',
+        );
+      }
+    }
+    if (valid && _checkedSignature != signature.toString()) {
+      final path = directory!.path;
+      valid = await Isolate.run(() => _valid(path, manifest));
+      _checkedSignature = valid ? signature.toString() : null;
+    }
+    if (!valid) _checkedSignature = null;
     if (!preparing) ready = valid;
-    notifyListeners();
+    if (ready != wasReady || present != wasPresent) notifyListeners();
     return ready;
   }
 
@@ -100,6 +135,8 @@ class SpeechLocalModel extends ChangeNotifier {
   );
 
   Future<bool> prepare({XFile? archiveFile, bool fromFile = false}) async {
+    if (preparing) return false;
+    if (_checking != null) await _checking;
     if (preparing) return false;
     preparing = true;
     _cancelled = false;
@@ -205,9 +242,29 @@ class SpeechLocalModel extends ChangeNotifier {
         }
       });
       if (_cancelled) throw const FormatException('已取消');
-      // Only the owned model directory is replaced, after complete validation.
-      if (await directory!.exists()) await directory!.delete(recursive: true);
-      await Directory('${staging.path}/model').rename(directory!.path);
+      // Retain the previous installation until the replacement is in place.
+      final backup = Directory('${directory!.path}.backup');
+      if (await backup.exists()) {
+        if (!await directory!.exists()) {
+          await backup.rename(directory!.path);
+        } else {
+          await backup.delete(recursive: true);
+        }
+      }
+      final hadPrevious = await directory!.exists();
+      if (hadPrevious) await directory!.rename(backup.path);
+      try {
+        await Directory('${staging.path}/model').rename(directory!.path);
+      } catch (_) {
+        if (hadPrevious &&
+            await backup.exists() &&
+            !await directory!.exists()) {
+          await backup.rename(directory!.path);
+        }
+        rethrow;
+      }
+      if (await backup.exists()) await backup.delete(recursive: true);
+      _checkedSignature = null;
       ready = true;
       present = true;
       return true;
@@ -218,7 +275,13 @@ class SpeechLocalModel extends ChangeNotifier {
           ? '无法打开文件选择器，请重试'
           : failure is FormatException
           ? '${failure.message}；请重试或选择官方完整音色包'
-          : '音色包安装失败，请检查剩余空间后重试';
+          : failure is TimeoutException
+          ? '下载超时，请检查网络后重试'
+          : failure is SocketException
+          ? '无法连接下载服务器，请检查网络后重试'
+          : failure is FileSystemException
+          ? '音色包文件读写失败，请检查存储空间后重试'
+          : '音色包安装失败，请检查网络与存储空间后重试';
       return false;
     } finally {
       _client?.close(force: true);
@@ -507,9 +570,11 @@ class KokoroModel extends ChangeNotifier {
 /// chunks without blocking Flutter's UI isolate. No network or LLM is involved.
 class SpeechLocalVoice {
   Future<_LocalSpeechWorker>? _worker;
+  String? _workerKey;
   void close() {
     final current = _worker;
     _worker = null;
+    _workerKey = null;
     if (current != null) {
       unawaited(current.then((worker) => worker.close(), onError: (_) {}));
     }
@@ -522,6 +587,9 @@ class SpeechLocalVoice {
     double speed, {
     bool kokoro = false,
   }) async* {
+    final key = '$path:${kokoro ? 'kokoro' : 'vits'}';
+    if (_workerKey != null && _workerKey != key) close();
+    _workerKey = key;
     final worker = await (_worker ??= _LocalSpeechWorker.create(
       path,
       kokoro: kokoro,

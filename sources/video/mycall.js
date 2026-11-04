@@ -1,4 +1,4 @@
-// LumeSource: {"id":"mycall_video","name":"草榴小说视频","version":"1.0.0","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://mycall.biz"],"network":"direct","icon":"https://mycall.biz/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"草榴小说视频（mycall.biz，综合站，全站 18+）：小说 /threadlist?group=RecentThread|PopularThread|HotThread（7 个分类：诱骗/改编/变身/乱伦/古典情色/武侠/玄幻）、视频 /category/6095467d69deb6073dc6d6d7?sort=recent|popular|like、图片 /images?sort=…；搜索 /search?type=all|novel|video&q=。帖子 /thread/{id}：小说按 ?chapter=N 翻（body 上写总章数），视频走 /api/v1/video/thread/{id}/play → manifest/master.m3u8，图集在 data-gallery-preview。全站列表都是单页 24 条，没有翻页参数（page=/p= 实测被忽略），所以本源不打分页；正文/视频/图集都免登录。⚠ 站点会弹 exoclick/magsrv 广告，源里只取 HTML 与接口，不加载广告脚本。"}]}
+// LumeSource: {"id":"mycall_video","name":"草榴小说视频","version":"1.0.1","category":"video","contentCategory":"adult","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://mycall.biz"],"network":"direct","icon":"https://mycall.biz/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"草榴小说视频（mycall.biz，综合站，全站 18+）：小说 /threadlist?group=RecentThread|PopularThread|HotThread（7 个分类：诱骗/改编/变身/乱伦/古典情色/武侠/玄幻）、视频 /category/6095467d69deb6073dc6d6d7?sort=recent|popular|like、图片 /images?sort=…；搜索 /search?type=all|novel|video&q=。帖子 /thread/{id}：小说按 ?chapter=N 翻（body 上写总章数），视频走 /api/v1/video/thread/{id}/play → manifest/master.m3u8，图集在 data-gallery-preview。全站列表都是单页 24 条，没有翻页参数（page=/p= 实测被忽略），所以本源不打分页；正文/视频/图集都免登录。⚠ 站点会弹 exoclick/magsrv 广告，源里只取 HTML 与接口，不加载广告脚本。"}],"contentTypes":["video","photo","novel"]}
 // LumeRuntime: javascript
 //
 // 站点：草榴小说视频（mycall.biz，综合站：小说 + 视频 + 图集，全站 18+）
@@ -239,7 +239,7 @@ function galleryImages(html) {
 var LumeSource = {
   id: 'mycall_video',
   name: '草榴小说视频',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'video',
   contentCategory: 'adult',
   network: 'direct',

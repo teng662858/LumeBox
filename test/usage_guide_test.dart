@@ -5,7 +5,7 @@ import 'package:lume_box/features/settings/settings_page.dart';
 import 'package:lume_box/features/settings/usage_guide_page.dart';
 
 void main() {
-  testWidgets('usage guide lists every section and all four speech modes', (
+  testWidgets('usage guide lists every section and all five speech modes', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -16,7 +16,7 @@ void main() {
     for (final title in [
       '第一次使用',
       '源与订阅',
-      '漫画朗读与音色',
+      '小说与漫画朗读',
       '漫画与美图',
       '视频与播放器',
       'Bangumi 追番同步',
@@ -30,11 +30,12 @@ void main() {
     // 第一次使用默认展开，先确认正文真的挂在页面上。
     expect(find.textContaining('总订阅导入导出'), findsOneWidget);
 
-    await tester.tap(find.text('漫画朗读与音色'));
+    await tester.tap(find.text('小说与漫画朗读'));
     await tester.pumpAndSettle();
     for (final mode in [
       '系统自带 TTS',
       '本地离线 VITS · sherpa-onnx',
+      'Kokoro 离线朗读',
       '在线云端 TTS · 简易（正则）',
       '在线云端 TTS · AI 增强',
     ]) {

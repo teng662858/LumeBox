@@ -23,8 +23,12 @@ class AdvancedSpeechSource {
     this.methods, {
     SpeechCloudConfig? config,
     SpeechCloudClient Function(SpeechCloudConfig)? clientFactory,
+    SpeechLocalVoice? localVoice,
+    Future<Directory?> Function(SpeechMode)? localDirectory,
   }) : config = config ?? SpeechCloudConfig.instance,
-       clientFactory = clientFactory ?? ((config) => SpeechCloudClient(config));
+       clientFactory = clientFactory ?? ((config) => SpeechCloudClient(config)),
+       _local = localVoice ?? SpeechLocalVoice(),
+       _localDirectory = localDirectory ?? _defaultLocalDirectory;
   final SpeechCloudConfig config;
   final SpeechCloudClient Function(SpeechCloudConfig) clientFactory;
   final MethodChannel methods;
@@ -33,7 +37,20 @@ class AdvancedSpeechSource {
   String? _annotationKey;
   int _generation = 0;
   SpeechCloudClient? _client;
-  final _local = SpeechLocalVoice();
+  final SpeechLocalVoice _local;
+  final Future<Directory?> Function(SpeechMode) _localDirectory;
+  static Future<Directory?> _defaultLocalDirectory(SpeechMode mode) async {
+    if (mode == SpeechMode.local) {
+      return await SpeechLocalModel.instance.check()
+          ? SpeechLocalModel.instance.directory
+          : null;
+    }
+    return await KokoroModel.instance.check()
+        ? KokoroModel.instance.directory
+        : null;
+  }
+
+  bool _localFinished = false;
   void prepare(List<SpeechSegment> segments) {
     final buffer = StringBuffer();
     var position = 0;
@@ -52,8 +69,9 @@ class AdvancedSpeechSource {
     }
   }
 
-  void cancel() {
-    _local.close();
+  void cancel({bool keepCompletedLocal = false}) {
+    if (!keepCompletedLocal || !_localFinished) _local.close();
+    _localFinished = false;
     _generation++;
     _client?.close();
     _client = null;
@@ -61,17 +79,25 @@ class AdvancedSpeechSource {
 
   Future<void> speak(SpeechSegment segment, SpeechSettings settings) async {
     await PlaybackFocus.acquire('tts');
-    cancel();
+    cancel(
+      keepCompletedLocal:
+          settings.mode == SpeechMode.local ||
+          settings.mode == SpeechMode.kokoro,
+    );
     final generation = _generation;
     final token = '$generation-${DateTime.now().microsecondsSinceEpoch}';
     final client = _client = clientFactory(config);
-    if (settings.mode == SpeechMode.local &&
-        !await SpeechLocalModel.instance.check()) {
-      throw const FormatException('离线模型缺失或损坏，请先准备模型');
-    }
-    if (settings.mode == SpeechMode.kokoro &&
-        !await KokoroModel.instance.check()) {
-      throw const FormatException('Kokoro 模型未安装');
+    Directory? localDirectory;
+    if (settings.mode == SpeechMode.local ||
+        settings.mode == SpeechMode.kokoro) {
+      localDirectory = await _localDirectory(settings.mode);
+      if (localDirectory == null) {
+        throw FormatException(
+          settings.mode == SpeechMode.kokoro
+              ? 'Kokoro 模型未安装'
+              : '离线模型缺失或损坏，请先准备模型',
+        );
+      }
     }
     if (generation != _generation) return;
     final sampleRate = settings.mode == SpeechMode.local ? 8000 : 24000;
@@ -151,9 +177,7 @@ class AdvancedSpeechSource {
           } else if (effective.mode == SpeechMode.local ||
               effective.mode == SpeechMode.kokoro) {
             final kokoro = effective.mode == SpeechMode.kokoro;
-            final directory = kokoro
-                ? KokoroModel.instance.directory
-                : SpeechLocalModel.instance.directory;
+            final directory = localDirectory;
             if (directory == null) {
               throw const FormatException('离线模型尚未就绪');
             }
@@ -211,6 +235,11 @@ class AdvancedSpeechSource {
         }
         if (generation == _generation) {
           await methods.invokeMethod<void>('streamFinish', {'token': token});
+          if (generation == _generation &&
+              (effective.mode == SpeechMode.local ||
+                  effective.mode == SpeechMode.kokoro)) {
+            _localFinished = true;
+          }
         }
       } catch (error) {
         if (generation == _generation) {

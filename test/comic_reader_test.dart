@@ -14,6 +14,7 @@ import 'package:lume_box/core/reading/comic_image_tools.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/speech/speech_session.dart';
+import 'package:lume_box/core/speech/speech_settings.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/comic/comic_reader_page.dart';
@@ -325,6 +326,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(ComicReaderSettings.load(library).doubleTapZoom, isTrue);
     await tester.scrollUntilVisible(find.text('从右往左'), -250);
+    await Scrollable.ensureVisible(
+      tester.element(find.text('从右往左')),
+      alignment: .5,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('从右往左'));
     await tester.pumpAndSettle();
     expect(
@@ -687,6 +693,12 @@ void main() {
   testWidgets('漫画朗读用 OCR 文本与单说话人 TTS 起播', (tester) async {
     final speech = _FakeSpeechBackend();
     final tools = _FakeImageTools(['第一句', '第二句']);
+    final requestedPages = <String>[];
+    const ComicReaderSettings(mode: ComicReadingMode.single).save(library);
+    library.setSetting(
+      SpeechSettings.settingKey,
+      const SpeechSettings(followAlong: false).encode(),
+    );
     await tester.binding.setSurfaceSize(const Size(420, 880));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     viewport = const Size(420, 880);
@@ -706,7 +718,10 @@ void main() {
             runtimeAvailable: true,
             speechBackend: speech,
             imageTools: tools,
-            pageBytes: (_) async => Uint8List.fromList([1, 2, 3]),
+            pageBytes: (url) async {
+              requestedPages.add(url);
+              return Uint8List.fromList([1, 2, 3]);
+            },
           ),
         ),
       ),
@@ -724,11 +739,26 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('漫画朗读'), findsWidgets);
-    await tester.tap(find.text('朗读本页'));
+    await tester.tap(find.text('连续朗读'));
     await tester.pumpAndSettle();
 
     expect(speech.spoken.join('\n'), contains('第一句'));
     expect(speech.spoken.join('\n'), contains('第二句'));
+    speech.controller.add(const SpeechEvent(SpeechEventKind.finished));
+    await tester.pumpAndSettle();
+    expect(speech.spoken.length, 2);
+    expect(requestedPages.toSet().length, 2);
+    expect(find.textContaining('第 2/2 页'), findsWidgets);
+    await tester.pump(const Duration(seconds: 1));
+    expect(
+      library.comicProgress(target.itemId)!.page,
+      1,
+      reason: '连续朗读即使关闭跟读也要翻到当前朗读页',
+    );
+    speech.controller.add(const SpeechEvent(SpeechEventKind.finished));
+    await tester.pumpAndSettle();
+    expect(find.text('本章已读完'), findsWidgets);
+    expect(speech.spoken.length, 2);
   });
 }
 

@@ -2,6 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:crypto/crypto.dart';
+
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/speech/speech_local.dart';
@@ -64,6 +68,52 @@ void main() {
       }
     },
   );
+
+  test('模型校验缓存支持变更失效与备份恢复', () async {
+    final root = await Directory.systemTemp.createTemp('vits-check-');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (_) async => root.path,
+    );
+    final target = Directory('${root.path}/speech/vits_aishell3');
+    final backup = Directory('${target.path}.backup');
+    await backup.create(recursive: true);
+    final file = File('${backup.path}/model');
+    await file.writeAsString('model');
+    final model = SpeechLocalModel(
+      manifest: {
+        'files': [
+          {
+            'name': 'model',
+            'bytes': 5,
+            'sha256': sha256.convert(utf8.encode('model')).toString(),
+          },
+        ],
+      },
+    );
+    try {
+      expect(await model.check(), true);
+      expect(await target.exists(), true);
+      expect(await backup.exists(), false);
+      expect(await model.check(), true);
+      final installed = File('${target.path}/model');
+      await installed.writeAsString('other');
+      await installed.setLastModified(
+        DateTime.now().add(const Duration(seconds: 3)),
+      );
+      expect(await model.check(), false);
+      expect(model.ready, false);
+    } finally {
+      model.dispose();
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      await root.delete(recursive: true);
+    }
+  });
 
   test('file chooser cancellation and errors are reported safely', () async {
     expect(
