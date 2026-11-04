@@ -187,7 +187,7 @@ const List<_GuideSection> _sections = [
 
 【四种模式】
 1. 系统自带 TTS：不联网、零成本，声音偏机械。
-2. 本地离线 VITS · sherpa-onnx：先在听书设置里点「从本地安装离线音色包（约147 MB）」，选择官方 vits-zh-aishell3.tar.bz2（保持压缩包原样，不要解压）。校验通过后可选 174 个音色，完全离线使用。
+2. 本地离线 VITS · sherpa-onnx：在听书设置选择本地离线朗读，下载约 147 MB 的音色包并校验安装；也可从文件安装官方压缩包。安装后可选 174 个音色，离线使用；音色包可在设置中删除。
 3. 在线云端 TTS · 简易（正则）：点「配置在线接口与密钥」，先在「TTS 服务商」里选：
    · OpenAI 兼容：填 TTS 地址、TTS 模型、TTS API-Key（兼容 /audio/speech）。
    · Azure Speech：填 Azure 区域（如 eastasia）与 Speech 密钥；音色填完整名称（如 zh-CN-XiaoxiaoNeural）。

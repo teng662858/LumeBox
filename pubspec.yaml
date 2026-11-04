@@ -142,7 +142,6 @@ flutter:
     - assets/models/intro/MobileCLIP-ACKNOWLEDGEMENTS.txt
     - assets/models/intro/YAMNet-LICENSE.txt
     - assets/speech/vits_aishell3/manifest.json
-    - assets/speech/vits_aishell3/runtime/
 
 # 图标生成配置：只生成 iOS 图标；remove_alpha_ios 强制抹除 Alpha 通道
 # （iOS 图标不接受透明通道，实色底才能通过系统图标校验）。

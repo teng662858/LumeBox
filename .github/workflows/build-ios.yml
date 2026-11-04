@@ -101,7 +101,6 @@ jobs:
         if: ${{ inputs.typecheck_only != true }}
         run: |
           python3 tool/prepare_intro_models.py
-          python3 tool/prepare_speech_assets.py
 
       - name: 准备 Python 运行环境（锁定版本与校验值）
         run: python3 tool/prepare_python_runtime.py

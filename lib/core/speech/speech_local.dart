@@ -12,10 +12,40 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 class SpeechLocalModel extends ChangeNotifier {
-  SpeechLocalModel({Future<XFile?> Function()? pickArchive})
-    : _pickArchive = pickArchive ?? _selectArchive;
+  SpeechLocalModel({Future<XFile?> Function()? pickArchive, Uri? downloadUri})
+    : _pickArchive = pickArchive ?? _selectArchive,
+      _downloadUri = downloadUri ?? Uri.parse(url);
 
   final Future<XFile?> Function() _pickArchive;
+  final Uri _downloadUri;
+  static const url =
+      'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-zh-aishell3.tar.bz2';
+  static const archiveBytes = 146922607;
+  HttpClient? _client;
+  bool _cancelled = false;
+  bool present = false;
+  String phase = '';
+  double? progress;
+
+  void cancel() {
+    if (!preparing) return;
+    _cancelled = true;
+    phase = '正在取消';
+    _client?.close(force: true);
+    notifyListeners();
+  }
+
+  Future<void> remove() async {
+    if (preparing) return;
+    final support = await getApplicationSupportDirectory();
+    directory = Directory('${support.path}/speech/vits_aishell3');
+    if (await directory!.exists()) await directory!.delete(recursive: true);
+    ready = false;
+    present = false;
+    error = null;
+    notifyListeners();
+  }
+
   static Future<XFile?> _selectArchive() =>
       openFile(acceptedTypeGroups: const [archiveType]);
   static final instance = SpeechLocalModel();
@@ -35,6 +65,7 @@ class SpeechLocalModel extends ChangeNotifier {
   Future<bool> _check() async {
     final support = await getApplicationSupportDirectory();
     directory = Directory('${support.path}/speech/vits_aishell3');
+    present = await directory!.exists();
     final manifest = await _manifest;
     final path = directory!.path;
     final valid = await Isolate.run(() => _valid(path, manifest));
@@ -71,6 +102,9 @@ class SpeechLocalModel extends ChangeNotifier {
   Future<bool> prepare({XFile? archiveFile, bool fromFile = false}) async {
     if (preparing) return false;
     preparing = true;
+    _cancelled = false;
+    phase = fromFile || archiveFile != null ? '正在选择文件' : '正在连接';
+    progress = null;
     error = null;
     notifyListeners();
     Directory? staging;
@@ -86,46 +120,46 @@ class SpeechLocalModel extends ChangeNotifier {
       staging = await parent.createTemp('prepare-');
       final archive = File('${staging.path}/pack.tar.bz2');
       final manifest = await _manifest;
-      Map<String, dynamic>? bundled;
-      if (picked == null) {
-        bundled = jsonDecode(
-          await rootBundle.loadString('$assets/runtime/manifest.json'),
-        ) as Map<String, dynamic>;
-        if (bundled['sourceSha256'] != manifest['archiveSha256']) {
-          throw const FormatException('内置音色版本不匹配');
-        }
-      }
-      final expectedArchive =
-          bundled?['archiveSha256'] ?? manifest['archiveSha256'];
       if (picked != null) {
+        phase = '正在读取文件';
+        notifyListeners();
         await picked.saveTo(archive.path);
       } else {
-        // The shipped pack is split into bounded assets. Assemble it on demand
-        // rather than opening a file picker or downloading it again.
+        final client = _client = HttpClient()
+          ..connectionTimeout = const Duration(seconds: 20);
+        final request = await client.getUrl(_downloadUri);
+        final response = await request.close().timeout(
+          const Duration(seconds: 30),
+        );
+        if (_cancelled) throw const FormatException('已取消');
+        if (response.statusCode != 200) throw const FormatException('下载模型失败');
+        phase = '正在下载';
+        notifyListeners();
         final sink = archive.openWrite();
+        var count = 0;
         try {
-          for (final part in bundled!['parts'] as List) {
-            final ByteData bytes;
-            try {
-              bytes = await rootBundle.load('$assets/runtime/${part['name']}');
-            } catch (_) {
-              throw const FormatException('内置音色资源缺失，请选择从文件安装');
+          await for (final bytes in response.timeout(
+            const Duration(seconds: 45),
+          )) {
+            if (_cancelled) throw const FormatException('已取消');
+            count += bytes.length;
+            if (count > archiveBytes) throw const FormatException('模型文件过大');
+            final next = (count / archiveBytes).clamp(0.0, 1.0);
+            if (progress == null || next - progress! >= .01) {
+              progress = next;
+              notifyListeners();
             }
-            if (bytes.lengthInBytes != part['bytes']) {
-              throw const FormatException('内置音色资源不完整，请选择从文件安装');
-            }
-            sink.add(
-              bytes.buffer.asUint8List(
-                bytes.offsetInBytes,
-                bytes.lengthInBytes,
-              ),
-            );
-            await sink.flush();
+            sink.add(bytes);
           }
         } finally {
           await sink.close();
         }
       }
+      if (_cancelled) throw const FormatException('已取消');
+      phase = '正在校验并解压';
+      progress = null;
+      notifyListeners();
+      final expectedArchive = manifest['archiveSha256'];
       final path = staging.path;
       await Isolate.run(() async {
         if ((await sha256.bind(File('$path/pack.tar.bz2').openRead()).first)
@@ -170,19 +204,27 @@ class SpeechLocalModel extends ChangeNotifier {
           throw const FormatException('模型文件校验失败');
         }
       });
+      if (_cancelled) throw const FormatException('已取消');
       // Only the owned model directory is replaced, after complete validation.
       if (await directory!.exists()) await directory!.delete(recursive: true);
       await Directory('${staging.path}/model').rename(directory!.path);
       ready = true;
+      present = true;
       return true;
     } catch (failure) {
-      error = choosingFile
-          ? '无法打开文件选择器，请重试或启用内置音色包'
+      error = _cancelled
+          ? '已取消'
+          : choosingFile
+          ? '无法打开文件选择器，请重试'
           : failure is FormatException
           ? '${failure.message}；请重试或选择官方完整音色包'
           : '音色包安装失败，请检查剩余空间后重试';
       return false;
     } finally {
+      _client?.close(force: true);
+      _client = null;
+      phase = '';
+      progress = null;
       if (staging != null && await staging.exists()) {
         await staging.delete(recursive: true);
       }
@@ -192,7 +234,7 @@ class SpeechLocalModel extends ChangeNotifier {
   }
 }
 
-/// Kokoro is installed separately from the bundled VITS voice.
+/// Kokoro is installed separately from the VITS voice.
 class KokoroModel extends ChangeNotifier {
   KokoroModel({Uri? downloadUri})
     : _downloadUri = downloadUri ?? Uri.parse(url);

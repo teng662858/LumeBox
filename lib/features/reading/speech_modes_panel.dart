@@ -207,7 +207,7 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
         content: const SingleChildScrollView(
           child: Text(
             '这是普通话离线音色包，压缩资源约 147 MB，支持 174 种音色。'
-            '优先使用安装包内置资源，无需重复下载；首次使用需要解压、校验并占用额外存储空间。\n\n'
+            '首次使用需联网下载，安装期间建议预留至少 600 MiB 空间；安装后可离线使用。\n\n'
             '也可从“文件”选择完整的 vits-zh-aishell3.tar.bz2 包。'
             '安装完成后即可选择本地模式；系统朗读无需安装这个包。',
           ),
@@ -223,21 +223,65 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('启用内置包'),
+            child: const Text('下载并安装'),
           ),
         ],
       ),
     );
     if (fromFile == null || !mounted) return;
-    final installed = await model.prepare(fromFile: fromFile);
+    final installed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _LocalInstallDialog(model: model, fromFile: fromFile),
+    );
     if (!mounted) return;
-    if (installed) {
+    if (installed == true) {
       if (selectWhenReady) _selectMode(SpeechMode.local);
       ScaffoldMessenger.maybeOf(context)
           ?.showSnackBar(const SnackBar(content: Text('离线音色包已就绪，可使用本地朗读')));
-    } else if (model.error != null) {
-      ScaffoldMessenger.maybeOf(context)
-          ?.showSnackBar(SnackBar(content: Text(model.error!)));
+    } else if (model.error != null && model.error != '已取消') {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(model.error!),
+          action: SnackBarAction(
+            label: '重试',
+            onPressed: () => _installOffline(selectWhenReady: selectWhenReady),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _removeOffline() async {
+    final accepted = await showGlassDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除本地离线音色包？'),
+        content: const Text('请先停止朗读。删除后再次使用需要重新下载；Kokoro 音色不受影响。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) return;
+    try {
+      await model.remove();
+      if (!mounted) return;
+      if (widget.settings.mode == SpeechMode.local) {
+        widget.onChanged(widget.settings.copyWith(mode: SpeechMode.system));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)
+            ?.showSnackBar(const SnackBar(content: Text('删除失败，请停止朗读后重试')));
+      }
     }
   }
 
@@ -293,7 +337,7 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
                       slot: 'speech_modes_panel.1',
                     ),
               label: Text(
-                model.preparing ? '正在解压并校验音色包…' : '启用内置离线音色包（约 147 MB）',
+                model.preparing ? '正在安装音色包…' : '下载 sherpa-onnx 离线音色包（约 147 MB）',
               ),
             ),
           if (!model.ready)
@@ -304,12 +348,16 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
                 style: TextStyle(fontSize: 12),
               ),
             ),
-          if (model.ready)
-            const ListTile(
+          if (model.present || model.ready)
+            ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: Text('离线音色包已就绪'),
-              subtitle: Text('可选择本地离线朗读，使用时无需联网'),
+              title: Text(model.ready ? '离线音色包已就绪' : '离线音色包损坏，请删除后重新下载'),
+              subtitle: const Text('sherpa-onnx · 普通话 VITS'),
+              trailing: TextButton(
+                onPressed: model.preparing ? null : _removeOffline,
+                child: const Text('删除'),
+              ),
             ),
           if (model.error != null)
             Text(
@@ -406,6 +454,61 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
       ),
     );
   }
+}
+
+class _LocalInstallDialog extends StatefulWidget {
+  const _LocalInstallDialog({required this.model, required this.fromFile});
+  final SpeechLocalModel model;
+  final bool fromFile;
+  @override
+  State<_LocalInstallDialog> createState() => _LocalInstallDialogState();
+}
+
+class _LocalInstallDialogState extends State<_LocalInstallDialog> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_run());
+    });
+  }
+
+  Future<void> _run() async {
+    final ok = await widget.model.prepare(fromFile: widget.fromFile);
+    if (mounted) Navigator.pop(context, ok);
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: false,
+    child: ListenableBuilder(
+      listenable: widget.model,
+      builder: (context, _) => AlertDialog(
+        title: const Text('安装 sherpa-onnx 离线音色'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.model.phase),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(value: widget.model.progress),
+            if (widget.model.progress != null)
+              Text('${(widget.model.progress! * 100).floor()}%'),
+            const SizedBox(height: 8),
+            const Text('解压期间取消可能需要等待当前步骤结束。'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: widget.model.phase == '正在取消'
+                ? null
+                : widget.model.cancel,
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _KokoroInstallDialog extends StatefulWidget {

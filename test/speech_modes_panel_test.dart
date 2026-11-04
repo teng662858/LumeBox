@@ -74,7 +74,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     },
   );
-  testWidgets('缺失音色包时取消保持系统模式，内置包就绪后再切换本地模式', (tester) async {
+  testWidgets('缺失音色包时取消保持系统模式，下载就绪后再切换本地模式', (tester) async {
     final model = _LocalModel();
     addTearDown(model.dispose);
     var settings = const SpeechSettings(rate: .7);
@@ -114,8 +114,8 @@ void main() {
     );
     expect(model.fromFile, isNull);
     await chooseLocal();
-    await tester.tap(find.text('启用内置包'));
-    await tester.pumpAndSettle();
+    await tester.tap(find.text('下载并安装'));
+    await tester.pump();
     expect(model.preparing, true);
     expect(model.fromFile, false);
     expect(settings.mode, SpeechMode.system);
@@ -145,7 +145,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('启用内置离线音色包（约 147 MB）'));
+    await tester.tap(find.text('下载 sherpa-onnx 离线音色包（约 147 MB）'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('从文件安装'));
     await tester.pump();
