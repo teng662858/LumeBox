@@ -1,4 +1,4 @@
-// LumeSource: {"id":"diyibanzhu_novel","name":"第一版主","version":"1.0.0","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.01bzw.us","https://www.111bz.cc","https://www.bz1111111.net"],"network":"direct","icon":"https://www.01bzw.us/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"第一版主（qula 模板小说站）。用户给的 bz1111111.net 与 diyibanzhu.app 在 Cloudflare 后面：bz1111111.net 是 managed challenge（本机所在网络连 challenges.cloudflare.com 都被断，浏览器也过不去），diyibanzhu.app 是 WAF 直接返回「Sorry, you have been blocked」。所以本源默认走可直连的同站镜像 01bzw.us（UTF-8，实测 200），另两个镜像 111bz.cc（GBK）与 bz1111111.net 按顺序备用。分类 /sort/{1-10}/{页码}/（玄幻/武侠/都市/历史/侦探/网游/科幻/恐怖/散文/辣文）；详情 /bookcv/{id}/ 的 og:novel:* 里有书名/作者/类别/状态；章节 /html/{p}/{书号}/{章节号}.html；正文在 div#content，站点把部分汉字换成 <img class=zi data-word=字> 做防采集，源里会还原。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（diyibanzhu.app）","url":"https://diyibanzhu.app/","description":"官方发布页；本机网络被 Cloudflare 拦住，手机数据网络通常能开"}]}
+// LumeSource: {"id":"diyibanzhu_novel","name":"第一版主","version":"1.0.1","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.01bzw.us","https://www.111bz.cc","https://www.bz1111111.net"],"network":"direct","icon":"https://www.01bzw.us/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"第一版主（qula 模板小说站）。用户给的 bz1111111.net 与 diyibanzhu.app 在 Cloudflare 后面：bz1111111.net 是 managed challenge（本机所在网络连 challenges.cloudflare.com 都被断，浏览器也过不去），diyibanzhu.app 是 WAF 直接返回「Sorry, you have been blocked」。所以本源默认走可直连的同站镜像 01bzw.us（UTF-8，实测 200），另两个镜像 111bz.cc（GBK）与 bz1111111.net 按顺序备用。分类 /sort/{1-10}/{页码}/（玄幻/武侠/都市/历史/侦探/网游/科幻/恐怖/散文/辣文）；详情 /bookcv/{id}/ 的 og:novel:* 里有书名/作者/类别/状态；章节 /html/{p}/{书号}/{章节号}.html；正文在 div#content，站点把部分汉字换成 <img class=zi data-word=字> 做防采集，源里会还原。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（diyibanzhu.app）","url":"https://diyibanzhu.app/","description":"官方发布页；本机网络被 Cloudflare 拦住，手机数据网络通常能开"}]}
 // LumeRuntime: javascript
 //
 // 站点：第一版主（qula 小说模板），主用镜像 https://www.01bzw.us
@@ -119,10 +119,55 @@ function parseItems(html) {
   return out;
 }
 
+async function postForm(path, fields, referer) {
+  var url = /^https?:\/\//i.test(path) ? path : base() + path;
+  var body = Object.keys(fields).map(function (key) {
+    return encodeURIComponent(key) + '=' + encodeURIComponent(fields[key]);
+  }).join('&');
+  var reply = await LumeSource.http.post(url, body, {
+    headers: {
+      'User-Agent': UA,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'text/html,*/*;q=0.8',
+      Referer: referer || base() + '/'
+    }
+  });
+  var status = reply ? reply.status : 0;
+  var text = reply && reply.body ? String(reply.body) : '';
+  if (status === 403 || /Just a moment|cf-chl-|请稍候/i.test(text)) {
+    throw new Error('NEED_WEBVIEW_VERIFY：第一版主的搜索接口被 Cloudflare 挡了（HTTP ' + status + '）');
+  }
+  return text;
+}
+
+// 搜索：qula 模板只认真宿主上的 POST /search/（01bzw.us 会 301 到 www.dybzw.me，GET 一律 0 条）
+function parseSearch(html) {
+  var text = String(html || '');
+  var out = [];
+  var seen = {};
+  var re = /<li[^>]*>[\s\S]{0,300}?<span class="s1">([\s\S]{0,40}?)<\/span>[\s\S]{0,200}?<a href="\/bookcv\/(\d+)\/"[^>]*>([\s\S]{0,80}?)<\/a>[\s\S]{0,300}?<span class="s4">([\s\S]{0,40}?)<\/span>/g;
+  var hit;
+  while ((hit = re.exec(text)) !== null) {
+    var id = hit[2];
+    if (seen[id]) continue;
+    var title = clean(hit[3]);
+    if (!title) continue;
+    seen[id] = true;
+    out.push({
+      id: id,
+      title: title,
+      cover: '',
+      subtitle: [clean(hit[1]).replace(/^\[|\]$/g, ''), hit[4] ? '作者：' + clean(hit[4]) : ''].filter(Boolean).join(' · '),
+      mediaType: 'novel'
+    });
+  }
+  return out;
+}
+
 var LumeSource = {
   id: 'diyibanzhu_novel',
   name: '第一版主',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'comic',
   contentCategory: 'adult',
   mediaType: 'novel',
@@ -155,7 +200,11 @@ var LumeSource = {
     var page = Math.max(1, Number(args.page) || 1);
     var categoryId = String(args.categoryId == null ? '' : args.categoryId).trim();
     var keyword = String(args.keyword == null ? '' : args.keyword).trim();
-    if (keyword) return { items: [], hasMore: false };
+    if (keyword) {
+      var html = await postForm('https://www.dybzw.me/search/', { searchkey: keyword, Submit: '搜索' }, base() + '/');
+      var found = parseSearch(html);
+      return { items: found, hasMore: false };
+    }
     var sortId = /^sort-(\d+)/.exec(categoryId);
     var sid = sortId ? sortId[1] : '1';
     var html = await fetchHtml('/sort/' + sid + '/' + page + '/');

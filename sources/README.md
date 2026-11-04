@@ -11,6 +11,11 @@ Cloudflare 后面打不开**：前者是 managed challenge 且本机网络连 `c
 - 正文 `div#content`：**站点把部分汉字换成 `<img class="zi" data-word="字">` 防采集**，
   源里按 `data-word`（回退 `alt`）还原；正文里插的「发布邮箱…地址发布页…」「笔趣Ω 『阁ΔＢＱgXsw』」按行过滤
 - 验证：`[PASS]` list 31 / detail ok / chapters 22（序章→第2章 有序）/ content 1615 字，无广告残留
+- **搜索（1.0.1 补上）**：qula 模板只认真宿主上的 **POST** `https://www.dybzw.me/search/`
+  （`searchkey=<词>&Submit=搜索`）；`01bzw.us/search/` 会 301 到该宿主并丢掉 POST body，GET 参数一律 0 条。
+  实测「盘龙」5 条（盘龙之妮丝/盘龙歪传/盘龙之最强本尊…），「母子」100 条。
+  （对照用户给的 Legado 书源 `D:\第一版主.json`：它用 bz88888 那套模板的
+  `/s.php?objectType=2&type=articlename&s=<GBK>&page=`，在 01bzw.us 上是 404。）
 
 ## 2026-11-04 酷18（`comic/cool18.js`，详见 [源记录](../docs/2026-11-04_酷18综合源.md)）
 
