@@ -123,6 +123,7 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
           : settings.fontId;
       void apply(AppearanceSettings value) => _appearance.apply(value);
       return GlassScaffold(
+        effectModule: GlassModule.settings,
         title: '字体与字号',
         actions: [
           IconButton(

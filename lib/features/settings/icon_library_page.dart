@@ -111,6 +111,7 @@ class _IconLibraryPageState extends State<IconLibraryPage> {
         ...store.slots.map((s) => s.group).toSet().toList()..sort(),
       ];
       return GlassScaffold(
+        effectModule: GlassModule.settings,
         behindBar: true,
         title: '应用图标库',
         actions: [

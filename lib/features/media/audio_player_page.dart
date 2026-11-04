@@ -3,7 +3,7 @@ import '../../shared/widgets/native_glass_controls.dart';
 import 'package:lume_box/shared/widgets/lume_icon.dart';
 
 import '../../shared/widgets/drawer_geometry.dart';
-import '../../shared/widgets/module_glass_scope.dart';
+import '../../shared/widgets/glass_card.dart';
 
 import 'dart:async';
 
@@ -60,8 +60,13 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
   String _time(Duration time) =>
       '${time.inMinutes}:${(time.inSeconds % 60).toString().padLeft(2, '0')}';
   @override
-  Widget build(BuildContext context) =>
-      ModuleGlassScope(module: GlassModule.video, child: _legacyBuild(context));
+  Widget build(BuildContext context) => SettingsSurfaceScope(
+    enabled: true,
+    child: ModuleGlassScope(
+      module: GlassModule.video,
+      child: _legacyBuild(context),
+    ),
+  );
   Widget _legacyBuild(BuildContext context) => Scaffold(
     appBar: AppBar(
       flexibleSpace: const SizedBox.expand(),
@@ -350,29 +355,36 @@ class _AudioPlaybackSettingsPageState extends State<AudioPlaybackSettingsPage> {
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        DropdownButtonFormField<AudioBookEngine>(
-          initialValue: AudioBookEngine.justAudio,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: '音频播放器'),
-          items: const [
-            DropdownMenuItem(
-              value: AudioBookEngine.justAudio,
-              child: Text('just_audio（默认推荐）'),
-            ),
-            DropdownMenuItem(
-              value: AudioBookEngine.audioPlayers,
-              enabled: false,
-              child: Text('audioplayers（预留，暂不可用）'),
-            ),
-          ],
-          onChanged: (value) async {
-            if (value != AudioBookEngine.justAudio) return;
-            settings.engine = value!;
-            await settings.save();
-          },
+        GlassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DropdownButtonFormField<AudioBookEngine>(
+                initialValue: AudioBookEngine.justAudio,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: '音频播放器'),
+                items: const [
+                  DropdownMenuItem(
+                    value: AudioBookEngine.justAudio,
+                    child: Text('just_audio（默认推荐）'),
+                  ),
+                  DropdownMenuItem(
+                    value: AudioBookEngine.audioPlayers,
+                    enabled: false,
+                    child: Text('audioplayers（预留，暂不可用）'),
+                  ),
+                ],
+                onChanged: (value) async {
+                  if (value != AudioBookEngine.justAudio) return;
+                  settings.engine = value!;
+                  await settings.save();
+                },
+              ),
+              const SizedBox(height: 20),
+              const Text('用于音频文件和播放列表，支持倍速、定时关闭、后台与锁屏控制。'),
+            ],
+          ),
         ),
-        const SizedBox(height: 20),
-        const Text('用于音频文件和播放列表，支持倍速、定时关闭、后台与锁屏控制。'),
       ],
     ),
   );

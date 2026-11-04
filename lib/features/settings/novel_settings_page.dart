@@ -103,73 +103,85 @@ class _NovelSettingsPageState extends State<NovelSettingsPage> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Container(
-                          key: const Key('novel-settings-preview'),
+                        GlassCard(
                           padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: background,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Text(
-                            '翻开这一页，故事正缓缓展开。\n愿每一次阅读，都有舒服的节奏。',
-                            style: TextStyle(
-                              fontSize: font,
-                              height: height,
-                              color: dark
-                                  ? const Color(0xffd4d2ca)
-                                  : const Color(0xff302c27),
-                            ),
-                          ),
-                        ),
-                        Text('字号 ${font.round()}', key: _fontKey),
-                        Slider(
-                          value: font,
-                          min: 14,
-                          max: 32,
-                          divisions: 18,
-                          onChanged: (value) =>
-                              store.setSetting('novel.fontSize', '$value'),
-                        ),
-                        Text(
-                          '行距 ${height.toStringAsFixed(1)}',
-                          key: _heightKey,
-                        ),
-                        Slider(
-                          value: height,
-                          min: 1.3,
-                          max: 2.3,
-                          divisions: 10,
-                          onChanged: (value) =>
-                              store.setSetting('novel.lineHeight', '$value'),
-                        ),
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            for (final entry in const {
-                              0: '跟随系统',
-                              1: '护眼',
-                              2: '夜间',
-                            }.entries)
-                              ChoiceChip(
-                                label: Text(entry.value),
-                                selected: theme == entry.key,
-                                onSelected: (_) => store.setSetting(
-                                  'novel.theme',
-                                  '${entry.key}',
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Container(
+                                key: const Key('novel-settings-preview'),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: background,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Text(
+                                  '翻开这一页，故事正缓缓展开。\n愿每一次阅读，都有舒服的节奏。',
+                                  style: TextStyle(
+                                    fontSize: font,
+                                    height: height,
+                                    color: dark
+                                        ? const Color(0xffd4d2ca)
+                                        : const Color(0xff302c27),
+                                  ),
                                 ),
                               ),
-                          ],
-                        ),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton.icon(
-                            onPressed: () {
-                              store.setSetting('novel.fontSize', '20');
-                              store.setSetting('novel.lineHeight', '1.5');
-                              store.setSetting('novel.theme', '0');
-                            },
-                            icon: const Icon(Icons.restore),
-                            label: const Text('恢复排版默认'),
+                              Text('字号 ${font.round()}', key: _fontKey),
+                              Slider(
+                                value: font,
+                                min: 14,
+                                max: 32,
+                                divisions: 18,
+                                onChanged: (value) => store.setSetting(
+                                  'novel.fontSize',
+                                  '$value',
+                                ),
+                              ),
+                              Text(
+                                '行距 ${height.toStringAsFixed(1)}',
+                                key: _heightKey,
+                              ),
+                              Slider(
+                                value: height,
+                                min: 1.3,
+                                max: 2.3,
+                                divisions: 10,
+                                onChanged: (value) => store.setSetting(
+                                  'novel.lineHeight',
+                                  '$value',
+                                ),
+                              ),
+                              Wrap(
+                                spacing: 8,
+                                children: [
+                                  for (final entry in const {
+                                    0: '跟随系统',
+                                    1: '护眼',
+                                    2: '夜间',
+                                  }.entries)
+                                    ChoiceChip(
+                                      label: Text(entry.value),
+                                      selected: theme == entry.key,
+                                      onSelected: (_) => store.setSetting(
+                                        'novel.theme',
+                                        '${entry.key}',
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton.icon(
+                                  onPressed: () {
+                                    store.setSetting('novel.fontSize', '20');
+                                    store.setSetting('novel.lineHeight', '1.5');
+                                    store.setSetting('novel.theme', '0');
+                                  },
+                                  icon: const Icon(Icons.restore),
+                                  label: const Text('恢复排版默认'),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 24),
@@ -181,39 +193,54 @@ class _NovelSettingsPageState extends State<NovelSettingsPage> {
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const Text('朗读模式、音色、语速、音量和跟随翻页与漫画朗读共用；自动下一章仅用于小说。'),
-                        Text('语速 ${(speech.rate / .5).toStringAsFixed(1)} 倍'),
-                        Slider(
-                          value: speech.rate,
-                          min: SpeechSettings.minRate,
-                          max: SpeechSettings.maxRate,
-                          onChanged: (value) =>
-                              saveSpeech(speech.copyWith(rate: value)),
-                        ),
-                        Text('音量 ${(speech.volume * 100).round()}%'),
-                        Slider(
-                          value: speech.volume,
-                          onChanged: (value) =>
-                              saveSpeech(speech.copyWith(volume: value)),
-                        ),
-                        SwitchListTile(
-                          title: const Text('朗读跟随翻页'),
-                          value: speech.followAlong,
-                          onChanged: (value) =>
-                              saveSpeech(speech.copyWith(followAlong: value)),
-                        ),
-                        SwitchListTile(
-                          title: const Text('读完自动下一章'),
-                          value:
-                              store.setting('novel.speech.autoNext') != 'false',
-                          onChanged: (value) => store.setSetting(
-                            'novel.speech.autoNext',
-                            '$value',
+                        const SizedBox(height: 12),
+                        GlassCard(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Text(
+                                '朗读模式、音色、语速、音量和跟随翻页与漫画朗读共用；自动下一章仅用于小说。',
+                              ),
+                              Text(
+                                '语速 ${(speech.rate / .5).toStringAsFixed(1)} 倍',
+                              ),
+                              Slider(
+                                value: speech.rate,
+                                min: SpeechSettings.minRate,
+                                max: SpeechSettings.maxRate,
+                                onChanged: (value) =>
+                                    saveSpeech(speech.copyWith(rate: value)),
+                              ),
+                              Text('音量 ${(speech.volume * 100).round()}%'),
+                              Slider(
+                                value: speech.volume,
+                                onChanged: (value) =>
+                                    saveSpeech(speech.copyWith(volume: value)),
+                              ),
+                              SwitchListTile(
+                                title: const Text('朗读跟随翻页'),
+                                value: speech.followAlong,
+                                onChanged: (value) => saveSpeech(
+                                  speech.copyWith(followAlong: value),
+                                ),
+                              ),
+                              SwitchListTile(
+                                title: const Text('读完自动下一章'),
+                                value:
+                                    store.setting('novel.speech.autoNext') !=
+                                    'false',
+                                onChanged: (value) => store.setSetting(
+                                  'novel.speech.autoNext',
+                                  '$value',
+                                ),
+                              ),
+                              SpeechModesPanel(
+                                settings: speech,
+                                onChanged: saveSpeech,
+                              ),
+                            ],
                           ),
-                        ),
-                        SpeechModesPanel(
-                          settings: speech,
-                          onChanged: saveSpeech,
                         ),
                       ],
                     ),

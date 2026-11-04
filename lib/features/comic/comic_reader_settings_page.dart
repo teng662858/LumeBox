@@ -117,6 +117,7 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
     final prefs = widget.preferences;
     return GlassScaffold(
       effectModule: GlassModule.comic,
+      settingsSurface: true,
       behindBar: true,
       title: '阅读设置',
       child: ListView(

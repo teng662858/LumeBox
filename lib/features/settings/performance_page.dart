@@ -27,6 +27,7 @@ class _PerformancePageState extends State<PerformancePage> {
 
   @override
   Widget build(BuildContext context) => GlassScaffold(
+    effectModule: GlassModule.settings,
     title: '流畅度采集',
     child: ListView(
       padding: const EdgeInsets.all(16),

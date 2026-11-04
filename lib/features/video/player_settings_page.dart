@@ -68,6 +68,7 @@ class PlayerSettingsPage extends StatelessWidget {
         _categories.where((entry) => entry.$1 == id).firstOrNull?.$2 ?? '播放器设置';
     return GlassScaffold(
       effectModule: GlassModule.video,
+      settingsSurface: true,
       title: title,
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -108,6 +109,7 @@ class PlayerSettingsPage extends StatelessWidget {
     if (focusCategory != null) return _categoryPage(context, focusCategory!);
     return GlassScaffold(
       effectModule: GlassModule.video,
+      settingsSurface: true,
       title: '播放器设置',
       child: ListView(
         padding: const EdgeInsets.all(16),

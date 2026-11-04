@@ -33,51 +33,58 @@ class _ICloudSettingsPageState extends State<ICloudSettingsPage> {
       builder: (context, _) => ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          ListTile(
-            leading: const LumeIcon(
-              Icons.cloud_outlined,
-              slot: 'icloud_settings_page.1',
+          GlassCard(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const LumeIcon(
+                    Icons.cloud_outlined,
+                    slot: 'icloud_settings_page.1',
+                  ),
+                  title: Text(cloud.status),
+                  subtitle: Text(
+                    cloud.lastSync == null
+                        ? '还没有成功同步记录'
+                        : '上次本机同步：${cloud.lastSync!.toLocal()}',
+                  ),
+                ),
+                NativeSwitchListTile.adaptive(
+                  title: const Text('自动 iCloud 同步'),
+                  subtitle: const Text('回到前台及前台每 5 分钟合并同步；默认关闭'),
+                  value: cloud.automatic,
+                  onChanged: !cloud.supported || cloud.busy
+                      ? null
+                      : (value) => cloud.setAutomatic(value),
+                ),
+                const ListTile(
+                  title: Text('收藏、收藏夹与阅读 / 播放进度'),
+                  subtitle: Text('始终参与同步；逐条合并，保留删除记录避免重新出现'),
+                ),
+                NativeSwitchListTile.adaptive(
+                  title: const Text('同步设置'),
+                  subtitle: const Text('阅读和播放设置、外观、布局、悬浮与图片处理设置；不包含密钥和应用锁'),
+                  value: cloud.includeSettings,
+                  onChanged: cloud.busy
+                      ? null
+                      : (v) {
+                          cloud.includeSettings = v;
+                          unawaited(cloud.save());
+                        },
+                ),
+                NativeSwitchListTile.adaptive(
+                  title: const Text('同步源订阅地址'),
+                  subtitle: const Text('漫画 / 视频的 JS 源订阅地址；源脚本与猫源运行包留在本机'),
+                  value: cloud.includeSubscriptions,
+                  onChanged: cloud.busy
+                      ? null
+                      : (v) {
+                          cloud.includeSubscriptions = v;
+                          unawaited(cloud.save());
+                        },
+                ),
+              ],
             ),
-            title: Text(cloud.status),
-            subtitle: Text(
-              cloud.lastSync == null
-                  ? '还没有成功同步记录'
-                  : '上次本机同步：${cloud.lastSync!.toLocal()}',
-            ),
-          ),
-          NativeSwitchListTile.adaptive(
-            title: const Text('自动 iCloud 同步'),
-            subtitle: const Text('回到前台及前台每 5 分钟合并同步；默认关闭'),
-            value: cloud.automatic,
-            onChanged: !cloud.supported || cloud.busy
-                ? null
-                : (value) => cloud.setAutomatic(value),
-          ),
-          const ListTile(
-            title: Text('收藏、收藏夹与阅读 / 播放进度'),
-            subtitle: Text('始终参与同步；逐条合并，保留删除记录避免重新出现'),
-          ),
-          NativeSwitchListTile.adaptive(
-            title: const Text('同步设置'),
-            subtitle: const Text('阅读和播放设置、外观、布局、悬浮与图片处理设置；不包含密钥和应用锁'),
-            value: cloud.includeSettings,
-            onChanged: cloud.busy
-                ? null
-                : (v) {
-                    cloud.includeSettings = v;
-                    unawaited(cloud.save());
-                  },
-          ),
-          NativeSwitchListTile.adaptive(
-            title: const Text('同步源订阅地址'),
-            subtitle: const Text('漫画 / 视频的 JS 源订阅地址；源脚本与猫源运行包留在本机'),
-            value: cloud.includeSubscriptions,
-            onChanged: cloud.busy
-                ? null
-                : (v) {
-                    cloud.includeSubscriptions = v;
-                    unawaited(cloud.save());
-                  },
           ),
           const SizedBox(height: 16),
           FilledButton.icon(

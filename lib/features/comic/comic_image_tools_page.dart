@@ -430,6 +430,7 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
   @override
   Widget build(BuildContext context) => GlassScaffold(
     effectModule: GlassModule.comic,
+    settingsSurface: true,
     title: widget.translation ? '全局翻译' : 'AI 图片超分与上色',
     child: ListView(
       padding: const EdgeInsets.all(16),

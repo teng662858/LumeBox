@@ -21,6 +21,24 @@ abstract final class HomePanelLayout {
   );
 }
 
+/// Visual treatment for settings pages without changing their glass module.
+class SettingsSurfaceScope extends InheritedWidget {
+  const SettingsSurfaceScope({
+    super.key,
+    required this.enabled,
+    required super.child,
+  });
+  final bool enabled;
+  static bool enabledOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<SettingsSurfaceScope>()
+          ?.enabled ??
+      false;
+  @override
+  bool updateShouldNotify(SettingsSurfaceScope oldWidget) =>
+      enabled != oldWidget.enabled;
+}
+
 /// 清透微磨砂玻璃层：低透明底色、极浅描边与可调的轻微背景模糊。
 ///
 /// 用在「浮在内容之上」的表面上（顶部栏 / 底部栏 / 覆盖面板）——它下面有东西
@@ -137,7 +155,27 @@ class GlassCard extends StatelessWidget {
         ),
       ),
     );
-    return surface;
+    if (!SettingsSurfaceScope.enabledOf(context) ||
+        MediaQuery.highContrastOf(context)) {
+      return surface;
+    }
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: border,
+        border: Border.all(
+          color: Colors.white.withValues(alpha: dark ? .08 : .75),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: dark ? .16 : .045),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: surface,
+    );
   }
 }
 
@@ -339,10 +377,14 @@ class GlassScaffold extends StatelessWidget {
     this.mergeHomeHeader = false,
     this.resizeToAvoidBottomInset,
     this.effectModule,
+    this.settingsSurface = false,
   });
 
   final Widget child;
   final GlassModule? effectModule;
+
+  /// Apply settings visual styling while retaining the original glass module.
+  final bool settingsSurface;
 
   /// 页面标题。为空时回退到项目名称。
   final String? title;
@@ -388,9 +430,12 @@ class GlassScaffold extends StatelessWidget {
       EdgeInsets.only(top: barHeight(context, extra: extra));
 
   @override
-  Widget build(BuildContext context) => ModuleGlassScope(
-    module: effectModule ?? ModuleGlassScope.moduleOf(context),
-    child: _legacyBuild(context),
+  Widget build(BuildContext context) => SettingsSurfaceScope(
+    enabled: settingsSurface || effectModule == GlassModule.settings,
+    child: ModuleGlassScope(
+      module: effectModule ?? ModuleGlassScope.moduleOf(context),
+      child: _legacyBuild(context),
+    ),
   );
   Widget _legacyBuild(BuildContext context) {
     // 顶栏内容要让出的高度：**避让后的**状态栏 + 工具栏 + 页签条。

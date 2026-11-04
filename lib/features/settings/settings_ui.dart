@@ -465,13 +465,6 @@ class _SettingsCategoryCard extends StatelessWidget {
           border: Border.all(
             color: Colors.white.withValues(alpha: dark ? .10 : .92),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: dark ? .18 : .055),
-              blurRadius: 20,
-              offset: const Offset(0, 7),
-            ),
-          ],
         ),
         child: GlassCard(
           radius: 24,

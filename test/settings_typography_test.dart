@@ -71,9 +71,9 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('App 图标'), findsOneWidget);
         expect(find.text('导出配置备份'), findsOneWidget);
-        final subtitleStyle = DefaultTextStyle.of(
-          tester.element(find.text('全局设置、各版块偏好与源配置')),
-        ).style;
+        final subtitleStyle = tester
+            .widget<Text>(find.text('使用密码加密全局设置、各版块偏好与源配置'))
+            .style!;
         expect(subtitleStyle.fontSize, 12);
         expect(subtitleStyle.color, const Color(0xFF8E8E93));
         expect(subtitleStyle.height, 1.5);
