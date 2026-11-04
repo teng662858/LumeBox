@@ -134,14 +134,11 @@ class _AdaptiveCoverSurfaceState extends State<AdaptiveCoverSurface> {
       color,
       theme.colorScheme.surface,
     );
-    final onPrimary = LumeTheme.contrast(Colors.white, primary) >= 4.5
-        ? Colors.white
-        : Colors.black;
     return Theme(
       data: theme.copyWith(
         colorScheme: theme.colorScheme.copyWith(
           primary: primary,
-          onPrimary: onPrimary,
+          onPrimary: Colors.white,
           secondary: primary,
         ),
         progressIndicatorTheme: theme.progressIndicatorTheme.copyWith(

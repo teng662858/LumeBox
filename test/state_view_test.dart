@@ -74,6 +74,39 @@ void main() {
     expect(find.text('TypeError: x is not a function'), findsOneWidget);
   });
 
+  testWidgets('主题色错误操作按钮使用白色文字', (tester) async {
+    final theme = LumeTheme.build(customAccent: const Color(0xFFFF2D55));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: theme,
+        home: Scaffold(
+          body: SourceStateView(
+            state: SourceStateKind.scriptError,
+            detail: '测试错误',
+            onRetry: () {},
+            action: FilledButton(onPressed: () {}, child: const Text('源管理')),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (final title in ['重试', '源管理']) {
+      final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, title),
+      );
+      expect(
+        button.style?.foregroundColor?.resolve({}) ??
+            theme.filledButtonTheme.style!.foregroundColor!.resolve({}),
+        Colors.white,
+      );
+      expect(
+        button.style?.backgroundColor?.resolve({}) ??
+            theme.filledButtonTheme.style!.backgroundColor!.resolve({}),
+        const Color(0xFFFF2D55),
+      );
+    }
+  });
+
   testWidgets('网络异常：标题 + 原始原因 + 重试', (tester) async {
     var retried = 0;
     await pumpView(

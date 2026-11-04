@@ -57,7 +57,7 @@ export default {categories(){return [{id:'1', title:createHash('sha256').update(
 // LumeSource: {"id":"module-$style","name":"模块 $style","category":"video"}
 // LumeRuntime: module
 ${declaration}function categories() { return [{id:'movie',title:'电影'}]; }
-${declaration}function list(a) { return {items:[{id:'1',title:a.keyword || '首页'}],hasMore:false}; }
+${declaration}function list(a) { return {items:[{id:'1',title:a.keyword || '首页',cover:'https://example.org/cover.jpg'}],hasMore:false}; }
 ${declaration}function detail(a) { return {id:a.id,title:'详情'}; }
 ${declaration}function chapters(a) { return [{id:'ep1',title:'第一集'}]; }
 ${declaration}function content(a) { return {kind:'video',url:'https://example.org/video.mp4',headers:{Referer:'https://example.org/'}}; }
@@ -83,6 +83,16 @@ ${style == 'default'
       expect(content.url.path, '/video.mp4');
       expect(content.headers['Referer'], 'https://example.org/');
       SourceRegistry.close(Section.video);
+      expect(
+        (await source.list(keyword: '重开后')).items.single.title,
+        '重开后',
+        reason: '旧数据源在板块重开后应使用新注册表，而不是已关闭的数据库',
+      );
+      final afterReopen = await source.content(
+        itemId: '1',
+        chapterId: chapter.id,
+      );
+      expect((afterReopen as VideoContent).url.path, '/video.mp4');
       expect((await manager.open(imported.descriptor!.id))!.name, '模块 $style');
     }, skip: available ? null : 'QuickJS 原生桥不可用');
   }

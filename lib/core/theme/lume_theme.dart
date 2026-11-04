@@ -11,7 +11,7 @@ import 'interface_typography.dart';
 export 'lume_typography.dart';
 export 'interface_typography.dart' show interfaceFontWeight;
 
-/// Unmodified user-selected fill and its readable foreground for controls.
+/// Unmodified user-selected fill and the white foreground used on controls.
 class LumeAccentColors extends ThemeExtension<LumeAccentColors> {
   const LumeAccentColors({required this.fill, required this.onFill});
   final Color fill;
@@ -323,11 +323,8 @@ class LumeTheme {
   /// The user's exact opaque color, for solid fills and selected controls.
   static Color get accentFill => _customAccent ?? Color(_accent.argb);
 
-  /// Choose the more legible neutral foreground for the unmodified fill.
-  static Color get onAccentFill =>
-      contrast(Colors.black, accentFill) >= contrast(Colors.white, accentFill)
-      ? Colors.black
-      : Colors.white;
+  /// Solid theme-colored controls use white labels and icons.
+  static Color get onAccentFill => Colors.white;
 
   static Color accentFillOf(BuildContext context) =>
       Theme.of(context).extension<LumeAccentColors>()?.fill ??
@@ -389,8 +386,8 @@ class LumeTheme {
   /// 稍重一点的填充（选中态底座、进度条槽）。
   static Color get fillStrong => palette.fillStrong;
 
-  /// 品牌紫上的前景色。
-  static Color get onAccent => palette.onAccent;
+  /// Foreground used on an opaque theme-colored surface.
+  static Color get onAccent => Colors.white;
 
   /// 语义色：各自主题下可读的版本（浅色用深色版，深色用亮色版）。
   static Color get success =>
@@ -481,7 +478,7 @@ class LumeTheme {
           brightness: brightness,
         ).copyWith(
           primary: accentColor,
-          onPrimary: onAccent,
+          onPrimary: Colors.white,
           surface: surface,
           onSurface: textPrimary,
           onSurfaceVariant: textSecondary,
@@ -573,7 +570,7 @@ class LumeTheme {
       ),
       textTheme: readableTextTheme(brightness),
       primaryTextTheme: readableTextTheme(brightness)
-          .apply(bodyColor: onAccent, displayColor: onAccent),
+          .apply(bodyColor: Colors.white, displayColor: Colors.white),
       cardTheme: CardThemeData(
         color: surface,
         surfaceTintColor: Colors.transparent,

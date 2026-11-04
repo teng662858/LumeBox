@@ -101,6 +101,17 @@ class SourceRegistry {
   static const String currentSourceKey = 'current_source';
 
   static final Map<String, Future<SourceRegistry>> _opening = {};
+
+  /// Read from the current registry, never from a registry retained by a page.
+  static SourceSiteConfig? existingSiteConfig(
+    Section section,
+    String sourceId,
+  ) {
+    final registry = _registries[section.id];
+    if (registry == null) return null;
+    return registry.source(sourceId)?.siteConfig ?? SourceSiteConfig.none;
+  }
+
   static String rewriteExisting(
     Section section,
     String sourceId,

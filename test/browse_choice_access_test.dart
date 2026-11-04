@@ -66,9 +66,9 @@ void main() {
           await tester.pumpAndSettle();
           final selected = tester.widget<ChoiceChip>(finder);
           expect(selected.selected, isTrue);
-          expect(selected.labelStyle!.color, Colors.black);
+          expect(selected.labelStyle!.color, Colors.white);
           expect(selected.selectedColor, const Color(0xFFFF2D55));
-          expect(selected.checkmarkColor, Colors.black);
+          expect(selected.checkmarkColor, Colors.white);
         }
         expect(tester.takeException(), isNull);
       },

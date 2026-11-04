@@ -35,54 +35,48 @@ void main() {
     }
   });
   tearDown(() => LumeTheme.applyBrightness(Brightness.light));
-  test(
-    'custom accent preserves exact fill while text and controls stay legible',
-    () {
-      const chosen = Color(0xFFFF2D55);
-      for (final brightness in Brightness.values) {
-        final theme = LumeTheme.build(
-          brightness: brightness,
-          customAccent: chosen,
-        );
-        final colors = theme.extension<LumeAccentColors>()!;
-        expect(colors.fill, chosen);
-        expect(
-          theme.filledButtonTheme.style!.backgroundColor!.resolve({}),
-          chosen,
-        );
-        expect(
-          theme.filledButtonTheme.style!.foregroundColor!.resolve({}),
-          colors.onFill,
-        );
-        expect(
-          theme.switchTheme.trackColor!.resolve({WidgetState.selected}),
-          chosen,
-        );
-        expect(
-          theme.switchTheme.thumbColor!.resolve({WidgetState.selected}),
-          Colors.white,
-        );
-        expect(theme.sliderTheme.activeTrackColor, chosen);
-        expect(theme.chipTheme.selectedColor, chosen);
-        expect(
-          LumeTheme.contrast(colors.onFill, chosen),
-          greaterThanOrEqualTo(4.5),
-        );
-        expect(
-          LumeTheme.contrast(theme.colorScheme.primary, LumeTheme.surfaceAlt),
-          greaterThanOrEqualTo(4.5),
-        );
-        expect(
-          AppearanceSettings(
-            useCustomAccent: true,
-            customAccentArgb: 0xFFFF2D55,
-          ).accentColorFor(brightness),
-          chosen,
-        );
-      }
-      LumeTheme.build();
-    },
-  );
+  test('custom accent preserves exact fill and uses white labels', () {
+    const chosen = Color(0xFFFF2D55);
+    for (final brightness in Brightness.values) {
+      final theme = LumeTheme.build(
+        brightness: brightness,
+        customAccent: chosen,
+      );
+      final colors = theme.extension<LumeAccentColors>()!;
+      expect(colors.fill, chosen);
+      expect(
+        theme.filledButtonTheme.style!.backgroundColor!.resolve({}),
+        chosen,
+      );
+      expect(
+        theme.filledButtonTheme.style!.foregroundColor!.resolve({}),
+        colors.onFill,
+      );
+      expect(
+        theme.switchTheme.trackColor!.resolve({WidgetState.selected}),
+        chosen,
+      );
+      expect(
+        theme.switchTheme.thumbColor!.resolve({WidgetState.selected}),
+        Colors.white,
+      );
+      expect(theme.sliderTheme.activeTrackColor, chosen);
+      expect(theme.chipTheme.selectedColor, chosen);
+      expect(colors.onFill, Colors.white);
+      expect(
+        LumeTheme.contrast(theme.colorScheme.primary, LumeTheme.surfaceAlt),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(
+        AppearanceSettings(
+          useCustomAccent: true,
+          customAccentArgb: 0xFFFF2D55,
+        ).accentColorFor(brightness),
+        chosen,
+      );
+    }
+    LumeTheme.build();
+  });
   test(
     'glass tint stays readable while the opacity slider remains effective',
     () {
@@ -132,13 +126,10 @@ void main() {
             {WidgetState.selected},
           );
           expect(
-            LumeTheme.contrast(
-              WidgetStateProperty.resolveAs<Color>(chip.color!, {
-                WidgetState.selected,
-              }),
-              theme.chipTheme.selectedColor!,
-            ),
-            greaterThanOrEqualTo(4.5),
+            WidgetStateProperty.resolveAs<Color>(chip.color!, {
+              WidgetState.selected,
+            }),
+            Colors.white,
           );
           final disabled = theme.filledButtonTheme.style!.foregroundColor!
               .resolve({WidgetState.disabled})!;

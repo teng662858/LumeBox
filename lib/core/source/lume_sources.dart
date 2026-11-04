@@ -275,6 +275,7 @@ class LumeSources {
       return null;
     }
     if (await registry.engineFor(sourceId) == null) return null;
+    final initialSiteConfig = record.siteConfig;
     return JsDataSource(
       id: record.id,
       name: SourceDisplayNames.of(record.id, record.name),
@@ -282,9 +283,10 @@ class LumeSources {
       runtime: _EngineRuntime(registry, sourceId),
       cache: cached ? SectionMemoryCache.instance : null,
       sourceConfiguration: () =>
-          registry.source(sourceId)?.siteConfig ?? SourceSiteConfig.none,
+          SourceRegistry.existingSiteConfig(section, sourceId) ??
+          initialSiteConfig,
       rewriteUrl: (url, {kind}) =>
-          registry.rewriteSourceUrl(sourceId, url, kind: kind),
+          SourceRegistry.rewriteExisting(section, sourceId, url, kind: kind),
     );
   }
 

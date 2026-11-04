@@ -207,7 +207,7 @@ void main() {
     expect(AppearanceSettings.fromJson({'textScale': 99}).textScale, 1.6);
   });
 
-  test('自定义极浅与极深主色保留可读文字，两套主题均有足够对比', () {
+  test('自定义主色的实心选中态使用白字，主题前景与页面保持对比', () {
     for (final brightness in Brightness.values) {
       for (final custom in [
         Colors.white,
@@ -219,13 +219,7 @@ void main() {
           brightness: brightness,
           customAccent: custom,
         );
-        expect(
-          LumeTheme.contrast(
-            theme.colorScheme.primary,
-            theme.colorScheme.onPrimary,
-          ),
-          greaterThanOrEqualTo(4.5),
-        );
+        expect(theme.colorScheme.onPrimary, Colors.white);
         expect(
           LumeTheme.contrast(
             theme.colorScheme.primary,
