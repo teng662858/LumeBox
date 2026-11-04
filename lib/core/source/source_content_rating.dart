@@ -335,6 +335,8 @@ class SourceContentRating {
     'ciyuanji_novel',
     // 酷18（cool18.com）：综合成人论坛（书屋/贴图/自拍/动漫/影视九个板块）。
     'cool18_comic',
+    // 第一版主（bz1111111.net / diyibanzhu.app 被 CF 挡，源里走同站镜像 01bzw.us）。
+    'diyibanzhu_novel',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

@@ -1,3 +1,17 @@
+## 2026-11-04 第一版主（`comic/diyibanzhu.js`，详见 [源记录](../docs/2026-11-04_第一版主源与打不开的原因.md)）
+
+`diyibanzhu_novel`：第一版主（qula 模板成人小说站）。**用户给的 bz1111111.net / diyibanzhu.app 在
+Cloudflare 后面打不开**：前者是 managed challenge 且本机网络连 `challenges.cloudflare.com` 都被断
+（`ERR_CONNECTION_CLOSED`），后者是 WAF 直接 `Sorry, you have been blocked`（`cf-ray …-HKG`）。
+同站镜像 **01bzw.us**（UTF-8，200）与 111bz.cc（GBK）可直连，源默认用 01bzw.us，另两个留在 mirrors。
+
+- 分类 `/sort/{1-10}/{页码}/`：玄幻/武侠/都市/历史/侦探/网游/科幻/恐怖/散文/辣文，31 本/页，翻页实测生效
+- 详情 `/bookcv/{id}/`：直接读 `og:novel:book_name / author / category / status / update_time / lastest_chapter_*`
+- 目录：同页 `/html/{p}/{书号}/{章节号}.html`，按章节号排序并过滤「开始阅读/加入书架」按钮
+- 正文 `div#content`：**站点把部分汉字换成 `<img class="zi" data-word="字">` 防采集**，
+  源里按 `data-word`（回退 `alt`）还原；正文里插的「发布邮箱…地址发布页…」「笔趣Ω 『阁ΔＢＱgXsw』」按行过滤
+- 验证：`[PASS]` list 31 / detail ok / chapters 22（序章→第2章 有序）/ content 1615 字，无广告残留
+
 ## 2026-11-04 酷18（`comic/cool18.js`，详见 [源记录](../docs/2026-11-04_酷18综合源.md)）
 
 `cool18_comic`：酷18（cool18.com）综合成人论坛，**综合源**（小说 / 图片 / 视频，已在

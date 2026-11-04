@@ -179,6 +179,7 @@ void main() {
       'shuba_novel',
       'ciyuanji_novel',
       'cool18_comic',
+      'diyibanzhu_novel',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);
