@@ -44,7 +44,7 @@ abstract final class SourceContentCategories {
   }
 
   // Established multi-media sources already installed before metadata support.
-  static const knownMixedIds = {'uaa_video', 'yeshezy_video'};
+  static const knownMixedIds = {'uaa_video', 'yeshezy_video', 'mycall_video'};
 
   static bool mixedFromScript(String script) {
     final header = RegExp(
