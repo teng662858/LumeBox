@@ -20,6 +20,8 @@ import '../../shared/widgets/source_drag_tile.dart';
 import '../../shared/widgets/source_swipe_tile.dart';
 import '../../shared/widgets/subscription_status_icon.dart';
 import '../reading/source_search_dialog.dart';
+import '../reading/section_toolbar.dart';
+import '../reading/search_results_page.dart';
 import '../reading/history_privacy.dart';
 import '../reading/history_sheet.dart';
 import '../reading/favorite_folder_dialogs.dart';
@@ -116,6 +118,7 @@ class _CatPageState extends State<CatPage>
   Map<String, String> filters = {};
   String? category, error;
   String query = '';
+  SearchMode _searchMode = SearchMode.single;
   String? browseMode;
   bool loading = true, more = false, loadingMore = false;
   int page = 1, sequence = 0;
@@ -783,12 +786,52 @@ class _CatPageState extends State<CatPage>
   Future<void> search() async {
     final lib = library;
     if (lib == null) return;
+    final manager = CatAggregateSourceManager(service);
+    final sites = await manager.list();
+    if (!mounted) return;
+    final scope = await showSearchModeMenu(
+      context,
+      current: _searchMode,
+      sources: sites,
+      sourceIds: SearchSourceSelectionStore(lib).load(),
+    );
+    if (scope == null || !mounted) return;
+    SearchSourceSelectionStore(lib).save(scope.sourceIds);
+    setState(() => _searchMode = scope.mode);
     final value = await showGlassDialog<String>(
       context: context,
-      builder: (_) =>
-          SourceSearchDialog(source: source, library: lib, initialQuery: query),
+      builder: (_) => SourceSearchDialog(
+        source: source,
+        library: lib,
+        initialQuery: query,
+        title: scope.mode.label,
+      ),
     );
     if (value != null && mounted) {
+      if (scope.mode == SearchMode.aggregate && value.trim().isNotEmpty) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => SearchResultsPage(
+              section: Section.cat,
+              keyword: value,
+              mode: SearchMode.aggregate,
+              manager: manager,
+              pipeline: _pipeline,
+              sourceIds: scope.sourceIds,
+              onOpenItem: (selection) {
+                final site = manager.sites
+                    .where((site) => site.id == selection.sourceId)
+                    .firstOrNull;
+                if (site != null) {
+                  unawaited(openItem(selection.item, site: site));
+                }
+              },
+            ),
+          ),
+        );
+        return;
+      }
       setState(() => query = value);
       await refresh();
     }

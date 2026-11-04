@@ -449,6 +449,45 @@ class CatDataSource
   }
 }
 
+/// Search across searchable sites from enabled Cat subscriptions.
+class CatAggregateSourceManager implements SourceManager {
+  CatAggregateSourceManager(this.service);
+  final CatService service;
+
+  Iterable<CatSite> get sites => service.subscriptions
+      .where((record) => record.enabled)
+      .expand((record) => record.sites)
+      .where((site) => site.searchable);
+
+  @override
+  bool get runtimeAvailable => true;
+  @override
+  Future<DataSource?> open(String sourceId) async {
+    final site = sites.where((site) => site.id == sourceId).firstOrNull;
+    return site == null ? null : CatDataSource(service, site);
+  }
+
+  @override
+  Future<List<SourceDescriptor>> list() async => [
+    for (final site in sites)
+      SourceDescriptor(
+        id: site.id,
+        name: site.name,
+        version: 'Node',
+        enabled: true,
+      ),
+  ];
+  @override
+  Future<SourceDescriptor?> current() async => (await list())
+      .where((site) => site.id == service.selectedSiteId)
+      .firstOrNull;
+  @override
+  void close() {}
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('请在猫源订阅管理中操作');
+}
+
 /// The player/readers use this port to reopen their own Cat site. Management is
 /// handled by Cat subscription UI, never the ordinary QuickJS source registry.
 class CatSourceManager implements SourceManager {
