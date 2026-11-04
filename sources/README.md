@@ -1,3 +1,15 @@
+## 2026-11-04 八叉书库（`comic/8csk.js`，详见 [源记录](../docs/2026-11-04_八叉书库源.md)）
+
+`8csk_comic`：8xsk 字站的成人小说（`8csk.org`，发布页 `8csk.xyz` 给 18 个同内容域名，全实测 200）。
+按**文字小说**交付（`mediaType: novel`）。分类 `/booklist1…9`（分页是「页号 − 1」）、榜单
+`/latest` `/release` `/popular` `/completed`（分页 `index_N.html`）、题材 `/genre/{slug}/`
+（站点没有题材索引，30 个 slug 从书页反查；题材会覆盖分类，站点没有组合参数）。
+搜索 `/e/search/index.php?keyboard=` 带 `searchid` 翻页（源里按词缓存 30 分钟）。
+**正文不在 HTML 里**：章节页内嵌一次性令牌，源里回放 `POST /conapi.php`
+（`url/mobile/isk/novel/chapter/t/n/sign`）取纯文本，实测第 1 章 4617 字、第 500 章 2027 字，无付费墙。
+目录两个坑都处理了：顶部「最新章节」块不认（只认 `#list-chapter`）、隐藏诱饵章节
+（`left:-99999px`）跳过；1001 章的书 6 路并发 5.3 秒抓完。封面在 `img.8xsk.top`（webp 实测 200）。
+
 ## 2026-11-04 91大事件（`video/91dasj.js`）· 西瓜书屋（`comic/xiguashuwu.js`）
 
 详见 [源记录](../docs/2026-11-04_91大事件与西瓜书屋源.md)。

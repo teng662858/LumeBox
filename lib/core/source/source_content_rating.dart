@@ -314,6 +314,9 @@ class SourceContentRating {
     // 西瓜书屋（xiguashuwu2.com，成人网络小说站）：VIP 角标书正文照样全量下发，
     // 长章节第二分页的敏感词是图片字（图片字跳过，正文主干完整）；归漫画板块的「小说」分类。
     'xiguashuwu_comic',
+    // 八叉书库（8csk.org，8xsk 字站，公告 18 个同内容域名）：全站成人小说，
+    // 正文走 POST /conapi.php 的一次性令牌，源里已复刻；归漫画板块的「小说」分类。
+    '8csk_comic',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

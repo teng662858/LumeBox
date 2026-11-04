@@ -169,6 +169,7 @@ void main() {
       'alicesw_comic',
       '91dasj_video',
       'xiguashuwu_comic',
+      '8csk_comic',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);
