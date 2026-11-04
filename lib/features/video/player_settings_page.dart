@@ -48,36 +48,40 @@ class PlayerSettingsPage extends StatelessWidget {
   /// 内核可用性目录。
   final PlayerKernelCatalog catalog;
 
-  @override
-  Widget build(BuildContext context) {
+  static const _categories = <(String, String, String, IconData)>[
+    ('playback', '播放与选集', '播放速度、画质与选集偏好', Icons.play_circle_outline),
+    ('intro', '片头片尾', '跳过片头片尾与同剧记忆', Icons.skip_next_outlined),
+    ('picture', '画面与显示', '缩放、画面比例与方向', Icons.aspect_ratio),
+    ('audio', '声音与字幕', '字幕样式、音轨与延迟', Icons.subtitles_outlined),
+    ('danmaku', '弹幕与匹配', '弹幕样式、屏蔽与服务', Icons.chat_bubble_outline),
+    ('controls', '手势与外观', '控制栏样式与手势灵敏度', Icons.touch_app_outlined),
+    (
+      'advanced',
+      '内核与网络',
+      '播放内核、解码和网络选项',
+      Icons.settings_input_component_outlined,
+    ),
+  ];
+
+  Widget _categoryPage(BuildContext context, String id) {
+    final title =
+        _categories.where((entry) => entry.$1 == id).firstOrNull?.$2 ?? '播放器设置';
     return GlassScaffold(
       effectModule: GlassModule.video,
-      title: '播放器设置',
+      title: title,
       child: ListView(
         padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          SettingsEntryCard(
-            icon: Icons.headphones_outlined,
-            title: '音频播放器',
-            subtitle: '独立音频内核 · 后台与锁屏控制',
-            onTap: () => Navigator.push<void>(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const AudioPlaybackSettingsPage(),
-              ),
-            ),
-          ),
-          const BackgroundPlaybackSetting(),
-          const SizedBox(height: 16),
+        children: [
+          if (id == 'playback') ...[
+            const BackgroundPlaybackSetting(),
+            const SizedBox(height: 16),
+          ],
           PlayerSettingsSheet(
-            initialCategory: focusCategory,
+            categoryOnly: id,
             settings: settings,
-            // 全局页没有播放器实例：按「设置里选的内核」查同一张能力表。
             capabilities: PlayerCapabilities.of(settings.kernel),
             catalog: catalog,
             onChanged: onChanged,
-            // 方向锁定是应用级偏好（与设置页的「横屏播放」同一份），
-            // 这里直接读写控制器，不必再由宿主转一手。
             orientation: PlaybackOrientationController.instance.orientation,
             onOrientationChanged: PlaybackOrientationController.instance.apply,
             danmaku: danmaku,
@@ -91,6 +95,44 @@ class PlayerSettingsPage extends StatelessWidget {
               onTap: () => Navigator.push<void>(
                 context,
                 MaterialPageRoute(builder: (_) => const DanmakuSourcesPage()),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (focusCategory != null) return _categoryPage(context, focusCategory!);
+    return GlassScaffold(
+      effectModule: GlassModule.video,
+      title: '播放器设置',
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: <Widget>[
+          for (final entry in _categories)
+            SettingsEntryCard(
+              key: ValueKey('player-settings-category-${entry.$1}'),
+              icon: entry.$4,
+              title: entry.$2,
+              subtitle: entry.$3,
+              onTap: () => Navigator.push<void>(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => _categoryPage(context, entry.$1),
+                ),
+              ),
+            ),
+          SettingsEntryCard(
+            icon: Icons.headphones_outlined,
+            title: '音频播放器',
+            subtitle: '独立音频内核 · 后台与锁屏控制',
+            onTap: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AudioPlaybackSettingsPage(),
               ),
             ),
           ),

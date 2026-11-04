@@ -245,7 +245,8 @@ class SettingsPage extends StatelessWidget {
             _push(context, const PlayerSettingsHost(focusCategory: 'audio')),
         '弹幕': () =>
             _push(context, const PlayerSettingsHost(focusCategory: 'danmaku')),
-        '后台播放': () => _push(context, const PlayerSettingsHost()),
+        '后台播放': () =>
+            _push(context, const PlayerSettingsHost(focusCategory: 'playback')),
       },
       onTap: () => _push(context, const PlayerSettingsHost()),
     ),

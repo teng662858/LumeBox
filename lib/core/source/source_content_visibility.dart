@@ -25,6 +25,11 @@ class SourceContentVisibility extends ChangeNotifier {
     ('video', '视频', '网络小视频及现有泛视频源'),
     ('movie', '影视', '网络影视站'),
     ('tvbox', 'TVBOX', 'TVBox 导入的采集接口、Python 和直播列表'),
+    ('js', 'JS 源', '视频抽屉中的 JavaScript 源'),
+    ('python', 'PY 源', '视频抽屉中的 Python 源'),
+    ('module', '模块源', '视频抽屉中的 ESM 与 CommonJS 模块源'),
+    ('cat', '猫源', '视频抽屉中的猫源订阅及站点'),
+    ('web', '网页主页', '视频抽屉中的网页主页和本地 HTML'),
   ];
   final Set<String> _hidden = {};
   File? _file;
@@ -34,8 +39,23 @@ class SourceContentVisibility extends ChangeNotifier {
           .where((group) => isVisible(group.$1))
           .toList();
   bool sectionVisible(Section section) => groups(section).isNotEmpty;
+  bool videoTypeVisible(String type) => switch (type) {
+    'all' || 'audio' || 'kazumi' => true,
+    'ordinary' => isVisible('js'),
+    _ => isVisible(type),
+  };
+  bool videoRuntimeVisible(SourceDescriptor source) => isVisible(
+    source.isTvBox
+        ? 'tvbox'
+        : switch (source.runtimeKind) {
+            'python' => 'python',
+            'module' => 'module',
+            _ => 'js',
+          },
+  );
   bool allows(Section section, SourceDescriptor source) =>
       isVisible(SourcePickerGroups.groupFor(section, source)) &&
+      (section != Section.video || videoRuntimeVisible(source)) &&
       PrivacySettings.instance.allowsSource(source.id, source.name) &&
       (section != Section.video ||
           !SourceContentCategories.appliesTo(source) ||

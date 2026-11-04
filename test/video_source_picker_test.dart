@@ -14,6 +14,7 @@ import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
+import 'package:lume_box/core/source/source_content_visibility.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/reading/source_bar.dart';
 import 'package:lume_box/features/source/video_source_picker.dart';
@@ -146,6 +147,62 @@ void main() {
       await tester.pumpAndSettle();
     }
   }
+
+  testWidgets('视频源类型开关隐藏对应页签和全部分组，不删除站点', (tester) async {
+    final visibility = SourceContentVisibility.instance;
+    manager.sources.add(
+      const SourceDescriptor(
+        id: 'py-test',
+        name: 'PY测试源',
+        version: '1',
+        enabled: true,
+        runtimeKind: 'python',
+      ),
+    );
+    manager.sources.add(
+      const SourceDescriptor(
+        id: 'module-test',
+        name: '模块测试源',
+        version: '1',
+        enabled: true,
+        runtimeKind: 'module',
+      ),
+    );
+    visibility.setVisible('python', false);
+    visibility.setVisible('cat', false);
+    visibility.setVisible('module', false);
+    visibility.setVisible('web', false);
+    addTearDown(() {
+      for (final id in ['python', 'cat', 'module', 'web']) {
+        visibility.setVisible(id, true);
+      }
+    });
+    await pump(tester);
+    for (final type in ['python', 'cat', 'module', 'web']) {
+      expect(find.byKey(ValueKey('video-source-type-$type')), findsNothing);
+      expect(find.byKey(ValueKey('video-source-group-$type')), findsNothing);
+    }
+    expect(find.text('PY测试源'), findsNothing);
+    expect(find.text('猫源测试长名称站点'), findsNothing);
+    expect(manager.sources.any((source) => source.id == 'py-test'), isTrue);
+    expect(service.subscriptions.single.sites.length, 2);
+    visibility.setVisible('python', true);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('video-source-type-python')),
+      findsOneWidget,
+    );
+    expect(find.text('PY测试源'), findsOneWidget);
+    visibility.setVisible('js', false);
+    addTearDown(() => visibility.setVisible('js', true));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('video-source-type-ordinary')),
+      findsNothing,
+    );
+    expect(find.text('普通视频长名称测试'), findsNothing);
+    expect(find.text('PY测试源'), findsOneWidget);
+  });
 
   testWidgets('视频源选择器给已分级的源显示 18+ 徽章，普通源不误标', (tester) async {
     final privacy = PrivacySettings.instance;

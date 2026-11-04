@@ -166,6 +166,8 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
       });
 
   bool _locateCurrent = true, _initialTypeChosen = false;
+  bool _typeVisible(VideoSourceType value) =>
+      SourceContentVisibility.instance.videoTypeVisible(value.name);
 
   bool _ordinarySelected(String id) =>
       !widget.showingCat && widget.currentWebId == null && currentId == id;
@@ -232,6 +234,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
     if (mounted) {
       setState(() {
         webHomes = _webStore?.items ?? webHomes;
+        if (!_typeVisible(type)) type = VideoSourceType.all;
         if (!PrivacySettings.instance.showAdult &&
             content == SourceContentCategory.adult) {
           content = SourceContentCategory.movie;
@@ -268,6 +271,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
         currentId = current?.id;
         webHomes = webStore.items;
         _chooseInitialType();
+        if (!_typeVisible(type)) type = VideoSourceType.all;
         if (!_contentChosen) {
           _contentChosen = true;
           final saved =
@@ -980,16 +984,20 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
       VideoSourceType.kazumi,
       VideoSourceType.audio,
     ].contains(type);
-    final showCat = [
-      VideoSourceType.all,
-      VideoSourceType.cat,
-      VideoSourceType.audio,
-    ].contains(type);
-    final showWeb = [
-      VideoSourceType.all,
-      VideoSourceType.web,
-      VideoSourceType.audio,
-    ].contains(type);
+    final showCat =
+        SourceContentVisibility.instance.isVisible('cat') &&
+        [
+          VideoSourceType.all,
+          VideoSourceType.cat,
+          VideoSourceType.audio,
+        ].contains(type);
+    final showWeb =
+        SourceContentVisibility.instance.isVisible('web') &&
+        [
+          VideoSourceType.all,
+          VideoSourceType.web,
+          VideoSourceType.audio,
+        ].contains(type);
     var initialOffset = 0.0;
     bool hasFocus = false;
     if ([VideoSourceType.cat, VideoSourceType.audio].contains(type) &&
@@ -1245,21 +1253,22 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                             ),
                           ),
                         ])
-                          Padding(
-                            key: _tabKeys[item],
-                            padding: const EdgeInsets.only(right: 8),
-                            child: ChoiceChip(
-                              key: ValueKey('video-source-type-${item.name}'),
-                              label: Text(item.label),
-                              selected: type == item,
-                              showCheckmark: false,
-                              onSelected: (_) => setState(() {
-                                _locateCurrent = false;
-                                type = item;
-                                _revealSelectedType();
-                              }),
+                          if (_typeVisible(item))
+                            Padding(
+                              key: _tabKeys[item],
+                              padding: const EdgeInsets.only(right: 8),
+                              child: ChoiceChip(
+                                key: ValueKey('video-source-type-${item.name}'),
+                                label: Text(item.label),
+                                selected: type == item,
+                                showCheckmark: false,
+                                onSelected: (_) => setState(() {
+                                  _locateCurrent = false;
+                                  type = item;
+                                  _revealSelectedType();
+                                }),
+                              ),
                             ),
-                          ),
                       ],
                     ),
                   ),

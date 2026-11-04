@@ -416,10 +416,10 @@ void main() {
     await tester.tap(find.text('播放器设置'));
     await pumpIoAndSettle(tester);
     expect(find.widgetWithText(AppBar, '播放器设置'), findsOneWidget);
-    expect(find.text('音频播放器'), findsOneWidget);
+    await tester.tap(find.text('播放与选集'));
+    await pumpIoAndSettle(tester);
     expect(find.text('后台播放'), findsOneWidget);
     expect(find.text('播放倍速'), findsOneWidget);
-    expect(find.text('字幕'), findsOneWidget);
   });
 
   testWidgets('运行日志：查看、按级别筛选、清空', (tester) async {

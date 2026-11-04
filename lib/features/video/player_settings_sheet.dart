@@ -122,8 +122,12 @@ class PlayerSettingsSheet extends StatefulWidget {
     this.connectionControls,
     this.danmakuControls,
     this.initialCategory,
+    this.categoryOnly,
   });
   final String? initialCategory;
+
+  /// When embedded in a settings subpage, render only this category.
+  final String? categoryOnly;
 
   /// 当前设置（受控）。
   final PlayerSettings settings;
@@ -496,7 +500,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       ]),
     ];
     final children = <Widget>[
-      if (widget.embedded) _categoryNavigation(),
+      if (widget.embedded && widget.categoryOnly == null) _categoryNavigation(),
       ...groups,
     ];
 
@@ -617,7 +621,9 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     String title,
     IconData icon,
     List<Widget> children,
-  ) => !widget.embedded && id != _selectedCategory
+  ) =>
+      (widget.categoryOnly != null && id != widget.categoryOnly) ||
+          (!widget.embedded && id != _selectedCategory)
       ? const SizedBox.shrink()
       : Padding(
           key: _categoryKeys.putIfAbsent(id, GlobalKey.new),
@@ -625,30 +631,31 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  Icon(
-                    icon,
-                    size: 20,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+              if (widget.categoryOnly == null)
+                Row(
+                  children: [
+                    Icon(
+                      icon,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
-                  ),
-                  if (widget.embedded)
-                    IconButton(
-                      tooltip: '回到分类',
-                      onPressed: () => _jumpTo(_navigationKey),
-                      icon: const Icon(Icons.vertical_align_top, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
                     ),
-                ],
-              ),
-              const Divider(),
+                    if (widget.embedded)
+                      IconButton(
+                        tooltip: '回到分类',
+                        onPressed: () => _jumpTo(_navigationKey),
+                        icon: const Icon(Icons.vertical_align_top, size: 18),
+                      ),
+                  ],
+                ),
+              if (widget.categoryOnly == null) const Divider(),
               ...children,
             ],
           ),

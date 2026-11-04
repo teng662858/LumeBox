@@ -863,9 +863,11 @@ void main() {
         findsOneWidget,
       );
     }
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('content-visible-video')),
+    await Scrollable.ensureVisible(
+      tester.element(find.byKey(const ValueKey('content-visible-video'))),
+      alignment: .5,
     );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('content-visible-video')));
     await tester.pumpAndSettle();
     expect(controller.isVisible('video'), false);
@@ -922,7 +924,7 @@ void main() {
     expect(second.sectionVisible(Section.video), false);
     expect(second.sectionVisible(Section.comic), false);
     expect(second.sectionVisible(Section.video), false);
-    expect(second.sectionVisible(Section.cat), true);
+    expect(second.sectionVisible(Section.cat), false);
     second.setVisible('movie', true);
     expect(second.sectionVisible(Section.video), true);
     expect(second.isVisible('video'), false);

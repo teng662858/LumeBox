@@ -33,7 +33,9 @@ class ContentVisibilityPage extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              for (final entry in SourcePickerGroups.forSection(section))
+              for (final entry in SourcePickerGroups.forSection(
+                section,
+              ).where((entry) => entry.$1 != 'tvbox'))
                 SwitchListTile(
                   key: ValueKey('content-visible-${entry.$1}'),
                   title: Text(entry.$2),
@@ -46,6 +48,35 @@ class ContentVisibilityPage extends StatelessWidget {
                   onChanged: (value) => settings.setVisible(entry.$1, value),
                 ),
             ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                '视频源类型',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            for (final id in const [
+              'js',
+              'python',
+              'tvbox',
+              'module',
+              'cat',
+              'web',
+            ])
+              Builder(
+                builder: (context) {
+                  final entry = SourceContentVisibility.types.firstWhere(
+                    (type) => type.$1 == id,
+                  );
+                  return SwitchListTile(
+                    key: ValueKey('content-visible-$id'),
+                    title: Text(entry.$2),
+                    subtitle: Text(entry.$3),
+                    value: settings.isVisible(id),
+                    onChanged: (value) => settings.setVisible(id, value),
+                  );
+                },
+              ),
           ],
         ),
       ),
