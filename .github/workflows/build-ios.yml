@@ -3,6 +3,9 @@
 # 触发规则（2026-10-20 起）：**只在手动触发时构建，push/合并到 main 不会自动出包。**
 # 需要包时：Actions → Build unsigned IPA (iOS) → Run workflow（或让 AI 用 gh 触发）。
 # 额度提醒：私有仓库的 macOS runner 按 10 倍折算 Actions 用量，手动构建便于控制成本。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 name: Build unsigned IPA (iOS)
 
 on:
