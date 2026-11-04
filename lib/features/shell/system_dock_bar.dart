@@ -142,10 +142,7 @@ class _SystemTabBarViewState extends State<_SystemTabBarView> {
       'materialOpacity': bar.settings.materialOpacity,
       'opaqueBackground': bar.settings.opaqueBackground,
       'tintColor': bar.settings.solidIcons
-          ? (Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFFFFFFFF)
-                    : const Color(0xFF161616))
-                .toARGB32()
+          ? Theme.of(context).colorScheme.primary.toARGB32()
           : bar.settings.followThemeColor
           ? LumeTheme.accent.toARGB32()
           : bar.settings.tintColor,

@@ -100,7 +100,7 @@ class _NativeNavigationSettingsCardState
           key: const ValueKey('navigation-solid-icons'),
           contentPadding: EdgeInsets.zero,
           title: const Text('黑色实心图标'),
-          subtitle: const Text('保留原有图标样式；开启后使用实心图标，深色模式自动变白。'),
+          subtitle: const Text('未选中为黑色实心（深色模式为白色），选中时跟随主题色。'),
           value: settings.solidIcons,
           onChanged: (value) => _change(settings.copyWith(solidIcons: value)),
         ),

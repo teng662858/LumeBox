@@ -127,10 +127,13 @@ void main() {
     directory.deleteSync(recursive: true);
   });
 
-  testWidgets('原生导航默认图标随深浅模式使用黑白色', (tester) async {
+  testWidgets('原生实心图标选中时跟随主题色', (tester) async {
     final harness = NativeHarness(tester)..install();
     Widget scene(Brightness brightness) => MaterialApp(
-      theme: ThemeData(brightness: brightness),
+      theme: LumeTheme.build(
+        brightness: brightness,
+        customAccent: const Color(0xFFFF2D55),
+      ),
       themeAnimationDuration: Duration.zero,
       home: Align(
         alignment: Alignment.bottomCenter,
@@ -148,10 +151,10 @@ void main() {
     );
     await tester.pumpWidget(scene(Brightness.light));
     await tester.pumpAndSettle();
-    expect(harness.updates.last['tintColor'], 0xFF161616);
+    expect(harness.updates.last['tintColor'], LumeTheme.accent.toARGB32());
     await tester.pumpWidget(scene(Brightness.dark));
     await tester.pumpAndSettle();
-    expect(harness.updates.last['tintColor'], 0xFFFFFFFF);
+    expect(harness.updates.last['tintColor'], LumeTheme.accent.toARGB32());
     await tester.pumpWidget(const SizedBox());
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
@@ -189,6 +192,9 @@ void main() {
     Finder comic() => find.byWidgetPredicate(
       (w) => w is LumeIcon && w.slot == 'dock.comic.normal',
     );
+    Finder video() => find.byWidgetPredicate(
+      (w) => w is LumeIcon && w.slot == 'dock.video.selected',
+    );
     await tester.pumpWidget(scene(false, Brightness.light));
     await tester.pumpAndSettle();
     expect(tester.widget<LumeIcon>(comic()).icon, Icons.book_outlined);
@@ -196,9 +202,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.widget<LumeIcon>(comic()).icon, Icons.book);
     expect(tester.widget<LumeIcon>(comic()).color, const Color(0xFF161616));
+    expect(tester.widget<LumeIcon>(video()).color, LumeTheme.accent);
     await tester.pumpWidget(scene(true, Brightness.dark));
     await tester.pumpAndSettle();
     expect(tester.widget<LumeIcon>(comic()).color, Colors.white);
+    expect(tester.widget<LumeIcon>(video()).color, LumeTheme.accent);
   });
 
   test('导航默认值采用用户截图参数，明确保存的系统高度和零留白仍保留', () {

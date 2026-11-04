@@ -1774,11 +1774,13 @@ class _DockItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = solidIcons
+    final color = selected
+        ? Theme.of(context).colorScheme.primary
+        : solidIcons
         ? (Theme.of(context).brightness == Brightness.dark
               ? Colors.white
               : const Color(0xFF161616))
-        : (selected ? LumeTheme.accent : LumeTheme.textSecondary);
+        : LumeTheme.textSecondary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
