@@ -92,8 +92,18 @@ class SettingsEntryCard extends StatelessWidget {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: (iconColor ?? LumeTheme.accent).withValues(alpha: .10),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    (iconColor ?? LumeTheme.accent).withValues(alpha: .16),
+                    (iconColor ?? LumeTheme.accent).withValues(alpha: .06),
+                  ],
+                ),
                 borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: (iconColor ?? LumeTheme.accent).withValues(alpha: .09),
+                ),
               ),
               child: Center(
                 child: LumeIcon(
@@ -311,6 +321,8 @@ class _SettingsHomeState extends State<SettingsHome> {
   );
   @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final accent = LumeTheme.accent;
     final search = query.trim().toLowerCase();
     final matches = widget.categories
         .where(
@@ -324,31 +336,74 @@ class _SettingsHomeState extends State<SettingsHome> {
       padding: GlassScaffold.barInset(context)
           .add(const EdgeInsets.fromLTRB(20, 20, 20, 36)),
       children: [
-        const SettingsPageIntro(
-          title: '让 LumeBox 更像你',
-          description: '外观、内容与使用习惯，从这里调整。',
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 4, 2, 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '让 LumeBox 更像你',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -.6,
+                  color: LumeTheme.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '外观、内容与使用习惯，从这里调整。',
+                style: TextStyle(
+                  fontSize: LumeTypography.bodySize,
+                  height: 1.5,
+                  color: LumeTheme.textSecondary,
+                ),
+              ),
+            ],
+          ),
         ),
         Padding(
           padding: const EdgeInsets.only(bottom: 20),
-          child: TextField(
-            key: const ValueKey('settings-search'),
-            onChanged: (value) => setState(() => query = value),
-            decoration: const InputDecoration(
-              hintText: '搜索设置',
-              prefixIcon: Icon(Icons.search),
-              filled: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.all(Radius.circular(20)),
-                borderSide: BorderSide.none,
+          child: Container(
+            decoration: BoxDecoration(
+              color: dark
+                  ? Colors.white.withValues(alpha: .06)
+                  : Colors.white.withValues(alpha: .78),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: dark
+                    ? Colors.white.withValues(alpha: .08)
+                    : Colors.white.withValues(alpha: .9),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: dark ? .12 : .035),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: TextField(
+              key: const ValueKey('settings-search'),
+              onChanged: (value) => setState(() => query = value),
+              decoration: InputDecoration(
+                hintText: '搜索设置',
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  color: accent.withValues(alpha: .8),
+                ),
+                filled: false,
+                border: const OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(20)),
+                  borderSide: BorderSide.none,
+                ),
               ),
             ),
           ),
         ),
         for (final category in matches) ...[
-          SettingsEntryCard(
-            icon: category.icon,
-            title: category.title,
-            subtitle: category.description,
+          _SettingsCategoryCard(
+            category: category,
             onTap: () => open(category),
           ),
           if (search.isNotEmpty)
@@ -373,6 +428,125 @@ class _SettingsHomeState extends State<SettingsHome> {
         if (matches.isEmpty)
           const SettingsNoteCard('没有找到相关设置，试试“主题”“播放”或“缓存”。'),
       ],
+    );
+  }
+}
+
+/// 首页入口使用柔和高光和阴影，保持各分类入口的触控面积与搜索行为。
+class _SettingsCategoryCard extends StatelessWidget {
+  const _SettingsCategoryCard({required this.category, required this.onTap});
+
+  final SettingsCategory category;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final accent = LumeTheme.accent;
+    final radius = BorderRadius.circular(24);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: dark
+                ? [
+                    Colors.white.withValues(alpha: .11),
+                    Colors.white.withValues(alpha: .045),
+                  ]
+                : [
+                    Colors.white.withValues(alpha: .96),
+                    Colors.white.withValues(alpha: .72),
+                  ],
+          ),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: dark ? .10 : .92),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: dark ? .18 : .055),
+              blurRadius: 20,
+              offset: const Offset(0, 7),
+            ),
+          ],
+        ),
+        child: GlassCard(
+          radius: 24,
+          padding: EdgeInsets.zero,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        accent.withValues(alpha: dark ? .30 : .19),
+                        accent.withValues(alpha: dark ? .12 : .07),
+                      ],
+                    ),
+                    border: Border.all(color: accent.withValues(alpha: .12)),
+                  ),
+                  child: Center(
+                    child: LumeIcon(
+                      category.icon,
+                      slot: 'settings.entry.${category.title}',
+                      label: category.title,
+                      group: '设置',
+                      size: 23,
+                      color: accent,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        category.title,
+                        style: TextStyle(
+                          fontSize: LumeTypography.titleSize,
+                          fontWeight: interfaceFontWeight(
+                            context,
+                            FontWeight.w600,
+                          ),
+                          color: LumeTheme.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        category.description,
+                        style: TextStyle(
+                          fontSize: LumeTypography.descriptionSize,
+                          height: 1.4,
+                          color: LumeTheme.descriptionColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 21,
+                  color: LumeTheme.muted,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
