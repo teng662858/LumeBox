@@ -169,7 +169,9 @@ class SpeechLocalModel extends ChangeNotifier {
           const Duration(seconds: 30),
         );
         if (_cancelled) throw const FormatException('已取消');
-        if (response.statusCode != 200) throw const FormatException('下载模型失败');
+        if (response.statusCode != 200) {
+          throw FormatException('下载服务器返回 HTTP ${response.statusCode}');
+        }
         phase = '正在下载';
         notifyListeners();
         final sink = archive.openWrite();
