@@ -40,7 +40,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
   Timer? _poll;
   bool _busy = false, _checking = false, _loading = true;
   bool _installing = false;
-  String _kind = 'movie';
+  String _filterKind = 'all';
   String _runtime = 'all';
   int _installation = 0;
   String? _error;
@@ -227,7 +227,31 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     if (!RegExp(r'(?://|#)\s*@?LumeSource\s*[:=]').hasMatch(text)) {
       throw const RepositoryFailure('此文件没有仓库源声明；REX 等模块请使用“添加到本机”，无需上传 GitHub');
     }
-    final inferred = SourceImportRouting.repositoryKind(text, fallback: _kind);
+    var inferred = SourceImportRouting.repositoryKind(
+      text,
+      fallback: 'unknown',
+    );
+    if (inferred == 'unknown') {
+      final selected = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('选择发布分类'),
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('无法自动识别源分类，请选择发布目录。'),
+            ),
+            for (final entry in GithubSourceRepository.kinds.entries)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, entry.key),
+                child: Text(entry.value),
+              ),
+          ],
+        ),
+      );
+      if (selected == null || !mounted) return;
+      inferred = selected;
+    }
     String? contentCategory;
     if (['movie', 'video'].contains(inferred) &&
         SourceContentCategories.fromScript(text).isEmpty) {
@@ -256,7 +280,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     final draft = GithubSourceRepository.prepareUpload(
       file.name,
       bytes,
-      fallbackKind: _kind,
+      fallbackKind: inferred,
       contentCategory: contentCategory,
     );
     final path = draft.path;
@@ -277,7 +301,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     );
     if (!accepted || !mounted) return;
     setState(() {
-      _kind = path.split('/').first;
+      _filterKind = path.split('/').first;
       _search.clear();
     });
     await _refresh();
@@ -390,7 +414,10 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
         _snapshot?.sources
             .where(
               (s) =>
-                  s.paths.first.startsWith('$_kind/') &&
+                  (_filterKind == 'all' ||
+                      s.paths.any(
+                        (path) => path.startsWith('$_filterKind/'),
+                      )) &&
                   (_runtime == 'all' ||
                       s.paths.any((path) => path.endsWith('.$_runtime'))) &&
                   (_installation == 0 ||
@@ -479,46 +506,41 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
               ),
               if (_operation != null)
                 Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(_publication?.status ?? '等待查询发布结果'),
-                        SelectableText('提交：${_operation!.commit}'),
-                        if (_publication?.url.isNotEmpty ?? false)
-                          SelectableText(_publication!.url),
-                        TextButton(
-                          onPressed: () => Clipboard.setData(
-                            ClipboardData(
-                              text: _publication?.url.isNotEmpty == true
-                                  ? _publication!.url
-                                  : 'https://github.com/${GithubSourceRepository.repository}/actions',
+                  child: ExpansionTile(
+                    title: Text(_publication?.status ?? '等待查询发布结果'),
+                    subtitle: const Text('查看提交与发布详情'),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SelectableText('提交：${_operation!.commit}'),
+                            if (_publication?.url.isNotEmpty ?? false)
+                              SelectableText(_publication!.url),
+                            TextButton(
+                              onPressed: () async {
+                                await Clipboard.setData(
+                                  ClipboardData(
+                                    text: _publication?.url.isNotEmpty == true
+                                        ? _publication!.url
+                                        : 'https://github.com/${GithubSourceRepository.repository}/actions',
+                                  ),
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('发布页面链接已复制')),
+                                  );
+                                }
+                              },
+                              child: const Text('复制 GitHub 发布页面链接'),
                             ),
-                          ),
-                          child: const Text('复制 GitHub 发布页面链接'),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              DropdownButtonFormField<String>(
-                key: ValueKey('repository-kind-$_kind'),
-                initialValue: _kind,
-                decoration: const InputDecoration(
-                  labelText: '默认分类（文件可识别时自动归类）',
-                ),
-                items: [
-                  for (final entry in GithubSourceRepository.kinds.entries)
-                    DropdownMenuItem(
-                      value: entry.key,
-                      child: Text(entry.value),
-                    ),
-                ],
-                onChanged: _busy
-                    ? null
-                    : (value) => setState(() => _kind = value!),
-              ),
               const SizedBox(height: 12),
               const Text(
                 '公共仓库发布',
@@ -528,6 +550,27 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                 onPressed: _busy || _pending ? null : _upload,
                 icon: const Icon(Icons.upload_file),
                 label: const Text('发布到 GitHub 并安装本机'),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                '仓库源列表',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              DropdownButtonFormField<String>(
+                key: ValueKey('repository-filter-$_filterKind'),
+                initialValue: _filterKind,
+                decoration: const InputDecoration(labelText: '浏览分类'),
+                items: [
+                  const DropdownMenuItem(value: 'all', child: Text('全部分类')),
+                  for (final entry in GithubSourceRepository.kinds.entries)
+                    DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() => _filterKind = value!),
               ),
               TextField(
                 controller: _search,
@@ -564,7 +607,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                     ),
                 ],
               ),
-              Text('当前分类 ${sources.length} 个源'),
+              Text('找到 ${sources.length} 个源'),
               for (final source in sources)
                 Card(
                   child: ListTile(

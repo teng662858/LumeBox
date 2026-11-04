@@ -140,7 +140,8 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.text('远端测试源'), findsOneWidget);
-      await tester.ensureVisible(find.byTooltip('从 GitHub 删除源'));
+      await tester.drag(find.byType(ListView).first, const Offset(0, -120));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('从 GitHub 删除源'));
       // Confirmation holds the operation lock, so its progress bar keeps animating.
       await tester.pump(const Duration(milliseconds: 350));
@@ -148,6 +149,8 @@ void main() {
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       expect(writes, 0);
+      await tester.drag(find.byType(ListView).first, const Offset(0, -100));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('从 GitHub 删除源'));
       await tester.pump(const Duration(milliseconds: 350));
       await tester.tap(find.text('确认提交'));

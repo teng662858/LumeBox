@@ -429,27 +429,38 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
 
   @override
   Widget build(BuildContext context) => GlassScaffold(
-    effectModule: GlassModule.comic,
+    effectModule: widget.translation ? GlassModule.settings : GlassModule.comic,
     settingsSurface: true,
     title: widget.translation ? '全局翻译' : 'AI 图片超分与上色',
     child: ListView(
       padding: const EdgeInsets.all(16),
       children: widget.translation
           ? [
-              NativeSwitchListTile.adaptive(
-                key: const ValueKey('global-live-translation'),
-                title: const Text('实时翻译'),
-                subtitle: const Text('自动翻译新加载的标题、搜索结果与漫画当前页'),
-                value: settings.liveTranslation,
-                onChanged: (value) {
-                  setState(() => settings.liveTranslation = value);
-                  save();
-                },
+              const SettingsPageIntro(
+                title: '翻译内容',
+                description: '统一设置标题、搜索结果与漫画文字的翻译方式。',
               ),
-              ListTile(
-                leading: const Icon(Icons.file_open_outlined),
-                title: const Text('导入翻译配置文件'),
-                subtitle: const Text('一次填好接口地址、模型和密钥'),
+              const SettingsGroupTitle('基本设置'),
+              SettingsGroupCard(
+                children: [
+                  NativeSwitchListTile.adaptive(
+                    key: const ValueKey('global-live-translation'),
+                    title: const Text('实时翻译'),
+                    subtitle: const Text('自动翻译新加载的标题、搜索结果与漫画当前页'),
+                    value: settings.liveTranslation,
+                    onChanged: (value) {
+                      setState(() => settings.liveTranslation = value);
+                      save();
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SettingsEntryCard(
+                icon: Icons.file_open_rounded,
+                iconColor: const Color(0xFF366AAE),
+                title: '导入翻译配置文件',
+                subtitle: '一次填好接口地址、模型和密钥',
                 onTap: busy ? null : importTranslationConfig,
               ),
               const ExpansionTile(
@@ -466,24 +477,33 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
                   ),
                 ],
               ),
-              choice(
-                '翻译为',
-                settings.target,
-                ComicImageToolsSettings.languages,
-                (v) => settings.target = v,
+              const SettingsGroupTitle('语言与翻译方式'),
+              SettingsGroupCard(
+                children: [
+                  choice(
+                    '翻译为',
+                    settings.target,
+                    ComicImageToolsSettings.languages,
+                    (v) => settings.target = v,
+                  ),
+                  choice('原文语言', settings.source, {
+                    'auto': '自动识别',
+                    ...ComicImageToolsSettings.languages,
+                  }, (v) => settings.source = v),
+                ],
               ),
-              choice('原文语言', settings.source, {
-                'auto': '自动识别',
-                ...ComicImageToolsSettings.languages,
-              }, (v) => settings.source = v),
               const SettingsFooterNote(
                 '首页标题、搜索结果、漫画对白与圈选文字共用此设置。AI 配置和目标语言只需填写一次。',
               ),
-              choice('全局翻译方式', settings.translationMode, {
-                TextTranslationMode.system: '系统翻译（本地）',
-                TextTranslationMode.ai: 'AI 翻译（联网）',
-                TextTranslationMode.fallback: '系统失败后用 AI 补译',
-              }, (v) => settings.translationMode = v),
+              SettingsGroupCard(
+                children: [
+                  choice('全局翻译方式', settings.translationMode, {
+                    TextTranslationMode.system: '系统翻译（本地）',
+                    TextTranslationMode.ai: 'AI 翻译（联网）',
+                    TextTranslationMode.fallback: '系统失败后用 AI 补译',
+                  }, (v) => settings.translationMode = v),
+                ],
+              ),
               SettingsFooterNote(switch (settings.translationMode) {
                 TextTranslationMode.system =>
                   '本模式在设备上翻译文字，不调用 AI 接口。首次使用可能需要下载系统语言包。',
@@ -491,14 +511,19 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
                 TextTranslationMode.fallback =>
                   '先使用系统翻译；只有失败、不支持或未译出的外文才发送给 AI 补译。成功译文保留，AI 不可用时保留原文。',
               }),
-              NativeSwitchListTile.adaptive(
-                title: const Text('漫画使用整图翻译服务器'),
-                subtitle: const Text('仅影响漫画图片；关闭时，漫画文字跟随全局翻译方式'),
-                value: settings.serverTranslation,
-                onChanged: (v) {
-                  setState(() => settings.serverTranslation = v);
-                  save();
-                },
+              const SettingsGroupTitle('漫画图片翻译'),
+              SettingsGroupCard(
+                children: [
+                  NativeSwitchListTile.adaptive(
+                    title: const Text('漫画使用整图翻译服务器'),
+                    subtitle: const Text('仅影响漫画图片；关闭时，漫画文字跟随全局翻译方式'),
+                    value: settings.serverTranslation,
+                    onChanged: (v) {
+                      setState(() => settings.serverTranslation = v);
+                      save();
+                    },
+                  ),
+                ],
               ),
               if (settings.serverTranslation) ...[
                 const SettingsFooterNote(

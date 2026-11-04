@@ -85,7 +85,8 @@ void main() {
             scrollable: find.byType(Scrollable).first,
           );
           expect(find.textContaining('尚未安装到本机'), findsOneWidget);
-          await tester.ensureVisible(find.byTooltip('安装到本机'));
+          await tester.drag(find.byType(ListView).first, const Offset(0, -120));
+          await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('安装到本机'));
           await tester.pumpAndSettle();
         }

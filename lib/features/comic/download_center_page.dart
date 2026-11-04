@@ -9,6 +9,7 @@ import '../../core/player/abstract_player.dart';
 import '../../core/reading/reading.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../download/local_download_export.dart';
+import '../settings/settings_ui.dart';
 import '../video/offline_video_server.dart';
 import '../video/video_download_center.dart';
 import '../video/video_player_page.dart';
@@ -224,252 +225,266 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
   @override
   Widget build(BuildContext context) => GlassScaffold(
     title: '下载中心',
+    effectModule: GlassModule.settings,
     child: ListenableBuilder(
       listenable: signals,
       builder: (context, _) => ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('下载保存在本机，可离线打开或保存到“文件”。退出详情页后任务继续；系统挂起时传输可能暂停。'),
+          const SettingsPageIntro(
+            title: '离线内容',
+            description: '下载保存在本机，可离线打开或保存到“文件”。退出详情页后任务继续；系统挂起时传输可能暂停。',
+          ),
           if (_busy) const LinearProgressIndicator(),
           if (center.storageError != null) Text(center.storageError!),
           if (videos.storageError != null) Text(videos.storageError!),
           if (videos.tasks.isEmpty &&
               !center.tasks.any((t) => t.indices.isNotEmpty))
-            const Padding(
+            const GlassCard(
               padding: EdgeInsets.all(24),
-              child: Text('暂无下载任务，请在视频或漫画详情页添加'),
+              child: Column(
+                children: [
+                  Icon(Icons.download_for_offline_rounded, size: 36),
+                  SizedBox(height: 12),
+                  Text('暂无下载任务，请在视频或漫画详情页添加', textAlign: TextAlign.center),
+                ],
+              ),
             ),
-          if (videos.tasks.isNotEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('视频'),
-            ),
+          if (videos.tasks.isNotEmpty) const SettingsGroupTitle('视频'),
           for (final task in videos.tasks.reversed)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${task.title} · ${task.chapterTitle}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      '${switch (task.state) {
-                        'running' => '下载中',
-                        'merging' => '正在合并 MP4',
-                        'merge_failed' => '合并失败，分片已保留',
-                        'queued' => '等待中',
-                        'done' => '已完成',
-                        'failed' => '下载失败',
-                        _ => '已暂停',
-                      }} · ${_size(task.bytes)}${task.totalBytes > 0 ? ' / ${_size(task.totalBytes)}' : ''}${task.total > 0 ? ' · ${task.completed}/${task.total} 分片' : ''}',
-                    ),
-                    if (task.running) ...[
-                      LinearProgressIndicator(
-                        value: task.state == 'merging' ? null : task.progress,
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: GlassCard(
+                padding: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${task.title} · ${task.chapterTitle}',
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                      if (task.state != 'merging')
-                        Text('${_size(task.bytesPerSecond)}/s'),
-                    ],
-                    if (task.error != null) Text(task.error!),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        if (task.running || task.state == 'queued')
-                          TextButton(
-                            onPressed: () => videos.pause(task),
-                            child: const Text('暂停'),
-                          )
-                        else if (task.state != 'done')
-                          TextButton(
-                            onPressed: () => videos.resume(task),
-                            child: Text(
-                              task.hasLocalPlaylist
-                                  ? '重试合并'
-                                  : task.state == 'failed'
-                                  ? '重试'
-                                  : '继续',
-                            ),
-                          ),
-                        if (task.state == 'done' && task.hasLocalPlaylist)
-                          TextButton(
-                            onPressed: () => videos.resume(task),
-                            child: const Text('合并为 MP4'),
-                          ),
-                        if (!task.running &&
-                            (task.state == 'done' ||
-                                task.hasLocalPlaylist)) ...[
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _perform(() => _play(task)),
-                            child: const Text('离线播放'),
-                          ),
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _perform(() => _exportVideo(task)),
-                            child: Text(
-                              task.hasLocalPlaylist ? '导出分片 ZIP' : '保存到本地文件',
-                            ),
-                          ),
-                        ],
-                        if (!task.running)
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _perform(
-                                    () => _storage(
-                                      Directory(videos.folder(task)),
-                                    ),
-                                  ),
-                            child: const Text('占用空间'),
-                          ),
-                        if (!task.running)
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _perform(() async {
-                                    if (await _confirmDelete(
-                                      '${task.title} · ${task.chapterTitle}',
-                                    )) {
-                                      await videos.remove(
-                                        task,
-                                        deleteFiles: true,
-                                      );
-                                    }
-                                  }),
-                            child: const Text('删除下载'),
-                          ),
+                      Text(
+                        '${switch (task.state) {
+                          'running' => '下载中',
+                          'merging' => '正在合并 MP4',
+                          'merge_failed' => '合并失败，分片已保留',
+                          'queued' => '等待中',
+                          'done' => '已完成',
+                          'failed' => '下载失败',
+                          _ => '已暂停',
+                        }} · ${_size(task.bytes)}${task.totalBytes > 0 ? ' / ${_size(task.totalBytes)}' : ''}${task.total > 0 ? ' · ${task.completed}/${task.total} 分片' : ''}',
+                      ),
+                      if (task.running) ...[
+                        LinearProgressIndicator(
+                          value: task.state == 'merging' ? null : task.progress,
+                        ),
+                        if (task.state != 'merging')
+                          Text('${_size(task.bytesPerSecond)}/s'),
                       ],
-                    ),
-                  ],
+                      if (task.error != null) Text(task.error!),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          if (task.running || task.state == 'queued')
+                            TextButton(
+                              onPressed: () => videos.pause(task),
+                              child: const Text('暂停'),
+                            )
+                          else if (task.state != 'done')
+                            TextButton(
+                              onPressed: () => videos.resume(task),
+                              child: Text(
+                                task.hasLocalPlaylist
+                                    ? '重试合并'
+                                    : task.state == 'failed'
+                                    ? '重试'
+                                    : '继续',
+                              ),
+                            ),
+                          if (task.state == 'done' && task.hasLocalPlaylist)
+                            TextButton(
+                              onPressed: () => videos.resume(task),
+                              child: const Text('合并为 MP4'),
+                            ),
+                          if (!task.running &&
+                              (task.state == 'done' ||
+                                  task.hasLocalPlaylist)) ...[
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _perform(() => _play(task)),
+                              child: const Text('离线播放'),
+                            ),
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _perform(() => _exportVideo(task)),
+                              child: Text(
+                                task.hasLocalPlaylist ? '导出分片 ZIP' : '保存到本地文件',
+                              ),
+                            ),
+                          ],
+                          if (!task.running)
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _perform(
+                                      () => _storage(
+                                        Directory(videos.folder(task)),
+                                      ),
+                                    ),
+                              child: const Text('占用空间'),
+                            ),
+                          if (!task.running)
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _perform(() async {
+                                      if (await _confirmDelete(
+                                        '${task.title} · ${task.chapterTitle}',
+                                      )) {
+                                        await videos.remove(
+                                          task,
+                                          deleteFiles: true,
+                                        );
+                                      }
+                                    }),
+                              child: const Text('删除下载'),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           if (center.tasks.any((t) => t.indices.isNotEmpty))
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('漫画 / 图片'),
-            ),
+            const SettingsGroupTitle('漫画 / 图片'),
           for (final task in center.tasks.reversed.where(
             (t) => t.indices.isNotEmpty,
           ))
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      task.title,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      '${switch (task.state) {
-                        'running' => '下载中',
-                        'done' => '已完成',
-                        'failed' => '有失败，可重试',
-                        _ => '已暂停',
-                      }} · ${task.running ? task.downloader?.progress.chapterDone ?? 0 : task.completed}/${task.indices.length} 章',
-                    ),
-                    if (task.running)
-                      LinearProgressIndicator(
-                        value: task.downloader?.progress.fraction,
-                      ),
-                    if (task.running)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: GlassCard(
+                padding: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        '${_size(task.downloader?.progress.downloadedBytes ?? 0)} · ${_size(task.downloader?.progress.bytesPerSecond ?? 0)}/s',
+                        task.title,
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                    if (task.error != null) Text(task.error!),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        if (task.running)
-                          TextButton(
-                            onPressed: () => center.pause(task),
-                            child: const Text('暂停'),
-                          )
-                        else
-                          TextButton(
-                            onPressed: task.downloader?.progress.running == true
-                                ? null
-                                : () => center.resume(task),
-                            child: Text(task.state == 'done' ? '检查补下' : '继续'),
-                          ),
-                        if (task.state == 'failed')
-                          TextButton(
-                            onPressed: () =>
-                                center.resume(task, failedOnly: true),
-                            child: const Text('重试失败章节'),
-                          ),
-                        if (!task.running &&
-                            task.downloader?.progress.running != true) ...[
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _perform(() => _read(task)),
-                            child: const Text('离线阅读'),
-                          ),
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _perform(() => _exportComic(task)),
-                            child: const Text('保存到本地文件'),
-                          ),
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _perform(() async {
-                                    final library = await ReadingLibrary.open(
-                                      task.section,
-                                    );
-                                    await _storage(
-                                      await comicDownloadDirectory(
+                      Text(
+                        '${switch (task.state) {
+                          'running' => '下载中',
+                          'done' => '已完成',
+                          'failed' => '有失败，可重试',
+                          _ => '已暂停',
+                        }} · ${task.running ? task.downloader?.progress.chapterDone ?? 0 : task.completed}/${task.indices.length} 章',
+                      ),
+                      if (task.running)
+                        LinearProgressIndicator(
+                          value: task.downloader?.progress.fraction,
+                        ),
+                      if (task.running)
+                        Text(
+                          '${_size(task.downloader?.progress.downloadedBytes ?? 0)} · ${_size(task.downloader?.progress.bytesPerSecond ?? 0)}/s',
+                        ),
+                      if (task.error != null) Text(task.error!),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          if (task.running)
+                            TextButton(
+                              onPressed: () => center.pause(task),
+                              child: const Text('暂停'),
+                            )
+                          else
+                            TextButton(
+                              onPressed:
+                                  task.downloader?.progress.running == true
+                                  ? null
+                                  : () => center.resume(task),
+                              child: Text(task.state == 'done' ? '检查补下' : '继续'),
+                            ),
+                          if (task.state == 'failed')
+                            TextButton(
+                              onPressed: () =>
+                                  center.resume(task, failedOnly: true),
+                              child: const Text('重试失败章节'),
+                            ),
+                          if (!task.running &&
+                              task.downloader?.progress.running != true) ...[
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _perform(() => _read(task)),
+                              child: const Text('离线阅读'),
+                            ),
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _perform(() => _exportComic(task)),
+                              child: const Text('保存到本地文件'),
+                            ),
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _perform(() async {
+                                      final library = await ReadingLibrary.open(
+                                        task.section,
+                                      );
+                                      await _storage(
+                                        await comicDownloadDirectory(
+                                          task,
+                                          library,
+                                        ),
+                                      );
+                                    }),
+                              child: const Text('占用空间'),
+                            ),
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => center.remove(task),
+                              child: const Text('移除任务'),
+                            ),
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _perform(() async {
+                                      if (!await _confirmDelete(task.title)) {
+                                        return;
+                                      }
+                                      final library = await ReadingLibrary.open(
+                                        task.section,
+                                      );
+                                      final dir = await comicDownloadDirectory(
                                         task,
                                         library,
-                                      ),
-                                    );
-                                  }),
-                            child: const Text('占用空间'),
-                          ),
-                          TextButton(
-                            onPressed: _busy ? null : () => center.remove(task),
-                            child: const Text('移除任务'),
-                          ),
-                          TextButton(
-                            onPressed: _busy
-                                ? null
-                                : () => _perform(() async {
-                                    if (!await _confirmDelete(task.title)) {
-                                      return;
-                                    }
-                                    final library = await ReadingLibrary.open(
-                                      task.section,
-                                    );
-                                    final dir = await comicDownloadDirectory(
-                                      task,
-                                      library,
-                                    );
-                                    if (!p.isWithin(
-                                      library.exportDir,
-                                      dir.absolute.path,
-                                    )) {
-                                      throw StateError('下载目录无效');
-                                    }
-                                    await center.remove(task);
-                                    if (await dir.exists()) {
-                                      await dir.delete(recursive: true);
-                                    }
-                                  }),
-                            child: const Text('删除下载'),
-                          ),
+                                      );
+                                      if (!p.isWithin(
+                                        library.exportDir,
+                                        dir.absolute.path,
+                                      )) {
+                                        throw StateError('下载目录无效');
+                                      }
+                                      await center.remove(task);
+                                      if (await dir.exists()) {
+                                        await dir.delete(recursive: true);
+                                      }
+                                    }),
+                              child: const Text('删除下载'),
+                            ),
+                          ],
                         ],
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

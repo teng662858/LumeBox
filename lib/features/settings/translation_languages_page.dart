@@ -118,11 +118,11 @@ class _TranslationLanguagesPageState extends State<TranslationLanguagesPage>
             title: '一次下载，各个源共用',
             description: '这些语言包供标题和漫画的系统本地翻译共用；AI 翻译不需要下载语言包。下载时 iOS 可能逐项要求确认，建议连接 Wi-Fi。',
           ),
-          ListTile(
-            leading: const Icon(Icons.translate),
-            title: const Text('全局翻译设置'),
-            subtitle: const Text('系统翻译、AI 翻译与失败自动补译'),
-            trailing: const Icon(Icons.chevron_right),
+          SettingsEntryCard(
+            icon: Icons.translate_rounded,
+            iconColor: const Color(0xFF366AAE),
+            title: '全局翻译设置',
+            subtitle: '系统翻译、AI 翻译与失败自动补译',
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) =>
@@ -136,6 +136,7 @@ class _TranslationLanguagesPageState extends State<TranslationLanguagesPage>
             Text(_error!),
             TextButton(onPressed: _reload, child: const Text('重新读取')),
           ] else ...[
+            const SettingsGroupTitle('语言包'),
             Text(
               '已就绪 ${_languages.length - missing.length} / ${_languages.length}',
             ),
@@ -157,18 +158,33 @@ class _TranslationLanguagesPageState extends State<TranslationLanguagesPage>
               ),
             ),
             const SizedBox(height: 12),
-            for (final language in _languages)
-              ListTile(
-                title: Text(language.name),
-                subtitle: Text('${language.code} → 简体中文'),
-                trailing: language.installed
-                    ? const Text('已就绪')
-                    : TextButton(
-                        onPressed: _busy ? null : () => _download([language]),
-                        child: const Text('下载'),
+            if (_languages.isNotEmpty)
+              SettingsGroupCard(
+                children: [
+                  for (final language in _languages)
+                    ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: const Color(0xFF366AAE)
+                            .withValues(alpha: .12),
+                        child: const Icon(
+                          Icons.language_rounded,
+                          color: Color(0xFF366AAE),
+                        ),
                       ),
+                      title: Text(language.name),
+                      subtitle: Text('${language.code} → 简体中文'),
+                      trailing: language.installed
+                          ? const Text('已就绪')
+                          : TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => _download([language]),
+                              child: const Text('下载'),
+                            ),
+                    ),
+                ],
               ),
-            if (_languages.isEmpty) const Text('当前设备没有可用的翻译语言包'),
+            if (_languages.isEmpty) const SettingsNoteCard('当前设备没有可用的翻译语言包'),
           ],
           const SizedBox(height: 16),
           const SettingsFooterNote(
