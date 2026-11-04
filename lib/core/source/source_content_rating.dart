@@ -333,6 +333,8 @@ class SourceContentRating {
     'shuba_novel',
     // 次元姬（ciyuanji.com）：成人轻小说站，正文是 DES-ECB 密文，源里内联纯 JS DES 解密。
     'ciyuanji_novel',
+    // 酷18（cool18.com）：综合成人论坛（书屋/贴图/自拍/动漫/影视九个板块）。
+    'cool18_comic',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

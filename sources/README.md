@@ -1,3 +1,18 @@
+## 2026-11-04 酷18（`comic/cool18.js`，详见 [源记录](../docs/2026-11-04_酷18综合源.md)）
+
+`cool18_comic`：酷18（cool18.com）综合成人论坛，**综合源**（小说 / 图片 / 视频，已在
+`metadata/mixed-sources.json` 登记）。进门先过年龄门 → 全部请求带 `Cookie: isok=true`。
+
+- **分类 9 个板块**：禁忌书屋（`/bbs4/`）· 情色趣闻（`/bbs5/`）· 性趣论坛（`/bj/`）文字；
+  性趣贴图（`/bbs/`）· 情色靓影（`/bbs2/`）· 私房自拍（`/bbs6/`）· 色色动漫（`/bbs7/`）·
+  卡通漫画（`/enter6/`）图片；成人影视（`/bbs3/`）视频（站点要登录才有播放器，源里明确提示）
+- **排序 3 档**：最新（页面内联 `const _PageData` JSON，201~261 帖/页）· 热门（`act=hot`，100 条榜单表）
+  · 精华（`act=gold`，200 条）
+- **筛选**：全成人区搜索 `/search.php?keyword=…&sa=全成人区搜索` 跨板块 200 条；
+  板块内 `act=threadsearch` 兜底
+- **正文**：`div#content-section` 的 `<pre>` —— 文字帖按 `<p></p>`/`<br>` 折行（实测 21694 字）；
+  图片帖收集 `<img src>` 并给 `imageHeaders`（实测 54 张，playable 200）
+
 ## 2026-11-04 次元姬（`comic/ciyuanji.js`，详见 [源记录](../docs/2026-11-04_次元姬源.md)）
 
 `ciyuanji_novel`：次元姬（www.ciyuanji.com，Next.js **SSR** 成人轻小说站）。**必须桌面 UA**（手机 UA 只给空壳）。
