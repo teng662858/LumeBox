@@ -815,90 +815,104 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
                   padding: const EdgeInsets.all(16),
                   child: Text(status!),
                 ),
-              const Divider(height: 32),
-              ListTile(
-                title: const Text('AI 上色（实验性 · 云端）'),
-                subtitle: const Text(
-                  '需要支持图片编辑的服务（返回 b64_json 图片）。DeepSeek 官方接口不能用于上色，可用于 AI 翻译。'
-                  '保存配置后，点击阅读页的「AI 上色当前图片」才会上传并处理，可能产生服务商费用。',
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              const SizedBox(height: 20),
+              GlassCard(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                 child: Column(
-                  children: <Widget>[
-                    DropdownButtonFormField<String>(
-                      initialValue: colorizeProtocol,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: '上色服务'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'openai',
-                          child: Text('通用图片编辑（OpenAI 兼容）'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'seedream',
-                          child: Text('火山方舟 · Seedream（国内）'),
-                        ),
-                      ],
-                      onChanged: busy
-                          ? null
-                          : (value) {
-                              if (value == null) return;
-                              setState(() {
-                                colorizeProtocol = value;
-                                colorizeEndpoint.text = value == 'seedream'
-                                    ? 'https://ark.cn-beijing.volces.com/api/v3/images/generations'
-                                    : 'https://api.openai.com/v1/images/edits';
-                                colorizeModel.text = value == 'seedream'
-                                    ? 'doubao-seedream-5-0-flash-260915'
-                                    : 'gpt-image-1-mini';
-                                colorizeKeyInput.clear();
-                              });
-                            },
-                    ),
-                    const SettingsFooterNote(
-                      '选择服务后自动填写接口和模型，再填该服务的 API Key。需要先在服务商控制台开通对应模型；每次上色只请求一张图。',
-                    ),
-                    TextField(
-                      controller: colorizeEndpoint,
-                      decoration: const InputDecoration(
-                        labelText: '图片编辑接口（HTTPS）',
-                        hintText: 'https://…/v1/images/edits',
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('AI 上色（实验性 · 云端）'),
+                      subtitle: const Text(
+                        '需要支持图片编辑的服务（返回 b64_json 图片）。DeepSeek 官方接口不能用于上色，可用于 AI 翻译。'
+                        '保存配置后，点击阅读页的「AI 上色当前图片」才会上传并处理，可能产生服务商费用。',
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: colorizeModel,
-                      decoration: const InputDecoration(
-                        labelText: '上色模型',
-                        hintText: '填写图片编辑服务提供的模型名',
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+                      child: Column(
+                        children: <Widget>[
+                          DropdownButtonFormField<String>(
+                            initialValue: colorizeProtocol,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: '上色服务',
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'openai',
+                                child: Text('通用图片编辑（OpenAI 兼容）'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'seedream',
+                                child: Text('火山方舟 · Seedream（国内）'),
+                              ),
+                            ],
+                            onChanged: busy
+                                ? null
+                                : (value) {
+                                    if (value == null) return;
+                                    setState(() {
+                                      colorizeProtocol = value;
+                                      colorizeEndpoint.text =
+                                          value == 'seedream'
+                                          ? 'https://ark.cn-beijing.volces.com/api/v3/images/generations'
+                                          : 'https://api.openai.com/v1/images/edits';
+                                      colorizeModel.text = value == 'seedream'
+                                          ? 'doubao-seedream-5-0-flash-260915'
+                                          : 'gpt-image-1-mini';
+                                      colorizeKeyInput.clear();
+                                    });
+                                  },
+                          ),
+                          const SettingsFooterNote(
+                            '选择服务后自动填写接口和模型，再填该服务的 API Key。需要先在服务商控制台开通对应模型；每次上色只请求一张图。',
+                          ),
+                          TextField(
+                            controller: colorizeEndpoint,
+                            decoration: const InputDecoration(
+                              labelText: '图片编辑接口（HTTPS）',
+                              hintText: 'https://…/v1/images/edits',
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: colorizeModel,
+                            decoration: const InputDecoration(
+                              labelText: '上色模型',
+                              hintText: '填写图片编辑服务提供的模型名',
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: colorizePrompt,
+                            minLines: 2,
+                            maxLines: 4,
+                            decoration: const InputDecoration(
+                              labelText: '上色提示词',
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: colorizeKeyInput,
+                            obscureText: true,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            decoration: const InputDecoration(
+                              labelText: '上色 API Key（留空保留）',
+                            ),
+                          ),
+                          const SettingsFooterNote(
+                            '填写所选服务的密钥。Seedream、通用上色和 AI 翻译的密钥分别保存，互不覆盖。通用上色兼容旧版共用的翻译密钥；上色提示词可保留默认内容。',
+                          ),
+                          const SizedBox(height: 12),
+                          FilledButton(
+                            onPressed: busy ? null : saveColorize,
+                            child: const Text('保存上色配置'),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: colorizePrompt,
-                      minLines: 2,
-                      maxLines: 4,
-                      decoration: const InputDecoration(labelText: '上色提示词'),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: colorizeKeyInput,
-                      obscureText: true,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: const InputDecoration(
-                        labelText: '上色 API Key（留空保留）',
-                      ),
-                    ),
-                    const SettingsFooterNote(
-                      '填写所选服务的密钥。Seedream、通用上色和 AI 翻译的密钥分别保存，互不覆盖。通用上色兼容旧版共用的翻译密钥；上色提示词可保留默认内容。',
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: busy ? null : saveColorize,
-                      child: const Text('保存上色配置'),
                     ),
                   ],
                 ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/speech/speech_settings.dart';
+import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../reading/speech_modes_panel.dart';
 
@@ -95,11 +96,15 @@ class _NovelSettingsPageState extends State<NovelSettingsPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text(
+                        Text(
                           '阅读排版',
                           style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
+                            fontSize: LumeTypography.sectionTitleSize,
+                            fontWeight: interfaceFontWeight(
+                              context,
+                              FontWeight.w600,
+                            ),
+                            color: LumeTheme.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -188,9 +193,13 @@ class _NovelSettingsPageState extends State<NovelSettingsPage> {
                         Text(
                           '朗读',
                           key: _speechKey,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
+                          style: TextStyle(
+                            fontSize: LumeTypography.sectionTitleSize,
+                            fontWeight: interfaceFontWeight(
+                              context,
+                              FontWeight.w600,
+                            ),
+                            color: LumeTheme.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 12),

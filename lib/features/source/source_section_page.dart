@@ -856,9 +856,6 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
           key: const ValueKey('source-manager-header'),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '已安装 ${sources.length} · 已启用 ${sources.where((s) => s.enabled).length} · 当前显示 ${visible.length}',
-            ),
             TextField(
               onChanged: (value) => setState(() => _sourceQuery = value),
               decoration: const InputDecoration(
@@ -867,6 +864,14 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                   slot: 'source_section_page.5',
                 ),
                 hintText: '搜索源名称、ID、分组或来源地址',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '已安装 ${sources.length} · 已启用 ${sources.where((s) => s.enabled).length} · 当前显示 ${visible.length}',
+              style: TextStyle(
+                fontSize: LumeTypography.descriptionSize,
+                color: LumeTheme.descriptionColor,
               ),
             ),
             const SizedBox(height: 8),

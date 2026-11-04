@@ -84,7 +84,7 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
     child: Text(
       title,
       style: Theme.of(context).textTheme.titleMedium
-          ?.copyWith(fontWeight: FontWeight.w700),
+          ?.copyWith(fontWeight: interfaceFontWeight(context, FontWeight.w700)),
     ),
   );
 
@@ -403,7 +403,7 @@ class _OptionCard<T> extends StatelessWidget {
             title,
             style: TextStyle(
               fontSize: LumeTypography.titleSize,
-              fontWeight: FontWeight.w600,
+              fontWeight: interfaceFontWeight(context, FontWeight.w600),
               color: LumeTheme.textPrimary,
             ),
           ),
@@ -411,7 +411,7 @@ class _OptionCard<T> extends StatelessWidget {
           Text(
             hint,
             style: TextStyle(
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w400,
               fontSize: LumeTypography.descriptionSize,
               color: LumeTheme.descriptionColor,
             ),
@@ -426,8 +426,11 @@ class _OptionCard<T> extends StatelessWidget {
                     value: option,
                     label: Text(
                       labelOf(option),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
+                      style: TextStyle(
+                        fontWeight: interfaceFontWeight(
+                          context,
+                          FontWeight.w600,
+                        ),
                         fontSize: LumeTypography.captionSize,
                       ),
                     ),

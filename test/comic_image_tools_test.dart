@@ -1012,6 +1012,17 @@ void main() {
     ]) {
       expect(find.text(text), findsOneWidget, reason: '缺少「$text」');
     }
+    final promptLabel = find.text('上色提示词');
+    final promptField = find.ancestor(
+      of: promptLabel,
+      matching: find.byType(TextField),
+    );
+    expect(promptField, findsOneWidget);
+    expect(
+      tester.getRect(promptLabel).top,
+      greaterThanOrEqualTo(tester.getRect(promptField).top),
+      reason: '浮动标签应位于输入框内部',
+    );
     expect(tester.takeException(), isNull);
   });
 

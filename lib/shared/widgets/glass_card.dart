@@ -430,13 +430,73 @@ class GlassScaffold extends StatelessWidget {
       EdgeInsets.only(top: barHeight(context, extra: extra));
 
   @override
-  Widget build(BuildContext context) => SettingsSurfaceScope(
-    enabled: settingsSurface || effectModule == GlassModule.settings,
-    child: ModuleGlassScope(
-      module: effectModule ?? ModuleGlassScope.moduleOf(context),
-      child: _legacyBuild(context),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final isSettings = settingsSurface || effectModule == GlassModule.settings;
+    final module = effectModule ?? ModuleGlassScope.moduleOf(context);
+    Widget content = _legacyBuild(context);
+    if (isSettings) {
+      final theme = Theme.of(context);
+      content = Theme(
+        data: theme.copyWith(
+          inputDecorationTheme: theme.inputDecorationTheme.copyWith(
+            contentPadding: const EdgeInsets.fromLTRB(14, 18, 14, 14),
+            labelStyle: LumeTypography.body.copyWith(
+              color: LumeTheme.textSecondary,
+            ),
+            floatingLabelStyle: LumeTypography.body.copyWith(
+              color: LumeTheme.accent,
+              fontWeight: interfaceFontWeight(context, FontWeight.w600),
+            ),
+            border: UnderlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color: LumeTheme.textSecondary.withValues(alpha: .22),
+              ),
+            ),
+            enabledBorder: UnderlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color: LumeTheme.textSecondary.withValues(alpha: .22),
+              ),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: LumeTheme.accent, width: 1.4),
+            ),
+            errorBorder: UnderlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: theme.colorScheme.error),
+            ),
+            focusedErrorBorder: UnderlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color: theme.colorScheme.error,
+                width: 1.4,
+              ),
+            ),
+          ),
+          listTileTheme: theme.listTileTheme.copyWith(
+            titleTextStyle: LumeTypography.title.copyWith(
+              color: LumeTheme.textPrimary,
+              fontWeight: interfaceFontWeight(context, FontWeight.w600),
+            ),
+            subtitleTextStyle: LumeTypography.description.copyWith(
+              color: LumeTheme.descriptionColorOf(theme.brightness),
+            ),
+            leadingAndTrailingTextStyle: LumeTypography.body.copyWith(
+              color: LumeTheme.textSecondary,
+            ),
+          ),
+        ),
+        child: content,
+      );
+    }
+    return SettingsSurfaceScope(
+      enabled: isSettings,
+      child: ModuleGlassScope(module: module, child: content),
+    );
+  }
+
   Widget _legacyBuild(BuildContext context) {
     // 顶栏内容要让出的高度：**避让后的**状态栏 + 工具栏 + 页签条。
     // 用壳自己的 context 读（此时还没被 Scaffold 注入顶栏高度）。

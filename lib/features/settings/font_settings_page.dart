@@ -187,12 +187,9 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
                 ],
               ),
             ),
-            const Padding(
+            const SettingsFooterNote(
+              '仅调整文字大小，播放器等页面的文字也会生效。图标、按钮尺寸和页面留白不随此滑杆缩放。',
               padding: EdgeInsets.fromLTRB(6, 10, 6, 20),
-              child: Text(
-                '仅调整文字大小，播放器等页面的文字也会生效。图标、按钮尺寸和页面留白不随此滑杆缩放。',
-                style: TextStyle(fontSize: 12, color: settingsNoteColor),
-              ),
             ),
             const SettingsGroupTitle('字形'),
             GlassCard(
@@ -231,12 +228,9 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
                 ],
               ),
             ),
-            const Padding(
+            const SettingsFooterNote(
+              '普通会减轻界面主题中的标题与按钮字重，斜体可叠加。阅读正文仍保留阅读器自身的排版设置。',
               padding: EdgeInsets.fromLTRB(6, 10, 6, 20),
-              child: Text(
-                '普通会减轻界面主题中的标题与按钮字重，斜体可叠加。阅读正文仍保留阅读器自身的排版设置。',
-                style: TextStyle(fontSize: 12, color: settingsNoteColor),
-              ),
             ),
             const SettingsGroupTitle('字体'),
             GlassCard(
@@ -284,12 +278,9 @@ class _FontSettingsPageState extends State<FontSettingsPage> {
                 ],
               ),
             ),
-            const Padding(
+            const SettingsFooterNote(
+              '支持 .ttf / .otf / .ttc，单个文件不超过 32 MB。缺少的字由系统字体补上；字体文件只保存在本机，不进入备份和同步。',
               padding: EdgeInsets.fromLTRB(6, 10, 6, 0),
-              child: Text(
-                '支持 .ttf / .otf / .ttc，单个文件不超过 32 MB。缺少的字由系统字体补上；字体文件只保存在本机，不进入备份和同步。',
-                style: TextStyle(fontSize: 12, color: settingsNoteColor),
-              ),
             ),
           ],
         ),

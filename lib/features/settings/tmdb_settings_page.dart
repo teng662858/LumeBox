@@ -187,7 +187,7 @@ class _TmdbSettingsPageState extends State<TmdbSettingsPage> {
             child: Text(
               '${(value * 100).round()}%',
               textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 11),
+              style: const TextStyle(fontSize: 12),
             ),
           ),
         ],
@@ -201,7 +201,7 @@ class _TmdbSettingsPageState extends State<TmdbSettingsPage> {
     tilePadding: EdgeInsets.zero,
     childrenPadding: EdgeInsets.zero,
     title: const Text('详情页外观调节', style: TextStyle(fontSize: 14)),
-    subtitle: const Text('背景 · 海报 · 渐变 · 标识', style: TextStyle(fontSize: 11)),
+    subtitle: const Text('背景 · 海报 · 渐变 · 标识', style: TextStyle(fontSize: 12)),
     children: [
       if (widget.appearanceKey != null)
         SwitchListTile.adaptive(
@@ -305,7 +305,7 @@ class _TmdbSettingsPageState extends State<TmdbSettingsPage> {
       Row(
         children: [
           const Expanded(
-            child: Text('实时生效 · 松手自动保存', style: TextStyle(fontSize: 11)),
+            child: Text('实时生效 · 松手自动保存', style: TextStyle(fontSize: 12)),
           ),
           TextButton(
             key: const Key('tmdb-appearance-reset'),
@@ -349,7 +349,7 @@ class _TmdbSettingsPageState extends State<TmdbSettingsPage> {
             title: const Text('详情页海报背景', style: TextStyle(fontSize: 14)),
             subtitle: const Text(
               '随海报取色；关闭后使用纯色背景',
-              style: TextStyle(fontSize: 11),
+              style: TextStyle(fontSize: 12),
             ),
             value: settings.detailBackdropEnabled,
             onChanged: (value) {
@@ -424,7 +424,7 @@ class _TmdbSettingsPageState extends State<TmdbSettingsPage> {
             },
           ),
           const SizedBox(height: 6),
-          const Text('仅影响下载清晰度，不改变页面尺寸。', style: TextStyle(fontSize: 11)),
+          const Text('仅影响下载清晰度，不改变页面尺寸。', style: TextStyle(fontSize: 12)),
           const SizedBox(height: 12),
           TextField(
             controller: keyText,

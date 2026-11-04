@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import '../../core/session/app_preferences.dart';
 import '../../core/session/configuration_backup.dart';
 import '../../core/security/local_cipher.dart';
+import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
 import 'app_icon_settings_page.dart';
 import 'settings_ui.dart';
@@ -222,80 +223,76 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: Text('配置备份', style: Theme.of(context).textTheme.headlineSmall),
         ),
-        GlassCard(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(
-            children: [
-              ListTile(
-                title: const Text('导出配置备份'),
-                subtitle: const Text(
-                  '使用密码加密全局设置、各版块偏好与源配置',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: settingsNoteColor,
-                    height: 1.5,
+        SettingsGroupCard(
+          children: [
+            ListTile(
+              title: const Text('导出配置备份'),
+              subtitle: Text(
+                '使用密码加密全局设置、各版块偏好与源配置',
+                style: TextStyle(
+                  fontSize: LumeTypography.descriptionSize,
+                  color: LumeTheme.descriptionColorOf(
+                    Theme.of(context).brightness,
                   ),
+                  height: 1.5,
                 ),
-                leading: const LumeIcon(
-                  Icons.upload_file,
-                  slot: 'configuration_settings_page.1',
-                ),
-                enabled: !busy,
-                onTap: () => run(export),
               ),
-              ListTile(
-                title: const Text('恢复配置备份'),
-                leading: const LumeIcon(
-                  Icons.settings_backup_restore,
-                  slot: 'configuration_settings_page.2',
-                ),
-                enabled: !busy,
-                onTap: () => run(restore),
+              leading: const LumeIcon(
+                Icons.upload_file,
+                slot: 'configuration_settings_page.1',
               ),
-            ],
-          ),
+              enabled: !busy,
+              onTap: () => run(export),
+            ),
+            ListTile(
+              title: const Text('恢复配置备份'),
+              leading: const LumeIcon(
+                Icons.settings_backup_restore,
+                slot: 'configuration_settings_page.2',
+              ),
+              enabled: !busy,
+              onTap: () => run(restore),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
-        GlassCard(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(
-            children: [
-              SwitchListTile(
-                title: const Text('自动备份'),
-                subtitle: const Text('使用本机密钥加密，每天保留一份，最近 7 份可在本机恢复'),
-                value: preferences.autoBackup,
-                onChanged: busy
-                    ? null
-                    : (value) {
-                        setState(() => preferences.autoBackup = value);
-                        preferences.save();
-                        if (value) {
-                          run(() async {
-                            await backup.automatic();
-                            return '自动备份已保存到本机';
-                          });
-                        }
-                      },
+        SettingsGroupCard(
+          children: [
+            SwitchListTile(
+              title: const Text('自动备份'),
+              subtitle: const Text('使用本机密钥加密，每天保留一份，最近 7 份可在本机恢复'),
+              value: preferences.autoBackup,
+              onChanged: busy
+                  ? null
+                  : (value) {
+                      setState(() => preferences.autoBackup = value);
+                      preferences.save();
+                      if (value) {
+                        run(() async {
+                          await backup.automatic();
+                          return '自动备份已保存到本机';
+                        });
+                      }
+                    },
+            ),
+            ListTile(
+              title: const Text('立即自动备份'),
+              enabled: !busy,
+              onTap: () => run(() async {
+                await backup.automatic();
+                return '备份已保存到本机';
+              }),
+            ),
+            ListTile(
+              title: const Text('恢复自动备份'),
+              leading: const LumeIcon(
+                Icons.history,
+                slot: 'configuration_settings_page.3',
               ),
-              ListTile(
-                title: const Text('立即自动备份'),
-                enabled: !busy,
-                onTap: () => run(() async {
-                  await backup.automatic();
-                  return '备份已保存到本机';
-                }),
-              ),
-              ListTile(
-                title: const Text('恢复自动备份'),
-                leading: const LumeIcon(
-                  Icons.history,
-                  slot: 'configuration_settings_page.3',
-                ),
-                enabled: !busy,
-                onTap: () => run(restoreAutomatic),
-              ),
-            ],
-          ),
+              enabled: !busy,
+              onTap: () => run(restoreAutomatic),
+            ),
+          ],
         ),
         const SizedBox(height: 24),
         if (busy) const LinearProgressIndicator(),

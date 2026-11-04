@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/settings/configuration_settings_page.dart';
+import 'package:lume_box/features/settings/settings_ui.dart';
+import 'package:lume_box/shared/widgets/glass_card.dart';
 
 void main() {
   test('light and dark themes preserve the title / description hierarchy', () {
@@ -46,6 +48,110 @@ void main() {
         expect(theme.switchTheme.thumbColor!.resolve(states)!.a, 1);
       }
     }
+  });
+
+  testWidgets(
+    'settings text follows dark mode and the regular weight preference',
+    (tester) async {
+      for (final brightness in Brightness.values) {
+        LumeTheme.applyBrightness(brightness);
+        await tester.pumpWidget(
+          MaterialApp(
+            key: ValueKey(brightness),
+            theme: LumeTheme.build(brightness: brightness, fontBold: false),
+            home: const GlassScaffold(
+              effectModule: GlassModule.settings,
+              child: Column(
+                children: [
+                  SettingsPageIntro(title: '页面标题', description: '页面说明'),
+                  ListTile(title: Text('设置标题'), subtitle: Text('设置说明')),
+                  SettingsFooterNote('底部说明'),
+                ],
+              ),
+            ),
+          ),
+        );
+        final title = tester.widget<Text>(find.text('页面标题'));
+        expect(title.style!.fontSize, 24);
+        expect(title.style!.fontWeight, FontWeight.w400);
+        final tileTheme = Theme.of(tester.element(find.text('设置标题')))
+            .listTileTheme;
+        expect(tileTheme.titleTextStyle!.fontSize, 16);
+        expect(tileTheme.titleTextStyle!.fontWeight, FontWeight.w400);
+        expect(tileTheme.subtitleTextStyle!.fontSize, 12);
+        final footer = tester.widget<Text>(find.text('底部说明'));
+        expect(footer.style!.fontSize, 12);
+        expect(
+          footer.style!.color,
+          brightness == Brightness.light
+              ? const Color(0xFF8E8E93)
+              : const Color(0xFFAEAEB2),
+        );
+      }
+      LumeTheme.applyBrightness(Brightness.light);
+    },
+  );
+
+  testWidgets('settings form labels stay inside their fields with large text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = TextEditingController(text: '已填写内容');
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: GlassScaffold(
+          effectModule: GlassModule.settings,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              controller: controller,
+              decoration: const InputDecoration(labelText: '上色提示词'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getRect(find.text('上色提示词')).top,
+      greaterThanOrEqualTo(tester.getRect(find.byType(TextField)).top),
+    );
+    expect(find.text('已填写内容'), findsOneWidget);
+  });
+
+  testWidgets('grouped settings keep one separator between options', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        home: const GlassScaffold(
+          effectModule: GlassModule.settings,
+          child: SettingsGroupCard(
+            children: [
+              ListTile(title: Text('第一项')),
+              ListTile(title: Text('第二项')),
+              ListTile(title: Text('第三项')),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.byType(SettingsDivider), findsNWidgets(2));
+    expect(find.text('第一项'), findsOneWidget);
+    expect(find.text('第三项'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   for (final width in [320.0, 430.0]) {

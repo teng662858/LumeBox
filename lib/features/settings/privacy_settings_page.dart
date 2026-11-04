@@ -54,6 +54,7 @@ class _PrivacySettingsPageState extends State<PrivacySettingsPage> {
                       ? null
                       : (v) => run(() => settings.setAppLock(v)),
                 ),
+                const SettingsDivider(),
                 ListTile(
                   title: const Text('解锁方式'),
                   trailing: DropdownButton<AppUnlockMethod>(

@@ -9,6 +9,40 @@ import '../../shared/widgets/glass_card.dart';
 /// 说明文字不该和设置项抢注意力：字号比正文小一档、颜色降到中性灰。
 const Color settingsNoteColor = Color(0xFF8E8E93);
 
+/// A subtle inset separator between independent options in the same card.
+class SettingsDivider extends StatelessWidget {
+  const SettingsDivider({super.key});
+
+  @override
+  Widget build(BuildContext context) => Divider(
+    height: 1,
+    thickness: 1,
+    indent: 16,
+    endIndent: 16,
+    color: Theme.of(context).brightness == Brightness.dark
+        ? Colors.white.withValues(alpha: .10)
+        : Colors.black.withValues(alpha: .07),
+  );
+}
+
+class SettingsGroupCard extends StatelessWidget {
+  const SettingsGroupCard({super.key, required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => GlassCard(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Column(
+      children: [
+        for (var i = 0; i < children.length; i++) ...[
+          if (i > 0) const SettingsDivider(),
+          children[i],
+        ],
+      ],
+    ),
+  );
+}
+
 /// 设置页的分组标题（个性与界面 / 阅读与播放 / …）。
 class SettingsGroupTitle extends StatelessWidget {
   const SettingsGroupTitle(
@@ -191,7 +225,7 @@ class SettingsEntryCard extends StatelessWidget {
   }
 }
 
-/// 页面底部的说明文字：11px、#8E8E93，不抢设置项的注意力。
+/// 页面底部的说明文字，随系统字号缩放并适配深色主题。
 class SettingsFooterNote extends StatelessWidget {
   const SettingsFooterNote(
     this.text, {
@@ -211,11 +245,11 @@ class SettingsFooterNote extends StatelessWidget {
       child: Text(
         text,
         textAlign: textAlign,
-        style: const TextStyle(
-          fontSize: 11,
+        style: TextStyle(
+          fontSize: LumeTypography.descriptionSize,
           fontWeight: FontWeight.w400,
           height: 1.5,
-          color: settingsNoteColor,
+          color: LumeTheme.descriptionColorOf(Theme.of(context).brightness),
         ),
       ),
     );
@@ -254,16 +288,17 @@ class SettingsPageIntro extends StatelessWidget {
         Text(
           title,
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            fontSize: 26,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -.6,
+            fontSize: LumeTypography.displaySmallSize,
+            fontWeight: interfaceFontWeight(context, FontWeight.w700),
+            height: 1.25,
+            color: LumeTheme.textPrimary,
           ),
         ),
         const SizedBox(height: 8),
         Text(
           description,
           style: Theme.of(context).textTheme.bodyMedium
-              ?.copyWith(color: LumeTheme.textSecondary, height: 1.6),
+              ?.copyWith(color: LumeTheme.textSecondary, height: 1.5),
         ),
       ],
     ),
@@ -336,31 +371,9 @@ class _SettingsHomeState extends State<SettingsHome> {
       padding: GlassScaffold.barInset(context)
           .add(const EdgeInsets.fromLTRB(20, 20, 20, 36)),
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(2, 4, 2, 22),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '让 LumeBox 更像你',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -.6,
-                  color: LumeTheme.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '外观、内容与使用习惯，从这里调整。',
-                style: TextStyle(
-                  fontSize: LumeTypography.bodySize,
-                  height: 1.5,
-                  color: LumeTheme.textSecondary,
-                ),
-              ),
-            ],
-          ),
+        const SettingsPageIntro(
+          title: '让 LumeBox 更像你',
+          description: '外观、内容与使用习惯，从这里调整。',
         ),
         Padding(
           padding: const EdgeInsets.only(bottom: 20),
@@ -439,10 +452,21 @@ class _SettingsCategoryCard extends StatelessWidget {
   final SettingsCategory category;
   final VoidCallback onTap;
 
+  Color _categoryColor(bool dark) => switch (category.title) {
+    '阅读与播放' => dark ? const Color(0xFFA89CFF) : const Color(0xFF6851C5),
+    '内容与订阅' => dark ? const Color(0xFF85B8FF) : const Color(0xFF366AAE),
+    '个性与界面' => dark ? const Color(0xFFDB9DE0) : const Color(0xFF9955A0),
+    '导航与首页' => dark ? const Color(0xFF83C7CA) : const Color(0xFF347D81),
+    '存储与安全' => dark ? const Color(0xFF8FCCA7) : const Color(0xFF387A53),
+    '网络与服务' => dark ? const Color(0xFFFFC284) : const Color(0xFF9B622C),
+    '诊断与关于' => dark ? const Color(0xFFA5B4C8) : const Color(0xFF596D89),
+    _ => LumeTheme.accent,
+  };
+
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final accent = LumeTheme.accent;
+    final accent = _categoryColor(dark);
     final radius = BorderRadius.circular(24);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
