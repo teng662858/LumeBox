@@ -331,6 +331,8 @@ class SourceContentRating {
     'jmcomic_novel',
     // 69书吧（69shuba.com）：jieqi 小说站，全站 CF managed challenge + GBK 编码。
     'shuba_novel',
+    // 次元姬（ciyuanji.com）：成人轻小说站，正文是 DES-ECB 密文，源里内联纯 JS DES 解密。
+    'ciyuanji_novel',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

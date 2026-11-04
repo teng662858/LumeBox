@@ -177,6 +177,7 @@ void main() {
       'jmcomic_video',
       'jmcomic_novel',
       'shuba_novel',
+      'ciyuanji_novel',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);

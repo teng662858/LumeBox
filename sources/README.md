@@ -1,3 +1,19 @@
+## 2026-11-04 次元姬（`comic/ciyuanji.js`，详见 [源记录](../docs/2026-11-04_次元姬源.md)）
+
+`ciyuanji_novel`：次元姬（www.ciyuanji.com，Next.js **SSR** 成人轻小说站）。**必须桌面 UA**（手机 UA 只给空壳）。
+首页 `/index` 的 `regionList` 7 区块；分类用 `/tags` 的 **67 个标签**，`/tags/{id}` 给书单；
+详情 `/book_detail/{id}` 给书名/作者/字数/简介/**完整目录**（实测 329 章）；正文
+`/chapter/{bookId}_{chapterId}.html`。
+
+**关键点：正文是 DES-ECB 密文**。站点 `_app` 里的解密函数是
+`DES.decrypt(content, Utf8.parse(rk), {ECB, Pkcs7})`，`rk` 来自 `./config/index.ts`，
+取前 8 字节 **`ZUreQN0E`** 即可（CryptoJS 用整串但 DES 只吃 8 字节）。App 沙箱没有 crypto 模块，
+所以源里**内联了一份纯 JS DES**（IP/FP/E/P/PC1/PC2/S 盒 + 16 轮 + base64 + PKCS7 + UTF-8），
+与 CryptoJS 结果逐字一致。
+
+`lume-source-check` **真站点全绿**：home 7 板块 / categories 67 / list 20 / detail ok / chapters 203 /
+content text 2270 字。带 `params` 密文的 `/library/card/…`、`/rank/card/…` 没做（标签已够）。
+
 ## 2026-11-04 69书吧（`comic/69shuba.js`，详见 [源记录](../docs/2026-11-04_69书吧源与次元姬卡点.md)）
 
 `shuba_novel`：69书吧（69shuba.com，jieqi 模板，**全站 Cloudflare managed challenge + GBK 编码**）。
