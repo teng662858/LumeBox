@@ -452,21 +452,21 @@ class _SettingsCategoryCard extends StatelessWidget {
   final SettingsCategory category;
   final VoidCallback onTap;
 
-  Color _categoryColor(bool dark) => switch (category.title) {
-    '阅读与播放' => dark ? const Color(0xFFA89CFF) : const Color(0xFF6851C5),
-    '内容与订阅' => dark ? const Color(0xFF85B8FF) : const Color(0xFF366AAE),
-    '个性与界面' => dark ? const Color(0xFFDB9DE0) : const Color(0xFF9955A0),
-    '导航与首页' => dark ? const Color(0xFF83C7CA) : const Color(0xFF347D81),
-    '存储与安全' => dark ? const Color(0xFF8FCCA7) : const Color(0xFF387A53),
-    '网络与服务' => dark ? const Color(0xFFFFC284) : const Color(0xFF9B622C),
-    '诊断与关于' => dark ? const Color(0xFFA5B4C8) : const Color(0xFF596D89),
+  Color _categoryColor() => switch (category.title) {
+    '阅读与播放' => const Color(0xFF6851C5),
+    '内容与订阅' => const Color(0xFF366AAE),
+    '个性与界面' => const Color(0xFF9955A0),
+    '导航与首页' => const Color(0xFF347D81),
+    '存储与安全' => const Color(0xFF387A53),
+    '网络与服务' => const Color(0xFF9B622C),
+    '诊断与关于' => const Color(0xFF596D89),
     _ => LumeTheme.accent,
   };
 
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final accent = _categoryColor(dark);
+    final accent = _categoryColor();
     final radius = BorderRadius.circular(24);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -503,15 +503,14 @@ class _SettingsCategoryCard extends StatelessWidget {
                   height: 48,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        accent.withValues(alpha: dark ? .30 : .19),
-                        accent.withValues(alpha: dark ? .12 : .07),
-                      ],
-                    ),
-                    border: Border.all(color: accent.withValues(alpha: .12)),
+                    color: accent,
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: dark ? .22 : .18),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
                   child: Center(
                     child: LumeIcon(
@@ -520,7 +519,7 @@ class _SettingsCategoryCard extends StatelessWidget {
                       label: category.title,
                       group: '设置',
                       size: 23,
-                      color: accent,
+                      color: Colors.white,
                     ),
                   ),
                 ),

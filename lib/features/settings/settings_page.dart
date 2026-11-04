@@ -101,13 +101,13 @@ class SettingsPage extends StatelessWidget {
       '诊断与关于': '使用帮助、诊断与版本信息',
     };
     final icons = [
-      Icons.palette_outlined,
-      Icons.dashboard_outlined,
-      Icons.play_circle_outline,
-      Icons.subscriptions_outlined,
-      Icons.wifi_outlined,
-      Icons.shield_outlined,
-      Icons.info_outline,
+      Icons.palette,
+      Icons.dashboard,
+      Icons.play_circle_filled,
+      Icons.subscriptions,
+      Icons.wifi,
+      Icons.shield,
+      Icons.info,
     ];
     final groups = <SettingsCategory>[];
     for (final entry in entries) {
