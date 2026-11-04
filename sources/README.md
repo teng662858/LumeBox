@@ -1,3 +1,24 @@
+## 2026-11-04 月亮小说（`comic/yueliang.js`）· 荔枝短剧（`video/liz.js`）
+
+详见 [源记录](../docs/2026-11-04_月亮小说与荔枝短剧源.md)。
+
+`yueliang_comic`：月亮小说（yueliangxiaoshuo.com，带 R-18 分区的中文小说站，全免费免登录）。
+新书 `/novel/new?p=N`（30 条/页）、榜单 `/novel/ranking?mode=daily|weekly|monthly|rookie|total`
++ 分级 `r18=0|1|2`（普通 22 条 / 全部 50 条 / R-18 25 条，三档首条不同）；书 `/novel/series/{id}`
+（目录 30 章/页、`?p=N`，实测一本 1385 章 47 页，源里 6 路并发）、单章 `/novel/show/{id}`
+正文 `div#novel-body`、搜索 `/search/novels?q=&p=`。`r18` 只对榜单生效（`/novel/new?r18=` 实测无效），
+源里只在榜单通道用它。
+
+`liz_video`：荔枝短剧（liz01.com，Nuxt3 + SSR，AI 成人短剧）。频道 `/category/`、`/original/`、
+`/featured/` + 24 个题材 `/en/tag/{slug}/`；单集 `/en/drama/{id}/ep-{n}/` 的 JSON-LD
+`VideoObject.contentUrl` 是 SSR 现签的 `/api/v1/cdn/video/{uuid}/manifest.m3u8?t=&sign=`，
+实测 206 + `#EXTM3U`（22,969 B master）。**封面是 AES-128-CBC 密文**（`media.lizdj009.com`，
+解出来是真 JPEG），源里用 `lume-enc://aes-cbc/…` 交 App 原生解密。排序按钮是前端 JS、`?sort=` 无效 → 不声明排序。
+
+同批给的 `www.69shuba.com` **没交付**：全站被 Cloudflare managed challenge 挡着（`/`、`/book/`、`/txt/`、
+`/modules/` 全 403「Just a moment...」，各镜像同样），且页面是 GBK 系编码，本机无法在挑战之后取到真实 HTML
+做五入口验证，按约定没有进 catalog/订阅。证据与后续步骤见源记录第四节。
+
 ## 2026-11-04 草榴小说视频（`video/mycall.js`，详见 [源记录](../docs/2026-11-04_草榴小说视频源.md)）
 
 `mycall_video`：**综合站**（mycall.biz，小说 / 视频 / 图集三形态混在一个源里）。

@@ -320,6 +320,10 @@ class SourceContentRating {
     // 草榴小说视频（mycall.biz，综合站）：小说 / 视频 / 图集三形态，
     // 视频走 /api/v1/video/thread/{id}/play 的 HLS，小说按 ?chapter=N 翻页。
     'mycall_video',
+    // 月亮小说（yueliangxiaoshuo.com）：带 R-18 分区的中文小说站，榜单可按分级过滤。
+    'yueliang_comic',
+    // 荔枝短剧（liz01.com）：AI 成人短剧，单集页给签名 m3u8，封面是 AES-128-CBC 密文。
+    'liz_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
