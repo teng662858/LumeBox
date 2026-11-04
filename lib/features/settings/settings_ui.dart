@@ -499,10 +499,10 @@ class _SettingsCategoryCard extends StatelessWidget {
             child: Row(
               children: [
                 Container(
-                  width: 48,
-                  height: 48,
+                  width: 46,
+                  height: 46,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
+                    shape: BoxShape.circle,
                     color: accent,
                     boxShadow: [
                       BoxShadow(
