@@ -39,6 +39,7 @@ import 'cache_settings_page.dart';
 import 'display_settings_group.dart';
 import 'navigation_settings_page.dart';
 import 'experience_settings_card.dart';
+import 'novel_settings_page.dart';
 import 'debug_panel_page.dart';
 import 'network_settings_page.dart';
 import 'log_report.dart';
@@ -90,7 +91,7 @@ class SettingsPage extends StatelessWidget {
     final descriptions = <String, String>{
       '个性与界面': '外观、配色与图标',
       '导航与首页': '首页布局、导航与液态玻璃',
-      '阅读与播放': '播放、图片工具与使用体验',
+      '阅读与播放': '小说、漫画、播放器与共用体验',
       '内容与订阅': '订阅、源与搜索偏好',
       '网络与服务': '网络连接与第三方服务',
       '存储与安全': '缓存、备份与隐私保护',
@@ -117,7 +118,7 @@ class SettingsPage extends StatelessWidget {
             keywords: entry.text == '个性与界面'
                 ? '外观 主题色 页面底色 App 图标 应用图标库'
                 : entry.text == '阅读与播放'
-                ? '触感反馈 触感强度 后台播放'
+                ? '触感反馈 触感强度 后台播放 字号 行距 朗读 漫画 图片工具 音频 内核 弹幕'
                 : '',
           ),
         );
@@ -191,28 +192,78 @@ class SettingsPage extends StatelessWidget {
     const ExperienceSettingsCard(),
     const SizedBox(height: 12),
     SettingsEntryCard(
+      icon: Icons.menu_book_outlined,
+      title: '小说设置',
+      subtitle: '字号、行距、阅读主题与朗读',
+      onTap: () => _push(context, const NovelSettingsPage()),
+    ),
+    SettingsEntryCard(
       icon: Icons.auto_stories_outlined,
-      title: '漫画阅读器设置',
-      subtitle: '布局、音量键翻页、自动阅读与图片翻译 · 与阅读页同步',
-      onTap: () => _push(context, const ComicReaderSettingsHost()),
+      title: '漫画设置',
+      subtitle: '阅读器、图片处理与 AI 图片工具',
+      searchTargets: {
+        '漫画阅读器设置': () => _push(context, const ComicReaderSettingsHost()),
+        'AI 图片超分与上色': () => _push(context, const ComicImageToolsSettingsPage()),
+      },
+      onTap: () => _push(
+        context,
+        SettingsCategoryPage(
+          category: SettingsCategory(
+            '漫画设置',
+            '阅读与图片处理',
+            Icons.auto_stories_outlined,
+            [
+              SettingsEntryCard(
+                icon: Icons.auto_stories_outlined,
+                title: '漫画阅读器设置',
+                subtitle: '布局、翻页、自动阅读与图片翻译',
+                onTap: () => _push(context, const ComicReaderSettingsHost()),
+              ),
+              SettingsEntryCard(
+                icon: Icons.auto_fix_high_outlined,
+                title: 'AI 图片超分与上色',
+                subtitle: '漫画 / 美图 AI 超分、上色与模型管理',
+                onTap: () =>
+                    _push(context, const ComicImageToolsSettingsPage()),
+              ),
+            ],
+          ),
+        ),
+      ),
     ),
     SettingsEntryCard(
       icon: Icons.play_circle_outline,
       title: '播放器设置',
-      subtitle: '内核、倍速、字幕与弹幕',
-      onTap: () => _push(context, const PlayerSettingsHost()),
-    ),
-    SettingsEntryCard(
-      icon: Icons.headphones_outlined,
-      title: '音频播放器',
-      subtitle: '独立音频内核 · 后台与锁屏控制',
-      onTap: () => _push(context, const AudioPlaybackSettingsPage()),
-    ),
-    SettingsEntryCard(
-      icon: Icons.auto_fix_high_outlined,
-      title: 'AI 图片超分与上色',
-      subtitle: '漫画 / 美图 AI 超分 · AI 上色 · waifu2x 模型管理',
-      onTap: () => _push(context, const ComicImageToolsSettingsPage()),
+      subtitle: '视频、音频、字幕、弹幕与后台播放',
+      searchTargets: {
+        '视频播放器': () => _push(context, const PlayerSettingsHost()),
+        '音频播放器': () => _push(context, const AudioPlaybackSettingsPage()),
+      },
+      onTap: () => _push(
+        context,
+        SettingsCategoryPage(
+          category: SettingsCategory(
+            '播放器设置',
+            '视频与音频播放',
+            Icons.play_circle_outline,
+            [
+              SettingsEntryCard(
+                icon: Icons.play_circle_outline,
+                title: '视频播放器',
+                subtitle: '内核、倍速、字幕与弹幕',
+                onTap: () => _push(context, const PlayerSettingsHost()),
+              ),
+              SettingsEntryCard(
+                icon: Icons.headphones_outlined,
+                title: '音频播放器',
+                subtitle: '独立音频内核 · 后台与锁屏控制',
+                onTap: () => _push(context, const AudioPlaybackSettingsPage()),
+              ),
+              const BackgroundPlaybackSetting(),
+            ],
+          ),
+        ),
+      ),
     ),
     SettingsEntryCard(
       icon: Icons.translate,

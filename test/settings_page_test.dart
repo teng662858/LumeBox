@@ -17,6 +17,7 @@ import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/core/util/lume_log.dart';
 import 'package:lume_box/features/settings/log_report.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
+import 'package:lume_box/features/settings/novel_settings_page.dart';
 import 'package:lume_box/features/shell/app_shell.dart';
 import 'package:lume_box/features/shell/shell_dock.dart';
 import 'package:lume_box/shared/widgets/glass_card.dart';
@@ -299,6 +300,25 @@ void main() {
     expect(find.widgetWithText(AppBar, '源总管理'), findsOneWidget);
   });
 
+  testWidgets('小说设置写入小说阅读器使用的现有设置', (tester) async {
+    final library = await tester.runAsync(
+      () => ReadingLibrary.open(Section.comic),
+    );
+    library!.setSetting('novel.fontSize', '24');
+    await tester.pumpWidget(
+      MaterialApp(home: NovelSettingsPage(library: library)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('字号 24'), findsOneWidget);
+    await tester.tap(find.text('护眼'));
+    await tester.pumpAndSettle();
+    expect(library.setting('novel.theme'), '1');
+    await tester.scrollUntilVisible(find.text('读完自动下一章'), 300);
+    await tester.tap(find.text('读完自动下一章'));
+    await tester.pumpAndSettle();
+    expect(library.setting('novel.speech.autoNext'), 'false');
+  });
+
   testWidgets('播放器内核：全局设置里保留逃生入口', (tester) async {
     await pumpSettings(tester);
 
@@ -309,6 +329,8 @@ void main() {
     await tester.tap(find.text('播放器设置'));
     await pumpIoAndSettle(tester);
     expect(find.widgetWithText(AppBar, '播放器设置'), findsOneWidget);
+    await tester.tap(find.text('视频播放器'));
+    await pumpIoAndSettle(tester);
     expect(find.text('播放倍速'), findsOneWidget);
     expect(find.text('字幕'), findsOneWidget);
   });

@@ -59,16 +59,30 @@ class _ExperienceSettingsCardState extends State<ExperienceSettingsCard> {
             ],
           ),
         ),
-        SwitchListTile(
-          title: const Text('后台播放'),
-          subtitle: const Text('视频退到后台时继续播放音频'),
-          value: preferences.backgroundPlayback,
-          onChanged: (value) {
-            setState(() => preferences.backgroundPlayback = value);
-            preferences.save();
-          },
-        ),
       ],
+    ),
+  );
+}
+
+class BackgroundPlaybackSetting extends StatefulWidget {
+  const BackgroundPlaybackSetting({super.key});
+  @override
+  State<BackgroundPlaybackSetting> createState() =>
+      _BackgroundPlaybackSettingState();
+}
+
+class _BackgroundPlaybackSettingState extends State<BackgroundPlaybackSetting> {
+  @override
+  Widget build(BuildContext context) => GlassCard(
+    padding: EdgeInsets.zero,
+    child: SwitchListTile(
+      title: const Text('后台播放'),
+      subtitle: const Text('视频退到后台时继续播放音频'),
+      value: AppPreferences.instance.backgroundPlayback,
+      onChanged: (value) {
+        setState(() => AppPreferences.instance.backgroundPlayback = value);
+        AppPreferences.instance.save();
+      },
     ),
   );
 }

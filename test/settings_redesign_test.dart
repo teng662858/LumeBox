@@ -204,6 +204,9 @@ void main() {
     await tester.tap(find.text('阅读与播放'));
     await tester.pumpAndSettle();
     expect(find.byType(ExperienceSettingsCard), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('播放器设置'), 250);
+    await tester.tap(find.text('播放器设置'));
+    await tester.pumpAndSettle();
     expect(find.text('后台播放'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
