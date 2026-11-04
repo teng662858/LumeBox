@@ -280,6 +280,9 @@ sys.modules["lume_tools"] = lume_tools
 
 
 class _Spider:
+    def init(self, extend=""):
+        """Compatibility with Spider implementations that call super().init()."""
+        pass
     def fetch(self, url, **kwargs):
         return requests.get(url, **kwargs)
 
@@ -837,7 +840,8 @@ def _dispatch(state, method, arg):
         item_id = item_id[3:] if item_id.startswith("py:") else item_id
         detail = state.get("detail", {}) if state.get("detail_id") == item_id else {}
         hint = str(detail.get("mediaType", detail.get("contentType", detail.get("kind", "")))).lower()
-        use_images = state.get("section") == "comic" and _method(spider, "imageContent") and hint not in ("video", "text", "novel", "html", "audio", "audiobook", "webplayer")
+        source_audio = state.get("media_type") in ("audio", "audiobook")
+        use_images = state.get("section") == "comic" and not source_audio and _method(spider, "imageContent") and hint not in ("video", "text", "novel", "html", "audio", "audiobook", "webplayer")
         if use_images:
             raw = _invoke(spider, "imageContent", (episode["id"],), {"id": episode["id"], "chapterid": episode["id"], "chapter_id": episode["id"], "flag": episode.get("flag", "")})
         else:
@@ -852,7 +856,7 @@ def _dispatch(state, method, arg):
                 return {"kind": kind, "text": body, "format": value.get("format", "html" if "html" in value else "text")}
             if kind in ("images", "image") or isinstance(value.get("images"), list):
                 return _image_content(value, episode["id"])
-        explicit_video = isinstance(value, dict) and str(value.get("kind", "")).lower() in ("video", "audio", "audiobook", "webplayer")
+        explicit_video = isinstance(value, dict) and (str(value.get("kind", "")).lower() in ("video", "audio", "audiobook", "webplayer") or source_audio and bool(value.get("url") or value.get("pageUrl")))
         if state.get("section") == "comic" and not explicit_video:
             return _image_content(raw, episode["id"])
         raw = value
@@ -860,7 +864,7 @@ def _dispatch(state, method, arg):
         if not url:
             raise ValueError("源未返回播放地址；请检查站点、外部解析后端或 Android 专属依赖")
         headers = _decoded(raw.get("header", raw.get("headers", {})))
-        return {"kind": raw.get("kind") if raw.get("kind") in ("audio", "audiobook") else "video", "url": url, "headers": headers,
+        return {"kind": raw.get("kind") if raw.get("kind") in ("audio", "audiobook", "video") else "audio" if source_audio and raw.get("kind") != "webplayer" else "video", "url": url, "headers": headers,
                 "webPlayer": raw.get("webPlayer") is True or raw.get("kind") == "webplayer",
                 "pageUrl": str(raw.get("pageUrl") or url),
                 "webParse": str(raw.get("parse", 0)) == "1" or (str(raw.get("jx", 0)) == "1" and not re.search(r"\.(?:mp4|m3u8|mp3|m4a|aac|flac|mkv|webm|mpd)(?:$|[?#])", url, re.I))}
@@ -893,6 +897,14 @@ def execute(request):
             encoded = re.search(r"^# LumePythonBytes: ([A-Za-z0-9+/=]+)$", source, re.M) if isinstance(source, str) else None
             if encoded:
                 source = base64.b64decode(encoded[1], validate=True)
+            header_source = source.decode('utf-8-sig', errors='replace') if isinstance(source, bytes) else source
+            header = re.search(r'^\s*#\s*LumeSource:\s*(\{[^\r\n]+\})', header_source, re.M)
+            if header:
+                try:
+                    metadata = json.loads(header[1])
+                    state['media_type'] = str(metadata.get('mediaType') or metadata.get('mediaKind') or metadata.get('category') or '').lower()
+                except (ValueError, AttributeError):
+                    pass
             namespace = module.__dict__
             exec(compile(source, filename, "exec"), namespace)
             cls = namespace.get("Spider")

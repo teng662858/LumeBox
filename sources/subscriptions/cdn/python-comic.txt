@@ -5,7 +5,6 @@ https://cdn.jsdelivr.net/gh/teng662858/LumeBox-Sources@main/audiobook/PY-[书]27
 https://cdn.jsdelivr.net/gh/teng662858/LumeBox-Sources@main/audiobook/PY-[助眠]ASMR吧-c2a49e62.py
 https://cdn.jsdelivr.net/gh/teng662858/LumeBox-Sources@main/audiobook/PY-[音]DJ呦呦-fc3515a6.py
 https://cdn.jsdelivr.net/gh/teng662858/LumeBox-Sources@main/audiobook/PY-[音]DJ哟哟-a1b88dcc.py
-https://cdn.jsdelivr.net/gh/teng662858/LumeBox-Sources@main/audiobook/PY-[音]千千音乐-2eaae8d8.py
 https://cdn.jsdelivr.net/gh/teng662858/LumeBox-Sources@main/audiobook/PY-[书]听友-6578014c.py
 https://cdn.jsdelivr.net/gh/teng662858/LumeBox-Sources@main/audiobook/PY-听友小说-f297fb8f.py
 https://cdn.jsdelivr.net/gh/teng662858/LumeBox-Sources@main/audiobook/PY-[书]喜马拉雅-e8d6b9de.py

@@ -2,12 +2,14 @@
   "format": "lume.python-collection",
   "version": 1,
   "provenance": "User supplied D:/PY源合集包; byte-identical copies deduplicated. Third-party scripts retain their original comments.",
-  "verification": "304 published scripts revalidated by the current production Python host on 2026-11-03 with networking/native calls/file writes disabled. Initial 2026-11-02 results matched by original SHA256. No claim of live playback availability.",
+  "verification": "2026-11-04: retired 7 default-config sources after three bounded live checks found no homepage, first three categories or search results. Remaining scripts are not all verified playable; network, verification and native dependencies remain limitations. Removed 3 additional sources with identical executable Python syntax trees to retained sources.",
   "counts": {
-    "published": 304,
+    "published": 294,
     "pending-load": 13,
     "excluded-demo": 1,
-    "excluded-tool": 3
+    "excluded-tool": 3,
+    "removed-live": 7,
+    "removed-duplicate": 3
   },
   "sources": [
     {
@@ -113,9 +115,9 @@
         "PY合集/91porna.py"
       ],
       "originalSha256": "40b09decdad4bd33bf9c7eba1dacf81ebf356bd8dcf5d695e3c116f062fe10be",
-      "path": "video/PY-91porna-7ff4e50e.py",
+      "path": null,
       "kind": "video",
-      "status": "published",
+      "status": "removed-live",
       "rating": "18+",
       "loadCheck": {
         "ok": true,
@@ -138,7 +140,13 @@
           "count": 30
         }
       },
-      "bodySha256": "1ec34c06a1310d7c25116f87a0d2ab93000506a3ea7902a81b5541b05c682274"
+      "bodySha256": "1ec34c06a1310d7c25116f87a0d2ab93000506a3ea7902a81b5541b05c682274",
+      "formerPath": "video/PY-91porna-7ff4e50e.py",
+      "liveAudit": {
+        "date": "2026-11-04",
+        "result": "首页、首三个分类和搜索均无条目；三轮检查请求返回 HTTP 200，未发现挑战标记；默认配置下未触发受限调用",
+        "scope": "本机网络与受限生产宿主；非站点永久关闭结论"
+      }
     },
     {
       "id": "pypack_64981e88f300aebc",
@@ -1523,9 +1531,9 @@
         "PY合集/快感研究所.py"
       ],
       "originalSha256": "fe3d7c34c3e77e3556e5cad71b9200bac7063f3c3ae1426d4537ead0257f5e6f",
-      "path": "video/PY-快感研究所-ae4f3015.py",
+      "path": null,
       "kind": "video",
-      "status": "published",
+      "status": "removed-live",
       "rating": "18+",
       "loadCheck": {
         "ok": true,
@@ -1546,7 +1554,13 @@
           "count": 24
         }
       },
-      "bodySha256": "eacfacca849104f9c4ce79c55f1ce4971dd9be5003263680d4f1d457b7ec1855"
+      "bodySha256": "eacfacca849104f9c4ce79c55f1ce4971dd9be5003263680d4f1d457b7ec1855",
+      "formerPath": "video/PY-快感研究所-ae4f3015.py",
+      "liveAudit": {
+        "date": "2026-11-04",
+        "result": "首页、首三个分类和搜索均无条目；三轮检查请求返回 HTTP 200，未发现挑战标记；默认配置下未触发受限调用",
+        "scope": "本机网络与受限生产宿主；非站点永久关闭结论"
+      }
     },
     {
       "id": "pypack_549496d6e862b0db",
@@ -1980,9 +1994,9 @@
         "PY合集/浮生影院.py"
       ],
       "originalSha256": "2458c0d36e8a05879894a884fda60662b6a7672afb6c62a408361a5fe5160c49",
-      "path": "movie/PY-浮生影院-e97e2170.py",
+      "path": null,
       "kind": "movie",
-      "status": "published",
+      "status": "removed-live",
       "rating": "unknown",
       "loadCheck": {
         "ok": true,
@@ -2003,7 +2017,13 @@
           "count": 12
         }
       },
-      "bodySha256": "a4557b4aa5d08c0277e0076d72ff79dd2e6510cc979e3314194089c9c6bdb2ed"
+      "bodySha256": "a4557b4aa5d08c0277e0076d72ff79dd2e6510cc979e3314194089c9c6bdb2ed",
+      "formerPath": "movie/PY-浮生影院-e97e2170.py",
+      "liveAudit": {
+        "date": "2026-11-04",
+        "result": "首页、首三个分类和搜索均无条目；三轮检查请求返回 HTTP 200，未发现挑战标记；默认配置下未触发受限调用",
+        "scope": "本机网络与受限生产宿主；非站点永久关闭结论"
+      }
     },
     {
       "id": "pypack_b7bf8b0f1eb0e1da",
@@ -2528,9 +2548,9 @@
         "PY合集/美人姬.py"
       ],
       "originalSha256": "6d888853a3d89fb9acd4af803963f63407fb6591899ec28e5042c309a81a3601",
-      "path": "video/PY-美人姬-20617dc8.py",
+      "path": null,
       "kind": "video",
-      "status": "published",
+      "status": "removed-live",
       "rating": "18+",
       "loadCheck": {
         "ok": true,
@@ -2551,7 +2571,13 @@
           "count": 4
         }
       },
-      "bodySha256": "6d888853a3d89fb9acd4af803963f63407fb6591899ec28e5042c309a81a3601"
+      "bodySha256": "6d888853a3d89fb9acd4af803963f63407fb6591899ec28e5042c309a81a3601",
+      "formerPath": "video/PY-美人姬-20617dc8.py",
+      "liveAudit": {
+        "date": "2026-11-04",
+        "result": "首页、首三个分类和搜索均无条目；三轮检查请求返回 HTTP 200，未发现挑战标记；默认配置下未触发受限调用",
+        "scope": "本机网络与受限生产宿主；非站点永久关闭结论"
+      }
     },
     {
       "id": "pypack_794ea446a150d735",
@@ -2624,9 +2650,9 @@
         "PY合集/蘑菇视频.py"
       ],
       "originalSha256": "840075afa93a6e27f2545dde9141429e3e51dbf17d415f52fb64330ada2c0ca9",
-      "path": "video/PY-蘑菇视频-6b7d858a.py",
+      "path": null,
       "kind": "video",
-      "status": "published",
+      "status": "removed-live",
       "rating": "18+",
       "loadCheck": {
         "ok": true,
@@ -2647,7 +2673,13 @@
           "count": 16
         }
       },
-      "bodySha256": "7ea48a5beed9797ec94bb11fee1fb91a67b2a90beb07fdb4a04b11272e2acd9f"
+      "bodySha256": "7ea48a5beed9797ec94bb11fee1fb91a67b2a90beb07fdb4a04b11272e2acd9f",
+      "formerPath": "video/PY-蘑菇视频-6b7d858a.py",
+      "liveAudit": {
+        "date": "2026-11-04",
+        "result": "首页、首三个分类和搜索均无条目；三轮检查请求返回 HTTP 200，未发现挑战标记；默认配置下未触发受限调用",
+        "scope": "本机网络与受限生产宿主；非站点永久关闭结论"
+      }
     },
     {
       "id": "pypack_6801804eecf1b0ce",
@@ -2784,9 +2816,9 @@
         "PY合集/金牌APP.py"
       ],
       "originalSha256": "bb7555b05e60b8a5bab45d76f3c20a6f8f1d0e8c5f9316136cd429410369c659",
-      "path": "movie/PY-金牌APP-f4f4f5f2.py",
+      "path": null,
       "kind": "movie",
-      "status": "published",
+      "status": "removed-live",
       "rating": "unknown",
       "loadCheck": {
         "ok": true,
@@ -2807,7 +2839,13 @@
           "count": 3
         }
       },
-      "bodySha256": "bfa53d68a65cc252e7e57c731b79695f66b7e6965722dc948b0859fcea8f754c"
+      "bodySha256": "bfa53d68a65cc252e7e57c731b79695f66b7e6965722dc948b0859fcea8f754c",
+      "formerPath": "movie/PY-金牌APP-f4f4f5f2.py",
+      "liveAudit": {
+        "date": "2026-11-04",
+        "result": "首页、首三个分类和搜索均无条目；三轮检查请求返回 HTTP 200，未发现挑战标记；默认配置下未触发受限调用",
+        "scope": "本机网络与受限生产宿主；非站点永久关闭结论"
+      }
     },
     {
       "id": "pypack_ac18f1ead1d18b21",
@@ -3487,9 +3525,9 @@
         "py精选源/[影]米饭.py"
       ],
       "originalSha256": "e18e212c42f2997682a7f909dac8759e27796d7da643059a886d8b652a4df7e7",
-      "path": "movie/PY-[影]米饭-adb67c3a.py",
+      "path": null,
       "kind": "movie",
-      "status": "published",
+      "status": "removed-duplicate",
       "rating": "unknown",
       "loadCheck": {
         "ok": true,
@@ -3513,7 +3551,9 @@
           }
         }
       },
-      "bodySha256": "e18e212c42f2997682a7f909dac8759e27796d7da643059a886d8b652a4df7e7"
+      "bodySha256": "e18e212c42f2997682a7f909dac8759e27796d7da643059a886d8b652a4df7e7",
+      "formerPath": "movie/PY-[影]米饭-adb67c3a.py",
+      "duplicateOf": "pypack_0da2be2e17d33f6c"
     },
     {
       "id": "pypack_fe77d10688265501",
@@ -7134,9 +7174,9 @@
         "影视/[影]毒口条影视.py"
       ],
       "originalSha256": "588b7a4649f928728e34e99f1c053c9e9a3437189bebfe529558e390d527be0d",
-      "path": "movie/PY-[影]毒口条影视-6ac08cc0.py",
+      "path": null,
       "kind": "movie",
-      "status": "published",
+      "status": "removed-duplicate",
       "rating": "unknown",
       "loadCheck": {
         "ok": true,
@@ -7160,7 +7200,9 @@
           }
         }
       },
-      "bodySha256": "588b7a4649f928728e34e99f1c053c9e9a3437189bebfe529558e390d527be0d"
+      "bodySha256": "588b7a4649f928728e34e99f1c053c9e9a3437189bebfe529558e390d527be0d",
+      "formerPath": "movie/PY-[影]毒口条影视-6ac08cc0.py",
+      "duplicateOf": "pypack_db9b2fd18d92e42f"
     },
     {
       "id": "pypack_db9b2fd18d92e42f",
@@ -8786,9 +8828,9 @@
         "影视/[影]骚火电影.py"
       ],
       "originalSha256": "5432796745948fa4076597df4a11cc0437c1c0813135f55c44a20920fb73a8e4",
-      "path": "movie/PY-[影]骚火电影-35eb7708.py",
+      "path": null,
       "kind": "movie",
-      "status": "published",
+      "status": "removed-duplicate",
       "rating": "unknown",
       "loadCheck": {
         "ok": true,
@@ -8812,7 +8854,9 @@
           }
         }
       },
-      "bodySha256": "5432796745948fa4076597df4a11cc0437c1c0813135f55c44a20920fb73a8e4"
+      "bodySha256": "5432796745948fa4076597df4a11cc0437c1c0813135f55c44a20920fb73a8e4",
+      "formerPath": "movie/PY-[影]骚火电影-35eb7708.py",
+      "duplicateOf": "pypack_bd177c93282bd2ea"
     },
     {
       "id": "pypack_6ba204ffc660e366",
@@ -10223,9 +10267,9 @@
         "音/[音]千千音乐.py"
       ],
       "originalSha256": "748a4ce0d3797f366b5ddbb919638a1020167222b9aed97f48ba03a9007eca70",
-      "path": "audiobook/PY-[音]千千音乐-2eaae8d8.py",
+      "path": null,
       "kind": "audiobook",
-      "status": "published",
+      "status": "removed-live",
       "rating": "unknown",
       "loadCheck": {
         "ok": true,
@@ -10246,7 +10290,13 @@
           "count": 12
         }
       },
-      "bodySha256": "748a4ce0d3797f366b5ddbb919638a1020167222b9aed97f48ba03a9007eca70"
+      "bodySha256": "748a4ce0d3797f366b5ddbb919638a1020167222b9aed97f48ba03a9007eca70",
+      "formerPath": "audiobook/PY-[音]千千音乐-2eaae8d8.py",
+      "liveAudit": {
+        "date": "2026-11-04",
+        "result": "首页、首三个分类和搜索均无条目；三轮检查请求返回 HTTP 200，未发现挑战标记；默认配置下未触发受限调用",
+        "scope": "本机网络与受限生产宿主；非站点永久关闭结论"
+      }
     },
     {
       "id": "pypack_c71045345421e4cd",

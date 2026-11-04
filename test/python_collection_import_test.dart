@@ -9,7 +9,7 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source_package.dart';
 
 void main() {
-  test('PY独立总订阅完整展开304个源，保留运行时、归属和稳定ID', () async {
+  test('PY独立总订阅完整展开已发布源，保留运行时、归属和稳定ID', () async {
     final index = jsonDecode(
       File('sources/python-collection.json').readAsStringSync(),
     ) as Map;
@@ -47,6 +47,6 @@ void main() {
       expect(resolver.complete, isTrue, reason: skipped.join("\n"));
     }
     expect(ids, published.map((r) => r['id']).toSet());
-    expect(ids.length, 304);
+    expect(ids.length, 294);
   });
 }

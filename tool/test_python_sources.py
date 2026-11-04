@@ -105,6 +105,32 @@ def call(source, action="call", **kwargs):
 
 
 class HostTests(unittest.TestCase):
+    def test_spider_can_call_parent_init(self):
+        source = FIXTURE.replace('def init(self, extend): self.initialized = extend', 'def init(self, extend):\n        super().init(extend)\n        self.initialized = extend')
+        self.assertTrue(call('parent-init', 'load', script=source)['ok'])
+        result = call('parent-init', method='categories')
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(result['value'][0]['title'], '电影')
+
+    def test_declared_audio_in_comic_section_uses_player_and_returns_audio(self):
+        source = '# LumeSource: {"id":"audio-test","name":"听书","version":"1","category":"comic","mediaType":"audio"}\n' + FIXTURE + "\n    def imageContent(self, id): raise ValueError('不应请求图片接口')\n    def playerContent(self, flag, id, vipFlags=None): return {'url':'https://media.test/book.mp3','header':{'Referer':'https://media.test/'}}"
+        for encoded in (False, True):
+            script = '# LumePythonBytes: ' + base64.b64encode(source.encode()).decode() if encoded else source
+            source_id = 'audio-declared-' + str(encoded)
+            self.assertTrue(call(source_id, 'load', script=script, section='comic')['ok'])
+            result = call(source_id, method='content', argument={'id':'book','chapterId':json.dumps({'id':'chapter'})})
+            self.assertTrue(result['ok'], result)
+            self.assertEqual(result['value']['kind'], 'audio')
+            self.assertEqual(result['value']['url'], 'https://media.test/book.mp3')
+            self.assertEqual(result['value']['headers']['Referer'], 'https://media.test/')
+
+    def test_declared_audio_preserves_explicit_video_content(self):
+        source = '# LumeSource: {"id":"audio-mixed","name":"混合","version":"1","category":"comic","mediaType":"audio"}\n' + FIXTURE + "\n    def playerContent(self, flag, id, vipFlags=None): return {'kind':'video','url':'https://media.test/video.mp4'}"
+        self.assertTrue(call('audio-mixed', 'load', script=source, section='comic')['ok'])
+        result = call('audio-mixed', method='content', argument={'id':'book','chapterId':json.dumps({'id':'chapter'})})
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(result['value']['kind'], 'video')
+
     def test_comic_spider_uses_declared_text_method_instead_of_image_method(self):
         source = FIXTURE + "\n    def detailContent(self, ids): return {'list':[{'vod_id':ids[0],'vod_name':'书','mediaType':'novel'}]}\n    def imageContent(self, id): raise ValueError('不应请求图片接口')\n    def playerContent(self, flag, id, vipFlags=None): return {'kind':'text','text':'实际正文'}"
         self.assertTrue(call('comic-with-novel', 'load', script=source, section='comic')['ok'])
