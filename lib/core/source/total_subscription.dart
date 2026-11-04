@@ -116,8 +116,9 @@ class TotalSubscriptionService {
   }
 
   Future<Map<Section, SubscriptionSyncResult>> import(
-    TotalSubscription total,
-  ) async {
+    TotalSubscription total, {
+    bool installAll = false,
+  }) async {
     total = TotalSubscription.decode(total.encode());
     final results = <Section, SubscriptionSyncResult>{};
     for (final entry in total.entries.entries) {
@@ -154,7 +155,15 @@ class TotalSubscriptionService {
               return SubscriptionSyncResult()
                 ..errors.add('订阅地址已保存，当前平台无法运行 JS 源');
             }
-            return service.sync(force: true);
+            return service.sync(
+              force: true,
+              installNewFor: installAll
+                  ? entry.value
+                        .where((item) => item.enabled)
+                        .map((item) => item.url)
+                        .toSet()
+                  : const {},
+            );
           },
         );
       } catch (error) {

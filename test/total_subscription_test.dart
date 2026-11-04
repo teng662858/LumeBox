@@ -118,6 +118,17 @@ void main() {
     expect(managers[Section.video]!.sources, isEmpty);
   });
 
+  test('一键导入全部源不改变自动安装偏好', () async {
+    final results = await service.import(total, installAll: true);
+    expect(results[Section.video]!.added, 1);
+    expect(results[Section.video]!.pending, 0);
+    final stored = await SourceSubscriptionSync.open(
+      Section.video,
+      manager: managers[Section.video],
+    );
+    expect(stored.subscriptions.single.autoInstallNew, isFalse);
+  });
+
   test('总订阅递归影视清单保留 Python 源和运行时', () async {
     const scriptUrl = 'https://repo.test/movie/gulu.py';
     remote[total.entries[Section.video]!.single.url] = scriptUrl;
@@ -343,8 +354,9 @@ class _UiService extends TotalSubscriptionService {
   Future<TotalSubscription> export() async => total;
   @override
   Future<Map<Section, SubscriptionSyncResult>> import(
-    TotalSubscription total,
-  ) async {
+    TotalSubscription total, {
+    bool installAll = false,
+  }) async {
     imported++;
     return {
       for (final section in total.entries.keys)

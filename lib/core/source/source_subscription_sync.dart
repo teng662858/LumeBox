@@ -413,7 +413,10 @@ class SourceSubscriptionSync {
     }
   }
 
-  Future<SubscriptionSyncResult> sync({bool force = false}) async {
+  Future<SubscriptionSyncResult> sync({
+    bool force = false,
+    Set<String> installNewFor = const {},
+  }) async {
     final result = SubscriptionSyncResult();
     final changes = <Map<String, String>>[];
     var downloaded = 0;
@@ -495,6 +498,7 @@ class SourceSubscriptionSync {
               final installed = old ?? before[declaredId];
               if (installed == null &&
                   !record.autoInstallNew &&
+                  !installNewFor.contains(record.url) &&
                   !record.approvedUrls.contains(ref.url)) {
                 record.pending[ref.url] = declaredName;
                 result.pending++;

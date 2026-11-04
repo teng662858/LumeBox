@@ -20,6 +20,7 @@ import '../../shared/widgets/state_view.dart';
 import 'browse_page.dart';
 import 'source_import_dialog.dart';
 import '../../core/source/source_subscription_sync.dart';
+import '../../core/source/total_subscription.dart';
 import 'source_import_flow.dart';
 import 'source_maintenance.dart';
 
@@ -668,6 +669,37 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
     );
   }
 
+  Future<void> _importAllSubscriptions() async {
+    setState(() => _maintaining = true);
+    try {
+      final service = TotalSubscriptionService(
+        managers: _managers,
+        fetch: widget.fetchSubscription,
+      );
+      final total = await service.read(SubscriptionCatalog.totalCdnUrl);
+      final results = await service.import(total, installAll: true);
+      await _reload();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              results.entries
+                  .map((e) => '${e.key.label}：${e.value.summary}')
+                  .join('\n'),
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('导入失败：$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _maintaining = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return GlassScaffold(
@@ -676,6 +708,12 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
       title: '源总管理',
       actions:
           <Widget>[
+                if (_runtimeAvailable && !_loading)
+                  IconButton(
+                    tooltip: '一键导入全部订阅源',
+                    icon: const Icon(Icons.playlist_add),
+                    onPressed: _maintaining ? null : _importAllSubscriptions,
+                  ),
                 if (_runtimeAvailable && !_loading)
                   PopupMenuButton<String>(
                     tooltip: '站点维护',
