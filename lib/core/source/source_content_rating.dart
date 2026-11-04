@@ -324,6 +324,8 @@ class SourceContentRating {
     'yueliang_comic',
     // 荔枝短剧（liz01.com）：AI 成人短剧，单集页给签名 m3u8，封面是 AES-128-CBC 密文。
     'liz_video',
+    // 乐成漫画 · 短剧（lcmhx.cc）：AI 成人短剧频道；HLS 有防盗链，源里改走站点 media.php 代理。
+    'lcm_video',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

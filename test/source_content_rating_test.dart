@@ -173,6 +173,7 @@ void main() {
       'mycall_video',
       'yueliang_comic',
       'liz_video',
+      'lcm_video',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);

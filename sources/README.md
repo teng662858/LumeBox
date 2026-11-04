@@ -1,3 +1,16 @@
+## 2026-11-04 乐成漫画短剧（`video/lcm.js`，详见 [源记录](../docs/2026-11-04_乐成漫画短剧源.md)）
+
+`lcm_video`：乐成漫画（lcmhx.cc，Nuxt2 SSR 的成人漫画 + AI 成人短剧站）。本源只做**已验证的短剧频道**
+`/mctype/5/`（28 条/页）：条目标题在 `img title` / `.hv-title` 里，详情页 `<video data-hls-src=…>`。
+**取流要绕防盗链**：`s.chigua.media` 直连 403（referer blocked），源里统一改写成站点代理
+`/media.php?url=`，实测 206 + `#EXTM3U`（2302 B），分片 200 + `video/mp2t` 901 KB。
+站点漫画分类的图片域 `img5.qy0.ru` 在本机出口一律 403「链接已失效」（封面域 t4.qy0.ru 正常），
+拿不到就验证不了，所以漫画分类没有写进源。
+
+同批给的 `www.ciyuanji.com`（次元姬）**没交付**：Next.js SPA，书的 id 是 24 字节不透明参数，
+`__NEXT_DATA__` 只有推荐位与 SEO、没有书籍内容，`/api/book/*` 全 404，站内 JS chunk 直接 GET 返回 SPA 外壳，
+拿不到接口与参数加密方式，按约定不猜接口。证据见源记录第四节。
+
 ## 2026-11-04 月亮小说（`comic/yueliang.js`）· 荔枝短剧（`video/liz.js`）
 
 详见 [源记录](../docs/2026-11-04_月亮小说与荔枝短剧源.md)。
