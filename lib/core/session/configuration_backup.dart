@@ -11,6 +11,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../reading/reading_library.dart';
 import '../source/source_backup.dart';
+import '../source/lume_sources.dart';
+import '../js/source_registry.dart';
 import '../source/source_subscription_sync.dart';
 import '../cat/cat_service.dart';
 import 'section_scope.dart';
@@ -128,6 +130,112 @@ class ConfigurationBackup {
       throw const FormatException('不是支持的 LumeBox 配置备份');
     }
     return Map<String, Object?>.from(data);
+  }
+
+  /// Read-only estimate. A script can report a different ID or fail on import.
+  Future<List<String>> previewSourceChanges(Map<String, Object?> data) async {
+    if (data['sources'] == null) return const ['备份不含已安装源'];
+    final backup = SourceBackup.decode(jsonEncode(data['sources']));
+    final rows = <String>[];
+    for (final entry in backup.sections.entries) {
+      final section = Section.values
+          .where((value) => value.id == entry.key)
+          .firstOrNull;
+      if (section == null || !LumeSources.runtimeAvailableFor(section)) {
+        for (final source in entry.value) {
+          rows.add('${source.name}：当前板块或运行时不可用，预计跳过');
+        }
+        continue;
+      }
+      try {
+        final registry = await SourceRegistry.open(section);
+        final ids = registry.sources.map((source) => source.id).toSet();
+        for (final source in entry.value) {
+          rows.add(
+            '${section.label} · ${source.name}：${ids.contains(source.id) ? '预计覆盖' : '预计新增'}',
+          );
+          ids.add(source.id);
+        }
+      } catch (_) {
+        for (final source in entry.value) {
+          rows.add('${section.label} · ${source.name}：无法读取当前源，结果待恢复时确认');
+        }
+      }
+    }
+    return rows.isEmpty ? const ['备份中没有已安装源'] : rows;
+  }
+
+  Future<List<String>> previewSettingsChanges(Map<String, Object?> data) async {
+    final base = await getApplicationSupportDirectory();
+    final lines = <String>[];
+    for (final entry in (data['files'] as Map).entries) {
+      final name = '${entry.key}';
+      if (!files.contains(name)) {
+        lines.add('$name：不支持的配置，恢复会被拒绝');
+      } else {
+        lines.add(
+          '$name：${await File('${base.path}/$name').exists() ? '预计覆盖' : '预计新增'}',
+        );
+      }
+    }
+    for (final section in Section.values) {
+      final values = (data['sections'] as Map)[section.id];
+      if (values is! Map) continue;
+      final library = await ReadingLibrary.open(section);
+      final existing = library.exportSettings();
+      for (final key in values.keys) {
+        final name = '$key';
+        final skipped =
+            name.startsWith('waf.') ||
+            name.startsWith('rex.widget.') ||
+            name == 'history.lock';
+        lines.add(
+          '${section.label} · $name：${skipped
+              ? '预计跳过'
+              : existing.containsKey(name)
+              ? '预计覆盖'
+              : '预计新增'}',
+        );
+      }
+    }
+    return lines.isEmpty ? const ['备份不含配置项'] : lines;
+  }
+
+  Future<List<String>> previewReadingChanges(Map<String, Object?> data) async {
+    final raw = data['readingData'];
+    if (raw is! Map) return const ['备份不含阅读记录'];
+    final lines = <String>[];
+    for (final section in Section.values) {
+      final rows = raw[section.id];
+      if (rows is! Map) continue;
+      final store = await ReadingStore.open(section);
+      final incoming = store.normalizeCloudRecords(
+        Map<String, Object?>.from(rows),
+      );
+      store.applyCloudRecords(incoming, validateOnly: true);
+      final existing = store.cloudRecords(includeSettings: false);
+      for (final entry in incoming.entries) {
+        final identity = jsonDecode(entry.key) as List;
+        final row = entry.value;
+        final info = row is Map ? row : const {};
+        final name =
+            '${info['title'] ?? info['chapter_title'] ?? info['item_id'] ?? identity[2]}';
+        final type = switch (identity[1]) {
+          'library_item' => '收藏／历史',
+          'reading_progress' => '阅读／播放进度',
+          'video_episode_progress' => '分集进度',
+          'reading_setting' => '收藏设置',
+          _ => '记录',
+        };
+        final action = row == null
+            ? (existing.containsKey(entry.key) ? '预计删除' : '预计跳过')
+            : existing.containsKey(entry.key)
+            ? '预计覆盖'
+            : '预计新增';
+        lines.add('${section.label} · $type · $name：$action');
+      }
+    }
+    return lines.isEmpty ? const ['备份中没有阅读记录'] : lines;
   }
 
   Future<void> restore(

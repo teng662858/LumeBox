@@ -19,6 +19,15 @@ class FrameProfile {
   DateTime? started;
   double budgetMs = 1000 / 60;
   int slow = 0, droppedSamples = 0;
+  int? _memoryStart;
+  int? _rss() {
+    try {
+      return ProcessInfo.currentRss;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Map<String, Object?>? lastReport;
   bool get recording => started != null;
   void start(String scene, {double refreshRate = 60}) {
@@ -30,6 +39,7 @@ class FrameProfile {
     _raster.clear();
     slow = 0;
     droppedSamples = 0;
+    _memoryStart = _rss();
     started = DateTime.now();
     SchedulerBinding.instance.addTimingsCallback(_timings);
   }
@@ -86,6 +96,8 @@ class FrameProfile {
       'buildP99Ms': percentile(_build, .99),
       'rasterP99Ms': percentile(_raster, .99),
       'droppedSamples': droppedSamples,
+      'processRssStartBytes': _memoryStart,
+      'processRssEndBytes': _rss(),
     };
   }
 

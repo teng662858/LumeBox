@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import '../../core/reading/browse_layout.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
+import '../../core/session/privacy_settings.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
@@ -22,6 +23,7 @@ import 'aggregate_search_results.dart';
 import 'poster_card.dart';
 import 'section_toolbar.dart';
 import 'source_search_dialog.dart';
+import '../source/waf_webview_page.dart';
 
 /// 独立的**搜索结果页**（用户口径：搜索完必须离开首页推荐网格，跳到这里）。
 ///
@@ -94,6 +96,7 @@ class _SearchResultsPageState extends State<SearchResultsPage>
   Set<String> _completedSourceIds = const {};
   Set<String> _failedSourceIds = const {};
   String? _resolvedSourceId;
+  String? _chosenSourceId;
 
   /// 结果里出现的图源名字（列表行显示来源用）。
   final Map<String, String> _sourceNames = <String, String>{};
@@ -124,6 +127,152 @@ class _SearchResultsPageState extends State<SearchResultsPage>
       await networkRequests.run('search', _runOwned);
     } on NetworkCancelled {
       // Leaving the page or replacing this load is not a source failure.
+    }
+  }
+
+  Future<void> _retryFailed(Set<String> ids) async {
+    if (_loading || ids.isEmpty) return;
+    final seq = ++_seq;
+    final selected = ids.intersection(_failedSourceIds);
+    if (selected.isEmpty) return;
+    final previousHits = _hits
+        .where((hit) => !selected.contains(hit.sourceId))
+        .toList();
+    final previousCompleted = _completedSourceIds.difference(selected);
+    final previousFailed = _failedSourceIds.difference(selected);
+    setState(() {
+      _loading = true;
+      _completedSourceIds = previousCompleted;
+      _failedSourceIds = previousFailed;
+    });
+    try {
+      await networkRequests.run(
+        'search',
+        () => AggregateSearch.run(
+          sources: _aggregateSites,
+          sourceIds: selected,
+          keyword: SearchSettings.instance.prepare(_keyword),
+          open: _manager.open,
+          onProgress: (progress) {
+            if (!mounted || seq != _seq) return;
+            final notRetried = selected.difference(
+              progress.sources.map((site) => site.id).toSet(),
+            );
+            setState(() {
+              _hits = [
+                ...previousHits,
+                ...progress.hits.where(
+                  (hit) =>
+                      SearchSettings.instance.accepts(hit.item.title, _keyword),
+                ),
+              ];
+              _completedSourceIds = {
+                ...previousCompleted,
+                ...notRetried,
+                ...progress.completedSourceIds,
+              };
+              _failedSourceIds = {
+                ...previousFailed,
+                ...notRetried,
+                ...progress.failedSourceIds,
+              };
+              _aggregateFailed = _failedSourceIds.length;
+              _aggregateCompleted = _completedSourceIds.length;
+              _loading = progress.completed < progress.total;
+            });
+          },
+        ),
+      );
+    } on NetworkCancelled {
+      // The page was closed or a new search replaced this retry.
+    } catch (error) {
+      if (mounted && seq == _seq) {
+        setState(() {
+          _failedSourceIds = {
+            ..._failedSourceIds,
+            ...selected.difference(_completedSourceIds),
+          };
+          _aggregateFailed = _failedSourceIds.length;
+          _loading = false;
+        });
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('重试未完成：$error')));
+      }
+    }
+  }
+
+  Future<void> _verifySearch(String message) async {
+    final id =
+        _chosenSourceId ??
+        widget.sourceId ??
+        _resolvedSourceId ??
+        (await _manager.current())?.id;
+    if (!mounted || id == null) return;
+    final descriptors = await _manager.list();
+    if (!mounted) return;
+    final source = descriptors.where((item) => item.id == id).firstOrNull;
+    if (source == null) return;
+    final outcome = await runWafWebViewFlow(
+      context: context,
+      section: widget.section,
+      sourceId: id,
+      sourceName: source.name,
+      failureMessage: message,
+      originUrl: source.originUrl,
+    );
+    if (!mounted) return;
+    if (outcome == WafWebViewOutcome.collected) {
+      await _run();
+    } else if (outcome == WafWebViewOutcome.emptySession) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('未取得验证会话，请完成验证后再关闭网页')));
+    }
+  }
+
+  Future<void> _chooseSingleSource() async {
+    try {
+      final sources = (await _manager.list())
+          .where(
+            (source) =>
+                source.enabled &&
+                PrivacySettings.instance.allowsSource(source.id, source.name),
+          )
+          .toList();
+      if (!mounted) return;
+      final selected = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('选择搜索站点'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: sources.isEmpty
+                ? const Text('没有可用站点')
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: sources.length,
+                    itemBuilder: (_, index) => ListTile(
+                      title: Text(sources[index].name),
+                      onTap: () =>
+                          Navigator.pop(dialogContext, sources[index].id),
+                    ),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+          ],
+        ),
+      );
+      if (selected == null || !mounted) return;
+      _chosenSourceId = selected;
+      await _run();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('读取站点失败：$error')));
+      }
     }
   }
 
@@ -181,6 +330,7 @@ class _SearchResultsPageState extends State<SearchResultsPage>
 
       // 当前源搜索：与浏览页同一套 list(keyword:)。
       final sourceId =
+          _chosenSourceId ??
           widget.sourceId ??
           _resolvedSourceId ??
           (await _manager.current())?.id;
@@ -235,6 +385,7 @@ class _SearchResultsPageState extends State<SearchResultsPage>
     DataSource? suggestionSource;
     try {
       final id =
+          _chosenSourceId ??
           widget.sourceId ??
           _resolvedSourceId ??
           (await _manager.current())?.id;
@@ -538,6 +689,23 @@ class _SearchResultsPageState extends State<SearchResultsPage>
         state: stateForError(failure),
         detail: detail,
         onRetry: _run,
+        action: widget.mode == SearchMode.single
+            ? Wrap(
+                spacing: 8,
+                children: [
+                  OutlinedButton(
+                    onPressed: _chooseSingleSource,
+                    child: const Text('换源搜索'),
+                  ),
+                  if (shouldOfferWebView(detail))
+                    OutlinedButton.icon(
+                      onPressed: () => _verifySearch(detail),
+                      icon: const Icon(Icons.public),
+                      label: const Text('打开网页验证'),
+                    ),
+                ],
+              )
+            : null,
       );
     }
     if (widget.mode == SearchMode.aggregate &&
@@ -553,6 +721,7 @@ class _SearchResultsPageState extends State<SearchResultsPage>
         pipeline: widget.pipeline,
         onOpen: (hit) => _open(hit.item, hit.sourceId),
         onRetry: () => unawaited(_run()),
+        onRetryFailed: (ids) => unawaited(_retryFailed(ids)),
       );
     }
     if (_count == 0) {
@@ -564,6 +733,12 @@ class _SearchResultsPageState extends State<SearchResultsPage>
             : '未搜索到相关内容',
         title: _aggregateFailed > 0 ? '有 $_aggregateFailed 个源没取到' : null,
         onRetry: _run,
+        action: widget.mode == SearchMode.single
+            ? OutlinedButton(
+                onPressed: _chooseSingleSource,
+                child: const Text('换源搜索'),
+              )
+            : null,
       );
     }
     return Column(

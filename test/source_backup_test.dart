@@ -13,6 +13,7 @@ import 'package:lume_box/core/js/qjs_bindings.dart';
 import 'package:lume_box/core/js/source_registry.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
+import 'package:lume_box/core/session/configuration_backup.dart';
 import 'package:lume_box/core/source/source.dart';
 
 /// 图源批量备份 / 恢复（文档第 4 条最后一项）。
@@ -217,6 +218,39 @@ async function getList(page) { return { list: [] }; }
   }, skip: skipReason);
 
   group('恢复备份', () {
+    test('配置恢复预览只读地列出预计新增、覆盖和不支持的板块', () async {
+      final registry = await seed(Section.video, 'old', '已有源');
+      const old = SourceBackupEntry(
+        id: 'old',
+        name: '已有源',
+        version: '1',
+        script: 'old',
+        enabled: true,
+      );
+      const fresh = SourceBackupEntry(
+        id: 'new',
+        name: '新源',
+        version: '1',
+        script: 'new',
+        enabled: true,
+      );
+      final backup = SourceBackup(
+        version: 1,
+        createdAt: DateTime.now(),
+        sections: {
+          Section.video.id: [old, fresh],
+          'unknown': [fresh],
+        },
+      );
+      final lines = await ConfigurationBackup().previewSourceChanges({
+        'sources': backup.toJson(),
+      });
+      expect(lines, contains('视频 · 已有源：预计覆盖'));
+      expect(lines, contains('视频 · 新源：预计新增'));
+      expect(lines, contains('新源：当前板块或运行时不可用，预计跳过'));
+      expect(registry.sources.map((source) => source.id), ['old']);
+    }, skip: skipReason);
+
     test('empty-device restore retains source routes, user choices and names without credentials', () async {
       final registry = await seed(Section.video, 'configured', 'original');
       registry.rename('configured', 'custom name');

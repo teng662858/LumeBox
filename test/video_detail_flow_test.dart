@@ -382,6 +382,36 @@ void main() {
     expect(state.lineResume.position, const Duration(seconds: 60));
   });
 
+  testWidgets('换源续播未选剧集时明确提示，不转移进度或自动播放', (tester) async {
+    final multi = MultiLineDetailSource();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VideoDetailPage(
+          source: multi,
+          item: const SourceItem(id: 'resume-cancel', title: '详情测试片'),
+          library: library,
+          resumeRequest: const VideoResumeRequest(
+            title: '详情测试片',
+            chapterTitle: '第1集',
+            chapterIndex: 0,
+            position: Duration(seconds: 60),
+            duration: Duration.zero,
+          ),
+          onPlay: (_, _, _, _) async => fail('未选择剧集不能自动播放'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('确认续播剧集'), findsOneWidget);
+    Navigator.of(tester.element(find.text('确认续播剧集'))).pop();
+    await tester.pumpAndSettle();
+    expect(find.text('未选择对应剧集，请手动选集后播放；原进度未转移'), findsOneWidget);
+    final dynamic state = tester.state(find.byType(VideoDetailPage));
+    expect(state.lineResume, isNull);
+    expect(multi.parses, 0);
+  });
+
   testWidgets('沉浸详情的TMDB小标和评分放在类型旁，不挤占年份行', (tester) async {
     await tester.binding.setSurfaceSize(const Size(440, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));

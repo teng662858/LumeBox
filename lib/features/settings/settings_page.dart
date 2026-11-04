@@ -34,6 +34,9 @@ import '../../shared/widgets/notice_card.dart';
 import '../source/global_source_page.dart';
 import '../source/source_repository_page.dart';
 import '../source/tvbox_import_page.dart';
+import '../source/source_subscription_page.dart';
+import '../cat/cat_subscription_page.dart';
+import '../../core/session/section.dart';
 import 'app_icon_settings_page.dart';
 import 'cache_settings_page.dart';
 import 'display_settings_group.dart';
@@ -200,6 +203,7 @@ class SettingsPage extends StatelessWidget {
       subtitle: '阅读器、图片处理与 AI 图片工具',
       searchTargets: {
         '漫画阅读器设置': () => _push(context, const ComicReaderSettingsHost()),
+        '漫画翻页': () => _push(context, const ComicReaderSettingsHost()),
         'AI 图片超分与上色': () => _push(context, const ComicImageToolsSettingsPage()),
       },
       onTap: () => _push(
@@ -234,6 +238,8 @@ class SettingsPage extends StatelessWidget {
       subtitle: '视频、音频、字幕、弹幕与后台播放',
       searchTargets: {
         '视频播放器': () => _push(context, const PlayerSettingsHost()),
+        '播放倍速': () =>
+            _push(context, const PlayerSettingsHost(focusCategory: 'playback')),
         '音频播放器': () => _push(context, const AudioPlaybackSettingsPage()),
         '字幕': () =>
             _push(context, const PlayerSettingsHost(focusCategory: 'audio')),
@@ -267,34 +273,83 @@ class SettingsPage extends StatelessWidget {
 
     const SettingsGroupTitle('内容与订阅'),
     SettingsEntryCard(
-      icon: Icons.playlist_add,
-      title: 'TVBox 聚合配置导入',
-      subtitle: '采集接口、Python 与直播列表 · 逐项预览和导入',
-      onTap: () => _push(context, const TvBoxImportPage()),
-    ),
-    SettingsEntryCard(
-      icon: Icons.cloud_upload_outlined,
-      title: 'GitHub 仓库源管理',
-      subtitle: '授权后直接新增或删除远端源文件，更新公共订阅',
-      onTap: () => _push(context, const SourceRepositoryPage()),
-    ),
-    SettingsEntryCard(
-      icon: Icons.sync,
-      title: '一键同步全部订阅',
-      subtitle: '立即更新漫画、视频和猫源订阅 · 查看逐项结果',
-      onTap: () => _push(context, const SubscriptionSyncPage()),
-    ),
-    SettingsEntryCard(
-      icon: Icons.subscriptions_outlined,
-      title: '总订阅导入导出',
-      subtitle: '漫画、视频订阅一键导入，或导出订阅地址',
-      onTap: () => _push(context, const TotalSubscriptionPage()),
-    ),
-    SettingsEntryCard(
       icon: Icons.tune,
-      title: '源总管理',
-      subtitle: '漫画 / 视频 / 猫源的源总览与批量管理',
-      onTap: () => _push(context, const GlobalSourcePage()),
+      title: '源管理',
+      subtitle: '添加源、管理订阅、更新与检测',
+      searchTargets: {
+        '源总管理': () => _push(context, const GlobalSourcePage()),
+        '总订阅导入导出': () => _push(context, const TotalSubscriptionPage()),
+        'TVBox 聚合配置导入': () => _push(context, const TvBoxImportPage()),
+        'GitHub 仓库源管理': () => _push(context, const SourceRepositoryPage()),
+        '一键同步全部订阅': () => _push(context, const SubscriptionSyncPage()),
+      },
+      onTap: () => _push(
+        context,
+        SettingsCategoryPage(
+          category: SettingsCategory('源管理', '添加、检查和更新站点与订阅', Icons.tune, [
+            SettingsEntryCard(
+              icon: Icons.playlist_add,
+              title: '添加与管理源',
+              subtitle: '添加源、批量检测和管理漫画与视频站点',
+              onTap: () => _push(context, const GlobalSourcePage()),
+            ),
+            for (final section in [Section.comic, Section.video])
+              SettingsEntryCard(
+                icon: Icons.subscriptions_outlined,
+                title: '${section.label}订阅',
+                subtitle: '添加、选择安装及更新订阅源',
+                onTap: () =>
+                    _push(context, SourceSubscriptionPage(section: section)),
+              ),
+            SettingsEntryCard(
+              icon: Icons.pets_outlined,
+              title: '猫源订阅',
+              subtitle: '管理猫源订阅和站点',
+              onTap: () => _push(context, const CatSubscriptionPage()),
+            ),
+            SettingsEntryCard(
+              icon: Icons.sync,
+              title: '一键同步全部订阅',
+              subtitle: '更新漫画、视频和猫源订阅',
+              onTap: () => _push(context, const SubscriptionSyncPage()),
+            ),
+            SettingsEntryCard(
+              icon: Icons.settings_outlined,
+              title: '高级导入与仓库',
+              subtitle: '总订阅、TVBox 与 GitHub 仓库',
+              onTap: () => _push(
+                context,
+                SettingsCategoryPage(
+                  category: SettingsCategory(
+                    '高级导入与仓库',
+                    '导入配置和管理仓库',
+                    Icons.settings_outlined,
+                    [
+                      SettingsEntryCard(
+                        icon: Icons.subscriptions_outlined,
+                        title: '总订阅导入导出',
+                        onTap: () =>
+                            _push(context, const TotalSubscriptionPage()),
+                      ),
+                      SettingsEntryCard(
+                        icon: Icons.playlist_add,
+                        title: 'TVBox 聚合配置导入',
+                        onTap: () => _push(context, const TvBoxImportPage()),
+                      ),
+                      SettingsEntryCard(
+                        icon: Icons.cloud_upload_outlined,
+                        title: 'GitHub 仓库源管理',
+                        onTap: () =>
+                            _push(context, const SourceRepositoryPage()),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ]),
+        ),
+      ),
     ),
     SettingsEntryCard(
       icon: Icons.search,
@@ -338,6 +393,9 @@ class SettingsPage extends StatelessWidget {
       icon: Icons.download_outlined,
       title: '下载中心',
       subtitle: '暂停、继续、失败重试与重开恢复',
+      searchTargets: {
+        '下载路径与文件': () => _push(context, const DownloadCenterPage()),
+      },
       onTap: () => _push(context, const DownloadCenterPage()),
     ),
     SettingsEntryCard(

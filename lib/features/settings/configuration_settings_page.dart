@@ -115,6 +115,9 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
       if (password == null || !mounted) return null;
     }
     final preview = await backup.preview(text, password: password);
+    final sourceChanges = await backup.previewSourceChanges(preview);
+    final settingsChanges = await backup.previewSettingsChanges(preview);
+    final readingChanges = await backup.previewReadingChanges(preview);
     if (!mounted) return null;
     final parts = ConfigurationRestorePart.values.toSet();
     final yes = await showGlassDialog<bool>(
@@ -127,7 +130,31 @@ class _ConfigurationSettingsPageState extends State<ConfigurationSettingsPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '备份时间：${preview['createdAt'] ?? '未知'}\n全局配置：${(preview['files'] as Map).length} 项\n板块配置：${(preview['sections'] as Map).length} 组\n选中内容中的同名数据会覆盖当前数据。恢复后请重新启动 App。',
+                  '备份时间：${preview['createdAt'] ?? '未知'}\n全局配置：${(preview['files'] as Map).length} 项\n板块配置：${(preview['sections'] as Map).length} 组\n包含：${preview.containsKey('readingData') ? '收藏、历史和阅读／播放进度' : '无阅读进度'}；${preview.containsKey('subscriptions') || preview.containsKey('catData') ? '订阅配置' : '无订阅配置'}；播放器设置属于板块配置。\n不包含已下载媒体及本地模型。订阅配置按板块整组替换，其他同名配置会覆盖；恢复后请重启 App。',
+                ),
+                ExpansionTile(
+                  title: Text('配置恢复预览 · ${settingsChanges.length} 项'),
+                  subtitle: const Text('仅恢复勾选的类别；逐项显示预计新增、覆盖或跳过'),
+                  children: [
+                    for (final line in settingsChanges)
+                      ListTile(dense: true, title: Text(line)),
+                  ],
+                ),
+                ExpansionTile(
+                  title: Text('阅读和进度预览 · ${readingChanges.length} 项'),
+                  subtitle: const Text('仅在勾选收藏、历史与进度时恢复'),
+                  children: [
+                    for (final line in readingChanges)
+                      ListTile(dense: true, title: Text(line)),
+                  ],
+                ),
+                ExpansionTile(
+                  title: Text('源恢复预览 · ${sourceChanges.length} 项'),
+                  subtitle: const Text('按源 ID 估计，实际导入可能失败或使用不同 ID'),
+                  children: [
+                    for (final line in sourceChanges)
+                      ListTile(dense: true, title: Text(line)),
+                  ],
                 ),
                 for (final part in ConfigurationRestorePart.values)
                   CheckboxListTile(

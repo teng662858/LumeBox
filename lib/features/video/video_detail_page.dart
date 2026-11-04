@@ -317,6 +317,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           : widget.initialChapterId;
       VideoProgress? transferredProgress;
       SourceChapter? transferredChapter;
+      var resumeNotSelected = false;
       if (!_initialChapterApplied &&
           widget.resumeRequest != null &&
           episodes.isNotEmpty) {
@@ -376,6 +377,8 @@ class _VideoDetailPageState extends State<VideoDetailPage>
             episodes.indexOf(chosen),
             widget.library.section,
           );
+        } else {
+          resumeNotSelected = true;
         }
       }
       _initialChapterApplied = true;
@@ -409,6 +412,11 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         compactEpisodeStart = index ~/ 10 * 10;
         loading = false;
       });
+      if (resumeNotSelected && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('未选择对应剧集，请手动选集后播放；原进度未转移')),
+        );
+      }
     } catch (failure) {
       if (NetworkCancellation.current?.isCancelled ?? false) return;
       if (mounted) {

@@ -25,6 +25,7 @@ class AggregateSearchResults extends StatefulWidget {
     required this.onRetry,
     this.pipeline,
     this.query = '',
+    this.onRetryFailed,
   });
   final Section section;
   final String query;
@@ -35,6 +36,7 @@ class AggregateSearchResults extends StatefulWidget {
   final bool loading;
   final ValueChanged<SearchHit> onOpen;
   final VoidCallback onRetry;
+  final ValueChanged<Set<String>>? onRetryFailed;
   final SectionImagePipeline? pipeline;
 
   @override
@@ -42,6 +44,55 @@ class AggregateSearchResults extends StatefulWidget {
 }
 
 class _AggregateSearchResultsState extends State<AggregateSearchResults> {
+  void _showFailures() {
+    final failedSites = widget.sites
+        .where((site) => widget.failed.contains(site.id))
+        .toList();
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('搜索失败 · ${failedSites.length} 个站点'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final site in failedSites)
+                ListTile(
+                  title: Text(site.name),
+                  trailing: TextButton(
+                    onPressed: widget.onRetryFailed == null
+                        ? null
+                        : () {
+                            Navigator.pop(dialogContext);
+                            widget.onRetryFailed!({site.id});
+                          },
+                    child: const Text('重试'),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('关闭'),
+          ),
+          if (widget.onRetryFailed != null)
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                widget.onRetryFailed!(
+                  failedSites.map((site) => site.id).toSet(),
+                );
+              },
+              child: const Text('重试失败站点'),
+            ),
+        ],
+      ),
+    );
+  }
+
   static const _layoutKey = 'search.results.siteLayout';
   static const _cardsKey = 'search.results.cards';
   static const _referenceVersionKey = 'search.results.threeColumnVersion';
@@ -565,19 +616,9 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
               if (widget.failed.isNotEmpty)
                 Tooltip(
                   message: '${widget.failed.length} 个源未取得结果，其他来源正常显示',
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.info_outline, size: 13),
-                        const SizedBox(width: 3),
-                        Text(
-                          '${widget.failed.length}',
-                          style: const TextStyle(fontSize: 10.5),
-                        ),
-                      ],
-                    ),
+                  child: TextButton(
+                    onPressed: widget.loading ? null : () => _showFailures(),
+                    child: Text('失败 ${widget.failed.length}'),
                   ),
                 ),
               IconButton(

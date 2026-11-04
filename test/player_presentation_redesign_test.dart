@@ -181,6 +181,8 @@ void main() {
       tester.widget<ListTile>(find.widgetWithText(ListTile, '缺集')).enabled,
       isFalse,
     );
+    await tester.drag(find.byType(ListView).last, const Offset(0, -180));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('备用'));
     await tester.pumpAndSettle();
     expect(selected, ['备用']);

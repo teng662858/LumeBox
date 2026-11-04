@@ -13,6 +13,7 @@ import 'js_sandbox/support/js_sandbox_support.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
+import 'package:lume_box/core/session/configuration_backup.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/core/util/lume_log.dart';
 import 'package:lume_box/features/settings/log_report.dart';
@@ -77,7 +78,7 @@ void main() {
       '缓存管理': '存储与安全',
       '运行日志': '诊断与关于',
       '错误报告': '诊断与关于',
-      '源总管理': '内容与订阅',
+      '源管理': '内容与订阅',
     };
     final category = categories[label];
     if (category != null) {
@@ -268,6 +269,16 @@ void main() {
       find.descendant(of: find.byType(AlertDialog), matching: find.text('清理')),
     );
     await pumpIoAndSettle(tester);
+    for (
+      var i = 0;
+      i < 40 && find.textContaining('已清理 漫画').evaluate().isEmpty;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 25)),
+      );
+      await tester.pump();
+    }
 
     expect(find.textContaining('缓存 0 B'), findsWidgets);
     expect(
@@ -293,9 +304,10 @@ void main() {
   testWidgets('图源总管理：设置页内的子页面入口仍在', (tester) async {
     await pumpSettings(tester);
 
-    await scrollTo(tester, '源总管理');
-    expect(find.text('源总管理'), findsOneWidget);
-    await tester.tap(find.text('源总管理'));
+    await scrollTo(tester, '源管理');
+    await tester.tap(find.text('源管理'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('添加与管理源'));
     await pumpIoAndSettle(tester);
 
     expect(find.widgetWithText(AppBar, '源总管理'), findsOneWidget);
@@ -341,6 +353,40 @@ void main() {
     await tester.tap(find.text('读完自动下一章'));
     await tester.pumpAndSettle();
     expect(library.setting('novel.speech.autoNext'), 'false');
+  });
+
+  test('配置预览区分新增、覆盖与受保护项，且不写入', () async {
+    final library = await ReadingLibrary.open(Section.comic);
+    library.setSetting('novel.fontSize', '22');
+    writeFile('appearance_settings.json', 2);
+    final lines = await ConfigurationBackup().previewSettingsChanges({
+      'files': {'appearance_settings.json': {}, 'network_settings.json': {}},
+      'sections': {
+        'comic': {
+          'novel.fontSize': '30',
+          'novel.lineHeight': '2',
+          'history.lock': 'secret',
+        },
+      },
+    });
+    expect(lines, contains('appearance_settings.json：预计覆盖'));
+    expect(lines, contains('network_settings.json：预计新增'));
+    expect(lines, contains('漫画 · novel.fontSize：预计覆盖'));
+    expect(lines, contains('漫画 · novel.lineHeight：预计新增'));
+    expect(lines, contains('漫画 · history.lock：预计跳过'));
+    expect(library.setting('novel.fontSize'), '22');
+  });
+
+  test('阅读记录预览按真实记录身份估计覆盖且不更改记录', () async {
+    final library = await ReadingLibrary.open(Section.comic);
+    library.recordHistoryItem(sourceId: 'site', itemId: 'book', title: '测试作品');
+    final store = await ReadingStore.open(Section.comic);
+    final rows = store.cloudRecords(includeSettings: false);
+    final lines = await ConfigurationBackup().previewReadingChanges({
+      'readingData': {'comic': rows},
+    });
+    expect(lines, contains('漫画 · 收藏／历史 · 测试作品：预计覆盖'));
+    expect(store.cloudRecords(includeSettings: false), rows);
   });
 
   testWidgets('设置搜索可直达小说行距和播放器字幕', (tester) async {

@@ -548,6 +548,83 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets('聚合搜索只重试失败站点并保留其他结果', (tester) async {
+      final manager = FakeSourceManager(
+        sources: descriptors(2),
+        opened: {
+          'speed-0': _SearchSource(
+            section: Section.video,
+            items: const [SourceItem(id: 'a', title: '影片甲')],
+          ),
+        },
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SearchResultsPage(
+            section: Section.video,
+            keyword: '影片',
+            mode: SearchMode.aggregate,
+            manager: manager,
+            onOpenItem: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('影片甲'), findsOneWidget);
+      expect(find.text('失败 1'), findsOneWidget);
+      manager.opened['speed-1'] = _SearchSource(
+        section: Section.video,
+        items: const [SourceItem(id: 'b', title: '影片乙')],
+      );
+      await tester.tap(find.text('失败 1'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('重试失败站点'));
+      await tester.pumpAndSettle();
+      expect(find.text('影片甲'), findsOneWidget);
+      expect(find.text('影片乙'), findsOneWidget);
+      expect(manager.openedIds.where((id) => id == 'speed-0').length, 1);
+      expect(manager.openedIds.where((id) => id == 'speed-1').length, 2);
+    });
+
+    testWidgets('单源搜索遇到验证拦截提供网页验证入口', (tester) async {
+      final manager = FakeSourceManager(
+        sources: descriptors(2),
+        opened: {
+          'speed-0': _SearchSource(
+            section: Section.video,
+            fail: const SourceException(
+              SourceErrorKind.network,
+              'HTTP 403 Cloudflare',
+            ),
+          ),
+          'speed-1': _SearchSource(
+            section: Section.video,
+            items: const [SourceItem(id: 'new', title: '换源影片')],
+          ),
+        },
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SearchResultsPage(
+            section: Section.video,
+            keyword: '影片',
+            mode: SearchMode.single,
+            manager: manager,
+            sourceId: 'speed-0',
+            onOpenItem: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('打开网页验证'), findsOneWidget);
+      expect(find.text('重试'), findsOneWidget);
+      await tester.tap(find.text('换源搜索'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('速度源1'));
+      await tester.pumpAndSettle();
+      expect(find.text('换源影片'), findsOneWidget);
+    });
+
     testWidgets('未传入 sourceId 时解析并记住当前源，结果可以打开', (tester) async {
       final manager = FakeSourceManager(
         sources: descriptors(1),
