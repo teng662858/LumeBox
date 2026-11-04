@@ -1,3 +1,21 @@
+## 2026-11-04 69书吧（`comic/69shuba.js`，详见 [源记录](../docs/2026-11-04_69书吧源与次元姬卡点.md)）
+
+`shuba_novel`：69书吧（69shuba.com，jieqi 模板，**全站 Cloudflare managed challenge + GBK 编码**）。
+13 个分类 `/novels/class/{0-12}.htm` + 5 个榜单（hot/male/female/full/last）；列表取
+`#article_list_content`；详情读 `h1` / 封面 / `bookinfo`（作者·分类·标签）；目录 `/book/{id}/` 一次给全
+（实测 569 章）；正文 `/txt/{书号}/{章节号}` 取 `.txtnav` 里广告之后的段落；搜索
+`POST /modules/article/search.php`。
+
+**CF 走正规路子**：所有请求 403/挑战页时抛 `NEED_WEBVIEW_VERIFY`，由 App 网页视图让用户本人过校验、
+之后复用 `cf_clearance`（不绕过任何校验）。页面 GBK，App 侧走 iOS 原生 gb18030 解码通道。
+解析层验证方式：用真实 Chrome 过完 CF 后抓到的 HTML 离线回放五入口——
+list 50 条 / detail 书名·作者·分类·标签 / chapters 569 / content 1208 字。
+（无 Cookie 的 Node 打测器会停在 403，属预期。）
+
+同批的 `ciyuanji.com` **不是 CF 问题**：书详情是 `/bookDetails?params=<24 字节密文>`，
+直接打开只落回首页外壳、`__NEXT_DATA__` 里没有书的内容、也没有任何书籍接口 XHR；
+API 基址已知（`/api/pc/cms`）但端点运行时拼、抓不到。卡点与需要的东西写在源记录第五节。
+
 ## 2026-11-04 禁漫天堂 · H動漫（`video/jmcomic-video.js`）· JM文庫（`comic/jmcomic-novel.js`）
 
 详见 [源记录](../docs/2026-11-04_禁漫天堂H動漫与JM文庫源.md)。漫画源（`comic/禁漫天堂.js`）是仓库里原有的，本次没动。

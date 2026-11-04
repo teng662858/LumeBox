@@ -176,6 +176,7 @@ void main() {
       'lcm_video',
       'jmcomic_video',
       'jmcomic_novel',
+      'shuba_novel',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);

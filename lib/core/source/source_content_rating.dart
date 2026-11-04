@@ -329,6 +329,8 @@ class SourceContentRating {
     // 禁漫天堂（18comic）：H動漫 频道（签名 HLS）与 JM文庫 的禁漫小說（纯文本正文）。
     'jmcomic_video',
     'jmcomic_novel',
+    // 69书吧（69shuba.com）：jieqi 小说站，全站 CF managed challenge + GBK 编码。
+    'shuba_novel',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
