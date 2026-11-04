@@ -670,13 +670,35 @@ class _GlobalSourcePageState extends State<GlobalSourcePage> {
   }
 
   Future<void> _importAllSubscriptions() async {
+    final route = await showGlassDialog<SubscriptionRoute>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('选择总订阅线路'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Text('选择一条线路，自动导入全部订阅源。'),
+          ),
+          for (final route in SubscriptionRoute.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, route),
+              child: Text(route.label),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+    if (route == null || !mounted || _maintaining) return;
     setState(() => _maintaining = true);
     try {
       final service = TotalSubscriptionService(
         managers: _managers,
         fetch: widget.fetchSubscription,
       );
-      final total = await service.read(SubscriptionCatalog.totalCdnUrl);
+      final total = await service.read(SubscriptionCatalog.totalFor(route));
       final results = await service.import(total, installAll: true);
       await _reload();
       if (mounted) {

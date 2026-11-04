@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/net/source_subscription.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
+import 'package:lume_box/core/source/total_subscription.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/source/global_source_page.dart';
 
@@ -73,6 +74,37 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('一键导入可选择三条线路，取消不会请求', (tester) async {
+    final requests = <String>[];
+    await pumpPage(
+      tester,
+      fakeManagers(),
+      fetchSubscription: (url) async {
+        requests.add(url);
+        throw StateError('测试停止请求');
+      },
+    );
+    Future<void> openPicker() async {
+      await tester.tap(find.byTooltip('一键导入全部订阅源'));
+      await tester.pumpAndSettle();
+    }
+
+    await openPicker();
+    for (final route in SubscriptionRoute.values) {
+      expect(find.text(route.label), findsOneWidget);
+    }
+    await tester.tap(find.text('取消').last);
+    await tester.pumpAndSettle();
+    expect(requests, isEmpty);
+    for (final route in SubscriptionRoute.values) {
+      await openPicker();
+      await tester.tap(find.text(route.label));
+      await tester.pumpAndSettle();
+      expect(requests.last, SubscriptionCatalog.totalFor(route));
+    }
+    expect(requests, hasLength(3));
+  });
 
   testWidgets('全局管理运行类型筛选保留板块隔离', (tester) async {
     final managers = fakeManagers(
