@@ -1,3 +1,20 @@
+## 2026-11-04 禁漫天堂 · H動漫（`video/jmcomic-video.js`）· JM文庫（`comic/jmcomic-novel.js`）
+
+详见 [源记录](../docs/2026-11-04_禁漫天堂H動漫与JM文庫源.md)。漫画源（`comic/禁漫天堂.js`）是仓库里原有的，本次没动。
+
+**先解决域名**：`18comic.vip` / `jmcomic.me` 本机一律 `403 Just a moment...`（CF managed challenge），
+公共 CORS 代理也全挂；发布页里的 **`18comic.ink` 直连 200**，所以两个源默认走 `.ink`，
+`.vip` / `.me` 留在 mirrors（请求到它们会抛 `NEED_WEBVIEW_VERIFY` 并提示换镜像）。
+
+`jmcomic_video`：H動漫 `/videos?o={mr|mv|mp|tr|md|tf}&t={a|t|w|m}&page=N`（48 条/页，排序/时间/翻页都实测生效）；
+卡片 `<a href="/video/{id}/…">` + `.thumb-overlay img[data-original]` + `.video-factory/.video-view/.video-added`；
+播放页内联签名 m3u8（`ms18comic-2.iiooxx.rocks/…/hls/{iphone|hd}/{id}.mp4/index.m3u8?e=&st=`），
+源里按序试前 4 条、命中的放 `qualities`，实测 206 + `#EXTM3U`。
+
+`jmcomic_novel`：禁漫小說 `/novels?o=`（单页 78 部、无翻页；`?t=` 实测 0 条 → 只给排序）；
+详情 `h1` = 「[作者] 标题 | 原名」，封面 `/media/novels/{id}_tmb.jpg`；
+章节 `/novelchapters/{n}`（详情页块级 `<a><li>…`，实测 14 章）；正文 `#ncc1`+`#ncc2` 两栏（第 1 章 4317 字、第 13 章 2865 字，未登录可读）。
+
 ## 2026-11-04 乐成漫画短剧（`video/lcm.js`，详见 [源记录](../docs/2026-11-04_乐成漫画短剧源.md)）
 
 `lcm_video`：乐成漫画（lcmhx.cc，Nuxt2 SSR 的成人漫画 + AI 成人短剧站）。本源只做**已验证的短剧频道**

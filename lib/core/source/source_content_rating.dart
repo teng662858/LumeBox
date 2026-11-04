@@ -326,6 +326,9 @@ class SourceContentRating {
     'liz_video',
     // 乐成漫画 · 短剧（lcmhx.cc）：AI 成人短剧频道；HLS 有防盗链，源里改走站点 media.php 代理。
     'lcm_video',
+    // 禁漫天堂（18comic）：H動漫 频道（签名 HLS）与 JM文庫 的禁漫小說（纯文本正文）。
+    'jmcomic_video',
+    'jmcomic_novel',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{

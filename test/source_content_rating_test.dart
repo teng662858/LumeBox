@@ -174,6 +174,8 @@ void main() {
       'yueliang_comic',
       'liz_video',
       'lcm_video',
+      'jmcomic_video',
+      'jmcomic_novel',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);
