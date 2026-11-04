@@ -8,6 +8,9 @@ import '../../shared/widgets/glass_card.dart';
 import 'danmaku/danmaku_settings.dart';
 import 'danmaku/danmaku_sources_page.dart';
 import 'player_settings_sheet.dart';
+import '../media/audio_player_page.dart';
+import '../settings/experience_settings_card.dart';
+import '../settings/settings_ui.dart';
 
 /// 播放器设置页（全局设置 Tab → 播放器设置）。
 ///
@@ -24,7 +27,9 @@ class PlayerSettingsPage extends StatelessWidget {
     this.catalog = const PlatformPlayerKernelCatalog(),
     this.danmaku,
     this.onDanmakuChanged,
+    this.focusCategory,
   });
+  final String? focusCategory;
 
   /// 弹幕设置（与播放页的弹幕面板同一份数据；为空时不显示弹幕一节）。
   ///
@@ -51,7 +56,21 @@ class PlayerSettingsPage extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
+          SettingsEntryCard(
+            icon: Icons.headphones_outlined,
+            title: '音频播放器',
+            subtitle: '独立音频内核 · 后台与锁屏控制',
+            onTap: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AudioPlaybackSettingsPage(),
+              ),
+            ),
+          ),
+          const BackgroundPlaybackSetting(),
+          const SizedBox(height: 16),
           PlayerSettingsSheet(
+            initialCategory: focusCategory,
             settings: settings,
             // 全局页没有播放器实例：按「设置里选的内核」查同一张能力表。
             capabilities: PlayerCapabilities.of(settings.kernel),

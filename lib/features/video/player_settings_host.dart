@@ -16,7 +16,13 @@ import 'video_player_settings.dart';
 /// 在这里改，落库仍写**视频板块自己的**设置库（与其他板块隔离）。
 /// 改动在下次进入视频板块时生效（切 Tab 会重建该板块页面）。
 class PlayerSettingsHost extends StatefulWidget {
-  const PlayerSettingsHost({super.key, this.catalog, this.storeOpener});
+  const PlayerSettingsHost({
+    super.key,
+    this.catalog,
+    this.storeOpener,
+    this.focusCategory,
+  });
+  final String? focusCategory;
 
   /// 内核可用性目录；为空时用平台目录。
   final PlayerKernelCatalog? catalog;
@@ -113,6 +119,7 @@ class _PlayerSettingsHostState extends State<PlayerSettingsHost> {
       );
     }
     return PlayerSettingsPage(
+      focusCategory: widget.focusCategory,
       settings: settings,
       catalog: widget.catalog ?? const PlatformPlayerKernelCatalog(),
       onChanged: _apply,

@@ -9,7 +9,6 @@ import 'package:lume_box/features/settings/settings_page.dart';
 import 'package:lume_box/features/settings/display_settings_group.dart';
 import 'package:lume_box/features/settings/liquid_glass_settings_page.dart';
 import 'package:lume_box/features/settings/configuration_settings_page.dart';
-import 'package:lume_box/features/settings/experience_settings_card.dart';
 import 'package:lume_box/shared/widgets/frosted_glass_widget.dart';
 import 'package:lume_box/shared/widgets/module_glass_scope.dart';
 
@@ -203,11 +202,9 @@ void main() {
     expect(find.text('阅读与播放'), findsOneWidget);
     await tester.tap(find.text('阅读与播放'));
     await tester.pumpAndSettle();
-    expect(find.byType(ExperienceSettingsCard), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('播放器设置'), 250);
-    await tester.tap(find.text('播放器设置'));
-    await tester.pumpAndSettle();
-    expect(find.text('后台播放'), findsOneWidget);
+    expect(find.text('小说设置'), findsOneWidget);
+    expect(find.text('漫画设置'), findsOneWidget);
+    expect(find.text('播放器设置'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
     await tester.pumpWidget(

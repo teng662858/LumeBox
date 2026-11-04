@@ -121,7 +121,9 @@ class PlayerSettingsSheet extends StatefulWidget {
     this.audioControls,
     this.connectionControls,
     this.danmakuControls,
+    this.initialCategory,
   });
+  final String? initialCategory;
 
   /// 当前设置（受控）。
   final PlayerSettings settings;
@@ -186,6 +188,18 @@ class PlayerSettingsSheet extends StatefulWidget {
 }
 
 class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.embedded && widget.initialCategory != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final target = _categoryKeys[widget.initialCategory];
+        if (target != null) _jumpTo(target);
+      });
+    }
+  }
+
   /// 面板自己持一份当前设置：弹窗不改宿主的状态树，改了要当场看到效果
   /// （尤其是「切内核后倍速跟着换」——那正是按内核分别记住的证据）。
   late PlayerSettings _settings = widget.settings;

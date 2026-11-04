@@ -184,17 +184,14 @@ class SettingsPage extends StatelessWidget {
 
     const SettingsGroupTitle('阅读与播放'),
     SettingsEntryCard(
-      icon: Icons.history,
-      title: '继续看／读／听',
-      subtitle: '汇总视频、漫画、小说与听书进度',
-      onTap: () => _push(context, const ContinueActivityPage()),
-    ),
-    const ExperienceSettingsCard(),
-    const SizedBox(height: 12),
-    SettingsEntryCard(
       icon: Icons.menu_book_outlined,
       title: '小说设置',
       subtitle: '字号、行距、阅读主题与朗读',
+      searchTargets: {
+        '小说字号': () => _push(context, const NovelSettingsPage(focus: 'font')),
+        '小说行距': () => _push(context, const NovelSettingsPage(focus: 'height')),
+        '小说朗读': () => _push(context, const NovelSettingsPage(focus: 'speech')),
+      },
       onTap: () => _push(context, const NovelSettingsPage()),
     ),
     SettingsEntryCard(
@@ -238,33 +235,22 @@ class SettingsPage extends StatelessWidget {
       searchTargets: {
         '视频播放器': () => _push(context, const PlayerSettingsHost()),
         '音频播放器': () => _push(context, const AudioPlaybackSettingsPage()),
+        '字幕': () =>
+            _push(context, const PlayerSettingsHost(focusCategory: 'audio')),
+        '弹幕': () =>
+            _push(context, const PlayerSettingsHost(focusCategory: 'danmaku')),
+        '后台播放': () => _push(context, const PlayerSettingsHost()),
       },
-      onTap: () => _push(
-        context,
-        SettingsCategoryPage(
-          category: SettingsCategory(
-            '播放器设置',
-            '视频与音频播放',
-            Icons.play_circle_outline,
-            [
-              SettingsEntryCard(
-                icon: Icons.play_circle_outline,
-                title: '视频播放器',
-                subtitle: '内核、倍速、字幕与弹幕',
-                onTap: () => _push(context, const PlayerSettingsHost()),
-              ),
-              SettingsEntryCard(
-                icon: Icons.headphones_outlined,
-                title: '音频播放器',
-                subtitle: '独立音频内核 · 后台与锁屏控制',
-                onTap: () => _push(context, const AudioPlaybackSettingsPage()),
-              ),
-              const BackgroundPlaybackSetting(),
-            ],
-          ),
-        ),
-      ),
+      onTap: () => _push(context, const PlayerSettingsHost()),
     ),
+    SettingsEntryCard(
+      icon: Icons.history,
+      title: '继续看／读／听',
+      subtitle: '汇总视频、漫画、小说与听书进度',
+      onTap: () => _push(context, const ContinueActivityPage()),
+    ),
+    const ExperienceSettingsCard(),
+    const SizedBox(height: 12),
     SettingsEntryCard(
       icon: Icons.translate,
       title: '翻译语言包',
