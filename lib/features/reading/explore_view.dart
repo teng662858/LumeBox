@@ -1366,7 +1366,7 @@ class _ExploreViewState extends State<ExploreView>
       builder: (context, _) => SourcePickerEdgeSwipe(
         onOpen: _openSourceDrawer,
         onOpenLeft: (motion) => _openSourceDrawer(motion: motion),
-        onOpenRight: (motion) => _openSourceDrawer(motion: motion),
+        onOpenRight: (motion) => _openCombinedFilters(motion: motion),
         child: Scaffold(
           // **本页不随键盘收缩**（真机反馈：唤起键盘后顶部搜索框被顶出屏幕，
           // 漫画 / 视频三块都复现）。这里的布局契约是：

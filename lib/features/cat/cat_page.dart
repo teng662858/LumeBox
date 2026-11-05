@@ -620,7 +620,7 @@ class _CatPageState extends State<CatPage>
 
     final selected = await showBrowseSideDrawer<Object>(
       context: context,
-      side: motion?.side ?? BrowseDrawerSide.right,
+      side: motion?.side ?? BrowseDrawerSide.left,
       edgeToggle: true,
       motion: motion,
       builder: (context) => StatefulBuilder(
@@ -1584,7 +1584,7 @@ class _CatPageState extends State<CatPage>
   Widget build(BuildContext context) => SourcePickerEdgeSwipe(
     onOpen: sitePicker,
     onOpenLeft: (motion) => sitePicker(motion: motion),
-    onOpenRight: (motion) => sitePicker(motion: motion),
+    onOpenRight: (motion) => combinedFilters(motion: motion),
     child: Scaffold(
       backgroundColor: LumeTheme.base,
       body: SafeArea(

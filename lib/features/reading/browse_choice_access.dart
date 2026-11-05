@@ -267,8 +267,9 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
     ({String? category, Map<String, String> filters})
   >(
     context: context,
-    side: BrowseDrawerSide.left,
+    side: BrowseDrawerSide.right,
     motion: motion,
+    edgeToggle: true,
     useRootNavigator: true,
     builder: (context) => StatefulBuilder(
       builder: (context, setPanelState) {

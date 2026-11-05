@@ -69,4 +69,38 @@ void main() {
     expect(result?.filters, {'area': 'cn', 'year': '2026'});
     expect(tester.takeException(), isNull);
   });
+  for (final left in [true, false]) {
+    testWidgets('分类筛选可从${left ? '左' : '右'}侧边缘收回', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(375, 812));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showBrowseFilters(
+                context: context,
+                categories: const [],
+                groups: const [],
+                category: null,
+                filters: const {},
+              ),
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('打开'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('browse-right-drawer')), findsOneWidget);
+      await tester.dragFrom(
+        Offset(left ? 1 : 374, 400),
+        Offset(left ? 120 : -120, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('classification-drawer-frame')),
+        findsNothing,
+      );
+    });
+  }
 }

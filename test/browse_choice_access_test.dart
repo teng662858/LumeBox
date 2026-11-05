@@ -110,7 +110,7 @@ void main() {
     expect(footer.left, 16);
     expect(
       footer.right,
-      tester.getRect(find.byKey(const ValueKey('browse-left-drawer'))).right -
+      tester.getRect(find.byKey(const ValueKey('browse-right-drawer'))).right -
           16,
     );
     expect(footer.bottom, 844 - 34);

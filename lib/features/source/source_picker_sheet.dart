@@ -50,7 +50,7 @@ Future<String?> showSourcePicker({
   BrowseDrawerMotion? motion,
 }) => showBrowseSideDrawer<String>(
   context: context,
-  side: motion?.side ?? BrowseDrawerSide.right,
+  side: motion?.side ?? BrowseDrawerSide.left,
   edgeToggle: true,
   motion: motion,
   builder: (_) => SourcePickerSheet(
