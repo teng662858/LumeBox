@@ -236,6 +236,23 @@ void main() {
       await player.dispose();
     });
 
+    test('停止作废仍在设置容差的交互跳转，不把停止后的进度拉回旧目标', () async {
+      final backend = _RecordingBufferingBackend();
+      final player = AvPlayer(buffering: backend);
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
+      );
+      final gate = Completer<void>();
+      backend.nonZeroToleranceGate = gate;
+      final pending = player.seekInteractive(const Duration(seconds: 42));
+      await Future<void>.delayed(Duration.zero);
+      await player.stop();
+      gate.complete();
+      await pending;
+      expect(platform.seekCalls, [Duration.zero]);
+      await player.dispose();
+    });
+
     test('松手精确 seek 作废仍在写容差的旧 fast seek', () async {
       final backend = _RecordingBufferingBackend();
       final player = AvPlayer(buffering: backend);

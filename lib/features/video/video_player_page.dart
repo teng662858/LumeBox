@@ -83,6 +83,7 @@ import 'player_kernel_picker.dart';
 import 'next_episode_buffer.dart';
 import 'player_settings_sheet.dart';
 import 'player_source_sheet.dart';
+import 'player_playback_info.dart';
 import 'player_speed_meter.dart';
 import 'player_speed_button.dart';
 import 'source_playback.dart';
@@ -366,6 +367,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   int _seekWatchdogGeneration = 0;
   String? _hint;
   Timer? _hintTimer;
+  OverlayEntry? _hintOverlay;
   bool _swipeNextFired = false;
 
   /// 控制栏自动隐藏的计时器（用户要求：播放中无操作 N 秒收起，点屏幕唤回）。
@@ -797,6 +799,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _nextEpisodeBuffer.dispose();
     _unlockTimer?.cancel();
     _hintTimer?.cancel();
+    _hintOverlay?.remove();
+    _hintOverlay?.dispose();
+    _hintOverlay = null;
     WidgetsBinding.instance.removeObserver(this);
     _danmakuLoadSeq++;
     for (final client in _danmakuClients) {
@@ -1664,9 +1669,42 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     if (message == null || !mounted) return;
     _hintTimer?.cancel();
     setState(() => _hint = message);
-    _hintTimer = Timer(const Duration(milliseconds: 1600), () {
-      if (mounted) setState(() => _hint = null);
-    });
+    _hintOverlay?.remove();
+    _hintOverlay?.dispose();
+    _hintOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        top: 8,
+        left: 16,
+        right: 16,
+        child: IgnorePointer(
+          child: SafeArea(
+            child: Material(
+              type: MaterialType.transparency,
+              child: _buildHintPill(),
+            ),
+          ),
+        ),
+      ),
+    );
+    // 每次重插到根 Overlay 顶层，反馈不会藏在刚打开的面板后面。
+    Overlay.of(context, rootOverlay: true).insert(_hintOverlay!);
+    _hintOverlay!.markNeedsBuild();
+    final important = RegExp('失败|超时|无法|不支持|未完成|不可用|不兼容').hasMatch(message);
+    _hintTimer = Timer(
+      Duration(
+        milliseconds: important
+            ? 5000
+            : message.length > 32
+            ? 4000
+            : 1600,
+      ),
+      () {
+        _hintOverlay?.remove();
+        _hintOverlay?.dispose();
+        _hintOverlay = null;
+        if (mounted) setState(() => _hint = null);
+      },
+    );
   }
 
   /// 顶部轻提示胶囊：不拦手势，最多两行。
@@ -3691,8 +3729,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             if (group == 'connection') ...[
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('显示播放速率'),
-                subtitle: const Text('在全屏进度条右上方显示传输速率'),
+                title: const Text('显示实时下载与缓冲'),
+                subtitle: const Text('显示实际下载速度；缓冲时同时显示已缓冲秒数'),
                 value: _showNetworkSpeed,
                 onChanged: (value) {
                   setState(() => _showNetworkSpeed = value);
@@ -3703,6 +3741,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('播放信息'),
+                onTap: _showPlaybackInfo,
                 subtitle: Text(
                   [
                     '内核：${_effectiveKernel.label}',
@@ -5298,7 +5337,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 top: _fullscreen ? 64 : 8,
                 left: 16,
                 right: 16,
-                child: IgnorePointer(child: _buildHintPill()),
+                child: IgnorePointer(
+                  child: _hintOverlay == null
+                      ? _buildHintPill()
+                      : const SizedBox.shrink(),
+                ),
               ),
               // 单击画面由手势层统一切换控制栏（见 _buildGestureLayer）；
               // 双击左右两侧快进/快退 10 秒（上面这层只吃点击，不吃拖动）。
@@ -5625,6 +5668,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       useSafeArea: true,
       builder: (sheetContext) => PlayerSourceSheet(
         fullBleed: true,
+        onPlaybackInfo: _showPlaybackInfo,
         initialTab: initialTab,
         initialView:
             PlayerEpisodeView.values
@@ -5942,7 +5986,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           slot: 'video_player_page.10',
           shadows: _fullscreen ? _controlShadows : null,
         ),
-        onPressed: player?.stop,
+        onPressed: player == null ? null : _stopPlayback,
       ),
       IconButton(
         iconSize: _iconSize + 5,
@@ -6094,6 +6138,66 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           ? PlayerControlGlyph(icon, size: _iconSize)
           : LumeIcon(icon, slot: 'video_player_page.13', variant: true),
       onPressed: onPressed,
+    );
+  }
+
+  Future<void> _stopPlayback() async {
+    _seekRevision++;
+    _seekWatchdogGeneration++;
+    _seekWatchdog?.cancel();
+    _seekDisplayTimeout?.cancel();
+    _cancelSeekConfirmation?.call();
+    _pendingScrubSeek = null;
+    _lastScrubSeek = null;
+    setState(() {
+      _committedSeekTarget = null;
+      _previewTarget = null;
+      _gesture = PlayerGestureState.idle.copyWith(
+        volume: _gesture.volume,
+        brightness: _brightness,
+      );
+    });
+    try {
+      await _player?.stop();
+    } catch (_) {
+      if (mounted) _showToast('停止播放失败，请重试');
+    }
+  }
+
+  Future<void> _showPlaybackInfo() async {
+    final player = _player;
+    final media = _media;
+    if (player == null || media == null) return;
+    final target = _target;
+    Future<String?> line() async {
+      if (target == null) return null;
+      try {
+        final source = await _openSource();
+        if (source == null) return null;
+        final chapters = await VideoEpisodeCatalog.load(source, target.itemId);
+        final current = chapters
+            .where((c) => c.id == target.chapterId)
+            .firstOrNull;
+        return current == null ? null : VideoEpisodeCatalog.lineOf(current);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (_) => PlayerPlaybackInfo(
+        address: media.uri,
+        stats: player.stats,
+        snapshot: player.snapshot,
+        onCopied: _showToast,
+        line: line(),
+        source: _source?.name ?? target?.sourceId ?? '手动地址',
+        quality: _qualityIndex >= 0 && _qualityIndex < _qualities.length
+            ? _qualities[_qualityIndex].label
+            : '未提供',
+        kernel: _effectiveKernel.label,
+      ),
     );
   }
 

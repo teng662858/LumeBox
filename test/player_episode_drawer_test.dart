@@ -66,7 +66,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('第120集'), findsOneWidget);
-      await tester.tap(find.byTooltip('正序'));
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('正序'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('第119集'));
       await tester.pumpAndSettle();
@@ -75,7 +77,9 @@ void main() {
       expect(selected, 118);
       expect(find.text('切集失败，请重试'), findsOneWidget);
       final next = PlayerEpisodeView.values[(mode.index + 1) % 3];
-      await tester.tap(find.byTooltip('视图：${mode.label}'));
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('视图：${next.label}'));
       await tester.pumpAndSettle();
       expect(changed, next);
       expect(find.text('第120集'), findsOneWidget);

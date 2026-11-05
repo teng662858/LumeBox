@@ -173,6 +173,8 @@ void main() {
 
       await tester.tap(find.byTooltip('播放器设置'), warnIfMissed: false);
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('player-category-advanced')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
       // 设置是弹窗：选 MPV 后用它自己的关闭按钮收起。
@@ -215,6 +217,8 @@ void main() {
       // 「还在准备」的提示——那条 SnackBar 会盖住控制栏，真机上点哪都没反应）。
       expect(find.byType(SnackBar), findsNothing, reason: '失败态不弹误导性提示');
       await tester.tap(find.byTooltip('播放器设置'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
@@ -296,6 +300,8 @@ void main() {
 
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('player-category-advanced')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
       // 同一帧里连点两次：第二次选择让第一次的重建作废。
@@ -362,6 +368,8 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('播放器设置'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('player-category-advanced')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
     await tester.pumpAndSettle();

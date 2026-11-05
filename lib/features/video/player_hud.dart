@@ -96,7 +96,8 @@ class PlayerStatsInline extends StatelessWidget {
     if (stats.downloadBytesPerSecond != null) {
       return PlaybackSpeedMeter.describeBytes(stats.downloadBytesPerSecond!);
     }
-    return PlaybackSpeedMeter.describe(kbps);
+    final probe = PlaybackSpeedMeter.describe(kbps);
+    return probe == null ? null : '线路测速 $probe';
   }
 
   @override
@@ -116,8 +117,14 @@ class PlayerStatsInline extends StatelessWidget {
         final labels = <String>[
           if (showResolution && value.resolutionText != null)
             value.resolutionText!,
+          if (showSpeed && value.buffering)
+            value.buffered == null
+                ? '正在缓冲 · 时长未知'
+                : '已缓冲 ${value.buffered!.inMilliseconds / 1000 < 1 ? '<1' : value.buffered!.inSeconds} 秒',
           if (showSpeed && speedText(value, kbps) != null)
-            speedText(value, kbps)!,
+            value.downloadBytesPerSecond != null
+                ? '下载 ${speedText(value, kbps)!}'
+                : speedText(value, kbps)!,
         ];
         if (labels.isEmpty) return const SizedBox.shrink();
         final texts = labels
@@ -139,7 +146,7 @@ class PlayerStatsInline extends StatelessWidget {
               ),
             )
             .toList();
-        if (stacked) {
+        if (stacked || (showSpeed && value.buffering)) {
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,

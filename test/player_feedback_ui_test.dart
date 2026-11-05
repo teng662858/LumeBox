@@ -101,7 +101,9 @@ void main() {
           ).writeAsBytes(bytes!.buffer.asUint8List());
         });
       }
-      await tester.tap(find.byTooltip('正序'));
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('正序'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('定位当前'));
       await tester.pumpAndSettle();

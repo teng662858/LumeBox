@@ -386,6 +386,7 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
 
   @override
   Future<void> stop() async {
+    _seekGeneration++;
     _wantsPlay = false;
     _retryAllowed = false;
     _retryTimer?.cancel();

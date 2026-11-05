@@ -239,6 +239,7 @@ void main() {
     Future<void> pumpPage(
       WidgetTester tester, {
       PlayerSettings? initial,
+      String category = 'audio',
     }) async {
       await tester.binding.setSurfaceSize(const Size(900, 2000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -246,6 +247,7 @@ void main() {
         MaterialApp(
           theme: LumeTheme.build(),
           home: PlayerSettingsPage(
+            focusCategory: category,
             settings: initial ?? const PlayerSettings(),
             catalog: const _AllAvailableCatalog(),
             onChanged: (_) {},
@@ -287,13 +289,14 @@ void main() {
       await pumpPage(
         tester,
         initial: const PlayerSettings(kernel: PlayerKernel.mpv),
+        category: 'advanced',
       );
       expect(find.text('解码'), findsOneWidget);
       expect(find.text('硬件解码'), findsOneWidget);
       expect(find.textContaining('优先硬解'), findsOneWidget);
 
       // AVPlayer（插件不暴露解码配置）→ 控件照旧在，但点了弹统一提示。
-      await pumpPage(tester);
+      await pumpPage(tester, category: 'advanced');
       expect(find.text('硬件解码'), findsOneWidget);
       expect(find.text('不支持'), findsOneWidget);
       expect(
@@ -311,6 +314,7 @@ void main() {
         MaterialApp(
           theme: LumeTheme.build(),
           home: PlayerSettingsPage(
+            focusCategory: 'audio',
             // 字幕样式（字号 / 颜色 / 描边 / 底色）只有 MPV 有通道；
             // AVPlayer 上这些控件照旧显示，但点了弹统一提示。
             settings: const PlayerSettings(kernel: PlayerKernel.mpv),
@@ -336,6 +340,7 @@ void main() {
         MaterialApp(
           theme: LumeTheme.build(),
           home: PlayerSettingsPage(
+            focusCategory: 'advanced',
             // 硬解开关只有 MPV 真的能切（AVPlayer 上是「不支持」入口）。
             settings: const PlayerSettings(kernel: PlayerKernel.mpv),
             catalog: const _AllAvailableCatalog(),

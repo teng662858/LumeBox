@@ -254,6 +254,8 @@ void main() {
 
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('player-category-advanced')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('MPV'));
@@ -308,6 +310,8 @@ void main() {
 
       // 切到 MPV：初始化抛错 → 回退 AVPlayer + 提示。
       await tester.tap(find.byTooltip('播放器设置'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
@@ -367,6 +371,8 @@ void main() {
 
       // 换成 MPV 内核：同一块 HUD 直接显示 MPV 的参数，页面代码零改动。
       await tester.tap(find.byTooltip('播放器设置'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();

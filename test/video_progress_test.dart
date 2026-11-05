@@ -917,6 +917,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.byTooltip('播放器设置'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('player-category-intro')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('player-category-intro')));
     await tester.pumpAndSettle();
     final markIntro = find.descendant(
@@ -975,6 +977,8 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.byTooltip('播放器设置'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('player-category-intro')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('player-category-intro')));
     await tester.pumpAndSettle();

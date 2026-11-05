@@ -75,6 +75,43 @@ void main() {
     });
   }
 
+  testWidgets('竖屏嵌套输入忽略父层清除的键盘 inset，操作按钮仍在键盘上方', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: MediaQuery.removeViewInsets(
+              context: context,
+              removeBottom: true,
+              child: DanmakuPanelFrame(
+                maxPortraitHeight: 280,
+                child: Column(
+                  children: [
+                    const TextField(),
+                    const Spacer(),
+                    TextButton(onPressed: () {}, child: const Text('确认输入')),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    final rect = tester.getRect(
+      find.byKey(const ValueKey('danmaku-panel-frame')),
+    );
+    expect(rect.bottom, lessThanOrEqualTo(544));
+    expect(rect.height, lessThanOrEqualTo(280));
+    expect(tester.getRect(find.text('确认输入')).bottom, lessThan(544));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('嵌套设置输入弹窗仍占物理屏幕四成，确认只关闭输入层', (tester) async {
     tester.view.physicalSize = const Size(932, 430);
     tester.view.devicePixelRatio = 1;

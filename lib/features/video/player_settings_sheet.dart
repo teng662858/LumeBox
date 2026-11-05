@@ -585,36 +585,48 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     }
   }
 
-  Widget _categoryNavigation() => Padding(
-    key: _navigationKey,
-    padding: const EdgeInsets.only(bottom: 12),
-    child: Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        for (final category in _categories)
-          if ((category.$1 != 'intro' ||
-                  widget.showPlaybackShortcuts ||
-                  widget.introControls != null) &&
-              (category.$1 != 'danmaku' ||
-                  _danmaku != null ||
-                  widget.danmakuControls != null))
-            ChoiceChip(
-              key: ValueKey('player-category-${category.$1}'),
-              label: Text(category.$2),
-              selected: !widget.embedded && _selectedCategory == category.$1,
-              showCheckmark: false,
-              onSelected: (_) {
-                if (widget.embedded) {
-                  _jumpTo(_categoryKeys[category.$1]!);
-                } else {
-                  setState(() => _selectedCategory = category.$1);
-                }
-              },
+  Widget _categoryNavigation() {
+    final choices = <Widget>[
+      for (final category in _categories)
+        if ((category.$1 != 'intro' ||
+                widget.showPlaybackShortcuts ||
+                widget.introControls != null) &&
+            (category.$1 != 'danmaku' ||
+                _danmaku != null ||
+                widget.danmakuControls != null))
+          ChoiceChip(
+            key: ValueKey('player-category-${category.$1}'),
+            label: Text(category.$2),
+            selected: !widget.embedded && _selectedCategory == category.$1,
+            showCheckmark: false,
+            onSelected: (_) {
+              if (widget.embedded) {
+                _jumpTo(_categoryKeys[category.$1]!);
+              } else {
+                setState(() => _selectedCategory = category.$1);
+              }
+            },
+          ),
+    ];
+    return Padding(
+      key: _navigationKey,
+      padding: const EdgeInsets.only(bottom: 8),
+      child: widget.embedded
+          ? Wrap(spacing: 6, runSpacing: 6, children: choices)
+          : SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final choice in choices)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: choice,
+                    ),
+                ],
+              ),
             ),
-      ],
-    ),
-  );
+    );
+  }
 
   Widget _group(
     String id,

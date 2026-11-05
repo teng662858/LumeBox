@@ -61,6 +61,10 @@ void main() {
         ('controls', '手势与外观'),
         ('playback', '播放与选集'),
       ]) {
+        await tester.ensureVisible(
+          find.byKey(ValueKey('player-category-${group.$1}')),
+        );
+        await tester.pumpAndSettle();
         await tester.tap(find.byKey(ValueKey('player-category-${group.$1}')));
         await tester.pumpAndSettle();
         final heading = tester.getRect(find.text(group.$2));
