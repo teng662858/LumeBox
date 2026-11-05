@@ -50,12 +50,13 @@ class RepositoryOperation {
     this.installPaths = const [],
     this.addedNames = const [],
     this.removedNames = const [],
+    this.removedPaths = const [],
     this.manual = false,
     this.dispatched = false,
   });
   final String branch, commit;
   final List<String> installPaths;
-  final List<String> addedNames, removedNames;
+  final List<String> addedNames, removedNames, removedPaths;
   final bool manual, dispatched;
   Map<String, Object> toJson() => {
     'branch': branch,
@@ -65,6 +66,7 @@ class RepositoryOperation {
     if (installPaths.isNotEmpty) 'installPaths': installPaths,
     if (addedNames.isNotEmpty) 'addedNames': addedNames,
     if (removedNames.isNotEmpty) 'removedNames': removedNames,
+    if (removedPaths.isNotEmpty) 'removedPaths': removedPaths,
   };
   static RepositoryOperation? parse(Object? value) =>
       value is Map && value['branch'] is String && value['commit'] is String
@@ -82,6 +84,13 @@ class RepositoryOperation {
                       ? value['removedNames'] as List
                       : const [])
                   .whereType<String>()
+                  .toList(),
+          removedPaths:
+              (value['removedPaths'] is List
+                      ? value['removedPaths'] as List
+                      : const [])
+                  .whereType<String>()
+                  .where(GithubSourceRepository.validPath)
                   .toList(),
           manual: value['manual'] == true,
           dispatched: value['dispatched'] == true,
@@ -102,10 +111,12 @@ class RepositoryPublication {
     this.url = '',
     this.finished = false,
     this.succeeded = false,
+    this.started = false,
   });
   final String status, url;
   final bool finished;
   final bool succeeded;
+  final bool started;
 }
 
 class RepositoryUpload {
@@ -528,11 +539,14 @@ class GithubSourceRepository {
       'actions/workflows/app-source-publish.yml/runs?head_sha=${Uri.encodeQueryComponent(operation.commit)}&per_page=10',
     );
     final runs = (response['workflow_runs'] as List).cast<Map>();
-    if (runs.isEmpty) return const RepositoryPublication('已提交，等待 GitHub 启动发布');
-    final run = runs.first;
+    final eligible = operation.manual
+        ? runs.where((run) => run['event'] == 'workflow_dispatch').toList()
+        : runs.toList();
+    if (eligible.isEmpty) return const RepositoryPublication('已提交，等待手动发布');
+    final run = eligible.first;
     final url = '${run['html_url'] ?? ''}';
     if (run['status'] != 'completed') {
-      return RepositoryPublication('正在校验、更新并核对订阅', url: url);
+      return RepositoryPublication('正在校验、更新并核对订阅', url: url, started: true);
     }
     return RepositoryPublication(
       run['conclusion'] == 'success'
@@ -541,6 +555,7 @@ class GithubSourceRepository {
       url: url,
       finished: true,
       succeeded: run['conclusion'] == 'success',
+      started: true,
     );
   }
 }

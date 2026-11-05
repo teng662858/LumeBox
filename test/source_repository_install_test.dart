@@ -39,11 +39,74 @@ class _Repository extends GithubSourceRepository {
   @override
   Future<RepositoryPublication> publication(
     RepositoryOperation operation,
-  ) async =>
-      const RepositoryPublication('已发布', finished: true, succeeded: true);
+  ) async => operation.manual && !operation.dispatched
+      ? const RepositoryPublication('已提交，等待手动发布')
+      : const RepositoryPublication(
+          '已发布',
+          finished: true,
+          succeeded: true,
+          started: true,
+        );
+}
+
+class _PublishedRepository extends _Repository {
+  _PublishedRepository(this.stillExists);
+  final bool stillExists;
+  @override
+  Future<RepositoryPublication> publication(
+    RepositoryOperation operation,
+  ) async => const RepositoryPublication(
+    '已发布：订阅内容核对通过',
+    finished: true,
+    succeeded: true,
+    started: true,
+  );
+  @override
+  Future<RepositorySnapshot> snapshot() async => RepositorySnapshot(
+    'head',
+    'tree',
+    stillExists ? {'movie/example.js': 'blob'} : {},
+    const [],
+  );
 }
 
 void main() {
+  for (final exists in [false, true]) {
+    testWidgets(exists ? '工作流成功但目标仍存在时不能报成功' : '外部发布成功后恢复记录并核对删除', (
+      tester,
+    ) async {
+      final credentials = _Credentials({
+        'token': 'test',
+        'operation': const RepositoryOperation(
+          'draft',
+          'commit',
+          manual: true,
+          removedPaths: ['movie/example.js'],
+          removedNames: ['影视示例'],
+        ).toJson(),
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SourceRepositoryPage(
+            store: credentials,
+            clientFactory: (_) => _PublishedRepository(exists),
+            managers: {
+              Section.comic: FakeSourceManager(),
+              Section.video: FakeSourceManager(),
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining(exists ? '待删除文件仍在仓库' : '发布成功：新增 0 个，删除 1 个'),
+        findsOneWidget,
+      );
+      expect(find.text('发布待发布的变更'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('放弃未发布记录保留本次待删除选择', (tester) async {
     final credentials = _Credentials({
       'token': 'test',

@@ -279,6 +279,32 @@ void main() {
     },
   );
 
+  test('手动草稿只认真正发布任务，不把跳过的创建任务视为完成', () async {
+    var runs = <Map<String, String>>[
+      {'event': 'create', 'status': 'completed', 'conclusion': 'skipped'},
+    ];
+    final repo = GithubSourceRepository(
+      'token',
+      client: MockClient(
+        (_) async => http.Response(jsonEncode({'workflow_runs': runs}), 200),
+      ),
+    );
+    addTearDown(repo.close);
+    const operation = RepositoryOperation('draft', 'candidate', manual: true);
+    expect((await repo.publication(operation)).finished, false);
+    runs = [
+      {'event': 'create', 'status': 'completed', 'conclusion': 'skipped'},
+      {
+        'event': 'workflow_dispatch',
+        'status': 'completed',
+        'conclusion': 'success',
+      },
+    ];
+    final result = await repo.publication(operation);
+    expect(result.started, true);
+    expect(result.succeeded, true);
+  });
+
   test('credentials and pending operation use native Keychain channel and clear explicitly', () async {
     var stored = '';
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

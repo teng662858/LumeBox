@@ -78,13 +78,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
         _repo = _client(token);
         _operation = RepositoryOperation.parse(data['operation']);
         await _refresh();
-        if (_operation?.manual == true && _operation?.dispatched == false) {
-          _publication = const RepositoryPublication('已提交，等待手动发布');
-        }
-        if (_operation != null &&
-            (!_operation!.manual || _operation!.dispatched)) {
-          _watch();
-        }
+        if (_operation != null) _watch();
       }
     } catch (_) {
       if (mounted) setState(() => _error = '无法读取 GitHub 授权，请重新连接');
@@ -153,13 +147,30 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     try {
       final result = await repo.publication(operation);
       if (!mounted || _operation != operation) return;
+      if (result.finished) {
+        _poll?.cancel();
+        await _refresh();
+        if (!mounted || _operation != operation) return;
+        final remaining = operation.removedPaths
+            .where(_snapshot!.files.containsKey)
+            .toList();
+        if (result.succeeded && remaining.isNotEmpty) {
+          setState(() {
+            _publication = RepositoryPublication(
+              '发布结果未通过核对：${remaining.length} 个待删除文件仍在仓库，请刷新检查',
+              url: result.url,
+              finished: true,
+              started: true,
+            );
+          });
+          return;
+        }
+      }
       setState(() {
         _publication = result;
         _error = null;
       });
       if (result.finished) {
-        _poll?.cancel();
-        await _refresh();
         if (result.succeeded && operation.installPaths.isNotEmpty && mounted) {
           setState(() {
             _installing = true;
@@ -180,6 +191,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
             operation.commit,
             addedNames: operation.addedNames,
             removedNames: operation.removedNames,
+            removedPaths: operation.removedPaths,
             manual: operation.manual,
             dispatched: operation.dispatched,
           );
@@ -222,18 +234,28 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
 
   Future<void> _publish() => _run(() async {
     final operation = _operation;
-    if (operation == null || !operation.manual || operation.dispatched) return;
+    if (operation == null ||
+        !operation.manual ||
+        operation.dispatched ||
+        (_publication?.started ?? false)) {
+      return;
+    }
     if (!await _confirm('手动发布', '将发布已提交的变更，更新并核对仓库订阅。', confirmLabel: '确认发布') ||
         !mounted) {
       return;
     }
-    await _repo!.dispatchPublication(operation);
+    try {
+      await _repo!.dispatchPublication(operation);
+    } on RepositoryFailure catch (error) {
+      throw RepositoryFailure('发布未启动：${error.message}');
+    }
     final dispatched = RepositoryOperation(
       operation.branch,
       operation.commit,
       installPaths: operation.installPaths,
       addedNames: operation.addedNames,
       removedNames: operation.removedNames,
+      removedPaths: operation.removedPaths,
       manual: true,
       dispatched: true,
     );
@@ -268,7 +290,10 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
   Future<void> _resolvePendingBeforeSubmit() async {
     final operation = _operation;
     if (operation == null) return;
-    final awaitingPublication = operation.manual && !operation.dispatched;
+    final awaitingPublication =
+        operation.manual &&
+        !operation.dispatched &&
+        !(_publication?.started ?? false);
     final choice = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -455,6 +480,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
       dispatched: operation.dispatched,
       addedNames: [for (final item in _additions.values) item.metadata.name],
       removedNames: [for (final item in _removals.values) item.name],
+      removedPaths: [for (final item in _removals.values) ...item.paths],
     );
     setState(() {
       _additions.clear();
@@ -752,12 +778,18 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                     ],
                   ),
                 ),
-              if (_operation?.manual == true && _operation?.dispatched == false)
+              if (_operation?.manual == true &&
+                  _operation?.dispatched == false &&
+                  !(_publication?.started ?? false) &&
+                  !(_publication?.finished ?? false))
                 TextButton(
                   onPressed: _busy ? null : _forgetUnpublished,
                   child: const Text('放弃上次待发布记录'),
                 ),
-              if (_operation?.manual == true && _operation?.dispatched == false)
+              if (_operation?.manual == true &&
+                  _operation?.dispatched == false &&
+                  !(_publication?.started ?? false) &&
+                  !(_publication?.finished ?? false))
                 FilledButton.icon(
                   onPressed: _busy ? null : _publish,
                   icon: const Icon(Icons.publish),
