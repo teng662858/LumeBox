@@ -285,6 +285,7 @@ void main() {
       bool fullscreenOnly = false,
       PlayerPrelaunch? prelaunch,
       ReadingLibrary? library,
+      Uri? mediaUri,
     }) async {
       final created = <_FakePlayer>[];
       await tester.binding.setSurfaceSize(const Size(900, 1600));
@@ -296,7 +297,9 @@ void main() {
             fullscreenOnly: fullscreenOnly,
             library: library,
             prelaunch: prelaunch,
-            media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
+            media: PlayerMedia(
+              uri: mediaUri ?? Uri.parse('https://example.com/a.mp4'),
+            ),
             qualities: qualities,
             catalog: catalog ?? const _AllKernelsCatalog(),
             speedMeter: speedMeter,
@@ -1833,7 +1836,12 @@ void main() {
     testWidgets('未知尺寸不修改系统方向，迟到的短剧尺寸不会触发横屏闪动', (tester) async {
       final calls = _captureOrientations(tester);
       final players = await pump(tester, fullscreenOnly: true);
-      expect(calls.where((call) => call.method == 'SystemChrome.setPreferredOrientations'), isEmpty);
+      expect(
+        calls.where(
+          (call) => call.method == 'SystemChrome.setPreferredOrientations',
+        ),
+        isEmpty,
+      );
       players.single.pushStats(const PlayerStats(width: 720, height: 1280));
       await tester.pumpAndSettle();
       expect(_lastOrientations(calls), ['DeviceOrientation.portraitUp']);
@@ -1955,7 +1963,7 @@ void main() {
       expect(find.byKey(VideoPlayerPage.controlPanelKey), findsOneWidget);
     });
 
-    testWidgets('网络流拖出缓冲区时松手才跳转', (tester) async {
+    testWidgets('网络流拖动中只预览，松手提交并保持目标进度', (tester) async {
       final players = await pump(tester);
       players.single.emit(
         position: const Duration(minutes: 1),
@@ -1992,8 +2000,8 @@ void main() {
       expect(players.single.seeks, isNotEmpty, reason: '松手要落到精确位置');
       expect(
         find.textContaining('拖动到'),
-        findsOneWidget,
-        reason: '内核尚未确认跳转，保留目标位置避免回弹',
+        findsNothing,
+        reason: '松手立即收起拖动提示，进度条独立保留目标位置',
       );
       players.single.emit(
         position: players.single.seeks.last,
@@ -2003,8 +2011,8 @@ void main() {
       expect(find.textContaining('拖动到'), findsNothing);
     });
 
-    testWidgets('拖动中快 seek 串行且只留最新落点', (tester) async {
-      final players = await pump(tester);
+    testWidgets('本地拖动中快 seek 串行且只留最新落点', (tester) async {
+      final players = await pump(tester, mediaUri: Uri.file('D:/test.mp4'));
       players.single.emit(
         position: const Duration(minutes: 1),
         duration: const Duration(minutes: 10),
@@ -2075,7 +2083,8 @@ void main() {
       await gesture.up();
       await tester.pump();
       expect(players.single.seeks, hasLength(1));
-      expect(find.textContaining('拖动到'), findsOneWidget);
+      expect(find.textContaining('拖动到'), findsNothing);
+      final committed = tester.widget<Slider>(slider).value;
 
       // 2s 超时后不再挂着：预览文字收掉（缓冲由内核状态自己表达）。
       await tester.pump(const Duration(seconds: 2));
@@ -2084,6 +2093,12 @@ void main() {
         find.textContaining('拖动到'),
         findsNothing,
         reason: '跳转回调不来也必须收尾，不能把预览留在屏幕上',
+      );
+
+      expect(
+        tester.widget<Slider>(slider).value,
+        committed,
+        reason: '两秒超时后仍保持目标，不回弹到旧进度',
       );
 
       // 6s 看门狗：位置没动且还在缓冲，自动重发同一跳转。
@@ -2097,9 +2112,97 @@ void main() {
       players.single.emit(
         position: players.single.seeks.last,
         duration: const Duration(minutes: 10),
+        buffering: false,
       );
       gate.complete();
       await tester.pumpAndSettle();
+    });
+
+    testWidgets('网络缓冲区内拖动也不发中间请求，旧进度上报不能拉回滑块', (tester) async {
+      final players = await pump(tester);
+      final player = players.single;
+      player.emit(
+        position: const Duration(minutes: 1),
+        duration: const Duration(minutes: 10),
+      );
+      player.pushStats(const PlayerStats(buffered: Duration(minutes: 10)));
+      await tester.pumpAndSettle();
+      final slider = find.byType(Slider).first;
+      final callbacks = tester.widget<Slider>(slider);
+      callbacks.onChangeStart!(.5);
+      callbacks.onChanged!(.6);
+      callbacks.onChanged!(.7);
+      await tester.pump();
+      expect(player.fastSeeks, isEmpty);
+      callbacks.onChangeEnd!(.7);
+      await tester.pump();
+      expect(player.seeks, [const Duration(minutes: 7)]);
+      await tester.pump(const Duration(seconds: 3));
+      player.emit(position: const Duration(seconds: 62), buffering: true);
+      await tester.pump();
+      expect(tester.widget<Slider>(slider).value, closeTo(.7, .001));
+      player.emit(position: const Duration(minutes: 7), buffering: false);
+      await tester.pump();
+      player.emit(position: const Duration(minutes: 7, seconds: 1));
+      await tester.pump();
+      expect(tester.widget<Slider>(slider).value, greaterThan(.7));
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('连续点击快进累计目标，不从迟到的旧位置重新计算', (tester) async {
+      final players = await pump(tester);
+      final player = players.single;
+      player.emit(
+        position: const Duration(seconds: 30),
+        duration: const Duration(minutes: 10),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('前进 10 秒'));
+      await tester.pump();
+      await tester.tap(find.byTooltip('前进 10 秒'));
+      await tester.pump();
+      expect(player.seeks, [
+        const Duration(seconds: 40),
+        const Duration(seconds: 50),
+      ]);
+      player.emit(position: const Duration(seconds: 50));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('连续跳转只跟踪最新目标，旧跳转超时不重发旧位置', (tester) async {
+      final players = await pump(tester);
+      final player = players.single;
+      player.emit(
+        position: const Duration(minutes: 1),
+        duration: const Duration(minutes: 10),
+      );
+      await tester.pumpAndSettle();
+      final slider = find.byType(Slider).first;
+      final gate = Completer<void>();
+      player.seekGate = gate;
+      var callbacks = tester.widget<Slider>(slider);
+      callbacks.onChangeStart!(.3);
+      callbacks.onChangeEnd!(.3);
+      await tester.pump();
+      callbacks = tester.widget<Slider>(slider);
+      callbacks.onChangeStart!(.8);
+      callbacks.onChangeEnd!(.8);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+      expect(tester.widget<Slider>(slider).value, closeTo(.8, .001));
+      player.emit(position: const Duration(minutes: 3), buffering: true);
+      await tester.pump(const Duration(seconds: 6));
+      expect(player.seeks, [
+        const Duration(minutes: 3),
+        const Duration(minutes: 8),
+        const Duration(minutes: 8),
+      ]);
+      player.emit(position: const Duration(minutes: 8), buffering: false);
+      gate.complete();
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox());
     });
 
     testWidgets('前进 10 秒：按当前位次跳转', (tester) async {
@@ -2124,6 +2227,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(players.single.seeks.last, const Duration(seconds: 30));
 
+      players.single.emit(position: const Duration(seconds: 30));
+      await tester.pumpAndSettle();
       // 越界夹到 0。
       players.single.emit(
         position: const Duration(seconds: 5),

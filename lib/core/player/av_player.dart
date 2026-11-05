@@ -347,6 +347,18 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
     await _controller?.seekTo(position);
   }
 
+  static const Duration interactiveSeekTolerance = Duration(seconds: 1);
+
+  @override
+  Future<void> seekInteractive(Duration position) async {
+    final generation = ++_seekGeneration;
+    // 允许前后 1 秒内就近落点，避开常见 2 秒 GOP 的逐帧精确解码。
+    // 使用有限容差，不继承实验性「只找前一关键帧」开关。
+    await _setSeekTolerance(interactiveSeekTolerance);
+    if (generation != _seekGeneration) return;
+    await _controller?.seekTo(position);
+  }
+
   /// 吸附到前一关键帧（实验开关）：写 -1 作哨兵，原生侧翻成 ±∞/0。
   bool _snapToKeyframe = false;
 

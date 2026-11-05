@@ -221,6 +221,21 @@ void main() {
       await player.dispose();
     });
 
+    test('交互跳转使用有限容差，精确跳转归零且不继承关键帧实验开关', () async {
+      final backend = _RecordingBufferingBackend();
+      final player = AvPlayer(buffering: backend);
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
+      );
+      player.setFastSeekSnapToKeyframe(true);
+      await player.seekInteractive(const Duration(seconds: 42));
+      expect(backend.seekTolerances.last, AvPlayer.interactiveSeekTolerance);
+      expect(platform.seekCalls.last, const Duration(seconds: 42));
+      await player.seek(const Duration(seconds: 60));
+      expect(backend.seekTolerances.last, Duration.zero);
+      await player.dispose();
+    });
+
     test('松手精确 seek 作废仍在写容差的旧 fast seek', () async {
       final backend = _RecordingBufferingBackend();
       final player = AvPlayer(buffering: backend);

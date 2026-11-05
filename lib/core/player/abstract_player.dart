@@ -84,6 +84,9 @@ abstract class AbstractPlayer {
 
   Future<void> seek(Duration position);
 
+  /// 用户拖动或快进：允许小幅容差以尽快恢复画面，精确定位仍使用 seek。
+  Future<void> seekInteractive(Duration position) => seek(position);
+
   /// 拖动预览用的快速定位：允许落到最近关键帧，落点可能有误差。
   ///
   /// 拖滑条/横向手势时每 150ms 会发一次，要求尽量快；松手时改用 [seek]。
