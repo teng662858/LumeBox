@@ -13,6 +13,7 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/total_subscription.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/source/global_source_page.dart';
+import 'package:lume_box/features/source/total_subscription_import_entry.dart';
 
 import 'support/fake_source_manager.dart';
 
@@ -62,17 +63,25 @@ void main() {
     Size size = const Size(900, 1400),
     Future<List<({String name, String text})>> Function()? readLocalScripts,
     Future<SourceFetchResult> Function(String url)? fetchSubscription,
+    bool importEntry = false,
   }) async {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
         theme: LumeTheme.build(),
-        home: GlobalSourcePage(
-          managerFactory: (section) => managers[section]!,
-          readLocalScripts: readLocalScripts,
-          fetchSubscription: fetchSubscription,
-        ),
+        home: importEntry
+            ? Scaffold(
+                body: TotalSubscriptionImportEntry(
+                  managerFactory: (section) => managers[section]!,
+                  fetchSubscription: fetchSubscription,
+                ),
+              )
+            : GlobalSourcePage(
+                managerFactory: (section) => managers[section]!,
+                readLocalScripts: readLocalScripts,
+                fetchSubscription: fetchSubscription,
+              ),
       ),
     );
     await tester.pumpAndSettle();
@@ -83,13 +92,14 @@ void main() {
     await pumpPage(
       tester,
       fakeManagers(),
+      importEntry: true,
       fetchSubscription: (url) async {
         requests.add(url);
         throw StateError('测试停止请求');
       },
     );
     Future<void> openPicker() async {
-      await tester.tap(find.byTooltip('一键导入全部订阅源'));
+      await tester.tap(find.text('一键导入全部订阅源'));
       await tester.pumpAndSettle();
     }
 
@@ -164,6 +174,7 @@ void main() {
       await pumpPage(
         tester,
         managers,
+        importEntry: true,
         fetchSubscription: (url) async {
           final text = values[url]!;
           return SourceFetchResult(
@@ -172,7 +183,7 @@ void main() {
           );
         },
       );
-      await tester.tap(find.byTooltip('一键导入全部订阅源'));
+      await tester.tap(find.text('一键导入全部订阅源'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('GitHub 原站'));
       await settle();

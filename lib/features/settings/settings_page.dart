@@ -1,3 +1,4 @@
+import '../source/total_subscription_import_entry.dart';
 import '../reading/continue_activity_page.dart';
 import 'performance_page.dart';
 import '../comic/download_center_page.dart';
@@ -288,6 +289,7 @@ class SettingsPage extends StatelessWidget {
         context,
         SettingsCategoryPage(
           category: SettingsCategory('源管理', '添加、检查和更新站点与订阅', Icons.tune, [
+            const TotalSubscriptionImportEntry(),
             SettingsEntryCard(
               icon: Icons.playlist_add,
               title: '添加与管理源',

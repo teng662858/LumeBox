@@ -307,10 +307,12 @@ void main() {
     await scrollTo(tester, '源管理');
     await tester.tap(find.text('源管理'));
     await tester.pumpAndSettle();
+    expect(find.text('一键导入全部订阅源'), findsOneWidget);
     await tester.tap(find.text('添加与管理源'));
     await pumpIoAndSettle(tester);
 
     expect(find.widgetWithText(AppBar, '源总管理'), findsOneWidget);
+    expect(find.byTooltip('一键导入全部订阅源'), findsNothing);
   });
 
   testWidgets('小说设置写入小说阅读器使用的现有设置', (tester) async {
