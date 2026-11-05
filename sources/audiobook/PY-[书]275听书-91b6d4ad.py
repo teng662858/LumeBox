@@ -14278,26 +14278,19 @@ class Spider(BaseSpider):
 
     def playerContent(self, flag, id, vipFlags):
         play_url = id if str(id).startswith('http') else urljoin(self.site, str(id))
+        # 播放失败时不再回落到网页解析：只有站点确实取不到地址才报错。
         try:
             if not self.session.cookies:
                 self._get('/')
                 time.sleep(1.05)
-            response = self._get(play_url, headers={'Referer': self._book_referer(play_url)})
-            match = re.search(
-                r'\baudio\s*:\s*\[\s*\{.*?\burl\s*:\s*["\']([^"\']+)["\']',
-                response.text, re.S,
-            )
-            if not match:
-                raise ValueError('播放页没有音频地址')
-            # 不能对整条 URL 做 html.unescape，&amp;timestamp 会被误解为 &times。
-            audio_url = match.group(1).replace('&amp;', '&')
+            audio_url = self._chapter_audio(play_url)
             audio_referer = play_url
             if audio_url.startswith('lrts$'):
                 audio_url = self._resolve_lrts(audio_url)
                 audio_referer = 'https://m.lrts.me/'
-            audio_url = re.sub(r'^http://', 'https://', audio_url, count=1, flags=re.I)
-            if not re.match(r'^https://', audio_url, re.I):
-                raise ValueError('播放地址不是有效的 HTTPS 音频链接')
+            # 音频主机证书已过期，且不提供 https 端口；保持站点下发的协议。
+            if not re.match(r'^https?://', audio_url, re.I):
+                raise ValueError('播放地址不是有效的音频链接')
             return {
                 'parse': 0, 'url': audio_url, 'jx': 0,
                 'header': {
@@ -14307,10 +14300,25 @@ class Spider(BaseSpider):
             }
         except Exception as error:
             print('playerContent error: %s' % error)
-            return {
-                'parse': 1, 'url': play_url, 'jx': 0,
-                'header': {'User-Agent': self.session.headers['User-Agent']},
-            }
+            # parse=1 只会让 App 打开网页播放器，这里抛出可读错误。
+            raise ValueError('275听书取不到音频地址：%s' % error)
+
+    def _chapter_audio(self, play_url):
+        """站点 2026 起把音频地址移到 api_chapter.php，播放页只有 url: null。"""
+        match = re.search(r'/play/(\d+)/(\d+)\.html', play_url)
+        if not match:
+            raise ValueError('播放页地址缺少书籍/章节编号')
+        book_id, chapter_id = match.group(1), match.group(2)
+        payload = self._get(
+            '/api_chapter.php',
+            params={'book_id': book_id, 'chapter_id': chapter_id},
+            headers={'Referer': play_url, 'X-Requested-With': 'XMLHttpRequest'},
+        ).json()
+        audio_url = payload.get('url') if isinstance(payload, dict) else None
+        if not audio_url:
+            # 新上架书籍未开放网页播放，站点要求装官方 App。
+            raise ValueError('站点未对该章节开放网页音频，请换一本或换源')
+        return str(audio_url).replace('\\/', '/').replace('&amp;', '&')
 
     def searchContent(self, key, quick, pg='1'):
         page = self._page_number(pg)

@@ -455,193 +455,81 @@ class Spider(BaseSpider):
             return {"list": [], "page": page, "pagecount": 0, "limit": 20, "total": 0}
 
         videos = []
-        # 优先尝试第三方搜索API
+        total = 0
+        # 站点自身的 SEO 搜索：无需登录，按专辑返回，支持翻页。
         try:
-            url = f"{self.SEARCH_HOST}/api/music/ximalaya.php?name={urllib.parse.quote(key)}"
-            html = self._fetch(url)
-            if html:
-                data = json.loads(html).get("data", [])
-                if isinstance(data, list):
-                    for it in data:
-                        album_id = it.get("albumId", "")
-                        if not album_id:
-                            continue
-                        detail_url = f"http://mobile.ximalaya.com/mobile/others/ca/album/track/{album_id}/true/0/200?albumId={album_id}"
-                        videos.append({
-                            "vod_id": detail_url,
-                            "vod_name": it.get("title", "未知标题"),
-                            "vod_pic": it.get("cover", ""),
-                            "vod_remarks": "喜马拉雅",
-                        })
-        except:
+            url = (
+                f"https://www.ximalaya.com/revision/search/seo"
+                f"?core=album&kw={urllib.parse.quote(key)}&page={page}"
+                f"&spellchecker=true&rows=30&condition=relation&device=iPhone"
+            )
+            payload = json.loads(self._fetch(url) or "{}")
+            album = (payload.get("data") or {}).get("album") or {}
+            docs = album.get("docs") or []
+            total = int(album.get("total") or 0)
+            for it in docs:
+                album_id = it.get("albumId")
+                if not album_id:
+                    continue
+                if it.get("isPaid"):
+                    remark = "付费"
+                elif it.get("isVipFree"):
+                    remark = "VIP"
+                else:
+                    remark = "免费"
+                videos.append({
+                    "vod_id": self._album_id(album_id),
+                    "vod_name": it.get("title", "未知标题"),
+                    "vod_pic": f"https://imagev2.xmcdn.com/{it.get('coverPath', '')}",
+                    "vod_remarks": remark,
+                })
+        except Exception:
             pass
 
-        # 如果第三方API无结果，回退到分类列表内搜索（关键词匹配标题）
-        if not videos:
-            # 搜索前3个分类的前2页
-            search_cats = ["youshengshu", "ertong", "yinyue"]
-            for cat in search_cats:
-                for p in range(1, 3):
-                    try:
-                        url = f"{self.HOST}/m-revision/page/category/queryCategoryAlbumsByPage?sort=0&pageSize=50&page={p}&categoryCode={cat}"
-                        html = self._fetch(url)
-                        if not html:
-                            continue
-                        data = json.loads(html).get("data", {})
-                        albums = data.get("albumBriefDetailInfos", [])
-                        for it in albums:
-                            info = it.get("albumInfo", {})
-                            title = info.get("title", "")
-                            if key.lower() in title.lower():
-                                album_id = it.get("id") or info.get("id", "")
-                                if not album_id:
-                                    continue
-                                detail_url = f"http://mobile.ximalaya.com/mobile/others/ca/album/track/{album_id}/true/0/200?albumId={album_id}"
-                                vip_type = info.get("albumVipPayType", 0)
-                                remark = "免费" if vip_type == 0 else ("VIP" if vip_type == 1 else "付费")
-                                videos.append({
-                                    "vod_id": detail_url,
-                                    "vod_name": title,
-                                    "vod_pic": f"http://imagev2.xmcdn.com/{info.get('cover', '')}",
-                                    "vod_remarks": remark,
-                                })
-                                if len(videos) >= 20:
-                                    break
-                        if len(videos) >= 20:
-                            break
-                    except:
-                        pass
-                if len(videos) >= 20:
-                    break
+        # 搜索接口异常时才退回分类内匹配，避免把慢速遍历当成常规路径。
+        if not videos and page == 1:
+            videos = self._search_in_categories(key)
 
+        pagecount = max(1, (total + 29) // 30) if total else (1 if videos else 0)
         return {
             "list": videos,
             "page": page,
-            "pagecount": 1,
+            "pagecount": pagecount,
             "limit": len(videos),
-            "total": len(videos),
+            "total": total or len(videos),
         }
+
+    @staticmethod
+    def _album_id(album_id):
+        return f"http://mobile.ximalaya.com/mobile/others/ca/album/track/{album_id}/true/0/200?albumId={album_id}"
+
+    def _search_in_categories(self, key):
+        videos = []
+        for cat in ("youshengshu", "ertong", "yinyue"):
+            for p in (1, 2):
+                try:
+                    url = f"{self.HOST}/m-revision/page/category/queryCategoryAlbumsByPage?sort=0&pageSize=50&page={p}&categoryCode={cat}"
+                    data = json.loads(self._fetch(url) or "{}").get("data", {})
+                    for it in data.get("albumBriefDetailInfos", []):
+                        info = it.get("albumInfo", {})
+                        title = info.get("title", "")
+                        if key.lower() not in title.lower():
+                            continue
+                        album_id = it.get("id") or info.get("id")
+                        if not album_id:
+                            continue
+                        vip_type = info.get("albumVipPayType", 0)
+                        videos.append({
+                            "vod_id": self._album_id(album_id),
+                            "vod_name": title,
+                            "vod_pic": f"https://imagev2.xmcdn.com/{info.get('cover', '')}",
+                            "vod_remarks": "免费" if vip_type == 0 else ("VIP" if vip_type == 1 else "付费"),
+                        })
+                        if len(videos) >= 20:
+                            return videos
+                except Exception:
+                    continue
+        return videos
 
     def localProxy(self, param):
         return [200, "text/plain", b""]
-
-
-# ==================== 本地测试 ====================
-if __name__ == "__main__":
-    import subprocess
-
-    class TestSpider(Spider):
-        def _fetch(self, url, headers=None):
-            cmd = ["curl", "-s", "-L", "-m", "15",
-                   "-H", "User-Agent: Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36"]
-            cmd.append(url)
-            try:
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-                return r.stdout
-            except:
-                return ""
-
-    spider = TestSpider()
-
-    print("=" * 60)
-    print("喜马拉雅 TVBox 爬虫测试")
-    print("=" * 60)
-
-    # 测试1: homeContent
-    print("\n[1] homeContent (分类栏 + 子分类筛选)")
-    result = spider.homeContent(filter=True)
-    cats = result.get("class", [])
-    filters = result.get("filters", {})
-    print(f"  主分类: {len(cats)} 个")
-    for c in cats[:5]:
-        flist = filters.get(c["type_id"], [])
-        sub_count = len(flist[0].get("value", [])) - 1 if flist and isinstance(flist, list) else 0
-        print(f"    {c['type_id']}: {c['type_name']} (子分类 {sub_count} 个)")
-    print(f"    ... 共 {len(cats)} 个分类")
-
-    # 测试2: categoryContent 有声书第1页
-    print("\n[2] categoryContent (有声书 第1页)")
-    result = spider.categoryContent("youshengshu", "1")
-    videos = result.get("list", [])
-    print(f"  视频: {len(videos)} 条, 页码: {result.get('page')}/{result.get('pagecount')}, 总计: {result.get('total')}")
-    for v in videos[:3]:
-        print(f"    {v['vod_name'][:30]} | {v['vod_remarks']} | pic={v['vod_pic'][:50]}")
-
-    # 测试3: categoryContent 翻页测试
-    print("\n[3] categoryContent (有声书 第2页 - 翻页测试)")
-    result = spider.categoryContent("youshengshu", "2")
-    videos = result.get("list", [])
-    print(f"  视频: {len(videos)} 条, 页码: {result.get('page')}/{result.get('pagecount')}")
-    if videos:
-        print(f"    首条: {videos[0]['vod_name'][:30]} | {videos[0]['vod_remarks']}")
-
-    # 测试4: VIP内容显示
-    print("\n[4] VIP内容显示检查")
-    vip_count = sum(1 for v in videos if v['vod_remarks'] in ('VIP', '付费'))
-    free_count = sum(1 for v in videos if v['vod_remarks'] == '免费')
-    print(f"  免费: {free_count}, VIP/付费: {vip_count}, 其他: {len(videos)-free_count-vip_count}")
-
-    # 测试5: 子分类筛选
-    print("\n[5] categoryContent (有声书-悬疑 子分类筛选)")
-    result = spider.categoryContent("youshengshu", "1", extend={"class": "xuanyi"})
-    videos = result.get("list", [])
-    print(f"  视频: {len(videos)} 条")
-    for v in videos[:3]:
-        print(f"    {v['vod_name'][:30]} | {v['vod_remarks']}")
-
-    # 测试6: 排序筛选
-    print("\n[6] categoryContent (有声书 最多播放排序)")
-    result = spider.categoryContent("youshengshu", "1", extend={"sort": "2"})
-    videos = result.get("list", [])
-    print(f"  视频: {len(videos)} 条")
-    if videos:
-        print(f"    首条: {videos[0]['vod_name'][:30]}")
-
-    # 测试7: 搜索
-    print("\n[7] searchContent (搜索: 三体)")
-    result = spider.searchContent("三体", "")
-    videos = result.get("list", [])
-    print(f"  结果: {len(videos)} 条")
-    for v in videos[:5]:
-        print(f"    {v['vod_name'][:30]}")
-
-    # 测试8: 详情页
-    print("\n[8] detailContent (详情页 + 翻页)")
-    test_id = ""
-    if videos:
-        test_id = videos[0]["vod_id"]
-    else:
-        test_id = "http://mobile.ximalaya.com/mobile/others/ca/album/track/96355823/true/0/200?albumId=96355823"
-
-    result = spider.detailContent([test_id])
-    if result.get("list"):
-        d = result["list"][0]
-        print(f"  标题: {d['vod_name']}")
-        print(f"  图片: {d['vod_pic'][:60] if d['vod_pic'] else '无'}")
-        print(f"  备注: {d['vod_remarks']}")
-        print(f"  简介: {d['vod_content'][:60] if d['vod_content'] else '无'}")
-        eps = d["vod_play_url"].split("#") if d.get("vod_play_url") else []
-        print(f"  集数: {len(eps)}")
-        if eps:
-            print(f"    首集: {eps[0][:60]}")
-            if len(eps) > 1:
-                print(f"    末集: {eps[-1][:60]}")
-
-        # 测试9: 播放
-        print("\n[9] playerContent (播放解析)")
-        if eps:
-            first = eps[0].split("$")
-            if len(first) == 2:
-                play_result = spider.playerContent("", first[1])
-                print(f"  parse: {play_result.get('parse')}")
-                print(f"  url: {play_result.get('url', '')[:80]}")
-                if play_result.get("url"):
-                    print("  [OK] 播放链接获取成功")
-                else:
-                    print("  [FAIL] 播放链接为空")
-    else:
-        print("  [FAIL] 详情页获取失败")
-
-    print("\n" + "=" * 60)
-    print("测试完成")
-    print("=" * 60)

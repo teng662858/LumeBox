@@ -3101,16 +3101,10 @@
             "filters",
             "home"
           ],
-          "warnings": [
-            "含系统进程接口；iOS 无法执行该路径"
-          ]
-        },
-        "categoryCheck": {
-          "ok": true,
-          "count": 24
+          "warnings": []
         }
       },
-      "bodySha256": "df303e850cd502a64ce7431ba82000755eb980e0bc26c42053b6215b71a44fd9"
+      "bodySha256": "fbf35423f085719011fcd3adcdc639bbc158111838937d03efa1f1cf523ffc9a"
     },
     {
       "id": "pypack_2e82f50f93f015bc",
@@ -4727,13 +4721,9 @@
             "home"
           ],
           "warnings": []
-        },
-        "categoryCheck": {
-          "ok": true,
-          "count": 20
         }
       },
-      "bodySha256": "f17c1e7303f18828dc0be12b04b1360765399e4a3c1f3ca40b000128f0103bb4"
+      "bodySha256": "0474296ebb6c46a0e5200b2d3b6305ced3271dc3468ddafde008d26d78761e29"
     },
     {
       "id": "pypack_d50ffac90ff60a17",
