@@ -1,3 +1,4 @@
+import 'player_snapshot_selector.dart';
 import 'player_edge_back.dart';
 import '../reading/poster_card.dart';
 import '../reading/section_toolbar.dart';
@@ -439,6 +440,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _networkSpeed.cancelBackground();
     final previous = _lifecycle;
     _lifecycle = state;
     final introSnapshot = _player?.snapshot.value;
@@ -1023,21 +1025,32 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       // 首帧到了（播放中且不在缓冲）才去排测速：起播抢带宽的事不做（见
       // 片头片尾：每次快照变化判一次（判定本身是纯函数，跳过一次后不再重复）。
       _scheduleSourceValidation(snapshot);
+      final stats = _player?.stats.value;
+      final bufferedAhead = stats?.buffered ?? Duration.zero;
+      final probeAllowed = PlaybackSpeedMeter.canProbeInBackground(
+        playing: playing,
+        buffering: snapshot.buffering,
+        buffered: bufferedAhead,
+        foreground:
+            _lifecycle == AppLifecycleState.resumed &&
+            _loaded &&
+            !_advancing &&
+            !_switchingQuality,
+        hasNativeSpeed: stats?.downloadBytesPerSecond != null,
+      );
+      if (!probeAllowed) _networkSpeed.cancelBackground();
       if (_settings.backgroundSourceValidation &&
-          playing &&
-          _player?.stats.value.downloadBytesPerSecond == null &&
-          !snapshot.buffering &&
+          probeAllowed &&
           snapshot.position > Duration.zero &&
-          _lifecycle == AppLifecycleState.resumed &&
           !(_nextSpeedProbe?.isAfter(DateTime.now()) ?? false)) {
         final media = _media;
         if (media != null && media.isNetwork) {
-          _nextSpeedProbe = DateTime.now().add(const Duration(seconds: 30));
+          _nextSpeedProbe = DateTime.now().add(const Duration(minutes: 2));
           unawaited(
             _networkSpeed.measure(
               media.uri,
               headers: media.headers,
-              force: true,
+              background: true,
             ),
           );
         }
@@ -1049,12 +1062,26 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           playing &&
           !snapshot.buffering &&
           snapshot.error == null &&
+          MediaPreload.instance.video &&
+          snapshot.position >= const Duration(seconds: 10) &&
+          _lifecycle == AppLifecycleState.resumed &&
           !_advancing &&
+          !_switchingQuality) {
+        unawaited(_nextEpisodeBuffer.warmCatalog(target, _openSource));
+      }
+      if (target != null &&
+          playing &&
+          !snapshot.buffering &&
+          snapshot.error == null &&
+          !_advancing &&
+          !_switchingQuality &&
           MediaPreload.instance.video &&
           _lifecycle == AppLifecycleState.resumed &&
           _session?.state != PipState.active &&
           snapshot.position >= const Duration(seconds: 10) &&
           remaining >= const Duration(seconds: 5) &&
+          remaining <=
+              Duration(seconds: MediaPreload.instance.triggerSeconds) &&
           buffered >=
               Duration(seconds: _settings.kernel == PlayerKernel.mdk ? 3 : 8)) {
         unawaited(
@@ -1703,8 +1730,31 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _store?.save(_settings);
       unawaited(_applyPreferredSubtitle());
       _showToast('已切换到 ${quality.label}，继续当前进度');
-    } catch (_) {
-      if (mounted) setState(() => _media = previousMedia);
+    } catch (failure) {
+      if (!mounted) return;
+      if (previousMedia != null) {
+        try {
+          await _loadMedia(previousMedia);
+          final restored = _player;
+          if (!mounted) return;
+          if (restored == null || restored.snapshot.value.error != null) {
+            throw StateError('原线路无法恢复');
+          }
+          if (snapshot.position > Duration.zero) {
+            await restored.seek(snapshot.position);
+          }
+          if (snapshot.playing) {
+            await restored.play();
+          } else {
+            await restored.pause();
+          }
+          _healthyPosition = snapshot.position;
+        } catch (_) {
+          if (mounted) setState(() => _media = previousMedia);
+          throw StateError('画质切换失败，原线路也未能恢复，请重试或更换线路');
+        }
+        throw StateError('画质切换失败，已恢复原画质和播放进度');
+      }
       rethrow;
     } finally {
       _suppressProgressSave = false;
@@ -1936,6 +1986,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               target,
               index,
               _settings.kernel,
+              wait: auto
+                  ? const Duration(seconds: 2)
+                  : const Duration(milliseconds: 350),
             );
       if (!mounted) return false;
       final List<SourceChapter>? chapters;
@@ -3424,6 +3477,44 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (group == 'connection')
+              ListenableBuilder(
+                listenable: Listenable.merge([
+                  _networkSpeed.busy,
+                  _networkSpeed.failed,
+                  _networkSpeed.kbps,
+                ]),
+                builder: (context, _) => ListTile(
+                  title: const Text('当前线路测速'),
+                  subtitle: Text(
+                    _networkSpeed.busy.value
+                        ? '正在测速…'
+                        : _networkSpeed.failed.value
+                        ? '测速未成功，可手动重试'
+                        : PlaybackSpeedMeter.describe(
+                                _networkSpeed.kbps.value,
+                              ) ??
+                              '测量线路速率，不代表播放器实时流量',
+                  ),
+                  trailing: TextButton(
+                    onPressed: _networkSpeed.busy.value
+                        ? null
+                        : () async {
+                            final media = _media;
+                            if (media == null || !media.isNetwork) {
+                              _showToast('当前不是网络视频，无需测速');
+                              return;
+                            }
+                            await _networkSpeed.measure(
+                              media.uri,
+                              headers: _playbackRequestHeaders,
+                              force: true,
+                            );
+                          },
+                    child: const Text('测速'),
+                  ),
+                ),
+              ),
             if (group == 'connection' && _player is PresentationEngine)
               Builder(
                 builder: (context) {
@@ -4136,8 +4227,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   }
 
   /// 应用当前该用的方向（同样的值不重复下发，见 [_appliedOrientations]）。
-  Future<void> _applyOrientation() =>
-      _sendOrientations(_preferredOrientations());
+  Future<void> _applyOrientation() {
+    // Unknown media dimensions keep the current system lock until stats arrive.
+    if (_fullscreen &&
+        _orientation == PlaybackOrientation.auto &&
+        !_hasVideoDimensions) {
+      return Future<void>.value();
+    }
+    return _sendOrientations(_preferredOrientations());
+  }
 
   /// 真正下发方向；桌面 / 测试环境没有方向概念，失败只记日志、不影响播放。
   Future<void> _sendOrientations(List<DeviceOrientation> orientations) async {
@@ -4553,31 +4651,33 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             VideoPlayerPage.controlHorizontalPadding,
             2,
           ),
-          child: ValueListenableBuilder<PlayerSnapshot>(
-            valueListenable: _player?.snapshot ?? _idleSnapshot,
-            builder: (context, snapshot, _) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                if (_showNetworkSpeed && _player != null)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 180),
-                      child: PlayerStatsInline(
-                        key: const Key('fullscreen-network-speed'),
-                        stats: _player!.stats,
-                        networkKbps: _networkSpeed.kbps,
-                        showResolution: false,
-                        dimmed: true,
-                      ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (_showNetworkSpeed && _player != null)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 180),
+                    child: PlayerStatsInline(
+                      key: const Key('fullscreen-network-speed'),
+                      stats: _player!.stats,
+                      networkKbps: _networkSpeed.kbps,
+                      showResolution: false,
+                      dimmed: true,
                     ),
                   ),
-                _buildProgress(snapshot),
-                // 两行（进度条行 / 按钮行）固定行距（用户口径）。
-                const SizedBox(height: VideoPlayerPage.controlRowGap),
-                _buildFloatingSplitControls(snapshot),
-              ],
-            ),
+                ),
+              _liveProgress(),
+              // 两行（进度条行 / 按钮行）固定行距（用户口径）。
+              const SizedBox(height: VideoPlayerPage.controlRowGap),
+              PlayerSnapshotSelector<(bool, String?, String)>(
+                snapshot: _player?.snapshot ?? _idleSnapshot,
+                select: (s) => (s.playing, s.error, _nextEpisodeBuffer.status),
+                builder: (context, snapshot) =>
+                    _buildFloatingSplitControls(snapshot),
+              ),
+            ],
           ),
         ),
       ),
@@ -4828,9 +4928,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       );
     }
 
-    return ValueListenableBuilder<PlayerSnapshot>(
-      valueListenable: player.snapshot,
-      builder: (context, snapshot, _) => snapshot.error == null
+    return PlayerSnapshotSelector<String?>(
+      snapshot: player.snapshot,
+      select: (s) => s.error,
+      builder: (context, snapshot) => snapshot.error == null
           ? _buildVideoArea(player)
           : _buildErrorStage(snapshot),
     );
@@ -5250,16 +5351,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         enabled: _settings.playbackGlass,
         child: Column(
           children: <Widget>[
-            ValueListenableBuilder<PlayerSnapshot>(
-              valueListenable: player?.snapshot ?? _idleSnapshot,
-              builder: (context, snapshot, _) => Column(
-                children: <Widget>[
-                  _buildProgress(snapshot),
-                  _buildPrimaryControls(snapshot),
-                  _buildSecondaryControls(),
-                ],
-              ),
+            _liveProgress(),
+            PlayerSnapshotSelector<(bool, String?)>(
+              snapshot: player?.snapshot ?? _idleSnapshot,
+              select: (s) => (s.playing, s.error),
+              builder: (context, snapshot) => _buildPrimaryControls(snapshot),
             ),
+            _buildSecondaryControls(),
           ],
         ),
       ),
@@ -5546,6 +5644,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     );
     if (mounted) _scheduleAutoHide();
   }
+
+  Widget _liveProgress() => ListenableBuilder(
+    listenable: Listenable.merge([
+      _player?.snapshot ?? _idleSnapshot,
+      if (_player != null) _player!.stats,
+    ]),
+    builder: (context, _) =>
+        _buildProgress((_player?.snapshot ?? _idleSnapshot).value),
+  );
 
   Widget _buildProgress(PlayerSnapshot snapshot) {
     final old = _legacyProgress(snapshot);

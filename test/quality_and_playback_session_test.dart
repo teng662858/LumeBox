@@ -196,7 +196,7 @@ void main() {
         reason: '只传变化项：没给进度就不写这个键，原生沿用上次的值',
       );
       expect(progress['playing'], true);
-      expect(progress['durationMs'], 45 * 60 * 1000);
+      expect(progress.containsKey('durationMs'), false, reason: '时长未变，不重复传输');
 
       final later = calls[3].arguments as Map<Object?, Object?>;
       expect(later['positionMs'], 6000);
@@ -226,6 +226,46 @@ void main() {
       await session.update(position: const Duration(seconds: 7), playing: false);
       expect(positions.length, 2);
     });
+
+    test(
+      'unchanged metadata on every tick does not bypass progress throttling',
+      () async {
+        final updates = <Map<Object?, Object?>>[];
+        messenger().setMockMethodCallHandler(methods, (call) async {
+          if (call.method == 'update') {
+            updates.add(call.arguments as Map<Object?, Object?>);
+          }
+          return call.method == 'isSupported' ? true : null;
+        });
+        final session = PlaybackSession(
+          backend: MethodChannelPlaybackBackend(),
+        );
+        await session.start(title: '标题', duration: const Duration(minutes: 10));
+        for (var i = 0; i < 50; i++) {
+          await session.update(
+            position: Duration(milliseconds: i * 100),
+            playing: true,
+            duration: const Duration(minutes: 10),
+            speed: 1,
+          );
+        }
+        expect(updates, hasLength(1));
+        await session.update(
+          position: const Duration(seconds: 5),
+          playing: true,
+          duration: const Duration(minutes: 10),
+          speed: 1,
+        );
+        expect(updates, hasLength(2));
+        await session.update(
+          position: const Duration(milliseconds: 5200),
+          playing: false,
+        );
+        expect(updates.last['positionMs'], 5200);
+        expect(updates.last['playing'], false);
+        await session.stop();
+      },
+    );
 
     test('会话没开始时 update 不过通道（避免给系统播放条塞空数据）', () async {
       final calls = <String>[];

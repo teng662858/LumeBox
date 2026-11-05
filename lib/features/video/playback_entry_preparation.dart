@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../core/player/player_factory.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
@@ -20,8 +22,9 @@ import 'playback_preference_wiring.dart';
 Future<void> preparePlaybackEntry(
   PlayerPrelaunch prelaunch,
   PlayerMedia media,
-  PlayerSettings? settings,
-) async {
+  PlayerSettings? settings, {
+  Duration sizeTimeout = const Duration(milliseconds: 250),
+}) async {
   final request = PlaybackPreferenceWiring.applyUserAgent(
     media,
     PlayerExperienceStore.current,
@@ -35,6 +38,7 @@ Future<void> preparePlaybackEntry(
   await prelaunch.prepareMedia(
     media,
     settings: settings,
+    sizeTimeout: sizeTimeout,
     requestMedia: PlayerMedia(
       uri: media.uri,
       title: media.title,
@@ -93,11 +97,13 @@ Future<PlayerPrelaunch?> preparePlaybackRoute(
   try {
     if (PlaybackOrientationController.instance.orientation ==
         PlaybackOrientation.auto) {
+      // Keep the preparation owned by the prelaunch. The route may paint while
+      // it loads; take() joins that same task rather than creating another player.
       await preparePlaybackEntry(
         entry,
         media,
         settings.copyWith(kernel: entry.kernel),
-      );
+      ).timeout(const Duration(milliseconds: 350), onTimeout: () {});
     }
     if (stillActive != null && !stillActive()) {
       await entry.discard();

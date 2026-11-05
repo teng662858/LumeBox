@@ -230,6 +230,7 @@ class PlayerPrelaunch {
     PlayerMedia? requestMedia,
     PlayerSettings? settings,
     Duration timeout = const Duration(seconds: 4),
+    Duration sizeTimeout = const Duration(milliseconds: 250),
   }) async {
     if (_consumed || _preparedMedia != null) return;
     final pending = _launch;
@@ -257,7 +258,8 @@ class PlayerPrelaunch {
           player.stats.addListener(changed);
           try {
             changed();
-            final remaining = timeout - watch.elapsed;
+            final available = timeout - watch.elapsed;
+            final remaining = available < sizeTimeout ? available : sizeTimeout;
             if (remaining > Duration.zero) {
               await ready.future.timeout(remaining);
             }

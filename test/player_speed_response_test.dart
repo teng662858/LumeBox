@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -5,6 +7,48 @@ import 'package:lume_box/core/net/lume_http.dart';
 import 'package:lume_box/features/video/player_speed_meter.dart';
 
 void main() {
+  test('background probes require sufficient buffering and no native traffic counter', () {
+    bool allowed({
+      int seconds = 20,
+      bool buffering = false,
+      bool native = false,
+    }) => PlaybackSpeedMeter.canProbeInBackground(
+      playing: true,
+      buffering: buffering,
+      buffered: Duration(seconds: seconds),
+      foreground: true,
+      hasNativeSpeed: native,
+    );
+    expect(allowed(), true);
+    expect(allowed(seconds: 8), false);
+    expect(allowed(buffering: true), false);
+    expect(allowed(native: true), false);
+  });
+  test('canceling a background probe releases busy state without reporting failure', () async {
+    final entered = Completer<void>(), response = Completer<http.Response>();
+    final client = LumeHttp(
+      client: MockClient((_) {
+        entered.complete();
+        return response.future;
+      }),
+    );
+    final meter = PlaybackSpeedMeter(http: client);
+    final task = meter.measure(
+      Uri.parse('https://example.test/slow.mp4'),
+      background: true,
+    );
+    await entered.future;
+    expect(meter.busy.value, true);
+    meter.cancelBackground();
+    await task;
+    expect(meter.busy.value, false);
+    expect(meter.failed.value, false);
+    response.complete(http.Response(List.filled(4096, 'a').join(), 200));
+    await Future<void>.delayed(Duration.zero);
+    meter.dispose();
+    client.dispose();
+  });
+
   test('HLS 测媒体分片而非索引，保留防盗链头', () async {
     final urls = <String>[];
     final meter = PlaybackSpeedMeter(

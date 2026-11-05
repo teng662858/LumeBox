@@ -1830,12 +1830,13 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('未知尺寸先保持竖屏，迟到的短剧尺寸不会触发横屏闪动', (tester) async {
+    testWidgets('未知尺寸不修改系统方向，迟到的短剧尺寸不会触发横屏闪动', (tester) async {
       final calls = _captureOrientations(tester);
       final players = await pump(tester, fullscreenOnly: true);
-      expect(_lastOrientations(calls), ['DeviceOrientation.portraitUp']);
+      expect(calls.where((call) => call.method == 'SystemChrome.setPreferredOrientations'), isEmpty);
       players.single.pushStats(const PlayerStats(width: 720, height: 1280));
       await tester.pumpAndSettle();
+      expect(_lastOrientations(calls), ['DeviceOrientation.portraitUp']);
       expect(
         calls
             .where((c) => c.method == 'SystemChrome.setPreferredOrientations')
@@ -2883,6 +2884,7 @@ class _CountingSpeedMeter extends PlaybackSpeedMeter {
     Uri uri, {
     Map<String, String>? headers,
     bool force = false,
+    bool background = false,
   }) async {
     requests++;
   }

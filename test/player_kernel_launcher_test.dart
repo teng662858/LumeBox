@@ -1,3 +1,8 @@
+import 'dart:io';
+
+import 'package:lume_box/core/reading/reading.dart';
+import 'package:lume_box/core/session/section.dart';
+import 'package:lume_box/core/session/section_scope.dart';
 import 'package:flutter/services.dart';
 import 'package:lume_box/features/video/playback_entry_preparation.dart';
 import 'package:lume_box/core/player/playback_orientation.dart';
@@ -22,7 +27,7 @@ void main() {
   tearDown(() => PlayerFactory.clearMpvInitFailure());
 
   for (final portrait in [false, true]) {
-    test('入场方向采用迟到1.2秒的真实尺寸：portrait=$portrait', () async {
+    test('显式方向预算可等待迟到1.2秒的真实尺寸：portrait=$portrait', () async {
       PlaybackOrientationController.instance.resetForTesting();
       final directions = <List<dynamic>>[];
       final messenger =
@@ -44,7 +49,12 @@ void main() {
       final media = PlayerMedia(
         uri: Uri.parse('https://example.test/orientation.mp4'),
       );
-      await preparePlaybackEntry(prelaunch, media, null);
+      await preparePlaybackEntry(
+        prelaunch,
+        media,
+        null,
+        sizeTimeout: const Duration(seconds: 2),
+      );
       await applyPlaybackEntryOrientation(prelaunch);
       expect(prelaunch.preparedStats?.width, portrait ? 720 : 1920);
       expect(
@@ -79,6 +89,63 @@ void main() {
     expect(await prelaunch.take(), isNull);
     await prelaunch.discard();
     expect(player.disposals, 0);
+    await player.dispose();
+  });
+
+  test('default orientation preflight does not hold the loaded player for late dimensions', () async {
+    final player = _DelayedDimensionsPlayer(false);
+    final prelaunch = PlayerPrelaunch.start(
+      PlayerKernel.avplayer,
+      factory: (_) => player,
+    );
+    final media = PlayerMedia(uri: Uri.parse('https://example.test/late.mp4'));
+    await preparePlaybackEntry(prelaunch, media, null);
+    expect(prelaunch.preparedStats, isNull);
+    expect(prelaunch.hasPreparedMedia(media), true);
+    expect((await prelaunch.take())?.player, same(player));
+    expect(player.loads, 1);
+    await player.dispose();
+  });
+
+  test('route enters before a pending media load and later takes the same instance', () async {
+    final root = await Directory.systemTemp.createTemp('lume-entry-budget-');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (_) async => root.path,
+    );
+    addTearDown(() async {
+      ReadingLibrary.disposeAll();
+      ReadingStore.disposeAll();
+      await SectionScope.closeAll();
+      messenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      );
+      await root.delete(recursive: true);
+    });
+    PlaybackOrientationController.instance.resetForTesting();
+    final library = await ReadingLibrary.open(Section.video);
+    final player = _PreflightPlayer()..pending = Completer<void>();
+    final prelaunch = PlayerPrelaunch.start(
+      PlayerKernel.avplayer,
+      factory: (_) => player,
+    );
+    final media = PlayerMedia(
+      uri: Uri.parse('https://example.test/pending.mp4'),
+    );
+    final entry = await preparePlaybackRoute(
+      media,
+      library: library,
+      prelaunch: prelaunch,
+    );
+    expect(entry, same(prelaunch));
+    expect(player.pending!.isCompleted, false);
+    player.pending!.complete();
+    expect((await prelaunch.take())?.player, same(player));
+    expect(prelaunch.hasPreparedMedia(media), true);
+    expect(player.loads, 1);
     await player.dispose();
   });
 

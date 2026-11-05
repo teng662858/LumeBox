@@ -1,3 +1,5 @@
+import '../../core/net/network_cancellation.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -55,9 +57,36 @@ class PlaybackSpeedMeter {
   Uri? _measured;
   bool _disposed = false;
   int _revision = 0;
+  NetworkCancellation? _probe;
+  bool _background = false;
+
+  void cancelBackground() {
+    if (_background) _cancelProbe();
+  }
+
+  void _cancelProbe() {
+    _revision++;
+    _probe?.cancel();
+    _probe = null;
+    _background = false;
+    if (!_disposed) busy.value = false;
+  }
+
+  static bool canProbeInBackground({
+    required bool playing,
+    required bool buffering,
+    required Duration buffered,
+    required bool foreground,
+    required bool hasNativeSpeed,
+  }) =>
+      playing &&
+      !buffering &&
+      foreground &&
+      !hasNativeSpeed &&
+      buffered >= const Duration(seconds: 20);
 
   void reset() {
-    _revision++;
+    _cancelProbe();
     _measured = null;
     kbps.value = null;
     failed.value = false;
@@ -68,19 +97,25 @@ class PlaybackSpeedMeter {
     Uri uri, {
     Map<String, String>? headers,
     bool force = false,
+    bool background = false,
   }) async {
     if (_disposed || !uri.hasScheme) return;
     if (!force && _measured == uri) return;
+    if (!background && _background) cancelBackground();
     if (busy.value) return;
+    final probe = _probe = NetworkCancellation();
+    _background = background;
     _measured = uri;
     final revision = _revision;
     busy.value = true;
     try {
-      final value = await _measure(uri, headers);
+      final value = await probe.run(() => _measure(uri, headers));
       if (_disposed || revision != _revision) return;
       kbps.value = value;
       // 没读到有效数据也算失败（站点拒绝 Range / 回了个错误页 / 数据太小）。
       failed.value = value == null;
+    } on NetworkCancelled {
+      // Playback owns the bandwidth; cancellation is not a failed probe.
     } catch (error) {
       // 测速失败不影响播放：清掉读数、如实标记失败并记一条日志。
       LumeLog.info('[player] 测速失败（$uri）：$error');
@@ -89,7 +124,11 @@ class PlaybackSpeedMeter {
         failed.value = true;
       }
     } finally {
-      if (!_disposed) busy.value = false;
+      if (!_disposed && identical(_probe, probe)) {
+        _probe = null;
+        _background = false;
+        busy.value = false;
+      }
     }
   }
 
@@ -159,6 +198,7 @@ class PlaybackSpeedMeter {
   }
 
   void dispose() {
+    _cancelProbe();
     _disposed = true;
     if (_ownsHttp) _http.dispose();
     kbps.dispose();

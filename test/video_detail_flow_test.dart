@@ -1112,7 +1112,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('列表先详情，尺寸预备后直接横屏入场，复用一个实例并返回详情', (tester) async {
+  testWidgets('方向预检等待受限，先进入播放页，尺寸返回后复用同一实例横屏播放', (tester) async {
     await tester.binding.setSurfaceSize(const Size(400, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final entryDirections = <List<dynamic>>[];
@@ -1178,8 +1178,8 @@ void main() {
     await tester.pump();
     expect(
       find.byType(VideoPlayerPage),
-      findsNothing,
-      reason: '先在详情页等待同一个内核读取尺寸，避免先竖屏再横屏',
+      findsOneWidget,
+      reason: '不在详情页等待慢媒体加载，播放页接手同一项预备任务',
     );
     expect(loadGate.isCompleted, isFalse);
     loadGate.complete();
