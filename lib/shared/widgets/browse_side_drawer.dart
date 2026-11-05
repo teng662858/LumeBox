@@ -5,6 +5,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../features/shell/shell_dock.dart';
 import 'drawer_geometry.dart';
 
 enum BrowseDrawerSide { left, right }
@@ -37,6 +38,31 @@ Future<T?> showBrowseSideDrawer<T>({
   BrowseDrawerMotion? motion,
   bool edgeToggle = false,
   bool useRootNavigator = true,
+}) async {
+  final dock = ShellDockScope.maybeOf(context);
+  final token = Object();
+  dock?.hide(token);
+  try {
+    return await _showBrowseSideDrawer<T>(
+      context: context,
+      builder: builder,
+      side: side,
+      motion: motion,
+      edgeToggle: edgeToggle,
+      useRootNavigator: useRootNavigator,
+    );
+  } finally {
+    dock?.show(token);
+  }
+}
+
+Future<T?> _showBrowseSideDrawer<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  required BrowseDrawerSide side,
+  BrowseDrawerMotion? motion,
+  required bool edgeToggle,
+  required bool useRootNavigator,
 }) async {
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
   final top = DrawerGeometry.top(context);

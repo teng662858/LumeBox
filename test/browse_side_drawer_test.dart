@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/features/source/video_source_scope.dart';
+import 'package:lume_box/features/shell/shell_dock.dart';
 import 'package:lume_box/shared/widgets/browse_side_drawer.dart';
 
 void main() {
@@ -52,6 +53,39 @@ void main() {
     );
   }
 
+  testWidgets('抽屉期间隐藏底栏，关闭后仅释放自己的隐藏请求', (tester) async {
+    final dock = ShellDockController();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ShellDockScope(
+          controller: dock,
+          child: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showBrowseSideDrawer<void>(
+                context: context,
+                side: BrowseDrawerSide.right,
+                builder: (context) => TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('关闭'),
+                ),
+              ),
+              child: const Text('打开'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+    expect(dock.visible, isFalse);
+    final otherOwner = Object();
+    dock.hide(otherOwner);
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
+    expect(dock.visible, isFalse);
+    dock.show(otherOwner);
+    expect(dock.visible, isTrue);
+  });
   testWidgets('双侧面板拖动中就跟手，松手后展开', (tester) async {
     await mount(tester);
     final pointer = await tester.startGesture(const Offset(1, 300));
