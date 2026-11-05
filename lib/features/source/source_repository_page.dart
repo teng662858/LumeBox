@@ -223,7 +223,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     if (operation == null || !operation.manual || operation.dispatched) return;
     if (!await _confirm(
           '手动发布',
-          '将发布已提交的变更，更新公共订阅并核对 GitHub 与国内线路。',
+          '将发布已提交的变更，更新并核对仓库订阅。',
           confirmLabel: '确认发布',
         ) ||
         !mounted) {
@@ -555,7 +555,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
           padding: const EdgeInsets.all(16),
           children: [
             const Text(
-              '远端仓库：teng662858/LumeBox-Sources · main\n仓库列表是可安装的源，不代表已经安装到手机。仓库增删会修改公共订阅。',
+              '远端仓库：teng662858/LumeBox-Sources · main\n仓库列表是可安装的源，不代表已经安装到手机。仓库增删会修改该仓库的订阅。',
             ),
             const SizedBox(height: 12),
             const Text('本机安装', style: TextStyle(fontWeight: FontWeight.w600)),
@@ -672,7 +672,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                 ),
               const SizedBox(height: 12),
               const Text(
-                '公共仓库发布',
+                '仓库发布',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               FilledButton.icon(
