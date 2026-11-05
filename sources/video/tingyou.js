@@ -1,4 +1,4 @@
-// LumeSource: {"id":"tingyou_video","name":"听友听书","version":"1.0.0","category":"video","contentCategory":"movie","contentTypes":["audio","video"],"network":"direct","mirrors":["https://fmfm.tingyou.fm","https://www.tingyou.fm","https://tingyou.fm"],"icon":"https://fmfm.tingyou.fm/favicon.svg","settings":[{"key":"note","type":"info","title":"站点说明","description":"听友听书（tingyou.fm）综合站：左侧听书（有声小说 / 评书 / 榜单，mp3 直链）、右侧影视（电影 / 连续剧 / 动漫 / 短剧 / 综艺，HLS）。影视播放用站点自己的游客身份（首次自动领一个匿名游客账号，不需要手机号），线路表里标了 VIP 的线路不走；听书不需要登录。接口域名由站方轮换，脚本会自己探活并缓存可用域名。"}]}
+// LumeSource: {"id":"tingyou_video","name":"听友听书","version":"1.0.0","category":"video","contentCategory":"movie","contentTypes":["audio","video"],"settingsApiVersion":2,"network":"direct","mirrors":["https://fmfm.tingyou.fm","https://www.tingyou.fm","https://tingyou.fm"],"icon":"https://fmfm.tingyou.fm/favicon.svg","settings":[{"key":"note","type":"info","title":"站点说明","description":"听友听书（tingyou.fm）综合站：左侧听书（有声小说 / 评书 / 榜单，mp3 直链）、右侧影视（电影 / 连续剧 / 动漫 / 短剧 / 综艺，HLS）。影视播放用站点自己的游客身份（首次自动领一个匿名游客账号，不需要手机号），线路表里标了 VIP 的线路不走；听书不需要登录。接口域名由站方轮换，脚本会自己探活并缓存可用域名。"}]}
 
 // 听友听书 · 综合源（听书 audio + 影视 video）
 //
