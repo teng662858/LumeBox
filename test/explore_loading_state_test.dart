@@ -1,3 +1,5 @@
+import 'package:lume_box/features/reading/source_loading_surface.dart';
+
 import 'dart:async';
 import 'dart:io';
 
@@ -38,6 +40,8 @@ void main() {
         );
     for (final section in Section.values) {
       await SectionScope.open(section);
+      // Complete filesystem initialization outside the widget fake-async zone.
+      await ReadingLibrary.open(section);
     }
   });
 
@@ -170,7 +174,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('正在加载…'), findsOneWidget);
+    expect(find.byType(SourceLoadingSurface), findsOneWidget);
     expect(source.calls, 1);
     await tester.tap(
       find.descendant(
@@ -216,7 +220,11 @@ void main() {
     // 请求还没回来：这里必须停在加载态。
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('正在加载…'), findsOneWidget, reason: '首屏该有加载态');
+    expect(
+      find.byType(SourceLoadingSurface),
+      findsOneWidget,
+      reason: '首屏该有加载态',
+    );
     expect(find.text('暂无内容'), findsNothing, reason: '请求在飞时不能闪假空态');
     expect(find.text('换个分类或关键词试试'), findsNothing, reason: '同上');
 
@@ -233,7 +241,7 @@ void main() {
     await tester.pump(const Duration(seconds: 21));
     await tester.pump();
     expect(find.textContaining('列表请求超时'), findsOneWidget);
-    expect(find.text('正在加载…'), findsNothing);
+    expect(find.byType(SourceLoadingSurface), findsNothing);
     source.release();
     await tester.tap(find.text('重试'));
     await tester.pumpAndSettle();

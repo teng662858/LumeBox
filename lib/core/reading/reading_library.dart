@@ -39,9 +39,11 @@ class ReadingLibrary {
 
   static final Map<String, ReadingLibrary> _opened = <String, ReadingLibrary>{};
   static final Map<String, Future<ReadingLibrary>> _opening = {};
+  static final _closePending = <String>{};
 
   /// 打开（必要时创建）板块阅读门面。同一板块重复调用返回同一实例。
   static Future<ReadingLibrary> open(Section section) async {
+    _closePending.remove(section.id);
     final existing = _opened[section.id];
     if (existing != null) return existing;
     return _opening.putIfAbsent(
@@ -55,6 +57,7 @@ class ReadingLibrary {
   static Future<ReadingLibrary> _open(Section section) async {
     final library = ReadingLibrary._(await ReadingStore.open(section));
     _opened[section.id] = library;
+    if (_closePending.remove(section.id)) library.dispose();
     return library;
   }
 
@@ -397,7 +400,14 @@ class ReadingLibrary {
   /// 释放的是 sqlite 句柄与内存缓存：数据都已在磁盘上，下次 [open] 会重新打开
   /// 同一个库文件，书架与进度照旧。释放后仍持有旧引用的页面不会因此崩——
   /// [ReadingStore] 对已关闭库的读写一律静默降级。可重复调用。
-  static void close(Section section) => _opened.remove(section.id)?.dispose();
+  static void close(Section section) {
+    final library = _opened.remove(section.id);
+    if (library != null) {
+      library.dispose();
+    } else if (_opening.containsKey(section.id)) {
+      _closePending.add(section.id);
+    }
+  }
 
   void dispose() {
     if (_disposed) return;
@@ -409,6 +419,7 @@ class ReadingLibrary {
   }
 
   static void disposeAll() {
+    _closePending.addAll(_opening.keys);
     for (final library in _opened.values.toList(growable: false)) {
       library.dispose();
     }

@@ -282,6 +282,35 @@ void main() {
     session.setSleep(0);
     expect(cancelled.isActive, false);
   });
+  test('焦点让出会作废正在加载的音频，晚到结果不能恢复播放', () async {
+    final gate = Completer<void>();
+    player.beforeLoad = () => gate.future;
+    final opening = session.open(resource, tracks);
+    while (player.loads == 0) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    await PlaybackFocus.acquire('video');
+    gate.complete();
+    await opening;
+    expect(session.playing, false);
+    expect(session.loading, false);
+    expect(player.lastTracks, isEmpty);
+    expect(PlaybackFocus.owner, 'video');
+  });
+
+  test('释放的会话不再响应后续媒体焦点变化', () async {
+    await session.load(resource, tracks);
+    await session.shutdown();
+    session.dispose();
+    await PlaybackFocus.acquire('video');
+    // The shared teardown can safely dispose a replacement session.
+    session = AudioBookSession(
+      factory: () => player,
+      initialize: () async {},
+      settings: settings,
+    );
+  });
+
   test(
     'TTS/video focus releases the audiobook playlist before switching sources',
     () async {

@@ -361,6 +361,9 @@ class AudioBookSession extends ChangeNotifier {
 
   @override
   void dispose() {
+    PlaybackFocus.unregister('audioBook', release);
+    _generation++;
+    _acceptEvents = false;
     PlaybackFocus.setPlaying('audioBook', false);
     _releaseRuntime?.call();
     progress.dispose();
@@ -504,6 +507,7 @@ class AudioBookSession extends ChangeNotifier {
       }
       if (_player == null) {
         await _initialize();
+        if (generation != _generation) return;
         _player = _factory();
         _preloadConfiguration = configuration;
         _subscriptions.addAll([
@@ -576,8 +580,14 @@ class AudioBookSession extends ChangeNotifier {
         index: index,
         position: resume,
       );
-      if (generation != _generation) return;
+      if (generation != _generation) {
+        // A focus change may release the queue while the native load is still
+        // pending. Its late completion must not reinstall the old media.
+        await _player?.release();
+        return;
+      }
       await _player!.speed(settings.speed);
+      if (generation != _generation) return;
       _ready = true;
       setSleep(settings.sleepMinutes);
     } catch (failure, stack) {
@@ -687,20 +697,31 @@ class AudioBookSession extends ChangeNotifier {
 
   Future<void> release() async {
     _remember();
+    final generation = ++_generation;
+    loading = false;
     _sleep?.cancel();
     sleepAt = null;
     _ready = false;
     _acceptEvents = false;
-    await _player?.release();
-    _releaseRuntime?.call();
+    final releaseRuntime = _releaseRuntime;
     _releaseRuntime = null;
-    playing = false;
-    notifyListeners();
+    try {
+      await _player?.release();
+    } finally {
+      releaseRuntime?.call();
+      if (generation == _generation) {
+        playing = false;
+        notifyListeners();
+      }
+    }
   }
 
   Future<void> shutdown() async {
     _remember();
     _generation++;
+    _ready = false;
+    _acceptEvents = false;
+    loading = false;
     _sleep?.cancel();
     for (final subscription in _subscriptions) {
       await subscription.cancel();

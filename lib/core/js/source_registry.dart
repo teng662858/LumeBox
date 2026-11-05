@@ -146,6 +146,7 @@ class SourceRegistry {
   static const String currentSourceKey = 'current_source';
 
   static final Map<String, Future<SourceRegistry>> _opening = {};
+  static final _closePending = <String>{};
 
   /// Read from the current registry, never from a registry retained by a page.
   static SourceSiteConfig? existingSiteConfig(
@@ -167,6 +168,7 @@ class SourceRegistry {
       SourcePreferences.read(section, sourceId).rewrite(url);
 
   static Future<SourceRegistry> open(Section section) {
+    _closePending.remove(section.id);
     final existing = _registries[section.id];
     if (existing != null) {
       existing._closeRequested = false;
@@ -184,6 +186,7 @@ class SourceRegistry {
         LumeHttp(),
       );
       _registries[section.id] = registry;
+      if (_closePending.remove(section.id)) registry._requestClose();
       return registry;
     } finally {
       _opening.remove(section.id);
@@ -776,8 +779,15 @@ class SourceRegistry {
   }
 
   /// 关闭整个板块：释放引擎、HTTP 客户端与数据库。
-  static void close(Section section) =>
-      _registries[section.id]?._requestClose();
+  static void close(Section section) {
+    final registry = _registries[section.id];
+    if (registry != null) {
+      registry._requestClose();
+    } else if (_opening.containsKey(section.id)) {
+      // A page can leave before directory/keychain/database initialization ends.
+      _closePending.add(section.id);
+    }
+  }
 
   int _leases = 0;
   bool _closeRequested = false;
