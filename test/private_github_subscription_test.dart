@@ -39,6 +39,38 @@ void main() {
     PrivateGithubSubscription.resetForTesting();
   });
 
+  test('私有仓库连接短暂中断时重试，404 不重试', () async {
+    var attempts = 0;
+    final client = MockClient((request) async {
+      attempts++;
+      if (attempts == 1) throw http.ClientException('connection closed');
+      return http.Response('ok', 200);
+    });
+    expect(
+      utf8.decode(
+        await credentials.download(
+          credentials.apiFor('${base}file.js')!,
+          client: client,
+        ),
+      ),
+      'ok',
+    );
+    expect(attempts, 2);
+    attempts = 0;
+    final missing = MockClient((request) async {
+      attempts++;
+      return http.Response('missing', 404);
+    });
+    await expectLater(
+      credentials.download(
+        credentials.apiFor('${base}file.js')!,
+        client: missing,
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(attempts, 1);
+  });
+
   test(
     'raw, CDN and blob links map only the configured repository and ref',
     () {

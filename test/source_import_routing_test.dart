@@ -46,6 +46,13 @@ void main() {
       );
     }
   });
+  test('声明视频综合内容的听书源保留视频板块', () {
+    final mixed = script({
+      'category': 'video',
+      'contentTypes': ['audio', 'video'],
+    }).replaceFirst('Sample', '听友听书');
+    expect(SourceImportRouting.section(mixed), Section.video);
+  });
   test('Upload chooses directory automatically, preserving identity and marking audio for older Apps', () {
     final upload = GithubSourceRepository.prepareUpload(
       'audio.js',

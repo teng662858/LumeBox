@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
@@ -189,24 +190,45 @@ class PrivateGithubSubscription {
       throw const FormatException('私有订阅地址无效');
     }
     final network = client ?? (_sharedClient ??= clientFactory());
-    final request = http.Request('GET', api)..followRedirects = false;
-    request.headers.addAll({
-      'Authorization': 'Bearer $token',
-      'Accept': 'application/vnd.github.raw+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'LumeBox-Private-Subscription',
-    });
-    final response = await network
-        .send(request)
-        .timeout(const Duration(seconds: 30));
+    http.StreamedResponse? response;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final request = http.Request('GET', api)..followRedirects = false;
+        request.headers.addAll({
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/vnd.github.raw+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'LumeBox-Private-Subscription',
+        });
+        response = await network
+            .send(request)
+            .timeout(const Duration(seconds: 30));
+        if ((response.statusCode == 429 || response.statusCode >= 500) &&
+            attempt < 2) {
+          await response.stream.drain<void>();
+          await Future<void>.delayed(
+            Duration(milliseconds: 300 * (attempt + 1)),
+          );
+          continue;
+        }
+        break;
+      } on http.ClientException catch (_) {
+        if (attempt == 2) rethrow;
+      } on SocketException catch (_) {
+        if (attempt == 2) rethrow;
+      } on TimeoutException catch (_) {
+        if (attempt == 2) rethrow;
+      }
+      await Future<void>.delayed(Duration(milliseconds: 300 * (attempt + 1)));
+    }
+    if (response == null) throw StateError('私有仓库连接失败，请检查网络后重试');
     if (response.statusCode != 200) {
-      throw StateError(
-        response.statusCode == 401 ||
-                response.statusCode == 403 ||
-                response.statusCode == 404
-            ? '私有仓库读取失败，请检查 Token、仓库访问权限、分支及文件路径'
-            : '私有仓库读取失败（HTTP ${response.statusCode}）',
-      );
+      throw StateError(switch (response.statusCode) {
+        401 => '私有仓库授权已失效，请检查 Token',
+        403 => 'GitHub 拒绝访问，请检查权限或请求限额',
+        404 => '仓库文件不存在或无权访问，请检查订阅清单和权限',
+        _ => '私有仓库读取失败（HTTP ${response.statusCode}）',
+      });
     }
     final bytes = BytesBuilder(copy: false);
     await for (final part in response.stream.timeout(
