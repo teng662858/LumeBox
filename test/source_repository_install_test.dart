@@ -78,11 +78,14 @@ void main() {
     await tester.tap(find.text('标记待删除'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
-      find.text('放弃上次待发布记录'),
+      find.text('手动提交全部变更'),
       -200,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(find.text('放弃上次待发布记录'));
+    await tester.tap(find.text('手动提交全部变更'));
+    await tester.pumpAndSettle();
+    expect(find.text('上一批变更尚未完成'), findsOneWidget);
+    await tester.tap(find.text('放弃上一批记录'));
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.textContaining('当前选择的变更会保留'), findsOneWidget);
     await tester.tap(find.text('放弃记录'));

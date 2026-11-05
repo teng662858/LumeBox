@@ -265,6 +265,49 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     });
   });
 
+  Future<void> _resolvePendingBeforeSubmit() async {
+    final operation = _operation;
+    if (operation == null) return;
+    final awaitingPublication = operation.manual && !operation.dispatched;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('上一批变更尚未完成'),
+        content: Text(
+          awaitingPublication
+              ? '请先发布上一批，或者放弃上一批的待发布记录。当前选择会保留，放弃记录不会删除 GitHub 草稿分支。'
+              : '上一批正在发布或等待查询结果。请刷新发布状态，完成后再提交；当前选择会保留。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('返回'),
+          ),
+          if (awaitingPublication)
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'forget'),
+              child: const Text('放弃上一批记录'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              context,
+              awaitingPublication ? 'publish' : 'refresh',
+            ),
+            child: Text(awaitingPublication ? '先发布上一批' : '刷新发布状态'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'forget') {
+      await _forgetUnpublished();
+    } else if (choice == 'publish') {
+      await _publish();
+    } else if (choice == 'refresh') {
+      await _check();
+    }
+  }
+
   bool get _pending => _operation != null && !(_publication?.finished ?? false);
 
   Future<void> _upload() => _run(() async {
@@ -752,7 +795,9 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                     ),
                   ),
                 FilledButton(
-                  onPressed: _busy || _pending ? null : _submitBatch,
+                  onPressed: _busy
+                      ? null
+                      : (_pending ? _resolvePendingBeforeSubmit : _submitBatch),
                   child: const Text('手动提交全部变更'),
                 ),
                 if (_pending)
