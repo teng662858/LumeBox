@@ -7,6 +7,48 @@ import 'package:lume_box/features/video/playback_failure_panel.dart';
 import 'support/fake_source_manager.dart';
 
 void main() {
+  testWidgets('黑底播放错误面板不继承浅色页面的黑色正文', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.light(),
+        home: Scaffold(
+          body: DefaultTextStyle(
+            style: const TextStyle(color: Colors.black),
+            child: PlaybackFailurePanel(
+              error: 'fixture failure',
+              retry: () async {},
+              dark: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    final title = find.text('暂时无法播放');
+    expect(title, findsOneWidget);
+    final style = DefaultTextStyle.of(tester.element(title)).style;
+    expect(style.color, Colors.white);
+    await tester.tap(find.text('查看错误详情'));
+    await tester.pumpAndSettle();
+    expect(
+      DefaultTextStyle.of(tester.element(find.text('fixture failure')))
+          .style
+          .color,
+      Colors.white,
+    );
+  });
+
+  test('本机代理打不开时给出源兼容提示，HTTP 权限错误仍保持原分类', () {
+    final failure = PlaybackFailure.from(
+      'Failed to open http://127.0.0.1:10010/fixture.mp4',
+    );
+    expect(failure.kind, PlaybackFailureKind.invalidSource);
+    expect(failure.hint, contains('兼容性'));
+    expect(
+      PlaybackFailure.from('HTTP 403 http://127.0.0.1:10010/fixture.mp4').kind,
+      PlaybackFailureKind.forbidden,
+    );
+  });
+
   test('failure categories keep access restrictions distinct from network and stale scripts', () {
     for (final (raw, kind) in [
       ('HTTP 401 Unauthorized', PlaybackFailureKind.login),

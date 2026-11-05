@@ -1,4 +1,4 @@
-// LumeSource: {"id":"i275_audiobook","name":"275听书","version":"1.1.0","category":"audiobook","contentCategory":"movie","mediaType":"audio","settingsApiVersion":2,"network":"direct","mirrors":["https://www.i275.com","https://m.i275.com"],"icon":"https://www.i275.com/logo192.png","settings":[{"key":"note","type":"info","title":"站点说明","description":"275听书（i275.com）是中文有声小说站：首页只有「最近上架」，没有分类页；本源把站内搜索做成「题材」分类（站方搜索最多回 50 条、不分页，每个题材一页到底）。音频三种来路：懒人畅听（lrts）走 m.lrts.me 换到腾讯音乐 CDN、喜马拉雅（xm）走 mobile 的 free/play 跳转，这两类实测能播；站方自建音频（新书与站内热门那批）现在只给官方 App 放行，请求回 HTTP 403，源里会如实报出来，不给播不响的地址。想听能播的，先从「题材」分类进。"}]}
+// LumeSource: {"id":"i275_audiobook","name":"275听书","version":"1.1.1","category":"comic","contentCategory":"movie","mediaType":"audio","settingsApiVersion":2,"network":"direct","mirrors":["https://www.i275.com","https://m.i275.com"],"icon":"https://www.i275.com/logo192.png","settings":[{"key":"note","type":"info","title":"站点说明","description":"275听书（i275.com）是中文有声小说站：首页只有「最近上架」，没有分类页；本源把站内搜索做成「题材」分类（站方搜索最多回 50 条、不分页，每个题材一页到底）。音频三种来路：懒人畅听（lrts）走 m.lrts.me 换到腾讯音乐 CDN、喜马拉雅（xm）走 mobile 的 free/play 跳转，这两类实测能播；站方自建音频（新书与站内热门那批）现在只给官方 App 放行，请求回 HTTP 403，源里会如实报出来，不给播不响的地址。首页优先展示题材推荐；热门和新书保留展示，但部分音频仍需官方客户端。会话过期会重新获取，切镜像不会复用旧站会话；播放与重试会重新获取短时音频地址。"}]}
 
 // 275听书网（https://www.i275.com）· 有声小说源
 //
@@ -40,7 +40,6 @@ var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605
 
 var SESSION_KEY = 'i275/session.json';
 var BOOK_KEY = 'i275/book_';
-var LRTS_KEY = 'i275/lrts_';
 var SESSION_TTL = 6 * 3600 * 1000;
 var BOOK_TTL = 30 * 60 * 1000;
 var CHAPTER_PAGE_LIMIT = 9000; // 实测最长一本书 8027 章，超过就截断到目录页能承载的范围
@@ -141,9 +140,9 @@ async function writeJson(key, value) {
 // 站点判「非法访问」看的是会话：宿主（App 的 SiteSessionPool / 检查器）本来就按 origin
 // 记住 Set-Cookie，所以**正常情况下什么都不用做**；只有在裸打被判非法访问时，
 // 才自己 GET 一次首页、把读得到的 Set-Cookie 拼成 Cookie 头重试一次。
-async function seedSession() {
+async function seedSession(force) {
   var cached = await readJson(SESSION_KEY);
-  if (cached && Date.now() - Number(cached.t || 0) < SESSION_TTL && cached.seeded) return cached.cookie || '';
+  if (!force && cached && cached.origin === base() && Date.now() - Number(cached.t || 0) < SESSION_TTL && cached.seeded) return cached.cookie || '';
   var response = await LumeSource.http.get(base() + '/', {
     headers: {
       'User-Agent': UA,
@@ -165,7 +164,7 @@ async function seedSession() {
   var cookie = pairs.join('; ');
   // 宿主已经把 Set-Cookie 收进自己的罐里时，这里读不到 —— 那就别自己造 Cookie，
   // 交给宿主带（显式塞一个假的 PHPSESSID 反而会让站点判非法访问）。
-  await writeJson(SESSION_KEY, { cookie: cookie, seeded: true, t: Date.now() });
+  await writeJson(SESSION_KEY, { origin: base(), cookie: cookie, seeded: true, t: Date.now() });
   return cookie;
 }
 
@@ -402,22 +401,20 @@ async function apiChapter(bookId, chapterId, cookie) {
 }
 
 async function chapterAudio(bookId, chapterId) {
-  // ① 先裸打一次：宿主 Cookie 罐里通常已经有会话了（GET / 那一步由下面的 seed 补）
   var warmed = await readJson(SESSION_KEY);
-  if (!warmed || !warmed.seeded || Date.now() - Number(warmed.t || 0) >= SESSION_TTL) {
-    await seedSession();
-  }
-  var data = await apiChapter(bookId, chapterId, '');
+  var valid = warmed && warmed.origin === base() && warmed.seeded &&
+    Date.now() - Number(warmed.t || 0) < SESSION_TTL;
+  var cookie = valid ? (warmed.cookie || '') : await seedSession();
+  var data = await apiChapter(bookId, chapterId, cookie);
   if (data && !data.error) return data;
   if (data && data.error && String(data.error).indexOf('非法访问') < 0) {
     throw new Error('275听书接口拒绝了这次请求：' + String(data.error));
   }
-  // ② 被判「非法访问」：自己领一次会话 Cookie 再重试一次
-  var cookie = await seedSession();
-  if (cookie) {
-    data = await apiChapter(bookId, chapterId, cookie);
-    if (data && !data.error) return data;
-  }
+  // A persisted seed is not proof that the current HTTP session still exists.
+  // Refresh once even when Set-Cookie is hidden and the host owns the cookie jar.
+  cookie = await seedSession(true);
+  data = await apiChapter(bookId, chapterId, cookie);
+  if (data && !data.error) return data;
   throw new Error('275听书接口判了「非法访问」：站点会话没拿到（宿主没保存 Set-Cookie 时会出现），稍后重试或换个镜像');
 }
 
@@ -456,10 +453,8 @@ async function probeAudio(url, headers) {
 // 真实音频在懒人畅听：m.lrts.me 的 getPlayPath 匿名就能换到腾讯音乐 CDN 的签名 mp4
 // （实测 18/20 可播，206 + audio/mp4；没买的付费章节会回「收费章节未购买」）。
 async function resolveLrts(token) {
-  var cached = await readJson(LRTS_KEY + hashKey(token) + '.json');
-  if (cached && cached.url && Date.now() - Number(cached.t || 0) < 20 * 60 * 1000) {
-    return cached.url;
-  }
+  // Signed media URLs can expire independently of the book/session cache.
+  // Resolve again for each playback/retry instead of persisting a stale URL.
   var parts = String(token).split('#');
   var match = /^lrts\$(\d+)/.exec(parts[0] || '');
   if (!match || !/^\d+$/.test(parts[1] || '')) {
@@ -484,7 +479,6 @@ async function resolveLrts(token) {
     }
     throw new Error('懒人畅听没有给这一集的音频' + (reason ? '（' + reason + '）' : '') + '，换一集或换一本书试试');
   }
-  await writeJson(LRTS_KEY + hashKey(token) + '.json', { url: url, t: Date.now() });
   return url;
 }
 
@@ -514,8 +508,19 @@ async function homeBoard() {
   var newest = parseHomeNewest(page.html);
   var hot = parseHot(page.html);
   var boards = [];
-  if (hot.length) boards.push({ title: '热门收听', items: hot });
-  if (newest.length) boards.push({ title: '最近上架', items: newest });
+  try {
+    var themed = await search(KW_CATEGORIES[0].key);
+    if (themed.items.length) boards.push({
+      title: KW_CATEGORIES[0].title,
+      moreUrl: 'kw:' + KW_CATEGORIES[0].key,
+      items: themed.items.slice(0, 12)
+    });
+  } catch (error) {
+    // A failed recommendation request must not hide the real site's homepage.
+    if (!hot.length && !newest.length) throw error;
+  }
+  if (hot.length) boards.push({ title: '热门收听（部分需官方客户端）', items: hot });
+  if (newest.length) boards.push({ title: '最近上架（部分需官方客户端）', items: newest });
   if (!boards.length) {
     throw new Error('275听书首页没有解析到任何书目（站点改版了？）');
   }
@@ -638,7 +643,7 @@ var LumeSource = {
   id: 'i275_audiobook',
   name: '275听书',
   version: '1.0.0',
-  category: 'audiobook',
+  category: 'comic',
   contentCategory: 'movie',
   mediaType: 'audio',
   network: 'direct',

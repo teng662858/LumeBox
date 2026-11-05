@@ -54,6 +54,13 @@ class PlaybackFailure {
         '站点找不到这个资源；可更新源或打开源站检查内容是否已下架。',
       );
     }
+    if (matches(r'https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?/')) {
+      return const PlaybackFailure(
+        PlaybackFailureKind.invalidSource,
+        '源的本地播放服务不可用',
+        '该源返回了本机代理地址；服务可能未启动、已退出或请求失败。请检查源的兼容性，或使用源站支持的播放方式。',
+      );
+    }
     if (matches(
       r'time.?out|timed out|超时|socketexception|network|网络|连接|connection|dns|handshake|握手|\b5\d\d\b',
     )) {

@@ -35,6 +35,46 @@ void main() {
     () => messenger.setMockMethodCallHandler(PythonSourceEngine.channel, null),
   );
 
+  test('相同 Python 配置只跨桥一次，变化与重新加载仍会同步', () async {
+    final actions = <String>[];
+    messenger.setMockMethodCallHandler(PythonSourceEngine.channel, (
+      call,
+    ) async {
+      final args = call.arguments as Map;
+      actions.add('${args['action']}');
+      return jsonEncode({
+        'ok': true,
+        'value': {
+          'methods': ['home'],
+        },
+      });
+    });
+    final client = LumeHttp(
+      client: MockClient((_) async => http.Response('', 200)),
+    );
+    final engine = PythonSourceEngine(
+      sourceId: 'config-cache-test',
+      http: client,
+    );
+    addTearDown(() {
+      engine.dispose();
+      client.dispose();
+    });
+    await engine.loadScript('class Spider: pass');
+    await Future.wait(
+      List.generate(
+        6,
+        (_) => engine.applyScriptConfig({'domain': 'https://fixture.test'}),
+      ),
+    );
+    expect(actions.where((a) => a == 'config'), hasLength(1));
+    await engine.applyScriptConfig({'domain': 'https://other.test'});
+    expect(actions.where((a) => a == 'config'), hasLength(2));
+    await engine.loadScript('class Spider: pass');
+    await engine.applyScriptConfig({'domain': 'https://other.test'});
+    expect(actions.where((a) => a == 'config'), hasLength(3));
+  });
+
   test('漫画 PY 使用漫画引擎与图片载荷，同名视频源网络会话独立', () async {
     final loads = <Map>[];
     messenger.setMockMethodCallHandler(PythonSourceEngine.channel, (

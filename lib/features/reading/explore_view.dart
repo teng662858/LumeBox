@@ -494,14 +494,21 @@ class _ExploreViewState extends State<ExploreView>
         _failure = null;
       });
       if (visit != null) return;
-      unawaited(_loadCategories());
+      // Python calls share a native serial worker. Let real home content go
+      // first; a slow site's category/filter discovery must not block it.
+      final deferMetadata = current.runtimeKind == 'python';
+      if (!deferMetadata) unawaited(_loadCategories());
       await _probeHomeSupport();
       if (!mounted || bootstrapSeq != _bootstrapSeq) return;
       setState(() => _state = SourceStateKind.ready);
-      if (!_isHomeMode) await _loadPage();
+      if (!_isHomeMode) {
+        if (deferMetadata) unawaited(_loadCategories());
+        await _loadPage();
+      }
       if (mounted &&
           bootstrapSeq == _bootstrapSeq &&
           identical(source, _source) &&
+          !(deferMetadata && _isHomeMode) &&
           (_categories.isEmpty || _filterGroups.isEmpty)) {
         // Some script hosts populate metadata during their first list request.
         // Recheck once after it completes instead of waiting for a pull refresh.
@@ -1827,7 +1834,12 @@ class _ExploreViewState extends State<ExploreView>
         onTranslationTexts: (texts) {
           if (mounted) setState(() => _homeTranslationTexts = texts);
         },
-        onHomeLoaded: () => unawaited(_metadataAfterHome()),
+        onHomeLoaded: _current?.runtimeKind == 'python'
+            ? null
+            : () => unawaited(_metadataAfterHome()),
+        onHomeSettled: _current?.runtimeKind == 'python'
+            ? () => unawaited(_metadataAfterHome())
+            : null,
         pipeline: _imagePipeline,
         originUrl: _current?.originUrl ?? '',
         onOpenItem: _open,

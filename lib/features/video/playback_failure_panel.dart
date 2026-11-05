@@ -225,7 +225,15 @@ class _PlaybackFailurePanelState extends State<PlaybackFailurePanel> {
         ],
       ),
     );
-    if (widget.dark) body = Theme(data: ThemeData.dark(), child: body);
+    if (widget.dark) {
+      body = Theme(
+        data: ThemeData.dark(),
+        child: DefaultTextStyle.merge(
+          style: const TextStyle(color: Colors.white),
+          child: body,
+        ),
+      );
+    }
     return body;
   }
 }

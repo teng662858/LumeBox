@@ -347,6 +347,33 @@ class Spider:
         host._contexts.clear()
         self.assertTrue(call("fixture", "load", script=FIXTURE)["ok"])
 
+    def test_custom_local_server_dependency_warns_without_running_a_server(self):
+        source = 'from http.server import ThreadingHTTPServer\n' + FIXTURE
+        result = call('local-server-note', 'load', script=source)
+        self.assertTrue(result['ok'], result)
+        self.assertTrue(any('自建本地 HTTP 服务' in w for w in result['value']['warnings']))
+
+    def test_script_network_timeouts_are_forwarded_and_never_extend_call_budget(self):
+        source = FIXTURE + """
+    def homeVideoContent(self):
+        import requests, urllib.request, http.client
+        requests.get('https://fixture.invalid/short', timeout=2)
+        requests.get('https://fixture.invalid/pair', timeout=(1, 3))
+        urllib.request.urlopen('https://fixture.invalid/urllib', timeout=3).read()
+        conn = http.client.HTTPSConnection('fixture.invalid', timeout=4)
+        conn.request('GET', '/client')
+        conn.getresponse().read()
+        requests.get('https://fixture.invalid/long', timeout=500)
+        return {'list':[{'vod_id':'one','vod_name':'bounded'}]}
+"""
+        self.assertTrue(call('network-timeout', 'load', script=source)['ok'])
+        result = call('network-timeout', method='home', timeout=30)
+        self.assertTrue(result['ok'], result)
+        requests = [r for r in CALLS if r['method'] == 'http']
+        self.assertEqual([round(r['timeout']) for r in requests[:4]], [2, 4, 3, 4])
+        self.assertLessEqual(requests[-1]['timeout'], 30)
+        self.assertGreater(requests[-1]['timeout'], 0)
+
     def test_shared_tools_import_and_host_decompression(self):
         source = FIXTURE + """
     def homeVideoContent(self):

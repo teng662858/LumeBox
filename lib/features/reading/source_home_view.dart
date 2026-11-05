@@ -53,6 +53,7 @@ class SourceHomeView extends StatefulWidget {
     this.bottomInset = 0,
     this.onRefreshMetadata,
     this.onHomeLoaded,
+    this.onHomeSettled,
     this.onTranslationTexts,
     this.browseMode,
     this.cacheTtl = const Duration(minutes: 2),
@@ -65,6 +66,7 @@ class SourceHomeView extends StatefulWidget {
   final double bottomInset;
   final Future<void> Function()? onRefreshMetadata;
   final VoidCallback? onHomeLoaded;
+  final VoidCallback? onHomeSettled;
   final ValueChanged<List<String>>? onTranslationTexts;
 
   /// 图源的订阅地址（可选）：过 WAF 时用它兜底拿站点 origin。
@@ -215,7 +217,10 @@ class _SourceHomeViewState extends State<SourceHomeView>
         _error = null;
         _preloadFirstScreen(cached.home);
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && seq == _seq) _notifyHome(cached.home);
+          if (mounted && seq == _seq) {
+            _notifyHome(cached.home);
+            widget.onHomeSettled?.call();
+          }
         });
         return;
       }
@@ -279,7 +284,10 @@ class _SourceHomeViewState extends State<SourceHomeView>
     } finally {
       if (seq == _seq) {
         _loadingSourceId = null;
-        if (mounted) setState(() => _refreshing = false);
+        if (mounted) {
+          setState(() => _refreshing = false);
+          widget.onHomeSettled?.call();
+        }
       }
     }
   }

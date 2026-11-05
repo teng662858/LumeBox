@@ -52,6 +52,7 @@ class PythonSourceEngine implements SourceEngine, ScriptConfigCapable {
   static bool _installed = false;
   bool _disposed = false;
   bool isPoisoned = false;
+  String? _appliedConfig;
   Set<String> _methods = {};
   List<String> _warnings = [];
   SourceMetadata? _metadata;
@@ -221,11 +222,19 @@ class PythonSourceEngine implements SourceEngine, ScriptConfigCapable {
     if (_disposed) {
       return const SandboxFailure(SandboxErrorKind.disposed, 'Python 源已释放');
     }
+    final config = args['action'] == 'config'
+        ? jsonEncode(args['config'])
+        : null;
+    if (!isPoisoned && config != null && config == _appliedConfig) {
+      return const SandboxSuccess(null);
+    }
+    if (args['action'] == 'load') _appliedConfig = null;
     try {
       final reply = await channel
           .invokeMethod<String>('execute', {...args, 'sourceId': _runtimeId})
           .timeout(const Duration(seconds: 65));
       final result = SandboxResult.fromJson(reply ?? '');
+      if (result.isOk && config != null) _appliedConfig = config;
       if (result.error?.kind.poisonsContext ?? false) isPoisoned = true;
       return result;
     } on MissingPluginException {

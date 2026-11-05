@@ -558,11 +558,11 @@ async function runSource(file, options) {
         report.calls.playable = body.length
           ? { ok: true, url: '', text: body.length }
           : { ok: false, error: 'content 是 text 但正文为空：' + JSON.stringify(content).slice(0, 200) };
-      } else if (content && (content.kind === 'video' || content.kind === 'images')) {
+      } else if (content && (content.kind === 'video' || content.kind === 'audio' || content.kind === 'images')) {
         const url = content.url || (content.images && content.images[0]) || '';
         if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
           report.calls.playable = { ok: true, url: url.slice(0, 160) };
-          if (content.kind === 'video') {
+          if (content.kind === 'video' || content.kind === 'audio') {
             const probe = await probeMedia(url, content.headers || {});
             report.calls.playable.probe = probe;
           }
@@ -628,7 +628,7 @@ async function probeMedia(url, headers) {
       ok:
         res.status >= 200 &&
         res.status < 400 &&
-        (looksM3u8 || looksFlv || /video|octet-stream|mp4|mpegurl/i.test(type)),
+        (looksM3u8 || looksFlv || /video|audio|octet-stream|mp4|mpegurl/i.test(type)),
       status: res.status,
       type,
       bytes: buffer.length,

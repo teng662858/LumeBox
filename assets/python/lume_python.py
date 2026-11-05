@@ -7,6 +7,7 @@ import base64
 import contextvars
 import io
 import json
+import math
 import re
 import os
 import hashlib
@@ -84,15 +85,31 @@ def _invoke(spider, name, args=(), named=None):
     return function(*positional, **keywords)
 
 
-def _host(method, payload):
+def _http_timeout(value):
+    """Bound a bridged request by the script's own network budget."""
+    values = value if isinstance(value, (tuple, list)) else (value,)
+    if not values or any(v is None for v in values):
+        return None
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in values):
+        return None  # urllib/http.client may use socket's default-timeout sentinel.
+    if any(not math.isfinite(v) or v <= 0 for v in values):
+        raise ValueError("网络超时必须是有限正数")
+    # Dart has one total deadline; a requests connect/read pair shares their sum.
+    return sum(values)
+
+
+def _host(method, payload, timeout=None):
     state = _active.get()
     remaining = state["deadline"] - time.monotonic()
     if remaining <= 0:
         raise TimeoutError("Python 源执行超时")
+    budget = min(remaining, 30)
+    if timeout is not None:
+        budget = min(budget, timeout)
     reply = json.loads(_lume_host.invoke(json.dumps({
         "method": method, "payload": payload,
         "sourceId": state["source_id"],
-        "timeout": min(remaining, 30),
+        "timeout": budget,
     })))
     if not reply.get("ok"):
         raise RuntimeError(reply.get("error", "宿主请求失败"))
@@ -121,7 +138,7 @@ class _HttpAdapter(BaseAdapter):
         value = _host("http", {
             "url": request.url, "method": request.method,
             "headers": dict(request.headers), "body": base64.b64encode(body).decode(),
-        })
+        }, timeout=_http_timeout(timeout))
         response = requests.Response()
         response.status_code = value["status"]
         response.headers = CaseInsensitiveDict(value["headers"])
@@ -210,7 +227,7 @@ class _UrlHandler(urllib.request.HTTPHandler, urllib.request.HTTPSHandler):
             "url": request.full_url, "method": request.get_method(),
             "headers": dict(request.header_items()),
             "body": base64.b64encode(data).decode(),
-        })
+        }, timeout=_http_timeout(getattr(request, "timeout", None)))
         return _UrlResponse(value, request.full_url)
 
     https_open = http_open
@@ -245,7 +262,7 @@ def _connection_request(self, method, url, body=None, headers=None, *, encode_ch
     self._lume_response = _UrlResponse(_host("http", {
         "url": target, "method": method, "headers": headers or {},
         "body": base64.b64encode(data).decode(),
-    }), target)
+    }, timeout=_http_timeout(self.timeout)), target)
 
 
 def _connection_response(self):
@@ -921,16 +938,21 @@ def execute(request):
             _contexts[source_id] = state
         warnings = []
         imports = set()
+        local_server = False
         with python_warnings.catch_warnings(action="ignore", category=SyntaxWarning):
             parsed = ast.parse(source)
         for node in ast.walk(parsed):
             if isinstance(node, ast.Import):
                 imports.update(alias.name.split('.')[0] for alias in node.names)
+                local_server |= any(alias.name in ('http.server', 'socketserver') for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imports.add(node.module.split('.')[0])
+                local_server |= node.module in ('http.server', 'socketserver')
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 if isinstance(node.func.value, ast.Name) and node.func.value.id in ("os", "subprocess") and node.func.attr in ("system", "popen", "Popen", "run", "fork", "execv"):
                     warnings.append("含系统进程接口；iOS 无法执行该路径")
+        if local_server:
+            warnings.append("含自建本地 HTTP 服务；后台线程与宿主网络桥未保证兼容，导入成功不代表能够播放，请验证源站支持的播放路径")
         for name in sorted(imports):
             if name in ("java", "jnius", "android", "dalvik", "chaquopy"):
                 warnings.append("含 Android 专属依赖 " + name + "；对应功能需要其他实现或外部后端")
