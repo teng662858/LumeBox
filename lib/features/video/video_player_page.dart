@@ -1,3 +1,4 @@
+import 'player_edge_back.dart';
 import '../reading/poster_card.dart';
 import '../reading/section_toolbar.dart';
 import 'video_detail_page.dart';
@@ -3875,7 +3876,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     },
     child: ModuleGlassScope(
       module: GlassModule.video,
-      child: _legacyBuild(context),
+      child: PlayerEdgeBack(enabled: !_locked, child: _legacyBuild(context)),
     ),
   );
   Widget _legacyBuild(BuildContext context) {
