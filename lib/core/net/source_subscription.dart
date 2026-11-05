@@ -51,7 +51,10 @@ class SourceSubscription {
 
   Future<({SourceFetchResult? value, Object? error, StackTrace? stack})>
   _startDownload(String url) async {
-    if (_activeDownloads >= 4) {
+    // The official repository is a static file host, not a scraped site.
+    // Keep general source hosts at four while allowing six official downloads.
+    final limit = SubscriptionCatalog.officialPath(url) == null ? 4 : 6;
+    if (_activeDownloads >= limit) {
       final ready = Completer<void>();
       _downloadWaiters.add(ready);
       await ready.future;
@@ -88,9 +91,10 @@ class SourceSubscription {
   ) sync* {
     for (var i = 0; i < urls.length; i++) {
       // Tiny/custom import limits preserve strictly lazy expansion. Normal
-      // subscriptions prefetch only a four-entry window; parsing stays ordered.
+      // subscriptions keep a bounded twelve-entry window so slower early files
+      // do not leave download slots idle; parsing stays ordered.
       if (maxScripts >= defaultMaxScripts) {
-        for (var j = i; j < urls.length && j < i + 4 && j < budget; j++) {
+        for (var j = i; j < urls.length && j < i + 12 && j < budget; j++) {
           final url = urls[j];
           if (!visited.contains(url)) {
             _downloads.putIfAbsent(url, () => _startDownload(url));
