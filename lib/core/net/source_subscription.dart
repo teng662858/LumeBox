@@ -158,6 +158,7 @@ class SourceSubscription {
     String url, {
     bool force = false,
   }) async {
+    url = SubscriptionCatalog.migrateUrl(url);
     final credentials = await PrivateGithubSubscription.load();
     final privateApi = credentials?.apiFor(url);
     if (privateApi != null) {
@@ -184,7 +185,9 @@ class SourceSubscription {
         throw LumeHttpException('HTTP ${response.statusCode}');
       }
     } on LumeHttpException {
-      final alternate = githubCdnUrl(url);
+      final alternate = SubscriptionCatalog.officialPath(url) == null
+          ? githubCdnUrl(url)
+          : null;
       if (alternate == null) rethrow;
       LumeLog.info('[订阅] GitHub 原始地址暂不可达，尝试 CDN：$url');
       response = await send(alternate);

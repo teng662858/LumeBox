@@ -164,7 +164,7 @@ class _TotalSubscriptionPageState extends State<TotalSubscriptionPage> {
           spacing: 8,
           runSpacing: 4,
           children: [
-            for (final route in SubscriptionRoute.values)
+            for (final route in SubscriptionCatalog.availableRoutes)
               ChoiceChip(
                 label: Text(route.label),
                 selected:

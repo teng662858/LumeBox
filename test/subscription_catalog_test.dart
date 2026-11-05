@@ -51,14 +51,14 @@ void main() {
     );
   });
 
-  test('旧官方清单迁移，CDN 线路不会重新指回原站子清单', () {
+  test('旧官方清单迁移至 GitHub 原站', () {
     expect(
       SubscriptionCatalog.migrateUrl('${SubscriptionCatalog.base}all'),
       SubscriptionCatalog.totalUrl,
     );
     expect(
       SubscriptionCatalog.migrateUrl('${SubscriptionCatalog.cdnBase}all'),
-      SubscriptionCatalog.totalCdnUrl,
+      SubscriptionCatalog.totalUrl,
     );
     expect(
       SubscriptionCatalog.canonical(
@@ -69,11 +69,11 @@ void main() {
     );
     expect(
       SubscriptionCatalog.migrateUrl('${SubscriptionCatalog.cdnBase}videos'),
-      SubscriptionCatalog.sectionUrl(Section.video, cdn: true),
+      SubscriptionCatalog.sectionUrl(Section.video),
     );
     expect(
       SubscriptionCatalog.migrateUrl('${SubscriptionCatalog.cdnBase}videos-hd'),
-      '${SubscriptionCatalog.cdnBase}subscriptions/legacy/videos-hd-cdn.txt',
+      '${SubscriptionCatalog.base}subscriptions/legacy/videos-hd.txt',
     );
     expect(
       SubscriptionCatalog.migrateUrl('${SubscriptionCatalog.base}video/播剧网.js'),
@@ -90,13 +90,13 @@ void main() {
       expect(SubscriptionCatalog.migrateUrl(url), url);
     }
   });
-  test('官方 CDN 旧清单地址转到 CDN 专用清单，不受旧 raw 清单缓存影响', () {
+  test('官方 CDN 旧清单地址迁移到 GitHub 原站', () {
     for (final name in ['all.json', 'video.txt', 'movie.txt', 'photo.txt']) {
       expect(
         SubscriptionCatalog.migrateUrl(
           '${SubscriptionCatalog.cdnBase}subscriptions/$name',
         ),
-        '${SubscriptionCatalog.cdnBase}subscriptions/cdn/$name',
+        '${SubscriptionCatalog.base}subscriptions/$name',
       );
     }
     expect(
@@ -104,7 +104,7 @@ void main() {
         '${SubscriptionCatalog.cdnBase}subscriptions/cdn/video.e861fbef.txt',
         Section.video,
       ),
-      '${SubscriptionCatalog.cdnBase}subscriptions/cdn/video.txt',
+      '${SubscriptionCatalog.base}subscriptions/video.txt',
     );
     for (final suffix in ['?token=test', '#private']) {
       final url =

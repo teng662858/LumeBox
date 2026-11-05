@@ -49,7 +49,7 @@ class _TotalSubscriptionImportEntryState
             padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
             child: Text('选择一条线路，自动导入全部订阅源。'),
           ),
-          for (final route in SubscriptionRoute.values)
+          for (final route in SubscriptionCatalog.availableRoutes)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, route),
               child: Text(route.label),

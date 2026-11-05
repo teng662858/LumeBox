@@ -87,7 +87,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('一键导入可选择三条线路，取消不会请求', (tester) async {
+  testWidgets('一键导入可选择两条线路，取消不会请求', (tester) async {
     final requests = <String>[];
     await pumpPage(
       tester,
@@ -104,13 +104,13 @@ void main() {
     }
 
     await openPicker();
-    for (final route in SubscriptionRoute.values) {
+    for (final route in SubscriptionCatalog.availableRoutes) {
       expect(find.text(route.label), findsOneWidget);
     }
     await tester.tap(find.text('取消').last);
     await tester.pumpAndSettle();
     expect(requests, isEmpty);
-    for (final route in SubscriptionRoute.values) {
+    for (final route in SubscriptionCatalog.availableRoutes) {
       await openPicker();
       await tester.tap(find.text(route.label));
       await tester.pumpAndSettle();
@@ -118,7 +118,7 @@ void main() {
       await tester.tap(find.text('关闭').last);
       await tester.pumpAndSettle();
     }
-    expect(requests, hasLength(3));
+    expect(requests, hasLength(2));
   });
 
   testWidgets('一键导入显示跳过项并可按选择恢复', (tester) async {

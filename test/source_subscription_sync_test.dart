@@ -108,7 +108,10 @@ void main() {
     await service.save();
     await service.load();
     expect(service.subscriptions, hasLength(1));
-    expect(service.subscriptions.single.url, stable);
+    expect(
+      service.subscriptions.single.url,
+      '${SubscriptionCatalog.base}subscriptions/video.txt',
+    );
     expect(
       service.subscriptions.single.members.keys,
       containsAll(['retired', 'active']),
@@ -512,7 +515,7 @@ void main() {
   });
 
   testWidgets('官方综合订阅选择线路后直接添加，自定义地址保留', (tester) async {
-    final official = SubscriptionCatalog.mixedFor(SubscriptionRoute.cdn);
+    final official = SubscriptionCatalog.mixedFor(SubscriptionRoute.cloudflare);
     remote[official] = 'https://repo.example/mixed.js';
     remote['https://repo.example/mixed.js'] = script('mixed', 1);
     await tester.pumpWidget(
@@ -541,7 +544,7 @@ void main() {
     );
     await tester.tap(find.text('综合源订阅'));
     await settle();
-    await tester.tap(find.text('国内 CDN'));
+    await tester.tap(find.text('Cloudflare'));
     await settle();
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,

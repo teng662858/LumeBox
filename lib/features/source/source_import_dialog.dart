@@ -520,7 +520,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
       Wrap(
         spacing: 8,
         children: [
-          for (final route in SubscriptionRoute.values)
+          for (final route in SubscriptionCatalog.availableRoutes)
             ActionChip(
               label: Text(route.label),
               onPressed: _busy

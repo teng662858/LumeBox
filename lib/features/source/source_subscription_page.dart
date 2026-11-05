@@ -322,7 +322,7 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
             Wrap(
               spacing: 8,
               children: [
-                for (final route in SubscriptionRoute.values)
+                for (final route in SubscriptionCatalog.availableRoutes)
                   ActionChip(
                     label: Text(route.label),
                     onPressed: _busy || service == null
