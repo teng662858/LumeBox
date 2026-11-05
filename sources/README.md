@@ -1,19 +1,24 @@
-## 2026-11-05 275听书（`comic/i275.js`，详见 [源记录](../docs/2026-11-05_275听书源评估.md)）
+## 2026-11-05 275听书（`comic/i275.js` v1.1.0，详见 [源记录](../docs/2026-11-05_275听书源评估.md)）
 
 `i275_audiobook`：275听书（www.i275.com，镜像 m.i275.com）有声小说。**站点结构极薄**：
 首页只有「最近上架」12 部 + 热门搜索 5 部，**没有分类页/排序/筛选/分页**；`search.php?q=` 命中书名/作者/演播，
 但服务端 `LIMIT 50` 且不吃 `page`；`/book/{id}.html` 一次给全目录（剑来 5231 章）；取音频只有
-`/api_chapter.php`，**且必须带一个网页会话**（先 `GET /` 拿 `PHPSESSID`，否则回 `{"error":"非法访问"}`）。
+`/api_chapter.php`，裸请求判 `非法访问`，先 `GET /` 让宿主存下 `PHPSESSID` 就正常（别自己造 session id）。
+源把站内搜索词做成 19 个「题材」分类（每个实测 10–50 条、首条互不相同），能播的题材排在前面。
 
-源把站内搜索词做成 19 个「题材」分类（玄幻/悬疑/评书/儿童…，每个实测 10–50 条、首条互不相同）。
+**音频四种来路**（抽样 70 本：lrts 31 / 自建 11 / null 3 / 空书 25）：
 
-**播放链路目前是断的，所以本源没有进订阅、没有推到源库**：`api_chapter.php` 的 `url` 有三种形态
-——自建音频（`2025/audio.tingshijie.com`，抽样 8/57）、`lrts$…`（只有懒人畅听编号，24/57）、`null`
-（新书没上传，5/57）；而自建音频那批地址虽然原样下发，`*.tingshijie.com` 对所有非官方 App 的请求一律
-回 `403 Access Denied: Please use the official App.`（换 UA/Referer/Cookie/签名参数、境外多节点复测都 403，
-连不存在的路径也 403）。站点首页自己也弹窗写着「本站无法正常收听，请到小程序『拾音盘』」。
-`content()` 因此先探一次字节：能取到就正常播，403 就抛可读文案，不伪造可播地址。
-解锁需要官方 App（`com.tsj.babala`）的音频凭据，或在手机上实测确认 403 是否只是出口 IP 白名单。
+- `lrts$…`（懒人畅听）→ `m.lrts.me/ajax/getPlayPath` 换腾讯音乐 CDN 的签名 m4a，实测 `206 + audio/mp4`；
+  但站方只免费放出**靠前的章**，中后段回「收费章节未购买」，源里翻成人话再抛（约 44% 的书属这类）。
+- `xm$<声音ID>`（喜马拉雅）→ `mobile.ximalaya.com/mobile/redirect/free/play/<id>/0` 302 到 audiopay CDN，
+  **整本可播**（实测 206 + audio/x-m4a，第 1/20/168/335 集都通）；源里不预取，免得把整集音频拉进沙箱。
+- 站方自建 `*.tingshijie.com` → **403 Access Denied: Please use the official App.**，换 UA/Referer/Cookie/
+  签名参数、境外多节点复测都一样，站点自己也弹窗「本站无法正常收听」；源里探到 403 就抛可读错误。
+- `null` / 空书 → 新书没上传或已下架。
+
+已发布 `audiobook/275听书.js`（源库 `3b6d1a1`），进了 `subscriptions/audiobook.txt` 与 `comics.txt`；
+`build_catalog.py --check` 0 变化。**但源仓库当前是私有的**，raw 与 jsDelivr 都 404（实测），
+要 `gh repo edit teng662858/LumeBox-Sources --visibility public` 之后订阅才拿得到。
 
 ## 2026-11-05 听友听书（`video/tingyou.js`，详见 [源记录](../docs/2026-11-05_听友听书综合源.md)）
 

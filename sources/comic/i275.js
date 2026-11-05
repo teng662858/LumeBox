@@ -1,4 +1,4 @@
-// LumeSource: {"id":"i275_audiobook","name":"275听书","version":"1.0.0","category":"audiobook","contentCategory":"movie","mediaType":"audio","settingsApiVersion":2,"network":"direct","mirrors":["https://www.i275.com","https://m.i275.com"],"icon":"https://www.i275.com/logo192.png","settings":[{"key":"note","type":"info","title":"站点说明","description":"275听书（i275.com）是中文有声小说站：首页只有「最近上架」，没有分类页；本源把站内搜索做成「题材」分类（站方搜索最多回 50 条、不分页，所以每个题材一页到底）。音频接口要一个网页会话（脚本自己领、自己复用）。注意：站方已把音频 CDN 收紧成「只给官方 App」，网页/第三方播放器请求会回 HTTP 403 Access Denied（站点首页自己也写着「本站无法正常收听，请到小程序拾音盘」）；源里会把这件事如实报出来，而不是给一个播不响的地址。"}]}
+// LumeSource: {"id":"i275_audiobook","name":"275听书","version":"1.1.0","category":"audiobook","contentCategory":"movie","mediaType":"audio","settingsApiVersion":2,"network":"direct","mirrors":["https://www.i275.com","https://m.i275.com"],"icon":"https://www.i275.com/logo192.png","settings":[{"key":"note","type":"info","title":"站点说明","description":"275听书（i275.com）是中文有声小说站：首页只有「最近上架」，没有分类页；本源把站内搜索做成「题材」分类（站方搜索最多回 50 条、不分页，每个题材一页到底）。音频三种来路：懒人畅听（lrts）走 m.lrts.me 换到腾讯音乐 CDN、喜马拉雅（xm）走 mobile 的 free/play 跳转，这两类实测能播；站方自建音频（新书与站内热门那批）现在只给官方 App 放行，请求回 HTTP 403，源里会如实报出来，不给播不响的地址。想听能播的，先从「题材」分类进。"}]}
 
 // 275听书网（https://www.i275.com）· 有声小说源
 //
@@ -8,57 +8,67 @@
 //   GET  /book/{书号}.html          详情：书名/封面/作者/演播/状态/热度/简介 + **完整目录**
 //                                   （目录条目 id="chapter-pos-N"，href=/play/{书号}/{章节号}.html）
 //   GET  /api_chapter.php?book_id=&chapter_id=   → {url,title,book_title,cover}
-//        · **必须带网页会话 Cookie**（先 GET / 拿 PHPSESSID），否则回 {"error":"非法访问"}
-//        · url 有三种形态（都是站点数据库的真实状态）：
-//            1. http(s)://2025.tingshijie.com/… 或 audio.tingshijie.com/…（自建音频）
-//            2. "lrts$<专辑号>#<音轨号>#…#<手机号>.txt" —— 只存了懒人畅听的编号，本站没有音频
-//            3. null —— 新书还没上传音频
+//        · 裸请求会被判 {"error":"非法访问"}；先 GET / 让宿主把 PHPSESSID 收进 Cookie 罐就正常
+//        · url 有四种形态（都是站点数据库的真实状态）：
+//            1. http(s)://2025.tingshijie.com/…、audio.tingshijie.com/…  ← 站方自建音频
+//            2. "lrts$<专辑号>#<音轨号>#<分段>#<手机号>.txt"               ← 懒人畅听编号
+//            3. "xm$<声音ID>"                                            ← 喜马拉雅声音
+//            4. null —— 新书还没上传音频
 //
-// ⚠ 播放链路的现状（2026-11-05 实测，写在源里免得以后误判成「源写错了」）：
-//    形态 1 的地址本身是对的（api 原样下发），但 *.tingshijie.com 对所有非官方 App 的请求
-//    一律回 403「Access Denied: Please use the official App.」：
-//      · http / https、带不带 Range、带不带 PHPSESSID、带各种 Referer 都一样；
-//      · 换 UA（浏览器 / Dalvik / okhttp / 微信 / 各种 App 猜名）只有 okhttp、ExoPlayer 会走成
-//        普通 404，其余全 403；加 ?sign= / ?token= / ?e=&st= 等签名参数也不改变结果；
-//      · 境外多节点复测（check-host.net 的 at/de/ir/rs/ru 节点）同样 403，
-//        说明不是本机出口 IP 的问题，是站方按客户端凭据收紧的。
-//    所以 content() 会先探一下这条地址：能取到字节就正常交给播放器；回 403 就抛出
-//    「站方只给官方 App」的可读错误（不伪造可播地址，也不静默返回空）。
+// 播放：②③ 真的能出声，① 播不了（是站方现状，不是解析问题）
+//   · ② 懒人畅听：GET https://m.lrts.me/ajax/getPlayPath?entityId=&entityType=3&opType=1
+//       &sections=[分段]&type=0&id=<音轨号>&section=<分段> → list[0].path 是腾讯音乐 CDN 的
+//       签名 m4a（实测 206 + audio/mp4；没买的付费章节回「收费章节未购买」）。抽样 20 本：
+//       18 本可播。
+//   · ③ 喜马拉雅：https://mobile.ximalaya.com/mobile/redirect/free/play/<id>/0 会 302 到
+//       audiopay CDN 的 m4a（实测 206 + audio/x-m4a，http/https 都行）。这里**故意不预取**，
+//       直接把跳转地址交给播放器，免得把整集音频拉进沙箱。
+//   · ① 站方自建音频：api 下发的地址本身是对的，但 *.tingshijie.com 对所有非官方 App 一律回
+//       403「Access Denied: Please use the official App.」—— http/https、带不带 Range /
+//       PHPSESSID / Referer / Origin / X-Requested-With、换 UA（浏览器/okhttp/微信/各种 App
+//       猜名）、加 ?sign= ?token= ?e=&st= 等参数结果都一样；境外多节点复测
+//       （check-host.net 的 at/de/ir/rs/ru）也 403，不是本机出口 IP 的问题。
+//       站点首页自己也弹窗写着「本站无法正常收听，请到小程序拾音盘」。content() 因此对这
+//       一类先探一次字节：403 就抛可读错误，不伪造可播地址。
 //
 // 没有的东西就不声明：站点没有排序、没有筛选、没有分页、没有会员体系；
-// 分类是本源用站内搜索词拼出来的（站方无分类页，这是唯一能真出内容的浏览轴）。
+// 分类是本源用站内搜索词拼出来的（站方无分类页，这是唯一能真出内容的浏览轴），
+// 顺序把「首条实测能播」的题材排在前面，免得用户第一下就踩到被锁的音频。
 
 var BASE_URL = 'https://www.i275.com';
 var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 
 var SESSION_KEY = 'i275/session.json';
 var BOOK_KEY = 'i275/book_';
+var LRTS_KEY = 'i275/lrts_';
 var SESSION_TTL = 6 * 3600 * 1000;
 var BOOK_TTL = 30 * 60 * 1000;
 var CHAPTER_PAGE_LIMIT = 9000; // 实测最长一本书 8027 章，超过就截断到目录页能承载的范围
 
 // 题材「分类」：站点没有分类页，这些是站内搜索词（每个都实测有真实结果，首条互不相同）。
 // 站方搜索上限 50 条且不分页，所以每个题材就是一个满 50 条（或更少）的列表。
+// 顺序说明：站方自建音频那批书（新书 + 站内热门）被 CDN 锁给官方 App，
+// 首批放「首条实测能播」的题材（懒人畅听/喜马拉雅音频），免得用户第一下就踩到锁。
 var KW_CATEGORIES = [
+  { key: '悬疑', title: '题材 · 悬疑' },
+  { key: '灵异', title: '题材 · 灵异' },
+  { key: '仙侠', title: '题材 · 仙侠' },
+  { key: '相声', title: '题材 · 相声' },
+  { key: '儿童', title: '题材 · 儿童' },
   { key: '玄幻', title: '题材 · 玄幻' },
   { key: '都市', title: '题材 · 都市' },
-  { key: '悬疑', title: '题材 · 悬疑' },
   { key: '恐怖', title: '题材 · 恐怖' },
   { key: '历史', title: '题材 · 历史' },
   { key: '修仙', title: '题材 · 修仙' },
-  { key: '仙侠', title: '题材 · 仙侠' },
   { key: '武侠', title: '题材 · 武侠' },
   { key: '盗墓', title: '题材 · 盗墓' },
-  { key: '灵异', title: '题材 · 灵异' },
   { key: '推理', title: '题材 · 推理' },
   { key: '言情', title: '题材 · 言情' },
   { key: '科幻', title: '题材 · 科幻' },
   { key: '校园', title: '题材 · 校园' },
   { key: '官场', title: '题材 · 官场' },
   { key: '评书', title: '题材 · 评书' },
-  { key: '相声', title: '题材 · 相声' },
-  { key: '广播剧', title: '题材 · 广播剧' },
-  { key: '儿童', title: '题材 · 儿童' }
+  { key: '广播剧', title: '题材 · 广播剧' }
 ];
 
 function base() {
@@ -128,11 +138,12 @@ async function writeJson(key, value) {
 }
 
 // ------------------------------------------------------------------ 会话（api_chapter 的门票）
-async function sessionCookie(force) {
-  var cached = force ? null : await readJson(SESSION_KEY);
-  if (cached && cached.cookie && Date.now() - Number(cached.t || 0) < SESSION_TTL) {
-    return cached.cookie;
-  }
+// 站点判「非法访问」看的是会话：宿主（App 的 SiteSessionPool / 检查器）本来就按 origin
+// 记住 Set-Cookie，所以**正常情况下什么都不用做**；只有在裸打被判非法访问时，
+// 才自己 GET 一次首页、把读得到的 Set-Cookie 拼成 Cookie 头重试一次。
+async function seedSession() {
+  var cached = await readJson(SESSION_KEY);
+  if (cached && Date.now() - Number(cached.t || 0) < SESSION_TTL && cached.seeded) return cached.cookie || '';
   var response = await LumeSource.http.get(base() + '/', {
     headers: {
       'User-Agent': UA,
@@ -140,49 +151,35 @@ async function sessionCookie(force) {
       'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
     }
   });
-  if (!response || response.status !== 200) {
-    throw new Error('275听书首页打不开：HTTP ' + (response ? response.status : 0) + '（站点换域名时请在源设置里改镜像）');
+  var status = response ? response.status : 0;
+  if (status !== 200) {
+    throw new Error('275听书首页打不开：HTTP ' + status + '（站点换域名时请在源设置里改镜像）');
   }
-  var raw = headerValue(response, 'set-cookie');
+  var raw = String(headerValue(response, 'set-cookie') || '');
   var pairs = [];
-  var parts = String(raw).split(',');
+  var parts = raw.split(',');
   for (var i = 0; i < parts.length; i++) {
     var piece = parts[i].split(';')[0].trim();
     if (piece && piece.indexOf('=') > 0) pairs.push(piece);
   }
   var cookie = pairs.join('; ');
-  if (!cookie || cookie.indexOf('PHPSESSID=') < 0) {
-    // 宿主已经替我们维持了 Cookie 罐（Set-Cookie 不在 headers 里）时，
-    // 仍然按「没有会话」处理会更稳：显式给一个 PHPSESSID，让 PHP 自己开一个会话再试。
-    cookie = 'PHPSESSID=' + randomSessionId();
-  }
-  await writeJson(SESSION_KEY, { cookie: cookie, t: Date.now() });
+  // 宿主已经把 Set-Cookie 收进自己的罐里时，这里读不到 —— 那就别自己造 Cookie，
+  // 交给宿主带（显式塞一个假的 PHPSESSID 反而会让站点判非法访问）。
+  await writeJson(SESSION_KEY, { cookie: cookie, seeded: true, t: Date.now() });
   return cookie;
 }
 
-function randomSessionId() {
-  var chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  var out = '';
-  for (var i = 0; i < 26; i++) out += chars.charAt(Math.floor(Math.random() * chars.length));
-  return out;
-}
-
 // ------------------------------------------------------------------ 抓页面
+// 站点只有 api_chapter.php 认会话，HTML 页匿名就能开；这里不领会话，
+// 免得每次 list/home 都多发一个 GET /（实测首页两跳 3 秒、多了会被判超预算）。
 async function fetchPage(path, referer) {
   var url = /^https?:\/\//i.test(path) ? path : base() + path;
-  var cookie = '';
-  try {
-    cookie = await sessionCookie(false);
-  } catch (error) {
-    cookie = '';
-  }
   var headers = {
     'User-Agent': UA,
     Accept: 'text/html,application/xhtml+xml,*/*;q=0.8',
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
     Referer: referer || base() + '/'
   };
-  if (cookie) headers.Cookie = cookie;
   var response = await LumeSource.http.get(url, { headers: headers });
   var status = response ? response.status : 0;
   if (status === 403 || status === 503) {
@@ -378,12 +375,16 @@ async function bookPage(id) {
 }
 
 // ------------------------------------------------------------------ 音频地址
-async function chapterAudio(bookId, chapterId, force) {
-  var cookie = await sessionCookie(!!force);
-  var referer = base() + '/book/' + bookId + '.html';
+async function apiChapter(bookId, chapterId, cookie) {
+  var headers = {
+    'User-Agent': UA,
+    Referer: base() + '/book/' + bookId + '.html',
+    Accept: 'application/json,*/*'
+  };
+  if (cookie) headers.Cookie = cookie;
   var response = await LumeSource.http.get(
     base() + '/api_chapter.php?book_id=' + encodeURIComponent(bookId) + '&chapter_id=' + encodeURIComponent(chapterId),
-    { headers: { 'User-Agent': UA, Referer: referer, Cookie: cookie, Accept: 'application/json,*/*' } }
+    { headers: headers }
   );
   var status = response ? response.status : 0;
   if (status !== 200) {
@@ -397,22 +398,39 @@ async function chapterAudio(bookId, chapterId, force) {
     data = null;
   }
   if (!data) throw new Error('275听书接口返回的不是 JSON：' + String(text).slice(0, 80));
-  if (data.error && !data.url) {
-    // 会话过期/被站点判成「不是从网页来的」时，重领一次会话再试
-    if (!force && String(data.error).indexOf('非法访问') >= 0) {
-      return chapterAudio(bookId, chapterId, true);
-    }
-    throw new Error('275听书接口拒绝了这次请求：' + String(data.error));
-  }
   return data;
 }
 
+async function chapterAudio(bookId, chapterId) {
+  // ① 先裸打一次：宿主 Cookie 罐里通常已经有会话了（GET / 那一步由下面的 seed 补）
+  var warmed = await readJson(SESSION_KEY);
+  if (!warmed || !warmed.seeded || Date.now() - Number(warmed.t || 0) >= SESSION_TTL) {
+    await seedSession();
+  }
+  var data = await apiChapter(bookId, chapterId, '');
+  if (data && !data.error) return data;
+  if (data && data.error && String(data.error).indexOf('非法访问') < 0) {
+    throw new Error('275听书接口拒绝了这次请求：' + String(data.error));
+  }
+  // ② 被判「非法访问」：自己领一次会话 Cookie 再重试一次
+  var cookie = await seedSession();
+  if (cookie) {
+    data = await apiChapter(bookId, chapterId, cookie);
+    if (data && !data.error) return data;
+  }
+  throw new Error('275听书接口判了「非法访问」：站点会话没拿到（宿主没保存 Set-Cookie 时会出现），稍后重试或换个镜像');
+}
+
+
 // 探一下音频地址到底能不能取到字节：能取到就放行，403 就如实说是站方的限制
-async function probeAudio(url) {
+async function probeAudio(url, headers) {
   try {
-    var attempt = LumeSource.http.get(url, {
-      headers: { 'User-Agent': UA, Range: 'bytes=0-2047', Referer: base() + '/' }
-    });
+    var probeHeaders = { 'User-Agent': UA, Range: 'bytes=0-2047', Referer: base() + '/' };
+    if (headers) {
+      var keys = Object.keys(headers);
+      for (var i = 0; i < keys.length; i++) probeHeaders[keys[i]] = headers[keys[i]];
+    }
+    var attempt = LumeSource.http.get(url, { headers: probeHeaders });
     var raced = await Promise.race([
       attempt,
       new Promise(function (resolve) {
@@ -433,6 +451,63 @@ async function probeAudio(url) {
   }
 }
 
+// ---------------------------------------------------------------- 懒人畅听（lrts$）
+// api_chapter 对一批书只给 "lrts$<专辑号>#<音轨号>#<分段>#<手机号>.txt"，
+// 真实音频在懒人畅听：m.lrts.me 的 getPlayPath 匿名就能换到腾讯音乐 CDN 的签名 mp4
+// （实测 18/20 可播，206 + audio/mp4；没买的付费章节会回「收费章节未购买」）。
+async function resolveLrts(token) {
+  var cached = await readJson(LRTS_KEY + hashKey(token) + '.json');
+  if (cached && cached.url && Date.now() - Number(cached.t || 0) < 20 * 60 * 1000) {
+    return cached.url;
+  }
+  var parts = String(token).split('#');
+  var match = /^lrts\$(\d+)/.exec(parts[0] || '');
+  if (!match || !/^\d+$/.test(parts[1] || '')) {
+    throw new Error('懒人畅听标识格式不认识：' + token);
+  }
+  var section = /^\d+$/.test(parts[2] || '') ? parts[2] : '1';
+  var query = 'entityId=' + match[1] + '&entityType=3&opType=1&sections=' + encodeURIComponent('[' + section + ']') +
+    '&type=0&id=' + parts[1] + '&section=' + section;
+  var headers = { 'User-Agent': UA, Referer: 'https://m.lrts.me/', Accept: 'application/json,*/*' };
+  var response = await LumeSource.http.get('https://m.lrts.me/ajax/getPlayPath?' + query, { headers: headers });
+  var payload = null;
+  try {
+    payload = JSON.parse((response && response.body) || '');
+  } catch (error) {
+    payload = null;
+  }
+  var url = payload && payload.list && payload.list[0] ? String(payload.list[0].path || '') : '';
+  if (!/^https?:\/\//i.test(url)) {
+    var reason = payload ? (payload.msg || payload.apiStatus || '') : '';
+    if (String(reason).indexOf('收费') >= 0 || String(reason).indexOf('购买') >= 0) {
+      throw new Error('这一集在懒人畅听是收费章节（' + reason + '）：站方只免费放出这本书的前几章，换靠前的章或换「喜马拉雅」音频的书');
+    }
+    throw new Error('懒人畅听没有给这一集的音频' + (reason ? '（' + reason + '）' : '') + '，换一集或换一本书试试');
+  }
+  await writeJson(LRTS_KEY + hashKey(token) + '.json', { url: url, t: Date.now() });
+  return url;
+}
+
+// ---------------------------------------------------------------- 喜马拉雅（xm$）
+// 另有一批书给的是 "xm$<声音ID>"：mobile.ximalaya.com 的 free/play 会 302 到
+// audiopay CDN 的 m4a（实测 206 + audio/x-m4a），不需要账号。
+// 这里**故意不预取**：宿主会跟随 302，预取一次就是把整集（几 MB～几十 MB）拉进沙箱，
+// 手机上白白吃流量；直接把这条跳转地址交给播放器，让它自己去跟。
+function ximalayaUrl(trackId) {
+  if (!/^\d+$/.test(trackId)) throw new Error('喜马拉雅声音编号不认识：xm$' + trackId);
+  return 'https://mobile.ximalaya.com/mobile/redirect/free/play/' + trackId + '/0';
+}
+
+function hashKey(text) {
+  var hash = 0;
+  var value = String(text);
+  for (var i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) % 1000000007;
+  }
+  return String(hash);
+}
+
+
 // ------------------------------------------------------------------ 入口
 async function homeBoard() {
   var page = await fetchPage('/', base() + '/');
@@ -448,15 +523,14 @@ async function homeBoard() {
 }
 
 async function categoryList() {
-  var list = [
-    // 首页「热门搜索」那 5 部是站点人工挑的常青书，实测都还有音频；
-    // 「最近上架」的新书大多还没上传音频（接口 url 为 null），所以排在后面。
-    { id: 'hot', title: '热门收听' },
-    { id: 'new', title: '最近上架' }
-  ];
+  var list = [];
+  // 题材板放前面：站内「热门搜索」那 5 部与最新 12 部大多是站方自建音频，
+  // 现在只给官方 App 放行（403）；题材板里老书多，走懒人畅听/喜马拉雅，实测能播。
   for (var i = 0; i < KW_CATEGORIES.length; i++) {
     list.push({ id: 'kw:' + KW_CATEGORIES[i].key, title: KW_CATEGORIES[i].title });
   }
+  list.push({ id: 'hot', title: '热门收听（站内）' });
+  list.push({ id: 'new', title: '最近上架（站内）' });
   return list;
 }
 
@@ -522,18 +596,36 @@ async function contentOf(input) {
     chapterId = parts[parts.length - 1];
   }
   if (!bookId || !chapterId) throw new Error('缺少书本或章节编号');
-  var data = await chapterAudio(bookId, chapterId, false);
+  var data = await chapterAudio(bookId, chapterId);
   var url = String(data.url == null ? '' : data.url).trim();
+
+  // ① 懒人畅听编号 → m.lrts.me 换腾讯音乐 CDN 的签名 mp4（匿名可用，实测 206）
   if (/^lrts\$/.test(url)) {
-    throw new Error('这一集 275听书只存了懒人畅听的编号（' + url.split('#')[0] + '），本站没有音频文件，换别的书试试');
+    var lrtsUrl = await resolveLrts(url);
+    return {
+      kind: 'audio',
+      url: lrtsUrl,
+      headers: { 'User-Agent': UA, Referer: 'https://m.lrts.me/' }
+    };
   }
+
+  // ② 喜马拉雅声音 ID → mobile.ximalaya.com 的 free/play 跳转（实测 206 + audio/x-m4a）
+  if (/^xm\$/.test(url)) {
+    return {
+      kind: 'audio',
+      url: ximalayaUrl(url.slice(3).trim()),
+      headers: { 'User-Agent': UA, Referer: 'https://www.ximalaya.com/' }
+    };
+  }
+
+  // ③ 站方自建音频：地址原样下发，但主机只给官方 App 放行（403）
   if (!/^https?:\/\//i.test(url)) {
     throw new Error('这一集站方没有给音频（接口 url 为空）：新书常常还没上传，换别的书试试');
   }
   var probe = await probeAudio(url);
   if (!probe.ok) {
-    throw new Error('站方音频主机拒绝非官方 App 的请求（HTTP 403「' + (probe.body || 'Access Denied') + '」）：' +
-      '275听书的音频 CDN 现在只给官方 App 放行，网页/第三方播放器取不到字节，本源不伪造可播地址');
+    throw new Error('站方自建音频主机拒绝非官方 App 的请求（HTTP 403「' + (probe.body || 'Access Denied') + '」）：' +
+      '这一类的书 275听书只给官方 App 放行，网页/第三方播放器取不到字节；换「题材」分类里别的书通常能播');
   }
   return {
     kind: 'audio',
