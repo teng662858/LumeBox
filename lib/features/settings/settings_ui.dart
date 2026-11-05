@@ -75,11 +75,21 @@ class SettingsGroupTitle extends StatelessWidget {
 
 /// Applies the colorful icon treatment only to the global settings hierarchy.
 class SettingsIconScope extends InheritedWidget {
-  const SettingsIconScope({super.key, required super.child});
+  const SettingsIconScope({
+    super.key,
+    this.color,
+    this.grouped = false,
+    required super.child,
+  });
+  final Color? color;
+  final bool grouped;
+  static SettingsIconScope? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<SettingsIconScope>();
   static bool enabled(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<SettingsIconScope>() != null;
   @override
-  bool updateShouldNotify(SettingsIconScope oldWidget) => false;
+  bool updateShouldNotify(SettingsIconScope oldWidget) =>
+      color != oldWidget.color || grouped != oldWidget.grouped;
 }
 
 // Each action gets its own recognizable glyph. The slot name remains unchanged
@@ -183,118 +193,119 @@ class SettingsEntryCard extends StatelessWidget {
     final style = SettingsIconScope.enabled(context)
         ? _settingsEntryIcon(title)
         : null;
+    final scope = SettingsIconScope.of(context);
+    final tint = scope?.color ?? style?.$2 ?? iconColor ?? LumeTheme.accent;
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: scope == null ? 42 : 30,
+            height: scope == null ? 42 : 30,
+            decoration: style == null
+                ? BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        (iconColor ?? LumeTheme.accent).withValues(alpha: .16),
+                        (iconColor ?? LumeTheme.accent).withValues(alpha: .06),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: (iconColor ?? LumeTheme.accent).withValues(
+                        alpha: .09,
+                      ),
+                    ),
+                  )
+                : BoxDecoration(
+                    color: tint.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+            child: Center(
+              child: LumeIcon(
+                style?.$1 ?? icon,
+                slot: 'settings.entry.$title',
+                label: title,
+                group: '设置',
+                size: scope == null ? 22 : 18,
+                color: style == null ? (iconColor ?? LumeTheme.accent) : tint,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: LumeTypography.titleSize,
+                    fontWeight: interfaceFontWeight(context, FontWeight.w600),
+                    color: LumeTheme.textPrimary,
+                  ),
+                ),
+                if (subtitle != null) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle!,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w400,
+                      fontSize: LumeTypography.descriptionSize,
+                      height: 1.5,
+                      color: LumeTheme.descriptionColor,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (trailing != null)
+            trailing!
+          else ...<Widget>[
+            if (trailingValue != null)
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: (MediaQuery.sizeOf(context).width * .22).clamp(
+                    48,
+                    110,
+                  ),
+                ),
+                child: Text(
+                  trailingValue!,
+                  textAlign: TextAlign.end,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w400,
+                    fontSize: LumeTypography.bodySize,
+                    height: 1.5,
+                    color: LumeTheme.textSecondary,
+                  ),
+                ),
+              ),
+            if (showChevron) ...<Widget>[
+              const SizedBox(width: 4),
+              LumeIcon(
+                Icons.chevron_right,
+                slot: 'settings_ui.2',
+                size: 20,
+                color: LumeTheme.muted,
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+    if (scope?.grouped ?? false) return InkWell(onTap: onTap, child: content);
     final card = GlassCard(
       radius: 24,
       padding: EdgeInsets.zero,
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: <Widget>[
-            Container(
-              width: 42,
-              height: 42,
-              decoration: style == null
-                  ? BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          (iconColor ?? LumeTheme.accent).withValues(
-                            alpha: .16,
-                          ),
-                          (iconColor ?? LumeTheme.accent).withValues(
-                            alpha: .06,
-                          ),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: (iconColor ?? LumeTheme.accent).withValues(
-                          alpha: .09,
-                        ),
-                      ),
-                    )
-                  : BoxDecoration(color: style.$2, shape: BoxShape.circle),
-              child: Center(
-                child: LumeIcon(
-                  style?.$1 ?? icon,
-                  slot: 'settings.entry.$title',
-                  label: title,
-                  group: '设置',
-                  size: 22,
-                  color: style == null
-                      ? (iconColor ?? LumeTheme.accent)
-                      : Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: LumeTypography.titleSize,
-                      fontWeight: interfaceFontWeight(context, FontWeight.w600),
-                      color: LumeTheme.textPrimary,
-                    ),
-                  ),
-                  if (subtitle != null) ...<Widget>[
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle!,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w400,
-                        fontSize: LumeTypography.descriptionSize,
-                        height: 1.5,
-                        color: LumeTheme.descriptionColor,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            if (trailing != null)
-              trailing!
-            else ...<Widget>[
-              if (trailingValue != null)
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: (MediaQuery.sizeOf(context).width * .22).clamp(
-                      48,
-                      110,
-                    ),
-                  ),
-                  child: Text(
-                    trailingValue!,
-                    textAlign: TextAlign.end,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w400,
-                      fontSize: LumeTypography.bodySize,
-                      height: 1.5,
-                      color: LumeTheme.textSecondary,
-                    ),
-                  ),
-                ),
-              if (showChevron) ...<Widget>[
-                const SizedBox(width: 4),
-                LumeIcon(
-                  Icons.chevron_right,
-                  slot: 'settings_ui.2',
-                  size: 20,
-                  color: LumeTheme.muted,
-                ),
-              ],
-            ],
-          ],
-        ),
-      ),
+      child: content,
     );
     if (marginBottom <= 0) return card;
     return Padding(
@@ -397,11 +408,49 @@ class SettingsCategory {
   final List<Widget> children;
 }
 
+Color settingsCategoryColor(String title) => switch (title) {
+  '阅读与播放' || '漫画设置' => const Color(0xFF6851C5),
+  '内容与订阅' => const Color(0xFF366AAE),
+  '个性与界面' => const Color(0xFF9955A0),
+  '导航与首页' => const Color(0xFF347D81),
+  '存储与安全' => const Color(0xFF387A53),
+  '网络与服务' => const Color(0xFF9B622C),
+  '诊断与关于' => const Color(0xFF596D89),
+  _ => LumeTheme.accent,
+};
+List<Widget> settingsGroupedChildren(List<Widget> children) {
+  final result = <Widget>[];
+  var entries = <Widget>[];
+  void flush() {
+    if (entries.isEmpty) return;
+    result.add(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 18),
+        child: SettingsGroupCard(children: entries),
+      ),
+    );
+    entries = <Widget>[];
+  }
+
+  for (final child in children) {
+    if (child is SettingsEntryCard) {
+      entries.add(child);
+    } else {
+      flush();
+      result.add(child);
+    }
+  }
+  flush();
+  return result;
+}
+
 class SettingsCategoryPage extends StatelessWidget {
   const SettingsCategoryPage({super.key, required this.category});
   final SettingsCategory category;
   @override
   Widget build(BuildContext context) => SettingsIconScope(
+    color: settingsCategoryColor(category.title),
+    grouped: true,
     child: GlassScaffold(
       title: category.title,
       effectModule: GlassModule.settings,
@@ -414,7 +463,7 @@ class SettingsCategoryPage extends StatelessWidget {
             title: category.title,
             description: category.description,
           ),
-          ...category.children,
+          ...settingsGroupedChildren(category.children),
         ],
       ),
     ),
@@ -504,7 +553,16 @@ class _SettingsHomeState extends State<SettingsHome> {
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: category.children,
+                children: [
+                  SettingsIconScope(
+                    color: settingsCategoryColor(category.title),
+                    grouped: true,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: settingsGroupedChildren(category.children),
+                    ),
+                  ),
+                ],
               ),
             ),
           if (search.isNotEmpty && expanded != category.title)

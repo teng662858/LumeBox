@@ -228,7 +228,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
       );
     });
     // The operation is visible even if persistence fails after GitHub accepted it.
-    if (!operation.manual) _watch();
+    _watch();
     await _store.save({'token': _repo!.token, 'operation': operation.toJson()});
   }
 
@@ -695,8 +695,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                     if (value == 'refresh') {
                       _run(() async {
                         await _refresh();
-                        if (_operation != null &&
-                            (!_operation!.manual || _operation!.dispatched)) {
+                        if (_operation != null) {
                           _watch();
                         }
                       });

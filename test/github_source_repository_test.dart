@@ -279,6 +279,32 @@ void main() {
     },
   );
 
+  test('GitHub main 手动发布后以提交祖先关系识别完成，不冒认其他发布', () async {
+    var status = 'diverged';
+    final repo = GithubSourceRepository(
+      'token',
+      client: MockClient((request) async {
+        return http.Response(
+          jsonEncode(
+            request.url.path.contains('/compare/')
+                ? {'status': status}
+                : {'workflow_runs': []},
+          ),
+          200,
+        );
+      }),
+    );
+    addTearDown(repo.close);
+    final operation = RepositoryOperation('draft', 'a' * 40, manual: true);
+    expect((await repo.publication(operation)).finished, false);
+    status = 'ahead';
+    final result = await repo.publication(operation);
+    expect(result.succeeded, true);
+    expect(result.status, contains('main 已包含'));
+    status = 'identical';
+    expect((await repo.publication(operation)).finished, true);
+  });
+
   test('手动草稿只认真正发布任务，不把跳过的创建任务视为完成', () async {
     var runs = <Map<String, String>>[
       {'event': 'create', 'status': 'completed', 'conclusion': 'skipped'},

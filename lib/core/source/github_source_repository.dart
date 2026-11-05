@@ -542,7 +542,29 @@ class GithubSourceRepository {
     final eligible = operation.manual
         ? runs.where((run) => run['event'] == 'workflow_dispatch').toList()
         : runs.toList();
-    if (eligible.isEmpty) return const RepositoryPublication('已提交，等待手动发布');
+    if (eligible.isEmpty) {
+      // A workflow dispatched on main uses main's SHA rather than the input
+      // candidate SHA. Check ancestry without mistaking another run for ours.
+      if (operation.manual &&
+          RegExp(r'^[0-9a-f]{40}$').hasMatch(operation.commit)) {
+        final comparison = await _api(
+          'GET',
+          'compare/${operation.commit}...main',
+        );
+        if (comparison['status'] == 'ahead' ||
+            comparison['status'] == 'identical') {
+          return const RepositoryPublication(
+            '已发布到仓库：main 已包含此提交；线路核对请查看 GitHub 发布流程',
+            finished: true,
+            succeeded: true,
+            started: true,
+          );
+        }
+      }
+      return RepositoryPublication(
+        operation.dispatched ? '已启动发布，等待 GitHub 工作流' : '已提交，等待手动发布',
+      );
+    }
     final run = eligible.first;
     final url = '${run['html_url'] ?? ''}';
     if (run['status'] != 'completed') {
