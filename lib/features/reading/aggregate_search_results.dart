@@ -100,6 +100,19 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
   bool _cards = true;
   String _sort = 'relevance';
   String? _selected;
+  List<SearchHit>? _groupedHits;
+  final _siteGroups = <String, List<SearchHit>>{};
+  final _mergedCache = <String, List<List<SearchHit>>>{};
+
+  void _prepareGroups() {
+    if (identical(_groupedHits, widget.hits)) return;
+    _groupedHits = widget.hits;
+    _siteGroups.clear();
+    _mergedCache.clear();
+    for (final hit in widget.hits) {
+      (_siteGroups[hit.sourceId] ??= []).add(hit);
+    }
+  }
 
   List<SourceDescriptor> get _visibleSites {
     final matching = widget.hits.map((hit) => hit.sourceId).toSet();
@@ -529,11 +542,18 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
   }
 
   Widget mergedWorks(List<SearchHit> hits) {
-    final groups = AggregateWorkGroups.group(
-      hits,
-      order: _sort,
-      query: widget.query,
-      library: ReadingLibrary.find(widget.section),
+    final cacheKey = '$_sort:${widget.query}:${_selected ?? ''}';
+    if (_mergedCache.length >= 8 && !_mergedCache.containsKey(cacheKey)) {
+      _mergedCache.remove(_mergedCache.keys.first);
+    }
+    final groups = _mergedCache.putIfAbsent(
+      cacheKey,
+      () => AggregateWorkGroups.group(
+        hits,
+        order: _sort,
+        query: widget.query,
+        library: ReadingLibrary.find(widget.section),
+      ),
     );
     return ListView.builder(
       itemCount: groups.length + 1,
@@ -585,10 +605,8 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
 
   @override
   Widget build(BuildContext context) {
-    final groups = <String, List<SearchHit>>{};
-    for (final hit in widget.hits) {
-      (groups[hit.sourceId] ??= []).add(hit);
-    }
+    _prepareGroups();
+    final groups = _siteGroups;
     final filtered = _selected == null
         ? widget.hits
         : groups[_selected] ?? const <SearchHit>[];

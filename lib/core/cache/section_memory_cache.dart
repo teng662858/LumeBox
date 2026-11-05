@@ -13,7 +13,7 @@ class MemoryCacheUsage {
 
   /// 估算字节数（见 [SectionMemoryCache.estimateBytes]）。
   ///
-  /// 是**估算**不是精确值：只用于设置页展示「缓存有多大」，不参与任何阈值判断。
+  /// 是估算值，用于展示和内存预算；条目数上限同时约束复杂对象。
   final int bytes;
 
   bool get isEmpty => entries == 0;
@@ -52,20 +52,34 @@ abstract interface class SourceReadCache {
 ///
 /// 生命周期：条目跨页面退出保留——这正是它区别于「页面资源」的地方
 /// （图片位图、脚本引擎退出板块即释放，不在这里）。进程退出即清空；
-/// 本轮不做过期淘汰策略，容量由用户在设置 →「缓存管理」里按板块清空。
+/// 每板块按容量、条目数和存活时间淘汰，最近访问的条目优先保留。
 class SectionMemoryCache implements SourceReadCache {
-  SectionMemoryCache._();
+  SectionMemoryCache({
+    this.maxEntriesPerSection = 128,
+    this.maxBytesPerSection = 8 * 1024 * 1024,
+    this.ttl = const Duration(minutes: 15),
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now;
+  final int maxEntriesPerSection, maxBytesPerSection;
+  final Duration ttl;
+  final DateTime Function() _now;
 
   /// 应用级单例：四个板块共用这张登记表，键按板块分格。
-  static final SectionMemoryCache instance = SectionMemoryCache._();
+  static final SectionMemoryCache instance = SectionMemoryCache();
 
   /// 板块 → （`图源 id|键` → 条目）。插入序即写入序，便于调试时看最新条目。
   final Map<Section, LinkedHashMap<String, _Entry>> _stores =
       <Section, LinkedHashMap<String, _Entry>>{};
 
   @override
-  Object? read(Section section, String sourceId, String key) =>
-      _stores[section]?[_cacheKey(sourceId, key)]?.value;
+  Object? read(Section section, String sourceId, String key) {
+    final store = _stores[section];
+    final cacheKey = _cacheKey(sourceId, key);
+    final entry = store?.remove(cacheKey);
+    if (entry == null || _now().difference(entry.created) >= ttl) return null;
+    store![cacheKey] = entry;
+    return entry.value;
+  }
 
   @override
   void write(Section section, String sourceId, String key, Object value) {
@@ -73,7 +87,16 @@ class SectionMemoryCache implements SourceReadCache {
       section,
       LinkedHashMap<String, _Entry>.new,
     );
-    store[_cacheKey(sourceId, key)] = _Entry(value, estimateBytes(value));
+    store.removeWhere((_, entry) => _now().difference(entry.created) >= ttl);
+    final cacheKey = _cacheKey(sourceId, key);
+    store.remove(cacheKey);
+    final bytes = estimateBytes(value);
+    if (bytes > maxBytesPerSection || maxEntriesPerSection <= 0) return;
+    store[cacheKey] = _Entry(value, bytes, _now());
+    var total = store.values.fold<int>(0, (sum, entry) => sum + entry.bytes);
+    while (store.length > maxEntriesPerSection || total > maxBytesPerSection) {
+      total -= store.remove(store.keys.first)!.bytes;
+    }
   }
 
   /// 某板块的占用（条目数 + 估算字节）。
@@ -135,12 +158,13 @@ class SectionMemoryCache implements SourceReadCache {
       }
       return bytes;
     }
-    return 16;
+    return 128;
   }
 }
 
 class _Entry {
-  const _Entry(this.value, this.bytes);
+  const _Entry(this.value, this.bytes, this.created);
+  final DateTime created;
 
   final Object? value;
   final int bytes;

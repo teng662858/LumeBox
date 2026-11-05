@@ -627,6 +627,37 @@ void main() {
       });
     });
 
+    testWidgets('内存压力释放预载图片，保留正在显示的图片', (tester) async {
+      await tester.runAsync(() async {
+        const urls = [
+          'https://pressure.test/visible.png',
+          'https://pressure.test/preload.png',
+        ];
+        for (final url in urls) {
+          final png = await pngBytes(12, 12, const Color(0xff123456));
+          await File(
+            p.join(library.imageCacheDir, '${ReadingStore.cacheKey(url)}.img'),
+          ).writeAsBytes(png);
+        }
+        final pipeline = SectionImagePipeline(cacheDir: library.imageCacheDir);
+        addTearDown(pipeline.dispose);
+        final visible = await pipeline.image(urls.first, targetWidth: 12);
+        pipeline.preload([urls.last], targetWidth: 12);
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(pipeline.memoryCount, 2);
+        SectionImagePipeline.trimMemory();
+        expect(pipeline.memoryCount, 1);
+        expect(
+          await pipeline.image(urls.first, targetWidth: 12),
+          same(visible),
+        );
+        pipeline.release(urls.first, targetWidth: 12);
+        pipeline.release(urls.first, targetWidth: 12);
+        SectionImagePipeline.trimMemory();
+        expect(pipeline.memoryCount, 0);
+      });
+    });
+
     testWidgets('预加载与淘汰走真实链路：磁盘缓存 → 解码 → 内存 LRU', (tester) async {
       await tester.runAsync(() async {
         final cacheDir = library.imageCacheDir;

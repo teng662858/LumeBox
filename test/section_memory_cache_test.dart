@@ -13,6 +13,29 @@ void main() {
   setUp(cache.clearAll);
   tearDown(cache.clearAll);
 
+  test('LRU, byte budget and TTL bound each section independently', () {
+    var now = DateTime(2026);
+    final bounded = SectionMemoryCache(
+      maxEntriesPerSection: 2,
+      maxBytesPerSection: 16,
+      ttl: const Duration(minutes: 1),
+      now: () => now,
+    );
+    bounded.write(Section.video, 'a', '1', 'abcd');
+    bounded.write(Section.video, 'a', '2', 'efgh');
+    expect(bounded.read(Section.video, 'a', '1'), 'abcd');
+    bounded.write(Section.video, 'a', '3', 'ijkl');
+    expect(bounded.read(Section.video, 'a', '2'), isNull);
+    expect(bounded.usageOf(Section.video).bytes, lessThanOrEqualTo(16));
+    bounded.write(Section.comic, 'a', '1', 'comic');
+    bounded.write(Section.video, 'a', 'huge', 'x' * 100);
+    expect(bounded.read(Section.video, 'a', 'huge'), isNull);
+    expect(bounded.read(Section.comic, 'a', '1'), 'comic');
+    now = now.add(const Duration(minutes: 2));
+    expect(bounded.read(Section.video, 'a', '1'), isNull);
+    expect(bounded.read(Section.comic, 'a', '1'), isNull);
+  });
+
   test('四板块各成一格：同一图源 id 在不同板块互不可见', () {
     cache.write(Section.cat, 'demo', 'categories', <String>['小说分类']);
     cache.write(Section.comic, 'demo', 'categories', <String>['漫画分类']);
@@ -30,11 +53,7 @@ void main() {
 
     expect(cache.clear(Section.comic), 1);
     expect(cache.read(Section.comic, 'demo', 'chapters|1'), isNull);
-    for (final section in <Section>[
-      Section.cat,
-      Section.video,
-      Section.cat,
-    ]) {
+    for (final section in <Section>[Section.cat, Section.video, Section.cat]) {
       expect(cache.read(section, 'demo', 'chapters|1'), <String>[section.id]);
     }
     expect(cache.usageOf(Section.comic).isEmpty, isTrue);
@@ -52,11 +71,9 @@ void main() {
     expect(cache.read(Section.video, 'a', 'categories'), isNull);
     expect(cache.read(Section.video, 'a', 'detail|1'), isNull);
     expect(cache.read(Section.video, 'b', 'categories'), <String>['b']);
-    expect(
-      cache.read(Section.cat, 'a', 'categories'),
-      <String>['novel-a'],
-      reason: 'novel 的 a 不是 video 的 a',
-    );
+    expect(cache.read(Section.cat, 'a', 'categories'), <String>[
+      'novel-a',
+    ], reason: 'novel 的 a 不是 video 的 a');
   });
 
   test('占用统计：条目数与估算字节（字符串按 UTF-16 码元 ×2）', () {

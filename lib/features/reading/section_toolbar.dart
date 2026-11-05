@@ -164,7 +164,8 @@ class AggregateSearch {
     final completedIds = <String>{};
     final failedIds = <String>{};
     List<SearchHit> snapshot() => [for (final result in results) ...?result];
-    void publish() => onProgress?.call(
+    Timer? publishTimer;
+    void emit() => onProgress?.call(
       AggregateSearchProgress(
         hits: List.unmodifiable(snapshot()),
         completed: completed,
@@ -175,6 +176,19 @@ class AggregateSearch {
         failedSourceIds: Set.unmodifiable(failedIds),
       ),
     );
+    void publish() {
+      if (completed == 0 || completed == enabled.length) {
+        publishTimer?.cancel();
+        publishTimer = null;
+        if (parent?.isCancelled != true) emit();
+      } else {
+        publishTimer ??= Timer(const Duration(milliseconds: 80), () {
+          publishTimer = null;
+          if (parent?.isCancelled != true) emit();
+        });
+      }
+    }
+
     parent?.check();
     publish();
     Future<void> worker() async {
@@ -237,9 +251,13 @@ class AggregateSearch {
       }
     }
 
-    await Future.wait([
-      for (var i = 0; i < concurrency && i < enabled.length; i++) worker(),
-    ]);
+    try {
+      await Future.wait([
+        for (var i = 0; i < concurrency && i < enabled.length; i++) worker(),
+      ]);
+    } finally {
+      publishTimer?.cancel();
+    }
     return (hits: snapshot(), failed: failed);
   }
 }

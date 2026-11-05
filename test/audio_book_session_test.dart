@@ -209,6 +209,57 @@ void main() {
     },
   );
 
+  test('progress ticks update only progress listeners', () async {
+    await session.open(resource, tracks);
+    await session.pause();
+    var pageUpdates = 0, progressUpdates = 0;
+    session.addListener(() => pageUpdates++);
+    session.progress.addListener(() => progressUpdates++);
+    for (var n = 1; n < 10; n++) {
+      player.p.add(Duration(milliseconds: n * 100));
+    }
+    expect(progressUpdates, 9);
+    expect(pageUpdates, 0);
+  });
+
+  test(
+    'chapter IDs survive reordered catalogs and missing chapters start safely',
+    () async {
+      await session.open(resource, tracks, index: 1);
+      await session.seek(const Duration(seconds: 47));
+      await session.pause();
+      await session.release();
+      final reordered = [tracks[2], tracks[0], tracks[1]];
+      final next = MediaResource(
+        id: resource.id,
+        title: resource.title,
+        kind: resource.kind,
+        destination: resource.destination,
+        episodes: reordered.map((t) => t.episode).toList(),
+      );
+      await session.open(next, reordered);
+      expect(session.current, 2);
+      expect(session.position.inSeconds, 47);
+      final restored = AudioBookSettings();
+      await session.pause();
+      await settings.save();
+      await restored.load();
+      expect(restored.chapterIds[resource.id], 'c1');
+      expect(restored.indexFor(next), 2);
+      final missing = MediaResource(
+        id: resource.id,
+        title: resource.title,
+        kind: resource.kind,
+        destination: resource.destination,
+        episodes: [tracks[0].episode],
+      );
+      await session.release();
+      await session.open(missing, [tracks[0]]);
+      expect(session.current, 0);
+      expect(session.position, Duration.zero);
+    },
+  );
+
   test('empty catalogs report a recoverable error', () async {
     await session.open(resource, []);
     expect(session.error, '资源没有可播放的章节');

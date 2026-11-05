@@ -92,11 +92,8 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
         builder: (context, _) {
           final ownsSession = session.resource?.id == widget.resource.id;
           final busy = _starting || !ownsSession || session.loading;
-          final position = ownsSession ? session.position : Duration.zero;
-          final total = ownsSession ? session.duration : Duration.zero;
           final failure = ownsSession ? session.error : null;
           final playing = !busy && session.playing;
-          final duration = busy ? 0.0 : total.inMilliseconds.toDouble();
           final current =
               (ownsSession ? session.current : widget.initialIndex ?? 0).clamp(
                 0,
@@ -170,43 +167,59 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
                   icon: const Icon(Icons.refresh),
                   label: const Text('重新加载'),
                 ),
-              NativeGlassSlider(
-                key: const Key('audio-book-seek'),
-                min: 0,
-                max: duration > 0 ? duration : 1,
-                value: (_drag ?? position.inMilliseconds.toDouble()).clamp(
-                  0,
-                  duration > 0 ? duration : 1,
-                ),
-                onChangeStart: duration > 0
-                    ? (value) => setState(() => _drag = value)
-                    : null,
-                onChanged: duration > 0
-                    ? (value) => setState(() => _drag = value)
-                    : null,
-                onChangeEnd: duration > 0
-                    ? (value) async {
-                        await session.seek(
-                          Duration(milliseconds: value.round()),
-                        );
-                        if (mounted) setState(() => _drag = null);
-                      }
-                    : null,
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _time(
-                      Duration(
-                        milliseconds:
-                            (_drag ?? position.inMilliseconds.toDouble())
-                                .round(),
-                      ),
+              ValueListenableBuilder<(Duration, Duration)>(
+                valueListenable: session.progress,
+                builder: (context, progress, _) {
+                  final position = ownsSession ? progress.$1 : Duration.zero;
+                  final total = ownsSession ? progress.$2 : Duration.zero;
+                  final duration = busy ? 0.0 : total.inMilliseconds.toDouble();
+                  return StatefulBuilder(
+                    builder: (context, updateProgress) => Column(
+                      children: [
+                        NativeGlassSlider(
+                          key: const Key('audio-book-seek'),
+                          min: 0,
+                          max: duration > 0 ? duration : 1,
+                          value: (_drag ?? position.inMilliseconds.toDouble())
+                              .clamp(0, duration > 0 ? duration : 1),
+                          onChangeStart: duration > 0
+                              ? (value) => updateProgress(() => _drag = value)
+                              : null,
+                          onChanged: duration > 0
+                              ? (value) => updateProgress(() => _drag = value)
+                              : null,
+                          onChangeEnd: duration > 0
+                              ? (value) async {
+                                  await session.seek(
+                                    Duration(milliseconds: value.round()),
+                                  );
+                                  if (mounted) {
+                                    updateProgress(() => _drag = null);
+                                  }
+                                }
+                              : null,
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              _time(
+                                Duration(
+                                  milliseconds:
+                                      (_drag ??
+                                              position.inMilliseconds
+                                                  .toDouble())
+                                          .round(),
+                                ),
+                              ),
+                            ),
+                            Text(_time(total)),
+                          ],
+                        ),
+                      ],
                     ),
-                  ),
-                  Text(_time(total)),
-                ],
+                  );
+                },
               ),
               const SizedBox(height: 16),
               Row(

@@ -323,8 +323,8 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         final session = AudioBookSession.instance;
         final index = session.resource?.id == audioEntry!.id
             ? session.current
-            : AudioBookSettings.instance.positions[audioEntry.id]?['index'];
-        if (index != null && index >= 0 && index < audioEntry.episodes.length) {
+            : AudioBookSettings.instance.indexFor(audioEntry);
+        if (index >= 0 && index < audioEntry.episodes.length) {
           audioChapterId = audioEntry.episodes[index].id;
         }
       }
@@ -465,6 +465,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       context,
       episodes,
       initial: selected,
+      formatHint: '支持直链视频与普通点播 HLS；直播、字节范围 HLS、DRM 和仅网页播放的内容暂不支持下载。',
     );
     if (indices == null || !mounted) return;
     await (widget.downloadCenter ?? VideoDownloadCenter.instance).enqueue(

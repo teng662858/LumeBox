@@ -81,10 +81,8 @@ void main() {
               ),
               StartupTask('搜索', () => SearchSettings.instance.boot()),
               StartupTask('影视资料', () => TmdbSettings.instance.boot()),
-              StartupTask('下载任务', () => ComicDownloadCenter.instance.boot()),
               StartupTask('预载缓存', () => MediaPreload.instance.boot()),
               StartupTask('外观', () => AppearanceController.instance.boot()),
-              StartupTask('字体目录', () => UserFonts.instance.boot()),
               StartupTask('悬浮模块', () => FloatingModules.instance.boot()),
               StartupTask('玻璃材质', () => FrostedSettings.instance.boot()),
               StartupTask(
@@ -92,14 +90,6 @@ void main() {
                 () => ComicImageToolsSettings.instance.boot(),
               ),
             ]);
-            try {
-              await UserFonts.instance
-                  .ensureLoaded(AppearanceController.instance.settings.fontId)
-                  .timeout(const Duration(seconds: 5));
-            } catch (error, stack) {
-              LumeLog.error(error, stack);
-              issues.add(const StartupIssue('自定义字体', false));
-            }
             return issues;
           },
           child: const LumeBoxApp(),
@@ -116,6 +106,7 @@ void main() {
                 }
               });
             }
+            unawaited(_deferredStartup());
             unawaited(_startupMaintenance());
           },
         ),
@@ -130,7 +121,7 @@ void main() {
 
 Future<void> _startupMaintenance() async {
   // Leave first-screen source/cover loading time before disk maintenance.
-  await Future<void>.delayed(const Duration(seconds: 8));
+  await Future<void>.delayed(const Duration(seconds: 20));
   try {
     await clearRetiredModuleCache();
   } catch (error, stack) {
@@ -148,5 +139,22 @@ Future<void> _startupMaintenance() async {
     } catch (error) {
       LumeLog.warn('旧备份加密迁移失败：$error');
     }
+  }
+}
+
+Future<void> _deferredStartup() async {
+  // First content paints with system fonts; custom fonts notify the app when ready.
+  await Future<void>.delayed(const Duration(milliseconds: 500));
+  final issues = await initializeAppTasks([
+    StartupTask('下载任务', () => ComicDownloadCenter.instance.boot()),
+    StartupTask('自定义字体', () async {
+      await UserFonts.instance.boot();
+      await UserFonts.instance.ensureLoaded(
+        AppearanceController.instance.settings.fontId,
+      );
+    }),
+  ]);
+  for (final issue in issues) {
+    LumeLog.warn('后台初始化未完成：${issue.name}，可在对应页面重试');
   }
 }

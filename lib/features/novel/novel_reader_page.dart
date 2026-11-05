@@ -31,19 +31,19 @@ TextSpan novelBodySpan(String text, TextStyle style) {
 
 /// Paginate actual body text using the same dimensions/scaler as the rendered
 /// page. Checkpoints are UTF-16 offsets, never screen-dependent page numbers.
-List<int> novelPageStarts(
+Iterable<int> novelPageOffsets(
   String text,
   TextStyle style,
   Size size,
   TextScaler scaler,
   TextDirection direction,
-) {
-  if (text.isEmpty || size.width <= 0 || size.height <= 0) return [0];
-  final starts = <int>[0];
+) sync* {
+  yield 0;
+  if (text.isEmpty || size.width <= 0 || size.height <= 0) return;
   var start = 0;
-  final painter = TextPainter(textDirection: direction, textScaler: scaler);
-  try {
-    while (start < text.length) {
+  while (start < text.length) {
+    final painter = TextPainter(textDirection: direction, textScaler: scaler);
+    try {
       // Bound layout work for long chapters; grow only when the page fits.
       var limit = (start + 4096).clamp(0, text.length);
       while (true) {
@@ -71,13 +71,20 @@ List<int> novelPageStarts(
       }
       if (next <= start) throw StateError('当前屏幕无法容纳正文');
       start = next;
-      if (start < text.length) starts.add(start);
+    } finally {
+      painter.dispose();
     }
-    return starts;
-  } finally {
-    painter.dispose();
+    if (start < text.length) yield start;
   }
 }
+
+List<int> novelPageStarts(
+  String text,
+  TextStyle style,
+  Size size,
+  TextScaler scaler,
+  TextDirection direction,
+) => novelPageOffsets(text, style, size, scaler, direction).toList();
 
 class NovelReaderPage extends StatefulWidget {
   const NovelReaderPage({
@@ -110,6 +117,86 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   int _theme = 0;
   List<int> _starts = [0];
   String? _layoutKey;
+  String? _requestedLayout;
+  bool _paginationComplete = false;
+  int get _pageCount => _paginationComplete
+      ? _starts.length
+      : (_starts.length - 1).clamp(1, _starts.length);
+  final _paginationCache = <String, List<int>>{};
+
+  void _schedulePagination(
+    String key,
+    TextStyle style,
+    Size size,
+    TextScaler scaler,
+    TextDirection direction,
+  ) {
+    if (_requestedLayout == key) return;
+    _requestedLayout = key;
+    _paginationComplete = false;
+    final text = _text;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _requestedLayout != key) return;
+      final cached = _paginationCache[key];
+      final starts = <int>[];
+      var painted = false;
+      void publish(bool complete) {
+        if (!mounted || _requestedLayout != key) return;
+        setState(() {
+          _starts = List.of(starts);
+          _paginationComplete = complete;
+          if (!painted) {
+            _page = _starts
+                .lastIndexWhere((start) => start <= _offset)
+                .clamp(0, _starts.length - 1);
+            final old = _controller;
+            _controller = PageController(initialPage: _page);
+            WidgetsBinding.instance.addPostFrameCallback((_) => old?.dispose());
+            painted = true;
+            _layoutKey = key;
+          }
+          _pageLabel.value =
+              '${_page + 1} / $_pageCount${complete ? '' : '+'} 页';
+        });
+      }
+
+      try {
+        if (cached != null) {
+          starts.addAll(cached);
+          publish(true);
+          return;
+        }
+        final watch = Stopwatch()..start();
+        for (final start in novelPageOffsets(
+          text,
+          style,
+          size,
+          scaler,
+          direction,
+        )) {
+          if (!mounted || _requestedLayout != key) return;
+          starts.add(start);
+          if (watch.elapsedMilliseconds >= 4) {
+            // Restore by character offset before exposing the first visible pages.
+            if (starts.last > _offset || painted) publish(false);
+            await Future<void>.delayed(Duration.zero);
+            watch.reset();
+          }
+        }
+        if (!mounted || _requestedLayout != key) return;
+        _paginationCache[key] = List.of(starts);
+        while (_paginationCache.length > 3) {
+          _paginationCache.remove(_paginationCache.keys.first);
+        }
+        publish(true);
+      } catch (error) {
+        if (mounted && _requestedLayout == key) {
+          setState(() => _error = '$error');
+        }
+      }
+    });
+  }
+
   PageController? _controller;
   Timer? _saveTimer;
   final _pageLabel = ValueNotifier<String>('');
@@ -293,6 +380,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   Future<void> _load() async {
     networkRequests.cancelAll();
     final revision = ++_revision;
+    _requestedLayout = null;
     setState(() {
       _loading = true;
       _error = null;
@@ -447,11 +535,8 @@ class _NovelReaderPageState extends State<NovelReaderPage>
         ? const Color(0xfff1e6ce)
         : Theme.of(context).colorScheme.surface;
     final foreground = dark ? const Color(0xffd4d2ca) : const Color(0xff302c27);
-    final style = TextStyle(
-      fontSize: _font,
-      height: _height,
-      color: foreground,
-    );
+    final style = Theme.of(context).textTheme.bodyLarge!
+        .copyWith(fontSize: _font, height: _height, color: foreground);
     return Theme(
       data: Theme.of(context).copyWith(
         brightness: dark ? Brightness.dark : Brightness.light,
@@ -539,45 +624,27 @@ class _NovelReaderPageState extends State<NovelReaderPage>
                         constraints.maxHeight,
                       );
                       final key =
-                          '${size.width}:${size.height}:$_font:$_height:${scaler.scale(_font)}:$direction';
+                          '$_revision:${size.width}:${size.height}:$_font:$_height:${scaler.scale(_font)}:$direction:${style.fontFamily}:${style.fontWeight}:${style.fontStyle}';
                       if (_layoutKey != key) {
-                        try {
-                          _starts = novelPageStarts(
-                            _text,
-                            style,
-                            size,
-                            scaler,
-                            direction,
-                          );
-                        } catch (error) {
-                          return Center(child: Text('$error'));
-                        }
-                        _page = _starts
-                            .lastIndexWhere((start) => start <= _offset)
-                            .clamp(0, _starts.length - 1);
-                        final old = _controller;
-                        _controller = PageController(initialPage: _page);
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          old?.dispose();
-                        });
-                        _layoutKey = key;
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) {
-                            _pageLabel.value =
-                                '${_page + 1} / ${_starts.length} 页';
-                          }
-                        });
+                        _schedulePagination(
+                          key,
+                          style,
+                          size,
+                          scaler,
+                          direction,
+                        );
+                        return const Center(child: CircularProgressIndicator());
                       }
                       return PageView.builder(
                         key: ValueKey('$_revision:$key'),
                         controller: _controller,
-                        itemCount: _starts.length,
+                        itemCount: _pageCount,
                         onPageChanged: (index) {
                           setState(() {
                             _page = index;
                             _offset = _starts[index];
                             _pageLabel.value =
-                                '${index + 1} / ${_starts.length} 页';
+                                '${index + 1} / $_pageCount${_paginationComplete ? '' : '+'} 页';
                           });
                           _saveTimer?.cancel();
                           _saveTimer = Timer(

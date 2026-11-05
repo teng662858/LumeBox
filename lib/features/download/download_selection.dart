@@ -6,6 +6,7 @@ Future<List<int>?> selectDownloadChapters(
   BuildContext context,
   List<SourceChapter> chapters, {
   int initial = 0,
+  String? formatHint,
 }) {
   final selected = <int>{
     if (chapters.isNotEmpty) initial.clamp(0, chapters.length - 1),
@@ -23,6 +24,14 @@ Future<List<int>?> selectDownloadChapters(
                 padding: EdgeInsets.all(16),
                 child: Text('选择下载章节 / 剧集'),
               ),
+              if (formatHint != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    formatHint,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
               Row(
                 children: [
                   TextButton(

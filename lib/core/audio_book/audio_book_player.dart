@@ -23,6 +23,21 @@ class AudioBookSettings extends ChangeNotifier {
   double speed = 1;
   int sleepMinutes = 0;
   final Map<String, Map<String, int>> positions = {};
+  final Map<String, String> chapterIds = {};
+  int indexFor(MediaResource entry) {
+    final chapter = chapterIds[entry.id];
+    if (chapter != null) {
+      final index = entry.episodes.indexWhere(
+        (episode) => episode.id == chapter,
+      );
+      return index < 0 ? 0 : index;
+    }
+    return (positions[entry.id]?['index'] ?? 0).clamp(
+      0,
+      entry.episodes.isEmpty ? 0 : entry.episodes.length - 1,
+    );
+  }
+
   Future<void> _saving = Future.value();
   Future<void>? _loading;
   Future<File> get _file async => File(
@@ -35,6 +50,13 @@ class AudioBookSettings extends ChangeNotifier {
     try {
       final data = jsonDecode(await file.readAsString());
       if (data is Map) {
+        if (data['chapterIds'] is Map) {
+          for (final entry in (data['chapterIds'] as Map).entries) {
+            if (entry.key is String && entry.value is String) {
+              chapterIds[entry.key as String] = entry.value as String;
+            }
+          }
+        }
         final raw = data['speed'];
         if (raw is num && raw.isFinite) speed = raw.toDouble().clamp(.5, 3);
         if (data['sleepMinutes'] is int) {
@@ -71,6 +93,7 @@ class AudioBookSettings extends ChangeNotifier {
       'speed': speed,
       'sleepMinutes': sleepMinutes,
       'positions': positions,
+      'chapterIds': chapterIds,
     });
     final next = _saving.then((_) async {
       final file = await _file;
@@ -321,6 +344,25 @@ class AudioBookSession extends ChangeNotifier {
   bool _ready = false;
   bool _acceptEvents = false;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
+  final progress = ValueNotifier<(Duration, Duration)>((
+    Duration.zero,
+    Duration.zero,
+  ));
+  void _notifyProgress() => progress.value = (position, duration);
+  @override
+  void notifyListeners() {
+    PlaybackFocus.setPlaying('audioBook', playing);
+    _notifyProgress();
+    super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    PlaybackFocus.setPlaying('audioBook', false);
+    progress.dispose();
+    super.dispose();
+  }
+
   AudioBookPlayer? get player => _player;
   Future<void> open(
     MediaResource entry,
@@ -332,7 +374,12 @@ class AudioBookSession extends ChangeNotifier {
         resource?.id == entry.id &&
         _ready &&
         error == null &&
-        (index == null || index == current)) {
+        (index == null || index == current) &&
+        sources.length == _tracks.length &&
+        List.generate(
+          sources.length,
+          (i) => i,
+        ).every((i) => sources[i].id == _tracks[i].id)) {
       return;
     }
     final task = load(entry, sources, index: index, resume: !restart);
@@ -387,6 +434,10 @@ class AudioBookSession extends ChangeNotifier {
     final previousId = resource?.id;
     final previousIndex = current;
     final previousPosition = position;
+    final previousChapter =
+        current >= 0 && current < (resource?.episodes.length ?? 0)
+        ? resource!.episodes[current].id
+        : null;
     final wasReady = _ready;
     _ready = false;
     _acceptEvents = false;
@@ -408,18 +459,23 @@ class AudioBookSession extends ChangeNotifier {
       await settings.load();
       if (generation != _generation) return;
       final saved = settings.positions[entry.id];
-      final index = (requested ?? saved?['index'] ?? 0).clamp(
+      final index = (requested ?? settings.indexFor(entry)).clamp(
         0,
         sources.length - 1,
       );
+      final savedChapter = settings.chapterIds[entry.id];
+      final savedMatches = savedChapter == null
+          ? (saved?['index'] == index)
+          : savedChapter == sources[index].episode.id;
       final resume =
           initialPosition ??
           (restore &&
                   wasReady &&
                   previousId == entry.id &&
-                  previousIndex == index
+                  (previousChapter == sources[index].episode.id ||
+                      previousChapter == null && previousIndex == index)
               ? previousPosition
-              : requested == null || restore && saved?['index'] == index
+              : ((requested == null || restore) && savedMatches)
               ? Duration(milliseconds: saved?['position'] ?? 0)
               : Duration.zero);
       resource = entry;
@@ -447,7 +503,7 @@ class AudioBookSession extends ChangeNotifier {
             if (!_acceptEvents) return;
             if (!seeking) {
               position = value;
-              notifyListeners();
+              _notifyProgress();
             }
             if (!loading &&
                 DateTime.now().difference(_savedAt).inSeconds >= 5) {
@@ -457,10 +513,11 @@ class AudioBookSession extends ChangeNotifier {
           _player!.duration.listen((value) {
             if (!_acceptEvents) return;
             duration = value ?? Duration.zero;
-            notifyListeners();
+            _notifyProgress();
           }),
           _player!.playing.listen((value) {
             if (!_acceptEvents) return;
+            if (playing == value) return;
             playing = value;
             notifyListeners();
             if (!loading && !value) _remember();
@@ -534,6 +591,9 @@ class AudioBookSession extends ChangeNotifier {
   void _remember() {
     final id = resource?.id;
     if (id == null || loading || !_ready) return;
+    if (current >= 0 && current < (resource?.episodes.length ?? 0)) {
+      settings.chapterIds[id] = resource!.episodes[current].id;
+    }
     settings.positions[id] = {
       'index': current,
       'position': position.inMilliseconds,

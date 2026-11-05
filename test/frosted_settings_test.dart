@@ -15,6 +15,22 @@ void main() {
     await FrostedSettings.instance.boot(directory: directory);
   });
   tearDown(() => directory.deleteSync(recursive: true));
+  test(
+    'lightweight mode persists without overwriting transparency preferences',
+    () async {
+      final settings = FrostedSettings.instance;
+      await settings.setLightweight(true);
+      expect(settings.reduceTransparency, true);
+      final restored = FrostedSettings();
+      await restored.boot(directory: directory);
+      expect(restored.lightweight, true);
+      await restored.setLightweight(false);
+      expect(restored.reduceTransparency, false);
+      expect(restored.frostedEnabled, true);
+      restored.dispose();
+    },
+  );
+
   test('only the ordinary blur preference migrates and persists', () async {
     await File('${directory.path}/glass_effects_settings.json').writeAsString(
       jsonEncode({

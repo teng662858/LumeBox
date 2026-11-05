@@ -224,6 +224,7 @@ class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
                   final audio = AudioBookSettings.instance;
                   await audio.load();
                   audio.positions.clear();
+                  audio.chapterIds.clear();
                   await audio.save();
                   return '已清空历史与续播记录（$count 项）';
                 },

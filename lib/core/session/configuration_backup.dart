@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'cat_configuration_backup.dart';
 import '../reading/reading_store.dart';
 import '../media/media_library.dart';
@@ -34,6 +36,7 @@ class ConfigurationBackup {
     : _catService = catService ?? CatService.instance;
   final CatService _catService;
   static Future<File>? _automatic;
+  static String? _lastAutomaticPath;
   final List<String> warnings = [];
   static const files = <String>{
     'app_preferences.json',
@@ -94,7 +97,7 @@ class ConfigurationBackup {
       warnings.add('猫源订阅损坏，已跳过');
     }
     final catData = await CatConfigurationBackup.export(base, warnings);
-    return jsonEncode({
+    return compute(jsonEncode, {
       'format': 'lumebox-configuration',
       'version': 2,
       'createdAt': DateTime.now().toIso8601String(),
@@ -474,35 +477,38 @@ class ConfigurationBackup {
 
   Future<File> _createAutomatic() async {
     final base = await getApplicationSupportDirectory();
-    final directory = Directory('${base.path}/configuration_backups')
-      ..createSync(recursive: true);
-    await _protectOldSnapshots(directory);
+    final directory = Directory('${base.path}/configuration_backups');
+    await directory.create(recursive: true);
     final day = DateTime.now().toIso8601String().substring(0, 10);
     final file = File('${directory.path}/LumeBox-$day.json');
-    if (!file.existsSync()) {
+    if (_lastAutomaticPath == file.path && await file.exists()) return file;
+    await _protectOldSnapshots(directory);
+    if (!await file.exists()) {
       final temporary = File('${file.path}.tmp');
-      temporary.writeAsStringSync(await export(), flush: true);
-      temporary.renameSync(file.path);
+      await temporary.writeAsString(await export(), flush: true);
+      await temporary.rename(file.path);
     }
-    // Keep the most recent seven daily snapshots.
-    final backups =
-        directory
-            .listSync()
-            .whereType<File>()
-            .where(
-              (f) =>
-                  RegExp(r'LumeBox-\d{4}-\d{2}-\d{2}\.json$').hasMatch(f.path),
-            )
-            .toList()
-          ..sort((a, b) => b.path.compareTo(a.path));
+    final backups = await directory
+        .list()
+        .where(
+          (f) =>
+              f is File &&
+              RegExp(r'LumeBox-\d{4}-\d{2}-\d{2}\.json$').hasMatch(f.path),
+        )
+        .cast<File>()
+        .toList();
+    backups.sort((a, b) => b.path.compareTo(a.path));
     for (final old in backups.skip(7)) {
-      old.deleteSync();
+      await old.delete();
     }
+    _lastAutomaticPath = file.path;
     return file;
   }
 
   Future<void> _protectOldSnapshots(Directory directory) async {
-    for (final file in directory.listSync().whereType<File>()) {
+    await for (final entity in directory.list()) {
+      if (entity is! File) continue;
+      final file = entity;
       if (!file.path.endsWith('.json')) continue;
       final text = await file.readAsString();
       if (BackupCipher.isEncrypted(text)) continue;

@@ -241,7 +241,7 @@ void main() {
         await tester.pumpAndSettle();
       }
       final pageContext = tester.element(
-        find.byKey(ValueKey<String>('${entry.$1}·${LumeTheme.themeId}')),
+        find.byKey(ValueKey<String>('shell-content-${entry.$1}')),
       );
       final capsule = tester.getRect(
         find.byKey(ShellDockBar.capsuleSurfaceKey),

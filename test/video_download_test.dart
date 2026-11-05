@@ -59,6 +59,78 @@ void main() {
     title: 'Movie',
     chapters: const [SourceChapter(id: 'episode', title: 'Episode')],
   );
+  for (final playing in [false, true]) {
+    test('HLS parallelism is bounded and yields to playback: $playing', () async {
+      var active = 0, peak = 0;
+      server.listen((request) async {
+        if (request.uri.path == '/parallel.m3u8') {
+          request.response.write(
+            '#EXTM3U\n${List.generate(6, (i) => '#EXTINF:1,\npart$i.ts').join('\n')}\n#EXT-X-ENDLIST\n',
+          );
+        } else {
+          active++;
+          if (active > peak) peak = active;
+          await Future<void>.delayed(const Duration(milliseconds: 25));
+          request.response.add([1, 2, 3]);
+          active--;
+        }
+        await request.response.close();
+      });
+      final c = VideoDownloadCenter(
+        directory: () async => root,
+        resolve: (_) async =>
+            VideoContent(url: origin.resolve('parallel.m3u8')),
+        playbackActive: () => playing,
+        merge: (_, _, _) async => throw StateError('fixture cannot remux'),
+      );
+      await c.boot();
+      await enqueue(c);
+      await until(() => c.tasks.single.state == 'merge_failed');
+      expect(peak, playing ? 1 : 3);
+      expect(c.tasks.single.completed, 6);
+      final body = await c.localFile(c.tasks.single).readAsString();
+      final segments = const LineSplitter()
+          .convert(body)
+          .where((line) => line.contains('segment-'))
+          .toList();
+      expect(
+        segments,
+        orderedEquals(
+          List.generate(
+            6,
+            (i) => segments.first.replaceFirst('segment-0', 'segment-$i'),
+          ),
+        ),
+      );
+      await c.flush();
+      c.dispose();
+    });
+  }
+
+  test(
+    'unsupported playlists are rejected before any segments are scheduled',
+    () {
+      expect(
+        VideoDownloadCenter.unsupportedPlaylistReason(
+          '#EXTM3U\n#EXT-X-BYTERANGE:3\nfile.ts\n#EXT-X-ENDLIST',
+        ),
+        contains('字节范围'),
+      );
+      expect(
+        VideoDownloadCenter.unsupportedPlaylistReason(
+          '#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI="key"\n#EXT-X-ENDLIST',
+        ),
+        contains('加密'),
+      );
+      expect(
+        VideoDownloadCenter.unsupportedPlaylistReason(
+          '#EXTM3U\n#EXTINF:1,\na.ts',
+        ),
+        contains('直播'),
+      );
+    },
+  );
+
   test('MP4 is persisted, survives restart, and resolved URLs and headers are not serialized', () async {
     final data = Uint8List.fromList([
       0,

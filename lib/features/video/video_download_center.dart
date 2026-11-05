@@ -1,3 +1,4 @@
+import '../../core/media/playback_focus.dart';
 import '../../core/net/lume_net.dart';
 import '../../core/net/lume_http.dart';
 
@@ -67,12 +68,23 @@ class VideoDownloadCenter extends ChangeNotifier {
     this.resolve,
     this.merge,
     this.cancelMerge,
+    this.playbackActive,
   });
   static final instance = VideoDownloadCenter();
   final Future<Directory> Function()? directory;
   final Future<VideoContent> Function(VideoDownloadTask)? resolve;
   final Future<void> Function(Directory, File, String)? merge;
   final Future<void> Function(String)? cancelMerge;
+  final bool Function()? playbackActive;
+  bool get _yieldToPlayback =>
+      playbackActive?.call() ?? PlaybackFocus.isPlaying;
+  final _progressWatch = Stopwatch()..start();
+  void _notifyProgress() {
+    if (_progressWatch.elapsedMilliseconds < 250) return;
+    _progressWatch.reset();
+    notifyListeners();
+  }
+
   final _merger = VideoDownloadMerger();
   final tasks = <VideoDownloadTask>[];
   Future<void>? _boot;
@@ -552,7 +564,10 @@ class VideoDownloadCenter extends ChangeNotifier {
           task.bytesPerSecond = interval * 1000 / watch.elapsedMilliseconds;
           interval = 0;
           watch.reset();
-          notifyListeners();
+          _notifyProgress();
+        }
+        if (_yieldToPlayback) {
+          await Future<void>.delayed(const Duration(milliseconds: 8));
         }
       }
       await sink.flush();
@@ -679,26 +694,25 @@ class VideoDownloadCenter extends ChangeNotifier {
           .writeAsString('${master.join('\n')}\n', flush: true);
       return;
     }
-    if (!lines.contains('#EXT-X-ENDLIST')) throw StateError('直播流不支持离线下载');
-    if (lines.any((l) => l.startsWith('#EXT-X-BYTERANGE'))) {
-      throw StateError('该线路使用字节范围 HLS，暂不支持下载');
-    }
+    final unsupported = unsupportedPlaylistReason(body);
+    if (unsupported != null) throw StateError(unsupported);
     final plan = sha256.convert(utf8.encode(body)).toString().substring(0, 16);
     final resourceDir = Directory(p.join(folder(task), '$name-$plan'));
     await resourceDir.create(recursive: true);
     final output = <String>[];
     var index = 0;
     task.total += lines.where((l) => l.isNotEmpty && !l.startsWith('#')).length;
+    final pending = <Future<void>>[];
+    Future<void> flushSegments() async {
+      final batch = List<Future<void>>.of(pending);
+      pending.clear();
+      await Future.wait(batch);
+    }
+
     for (final line in lines) {
       _check(task);
-      if (line.startsWith('#EXT-X-KEY:') &&
-          !line.contains('METHOD=NONE') &&
-          (!line.contains('METHOD=AES-128') ||
-              (line.contains('KEYFORMAT=') &&
-                  !line.contains('KEYFORMAT="identity"')))) {
-        throw StateError('该加密格式不支持离线下载');
-      }
       if (line.startsWith('#EXT-X-KEY:') || line.startsWith('#EXT-X-MAP:')) {
+        await flushSegments();
         final match = RegExp(r'URI="([^"]+)"').firstMatch(line);
         if (match != null) {
           final url = uri.resolve(match.group(1)!);
@@ -727,22 +741,52 @@ class VideoDownloadCenter extends ChangeNotifier {
             ? suffix
             : '.ts';
         final relative = '$name-$plan/segment-${index++}$extension';
-        await _resource(
-          task,
-          url,
-          origin,
-          headers,
-          File(p.join(folder(task), relative)),
-        );
-        task.completed++;
-        notifyListeners();
+        pending.add(() async {
+          if (_yieldToPlayback) {
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+          }
+          await _resource(
+            task,
+            url,
+            origin,
+            headers,
+            File(p.join(folder(task), relative)),
+          );
+          task.completed++;
+          _notifyProgress();
+        }());
         output.add(relative);
+        if (pending.length >= (_yieldToPlayback ? 1 : 3)) await flushSegments();
       } else {
         output.add(line);
       }
     }
+    await flushSegments();
     await File(p.join(folder(task), '$name.m3u8'))
         .writeAsString('${output.join('\n')}\n', flush: true);
+  }
+
+  static String? unsupportedPlaylistReason(String body) {
+    final lines = const LineSplitter()
+        .convert(body)
+        .map((line) => line.trim())
+        .toList();
+    if (lines.any((line) => line.startsWith('#EXT-X-STREAM-INF:'))) return null;
+    if (!lines.contains('#EXT-X-ENDLIST')) return '直播流不支持离线下载';
+    if (lines.any((line) => line.startsWith('#EXT-X-BYTERANGE'))) {
+      return '该线路使用字节范围 HLS，暂不支持下载';
+    }
+    if (lines.any(
+      (line) =>
+          line.startsWith('#EXT-X-KEY:') &&
+          !line.contains('METHOD=NONE') &&
+          (!line.contains('METHOD=AES-128') ||
+              line.contains('KEYFORMAT=') &&
+                  !line.contains('KEYFORMAT="identity"')),
+    )) {
+      return '该加密格式不支持离线下载';
+    }
+    return null;
   }
 
   Future<void> _resource(

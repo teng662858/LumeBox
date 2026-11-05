@@ -109,6 +109,30 @@ void main() {
     root.deleteSync(recursive: true);
   });
 
+  test('pagination can stop after a bounded prefix and matches complete page offsets', () {
+    final body = '第一行正文内容。第二行正文内容。\n' * 300;
+    const style = TextStyle(fontSize: 20, height: 1.5);
+    const size = Size(300, 500);
+    final prefix = novelPageOffsets(
+      body,
+      style,
+      size,
+      TextScaler.noScaling,
+      TextDirection.ltr,
+    ).take(3).toList();
+    final all = novelPageStarts(
+      body,
+      style,
+      size,
+      TextScaler.noScaling,
+      TextDirection.ltr,
+    );
+    expect(prefix, all.take(3));
+    expect(prefix, hasLength(3));
+    expect(all.length, greaterThan(3));
+    expect(prefix.last, lessThan(body.length));
+  });
+
   test('文本契约保留段落、去除网页脚本，不把简介当正文', () {
     final text = ChapterContent.parse({
       'kind': 'html',

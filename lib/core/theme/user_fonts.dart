@@ -35,7 +35,10 @@ class UserFonts extends ChangeNotifier {
     await loader.load();
   }
 
-  Future<void> boot() async {
+  Future<void>? _booting;
+  Future<void> boot() => _booting ??= _boot();
+
+  Future<void> _boot() async {
     if (_directory != null) return;
     _directory = Directory(
       p.join((await getApplicationSupportDirectory()).path, 'custom_fonts'),
@@ -43,8 +46,8 @@ class UserFonts extends ChangeNotifier {
     _fonts = [];
     try {
       final index = File(p.join(_directory!.path, 'index.json'));
-      if (index.existsSync()) {
-        final data = jsonDecode(index.readAsStringSync());
+      if (await index.exists()) {
+        final data = jsonDecode(await index.readAsString());
         if (data is List) {
           final seen = <String>{};
           for (final item in data) {
@@ -58,7 +61,7 @@ class UserFonts extends ChangeNotifier {
               continue;
             }
             final file = _file(id);
-            if (file.existsSync() && file.lengthSync() <= maxBytes) {
+            if (await file.exists() && await file.length() <= maxBytes) {
               _fonts.add(
                 UserFont(id, name.length > 150 ? name.substring(0, 150) : name),
               );
@@ -84,6 +87,7 @@ class UserFonts extends ChangeNotifier {
       _loaded.contains(id) ? find(id)?.family : null;
 
   Future<bool> ensureLoaded(String id) async {
+    await boot();
     if (id.isEmpty || find(id) == null) return false;
     if (_loaded.contains(id)) return true;
     try {
@@ -115,7 +119,7 @@ class UserFonts extends ChangeNotifier {
     }
     final bytes = await file.readAsBytes();
     validateFont(bytes);
-    if (_directory == null) await boot();
+    await boot();
     final id = sha256.convert(bytes).toString();
     final existing = find(id);
     if (existing != null) {
@@ -221,6 +225,7 @@ class UserFonts extends ChangeNotifier {
 
   @visibleForTesting
   void resetForTesting() {
+    _booting = null;
     _directory = null;
     _fonts = [];
     _loaded.clear();

@@ -6,6 +6,16 @@ class PlaybackFocus {
   static Future<void>? _pending;
   static String? _owner;
   static String? get owner => _owner;
+  static final _playing = <String>{};
+  static bool get isPlaying => _playing.contains(_owner);
+  static void setPlaying(String name, bool value) {
+    if (value) {
+      _playing.add(name);
+    } else {
+      _playing.remove(name);
+    }
+  }
+
   static void register(String name, Future<void> Function() release) =>
       _release[name] = release;
   static void unregister(String name, Future<void> Function() release) {

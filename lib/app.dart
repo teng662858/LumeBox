@@ -1,3 +1,5 @@
+import 'shared/widgets/theme_refresh_boundary.dart';
+
 import 'package:flutter/material.dart';
 
 import 'core/session/privacy_settings.dart';
@@ -83,10 +85,7 @@ class _LumeBoxAppState extends State<LumeBoxApp> {
           ),
           themeMode: appearance.mode,
           // 页面里的静态色名（`LumeTheme.textPrimary` 等）按进程级亮度取色，
-          // 而 Flutter 选亮色还是暗色由 ThemeMode.system 决定。这里把**实际生效
-          // 的亮度**回写给静态色名，并按亮度给整棵子树换 key：
-          // 系统外观一变，子树整体重建，所有静态色名重新取值——
-          // 否则只换 ThemeData、不重建的页面会留着旧主题的颜色。
+          // 同步实际主题后重新求值静态色名，保留路由和页面状态。
           builder: (context, child) {
             final brightness = Theme.of(context).brightness;
             LumeTheme.applyBrightness(brightness);
@@ -95,14 +94,8 @@ class _LumeBoxAppState extends State<LumeBoxApp> {
               customAccent: appearance.customAccent,
             );
             LumeTheme.applyBackground(appearance.background);
-            return KeyedSubtree(
-              key: ValueKey<String>(LumeTheme.themeId),
-              // 注意：**这一层 key 换不动子树里的页面**。child 是带 GlobalKey 的
-              // Navigator，换 key 只是把它换个位置、原样复用（实测）。真正让
-              // 「切主题后整页换色」生效的是下面这层 key：
-              // `AppShell._buildPage` 按页签标识 + 主题身份建当前页签，
-              // 主题一变当前页签整体重建，页内静态色名（`LumeTheme.textPrimary`
-              // 等）才重新取值。这一层保留是为了兄弟子树（弹层等）也跟着重建。
+            return ThemeRefreshBoundary(
+              identity: LumeTheme.themeId,
               child: MediaQuery(
                 data: MediaQuery.of(context).copyWith(
                   textScaler: appearance.textScale == 1

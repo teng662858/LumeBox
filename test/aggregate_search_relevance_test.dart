@@ -32,6 +32,29 @@ void main() {
     settings.simplify = true;
   });
 
+  test('burst results coalesce progress while preserving the final complete snapshot', () async {
+    final updates = <AggregateSearchProgress>[];
+    final result = await AggregateSearch.run(
+      sources: [
+        for (var i = 0; i < 20; i++)
+          SourceDescriptor(
+            id: 'site$i',
+            name: '站点$i',
+            version: '1',
+            enabled: true,
+          ),
+      ],
+      open: (_) async =>
+          _FallbackSource(const [SourceItem(id: '1', title: '作品')]),
+      keyword: '作品',
+      onProgress: updates.add,
+    );
+    expect(result.hits, hasLength(20));
+    expect(updates.last.completed, 20);
+    expect(updates.last.hits, hasLength(20));
+    expect(updates.length, lessThan(5));
+  });
+
   test(
     'aggregate titles must contain the query, including every search term',
     () {

@@ -176,6 +176,7 @@ class _ShellDockBarState extends State<ShellDockBar>
       }, GlassPart.dock);
   bool get _motionEnabled =>
       FrostedSettings.instance.frostedEnabled &&
+      !FrostedSettings.instance.lightweight &&
       _glassStyle.enabled &&
       _glassStyle.motion &&
       widget.appearance.animateSelection &&

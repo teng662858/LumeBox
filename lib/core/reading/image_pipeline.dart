@@ -64,6 +64,7 @@ class SectionImagePipeline {
   }) : _client = client ?? http.Client(),
        _maxRetries = maxRetries < 0 ? 0 : maxRetries,
        _memory = ImageMemoryCache(memoryBudgetBytes) {
+    _live.add(this);
     _removePreloadClearer = MediaPreload.instance.onClear(() {
       _preloadQueue.clear();
       _preloadKeys.clear();
@@ -73,6 +74,18 @@ class SectionImagePipeline {
       _speculativeKeys.clear();
     });
   }
+  static final _live = <SectionImagePipeline>{};
+  static void trimMemory() {
+    for (final pipeline in _live) {
+      pipeline._preloadQueue.clear();
+      pipeline._preloadKeys.clear();
+      pipeline._preloadWindows.clear();
+      pipeline._preloadWindow = null;
+      pipeline._memory.clearUnused(includePinned: true);
+      pipeline._speculativeKeys.clear();
+    }
+  }
+
   late final void Function() _removePreloadClearer;
   final _speculativeKeys = <String>{};
 
@@ -552,6 +565,7 @@ class SectionImagePipeline {
 
   /// 关闭客户端、取消在飞请求、清空内存缓存并拒绝后续调用。可重复调用。
   void dispose() {
+    _live.remove(this);
     _removePreloadClearer();
     _preloadQueue.clear();
     _preloadKeys.clear();

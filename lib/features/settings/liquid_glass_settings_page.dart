@@ -28,6 +28,12 @@ class LiquidGlassSettingsPage extends StatelessWidget {
                 description:
                     'iOS 26 及以上使用系统液态玻璃，旧版 iOS 使用系统磨砂材质。模糊、折射和高光由系统自动处理。',
               ),
+              SwitchListTile.adaptive(
+                title: const Text('轻量效果'),
+                subtitle: const Text('使用实色材质，减少实时模糊、折射和叠加效果；保留当前外观参数。'),
+                value: settings.lightweight,
+                onChanged: settings.setLightweight,
+              ),
               if (!DockNativeGlass.supported)
                 const SettingsFooterNote('当前平台显示兼容预览；以下原生材质参数在 iOS 上生效。'),
               GlassCard(
