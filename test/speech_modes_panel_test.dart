@@ -161,15 +161,28 @@ void main() {
   testWidgets('小说音色列表和已选音色显示中文且保留系统标识', (tester) async {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final calls = <MethodCall>[];
     messenger.setMockMethodCallHandler(
-      const MethodChannel('lumebox/speech'),
-      (call) async => call.method == 'speechVoices'
+      const MethodChannel('lumebox/mediaTracks'),
+      (_) async => null,
+    );
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(
+        const MethodChannel('lumebox/mediaTracks'),
+        null,
+      ),
+    );
+    messenger.setMockMethodCallHandler(const MethodChannel('lumebox/speech'), (
+      call,
+    ) async {
+      calls.add(call);
+      return call.method == 'speechVoices'
           ? [
               {'id': 'voice-a', 'name': 'Tingting', 'language': 'zh-CN'},
               {'id': 'voice-b', 'name': 'Grandpa', 'language': 'zh-CN'},
             ]
-          : null,
-    );
+          : null;
+    });
     addTearDown(
       () => messenger.setMockMethodCallHandler(
         const MethodChannel('lumebox/speech'),
@@ -199,6 +212,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('爷爷 · 普通话').last);
     await tester.pumpAndSettle();
+    await tester.tap(find.text('试听'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    expect(settings.narratorVoice, 'voice-a');
+    expect(
+      calls.lastWhere((call) => call.method == 'speak').arguments['voice'],
+      'voice-b',
+    );
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
     expect(settings.narratorVoice, 'voice-b');

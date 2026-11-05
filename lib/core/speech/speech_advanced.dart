@@ -77,8 +77,13 @@ class AdvancedSpeechSource {
     _client = null;
   }
 
-  Future<void> speak(SpeechSegment segment, SpeechSettings settings) async {
-    await PlaybackFocus.acquire('tts');
+  Future<void> speak(
+    SpeechSegment segment,
+    SpeechSettings settings, {
+    String focusOwner = 'tts',
+    void Function(String)? onError,
+  }) async {
+    await PlaybackFocus.acquire(focusOwner);
     cancel(
       keepCompletedLocal:
           settings.mode == SpeechMode.local ||
@@ -250,6 +255,7 @@ class AdvancedSpeechSource {
               : error is SocketException
               ? '无法连接语音服务，请检查网络'
               : '听书服务不可用，请检查接口、模型和音色配置';
+          onError?.call(message);
           try {
             await methods.invokeMethod<void>('streamFail', {
               'token': token,

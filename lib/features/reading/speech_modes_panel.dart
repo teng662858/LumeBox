@@ -7,6 +7,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/media/playback_focus.dart';
+import '../../core/speech/speech_advanced.dart';
+import '../../core/speech/speech_segments.dart';
 import '../../core/speech/speech_cloud.dart';
 import '../../core/speech/speech_local.dart';
 import '../../core/speech/speech_settings.dart';
@@ -449,7 +452,7 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
       context: context,
       builder: (_) => _SpeechVoiceDialog(
         role: role,
-        mode: widget.settings.mode,
+        settings: widget.settings,
         value: _voice(role),
       ),
     );
@@ -891,11 +894,12 @@ class _CloudSettingsDialogState extends State<_CloudSettingsDialog> {
 class _SpeechVoiceDialog extends StatefulWidget {
   const _SpeechVoiceDialog({
     required this.role,
-    required this.mode,
+    required this.settings,
     required this.value,
   });
   final String role, value;
-  final SpeechMode mode;
+  final SpeechSettings settings;
+  SpeechMode get mode => settings.mode;
   @override
   State<_SpeechVoiceDialog> createState() => _SpeechVoiceDialogState();
 }
@@ -903,9 +907,71 @@ class _SpeechVoiceDialog extends StatefulWidget {
 class _SpeechVoiceDialogState extends State<_SpeechVoiceDialog> {
   late final controller = TextEditingController(text: widget.value);
   List<(String, String)> voices = [];
+  static const _methods = MethodChannel('lumebox/speech');
+  final _preview = AdvancedSpeechSource(_methods);
+  bool _busy = false;
+
+  Future<void> _stopPreview() async {
+    _preview.cancel();
+    try {
+      await _methods.invokeMethod<void>('stop');
+    } on MissingPluginException {
+      // No speech engine is installed on this platform.
+    } on PlatformException {
+      // The engine may already have been torn down.
+    }
+  }
+
+  Future<void> _tryVoice() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await PlaybackFocus.acquire('speech_preview');
+      if (!mounted) return;
+      await _stopPreview();
+      if (!mounted) return;
+      const text = '你好，这是一段语音试听，欢迎使用朗读功能。';
+      final settings = widget.settings.copyWith(
+        narratorVoice: controller.text.trim(),
+        autoDialogue: false,
+        backgroundPlayback: false,
+      );
+      if (settings.mode == SpeechMode.system) {
+        await _methods.invokeMethod<void>('speak', {
+          'text': text,
+          'rate': settings.rate,
+          'pitch': settings.pitch,
+          'volume': settings.volume,
+          'voice': settings.narratorVoice,
+          'background': false,
+        });
+      } else {
+        await _preview.speak(
+          const SpeechSegment(text: text, start: 0),
+          settings,
+          focusOwner: 'speech_preview',
+          onError: (message) {
+            if (mounted) {
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text('试听失败：$message')));
+            }
+          },
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('试听失败：$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    PlaybackFocus.register('speech_preview', _stopPreview);
     if (widget.mode == SpeechMode.system) unawaited(_load());
     if ((widget.mode == SpeechMode.cloud ||
             widget.mode == SpeechMode.cloudAi) &&
@@ -963,6 +1029,12 @@ class _SpeechVoiceDialogState extends State<_SpeechVoiceDialog> {
 
   @override
   void dispose() {
+    PlaybackFocus.unregister('speech_preview', _stopPreview);
+    if (PlaybackFocus.owner == 'speech_preview') {
+      unawaited(_stopPreview());
+    } else {
+      _preview.cancel();
+    }
     controller.dispose();
     super.dispose();
   }
@@ -1001,6 +1073,11 @@ class _SpeechVoiceDialogState extends State<_SpeechVoiceDialog> {
             ),
     ),
     actions: [
+      TextButton.icon(
+        onPressed: _busy ? null : _tryVoice,
+        icon: const Icon(Icons.volume_up_outlined),
+        label: const Text('试听'),
+      ),
       TextButton(
         onPressed: () => Navigator.pop(context),
         child: const Text('取消'),
