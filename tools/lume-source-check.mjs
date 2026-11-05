@@ -138,6 +138,7 @@ function makeHttp(opts) {
     let payload = options.body == null ? undefined : String(options.body);
     let status = 0;
     let body = '';
+    let bodyBase64 = null;
     let headersOut = {};
     let finalUrl = url;
     const setCookie = [];
@@ -164,7 +165,10 @@ function makeHttp(opts) {
         finalUrl = target;
         const location = res.headers.get('location');
         if (![301, 302, 303, 307, 308].includes(status) || !location) {
-          body = await res.text();
+          // 与 App 侧一致：脚本传 {binary:true} 时额外回 bodyBase64（二进制接口用）。
+          const bytes = Buffer.from(await res.arrayBuffer());
+          body = bytes.toString('utf8');
+          if (options.binary === true) bodyBase64 = bytes.toString('base64');
           break;
         }
         await res.arrayBuffer().catch(() => undefined);
@@ -186,6 +190,7 @@ function makeHttp(opts) {
       status,
       headers: headersOut,
       body,
+      ...(bodyBase64 == null ? {} : { bodyBase64 }),
       setCookie,
       text: () => body,
       json: () => JSON.parse(body),

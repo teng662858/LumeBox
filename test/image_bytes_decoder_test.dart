@@ -2,13 +2,16 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pointycastle/export.dart'
     show
+        AEADParameters,
         AESEngine,
         BlockCipher,
         CBCBlockCipher,
         ECBBlockCipher,
+        GCMBlockCipher,
         KeyParameter,
         ParametersWithIV;
 import 'package:lume_box/core/reading/image_bytes_decoder.dart';
@@ -227,4 +230,76 @@ void main() {
       );
     },
   );
+  test('tvimage1 envelope (听友听书 影视封面) round-trips and rejects tampering', () {
+    // 按站点前端 decodeImageEnvelope 的反向构造：头是明文 JSON、正文 AES-256-GCM、
+    // wrapped_key = key XOR SHA-256(固定串 + nonce + 摘要 + 0 + asset_id + 0 + role)。
+    const assetId = 'asset-9e1c';
+    const role = 'work-cover';
+    final key = Uint8List.fromList(List.generate(32, (i) => (i * 11 + 5) & 0xff));
+    final nonce = Uint8List.fromList(List.generate(12, (i) => (i * 3 + 1) & 0xff));
+    final image = Uint8List.fromList([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      ...List.generate(200, (i) => (i * 13) & 0xff),
+    ]);
+    final digest = crypto.sha256.convert(image).bytes;
+    final material = <int>[
+      ...utf8.encode('tv.image-envelope/v3/wrapped-key'),
+      0,
+      ...nonce,
+      ...digest,
+      0,
+      ...utf8.encode(assetId),
+      0,
+      ...utf8.encode(role),
+    ];
+    final mask = crypto.sha256.convert(material).bytes;
+    final wrapped = List<int>.generate(32, (i) => key[i] ^ mask[i]);
+    String b64url(List<int> bytes) =>
+        base64Url.encode(bytes).replaceAll('=', '');
+    final header = utf8.encode(
+      jsonEncode({
+        'schema': 'tv.image-envelope',
+        'version': 3,
+        'algorithm': 'AES-256-GCM',
+        'asset_id': assetId,
+        'role': role,
+        'nonce': b64url(nonce),
+        'wrapped_key': b64url(wrapped),
+        'plaintext_sha256': digest
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join(),
+        'plaintext_bytes': image.length,
+        'mime_type': 'image/png',
+      }),
+    );
+    final aad = Uint8List.fromList(header);
+    final cipher = GCMBlockCipher(AESEngine())
+      ..init(true, AEADParameters(KeyParameter(key), 128, nonce, aad));
+    final body = cipher.process(image);
+    final headLength = ByteData(4)..setUint32(0, header.length, Endian.big);
+    final envelope = Uint8List.fromList([
+      ...utf8.encode('TVIMAGE1'),
+      ...headLength.buffer.asUint8List(),
+      ...header,
+      ...body,
+    ]);
+    final decoded = decodeSourceImage(envelope, const {
+      'x-lume-image-encoding': 'tvimage1',
+    });
+    expect(decoded, image);
+
+    final tampered = Uint8List.fromList(envelope)..[envelope.length - 1] ^= 0x01;
+    expect(
+      () => decodeSourceImage(tampered, const {
+        'x-lume-image-encoding': 'tvimage1',
+      }),
+      throwsFormatException,
+    );
+    expect(
+      () => decodeSourceImage(Uint8List.fromList(utf8.encode('TVIMAGE1')), const {
+        'x-lume-image-encoding': 'tvimage1',
+      }),
+      throwsFormatException,
+    );
+  });
 }

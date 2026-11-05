@@ -1,3 +1,27 @@
+## 2026-11-05 听友听书（`video/tingyou.js`，详见 [源记录](../docs/2026-11-05_听友听书综合源.md)）
+
+`tingyou_video`：听友听书（tingyou.fm / www.tingyou.fm / fmfm.tingyou.fm 同内容）**综合源**——
+听书（有声小说 / 评书 / 榜单，mp3 直链）+ 影视（电影 / 连续剧 / 动漫 / 短剧 / 综艺，HLS），
+已在 `metadata/mixed-sources.json` 登记。站点两套接口完全不同：
+
+- **听书** `/h5/listening/*` 明文 JSON：`filters` 给 2 个大类 + 43 个题材，`category?category=&type=&sort=&page=`
+  固定 20 条/页，`rank?section=hot|recommend|latest` 30 条/页，`chapters/{id}` **一次给全**（《剑来》5329 章），
+  `POST play {album_id, chapter_idx}` 回 mp3（实测 206 + `audio/mpeg`）。请求**必须带 Origin/Referer**，
+  缺了接口直接 404（不是站点改版）。
+- **影视** 全部走 `POST /web/v1/tv/call`：请求体是 AES-256-CBC 的 JSON（base64 当 body 发）+
+  `X-Post-Signature = base64(HMAC-SHA256(8 字节固定密钥, 那段 base64))`，响应同 key 解密；
+  key/iv/HMAC key 都是前端常量。**播放要账号**：源里自动领站点游客账号（`/web/user/register/temp`，
+  不要手机号），token 存 fs、401 重领；`is_vip` 线路不取。分页是游标（`page=` 会 400），源里做
+  `next_cursor` 链，顺序翻页 1 请求/页。
+- **接口域名会轮换**：站方用加密的「启动头」（`h5api.dat`，`[密文][key32][iv16]`）下发 `api_hosts`，
+  源里解头 + 探活 + 缓存 6 小时；实测 `appp.fdhtbz.cn` 会阶段性 404（同时另两个域名 200）。
+- **影视封面是 TVIMAGE1 信封**（`'TVIMAGE1'|头长|JSON头|AES-256-GCM(密文+tag)`，JSON 头当 AAD、
+  `wrapped_key` 与 SHA-256 掩码异或），App 侧新增 `x-lume-image-encoding: tvimage1` 解码
+  （`lib/core/reading/image_bytes_decoder.dart`）；旧版 App 显示占位图，不影响播放。
+- 验证：`[PASS]` 听书 home 1.9s / 58 分类 / list 30 / chapters 5329 / content mp3；
+  影视 list 24 / chapters 12 / content `200 application/vnd.apple.mpegurl`；搜索「遮天」15 条。
+  58 个分类逐个跑 list 首条互不相同（连载榜/评书榜与最新/评书分类逐条相同，故未重复声明）。
+
 ## 2026-11-04 第一版主（`comic/diyibanzhu.js`，详见 [源记录](../docs/2026-11-04_第一版主源与打不开的原因.md)）
 
 `diyibanzhu_novel`：第一版主（qula 模板成人小说站）。**用户给的 bz1111111.net / diyibanzhu.app 在
