@@ -18,10 +18,13 @@ class PrivateGithubSubscription {
 
   static const channel = MethodChannel('lumebox/source_repository');
   static Future<PrivateGithubSubscription?>? _cached;
+  static http.Client? _sharedClient;
   @visibleForTesting
   static http.Client Function() clientFactory = http.Client.new;
   @visibleForTesting
   static void resetForTesting() {
+    _sharedClient?.close();
+    _sharedClient = null;
     _cached = null;
     clientFactory = http.Client.new;
   }
@@ -185,40 +188,35 @@ class PrivateGithubSubscription {
         api.userInfo.isNotEmpty) {
       throw const FormatException('私有订阅地址无效');
     }
-    final own = client == null;
-    final network = client ?? clientFactory();
-    try {
-      final request = http.Request('GET', api)..followRedirects = false;
-      request.headers.addAll({
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/vnd.github.raw+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-        'User-Agent': 'LumeBox-Private-Subscription',
-      });
-      final response = await network
-          .send(request)
-          .timeout(const Duration(seconds: 30));
-      if (response.statusCode != 200) {
-        throw StateError(
-          response.statusCode == 401 ||
-                  response.statusCode == 403 ||
-                  response.statusCode == 404
-              ? '私有仓库读取失败，请检查 Token、仓库访问权限、分支及文件路径'
-              : '私有仓库读取失败（HTTP ${response.statusCode}）',
-        );
-      }
-      final bytes = BytesBuilder(copy: false);
-      await for (final part in response.stream.timeout(
-        const Duration(seconds: 30),
-      )) {
-        bytes.add(part);
-        if (bytes.length > 8 * 1024 * 1024) {
-          throw const FormatException('私有订阅文件超过 8 MB');
-        }
-      }
-      return bytes.takeBytes();
-    } finally {
-      if (own) network.close();
+    final network = client ?? (_sharedClient ??= clientFactory());
+    final request = http.Request('GET', api)..followRedirects = false;
+    request.headers.addAll({
+      'Authorization': 'Bearer $token',
+      'Accept': 'application/vnd.github.raw+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'LumeBox-Private-Subscription',
+    });
+    final response = await network
+        .send(request)
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode != 200) {
+      throw StateError(
+        response.statusCode == 401 ||
+                response.statusCode == 403 ||
+                response.statusCode == 404
+            ? '私有仓库读取失败，请检查 Token、仓库访问权限、分支及文件路径'
+            : '私有仓库读取失败（HTTP ${response.statusCode}）',
+      );
     }
+    final bytes = BytesBuilder(copy: false);
+    await for (final part in response.stream.timeout(
+      const Duration(seconds: 30),
+    )) {
+      bytes.add(part);
+      if (bytes.length > 8 * 1024 * 1024) {
+        throw const FormatException('私有订阅文件超过 8 MB');
+      }
+    }
+    return bytes.takeBytes();
   }
 }
