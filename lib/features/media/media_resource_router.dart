@@ -14,6 +14,7 @@ Future<void> openMediaResource(
   MediaResource entry, {
   int? index,
   ResolvedMedia? initialMedia,
+  bool restartAudio = false,
 }) async {
   if (entry.episodes.isEmpty) throw StateError('资源没有章节');
   final service = MediaResourceService();
@@ -30,6 +31,7 @@ Future<void> openMediaResource(
             initialMedia: initialMedia,
           ),
           initialIndex: index,
+          restart: restartAudio,
         ),
       ),
     );

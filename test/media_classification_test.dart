@@ -96,6 +96,21 @@ void main() {
     expect(probes, 0);
   });
 
+  test('已识别音频可先建立目录，进入播放页后才解析地址', () async {
+    final source = _DeferredAudioSource();
+    final entry = await MediaResourceService(library: library).source(
+      source: source,
+      item: const SourceItem(id: 'deferred', title: '听书'),
+      chapters: const [SourceChapter(id: 'chapter', title: '第一集')],
+      hint: ResourceKind.audioBook,
+      trackInfo: const MediaTrackInfo(known: true, audio: true),
+      deferContent: true,
+    );
+    expect(entry.kind, ResourceKind.audioBook);
+    expect(entry.episodes.single.id, 'chapter');
+    expect(source.calls, 0);
+  });
+
   test('复用选中集地址和请求头，后续解析仍刷新地址', () async {
     final entry = MediaResource(
       id: 'prepared',
@@ -183,4 +198,17 @@ void main() {
     expect(resolved.url, entry.episodes.single.url);
     expect(resolved.headers, entry.episodes.single.headers);
   });
+}
+
+class _DeferredAudioSource extends FakeReadingDataSource {
+  _DeferredAudioSource() : super(section: Section.video);
+  int calls = 0;
+  @override
+  Future<ChapterContent> content({
+    required String itemId,
+    required String chapterId,
+  }) async {
+    calls++;
+    throw StateError('应在播放页解析');
+  }
 }

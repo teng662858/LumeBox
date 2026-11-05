@@ -20,10 +20,12 @@ class AudioPlayerPage extends StatefulWidget {
     required this.resource,
     required this.tracks,
     this.initialIndex,
+    this.restart = false,
   });
   final MediaResource resource;
   final List<AudioBookTrack> tracks;
   final int? initialIndex;
+  final bool restart;
   @override
   State<AudioPlayerPage> createState() => _AudioPlayerPageState();
 }
@@ -31,6 +33,7 @@ class AudioPlayerPage extends StatefulWidget {
 class _AudioPlayerPageState extends State<AudioPlayerPage> {
   final session = AudioBookSession.instance;
   double? _drag;
+  bool _starting = true;
   @override
   void initState() {
     super.initState();
@@ -41,22 +44,15 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
   }
 
   Future<void> _start() async {
-    if (session.resource?.id != widget.resource.id) {
-      await session.load(
+    try {
+      await session.open(
         widget.resource,
         widget.tracks,
         index: widget.initialIndex,
+        restart: widget.restart,
       );
-      if (session.error == null && session.resource?.id == widget.resource.id) {
-        unawaited(session.play());
-      }
-    } else if (widget.initialIndex != null) {
-      await session.load(
-        widget.resource,
-        widget.tracks,
-        index: widget.initialIndex,
-      );
-      unawaited(session.play());
+    } finally {
+      if (mounted) setState(() => _starting = false);
     }
   }
 
@@ -94,13 +90,20 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
       child: ListenableBuilder(
         listenable: session,
         builder: (context, _) {
-          final duration = session.duration.inMilliseconds.toDouble();
-          final current = session.current.clamp(
-            0,
-            widget.resource.episodes.isEmpty
-                ? 0
-                : widget.resource.episodes.length - 1,
-          );
+          final ownsSession = session.resource?.id == widget.resource.id;
+          final busy = _starting || !ownsSession || session.loading;
+          final position = ownsSession ? session.position : Duration.zero;
+          final total = ownsSession ? session.duration : Duration.zero;
+          final failure = ownsSession ? session.error : null;
+          final playing = !busy && session.playing;
+          final duration = busy ? 0.0 : total.inMilliseconds.toDouble();
+          final current =
+              (ownsSession ? session.current : widget.initialIndex ?? 0).clamp(
+                0,
+                widget.resource.episodes.isEmpty
+                    ? 0
+                    : widget.resource.episodes.length - 1,
+              );
           return ListView(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
             children: [
@@ -145,21 +148,36 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
                   textAlign: TextAlign.center,
                 ),
               const SizedBox(height: 20),
-              if (session.loading) const LinearProgressIndicator(),
-              if (session.error != null)
+              if (busy) ...[
+                const LinearProgressIndicator(),
+                const SizedBox(height: 8),
                 Text(
-                  session.error!,
+                  ownsSession ? session.loadingMessage : '正在准备播放器…',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              if (failure != null)
+                Text(
+                  failure,
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     color: Theme.of(context).colorScheme.error,
                   ),
                 ),
+              if (failure != null && !busy)
+                TextButton.icon(
+                  onPressed: session.retry,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('重新加载'),
+                ),
               NativeGlassSlider(
                 key: const Key('audio-book-seek'),
                 min: 0,
                 max: duration > 0 ? duration : 1,
-                value: (_drag ?? session.position.inMilliseconds.toDouble())
-                    .clamp(0, duration > 0 ? duration : 1),
+                value: (_drag ?? position.inMilliseconds.toDouble()).clamp(
+                  0,
+                  duration > 0 ? duration : 1,
+                ),
                 onChangeStart: duration > 0
                     ? (value) => setState(() => _drag = value)
                     : null,
@@ -182,13 +200,12 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
                     _time(
                       Duration(
                         milliseconds:
-                            (_drag ??
-                                    session.position.inMilliseconds.toDouble())
+                            (_drag ?? position.inMilliseconds.toDouble())
                                 .round(),
                       ),
                     ),
                   ),
-                  Text(_time(session.duration)),
+                  Text(_time(total)),
                 ],
               ),
               const SizedBox(height: 16),
@@ -197,7 +214,7 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
                 children: [
                   IconButton(
                     tooltip: '上一集',
-                    onPressed: session.current > 0 ? session.previous : null,
+                    onPressed: !busy && current > 0 ? session.previous : null,
                     icon: const LumeIcon(
                       Icons.skip_previous_rounded,
                       slot: 'audio_book_page.4',
@@ -206,16 +223,14 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
                   ),
                   const SizedBox(width: 20),
                   IconButton.filled(
-                    tooltip: session.playing ? '暂停' : '播放',
-                    onPressed: session.loading
+                    tooltip: playing ? '暂停' : '播放',
+                    onPressed: busy
                         ? null
                         : () => session.playing
                               ? session.pause()
                               : session.play(),
                     icon: LumeIcon(
-                      session.playing
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
+                      playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
                       slot: 'audio_book_page.5',
                       variant: true,
                     ),
@@ -225,7 +240,7 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
                   IconButton(
                     tooltip: '下一集',
                     onPressed:
-                        session.current + 1 < widget.resource.episodes.length
+                        !busy && current + 1 < widget.resource.episodes.length
                         ? session.next
                         : null,
                     icon: const LumeIcon(
@@ -241,6 +256,7 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   PopupMenuButton<double>(
+                    enabled: !busy,
                     tooltip: '播放倍速',
                     initialValue: AudioBookSettings.instance.speed,
                     onSelected: session.setSpeed,
@@ -264,6 +280,7 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
                     ),
                   ),
                   PopupMenuButton<int>(
+                    enabled: !busy,
                     tooltip: '睡眠定时',
                     onSelected: (minutes) async {
                       session.setSleep(minutes);
@@ -292,11 +309,14 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
                       slot: 'audio_book_page.7',
                     ),
                     label: const Text('选集'),
-                    onPressed: () => _episodes(context),
+                    onPressed: busy ? null : () => _episodes(context),
                   ),
                 ],
               ),
-              TextButton(onPressed: session.stop, child: const Text('停止播放')),
+              TextButton(
+                onPressed: busy ? null : session.stop,
+                child: const Text('停止播放'),
+              ),
             ],
           );
         },

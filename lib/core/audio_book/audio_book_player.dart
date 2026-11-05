@@ -311,6 +311,7 @@ class AudioBookSession extends ChangeNotifier {
   int current = 0;
   bool playing = false, loading = false, seeking = false;
   String? error;
+  String loadingMessage = '正在加载音频…';
   DateTime? sleepAt;
   Timer? _sleep;
   DateTime _savedAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -318,15 +319,57 @@ class AudioBookSession extends ChangeNotifier {
   Future<void> _loads = Future.value();
   List<AudioBookTrack> _tracks = [];
   bool _ready = false;
+  bool _acceptEvents = false;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   AudioBookPlayer? get player => _player;
+  Future<void> open(
+    MediaResource entry,
+    List<AudioBookTrack> sources, {
+    int? index,
+    bool restart = false,
+  }) async {
+    if (!restart &&
+        resource?.id == entry.id &&
+        _ready &&
+        error == null &&
+        (index == null || index == current)) {
+      return;
+    }
+    final task = load(entry, sources, index: index, resume: !restart);
+    final generation = _generation;
+    await task;
+    if (generation == _generation &&
+        resource?.id == entry.id &&
+        error == null) {
+      unawaited(play());
+    }
+  }
+
+  Future<void> retry() async {
+    final entry = resource;
+    if (entry == null || loading) return;
+    final task = load(
+      entry,
+      _tracks,
+      index: current,
+      initialPosition: position,
+    );
+    final generation = _generation;
+    await task;
+    if (generation == _generation && error == null) unawaited(play());
+  }
+
   Future<void> load(
     MediaResource entry,
     List<AudioBookTrack> sources, {
     int? index,
+    bool resume = false,
+    Duration? initialPosition,
   }) {
     final generation = ++_generation;
-    final task = _loads.then((_) => _load(entry, sources, index, generation));
+    final task = _loads.then(
+      (_) => _load(entry, sources, index, generation, resume, initialPosition),
+    );
     _loads = task.catchError((_) {});
     return task;
   }
@@ -336,17 +379,53 @@ class AudioBookSession extends ChangeNotifier {
     List<AudioBookTrack> sources,
     int? requested,
     int generation,
+    bool restore,
+    Duration? initialPosition,
   ) async {
     if (generation != _generation) return;
     _remember();
+    final previousId = resource?.id;
+    final previousIndex = current;
+    final previousPosition = position;
+    final wasReady = _ready;
+    _ready = false;
+    _acceptEvents = false;
+    _sleep?.cancel();
+    sleepAt = null;
     loading = true;
+    loadingMessage = '正在准备播放器…';
+    resource = entry;
+    current = requested ?? 0;
+    position = Duration.zero;
+    duration = Duration.zero;
+    playing = false;
     error = null;
     notifyListeners();
     _tracks = sources;
     try {
+      if (sources.isEmpty) throw const AudioBookFailure('资源没有可播放的章节');
       await PlaybackFocus.acquire('audioBook');
       await settings.load();
       if (generation != _generation) return;
+      final saved = settings.positions[entry.id];
+      final index = (requested ?? saved?['index'] ?? 0).clamp(
+        0,
+        sources.length - 1,
+      );
+      final resume =
+          initialPosition ??
+          (restore &&
+                  wasReady &&
+                  previousId == entry.id &&
+                  previousIndex == index
+              ? previousPosition
+              : requested == null || restore && saved?['index'] == index
+              ? Duration(milliseconds: saved?['position'] ?? 0)
+              : Duration.zero);
+      resource = entry;
+      position = resume;
+      duration = Duration.zero;
+      current = index;
       final policy = MediaPreload.instance;
       final configuration = '${policy.bufferSeconds}|${policy.capacityMb}';
       if (_player != null && _preloadConfiguration != configuration) {
@@ -365,7 +444,7 @@ class AudioBookSession extends ChangeNotifier {
         _preloadConfiguration = configuration;
         _subscriptions.addAll([
           _player!.position.listen((value) {
-            if (!_ready && !loading) return;
+            if (!_acceptEvents) return;
             if (!seeking) {
               position = value;
               notifyListeners();
@@ -376,21 +455,23 @@ class AudioBookSession extends ChangeNotifier {
             }
           }),
           _player!.duration.listen((value) {
-            if (!_ready && !loading) return;
+            if (!_acceptEvents) return;
             duration = value ?? Duration.zero;
             notifyListeners();
           }),
           _player!.playing.listen((value) {
+            if (!_acceptEvents) return;
             playing = value;
             notifyListeners();
             if (!loading && !value) _remember();
           }),
           _player!.index.listen((value) {
-            if (!_ready && !loading) return;
+            if (!_acceptEvents) return;
             current = value ?? 0;
             notifyListeners();
           }),
           _player!.errors.listen((message) {
+            if (!_acceptEvents) return;
             error = message;
             notifyListeners();
           }),
@@ -399,19 +480,37 @@ class AudioBookSession extends ChangeNotifier {
       _remember();
       await _player!.stop();
       if (generation != _generation) return;
-      final saved = settings.positions[entry.id];
-      final index = (requested ?? saved?['index'] ?? 0).clamp(
-        0,
-        sources.length - 1,
+      _acceptEvents = true;
+      loadingMessage = '正在加载音频…';
+      notifyListeners();
+      await _player!.load(
+        [
+          for (final track in sources)
+            if (track.resolve == null)
+              track
+            else
+              AudioBookTrack(
+                id: track.id,
+                episode: track.episode,
+                album: track.album,
+                cover: track.cover,
+                resolve: () async {
+                  if (generation == _generation && loading) {
+                    loadingMessage = '正在解析音频地址…';
+                    notifyListeners();
+                  }
+                  final audio = await track.resolve!();
+                  if (generation == _generation && loading) {
+                    loadingMessage = '正在缓冲音频…';
+                    notifyListeners();
+                  }
+                  return audio;
+                },
+              ),
+        ],
+        index: index,
+        position: resume,
       );
-      final resume = requested == null
-          ? Duration(milliseconds: saved?['position'] ?? 0)
-          : Duration.zero;
-      resource = entry;
-      position = resume;
-      duration = Duration.zero;
-      current = index;
-      await _player!.load(sources, index: index, position: resume);
       if (generation != _generation) return;
       await _player!.speed(settings.speed);
       _ready = true;
@@ -419,6 +518,7 @@ class AudioBookSession extends ChangeNotifier {
     } catch (failure, stack) {
       LumeLog.error('[audioBook] 加载失败: $failure', stack);
       if (generation == _generation) {
+        _acceptEvents = false;
         error = failure is AudioBookFailure
             ? failure.message
             : '音频加载失败，请检查地址、权限和网络';
@@ -445,7 +545,10 @@ class AudioBookSession extends ChangeNotifier {
 
   Future<void> play() async {
     if (loading) return;
-    if (!_ready && resource != null) await load(resource!, _tracks);
+    if (error != null || !_ready && resource != null) {
+      await retry();
+      return;
+    }
     if (_player == null || loading || error != null) return;
     try {
       await _player!.play();
@@ -519,6 +622,7 @@ class AudioBookSession extends ChangeNotifier {
     _sleep?.cancel();
     sleepAt = null;
     _ready = false;
+    _acceptEvents = false;
     await _player?.release();
     playing = false;
     notifyListeners();

@@ -1,3 +1,4 @@
+import '../../core/audio_book/audio_book_player.dart';
 import 'playback_entry_preparation.dart';
 import '../../core/source/source_content_type.dart';
 import '../reading/content_detail_router.dart';
@@ -312,6 +313,21 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         widget.item.id,
         sourceId: _source?.id ?? widget.sourceId,
       );
+      final audioEntry = MediaLibrary.instance.byId(
+        MediaResource.sourceKey(source.section, source.id, widget.item.id),
+      );
+      String? audioChapterId;
+      if (audioEntry?.kind == ResourceKind.audioBook) {
+        await AudioBookSettings.instance.load();
+        if (!mounted) return;
+        final session = AudioBookSession.instance;
+        final index = session.resource?.id == audioEntry!.id
+            ? session.current
+            : AudioBookSettings.instance.positions[audioEntry.id]?['index'];
+        if (index != null && index >= 0 && index < audioEntry.episodes.length) {
+          audioChapterId = audioEntry.episodes[index].id;
+        }
+      }
       var initialChapter = _initialChapterApplied
           ? null
           : widget.initialChapterId;
@@ -386,7 +402,11 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       final resumed =
           transferredChapter ??
           episodes
-              .where((e) => e.id == (initialChapter ?? saved?.chapterId))
+              .where(
+                (e) =>
+                    e.id ==
+                    (initialChapter ?? audioChapterId ?? saved?.chapterId),
+              )
               .firstOrNull;
       final rememberedLine = widget.library.setting(
         'video.line.work.${jsonEncode([source.id, widget.item.id])}',
@@ -398,7 +418,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           : VideoEpisodeCatalog.lineOf(resumed);
       final activeEpisodes = grouped[line] ?? <SourceChapter>[];
       var index = activeEpisodes.indexWhere(
-        (e) => e.id == (initialChapter ?? saved?.chapterId),
+        (e) => e.id == (initialChapter ?? audioChapterId ?? saved?.chapterId),
       );
       if (index < 0) index = 0;
       setState(() {
@@ -460,6 +480,27 @@ class _VideoDetailPageState extends State<VideoDetailPage>
     }
   }
 
+  void _syncAudioChapter(MediaResource entry) {
+    final session = AudioBookSession.instance;
+    if (!mounted ||
+        session.resource?.id != entry.id ||
+        entry.episodes.isEmpty) {
+      return;
+    }
+    final index = session.current.clamp(0, entry.episodes.length - 1);
+    final selectedIndex = chapters.indexWhere(
+      (e) => e.id == entry.episodes[index].id,
+    );
+    if (selectedIndex < 0) return;
+    setState(() {
+      selected = selectedIndex;
+      episodePage = selectedIndex ~/ 50;
+      compactEpisodeStart = selectedIndex ~/ 10 * 10;
+    });
+  }
+
+  bool _restartAudio = false;
+
   Future<void> play() async {
     if (resolving || chapters.isEmpty) return;
     setState(() {
@@ -470,6 +511,31 @@ class _VideoDetailPageState extends State<VideoDetailPage>
     PlayerPrelaunch? prepared;
     try {
       final chapter = chapters[selected];
+      await MediaLibrary.instance.boot();
+      final known = MediaLibrary.instance.byId(
+        MediaResource.sourceKey(_source!.section, _source!.id, widget.item.id),
+      );
+      if (known?.kind == ResourceKind.audioBook) {
+        final entry = await MediaResourceService().source(
+          source: _source!,
+          item: widget.item,
+          chapters: chapters,
+          hint: ResourceKind.audioBook,
+          trackInfo: const MediaTrackInfo(known: true, audio: true),
+          deferContent: true,
+        );
+        if (!mounted) return;
+        await openMediaResource(
+          context,
+          entry,
+          index: selected,
+          restartAudio: _restartAudio,
+        );
+        _restartAudio = false;
+        _syncAudioChapter(entry);
+        widget.library.refresh();
+        return;
+      }
       final direct = SourcePlayback.itemAddress(widget.item.id);
       ChapterContent? content;
       {
@@ -592,11 +658,14 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           context,
           entry,
           index: selected,
+          restartAudio: _restartAudio,
           initialMedia: ResolvedMedia(
             address,
             headers: SourcePlayback.contentHeaders(content, source: _source!),
           ),
         );
+        _restartAudio = false;
+        _syncAudioChapter(entry);
         widget.library.refresh();
         return;
       }
@@ -1566,7 +1635,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   }
 
   String get playLabel {
-    if (resolving) return '正在解析';
+    if (resolving) return '正在解析播放地址…';
     if (chapters.isEmpty) return '暂无可播放剧集';
     final progress = episodeProgress(selected);
     final label = VideoEpisodeCatalog.displayLabel(
@@ -1786,6 +1855,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
     setState(() {
       if (index != selected) lineResume = null;
       selected = index;
+      _restartAudio = true;
       compactEpisodeStart =
           (reversed ? chapters.length - 1 - selected : selected) ~/ 10 * 10;
     });

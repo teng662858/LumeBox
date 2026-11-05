@@ -85,6 +85,7 @@ class MediaResourceService {
     ResourceKind? hint,
     ChapterContent? firstContent,
     MediaTrackInfo? trackInfo,
+    bool deferContent = false,
   }) async {
     await library.boot();
     final id = MediaResource.sourceKey(source.section, source.id, item.id);
@@ -112,7 +113,7 @@ class MediaResourceService {
     }
     final content =
         firstContent ??
-        (chapters.isEmpty
+        (deferContent || chapters.isEmpty
             ? null
             : await source.content(
                 itemId: item.id,
