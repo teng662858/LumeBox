@@ -91,8 +91,15 @@ void main() {
         240,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.tap(find.text(category));
-      await tester.pumpAndSettle();
+      final probe = label == '缓存管理'
+          ? '存储与缓存'
+          : ['运行日志', '错误报告'].contains(label)
+          ? '问题排查'
+          : label;
+      if (find.text(probe).evaluate().isEmpty) {
+        await tester.tap(find.text(category));
+        await tester.pumpAndSettle();
+      }
     }
     final hub = label == '缓存管理'
         ? '存储与缓存'
@@ -315,6 +322,46 @@ void main() {
     expect(find.byTooltip('一键导入全部订阅源'), findsNothing);
   });
 
+  testWidgets('源仓库设置最多三级，首页分类展开不压栈', (tester) async {
+    final observer = _PageDepthObserver();
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const channel = MethodChannel('lumebox/source_repository');
+    messenger.setMockMethodCallHandler(channel, (_) async => '');
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    await tester.binding.setSurfaceSize(const Size(900, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        navigatorObservers: [observer],
+        home: const SettingsPage(runtimeAvailable: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('内容与订阅'));
+    await tester.pumpAndSettle();
+    expect(observer.depth, 1);
+    await tester.ensureVisible(find.text('源管理'));
+    await tester.tap(find.text('源管理'));
+    await tester.pumpAndSettle();
+    expect(observer.depth, 2);
+    await tester.scrollUntilVisible(
+      find.text('GitHub 仓库源管理'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('GitHub 仓库源管理'));
+    await tester.pumpAndSettle();
+    expect(observer.depth, 3);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(observer.depth, 2);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(observer.depth, 1);
+  });
+
   testWidgets('小说设置写入小说阅读器使用的现有设置', (tester) async {
     final library = await tester.runAsync(
       () => ReadingLibrary.open(Section.comic),
@@ -415,9 +462,7 @@ void main() {
     expect(find.text('各模块独立设置'), findsNothing);
     await scrollTo(tester, '播放器设置');
     expect(find.text('播放器设置'), findsOneWidget);
-    await tester.tap(find.text('播放器设置'));
-    await pumpIoAndSettle(tester);
-    expect(find.widgetWithText(AppBar, '播放器设置'), findsOneWidget);
+    await tester.ensureVisible(find.text('播放与选集'));
     await tester.tap(find.text('播放与选集'));
     await pumpIoAndSettle(tester);
     expect(find.text('后台播放'), findsOneWidget);
@@ -608,3 +653,16 @@ void main() {
 }
 
 DateTime _fixedNow() => DateTime(2026, 10, 4, 21, 33, 10);
+
+class _PageDepthObserver extends NavigatorObserver {
+  int depth = 0;
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute) depth++;
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PageRoute) depth--;
+  }
+}

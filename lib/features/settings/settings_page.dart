@@ -3,6 +3,7 @@ import '../reading/continue_activity_page.dart';
 import 'performance_page.dart';
 import '../comic/download_center_page.dart';
 import '../video/player_settings_host.dart';
+import '../video/danmaku/danmaku_sources_page.dart';
 import '../comic/comic_reader_settings_host.dart';
 
 import 'package:lume_box/shared/widgets/lume_icon.dart';
@@ -122,7 +123,7 @@ class SettingsPage extends StatelessWidget {
             keywords: entry.text == '个性与界面'
                 ? '外观 主题色 页面底色 App 图标 应用图标库'
                 : entry.text == '阅读与播放'
-                ? '触感反馈 触感强度 后台播放 字号 行距 朗读 漫画 图片工具 音频 内核 弹幕'
+                ? '播放器设置 视频播放器 触感反馈 触感强度 后台播放 字号 行距 朗读 漫画 图片工具 音频 内核 弹幕'
                 : '',
           ),
         );
@@ -233,23 +234,71 @@ class SettingsPage extends StatelessWidget {
         ),
       ),
     ),
+    const Padding(
+      padding: EdgeInsets.fromLTRB(4, 12, 4, 10),
+      child: Text('播放器设置', style: TextStyle(fontWeight: FontWeight.w600)),
+    ),
+    for (final entry in const [
+      ('playback', '播放与选集', '播放速度、画质与选集偏好', Icons.play_circle_outline),
+      ('intro', '片头片尾', '跳过片头片尾与同剧记忆', Icons.skip_next_outlined),
+      ('picture', '画面与显示', '缩放、画面比例与方向', Icons.aspect_ratio),
+      ('audio', '声音与字幕', '字幕样式、音轨与延迟', Icons.closed_caption_outlined),
+      ('danmaku', '弹幕与匹配', '弹幕样式、屏蔽与匹配', Icons.chat_bubble_outline),
+      ('controls', '手势与外观', '控制栏样式与手势灵敏度', Icons.touch_app_outlined),
+      (
+        'advanced',
+        '内核与网络',
+        '播放内核、解码和网络选项',
+        Icons.settings_input_component_outlined,
+      ),
+    ])
+      SettingsEntryCard(
+        icon: entry.$4,
+        title: entry.$2,
+        subtitle: entry.$3,
+        searchTargets: switch (entry.$1) {
+          'playback' => {
+            '视频播放器': () => _push(
+              context,
+              const PlayerSettingsHost(focusCategory: 'playback'),
+            ),
+            '播放倍速': () => _push(
+              context,
+              const PlayerSettingsHost(focusCategory: 'playback'),
+            ),
+            '后台播放': () => _push(
+              context,
+              const PlayerSettingsHost(focusCategory: 'playback'),
+            ),
+          },
+          'audio' => {
+            '字幕': () => _push(
+              context,
+              const PlayerSettingsHost(focusCategory: 'audio'),
+            ),
+          },
+          'danmaku' => {
+            '弹幕': () => _push(
+              context,
+              const PlayerSettingsHost(focusCategory: 'danmaku'),
+            ),
+          },
+          _ => {},
+        },
+        onTap: () =>
+            _push(context, PlayerSettingsHost(focusCategory: entry.$1)),
+      ),
     SettingsEntryCard(
-      icon: Icons.play_circle_outline,
-      title: '播放器设置',
-      subtitle: '视频、音频、字幕、弹幕与后台播放',
-      searchTargets: {
-        '视频播放器': () => _push(context, const PlayerSettingsHost()),
-        '播放倍速': () =>
-            _push(context, const PlayerSettingsHost(focusCategory: 'playback')),
-        '音频播放器': () => _push(context, const AudioPlaybackSettingsPage()),
-        '字幕': () =>
-            _push(context, const PlayerSettingsHost(focusCategory: 'audio')),
-        '弹幕': () =>
-            _push(context, const PlayerSettingsHost(focusCategory: 'danmaku')),
-        '后台播放': () =>
-            _push(context, const PlayerSettingsHost(focusCategory: 'playback')),
-      },
-      onTap: () => _push(context, const PlayerSettingsHost()),
+      icon: Icons.comment_outlined,
+      title: '弹幕服务',
+      subtitle: '内置本机服务 · 弹弹play · 自定义服务器',
+      onTap: () => _push(context, const DanmakuSourcesPage()),
+    ),
+    SettingsEntryCard(
+      icon: Icons.headphones_outlined,
+      title: '音频播放器',
+      subtitle: '独立音频内核 · 后台与锁屏控制',
+      onTap: () => _push(context, const AudioPlaybackSettingsPage()),
     ),
     SettingsEntryCard(
       icon: Icons.history,
@@ -316,39 +365,21 @@ class SettingsPage extends StatelessWidget {
               subtitle: '更新漫画、视频和猫源订阅',
               onTap: () => _push(context, const SubscriptionSyncPage()),
             ),
+            const SettingsGroupTitle('高级导入与仓库'),
             SettingsEntryCard(
-              icon: Icons.settings_outlined,
-              title: '高级导入与仓库',
-              subtitle: '总订阅、TVBox 与 GitHub 仓库',
-              onTap: () => _push(
-                context,
-                SettingsCategoryPage(
-                  category: SettingsCategory(
-                    '高级导入与仓库',
-                    '导入配置和管理仓库',
-                    Icons.settings_outlined,
-                    [
-                      SettingsEntryCard(
-                        icon: Icons.subscriptions_outlined,
-                        title: '总订阅导入导出',
-                        onTap: () =>
-                            _push(context, const TotalSubscriptionPage()),
-                      ),
-                      SettingsEntryCard(
-                        icon: Icons.playlist_add,
-                        title: 'TVBox 聚合配置导入',
-                        onTap: () => _push(context, const TvBoxImportPage()),
-                      ),
-                      SettingsEntryCard(
-                        icon: Icons.cloud_upload_outlined,
-                        title: 'GitHub 仓库源管理',
-                        onTap: () =>
-                            _push(context, const SourceRepositoryPage()),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              icon: Icons.subscriptions_outlined,
+              title: '总订阅导入导出',
+              onTap: () => _push(context, const TotalSubscriptionPage()),
+            ),
+            SettingsEntryCard(
+              icon: Icons.playlist_add,
+              title: 'TVBox 聚合配置导入',
+              onTap: () => _push(context, const TvBoxImportPage()),
+            ),
+            SettingsEntryCard(
+              icon: Icons.cloud_upload_outlined,
+              title: 'GitHub 仓库源管理',
+              onTap: () => _push(context, const SourceRepositoryPage()),
             ),
           ]),
         ),

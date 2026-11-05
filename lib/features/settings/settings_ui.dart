@@ -349,11 +349,7 @@ class SettingsHome extends StatefulWidget {
 
 class _SettingsHomeState extends State<SettingsHome> {
   String query = '';
-  void open(SettingsCategory category) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (_) => SettingsCategoryPage(category: category),
-    ),
-  );
+  String? expanded;
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
@@ -417,9 +413,20 @@ class _SettingsHomeState extends State<SettingsHome> {
         for (final category in matches) ...[
           _SettingsCategoryCard(
             category: category,
-            onTap: () => open(category),
+            expanded: expanded == category.title,
+            onTap: () => setState(() {
+              expanded = expanded == category.title ? null : category.title;
+            }),
           ),
-          if (search.isNotEmpty)
+          if (expanded == category.title)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: category.children,
+              ),
+            ),
+          if (search.isNotEmpty && expanded != category.title)
             for (final entry
                 in category.children.whereType<SettingsEntryCard>())
               for (final target in entry.searchTargets.entries)
@@ -430,7 +437,7 @@ class _SettingsHomeState extends State<SettingsHome> {
                     subtitle: entry.title,
                     onTap: target.value,
                   ),
-          if (search.isNotEmpty)
+          if (search.isNotEmpty && expanded != category.title)
             for (final entry
                 in category.children.whereType<SettingsEntryCard>())
               if (('${entry.title} ${entry.subtitle}').toLowerCase().contains(
@@ -447,10 +454,15 @@ class _SettingsHomeState extends State<SettingsHome> {
 
 /// 首页入口使用柔和高光和阴影，保持各分类入口的触控面积与搜索行为。
 class _SettingsCategoryCard extends StatelessWidget {
-  const _SettingsCategoryCard({required this.category, required this.onTap});
+  const _SettingsCategoryCard({
+    required this.category,
+    required this.onTap,
+    required this.expanded,
+  });
 
   final SettingsCategory category;
   final VoidCallback onTap;
+  final bool expanded;
 
   Color _categoryColor() => switch (category.title) {
     '阅读与播放' => const Color(0xFF6851C5),
@@ -554,7 +566,9 @@ class _SettingsCategoryCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Icon(
-                  Icons.chevron_right_rounded,
+                  expanded
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded,
                   size: 21,
                   color: LumeTheme.muted,
                 ),

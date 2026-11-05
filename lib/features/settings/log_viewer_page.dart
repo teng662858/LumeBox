@@ -48,7 +48,7 @@ class _LogViewerPageState extends State<LogViewerPage> {
   }
 
   void _export() {
-    Navigator.of(context).push(
+    Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => LogReportPage(exporter: widget.exporter),
       ),
