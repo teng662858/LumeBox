@@ -30,6 +30,64 @@ void main() {
     [source],
   );
 
+  test(
+    'batch additions and alias deletions use one candidate commit',
+    () async {
+      final requests = <http.Request>[];
+      final repo = GithubSourceRepository(
+        'token',
+        client: MockClient((request) async {
+          requests.add(request);
+          if (request.url.path.endsWith('/git/blobs')) {
+            return http.Response('{"sha":"newBlob"}', 201);
+          }
+          if (request.url.path.endsWith('/git/trees')) {
+            final entries = jsonDecode(request.body)['tree'] as List;
+            expect(entries.map((e) => e['path']).toSet(), {
+              'movie/旧源.js',
+              'video/旧源.js',
+              'movie/a.js',
+              'movie/b.js',
+            });
+            expect(entries.where((e) => e['sha'] == null).length, 2);
+            return http.Response('{"sha":"newTree"}', 201);
+          }
+          if (request.url.path.endsWith('/git/commits')) {
+            expect(jsonDecode(request.body)['parents'], ['base']);
+            return http.Response('{"sha":"candidate"}', 201);
+          }
+          return http.Response('{"ref":"candidate"}', 201);
+        }),
+      );
+      addTearDown(repo.close);
+      final uploads = [
+        GithubSourceRepository.prepareUpload('a.js', script(id: 'a')),
+        GithubSourceRepository.prepareUpload('b.js', script(id: 'b')),
+      ];
+      final result = await repo.applyBatch(
+        snapshot,
+        additions: uploads,
+        removals: [source],
+      );
+      expect(result.installPaths, ['movie/a.js', 'movie/b.js']);
+      expect(
+        requests.where((r) => r.url.path.endsWith('/git/commits')).length,
+        1,
+      );
+      expect(requests.where((r) => r.url.path.endsWith('/git/refs')).length, 1);
+      final before = requests.length;
+      await expectLater(
+        repo.applyBatch(
+          snapshot,
+          additions: [uploads.first, uploads.first],
+          removals: [],
+        ),
+        throwsA(isA<RepositoryFailure>()),
+      );
+      expect(requests.length, before);
+    },
+  );
+
   test('upload validates category, UTF-8, paths, metadata and limits before any write', () {
     expect(
       GithubSourceRepository.validateUpload('movie/测试.js', script()).id,

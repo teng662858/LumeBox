@@ -30,6 +30,7 @@ void main() {
     (tester) async {
       final store = MemoryCredentialStore();
       var writes = 0;
+      Map<String, dynamic>? submittedTree;
       final catalog = jsonEncode({
         'sources': [
           {
@@ -37,6 +38,13 @@ void main() {
             'name': '远端测试源',
             'version': '1',
             'path': 'movie/测试.js',
+            'aliases': [],
+          },
+          {
+            'id': 'two',
+            'name': '第二个源',
+            'version': '1',
+            'path': 'movie/第二.js',
             'aliases': [],
           },
         ],
@@ -50,6 +58,9 @@ void main() {
               client: MockClient((request) async {
                 if (request.method != 'GET') {
                   writes++;
+                  if (request.url.path.endsWith('/git/trees')) {
+                    submittedTree = jsonDecode(request.body);
+                  }
                   return http.Response(
                     jsonEncode(
                       request.url.path.endsWith('/git/trees')
@@ -88,6 +99,12 @@ void main() {
                       {
                         'path': 'movie/测试.js',
                         'sha': 'source',
+                        'type': 'blob',
+                        'mode': '100644',
+                      },
+                      {
+                        'path': 'movie/第二.js',
+                        'sha': 'source2',
                         'type': 'blob',
                         'mode': '100644',
                       },
@@ -142,20 +159,48 @@ void main() {
       expect(find.text('远端测试源'), findsOneWidget);
       await tester.drag(find.byType(ListView).first, const Offset(0, -120));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('从 GitHub 删除源'));
-      // Confirmation holds the operation lock, so its progress bar keeps animating.
+      await tester.tap(find.byTooltip('标记删除').first);
+      await tester.pumpAndSettle();
+      expect(writes, 0);
+      await tester.scrollUntilVisible(
+        find.text('第二个源'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.byTooltip('标记删除').first);
+      await tester.pumpAndSettle();
+      expect(writes, 0);
+      await tester.scrollUntilVisible(
+        find.text('一次提交并发布全部变更'),
+        -200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.scrollUntilVisible(
+        find.text('待提交：新增 0，删除 2'),
+        -150,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('待提交：新增 0，删除 2'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('一次提交并发布全部变更'),
+        150,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('一次提交并发布全部变更'));
       await tester.pump(const Duration(milliseconds: 350));
       expect(find.textContaining('影响所有订阅用户'), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       expect(writes, 0);
-      await tester.drag(find.byType(ListView).first, const Offset(0, -100));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('从 GitHub 删除源'));
+      await tester.tap(find.text('一次提交并发布全部变更'));
       await tester.pump(const Duration(milliseconds: 350));
       await tester.tap(find.text('确认提交'));
       await pumpIoAndSettle(tester);
       expect(writes, 3);
+      expect((submittedTree!['tree'] as List).map((e) => e['path']).toSet(), {
+        'movie/测试.js',
+        'movie/第二.js',
+      });
       expect(
         RepositoryOperation.parse(store.value['operation'])?.commit,
         'candidate',

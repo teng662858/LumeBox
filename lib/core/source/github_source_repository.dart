@@ -391,6 +391,65 @@ class GithubSourceRepository {
     ], '删除 ${source.name}');
   }
 
+  /// Submit all staged changes as one candidate commit and one publication.
+  Future<RepositoryOperation> applyBatch(
+    RepositorySnapshot snapshot, {
+    required List<RepositoryUpload> additions,
+    required List<RepositorySource> removals,
+  }) async {
+    if (additions.isEmpty && removals.isEmpty) {
+      throw const RepositoryFailure('没有待提交的源');
+    }
+    final removedPaths = <String>{};
+    final removedIds = <String>{};
+    for (final source in removals) {
+      if (!snapshot.sources.contains(source) ||
+          !removedIds.add(source.id) ||
+          source.paths.any(
+            (p) => !validPath(p) || !snapshot.files.containsKey(p),
+          )) {
+        throw const RepositoryFailure('仓库源已变化，请刷新后重新选择');
+      }
+      removedPaths.addAll(source.paths);
+    }
+    final paths = <String>{};
+    final ids = <String>{};
+    for (final upload in additions) {
+      final meta = validateUpload(upload.path, upload.bytes);
+      if (!paths.add(upload.path) ||
+          !ids.add(meta.id) ||
+          (snapshot.files.containsKey(upload.path) &&
+              !removedPaths.contains(upload.path)) ||
+          snapshot.sources.any(
+            (s) => s.id == meta.id && !removedIds.contains(s.id),
+          )) {
+        throw const RepositoryFailure('待添加的源存在重复 ID 或路径，请核对后重试');
+      }
+    }
+    final entries = <Map<String, Object?>>[
+      for (final path in removedPaths.difference(paths))
+        {'path': path, 'mode': '100644', 'type': 'blob', 'sha': null},
+    ];
+    for (final upload in additions) {
+      final blob = await _api('POST', 'git/blobs', {
+        'content': base64Encode(upload.bytes),
+        'encoding': 'base64',
+      });
+      entries.add({
+        'path': upload.path,
+        'mode': '100644',
+        'type': 'blob',
+        'sha': blob['sha'],
+      });
+    }
+    return _candidate(
+      snapshot,
+      entries,
+      '批量更新源（新增 ${additions.length}，删除 ${removals.length}）',
+      installPaths: additions.map((upload) => upload.path).toList(),
+    );
+  }
+
   Future<RepositoryOperation> _candidate(
     RepositorySnapshot snapshot,
     List<Map<String, Object?>> entries,
