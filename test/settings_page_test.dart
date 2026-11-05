@@ -305,9 +305,7 @@ void main() {
   testWidgets('图源总管理：设置页内的子页面入口仍在', (tester) async {
     await pumpSettings(tester);
 
-    await scrollTo(tester, '源管理');
-    expect(find.text('一键导入全部订阅源'), findsOneWidget);
-    await tester.tap(find.text('源管理'));
+    await tester.tap(find.byKey(const ValueKey('settings-category-源管理')));
     await pumpIoAndSettle(tester);
 
     expect(find.widgetWithText(AppBar, '源总管理'), findsOneWidget);

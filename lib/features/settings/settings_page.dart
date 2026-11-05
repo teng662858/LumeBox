@@ -100,7 +100,7 @@ class SettingsPage extends StatelessWidget {
       '个性与界面': '外观、配色与图标',
       '导航与首页': '首页布局、导航与液态玻璃',
       '阅读与播放': '小说、漫画、播放器与共用体验',
-      '内容与订阅': '订阅、源与搜索偏好',
+      '内容与订阅': '订阅更新、导入与仓库维护',
       '网络与服务': '网络连接与第三方服务',
       '存储与安全': '缓存、备份与隐私保护',
       '诊断与关于': '使用帮助、诊断与版本信息',
@@ -145,9 +145,20 @@ class SettingsPage extends StatelessWidget {
         groups.last.children.add(entry);
       }
     }
+    groups.add(
+      SettingsCategory(
+        '源管理',
+        '添加源、批量检测和管理站点',
+        Icons.layers_outlined,
+        const [],
+        status: () => '全部站点',
+        onTap: () => _push(context, const GlobalSourcePage()),
+      ),
+    );
     const priority = [
       '阅读与播放',
       '内容与订阅',
+      '源管理',
       '个性与界面',
       '导航与首页',
       '存储与安全',
@@ -248,6 +259,12 @@ class SettingsPage extends StatelessWidget {
       onTap: () => _push(context, const ContentVisibilityPage()),
     ),
 
+    SettingsEntryCard(
+      icon: Icons.search,
+      title: '搜索',
+      subtitle: '搜索自动繁转简 / 精确搜索',
+      onTap: () => _push(context, const SearchSettingsPage()),
+    ),
     const SettingsGroupTitle('阅读与播放'),
     const SettingsGroupTitle('阅读', topPadding: 0),
     SettingsEntryCard(
@@ -358,12 +375,6 @@ class SettingsPage extends StatelessWidget {
     const SettingsGroupTitle('内容与订阅'),
     const SettingsGroupTitle('源与订阅', topPadding: 0),
     const TotalSubscriptionImportEntry(),
-    SettingsEntryCard(
-      icon: Icons.playlist_add,
-      title: '源管理',
-      subtitle: '添加源、批量检测和管理漫画与视频站点',
-      onTap: () => _push(context, const GlobalSourcePage()),
-    ),
     for (final section in [Section.comic, Section.video])
       SettingsEntryCard(
         icon: Icons.subscriptions_outlined,
@@ -404,12 +415,6 @@ class SettingsPage extends StatelessWidget {
       icon: Icons.cloud_upload_outlined,
       title: '仓库维护',
       onTap: () => _push(context, const SourceRepositoryPage()),
-    ),
-    SettingsEntryCard(
-      icon: Icons.search,
-      title: '搜索',
-      subtitle: '搜索自动繁转简 / 精确搜索',
-      onTap: () => _push(context, const SearchSettingsPage()),
     ),
     const SettingsGroupTitle('网络与服务'),
     SettingsEntryCard(

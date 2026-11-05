@@ -404,7 +404,9 @@ class SettingsCategory {
     this.children, {
     this.keywords = '',
     this.status,
+    this.onTap,
   });
+  final VoidCallback? onTap;
   final String title, description, keywords;
   final String Function()? status;
   final IconData icon;
@@ -512,6 +514,10 @@ class _SettingsHomeState extends State<SettingsHome> {
 
   Future<void> _openCategory(SettingsCategory category) async {
     FocusManager.instance.primaryFocus?.unfocus();
+    if (category.onTap != null) {
+      category.onTap!();
+      return;
+    }
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => SettingsCategoryPage(category: category),
