@@ -169,6 +169,11 @@ void main() {
         );
         await tester.tap(find.text('个性与界面'));
         await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.byType(DisplaySettingsGroup),
+          180,
+          scrollable: find.byType(Scrollable).first,
+        );
         expect(find.byType(DisplaySettingsGroup), findsOneWidget);
         await tester.scrollUntilVisible(
           find.text('页面底色').hitTestable(),

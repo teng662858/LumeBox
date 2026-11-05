@@ -148,45 +148,7 @@ class SettingsPage extends StatelessWidget {
       effectModule: GlassModule.settings,
       behindBar: true,
       title: '设置',
-      child: SettingsHome(
-        categories: groups,
-        header: GlassCard(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('源与订阅', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 6),
-              const Text(
-                '管理已安装的源，或同步订阅获取更新。',
-                style: TextStyle(color: settingsNoteColor, height: 1.5),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: () => _push(context, const GlobalSourcePage()),
-                    icon: const Icon(Icons.tune, size: 18),
-                    label: const Text('管理源'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        _push(context, const SubscriptionSyncPage()),
-                    icon: const Icon(Icons.sync, size: 18),
-                    label: const Text('同步订阅'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        footer: const Padding(
-          padding: EdgeInsets.only(top: 24),
-          child: _BuildInfoRow(),
-        ),
-      ),
+      child: SettingsHome(categories: groups),
     );
   }
 
@@ -247,25 +209,30 @@ class SettingsPage extends StatelessWidget {
         '漫画翻页': () => _push(context, const ComicReaderSettingsHost()),
         'AI 图片超分与上色': () => _push(context, const ComicImageToolsSettingsPage()),
       },
-      onTap: null,
-      inlineCategory: SettingsCategory(
-        '漫画设置',
-        '阅读与图片处理',
-        Icons.auto_stories_outlined,
-        [
-          SettingsEntryCard(
-            icon: Icons.auto_stories_outlined,
-            title: '漫画阅读器设置',
-            subtitle: '布局、翻页、自动阅读与图片翻译',
-            onTap: () => _push(context, const ComicReaderSettingsHost()),
+      onTap: () => _push(
+        context,
+        SettingsCategoryPage(
+          category: SettingsCategory(
+            '漫画设置',
+            '阅读与图片处理',
+            Icons.auto_stories_outlined,
+            [
+              SettingsEntryCard(
+                icon: Icons.auto_stories_outlined,
+                title: '漫画阅读器设置',
+                subtitle: '布局、翻页、自动阅读与图片翻译',
+                onTap: () => _push(context, const ComicReaderSettingsHost()),
+              ),
+              SettingsEntryCard(
+                icon: Icons.auto_fix_high_outlined,
+                title: 'AI 图片超分与上色',
+                subtitle: '漫画 / 美图 AI 超分、上色与模型管理',
+                onTap: () =>
+                    _push(context, const ComicImageToolsSettingsPage()),
+              ),
+            ],
           ),
-          SettingsEntryCard(
-            icon: Icons.auto_fix_high_outlined,
-            title: 'AI 图片超分与上色',
-            subtitle: '漫画 / 美图 AI 超分、上色与模型管理',
-            onTap: () => _push(context, const ComicImageToolsSettingsPage()),
-          ),
-        ],
+        ),
       ),
     ),
     const Padding(
@@ -370,58 +337,63 @@ class SettingsPage extends StatelessWidget {
             _push(context, const PrivateSubscriptionSettingsPage()),
         '一键同步全部订阅': () => _push(context, const SubscriptionSyncPage()),
       },
-      onTap: null,
-      inlineCategory: SettingsCategory('源管理', '添加、检查和更新站点与订阅', Icons.tune, [
-        const TotalSubscriptionImportEntry(),
-        SettingsEntryCard(
-          icon: Icons.playlist_add,
-          title: '添加与管理源',
-          subtitle: '添加源、批量检测和管理漫画与视频站点',
-          onTap: () => _push(context, const GlobalSourcePage()),
+      onTap: () => _push(
+        context,
+        SettingsCategoryPage(
+          category: SettingsCategory('源管理', '添加、检查和更新站点与订阅', Icons.tune, [
+            const TotalSubscriptionImportEntry(),
+            SettingsEntryCard(
+              icon: Icons.playlist_add,
+              title: '添加与管理源',
+              subtitle: '添加源、批量检测和管理漫画与视频站点',
+              onTap: () => _push(context, const GlobalSourcePage()),
+            ),
+            for (final section in [Section.comic, Section.video])
+              SettingsEntryCard(
+                icon: Icons.subscriptions_outlined,
+                title: '${section.label}订阅',
+                subtitle: '添加、选择安装及更新订阅源',
+                onTap: () =>
+                    _push(context, SourceSubscriptionPage(section: section)),
+              ),
+            SettingsEntryCard(
+              icon: Icons.pets_outlined,
+              title: '猫源订阅',
+              subtitle: '管理猫源订阅和站点',
+              onTap: () => _push(context, const CatSubscriptionPage()),
+            ),
+            SettingsEntryCard(
+              icon: Icons.sync,
+              title: '一键同步全部订阅',
+              subtitle: '更新漫画、视频和猫源订阅',
+              onTap: () => _push(context, const SubscriptionSyncPage()),
+            ),
+            const SettingsGroupTitle('高级导入与仓库'),
+            SettingsEntryCard(
+              icon: Icons.lock_outline,
+              title: '私有 GitHub 订阅',
+              subtitle: '配置仓库和只读 Token',
+              onTap: () =>
+                  _push(context, const PrivateSubscriptionSettingsPage()),
+            ),
+            SettingsEntryCard(
+              icon: Icons.subscriptions_outlined,
+              title: '总订阅导入导出',
+              onTap: () => _push(context, const TotalSubscriptionPage()),
+            ),
+            SettingsEntryCard(
+              icon: Icons.playlist_add,
+              title: 'TVBox 聚合配置导入',
+              onTap: () => _push(context, const TvBoxImportPage()),
+            ),
+            SettingsEntryCard(
+              icon: Icons.cloud_upload_outlined,
+              title: '仓库维护',
+              onTap: () => _push(context, const SourceRepositoryPage()),
+            ),
+          ]),
         ),
-        for (final section in [Section.comic, Section.video])
-          SettingsEntryCard(
-            icon: Icons.subscriptions_outlined,
-            title: '${section.label}订阅',
-            subtitle: '添加、选择安装及更新订阅源',
-            onTap: () =>
-                _push(context, SourceSubscriptionPage(section: section)),
-          ),
-        SettingsEntryCard(
-          icon: Icons.pets_outlined,
-          title: '猫源订阅',
-          subtitle: '管理猫源订阅和站点',
-          onTap: () => _push(context, const CatSubscriptionPage()),
-        ),
-        SettingsEntryCard(
-          icon: Icons.sync,
-          title: '一键同步全部订阅',
-          subtitle: '更新漫画、视频和猫源订阅',
-          onTap: () => _push(context, const SubscriptionSyncPage()),
-        ),
-        const SettingsGroupTitle('高级导入与仓库'),
-        SettingsEntryCard(
-          icon: Icons.lock_outline,
-          title: '私有 GitHub 订阅',
-          subtitle: '配置仓库和只读 Token',
-          onTap: () => _push(context, const PrivateSubscriptionSettingsPage()),
-        ),
-        SettingsEntryCard(
-          icon: Icons.subscriptions_outlined,
-          title: '总订阅导入导出',
-          onTap: () => _push(context, const TotalSubscriptionPage()),
-        ),
-        SettingsEntryCard(
-          icon: Icons.playlist_add,
-          title: 'TVBox 聚合配置导入',
-          onTap: () => _push(context, const TvBoxImportPage()),
-        ),
-        SettingsEntryCard(
-          icon: Icons.cloud_upload_outlined,
-          title: '仓库维护',
-          onTap: () => _push(context, const SourceRepositoryPage()),
-        ),
-      ]),
+      ),
     ),
     SettingsEntryCard(
       icon: Icons.search,
@@ -478,26 +450,30 @@ class SettingsPage extends StatelessWidget {
         '预载与清理': () => _push(context, const PreloadSettingsPage()),
         '缓存管理': () => _push(context, CacheSettingsPage(service: cacheService)),
       },
-      onTap: null,
-      inlineCategory: SettingsCategory(
-        '存储与缓存',
-        '按需调整预载，查看和清理占用',
-        Icons.storage_outlined,
-        [
-          SettingsEntryCard(
-            icon: Icons.downloading_outlined,
-            title: '预载与清理',
-            subtitle: '视频 / 图片 / 音频预载与自动清理策略',
-            onTap: () => _push(context, const PreloadSettingsPage()),
+      onTap: () => _push(
+        context,
+        SettingsCategoryPage(
+          category: SettingsCategory(
+            '存储与缓存',
+            '按需调整预载，查看和清理占用',
+            Icons.storage_outlined,
+            [
+              SettingsEntryCard(
+                icon: Icons.downloading_outlined,
+                title: '预载与清理',
+                subtitle: '视频 / 图片 / 音频预载与自动清理策略',
+                onTap: () => _push(context, const PreloadSettingsPage()),
+              ),
+              SettingsEntryCard(
+                icon: Icons.cleaning_services_outlined,
+                title: '缓存管理',
+                subtitle: '按板块统计和清理，不删除收藏及已保存内容',
+                onTap: () =>
+                    _push(context, CacheSettingsPage(service: cacheService)),
+              ),
+            ],
           ),
-          SettingsEntryCard(
-            icon: Icons.cleaning_services_outlined,
-            title: '缓存管理',
-            subtitle: '按板块统计和清理，不删除收藏及已保存内容',
-            onTap: () =>
-                _push(context, CacheSettingsPage(service: cacheService)),
-          ),
-        ],
+        ),
       ),
     ),
     SettingsEntryCard(
@@ -540,22 +516,27 @@ class SettingsPage extends StatelessWidget {
         '沙箱设置': () => _push(context, const SandboxSettingsPage()),
         '调试面板': () => _push(context, const DebugPanelPage()),
       },
-      onTap: null,
-      inlineCategory: SettingsCategory('高级设置', '脚本执行与开发排查工具', Icons.tune, [
-        SettingsEntryCard(
-          icon: Icons.hourglass_bottom_outlined,
-          title: '沙箱设置',
-          subtitle: '脚本执行超时与运行限制',
-          onTap: () => _push(context, const SandboxSettingsPage()),
+      onTap: () => _push(
+        context,
+        SettingsCategoryPage(
+          category: SettingsCategory('高级设置', '脚本执行与开发排查工具', Icons.tune, [
+            SettingsEntryCard(
+              icon: Icons.hourglass_bottom_outlined,
+              title: '沙箱设置',
+              subtitle: '脚本执行超时与运行限制',
+              onTap: () => _push(context, const SandboxSettingsPage()),
+            ),
+            SettingsEntryCard(
+              icon: Icons.bug_report_outlined,
+              title: '调试面板',
+              subtitle: '请求抓包与 JS 上下文统计；抓包默认关闭',
+              onTap: () => _push(context, const DebugPanelPage()),
+            ),
+          ]),
         ),
-        SettingsEntryCard(
-          icon: Icons.bug_report_outlined,
-          title: '调试面板',
-          subtitle: '请求抓包与 JS 上下文统计；抓包默认关闭',
-          onTap: () => _push(context, const DebugPanelPage()),
-        ),
-      ]),
+      ),
     ),
+    const _BuildInfoRow(),
   ];
 
   Widget _diagnostics(BuildContext context) => SettingsCategoryPage(

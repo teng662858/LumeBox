@@ -345,13 +345,16 @@ void main() {
     await tester.ensureVisible(find.text('源管理'));
     await tester.tap(find.text('源管理'));
     await tester.pumpAndSettle();
-    expect(observer.depth, 1);
+    expect(observer.depth, 2);
     await tester.scrollUntilVisible(
-      find.text('仓库维护').hitTestable(),
+      find.text('仓库维护'),
       200,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.tap(find.text('仓库维护'));
+    await tester.pumpAndSettle();
+    expect(observer.depth, 3);
+    await tester.pageBack();
     await tester.pumpAndSettle();
     expect(observer.depth, 2);
     await tester.pageBack();
