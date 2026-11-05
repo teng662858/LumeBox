@@ -9,9 +9,7 @@ import '../../core/source/github_source_repository.dart';
 import '../../core/source/source.dart';
 import '../../core/source/source_import_routing.dart';
 import '../../core/source/source_content_category.dart';
-import '../../core/source/source_subscription_sync.dart';
 import '../../core/session/section.dart';
-import 'source_import_dialog.dart';
 import 'source_import_flow.dart';
 import '../../shared/widgets/glass_card.dart';
 
@@ -221,11 +219,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
   Future<void> _publish() => _run(() async {
     final operation = _operation;
     if (operation == null || !operation.manual || operation.dispatched) return;
-    if (!await _confirm(
-          '手动发布',
-          '将发布已提交的变更，更新并核对仓库订阅。',
-          confirmLabel: '确认发布',
-        ) ||
+    if (!await _confirm('手动发布', '将发布已提交的变更，更新并核对仓库订阅。', confirmLabel: '确认发布') ||
         !mounted) {
       return;
     }
@@ -270,7 +264,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
       final text = utf8.decode(bytes);
       if (!RegExp(r'(?://|#)\s*@?LumeSource\s*[:=]').hasMatch(text)) {
         throw const RepositoryFailure(
-          '此文件没有仓库源声明；REX 等模块请使用“添加到本机”，无需上传 GitHub',
+          '此文件没有仓库源声明；REX 等模块请在源管理中使用“导入源”，无需上传 GitHub',
         );
       }
       var inferred = SourceImportRouting.repositoryKind(
@@ -425,37 +419,6 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _localImport() => _run(() async {
-    final request = await showDialog<SourceImportRequest>(
-      context: context,
-      builder: (_) => const SourceImportDialog(
-        sections: [Section.comic, Section.video],
-        initialSection: Section.video,
-      ),
-    );
-    if (request == null || !mounted) return;
-    await importSources(
-      context,
-      manager: _manager(request.section),
-      section: request.section,
-      items: request.items,
-      skipped: request.skipped,
-      notes: request.notes,
-      managers: {
-        for (final s in [Section.comic, Section.video]) s: _manager(s),
-      },
-    );
-    if (request.subscriptionUrls.isNotEmpty) {
-      await SourceSubscriptionSync.remember(
-        request.subscriptionSection,
-        request.subscriptionUrls,
-        manager: _manager(request.subscriptionSection),
-      );
-    }
-    await _readInstalled();
-    if (mounted) setState(() {});
-  });
-
   Future<bool> _confirm(
     String title,
     String text, {
@@ -550,19 +513,13 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
       },
       child: GlassScaffold(
         effectModule: GlassModule.sources,
-        title: 'GitHub 仓库源管理',
+        title: '仓库维护',
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             const Text(
-              '远端仓库：teng662858/LumeBox-Sources · main\n仓库列表是可安装的源，不代表已经安装到手机。仓库增删会修改该仓库的订阅。',
-            ),
-            const SizedBox(height: 12),
-            const Text('本机安装', style: TextStyle(fontWeight: FontWeight.w600)),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : _localImport,
-              icon: const Icon(Icons.add_to_photos_outlined),
-              label: const Text('添加到本机（不上传 GitHub）'),
+              'LumeBox-Sources · main',
+              style: TextStyle(fontWeight: FontWeight.w600),
             ),
             if (_loading || _busy) const LinearProgressIndicator(),
             if (_error != null)
@@ -588,44 +545,49 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
               ),
             ],
             if (_repo != null) ...[
-              Wrap(
-                spacing: 8,
-                children: [
-                  OutlinedButton(
-                    onPressed: _busy
-                        ? null
-                        : () => _run(() async {
-                            await _refresh();
-                            if (_operation != null &&
-                                (!_operation!.manual ||
-                                    _operation!.dispatched)) {
-                              _watch();
-                            }
-                          }),
-                    child: const Text('刷新仓库与发布状态'),
-                  ),
-                  TextButton(
-                    onPressed: _busy
-                        ? null
-                        : () => _run(() async {
-                            await _store.clear();
-                            _poll?.cancel();
-                            _repo?.close();
-                            if (mounted) {
-                              setState(() {
-                                _repo = null;
-                                _snapshot = null;
-                                _operation = null;
-                                _publication = null;
-                                _additions.clear();
-                                _removals.clear();
-                                _removalVersions.clear();
-                              });
-                            }
-                          }),
-                    child: const Text('移除授权'),
-                  ),
-                ],
+              Align(
+                alignment: Alignment.centerRight,
+                child: PopupMenuButton<String>(
+                  tooltip: '仓库选项',
+                  onSelected: (value) {
+                    if (value == 'refresh') {
+                      _run(() async {
+                        await _refresh();
+                        if (_operation != null &&
+                            (!_operation!.manual || _operation!.dispatched)) {
+                          _watch();
+                        }
+                      });
+                    } else if (value == 'disconnect') {
+                      _run(() async {
+                        await _store.clear();
+                        _poll?.cancel();
+                        _repo?.close();
+                        if (mounted) {
+                          setState(() {
+                            _repo = null;
+                            _snapshot = null;
+                            _operation = null;
+                            _publication = null;
+                            _additions.clear();
+                            _removals.clear();
+                            _removalVersions.clear();
+                          });
+                        }
+                      });
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'refresh',
+                      child: Text('刷新仓库与发布状态'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'disconnect',
+                      child: Text('移除授权'),
+                    ),
+                  ],
+                ),
               ),
               if (_operation != null)
                 Card(
@@ -668,17 +630,14 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                 FilledButton.icon(
                   onPressed: _busy ? null : _publish,
                   icon: const Icon(Icons.publish),
-                  label: const Text('手动发布已提交的变更'),
+                  label: const Text('发布待发布的变更'),
                 ),
               const SizedBox(height: 12),
-              const Text(
-                '仓库发布',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
+              const Text('仓库发布', style: TextStyle(fontWeight: FontWeight.w600)),
               FilledButton.icon(
                 onPressed: _busy ? null : _upload,
                 icon: const Icon(Icons.upload_file),
-                label: const Text('选择要添加的源（可多选）'),
+                label: const Text('上传源文件'),
               ),
               if (_additions.isNotEmpty || _removals.isNotEmpty) ...[
                 Text('待提交：新增 ${_additions.length}，删除 ${_removals.length}'),
@@ -716,59 +675,69 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 12),
-              Semantics(
-                label: '浏览分类',
-                child: DropdownButtonFormField<String>(
-                  key: ValueKey('repository-filter-$_filterKind'),
-                  initialValue: _filterKind,
-                  decoration: const InputDecoration(hintText: '浏览分类'),
-                  items: [
-                    const DropdownMenuItem(value: 'all', child: Text('全部分类')),
-                    for (final entry in GithubSourceRepository.kinds.entries)
-                      DropdownMenuItem(
-                        value: entry.key,
-                        child: Text(entry.value),
-                      ),
-                  ],
-                  onChanged: _busy
-                      ? null
-                      : (value) => setState(() => _filterKind = value!),
-                ),
-              ),
-              const SizedBox(height: 12),
               TextField(
                 controller: _search,
                 decoration: const InputDecoration(labelText: '搜索仓库源'),
                 onChanged: (_) => setState(() {}),
               ),
-              Wrap(
-                spacing: 8,
+              ExpansionTile(
+                title: const Text('筛选'),
                 children: [
-                  for (final (value, label) in [
-                    ('all', '全部类型'),
-                    ('py', 'PY'),
-                    ('js', 'JS'),
-                  ])
-                    ChoiceChip(
-                      label: Text(label),
-                      selected: _runtime == value,
-                      onSelected: (_) => setState(() => _runtime = value),
+                  Semantics(
+                    label: '浏览分类',
+                    child: DropdownButtonFormField<String>(
+                      key: ValueKey('repository-filter-$_filterKind'),
+                      initialValue: _filterKind,
+                      decoration: const InputDecoration(hintText: '浏览分类'),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text('全部分类'),
+                        ),
+                        for (final entry
+                            in GithubSourceRepository.kinds.entries)
+                          DropdownMenuItem(
+                            value: entry.key,
+                            child: Text(entry.value),
+                          ),
+                      ],
+                      onChanged: _busy
+                          ? null
+                          : (value) => setState(() => _filterKind = value!),
                     ),
-                ],
-              ),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final (value, label) in [
-                    (0, '全部安装状态'),
-                    (1, '已安装'),
-                    (2, '未安装'),
-                  ])
-                    ChoiceChip(
-                      label: Text(label),
-                      selected: _installation == value,
-                      onSelected: (_) => setState(() => _installation = value),
-                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final (value, label) in [
+                        ('all', '全部类型'),
+                        ('py', 'PY'),
+                        ('js', 'JS'),
+                      ])
+                        ChoiceChip(
+                          label: Text(label),
+                          selected: _runtime == value,
+                          onSelected: (_) => setState(() => _runtime = value),
+                        ),
+                    ],
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final (value, label) in [
+                        (0, '全部安装状态'),
+                        (1, '已安装'),
+                        (2, '未安装'),
+                      ])
+                        ChoiceChip(
+                          label: Text(label),
+                          selected: _installation == value,
+                          onSelected: (_) =>
+                              setState(() => _installation = value),
+                        ),
+                    ],
+                  ),
                 ],
               ),
               Text('找到 ${sources.length} 个源'),
@@ -777,30 +746,28 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                   child: ListTile(
                     title: Text(source.name),
                     subtitle: Text(
-                      '${source.version} · ${source.paths.first}\n${_installed[source.id] == null ? '尚未安装到本机' : '已在本机 · ${_installed[source.id]!.label}'}',
+                      '${GithubSourceRepository.kinds[source.paths.first.split('/').first] ?? '源'} · ${source.paths.first.split('.').last.toUpperCase()} · ${source.version}\n${_installed.containsKey(source.id) ? '已安装' : '未安装'}',
                     ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: '安装到本机',
-                          icon: const Icon(Icons.download_outlined),
-                          onPressed: _busy
-                              ? null
-                              : () => _run(() => _install(source)),
+                    trailing: PopupMenuButton<String>(
+                      tooltip: '源操作',
+                      enabled: !_busy,
+                      onSelected: (value) {
+                        if (value == 'install') {
+                          _run(() => _install(source));
+                        } else {
+                          _toggleRemoval(source);
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: 'install',
+                          child: Text('安装到本机'),
                         ),
-                        IconButton(
-                          tooltip: _removals.containsKey(source.id)
-                              ? '取消标记删除'
-                              : '标记删除',
-                          icon: Icon(
-                            _removals.containsKey(source.id)
-                                ? Icons.delete
-                                : Icons.delete_outline,
+                        PopupMenuItem(
+                          value: 'remove',
+                          child: Text(
+                            _removals.containsKey(source.id) ? '取消删除' : '从仓库删除',
                           ),
-                          onPressed: _busy
-                              ? null
-                              : () => _toggleRemoval(source),
                         ),
                       ],
                     ),

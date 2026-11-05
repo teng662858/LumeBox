@@ -139,18 +139,10 @@ void main() {
       await tester.tap(find.text('授权并读取仓库'));
       await pumpIoAndSettle(tester);
       expect(store.value['token'], 'test-token');
-      final heading = find.text('仓库源列表');
-      final filter = find.byKey(const ValueKey('repository-filter-all'));
-      final search = find.widgetWithText(TextField, '搜索仓库源');
-      expect(
-        tester.getRect(filter).top,
-        greaterThan(tester.getRect(heading).bottom),
-      );
-      expect(
-        tester.getRect(search).top,
-        greaterThan(tester.getRect(filter).bottom),
-      );
-      expect(find.text('浏览分类'), findsNothing);
+      expect(find.text('搜索仓库源'), findsOneWidget);
+      expect(find.text('筛选'), findsOneWidget);
+      await tester.tap(find.text('筛选'));
+      await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.text('远端测试源'),
         200,
@@ -180,7 +172,9 @@ void main() {
       expect(find.text('远端测试源'), findsOneWidget);
       await tester.drag(find.byType(ListView).first, const Offset(0, -120));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('标记删除').first);
+      await tester.tap(find.byTooltip('源操作').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('从仓库删除'));
       await tester.pumpAndSettle();
       expect(writes, 0);
       await tester.scrollUntilVisible(
@@ -188,7 +182,16 @@ void main() {
         200,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.tap(find.byTooltip('标记删除').first);
+      await tester.tap(
+        find.descendant(
+          of: find
+              .ancestor(of: find.text('第二个源'), matching: find.byType(ListTile))
+              .first,
+          matching: find.byTooltip('源操作'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('从仓库删除'));
       await tester.pumpAndSettle();
       expect(writes, 0);
       await tester.scrollUntilVisible(
@@ -228,17 +231,17 @@ void main() {
       );
       expect(dispatches, 0);
       await tester.scrollUntilVisible(
-        find.text('手动发布已提交的变更'),
+        find.text('发布待发布的变更'),
         -200,
         scrollable: find.byType(Scrollable).first,
       );
       await Scrollable.ensureVisible(
-        tester.element(find.text('手动发布已提交的变更')),
+        tester.element(find.text('发布待发布的变更')),
         alignment: .5,
       );
       await tester.pumpAndSettle();
       expect(RepositoryOperation.parse(store.value['operation'])?.manual, true);
-      await tester.tap(find.text('手动发布已提交的变更'));
+      await tester.tap(find.text('发布待发布的变更'));
       await tester.pump(const Duration(milliseconds: 350));
       expect(dispatches, 0);
       await tester.tap(find.text('确认发布'));

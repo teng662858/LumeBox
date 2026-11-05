@@ -365,7 +365,7 @@ class SettingsPage extends StatelessWidget {
         '源总管理': () => _push(context, const GlobalSourcePage()),
         '总订阅导入导出': () => _push(context, const TotalSubscriptionPage()),
         'TVBox 聚合配置导入': () => _push(context, const TvBoxImportPage()),
-        'GitHub 仓库源管理': () => _push(context, const SourceRepositoryPage()),
+        '仓库维护': () => _push(context, const SourceRepositoryPage()),
         '私有 GitHub 订阅': () =>
             _push(context, const PrivateSubscriptionSettingsPage()),
         '一键同步全部订阅': () => _push(context, const SubscriptionSyncPage()),
@@ -418,7 +418,7 @@ class SettingsPage extends StatelessWidget {
         ),
         SettingsEntryCard(
           icon: Icons.cloud_upload_outlined,
-          title: 'GitHub 仓库源管理',
+          title: '仓库维护',
           onTap: () => _push(context, const SourceRepositoryPage()),
         ),
       ]),

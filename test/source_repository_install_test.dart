@@ -80,24 +80,26 @@ void main() {
         await tester.pumpAndSettle();
         if (!automatic) {
           await tester.scrollUntilVisible(
-            find.textContaining('尚未安装到本机'),
+            find.textContaining('未安装'),
             200,
             scrollable: find.byType(Scrollable).first,
           );
-          expect(find.textContaining('尚未安装到本机'), findsOneWidget);
+          expect(find.textContaining('未安装'), findsOneWidget);
           await tester.drag(find.byType(ListView).first, const Offset(0, -120));
           await tester.pumpAndSettle();
-          await tester.tap(find.byTooltip('安装到本机'));
+          await tester.tap(find.byTooltip('源操作'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('安装到本机'));
           await tester.pumpAndSettle();
         }
         expect(video.imported, hasLength(1));
         expect(comic.imported, isEmpty);
         await tester.scrollUntilVisible(
-          find.textContaining('已在本机 · 视频'),
+          find.textContaining('已安装'),
           200,
           scrollable: find.byType(Scrollable).first,
         );
-        expect(find.textContaining('已在本机 · 视频'), findsOneWidget);
+        expect(find.textContaining('已安装'), findsOneWidget);
         if (automatic) {
           expect(
             RepositoryOperation.parse(credentials.data['operation'])!

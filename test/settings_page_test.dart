@@ -347,11 +347,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(observer.depth, 1);
     await tester.scrollUntilVisible(
-      find.text('GitHub 仓库源管理').hitTestable(),
+      find.text('仓库维护').hitTestable(),
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(find.text('GitHub 仓库源管理'));
+    await tester.tap(find.text('仓库维护'));
     await tester.pumpAndSettle();
     expect(observer.depth, 2);
     await tester.pageBack();
