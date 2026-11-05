@@ -78,7 +78,13 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
         _repo = _client(token);
         _operation = RepositoryOperation.parse(data['operation']);
         await _refresh();
-        if (_operation != null) _watch();
+        if (_operation?.manual == true && _operation?.dispatched == false) {
+          _publication = const RepositoryPublication('已提交，等待手动发布');
+        }
+        if (_operation != null &&
+            (!_operation!.manual || _operation!.dispatched)) {
+          _watch();
+        }
       }
     } catch (_) {
       if (mounted) setState(() => _error = '无法读取 GitHub 授权，请重新连接');
@@ -172,6 +178,8 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
           final completed = RepositoryOperation(
             operation.branch,
             operation.commit,
+            manual: operation.manual,
+            dispatched: operation.dispatched,
           );
           _operation = completed;
           await _store.save({
@@ -201,12 +209,44 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     if (!mounted) return;
     setState(() {
       _operation = operation;
-      _publication = const RepositoryPublication('已提交，等待 GitHub 发布');
+      _publication = RepositoryPublication(
+        operation.manual ? '已提交，等待手动发布' : '已提交，等待 GitHub 发布',
+      );
     });
     // The operation is visible even if persistence fails after GitHub accepted it.
-    _watch();
+    if (!operation.manual) _watch();
     await _store.save({'token': _repo!.token, 'operation': operation.toJson()});
   }
+
+  Future<void> _publish() => _run(() async {
+    final operation = _operation;
+    if (operation == null || !operation.manual || operation.dispatched) return;
+    if (!await _confirm(
+          '手动发布',
+          '将发布已提交的变更，更新公共订阅并核对 GitHub 与国内线路。',
+          confirmLabel: '确认发布',
+        ) ||
+        !mounted) {
+      return;
+    }
+    await _repo!.dispatchPublication(operation);
+    final dispatched = RepositoryOperation(
+      operation.branch,
+      operation.commit,
+      installPaths: operation.installPaths,
+      manual: true,
+      dispatched: true,
+    );
+    setState(() {
+      _operation = dispatched;
+      _publication = const RepositoryPublication('已启动发布，等待 GitHub 工作流');
+    });
+    _watch();
+    await _store.save({
+      'token': _repo!.token,
+      'operation': dispatched.toJson(),
+    });
+  });
 
   bool get _pending => _operation != null && !(_publication?.finished ?? false);
 
@@ -292,15 +332,10 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
       final path = draft.path;
       final meta = draft.metadata;
       final existing = _snapshot!.sources
-          .where(
-            (s) =>
-                (s.id == meta.id || s.paths.contains(path)) &&
-                !_removals.containsKey(s.id),
-          )
+          .where((s) => s.id == meta.id || s.paths.contains(path))
           .firstOrNull;
       if (existing != null ||
-          (_snapshot!.files.containsKey(path) &&
-              !_removals.values.any((s) => s.paths.contains(path))) ||
+          _snapshot!.files.containsKey(path) ||
           _additions.values.any(
             (item) => item.path == path || item.metadata.id == meta.id,
           )) {
@@ -320,7 +355,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     ].join('\n');
     if (!await _confirm(
           '提交仓库变更',
-          '以下变更将一次提交并发布到公共订阅，影响所有订阅用户：\n\n$description\n\n新增源发布成功后会安装到本机。',
+          '以下变更将提交到草稿分支，不会立即发布：\n\n$description\n\n提交后可手动发布；发布成功后新增源会安装到本机。',
         ) ||
         !mounted) {
       return;
@@ -421,7 +456,11 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     if (mounted) setState(() {});
   });
 
-  Future<bool> _confirm(String title, String text) async =>
+  Future<bool> _confirm(
+    String title,
+    String text, {
+    String confirmLabel = '确认提交',
+  }) async =>
       await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -434,7 +473,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('确认提交'),
+              child: Text(confirmLabel),
             ),
           ],
         ),
@@ -533,7 +572,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
               ),
             if (_repo == null && !_loading) ...[
               const Text(
-                '使用此仓库的 GitHub fine-grained token：Contents 读写、Actions 只读。令牌只保存在本机钥匙串。',
+                '使用此仓库的 GitHub fine-grained token：Contents 和 Actions 均需读写。令牌只保存在本机钥匙串。',
               ),
               TextField(
                 controller: _token,
@@ -557,7 +596,9 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                         ? null
                         : () => _run(() async {
                             await _refresh();
-                            if (_operation != null) {
+                            if (_operation != null &&
+                                (!_operation!.manual ||
+                                    _operation!.dispatched)) {
                               _watch();
                             }
                           }),
@@ -623,6 +664,12 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                     ],
                   ),
                 ),
+              if (_operation?.manual == true && _operation?.dispatched == false)
+                FilledButton.icon(
+                  onPressed: _busy ? null : _publish,
+                  icon: const Icon(Icons.publish),
+                  label: const Text('手动发布已提交的变更'),
+                ),
               const SizedBox(height: 12),
               const Text(
                 '公共仓库发布',
@@ -659,9 +706,9 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                   ),
                 FilledButton(
                   onPressed: _busy || _pending ? null : _submitBatch,
-                  child: const Text('一次提交并发布全部变更'),
+                  child: const Text('手动提交全部变更'),
                 ),
-                if (_pending) const Text('上一批正在发布，可以继续选择，发布完成后提交。'),
+                if (_pending) const Text('上一批尚未发布完成，可以继续选择，发布完成后提交。'),
               ],
               const SizedBox(height: 16),
               const Text(

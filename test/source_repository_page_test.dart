@@ -30,6 +30,8 @@ void main() {
     (tester) async {
       final store = MemoryCredentialStore();
       var writes = 0;
+      var dispatches = 0;
+      const candidate = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
       Map<String, dynamic>? submittedTree;
       final catalog = jsonEncode({
         'sources': [
@@ -57,6 +59,13 @@ void main() {
               token,
               client: MockClient((request) async {
                 if (request.method != 'GET') {
+                  if (request.url.path.endsWith('/dispatches')) {
+                    dispatches++;
+                    final body = jsonDecode(request.body);
+                    expect(body['ref'], startsWith('lumebox/draft-'));
+                    expect(body['inputs']['candidate_sha'], candidate);
+                    return http.Response('', 204);
+                  }
                   writes++;
                   if (request.url.path.endsWith('/git/trees')) {
                     submittedTree = jsonDecode(request.body);
@@ -66,7 +75,7 @@ void main() {
                       request.url.path.endsWith('/git/trees')
                           ? {'sha': 'newTree'}
                           : request.url.path.endsWith('/git/commits')
-                          ? {'sha': 'candidate'}
+                          ? {'sha': candidate}
                           : {'ref': 'candidate'},
                     ),
                     201,
@@ -171,7 +180,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(writes, 0);
       await tester.scrollUntilVisible(
-        find.text('一次提交并发布全部变更'),
+        find.text('手动提交全部变更'),
         -200,
         scrollable: find.byType(Scrollable).first,
       );
@@ -182,17 +191,17 @@ void main() {
       );
       expect(find.text('待提交：新增 0，删除 2'), findsOneWidget);
       await tester.scrollUntilVisible(
-        find.text('一次提交并发布全部变更'),
+        find.text('手动提交全部变更'),
         150,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.tap(find.text('一次提交并发布全部变更'));
+      await tester.tap(find.text('手动提交全部变更'));
       await tester.pump(const Duration(milliseconds: 350));
-      expect(find.textContaining('影响所有订阅用户'), findsOneWidget);
+      expect(find.textContaining('不会立即发布'), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       expect(writes, 0);
-      await tester.tap(find.text('一次提交并发布全部变更'));
+      await tester.tap(find.text('手动提交全部变更'));
       await tester.pump(const Duration(milliseconds: 350));
       await tester.tap(find.text('确认提交'));
       await pumpIoAndSettle(tester);
@@ -203,9 +212,25 @@ void main() {
       });
       expect(
         RepositoryOperation.parse(store.value['operation'])?.commit,
-        'candidate',
+        candidate,
       );
-      expect(find.textContaining('等待 GitHub'), findsOneWidget);
+      expect(dispatches, 0);
+      await tester.scrollUntilVisible(
+        find.text('手动发布已提交的变更'),
+        -200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(RepositoryOperation.parse(store.value['operation'])?.manual, true);
+      await tester.tap(find.text('手动发布已提交的变更'));
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(dispatches, 0);
+      await tester.tap(find.text('确认发布'));
+      await pumpIoAndSettle(tester);
+      expect(dispatches, 1);
+      expect(
+        RepositoryOperation.parse(store.value['operation'])?.dispatched,
+        true,
+      );
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

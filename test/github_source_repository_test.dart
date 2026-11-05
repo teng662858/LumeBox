@@ -158,7 +158,7 @@ void main() {
           }
           expect(
             jsonDecode(request.body)['ref'],
-            startsWith('refs/heads/lumebox/manage-'),
+            startsWith('refs/heads/lumebox/draft-'),
           );
           return http.Response('{"ref":"candidate"}', 201);
         }),

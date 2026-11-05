@@ -48,12 +48,17 @@ class RepositoryOperation {
     this.branch,
     this.commit, {
     this.installPaths = const [],
+    this.manual = false,
+    this.dispatched = false,
   });
   final String branch, commit;
   final List<String> installPaths;
+  final bool manual, dispatched;
   Map<String, Object> toJson() => {
     'branch': branch,
     'commit': commit,
+    if (manual) 'manual': true,
+    if (dispatched) 'dispatched': true,
     if (installPaths.isNotEmpty) 'installPaths': installPaths,
   };
   static RepositoryOperation? parse(Object? value) =>
@@ -61,6 +66,8 @@ class RepositoryOperation {
       ? RepositoryOperation(
           value['branch'] as String,
           value['commit'] as String,
+          manual: value['manual'] == true,
+          dispatched: value['dispatched'] == true,
           installPaths:
               (value['installPaths'] is List
                       ? value['installPaths'] as List
@@ -92,7 +99,7 @@ class RepositoryUpload {
 }
 
 /// Only the official source repository and API host receive this token.
-/// A candidate branch triggers validation/build/publication; main is never forced.
+/// A draft branch is submitted first; publication is dispatched separately.
 class GithubSourceRepository {
   GithubSourceRepository(this.token, {http.Client? client})
     : _client = client ?? http.Client();
@@ -144,15 +151,15 @@ class GithubSourceRepository {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw RepositoryFailure(switch (response.statusCode) {
           401 => 'GitHub 授权已失效，请重新填写令牌',
-          403 => 'GitHub 拒绝访问：请检查仓库写入权限、Actions 读取权限或请求限额',
+          403 => 'GitHub 拒绝访问：请检查仓库与 Actions 的读写权限或请求限额',
           404 => '找不到仓库或发布流程，请检查授权范围',
           409 || 422 => '仓库已变动或分支受保护，请刷新后重试',
           _ => 'GitHub 请求失败（${response.statusCode}），请稍后重试',
         });
       }
-      return Map<String, dynamic>.from(
-        jsonDecode(utf8.decode(bytes.takeBytes())) as Map,
-      );
+      final payload = bytes.takeBytes();
+      if (payload.isEmpty) return {};
+      return Map<String, dynamic>.from(jsonDecode(utf8.decode(payload)) as Map);
     } on RepositoryFailure {
       rethrow;
     } catch (_) {
@@ -418,13 +425,13 @@ class GithubSourceRepository {
       final meta = validateUpload(upload.path, upload.bytes);
       if (!paths.add(upload.path) ||
           !ids.add(meta.id) ||
-          (snapshot.files.containsKey(upload.path) &&
-              !removedPaths.contains(upload.path)) ||
-          snapshot.sources.any(
-            (s) => s.id == meta.id && !removedIds.contains(s.id),
-          )) {
+          snapshot.files.containsKey(upload.path) ||
+          snapshot.sources.any((s) => s.id == meta.id)) {
         throw const RepositoryFailure('待添加的源存在重复 ID 或路径，请核对后重试');
       }
+    }
+    if (removedPaths.length + additions.length > 20) {
+      throw const RepositoryFailure('一次最多提交 20 个源文件（包括别名），请分批操作');
     }
     final entries = <Map<String, Object?>>[
       for (final path in removedPaths.difference(paths))
@@ -467,17 +474,33 @@ class GithubSourceRepository {
     });
     final random = Random.secure();
     final branch =
-        'lumebox/manage-${List.generate(12, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join()}';
+        'lumebox/draft-${List.generate(12, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join()}';
     final operation = RepositoryOperation(
       branch,
       commit['sha'] as String,
       installPaths: installPaths,
+      manual: true,
     );
     await _api('POST', 'git/refs', {
       'ref': 'refs/heads/$branch',
       'sha': operation.commit,
     });
     return operation;
+  }
+
+  Future<void> dispatchPublication(RepositoryOperation operation) async {
+    if (!operation.manual ||
+        !RegExp(r'^lumebox/draft-[0-9a-f]{24}$').hasMatch(operation.branch) ||
+        !RegExp(r'^[0-9a-f]{40}$').hasMatch(operation.commit)) {
+      throw const RepositoryFailure('提交信息无效，请刷新后重试');
+    }
+    await _api('POST', 'actions/workflows/app-source-publish.yml/dispatches', {
+      'ref': operation.branch,
+      'inputs': {
+        'candidate_branch': operation.branch,
+        'candidate_sha': operation.commit,
+      },
+    });
   }
 
   Future<RepositoryPublication> publication(
