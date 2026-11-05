@@ -80,7 +80,9 @@ class PlayerSettingsScaffold extends StatelessWidget {
     required this.title,
     required this.body,
     this.actions = const [],
+    this.embedded = false,
   });
+  final bool embedded;
   final String title;
   final Widget body;
   final List<Widget> actions;
@@ -106,54 +108,73 @@ class PlayerSettingsScaffold extends StatelessWidget {
           ),
         ),
       ),
-      child: Scaffold(
-        backgroundColor: VideoGlassScope.active(context)
-            ? Colors.transparent
-            : theme.colorScheme.surface,
-        appBar: AppBar(
-          toolbarHeight: 52,
-          centerTitle: false,
-          title: Text(
-            title,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-          ),
-          backgroundColor: VideoGlassScope.active(context)
-              ? Colors.transparent
-              : theme.colorScheme.surface,
-          surfaceTintColor: Colors.transparent,
-          leading: scope == null
-              ? null
-              : IconButton(
-                  tooltip: Navigator.of(context).canPop() ? '返回上一级' : '关闭设置',
-                  icon: Icon(
-                    Navigator.of(context).canPop()
-                        ? Icons.arrow_back_rounded
-                        : Icons.close_rounded,
-                    size: 22,
+      child: embedded
+          ? Column(
+              children: [
+                if (actions.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: actions,
+                    ),
                   ),
-                  onPressed: Navigator.of(context).canPop()
-                      ? () => Navigator.of(context).pop()
-                      : scope.close,
+                Expanded(child: body),
+              ],
+            )
+          : Scaffold(
+              backgroundColor: VideoGlassScope.active(context)
+                  ? Colors.transparent
+                  : theme.colorScheme.surface,
+              appBar: AppBar(
+                toolbarHeight: 52,
+                centerTitle: false,
+                title: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-          actions: [
-            ...actions,
-            if (scope != null && Navigator.of(context).canPop())
-              IconButton(
-                tooltip: '关闭全部设置',
-                icon: const Icon(Icons.close_rounded, size: 21),
-                onPressed: scope.close,
+                backgroundColor: VideoGlassScope.active(context)
+                    ? Colors.transparent
+                    : theme.colorScheme.surface,
+                surfaceTintColor: Colors.transparent,
+                leading: scope == null
+                    ? null
+                    : IconButton(
+                        tooltip: Navigator.of(context).canPop()
+                            ? '返回上一级'
+                            : '关闭设置',
+                        icon: Icon(
+                          Navigator.of(context).canPop()
+                              ? Icons.arrow_back_rounded
+                              : Icons.close_rounded,
+                          size: 22,
+                        ),
+                        onPressed: Navigator.of(context).canPop()
+                            ? () => Navigator.of(context).pop()
+                            : scope.close,
+                      ),
+                actions: [
+                  ...actions,
+                  if (scope != null && Navigator.of(context).canPop())
+                    IconButton(
+                      tooltip: '关闭全部设置',
+                      icon: const Icon(Icons.close_rounded, size: 21),
+                      onPressed: scope.close,
+                    ),
+                  const SizedBox(width: 4),
+                ],
               ),
-            const SizedBox(width: 4),
-          ],
-        ),
-        body: Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
-            child: body,
-          ),
-        ),
-      ),
+              body: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: body,
+                ),
+              ),
+            ),
     );
   }
 }

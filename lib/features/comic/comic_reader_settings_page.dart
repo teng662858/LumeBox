@@ -24,6 +24,8 @@ import '../../shared/widgets/chapter_order_controls.dart';
 class ComicReaderSettingsPage extends StatefulWidget {
   const ComicReaderSettingsPage({
     super.key,
+    this.embedded = false,
+    this.onOpenImageSettings,
     required this.settings,
     required this.onChanged,
     this.onSavePage,
@@ -55,6 +57,8 @@ class ComicReaderSettingsPage extends StatefulWidget {
   /// 当前页是否可保存（没图 / 正在保存时为 false）。
   final bool canSavePage;
 
+  final bool embedded;
+  final ValueChanged<bool>? onOpenImageSettings;
   @override
   State<ComicReaderSettingsPage> createState() =>
       _ComicReaderSettingsPageState();
@@ -118,17 +122,22 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
     return GlassScaffold(
       effectModule: GlassModule.comic,
       settingsSurface: true,
+      embedded: widget.embedded,
       behindBar: true,
       title: '阅读设置',
       child: ListView(
-        padding: GlassScaffold.barInset(context).add(
-          EdgeInsets.fromLTRB(
-            16,
-            12,
-            16,
-            24 + ShellDockScope.bottomInset(context),
-          ),
-        ),
+        padding:
+            (widget.embedded
+                    ? EdgeInsets.zero
+                    : GlassScaffold.barInset(context))
+                .add(
+                  EdgeInsets.fromLTRB(
+                    16,
+                    12,
+                    16,
+                    24 + ShellDockScope.bottomInset(context),
+                  ),
+                ),
         children: [
           const Text('与阅读页共用同一份设置，修改后立即生效。'),
           _section('阅读布局'),
@@ -288,24 +297,29 @@ class _ComicReaderSettingsPageState extends State<ComicReaderSettingsPage> {
                   leading: const Icon(Icons.hd_outlined),
                   title: const Text('AI 图片超分与上色'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) => const ComicImageToolsSettingsPage(),
-                    ),
-                  ),
+                  onTap: () => widget.onOpenImageSettings != null
+                      ? widget.onOpenImageSettings!(false)
+                      : Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ComicImageToolsSettingsPage(),
+                          ),
+                        ),
                 ),
                 ListTile(
                   leading: const Icon(Icons.translate),
                   title: const Text('漫画翻译'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          const ComicImageToolsSettingsPage(translation: true),
-                    ),
-                  ),
+                  onTap: () => widget.onOpenImageSettings != null
+                      ? widget.onOpenImageSettings!(true)
+                      : Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ComicImageToolsSettingsPage(
+                              translation: true,
+                            ),
+                          ),
+                        ),
                 ),
                 ListTile(
                   leading: const Icon(Icons.gesture),

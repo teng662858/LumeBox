@@ -95,20 +95,6 @@ void main() {
       await tester.tap(find.byKey(ValueKey('settings-category-$category')));
       await tester.pumpAndSettle();
     }
-    final hub = label == '缓存管理'
-        ? '存储与缓存'
-        : ['运行日志', '错误报告'].contains(label)
-        ? '问题排查'
-        : null;
-    if (hub != null) {
-      await tester.scrollUntilVisible(
-        find.text(hub),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(find.text(hub));
-      await tester.pumpAndSettle();
-    }
     await tester.scrollUntilVisible(
       find.text(label),
       260,
@@ -311,6 +297,65 @@ void main() {
     expect(find.widgetWithText(AppBar, '源总管理'), findsOneWidget);
     expect(find.byTooltip('一键导入全部订阅源'), findsNothing);
   });
+
+  for (final path in const [
+    ('阅读与播放', '漫画设置'),
+    ('阅读与播放', '播放器设置'),
+    ('存储与安全', '预载与清理'),
+    ('存储与安全', '缓存管理'),
+    ('诊断与关于', '运行日志'),
+    ('诊断与关于', '错误报告'),
+    ('诊断与关于', '沙箱设置'),
+    ('诊断与关于', '调试面板'),
+  ]) {
+    testWidgets('${path.$2} 最多三级，页内切换不增加返回层级', (tester) async {
+      final observer = _PageDepthObserver();
+      await tester.binding.setSurfaceSize(const Size(900, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: LumeTheme.build(),
+          navigatorObservers: [observer],
+          home: const SettingsPage(runtimeAvailable: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('settings-category-${path.$1}')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text(path.$2),
+        220,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text(path.$2));
+      await pumpIoAndSettle(tester);
+      expect(observer.depth, 3);
+      if (path.$2 == '漫画设置') {
+        for (final tab in ['images', 'translation', 'reading']) {
+          await tester.ensureVisible(find.byKey(ValueKey('settings-tab-$tab')));
+          await tester.tap(find.byKey(ValueKey('settings-tab-$tab')));
+          await pumpIoAndSettle(tester);
+          expect(observer.depth, 3);
+          expect(find.byType(AppBar), findsOneWidget);
+        }
+      }
+      if (path.$2 == '播放器设置') {
+        for (final tab in ['advanced', 'audio', 'playback']) {
+          await tester.ensureVisible(find.byKey(ValueKey('settings-tab-$tab')));
+          await tester.tap(find.byKey(ValueKey('settings-tab-$tab')));
+          await tester.pumpAndSettle();
+          expect(observer.depth, 3);
+        }
+      }
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(observer.depth, 2);
+      expect(
+        find.byKey(ValueKey('settings-category-${path.$1}')),
+        findsNothing,
+      );
+    });
+  }
 
   testWidgets('源仓库设置保持三级，分类目录进入独立页面', (tester) async {
     final observer = _PageDepthObserver();

@@ -7,7 +7,13 @@ import 'comic_reader_settings_page.dart';
 import 'comic_settings.dart';
 
 class ComicReaderSettingsHost extends StatefulWidget {
-  const ComicReaderSettingsHost({super.key});
+  const ComicReaderSettingsHost({
+    super.key,
+    this.embedded = false,
+    this.onOpenImageSettings,
+  });
+  final bool embedded;
+  final ValueChanged<bool>? onOpenImageSettings;
   @override
   State<ComicReaderSettingsHost> createState() =>
       _ComicReaderSettingsHostState();
@@ -23,7 +29,7 @@ class _ComicReaderSettingsHostState extends State<ComicReaderSettingsHost> {
       final store = snapshot.data;
       if (store == null) {
         return Scaffold(
-          appBar: AppBar(title: const Text('漫画阅读器设置')),
+          appBar: widget.embedded ? null : AppBar(title: const Text('漫画阅读器设置')),
           body: Center(
             child: snapshot.hasError
                 ? const Text('阅读设置暂不可用，请返回后重试')
@@ -37,6 +43,8 @@ class _ComicReaderSettingsHostState extends State<ComicReaderSettingsHost> {
           final settings = ComicReaderSettings.load(store);
           final preferences = ComicReaderPreferences.load(store);
           return ComicReaderSettingsPage(
+            embedded: widget.embedded,
+            onOpenImageSettings: widget.onOpenImageSettings,
             settings: settings,
             preferences: preferences,
             onChanged: (next) {

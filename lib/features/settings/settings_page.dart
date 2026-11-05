@@ -4,7 +4,7 @@ import 'performance_page.dart';
 import '../comic/download_center_page.dart';
 import '../video/player_settings_host.dart';
 import '../video/danmaku/danmaku_sources_page.dart';
-import '../comic/comic_reader_settings_host.dart';
+import '../comic/comic_settings_page.dart';
 
 import 'package:lume_box/shared/widgets/lume_icon.dart';
 
@@ -138,6 +138,8 @@ class SettingsPage extends StatelessWidget {
                 ? '外观 主题色 页面底色 App 图标 应用图标库'
                 : entry.text == '阅读与播放'
                 ? '播放器设置 视频播放器 触感反馈 触感强度 后台播放 字号 行距 朗读 漫画 图片工具 音频 内核 弹幕'
+                : entry.text == '诊断与关于'
+                ? '问题排查 高级设置 诊断包 导出诊断包'
                 : '',
           ),
         );
@@ -281,37 +283,14 @@ class SettingsPage extends StatelessWidget {
     SettingsEntryCard(
       icon: Icons.auto_stories_outlined,
       title: '漫画设置',
-      subtitle: '阅读器、图片处理与 AI 图片工具',
+      subtitle: '阅读器、图片处理与漫画翻译',
       searchTargets: {
-        '漫画阅读器设置': () => _push(context, const ComicReaderSettingsHost()),
-        '漫画翻页': () => _push(context, const ComicReaderSettingsHost()),
-        'AI 图片超分与上色': () => _push(context, const ComicImageToolsSettingsPage()),
+        '漫画阅读器设置': () => _push(context, const ComicSettingsPage()),
+        '漫画翻页': () => _push(context, const ComicSettingsPage()),
+        'AI 图片超分与上色': () =>
+            _push(context, const ComicSettingsPage(initialTab: 'images')),
       },
-      onTap: () => _push(
-        context,
-        SettingsCategoryPage(
-          category: SettingsCategory(
-            '漫画设置',
-            '阅读与图片处理',
-            Icons.auto_stories_outlined,
-            [
-              SettingsEntryCard(
-                icon: Icons.auto_stories_outlined,
-                title: '漫画阅读器设置',
-                subtitle: '布局、翻页、自动阅读与图片翻译',
-                onTap: () => _push(context, const ComicReaderSettingsHost()),
-              ),
-              SettingsEntryCard(
-                icon: Icons.auto_fix_high_outlined,
-                title: 'AI 图片超分与上色',
-                subtitle: '漫画 / 美图 AI 超分、上色与模型管理',
-                onTap: () =>
-                    _push(context, const ComicImageToolsSettingsPage()),
-              ),
-            ],
-          ),
-        ),
-      ),
+      onTap: () => _push(context, const ComicSettingsPage()),
     ),
     const SettingsGroupTitle('播放'),
     SettingsEntryCard(
@@ -457,39 +436,18 @@ class SettingsPage extends StatelessWidget {
       },
       onTap: () => _push(context, const DownloadCenterPage()),
     ),
+    const SettingsGroupTitle('存储与缓存'),
     SettingsEntryCard(
-      icon: Icons.storage_outlined,
-      title: '存储与缓存',
-      subtitle: '预加载策略 · 空间占用 · 缓存清理',
-      searchTargets: {
-        '预载与清理': () => _push(context, const PreloadSettingsPage()),
-        '缓存管理': () => _push(context, CacheSettingsPage(service: cacheService)),
-      },
-      onTap: () => _push(
-        context,
-        SettingsCategoryPage(
-          category: SettingsCategory(
-            '存储与缓存',
-            '按需调整预载，查看和清理占用',
-            Icons.storage_outlined,
-            [
-              SettingsEntryCard(
-                icon: Icons.downloading_outlined,
-                title: '预载与清理',
-                subtitle: '视频 / 图片 / 音频预载与自动清理策略',
-                onTap: () => _push(context, const PreloadSettingsPage()),
-              ),
-              SettingsEntryCard(
-                icon: Icons.cleaning_services_outlined,
-                title: '缓存管理',
-                subtitle: '按板块统计和清理，不删除收藏及已保存内容',
-                onTap: () =>
-                    _push(context, CacheSettingsPage(service: cacheService)),
-              ),
-            ],
-          ),
-        ),
-      ),
+      icon: Icons.downloading_outlined,
+      title: '预载与清理',
+      subtitle: '视频 / 图片 / 音频预载与自动清理策略',
+      onTap: () => _push(context, const PreloadSettingsPage()),
+    ),
+    SettingsEntryCard(
+      icon: Icons.cleaning_services_outlined,
+      title: '缓存管理',
+      subtitle: '按板块统计和清理，不删除收藏及已保存内容',
+      onTap: () => _push(context, CacheSettingsPage(service: cacheService)),
     ),
     SettingsEntryCard(
       icon: Icons.privacy_tip_outlined,
@@ -505,78 +463,51 @@ class SettingsPage extends StatelessWidget {
     ),
 
     const SettingsGroupTitle('诊断与关于'),
-    SettingsEntryCard(
-      icon: Icons.troubleshoot,
-      title: '问题排查',
-      subtitle: '加载耗时 · 流畅度 · 日志 · 导出诊断包',
-      searchTargets: {
-        '流畅度采集': () => _push(context, const PerformancePage()),
-        '运行日志': () => _push(context, LogViewerPage(exporter: exporter)),
-        '错误报告': () => _push(context, LogReportPage(exporter: exporter)),
-        '诊断包': () => _push(context, _diagnostics(context)),
-      },
-      onTap: () => _push(context, _diagnostics(context)),
-    ),
+    const SettingsGroupTitle('问题排查', topPadding: 0),
+    ..._diagnosticEntries(context),
     SettingsEntryCard(
       icon: Icons.menu_book_outlined,
       title: '使用说明',
       subtitle: '源导入、听书与在线接口、漫画翻译与超分、播放器、备份与隐私',
       onTap: () => _push(context, const UsageGuidePage()),
     ),
+    const SettingsGroupTitle('高级设置'),
     SettingsEntryCard(
-      icon: Icons.tune,
-      title: '高级设置',
-      subtitle: '沙箱执行限制 · 请求抓包 · JS 上下文统计',
-      searchTargets: {
-        '沙箱设置': () => _push(context, const SandboxSettingsPage()),
-        '调试面板': () => _push(context, const DebugPanelPage()),
-      },
-      onTap: () => _push(
-        context,
-        SettingsCategoryPage(
-          category: SettingsCategory('高级设置', '脚本执行与开发排查工具', Icons.tune, [
-            SettingsEntryCard(
-              icon: Icons.hourglass_bottom_outlined,
-              title: '沙箱设置',
-              subtitle: '脚本执行超时与运行限制',
-              onTap: () => _push(context, const SandboxSettingsPage()),
-            ),
-            SettingsEntryCard(
-              icon: Icons.bug_report_outlined,
-              title: '调试面板',
-              subtitle: '请求抓包与 JS 上下文统计；抓包默认关闭',
-              onTap: () => _push(context, const DebugPanelPage()),
-            ),
-          ]),
-        ),
-      ),
+      icon: Icons.hourglass_bottom_outlined,
+      title: '沙箱设置',
+      subtitle: '脚本执行超时与运行限制',
+      onTap: () => _push(context, const SandboxSettingsPage()),
+    ),
+    SettingsEntryCard(
+      icon: Icons.bug_report_outlined,
+      title: '调试面板',
+      subtitle: '请求抓包与 JS 上下文统计；抓包默认关闭',
+      onTap: () => _push(context, const DebugPanelPage()),
     ),
     const _BuildInfoRow(),
   ];
 
-  Widget _diagnostics(BuildContext context) => SettingsCategoryPage(
-    category: SettingsCategory('问题排查', '先查看加载耗时，必要时导出诊断包', Icons.troubleshoot, [
-      SettingsEntryCard(
-        icon: Icons.speed,
-        title: '流畅度采集',
-        subtitle: '源加载耗时与帧耗时报告',
-        onTap: () => _push(context, const PerformancePage()),
-      ),
-      SettingsEntryCard(
-        icon: Icons.receipt_long_outlined,
-        title: '运行日志',
-        subtitle: '本次与上次会话记录',
-        onTap: () => _push(context, LogViewerPage(exporter: exporter)),
-      ),
-      SettingsEntryCard(
-        icon: Icons.file_upload_outlined,
-        title: '错误报告',
-        subtitle: '整理错误与警告并导出',
-        onTap: () => _push(context, LogReportPage(exporter: exporter)),
-      ),
-      const DiagnosticExportTile(),
-    ]),
-  );
+  List<Widget> _diagnosticEntries(BuildContext context) => [
+    SettingsEntryCard(
+      icon: Icons.speed,
+      title: '流畅度采集',
+      subtitle: '源加载耗时与帧耗时报告',
+      onTap: () => _push(context, const PerformancePage()),
+    ),
+    SettingsEntryCard(
+      icon: Icons.receipt_long_outlined,
+      title: '运行日志',
+      subtitle: '本次与上次会话记录',
+      onTap: () => _push(context, LogViewerPage(exporter: exporter)),
+    ),
+    SettingsEntryCard(
+      icon: Icons.file_upload_outlined,
+      title: '错误报告',
+      subtitle: '整理错误与警告并导出',
+      onTap: () => _push(context, LogReportPage(exporter: exporter)),
+    ),
+    const DiagnosticExportTile(),
+  ];
 
   void _push(BuildContext context, Widget page) {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));

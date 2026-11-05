@@ -45,6 +45,7 @@ Future<bool> exportProcessedImage(Uint8List bytes, String name) async {
 class ComicImageToolsSettingsPage extends StatefulWidget {
   const ComicImageToolsSettingsPage({
     super.key,
+    this.embedded = false,
     this.translation = false,
     this.pickModelFile,
     this.pickTranslationConfig,
@@ -60,6 +61,7 @@ class ComicImageToolsSettingsPage extends StatefulWidget {
     ),
   ];
   final bool translation;
+  final bool embedded;
   @override
   State<ComicImageToolsSettingsPage> createState() => _SettingsState();
 }
@@ -431,6 +433,7 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
   Widget build(BuildContext context) => GlassScaffold(
     effectModule: widget.translation ? GlassModule.settings : GlassModule.comic,
     settingsSurface: true,
+    embedded: widget.embedded,
     title: widget.translation ? '全局翻译' : 'AI 图片超分与上色',
     child: ListView(
       padding: const EdgeInsets.all(16),

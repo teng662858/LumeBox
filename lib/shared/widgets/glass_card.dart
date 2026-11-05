@@ -378,6 +378,7 @@ class GlassScaffold extends StatelessWidget {
     this.resizeToAvoidBottomInset,
     this.effectModule,
     this.settingsSurface = false,
+    this.embedded = false,
   });
 
   final Widget child;
@@ -385,6 +386,9 @@ class GlassScaffold extends StatelessWidget {
 
   /// Apply settings visual styling while retaining the original glass module.
   final bool settingsSurface;
+
+  /// Render the content inside an existing settings shell.
+  final bool embedded;
 
   /// 页面标题。为空时回退到项目名称。
   final String? title;
@@ -433,7 +437,7 @@ class GlassScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final isSettings = settingsSurface || effectModule == GlassModule.settings;
     final module = effectModule ?? ModuleGlassScope.moduleOf(context);
-    Widget content = _legacyBuild(context);
+    Widget content = embedded ? child : _legacyBuild(context);
     if (isSettings) {
       final theme = Theme.of(context);
       content = Theme(

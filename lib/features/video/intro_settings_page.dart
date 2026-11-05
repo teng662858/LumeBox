@@ -40,7 +40,8 @@ const introMethodHelp = <String, String>{
 };
 
 class IntroSettingsPage extends StatefulWidget {
-  const IntroSettingsPage({super.key, this.store});
+  const IntroSettingsPage({super.key, this.store, this.embedded = false});
+  final bool embedded;
   final IntroStore? store;
   @override
   State<IntroSettingsPage> createState() => _IntroSettingsPageState();
@@ -176,6 +177,7 @@ class _IntroSettingsPageState extends State<IntroSettingsPage> {
     final store = _store;
     if (store == null) {
       return PlayerSettingsScaffold(
+        embedded: widget.embedded,
         title: '片头片尾识别',
         body: Center(
           child: _error == null
@@ -485,6 +487,7 @@ class _IntroSettingsPageState extends State<IntroSettingsPage> {
           );
         }
         return PlayerSettingsScaffold(
+          embedded: widget.embedded,
           title: '片头片尾识别',
           actions: [
             IconButton(

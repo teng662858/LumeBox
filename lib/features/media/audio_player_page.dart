@@ -362,7 +362,8 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
 }
 
 class AudioPlaybackSettingsPage extends StatefulWidget {
-  const AudioPlaybackSettingsPage({super.key});
+  const AudioPlaybackSettingsPage({super.key, this.embedded = false});
+  final bool embedded;
   @override
   State<AudioPlaybackSettingsPage> createState() =>
       _AudioPlaybackSettingsPageState();
@@ -384,10 +385,12 @@ class _AudioPlaybackSettingsPageState extends State<AudioPlaybackSettingsPage> {
   Widget build(BuildContext context) =>
       ModuleGlassScope(module: GlassModule.video, child: _legacyBuild(context));
   Widget _legacyBuild(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      flexibleSpace: const SizedBox.expand(),
-      title: const Text('音频播放器'),
-    ),
+    appBar: widget.embedded
+        ? null
+        : AppBar(
+            flexibleSpace: const SizedBox.expand(),
+            title: const Text('音频播放器'),
+          ),
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [

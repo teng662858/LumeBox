@@ -123,11 +123,9 @@ class _TranslationLanguagesPageState extends State<TranslationLanguagesPage>
             iconColor: const Color(0xFF366AAE),
             title: '全局翻译设置',
             subtitle: '系统翻译、AI 翻译与失败自动补译',
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    const ComicImageToolsSettingsPage(translation: true),
-              ),
+            onTap: () => showSettingsDetail(
+              context,
+              const ComicImageToolsSettingsPage(translation: true),
             ),
           ),
           if (_loading)

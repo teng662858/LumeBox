@@ -10,7 +10,7 @@ import 'package:lume_box/shared/widgets/glass_card.dart';
 /// 播放器设置页的验证：内核选择（未接入项不可选并给出原因）、倍速档位、
 /// 字幕开关与字号。页面是受控组件，断言落在「回调收到了什么设置」上。
 void main() {
-  testWidgets('播放器设置分组进入子页，调整后返回再进入保留数值', (tester) async {
+  testWidgets('播放器页内切换不增加路由，重新切回保留数值', (tester) async {
     var settings = const PlayerSettings();
     await tester.pumpWidget(
       MaterialApp(
@@ -29,14 +29,17 @@ void main() {
     expect(find.text('声音与字幕'), findsOneWidget);
     expect(find.text('弹幕与匹配'), findsOneWidget);
     expect(find.text('手势与外观'), findsOneWidget);
-    expect(find.text('播放倍速'), findsNothing);
+    expect(find.text('播放倍速'), findsOneWidget);
+    await tester.ensureVisible(find.text('播放与选集'));
     await tester.tap(find.text('播放与选集'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ChoiceChip, '2x'));
     await tester.pumpAndSettle();
     expect(settings.speed, 2);
-    await tester.pageBack();
+    await tester.ensureVisible(find.text('画面与显示'));
+    await tester.tap(find.text('画面与显示'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('播放与选集'));
     await tester.tap(find.text('播放与选集'));
     await tester.pumpAndSettle();
     expect(

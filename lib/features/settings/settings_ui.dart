@@ -839,3 +839,76 @@ class _SettingsDirectoryRow extends StatelessWidget {
     ),
   );
 }
+
+/// Changes sections in place, keeping settings navigation at three levels.
+class SettingsTabBar extends StatefulWidget {
+  const SettingsTabBar({
+    super.key,
+    required this.tabs,
+    required this.selected,
+    required this.onSelected,
+  });
+  final List<(String, String)> tabs;
+  final String selected;
+  final ValueChanged<String> onSelected;
+  @override
+  State<SettingsTabBar> createState() => _SettingsTabBarState();
+}
+
+class _SettingsTabBarState extends State<SettingsTabBar> {
+  final keys = <String, GlobalKey>{};
+  @override
+  void initState() {
+    super.initState();
+    revealSelection();
+  }
+
+  @override
+  void didUpdateWidget(SettingsTabBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selected != oldWidget.selected) revealSelection();
+  }
+
+  void revealSelection() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final target = keys[widget.selected]?.currentContext;
+      if (target != null) Scrollable.ensureVisible(target, alignment: .5);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    child: Row(
+      children: [
+        for (final tab in widget.tabs)
+          Padding(
+            key: keys.putIfAbsent(tab.$1, GlobalKey.new),
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              key: ValueKey('settings-tab-${tab.$1}'),
+              label: Text(tab.$2),
+              selected: widget.selected == tab.$1,
+              onSelected: (_) {
+                FocusManager.instance.primaryFocus?.unfocus();
+                widget.onSelected(tab.$1);
+              },
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+Future<void> showSettingsDetail(BuildContext context, Widget page) =>
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * .94,
+        child: page,
+      ),
+    );
