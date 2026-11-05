@@ -48,11 +48,14 @@ class RepositoryOperation {
     this.branch,
     this.commit, {
     this.installPaths = const [],
+    this.addedNames = const [],
+    this.removedNames = const [],
     this.manual = false,
     this.dispatched = false,
   });
   final String branch, commit;
   final List<String> installPaths;
+  final List<String> addedNames, removedNames;
   final bool manual, dispatched;
   Map<String, Object> toJson() => {
     'branch': branch,
@@ -60,12 +63,26 @@ class RepositoryOperation {
     if (manual) 'manual': true,
     if (dispatched) 'dispatched': true,
     if (installPaths.isNotEmpty) 'installPaths': installPaths,
+    if (addedNames.isNotEmpty) 'addedNames': addedNames,
+    if (removedNames.isNotEmpty) 'removedNames': removedNames,
   };
   static RepositoryOperation? parse(Object? value) =>
       value is Map && value['branch'] is String && value['commit'] is String
       ? RepositoryOperation(
           value['branch'] as String,
           value['commit'] as String,
+          addedNames:
+              (value['addedNames'] is List
+                      ? value['addedNames'] as List
+                      : const [])
+                  .whereType<String>()
+                  .toList(),
+          removedNames:
+              (value['removedNames'] is List
+                      ? value['removedNames'] as List
+                      : const [])
+                  .whereType<String>()
+                  .toList(),
           manual: value['manual'] == true,
           dispatched: value['dispatched'] == true,
           installPaths:

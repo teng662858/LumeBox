@@ -170,28 +170,17 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(find.text('远端测试源'), findsOneWidget);
-      await tester.drag(find.byType(ListView).first, const Offset(0, -120));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('源操作').first);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('从仓库删除'));
-      await tester.pumpAndSettle();
-      expect(writes, 0);
       await tester.scrollUntilVisible(
-        find.text('第二个源'),
-        200,
+        find.text('批量管理'),
+        -200,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.tap(
-        find.descendant(
-          of: find
-              .ancestor(of: find.text('第二个源'), matching: find.byType(ListTile))
-              .first,
-          matching: find.byTooltip('源操作'),
-        ),
-      );
+      await tester.tap(find.text('批量管理'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('从仓库删除'));
+      await tester.tap(find.text('全选／取消全选'));
+      await tester.pumpAndSettle();
+      expect(find.text('已选 2 个'), findsOneWidget);
+      await tester.tap(find.text('标记待删除'));
       await tester.pumpAndSettle();
       expect(writes, 0);
       await tester.scrollUntilVisible(
@@ -230,6 +219,10 @@ void main() {
         candidate,
       );
       expect(dispatches, 0);
+      expect(
+        RepositoryOperation.parse(store.value['operation'])!.removedNames,
+        containsAll(['远端测试源', '第二个源']),
+      );
       await tester.scrollUntilVisible(
         find.text('发布待发布的变更'),
         -200,

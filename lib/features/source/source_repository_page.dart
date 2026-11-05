@@ -38,6 +38,8 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
   Timer? _poll;
   bool _busy = false, _checking = false, _loading = true;
   bool _installing = false;
+  bool _batchMode = false;
+  final Set<String> _selected = {};
   String _filterKind = 'all';
   String _runtime = 'all';
   int _installation = 0;
@@ -176,6 +178,8 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
           final completed = RepositoryOperation(
             operation.branch,
             operation.commit,
+            addedNames: operation.addedNames,
+            removedNames: operation.removedNames,
             manual: operation.manual,
             dispatched: operation.dispatched,
           );
@@ -228,6 +232,8 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
       operation.branch,
       operation.commit,
       installPaths: operation.installPaths,
+      addedNames: operation.addedNames,
+      removedNames: operation.removedNames,
       manual: true,
       dispatched: true,
     );
@@ -239,6 +245,23 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     await _store.save({
       'token': _repo!.token,
       'operation': dispatched.toJson(),
+    });
+  });
+
+  Future<void> _forgetUnpublished() => _run(() async {
+    final previous = _operation;
+    if (previous == null || !previous.manual || previous.dispatched) return;
+    final accepted = await _confirm(
+      '放弃上次待发布记录？',
+      '将不再跟踪上次提交。GitHub 上的草稿分支不会删除，也不会发布；当前选择的变更会保留。之后可重新提交当前变更。',
+      confirmLabel: '放弃记录',
+    );
+    if (!accepted || !mounted) return;
+    await _store.save({'token': _repo!.token});
+    if (!mounted) return;
+    setState(() {
+      _operation = null;
+      _publication = null;
     });
   });
 
@@ -349,7 +372,7 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
     ].join('\n');
     if (!await _confirm(
           '提交仓库变更',
-          '以下变更将提交到草稿分支，不会立即发布：\n\n$description\n\n提交后可手动发布；发布成功后新增源会安装到本机。',
+          '以下变更将提交到草稿分支，不会立即发布：\n\n$description\n\n提交后可手动发布；发布成功后新增源会安装到本机。从仓库删除不会卸载本机已安装的源。',
         ) ||
         !mounted) {
       return;
@@ -381,12 +404,23 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
       additions: _additions.values.toList(),
       removals: removals,
     );
+    final recorded = RepositoryOperation(
+      operation.branch,
+      operation.commit,
+      installPaths: operation.installPaths,
+      manual: operation.manual,
+      dispatched: operation.dispatched,
+      addedNames: [for (final item in _additions.values) item.metadata.name],
+      removedNames: [for (final item in _removals.values) item.name],
+    );
     setState(() {
       _additions.clear();
       _removals.clear();
       _removalVersions.clear();
+      _selected.clear();
+      _batchMode = false;
     });
-    await _submitted(operation);
+    await _submitted(recorded);
   });
 
   Future<void> _readInstalled() async {
@@ -514,8 +548,47 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
       child: GlassScaffold(
         effectModule: GlassModule.sources,
         title: '仓库维护',
+        floatingActionButton: !_batchMode
+            ? null
+            : SafeArea(
+                child: Material(
+                  elevation: 4,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('已选 ${_selected.length} 个'),
+                        const SizedBox(width: 12),
+                        FilledButton(
+                          onPressed: _selected.isEmpty || _busy
+                              ? null
+                              : () {
+                                  for (final source in _snapshot!.sources.where(
+                                    (s) =>
+                                        _selected.contains(s.id) &&
+                                        !_removals.containsKey(s.id),
+                                  )) {
+                                    _toggleRemoval(source);
+                                  }
+                                  setState(() {
+                                    _selected.clear();
+                                    _batchMode = false;
+                                  });
+                                },
+                          child: const Text('标记待删除'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, _batchMode ? 100 : 16),
           children: [
             const Text(
               'LumeBox-Sources · main',
@@ -592,7 +665,13 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
               if (_operation != null)
                 Card(
                   child: ExpansionTile(
-                    title: Text(_publication?.status ?? '等待查询发布结果'),
+                    title: Text(
+                      _publication?.succeeded == true &&
+                              (_operation!.addedNames.isNotEmpty ||
+                                  _operation!.removedNames.isNotEmpty)
+                          ? '发布成功：新增 ${_operation!.addedNames.length} 个，删除 ${_operation!.removedNames.length} 个'
+                          : (_publication?.status ?? '等待查询发布结果'),
+                    ),
                     subtitle: const Text('查看提交与发布详情'),
                     children: [
                       Padding(
@@ -601,6 +680,10 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             SelectableText('提交：${_operation!.commit}'),
+                            for (final name in _operation!.addedNames)
+                              Text('新增：$name'),
+                            for (final name in _operation!.removedNames)
+                              Text('删除：$name'),
                             if (_publication?.url.isNotEmpty ?? false)
                               SelectableText(_publication!.url),
                             TextButton(
@@ -625,6 +708,11 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                       ),
                     ],
                   ),
+                ),
+              if (_operation?.manual == true && _operation?.dispatched == false)
+                TextButton(
+                  onPressed: _busy ? null : _forgetUnpublished,
+                  child: const Text('放弃上次待发布记录'),
                 ),
               if (_operation?.manual == true && _operation?.dispatched == false)
                 FilledButton.icon(
@@ -667,7 +755,8 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                   onPressed: _busy || _pending ? null : _submitBatch,
                   child: const Text('手动提交全部变更'),
                 ),
-                if (_pending) const Text('上一批尚未发布完成，可以继续选择，发布完成后提交。'),
+                if (_pending)
+                  const Text('上一批尚未发布完成。请先发布；若不再需要且尚未启动发布，可放弃上次待发布记录。当前选择会保留。'),
               ],
               const SizedBox(height: 16),
               const Text(
@@ -740,37 +829,83 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                   ),
                 ],
               ),
-              Text('找到 ${sources.length} 个源'),
+              Row(
+                children: [
+                  Expanded(child: Text('找到 ${sources.length} 个源')),
+                  TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() {
+                            _batchMode = !_batchMode;
+                            _selected.clear();
+                          }),
+                    child: Text(_batchMode ? '退出批量管理' : '批量管理'),
+                  ),
+                ],
+              ),
+              if (_batchMode)
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => setState(() {
+                        if (sources.every((s) => _selected.contains(s.id))) {
+                          _selected.removeAll(sources.map((s) => s.id));
+                        } else {
+                          _selected.addAll(sources.map((s) => s.id));
+                        }
+                      }),
+                      child: const Text('全选／取消全选'),
+                    ),
+                  ],
+                ),
               for (final source in sources)
                 Card(
                   child: ListTile(
+                    leading: _batchMode
+                        ? Checkbox(
+                            value: _selected.contains(source.id),
+                            onChanged: _busy
+                                ? null
+                                : (value) => setState(() {
+                                    if (value == true) {
+                                      _selected.add(source.id);
+                                    } else {
+                                      _selected.remove(source.id);
+                                    }
+                                  }),
+                          )
+                        : null,
                     title: Text(source.name),
                     subtitle: Text(
-                      '${GithubSourceRepository.kinds[source.paths.first.split('/').first] ?? '源'} · ${source.paths.first.split('.').last.toUpperCase()} · ${source.version}\n${_installed.containsKey(source.id) ? '已安装' : '未安装'}',
+                      '${GithubSourceRepository.kinds[source.paths.first.split('/').first] ?? '源'} · ${source.paths.first.split('.').last.toUpperCase()} · ${source.version}\n${_installed.containsKey(source.id) ? '已安装' : '未安装'}${_removals.containsKey(source.id) ? ' · 待删除' : ''}',
                     ),
-                    trailing: PopupMenuButton<String>(
-                      tooltip: '源操作',
-                      enabled: !_busy,
-                      onSelected: (value) {
-                        if (value == 'install') {
-                          _run(() => _install(source));
-                        } else {
-                          _toggleRemoval(source);
-                        }
-                      },
-                      itemBuilder: (_) => [
-                        const PopupMenuItem(
-                          value: 'install',
-                          child: Text('安装到本机'),
-                        ),
-                        PopupMenuItem(
-                          value: 'remove',
-                          child: Text(
-                            _removals.containsKey(source.id) ? '取消删除' : '从仓库删除',
+                    trailing: _batchMode
+                        ? null
+                        : PopupMenuButton<String>(
+                            tooltip: '源操作',
+                            enabled: !_busy,
+                            onSelected: (value) {
+                              if (value == 'install') {
+                                _run(() => _install(source));
+                              } else {
+                                _toggleRemoval(source);
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              const PopupMenuItem(
+                                value: 'install',
+                                child: Text('安装到本机'),
+                              ),
+                              PopupMenuItem(
+                                value: 'remove',
+                                child: Text(
+                                  _removals.containsKey(source.id)
+                                      ? '取消删除'
+                                      : '从仓库删除',
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
             ],

@@ -44,6 +44,64 @@ class _Repository extends GithubSourceRepository {
 }
 
 void main() {
+  testWidgets('放弃未发布记录保留本次待删除选择', (tester) async {
+    final credentials = _Credentials({
+      'token': 'test',
+      'operation': const RepositoryOperation(
+        'draft',
+        'old',
+        manual: true,
+      ).toJson(),
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SourceRepositoryPage(
+          store: credentials,
+          clientFactory: (_) => _Repository(),
+          managers: {
+            Section.comic: FakeSourceManager(),
+            Section.video: FakeSourceManager(),
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('批量管理'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('批量管理'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('全选／取消全选'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('标记待删除'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('放弃上次待发布记录'),
+      -200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('放弃上次待发布记录'));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.textContaining('当前选择的变更会保留'), findsOneWidget);
+    await tester.tap(find.text('放弃记录'));
+    await tester.pumpAndSettle();
+    expect(credentials.data.containsKey('operation'), false);
+    await tester.scrollUntilVisible(
+      find.text('手动提交全部变更'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '手动提交全部变更'))
+          .onPressed,
+      isNotNull,
+    );
+    expect(find.text('待提交：新增 0，删除 1'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
   for (final automatic in [false, true]) {
     testWidgets(
       automatic
