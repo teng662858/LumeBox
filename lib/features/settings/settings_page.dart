@@ -148,7 +148,7 @@ class SettingsPage extends StatelessWidget {
       effectModule: GlassModule.settings,
       behindBar: true,
       title: '设置',
-      child: SettingsHome(categories: groups),
+      child: SettingsIconScope(child: SettingsHome(categories: groups)),
     );
   }
 

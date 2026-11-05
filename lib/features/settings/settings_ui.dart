@@ -73,6 +73,72 @@ class SettingsGroupTitle extends StatelessWidget {
   }
 }
 
+/// Applies the colorful icon treatment only to the global settings hierarchy.
+class SettingsIconScope extends InheritedWidget {
+  const SettingsIconScope({super.key, required super.child});
+  static bool enabled(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<SettingsIconScope>() != null;
+  @override
+  bool updateShouldNotify(SettingsIconScope oldWidget) => false;
+}
+
+// Each action gets its own recognizable glyph. The slot name remains unchanged
+// so existing user-selected icons continue to apply.
+(IconData, Color)? _settingsEntryIcon(String title) => switch (title) {
+  '主题色' => (Icons.palette, Color(0xFF9B51A5)),
+  '页面底色' => (Icons.format_color_fill, Color(0xFFB65B83)),
+  'App 图标' => (Icons.apps, Color(0xFFAC5C9B)),
+  '应用图标库' => (Icons.interests, Color(0xFF8651A6)),
+  '原生系统导航' => (Icons.navigation, Color(0xFF347D81)),
+  '内容分类显示' => (Icons.visibility, Color(0xFF278A92)),
+  '小说设置' => (Icons.menu_book, Color(0xFF7154B8)),
+  '漫画设置' => (Icons.auto_stories, Color(0xFF8956B1)),
+  '漫画阅读器设置' => (Icons.chrome_reader_mode, Color(0xFF8956B1)),
+  'AI 图片超分与上色' => (Icons.auto_fix_high, Color(0xFFAA5C9B)),
+  '播放与选集' => (Icons.video_library, Color(0xFF6851C5)),
+  '片头片尾' => (Icons.skip_next, Color(0xFF6B70BA)),
+  '画面与显示' => (Icons.aspect_ratio, Color(0xFF5675B2)),
+  '声音与字幕' => (Icons.closed_caption, Color(0xFF5269B3)),
+  '弹幕与匹配' => (Icons.chat_bubble, Color(0xFF9758A7)),
+  '手势与外观' => (Icons.touch_app, Color(0xFF8D66AA)),
+  '内核与网络' => (Icons.memory, Color(0xFF5968A9)),
+  '弹幕服务' => (Icons.forum, Color(0xFFAD6297)),
+  '音频播放器' => (Icons.headphones, Color(0xFF7956BD)),
+  '继续看／读／听' => (Icons.history, Color(0xFF8265AB)),
+  '翻译语言包' => (Icons.language, Color(0xFF478F8B)),
+  '全局翻译' => (Icons.translate, Color(0xFF367F92)),
+  '源管理' => (Icons.source, Color(0xFF366AAE)),
+  '一键导入全部订阅源' => (Icons.playlist_add_circle, Color(0xFF4779B4)),
+  '添加与管理源' => (Icons.library_add, Color(0xFF3974B5)),
+  '漫画订阅' => (Icons.collections_bookmark, Color(0xFF6A67B6)),
+  '视频订阅' => (Icons.subscriptions, Color(0xFF467AB3)),
+  '猫源订阅' => (Icons.pets, Color(0xFF9B719C)),
+  '一键同步全部订阅' => (Icons.sync, Color(0xFF398C83)),
+  '私有 GitHub 订阅' => (Icons.lock, Color(0xFF4D7897)),
+  '总订阅导入导出' => (Icons.import_export, Color(0xFF527BA8)),
+  'TVBox 聚合配置导入' => (Icons.live_tv, Color(0xFF5289A0)),
+  '仓库维护' => (Icons.cloud_upload, Color(0xFF526DA2)),
+  '搜索' => (Icons.search, Color(0xFF547EB6)),
+  '网络设置' => (Icons.wifi, Color(0xFF9B622C)),
+  'TMDB配置' => (Icons.movie, Color(0xFFAC7437)),
+  'Bangumi 追番同步' => (Icons.tv, Color(0xFFAA6674)),
+  '下载中心' => (Icons.download, Color(0xFF3C885F)),
+  '存储与缓存' => (Icons.storage, Color(0xFF387A53)),
+  '预载与清理' => (Icons.downloading, Color(0xFF498C76)),
+  '缓存管理' => (Icons.cleaning_services, Color(0xFFB05252)),
+  '隐私（应用锁）' => (Icons.privacy_tip, Color(0xFF4C8063)),
+  '配置备份' => (Icons.backup, Color(0xFF478A88)),
+  '问题排查' => (Icons.troubleshoot, Color(0xFF596D89)),
+  '使用说明' => (Icons.help, Color(0xFF657C9A)),
+  '高级设置' => (Icons.tune, Color(0xFF77708F)),
+  '沙箱设置' => (Icons.hourglass_bottom, Color(0xFF8B7694)),
+  '调试面板' => (Icons.bug_report, Color(0xFF9A6673)),
+  '流畅度采集' => (Icons.speed, Color(0xFF627CA0)),
+  '运行日志' => (Icons.receipt_long, Color(0xFF6B8291)),
+  '错误报告' => (Icons.assignment, Color(0xFF9B6D71)),
+  _ => null,
+};
+
 /// 统一设置项卡片。
 ///
 /// 排版口径（用户要求，所有设置页共用）：
@@ -114,6 +180,9 @@ class SettingsEntryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final style = SettingsIconScope.enabled(context)
+        ? _settingsEntryIcon(title)
+        : null;
     final card = GlassCard(
       radius: 24,
       padding: EdgeInsets.zero,
@@ -125,28 +194,38 @@ class SettingsEntryCard extends StatelessWidget {
             Container(
               width: 42,
               height: 42,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    (iconColor ?? LumeTheme.accent).withValues(alpha: .16),
-                    (iconColor ?? LumeTheme.accent).withValues(alpha: .06),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: (iconColor ?? LumeTheme.accent).withValues(alpha: .09),
-                ),
-              ),
+              decoration: style == null
+                  ? BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          (iconColor ?? LumeTheme.accent).withValues(
+                            alpha: .16,
+                          ),
+                          (iconColor ?? LumeTheme.accent).withValues(
+                            alpha: .06,
+                          ),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: (iconColor ?? LumeTheme.accent).withValues(
+                          alpha: .09,
+                        ),
+                      ),
+                    )
+                  : BoxDecoration(color: style.$2, shape: BoxShape.circle),
               child: Center(
                 child: LumeIcon(
-                  icon,
+                  style?.$1 ?? icon,
                   slot: 'settings.entry.$title',
                   label: title,
                   group: '设置',
                   size: 22,
-                  color: iconColor ?? LumeTheme.accent,
+                  color: style == null
+                      ? (iconColor ?? LumeTheme.accent)
+                      : Colors.white,
                 ),
               ),
             ),
@@ -322,20 +401,22 @@ class SettingsCategoryPage extends StatelessWidget {
   const SettingsCategoryPage({super.key, required this.category});
   final SettingsCategory category;
   @override
-  Widget build(BuildContext context) => GlassScaffold(
-    title: category.title,
-    effectModule: GlassModule.settings,
-    behindBar: true,
-    child: ListView(
-      padding: GlassScaffold.barInset(context)
-          .add(const EdgeInsets.fromLTRB(20, 20, 20, 36)),
-      children: [
-        SettingsPageIntro(
-          title: category.title,
-          description: category.description,
-        ),
-        ...category.children,
-      ],
+  Widget build(BuildContext context) => SettingsIconScope(
+    child: GlassScaffold(
+      title: category.title,
+      effectModule: GlassModule.settings,
+      behindBar: true,
+      child: ListView(
+        padding: GlassScaffold.barInset(context)
+            .add(const EdgeInsets.fromLTRB(20, 20, 20, 36)),
+        children: [
+          SettingsPageIntro(
+            title: category.title,
+            description: category.description,
+          ),
+          ...category.children,
+        ],
+      ),
     ),
   );
 }
