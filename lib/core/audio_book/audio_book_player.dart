@@ -177,7 +177,9 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   }) async {
     await _configureSession();
     final urls = await _proxy.prepare(sources);
-    _singleMode = !MediaPreload.instance.audio;
+    // Huge native queues serialize thousands of MediaItems on route entry.
+    // Keep the Dart catalog intact and load chapters on demand instead.
+    _singleMode = !MediaPreload.instance.audio || sources.length > 200;
     _removePreloadClearer ??= MediaPreload.instance.onClear(() async {
       if (_playlist.isEmpty || _changing || _singleMode) return;
       final index = (_player.currentIndex ?? 0) + (_singleMode ? _offset : 0);

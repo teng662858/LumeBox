@@ -583,9 +583,20 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                 firstContent:
                     content ?? VideoContent(url: address, audioOnly: true),
                 hint: ResourceKind.audioBook,
+                trackInfo: audioHint
+                    ? const MediaTrackInfo(known: true, audio: true)
+                    : tracks,
               );
         if (!mounted) return;
-        await openMediaResource(context, entry, index: selected);
+        await openMediaResource(
+          context,
+          entry,
+          index: selected,
+          initialMedia: ResolvedMedia(
+            address,
+            headers: SourcePlayback.contentHeaders(content, source: _source!),
+          ),
+        );
         widget.library.refresh();
         return;
       }

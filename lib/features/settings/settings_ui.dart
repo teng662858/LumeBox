@@ -92,8 +92,10 @@ class SettingsEntryCard extends StatelessWidget {
     this.showChevron = true,
     this.marginBottom = 10,
     this.iconColor,
+    this.inlineCategory,
   });
 
+  final SettingsCategory? inlineCategory;
   final IconData icon;
   final String title;
   final String? subtitle;
@@ -114,6 +116,28 @@ class SettingsEntryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final category = inlineCategory;
+    if (category != null) {
+      return Padding(
+        padding: EdgeInsets.only(bottom: marginBottom),
+        child: GlassCard(
+          padding: EdgeInsets.zero,
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
+            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            shape: const Border(),
+            collapsedShape: const Border(),
+            leading: Icon(icon, color: iconColor ?? LumeTheme.accent),
+            title: Text(title),
+            subtitle: subtitle == null ? null : Text(subtitle!),
+            children: category.children,
+          ),
+        ),
+      );
+    }
     final card = GlassCard(
       radius: 24,
       padding: EdgeInsets.zero,
@@ -341,8 +365,14 @@ class SettingsCategoryPage extends StatelessWidget {
 }
 
 class SettingsHome extends StatefulWidget {
-  const SettingsHome({super.key, required this.categories});
+  const SettingsHome({
+    super.key,
+    required this.categories,
+    this.header,
+    this.footer,
+  });
   final List<SettingsCategory> categories;
+  final Widget? header, footer;
   @override
   State<SettingsHome> createState() => _SettingsHomeState();
 }
@@ -368,8 +398,8 @@ class _SettingsHomeState extends State<SettingsHome> {
           .add(const EdgeInsets.fromLTRB(20, 20, 20, 36)),
       children: [
         const SettingsPageIntro(
-          title: '让 LumeBox 更像你',
-          description: '外观、内容与使用习惯，从这里调整。',
+          title: '让 LumeBox 更合你的习惯',
+          description: '管理内容来源，调整阅读与播放偏好。',
         ),
         Padding(
           padding: const EdgeInsets.only(bottom: 20),
@@ -410,6 +440,8 @@ class _SettingsHomeState extends State<SettingsHome> {
             ),
           ),
         ),
+        if (search.isEmpty && widget.header != null) widget.header!,
+        if (search.isEmpty) const SettingsGroupTitle('使用偏好与管理'),
         for (final category in matches) ...[
           _SettingsCategoryCard(
             category: category,
@@ -447,6 +479,7 @@ class _SettingsHomeState extends State<SettingsHome> {
         ],
         if (matches.isEmpty)
           const SettingsNoteCard('没有找到相关设置，试试“主题”“播放”或“缓存”。'),
+        if (search.isEmpty && widget.footer != null) widget.footer!,
       ],
     );
   }
@@ -479,101 +512,72 @@ class _SettingsCategoryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final accent = _categoryColor();
-    final radius = BorderRadius.circular(24);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: dark
-                ? [
-                    Colors.white.withValues(alpha: .11),
-                    Colors.white.withValues(alpha: .045),
-                  ]
-                : [
-                    Colors.white.withValues(alpha: .96),
-                    Colors.white.withValues(alpha: .72),
-                  ],
-          ),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: dark ? .10 : .92),
-          ),
-        ),
-        child: GlassCard(
-          radius: 24,
-          padding: EdgeInsets.zero,
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-            child: Row(
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
+      padding: const EdgeInsets.only(bottom: 2),
+      child: GlassCard(
+        radius: 14,
+        padding: EdgeInsets.zero,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: dark ? .22 : .10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Center(
+                  child: LumeIcon(
+                    category.icon,
+                    slot: 'settings.entry.${category.title}',
+                    label: category.title,
+                    group: '设置',
+                    size: 20,
                     color: accent,
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: dark ? .22 : .18),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
                   ),
-                  child: Center(
-                    child: LumeIcon(
-                      category.icon,
-                      slot: 'settings.entry.${category.title}',
-                      label: category.title,
-                      group: '设置',
-                      size: 23,
-                      color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      category.title,
+                      style: TextStyle(
+                        fontSize: LumeTypography.titleSize,
+                        fontWeight: interfaceFontWeight(
+                          context,
+                          FontWeight.w600,
+                        ),
+                        color: LumeTheme.textPrimary,
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        category.title,
-                        style: TextStyle(
-                          fontSize: LumeTypography.titleSize,
-                          fontWeight: interfaceFontWeight(
-                            context,
-                            FontWeight.w600,
-                          ),
-                          color: LumeTheme.textPrimary,
-                        ),
+                    const SizedBox(height: 3),
+                    Text(
+                      category.description,
+                      style: TextStyle(
+                        fontSize: LumeTypography.descriptionSize,
+                        height: 1.4,
+                        color: LumeTheme.descriptionColor,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        category.description,
-                        style: TextStyle(
-                          fontSize: LumeTypography.descriptionSize,
-                          height: 1.4,
-                          color: LumeTheme.descriptionColor,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Icon(
-                  expanded
-                      ? Icons.expand_less_rounded
-                      : Icons.expand_more_rounded,
-                  size: 21,
-                  color: LumeTheme.muted,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                expanded
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+                size: 20,
+                color: LumeTheme.muted,
+              ),
+            ],
           ),
         ),
       ),

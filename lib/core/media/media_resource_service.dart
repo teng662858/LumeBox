@@ -15,19 +15,38 @@ class MediaResourceService {
   }) : library = library ?? MediaLibrary.instance;
   final MediaTrackProbe probe;
   final MediaLibrary library;
-  List<AudioBookTrack> audioTracks(MediaResource resource) => [
-    for (final episode in resource.episodes)
-      AudioBookTrack(
-        id: '${resource.id}/${episode.id}',
-        episode: episode,
-        album: resource.title,
-        cover: resource.cover,
-        resolve: () async {
-          final media = await resolve(resource, episode);
-          return ResolvedAudio(media.url, headers: media.headers);
-        },
+  List<AudioBookTrack> audioTracks(
+    MediaResource resource, {
+    int? initialIndex,
+    ResolvedMedia? initialMedia,
+  }) => [
+    for (var i = 0; i < resource.episodes.length; i++)
+      _audioTrack(
+        resource,
+        resource.episodes[i],
+        initialMedia: i == initialIndex ? initialMedia : null,
       ),
   ];
+
+  AudioBookTrack _audioTrack(
+    MediaResource resource,
+    ResourceEpisode episode, {
+    ResolvedMedia? initialMedia,
+  }) {
+    var prepared = initialMedia;
+    return AudioBookTrack(
+      id: '${resource.id}/${episode.id}',
+      episode: episode,
+      album: resource.title,
+      cover: resource.cover,
+      resolve: () async {
+        final media = prepared ?? await resolve(resource, episode);
+        prepared = null;
+        return ResolvedAudio(media.url, headers: media.headers);
+      },
+    );
+  }
+
   static Uri? address(ChapterContent? content) {
     if (content is VideoContent) return content.url;
     return null;
@@ -65,6 +84,7 @@ class MediaResourceService {
     required List<SourceChapter> chapters,
     ResourceKind? hint,
     ChapterContent? firstContent,
+    MediaTrackInfo? trackInfo,
   }) async {
     await library.boot();
     final id = MediaResource.sourceKey(source.section, source.id, item.id);
@@ -99,9 +119,14 @@ class MediaResourceService {
                 chapterId: chapters.first.id,
               ));
     final uri = address(content);
-    final tracks = uri == null
-        ? const MediaTrackInfo()
-        : await probe.inspect(uri, headers: headers(content, source: source));
+    final tracks =
+        trackInfo ??
+        (uri == null
+            ? const MediaTrackInfo()
+            : await probe.inspect(
+                uri,
+                headers: headers(content, source: source),
+              ));
     final kind = tracks.kind ?? hint ?? ResourceKind.video;
     return library.add(
       MediaResource(

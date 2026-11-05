@@ -162,6 +162,11 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byType(DisplaySettingsGroup), findsNothing);
+        await tester.scrollUntilVisible(
+          find.text('个性与界面').hitTestable(),
+          180,
+          scrollable: find.byType(Scrollable).first,
+        );
         await tester.tap(find.text('个性与界面'));
         await tester.pumpAndSettle();
         expect(find.byType(DisplaySettingsGroup), findsOneWidget);

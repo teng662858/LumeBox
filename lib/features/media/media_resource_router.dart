@@ -13,6 +13,7 @@ Future<void> openMediaResource(
   BuildContext context,
   MediaResource entry, {
   int? index,
+  ResolvedMedia? initialMedia,
 }) async {
   if (entry.episodes.isEmpty) throw StateError('资源没有章节');
   final service = MediaResourceService();
@@ -23,7 +24,11 @@ Future<void> openMediaResource(
       MaterialPageRoute<void>(
         builder: (_) => AudioPlayerPage(
           resource: entry,
-          tracks: service.audioTracks(entry),
+          tracks: service.audioTracks(
+            entry,
+            initialIndex: index,
+            initialMedia: initialMedia,
+          ),
           initialIndex: index,
         ),
       ),

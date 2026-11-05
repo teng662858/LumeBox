@@ -54,6 +54,41 @@ void main() {
     await subscription.cancel();
   });
 
+  test('五千章目录只提交当前集，切集保持目录索引与恢复位置', () async {
+    MediaPreload.instance.update(audio: true);
+    final catalog = [
+      for (var i = 0; i < 5329; i++)
+        AudioBookTrack(
+          id: 'long-$i',
+          album: '长篇听书',
+          episode: ResourceEpisode(
+            id: '$i',
+            title: '$i',
+            url: Uri.parse('https://fixture.invalid/$i.mp3'),
+          ),
+        ),
+    ];
+    final observed = <int?>[];
+    final subscription = player.index.listen(observed.add);
+    await player.load(
+      catalog,
+      index: 3100,
+      position: const Duration(seconds: 42),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(native.batches, isEmpty);
+    expect(native.singles, hasLength(1));
+    expect(observed.last, 3100);
+    expect(native.position, const Duration(seconds: 42));
+    await player.next();
+    await Future<void>.delayed(Duration.zero);
+    expect(observed.last, 3101);
+    await player.previous();
+    await Future<void>.delayed(Duration.zero);
+    expect(observed.last, 3100);
+    await subscription.cancel();
+  });
+
   test('开启预载提交完整惰性队列；清理后仅保留当前集和播放位置', () async {
     MediaPreload.instance.update(audio: true);
     await player.load(tracks, index: 1, position: const Duration(seconds: 19));
