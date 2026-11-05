@@ -17,6 +17,35 @@ class SectionPreloader {
   static final _requests = NetworkRequestOwner();
   static final _targets = <Section, Completer<({String id, bool home})?>>{};
 
+  static final _capabilities =
+      <(Section, String, Object), ({DateTime at, Future<bool> value})>{};
+  static Future<bool> supportsHome(DataSource source) {
+    if (source is! HomeCapable) return Future.value(false);
+    final key = (
+      source.section,
+      source.id,
+      source is JsDataSource ? JsDataSource : source,
+    );
+    final cached = _capabilities[key];
+    if (cached != null && DateTime.now().difference(cached.at) < ttl) {
+      return cached.value;
+    }
+    late Future<bool> value;
+    value =
+        NetworkCancellation.runWith(
+          null,
+          () => Future.sync(() => (source as HomeCapable).supportsHome()),
+        ).timeout(const Duration(seconds: 2)).catchError((Object error) {
+          if (identical(_capabilities[key]?.value, value)) {
+            _capabilities.remove(key);
+          }
+          LumeLog.info('[warm] 首页能力探测未完成：$error');
+          return false;
+        });
+    _capabilities[key] = (at: DateTime.now(), value: value);
+    return value;
+  }
+
   static Future<void> warm(
     Section section, {
     SourceManager? manager,
@@ -81,8 +110,7 @@ class SectionPreloader {
       if (source == null) return;
       SourceHome? home;
       SourceList? list;
-      final homeSupported =
-          source is HomeCapable && await (source as HomeCapable).supportsHome();
+      final homeSupported = await supportsHome(source);
       token?.check();
       if (!target.isCompleted) {
         target.complete((id: source.id, home: homeSupported));
@@ -131,7 +159,13 @@ class SectionPreloader {
           return;
         }
         await task;
-      })().timeout(const Duration(seconds: 3), onTimeout: () {});
+      })().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {
+          // The foreground must not race a still-running warm request.
+          if (identical(_tasks[section], task)) discard(section);
+        },
+      );
     }
   }
 
@@ -165,9 +199,19 @@ class SectionPreloader {
     return entry!.home;
   }
 
+  static void cancelPendingExcept(Section? active) {
+    for (final section in _tasks.keys.toList()) {
+      if (section != active) discard(section);
+    }
+    for (final section in Section.values) {
+      if (section != active) CoverWarmup.discard(section);
+    }
+  }
+
   static void discard([Section? section]) {
     CoverWarmup.discard(section);
     for (final target in section == null ? Section.values : [section]) {
+      _capabilities.removeWhere((key, _) => key.$1 == target);
       _requests.cancel(target.id);
       _warm.remove(target);
       _tasks.remove(target);

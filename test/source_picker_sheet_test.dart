@@ -235,6 +235,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      expect(
+        find.byType(SourceIcon).evaluate().length,
+        lessThan(24),
+        reason: '80 个源只构建可见附近的行',
+      );
       if (section != Section.cat) {
         final list = find.byKey(const ValueKey('picker-grouped-list'));
         expect(
@@ -358,9 +363,7 @@ void main() {
       );
       final more = tester.getRect(find.byKey(const ValueKey('picker-more-a')));
       expect(tester.getRect(a).right - more.right, 4);
-      final panel = tester.getRect(
-        find.byKey(const ValueKey('browse-right-drawer')),
-      );
+      final panel = tester.getRect(find.byType(SourcePickerSheet));
       if (section != Section.cat) {
         expect(tester.getTopLeft(a).dx, tester.getTopLeft(b).dx);
         expect(tester.getTopLeft(a).dy, lessThan(tester.getTopLeft(b).dy));
@@ -437,9 +440,7 @@ void main() {
     final second = find.byKey(const ValueKey('picker-source-c2'));
     expect(tester.getSize(card).height, 55, reason: '单列卡片统一 55 高');
     // 单列铺满侧栏内容宽度，左缘仍与搜索框同基线。
-    final panel = tester.getRect(
-      find.byKey(const ValueKey('browse-right-drawer')),
-    );
+    final panel = tester.getRect(find.byType(SourcePickerSheet));
     expect(tester.getSize(card).width, panel.width - 32);
     expect(tester.getTopLeft(card).dx, panel.left + 16);
     final decoration =

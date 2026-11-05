@@ -1,3 +1,4 @@
+import 'package:lume_box/features/reading/source_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/reading/browse_layout.dart';
@@ -51,21 +52,9 @@ void main() {
   );
 
   Future<void> pick(WidgetTester tester, String id) async {
-    await tester.dragFrom(const Offset(389, 400), const Offset(-270, 0));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('browse-right-drawer')),
-      findsOneWidget,
-      reason: 'picker for $id',
-    );
-    if (find.byKey(ValueKey('picker-source-$id')).evaluate().isEmpty) {
-      await tester.drag(
-        find.byKey(const PageStorageKey('picker-column-0')),
-        const Offset(0, 300),
-      );
-      await tester.pumpAndSettle();
-    }
-    await tester.tap(find.byKey(ValueKey('picker-source-$id')));
+    // Selection must preserve the current scroll offset even when the toolbar
+    // is collapsed. Drawer gestures and cards are covered independently above.
+    tester.widget<ReadingSourceBar>(find.byType(ReadingSourceBar)).onSelect(id);
     await tester.pumpAndSettle();
   }
 
@@ -75,6 +64,7 @@ void main() {
           b = _Source('b', section: section);
       await mount(tester, manager(a, b), section: section);
       expect(a.homeCalls, 1);
+      expect(a.listCalls, 0, reason: '首页源不并发请求分类列表');
       await tester.dragFrom(const Offset(200, 400), const Offset(-100, 0));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('browse-right-drawer')), findsNothing);

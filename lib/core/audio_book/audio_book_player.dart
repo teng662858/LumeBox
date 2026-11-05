@@ -1,3 +1,5 @@
+import '../source/source_runtime_pins.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -327,6 +329,7 @@ class AudioBookSession extends ChangeNotifier {
   final Future<void> Function() _initialize;
   final AudioBookSettings settings;
   final Timer Function(Duration, void Function()) _schedule;
+  VoidCallback? _releaseRuntime;
   AudioBookPlayer? _player;
   String? _preloadConfiguration;
   MediaResource? resource;
@@ -359,6 +362,7 @@ class AudioBookSession extends ChangeNotifier {
   @override
   void dispose() {
     PlaybackFocus.setPlaying('audioBook', false);
+    _releaseRuntime?.call();
     progress.dispose();
     super.dispose();
   }
@@ -445,6 +449,10 @@ class AudioBookSession extends ChangeNotifier {
     sleepAt = null;
     loading = true;
     loadingMessage = '正在准备播放器…';
+    _releaseRuntime?.call();
+    _releaseRuntime = entry.originSection != null && entry.sourceId != null
+        ? SourceRuntimePins.retain(entry.originSection!, entry.sourceId!)
+        : null;
     resource = entry;
     current = requested ?? 0;
     position = Duration.zero;
@@ -684,6 +692,8 @@ class AudioBookSession extends ChangeNotifier {
     _ready = false;
     _acceptEvents = false;
     await _player?.release();
+    _releaseRuntime?.call();
+    _releaseRuntime = null;
     playing = false;
     notifyListeners();
   }
@@ -697,6 +707,8 @@ class AudioBookSession extends ChangeNotifier {
     }
     _subscriptions.clear();
     await _player?.release();
+    _releaseRuntime?.call();
+    _releaseRuntime = null;
     await settings.save();
   }
 }

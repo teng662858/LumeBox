@@ -1,3 +1,5 @@
+import '../../core/source/source_runtime_pins.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -200,6 +202,10 @@ class ComicDownloadCenter extends ChangeNotifier {
     task.state = 'running';
     notifyListeners();
     await _save();
+    final releaseRuntime = SourceRuntimePins.retain(
+      task.section,
+      task.sourceId,
+    );
     try {
       if (task.downloader == null) {
         final source =
@@ -234,6 +240,7 @@ class ComicDownloadCenter extends ChangeNotifier {
       task.state = 'failed';
       task.error = '$error';
     } finally {
+      releaseRuntime();
       await _save();
       notifyListeners();
     }

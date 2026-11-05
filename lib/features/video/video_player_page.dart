@@ -1,3 +1,4 @@
+import '../../core/source/source_runtime_pins.dart';
 import 'player_snapshot_selector.dart';
 import 'player_edge_back.dart';
 import '../reading/poster_card.dart';
@@ -720,9 +721,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     return PlayerKernel.values.firstWhere(_catalog.isAvailable);
   }
 
+  final _runtimeReleases = <String, VoidCallback>{};
+  void _retainRuntime(String? id) {
+    if (id != null) {
+      _runtimeReleases.putIfAbsent(
+        id,
+        () => SourceRuntimePins.retain(Section.video, id),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    final runtimeId = widget.target?.sourceId ?? widget.sourceId;
+    _retainRuntime(runtimeId);
+
     WidgetsBinding.instance.addObserver(this);
     DanmakuSourcesStore.revision.addListener(_danmakuServiceChanged);
     if (widget.fullscreenOnly) {
@@ -845,6 +859,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         LumeLog.error(error, stack);
       } finally {
         if (player != null) await _disposeQuietly(player, '退出播放页');
+        for (final release in _runtimeReleases.values) {
+          release();
+        }
+        _runtimeReleases.clear();
       }
     }());
     // 预启动的实例没人接手（页面没起播就退了 / 内核库打不开）：就地释放，
@@ -1855,6 +1873,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _intro?.cancel();
     _introMedia = null;
     _healthyPosition = Duration.zero;
+    _retainRuntime(target?.sourceId);
     _target = target;
     _syncQualityIndex(media);
     _suppressProgressSave = true;

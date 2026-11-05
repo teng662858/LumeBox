@@ -35,6 +35,27 @@ class CoverViewportState extends State<CoverViewport> {
   final _entries = <CoverViewportEntry>{};
   final _groups = <(SectionImagePipeline, int?)>{};
   bool _scheduled = false;
+  bool _active = true;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final active = TickerMode.valuesOf(context).enabled;
+    if (active == _active) return;
+    _active = active;
+    if (!active) {
+      for (final entry in _entries) {
+        entry.visible = false;
+      }
+      for (final group in _groups) {
+        if (!group.$1.isDisposed) {
+          group.$1.replacePreloads(const [], targetWidth: group.$2);
+        }
+      }
+      _groups.clear();
+    } else {
+      schedule();
+    }
+  }
 
   void register(CoverViewportEntry entry) {
     _entries.add(entry);
@@ -48,7 +69,7 @@ class CoverViewportState extends State<CoverViewport> {
   }
 
   void schedule() {
-    if (_scheduled || !mounted) return;
+    if (_scheduled || !mounted || !_active) return;
     _scheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduled = false;
@@ -58,6 +79,7 @@ class CoverViewportState extends State<CoverViewport> {
   }
 
   void _updateWindow() {
+    if (!_active) return;
     final viewport = context.findRenderObject();
     if (viewport is! RenderBox || !viewport.hasSize) return;
     final visible = Offset.zero & viewport.size;

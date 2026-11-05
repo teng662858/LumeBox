@@ -1,3 +1,4 @@
+import 'source_loading_surface.dart';
 import '../../core/util/source_load_profile.dart';
 import '../../shared/widgets/network_owned_state.dart';
 
@@ -54,8 +55,10 @@ class SourceHomeView extends StatefulWidget {
     this.onHomeLoaded,
     this.onTranslationTexts,
     this.browseMode,
+    this.cacheTtl = const Duration(minutes: 2),
   });
 
+  final Duration cacheTtl;
   final DataSource source;
   final String? browseMode;
   final double topInset;
@@ -80,10 +83,51 @@ class SourceHomeView extends StatefulWidget {
 
 class _SourceHomeViewState extends State<SourceHomeView>
     with NetworkOwnedState<SourceHomeView> {
-  static final _visits = Expando<SourceHome>();
+  static final _visits = Expando<({SourceHome home, DateTime at})>();
   SourceHome? _home;
   Object? _error;
   int _seq = 0;
+  bool _refreshing = false;
+  bool _browseVisible = true;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final visible = TickerMode.valuesOf(context).enabled;
+    final resumed = visible && !_browseVisible;
+    _browseVisible = visible;
+    if (resumed && _home != null) _preloadFirstScreen(_home!);
+  }
+
+  SourceHome? _visibleHome;
+  List<SourceItem>? _flatItems;
+  String? _flatMode;
+  SourceHome _filterHome(SourceHome home) => SourceHome(
+    items: home.items.where(_visible).toList(),
+    boards: [
+      for (final board in home.boards)
+        SourceHomeBoard(
+          title: board.title,
+          moreUrl: board.moreUrl,
+          items: board.items.where(_visible).toList(),
+        ),
+    ],
+  );
+  bool _visible(SourceItem item) => MediaLibrary.instance.visibleAtOrigin(
+    widget.source.section,
+    widget.source.id,
+    item.id,
+  );
+  String _visibleIds(SourceHome home) => [
+    for (final item in home.items) item.id,
+    for (final board in home.boards) ...[
+      board.title,
+      ...board.items.map((item) => item.id),
+    ],
+  ].join('\u0000');
+  void _invalidatePresentation() {
+    _visibleHome = null;
+    _flatItems = null;
+  }
 
   @override
   void initState() {
@@ -99,7 +143,16 @@ class _SourceHomeViewState extends State<SourceHomeView>
   }
 
   void _mediaChanged() {
-    if (mounted) setState(() {});
+    if (!mounted || _home == null) return;
+    final next = _filterHome(_home!);
+    if (_visibleHome != null &&
+        _visibleIds(next) == _visibleIds(_visibleHome!)) {
+      return;
+    }
+    setState(() {
+      _visibleHome = next;
+      _flatItems = null;
+    });
   }
 
   @override
@@ -119,6 +172,8 @@ class _SourceHomeViewState extends State<SourceHomeView>
       // Source ids are stable across settings changes. A new DataSource object
       // therefore needs a forced load: cancel old warm data and advance _seq,
       // even when _loadingSourceId still equals this id.
+      _home = null;
+      _invalidatePresentation();
       _load(force: true);
     } else if (!identical(oldWidget.pipeline, widget.pipeline) &&
         _home != null) {
@@ -151,14 +206,31 @@ class _SourceHomeViewState extends State<SourceHomeView>
     final seq = ++_seq;
     _loadingSourceId = source.id;
     networkRequests.cancel('home');
+    final cached = !force ? _visits[source] : null;
+    if (cached != null) {
+      _home = cached.home;
+      _invalidatePresentation();
+      if (DateTime.now().difference(cached.at) < widget.cacheTtl) {
+        _loadingSourceId = null;
+        _error = null;
+        _preloadFirstScreen(cached.home);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && seq == _seq) _notifyHome(cached.home);
+        });
+        return;
+      }
+    }
     setState(() {
-      _home = null;
+      _refreshing = true;
       _error = null;
     });
     if (source is! HomeCapable) {
       _loadingSourceId = null;
       if (!mounted) return;
-      setState(() => _home = const SourceHome());
+      setState(() {
+        _home = const SourceHome();
+        _refreshing = false;
+      });
       return;
     }
     try {
@@ -170,7 +242,6 @@ class _SourceHomeViewState extends State<SourceHomeView>
       );
       if (!mounted || seq != _seq) return;
       final home =
-          (!force ? _visits[source] : null) ??
           SectionPreloader.takeWarmHome(source.section, sourceId: source.id) ??
           await networkRequests.run<SourceHome>(
             'home',
@@ -187,17 +258,13 @@ class _SourceHomeViewState extends State<SourceHomeView>
             ),
           );
       if (!mounted || seq != _seq) return;
-      _visits[source] = home;
-      setState(() => _home = home);
+      _visits[source] = (home: home, at: DateTime.now());
+      setState(() {
+        _home = home;
+        _invalidatePresentation();
+      });
       _preloadFirstScreen(home);
-      widget.onTranslationTexts?.call([
-        ...home.items.map((item) => item.title),
-        for (final board in home.boards) ...[
-          board.title,
-          ...board.items.map((item) => item.title),
-        ],
-      ]);
-      widget.onHomeLoaded?.call();
+      _notifyHome(home);
     } catch (error) {
       if (!mounted || seq != _seq) return;
       if (!retried && _superseded(error)) {
@@ -210,8 +277,22 @@ class _SourceHomeViewState extends State<SourceHomeView>
       }
       setState(() => _error = error);
     } finally {
-      if (seq == _seq) _loadingSourceId = null;
+      if (seq == _seq) {
+        _loadingSourceId = null;
+        if (mounted) setState(() => _refreshing = false);
+      }
     }
+  }
+
+  void _notifyHome(SourceHome home) {
+    widget.onTranslationTexts?.call([
+      ...home.items.map((item) => item.title),
+      for (final board in home.boards) ...[
+        board.title,
+        ...board.items.map((item) => item.title),
+      ],
+    ]);
+    widget.onHomeLoaded?.call();
   }
 
   /// 用户显式发起的一次尝试（卡片上的【重试】）：**先武装，再重放**。
@@ -227,6 +308,14 @@ class _SourceHomeViewState extends State<SourceHomeView>
 
   /// 数据返回后立刻预取首屏，按页面的平铺顺序和实际解码档准备封面。
   void _preloadFirstScreen(SourceHome home) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _browseVisible && identical(_home, home)) {
+        _preloadVisible(home);
+      }
+    });
+  }
+
+  void _preloadVisible(SourceHome home) {
     final pipeline = widget.pipeline;
     if (pipeline == null) return;
     pipeline.bindSource(widget.source);
@@ -288,7 +377,7 @@ class _SourceHomeViewState extends State<SourceHomeView>
   @override
   Widget build(BuildContext context) {
     final error = _error;
-    if (error != null) {
+    if (error != null && _home == null) {
       final detail = error is SourceException ? error.message : '$error';
       final connection = secureConnectionFailureOf(error);
       final description = connection == null
@@ -351,27 +440,13 @@ class _SourceHomeViewState extends State<SourceHomeView>
         ),
       );
     }
-    final original = _home;
-    bool visible(SourceItem item) => MediaLibrary.instance.visibleAtOrigin(
-      widget.source.section,
-      widget.source.id,
-      item.id,
-    );
-    final home = original == null
-        ? null
-        : SourceHome(
-            items: original.items.where(visible).toList(),
-            boards: [
-              for (final board in original.boards)
-                SourceHomeBoard(
-                  title: board.title,
-                  moreUrl: board.moreUrl,
-                  items: board.items.where(visible).toList(),
-                ),
-            ],
-          );
+    final home = _home == null ? null : _visibleHome ??= _filterHome(_home!);
     if (home == null) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2.5));
+      return SourceLoadingSurface(
+        section: widget.source.section,
+        topInset: widget.topInset,
+        label: '正在加载${widget.source.name}首页…',
+      );
     }
     if (home.isEmpty) {
       // 用户口径任务 3.2：空首页给提示并引导去分类。
@@ -416,29 +491,65 @@ class _SourceHomeViewState extends State<SourceHomeView>
         ),
       );
     }
-    final items = home.isBoards
-        ? {
-            for (final board in boards)
-              for (final item in board.items) item.id: item,
-          }.values.toList()
-        : home.items;
+    if (_flatItems == null || _flatMode != widget.browseMode) {
+      _flatMode = widget.browseMode;
+      _flatItems = home.isBoards
+          ? {
+              for (final board in boards)
+                for (final item in board.items) item.id: item,
+            }.values.toList()
+          : home.items;
+    }
+    final items = _flatItems!;
     return AdaptiveCoverSurface(
       pipeline: widget.pipeline,
       item: items.isEmpty ? null : items.first,
-      child: RefreshIndicator(
-        onRefresh: () async {
-          await Future.wait([
-            _load(force: true),
-            if (widget.onRefreshMetadata != null) widget.onRefreshMetadata!(),
-          ]);
-        },
-        child: CoverViewport(child: _buildFlat(items)),
+      child: Column(
+        children: [
+          if (error != null)
+            Padding(
+              padding: EdgeInsets.fromLTRB(16, widget.topInset, 16, 4),
+              child: Row(
+                children: [
+                  const Expanded(child: Text('首页更新失败，已保留现有内容')),
+                  if (shouldOfferWebView('$error'))
+                    TextButton(
+                      onPressed: _openWebViewForWaf,
+                      child: const Text('网页视图'),
+                    ),
+                  TextButton(onPressed: _retry, child: const Text('重试')),
+                ],
+              ),
+            ),
+          Expanded(
+            child: Stack(
+              children: [
+                RefreshIndicator(
+                  onRefresh: _retry,
+                  child: CoverViewport(
+                    child: _buildFlat(
+                      items,
+                      topInset: error != null ? 8 : widget.topInset,
+                    ),
+                  ),
+                ),
+                if (_refreshing)
+                  Positioned(
+                    top: error != null ? 0 : widget.topInset,
+                    left: 16,
+                    right: 16,
+                    child: const LinearProgressIndicator(minHeight: 2),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
   /// 旧兼容模式：普通网格首页（不出现任何横向板块组件）。
-  Widget _buildFlat(List<SourceItem> items) {
+  Widget _buildFlat(List<SourceItem> items, {required double topInset}) {
     final mode =
         BrowseLayoutSettings.instance.modeFor(widget.source.section) ??
         BrowseLayoutMode.grid3;
@@ -449,12 +560,7 @@ class _SourceHomeViewState extends State<SourceHomeView>
         ),
         scrollCacheExtent: const ScrollCacheExtent.viewport(1),
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(
-          16,
-          widget.topInset,
-          16,
-          16 + widget.bottomInset,
-        ),
+        padding: EdgeInsets.fromLTRB(16, topInset, 16, 16 + widget.bottomInset),
         itemCount: items.length,
         separatorBuilder: (_, _) => const Divider(height: 1, thickness: 1),
         itemBuilder: (context, index) {
@@ -488,7 +594,7 @@ class _SourceHomeViewState extends State<SourceHomeView>
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(
           sidePadding,
-          widget.topInset,
+          topInset,
           sidePadding,
           16 + widget.bottomInset,
         ),

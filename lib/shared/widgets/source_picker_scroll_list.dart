@@ -9,12 +9,16 @@ import 'source_card_metrics.dart';
 class SourcePickerScrollList extends StatefulWidget {
   const SourcePickerScrollList({
     super.key,
-    required this.children,
+    this.children = const [],
+    this.itemBuilder,
+    this.itemCount,
     this.focusKey,
     this.estimatedOffset = 0,
     this.padding = const EdgeInsets.only(bottom: 16),
   });
   final List<Widget> children;
+  final IndexedWidgetBuilder? itemBuilder;
+  final int? itemCount;
   final GlobalKey? focusKey;
   final double estimatedOffset;
   final EdgeInsets padding;
@@ -94,12 +98,13 @@ class _SourcePickerScrollListState extends State<SourcePickerScrollList> {
             if (notification.dragDetails != null) _pending = false;
             return false;
           },
-          child: ListView(
+          child: ListView.builder(
             controller: _controller,
             primary: false,
             physics: const BouncingScrollPhysics(),
             padding: widget.padding.copyWith(bottom: bottom),
-            children: widget.children,
+            itemCount: widget.itemCount ?? widget.children.length,
+            itemBuilder: widget.itemBuilder ?? (_, i) => widget.children[i],
           ),
         );
       },

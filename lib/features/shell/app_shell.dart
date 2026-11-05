@@ -1,3 +1,4 @@
+import '../../core/js/source_registry.dart';
 import '../../core/cache/section_memory_cache.dart';
 import '../../core/net/lume_net.dart';
 import '../../core/net/network_cancellation.dart';
@@ -376,6 +377,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   @override
   void didHaveMemoryPressure() {
+    SourceRegistry.trimIdleRuntimes();
     SectionMemoryCache.instance.clearAll();
     SectionImagePipeline.trimMemory();
     PaintingBinding.instance.imageCache.clear();
@@ -392,6 +394,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       _backgroundWarmed.clear();
       _scheduleBackgroundWarm();
     } else {
+      SectionPreloader.cancelPendingExcept(null);
+      CatPreloader.discard();
       _subscriptionTimer?.cancel();
       _subscriptionStartupTimer?.cancel();
       _backgroundWarmTimer?.cancel();
@@ -427,6 +431,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // 点下去、页面还没构建的那一小段，把板块运行时（阅读库 + 源引擎）与首页
     // 第一页提前拉起来；页面构建后能直接吃这口热饭。
     // 预热失败不影响任何事（页面照旧自己取），见 [SectionPreloader]。
+    SectionPreloader.cancelPendingExcept(sectionFromId(id));
+    if (sectionFromId(id) != Section.cat) CatPreloader.discard();
     if (!_visitedPages.contains(id)) unawaited(_warmUp(id));
     setState(() {
       _activeId = id;

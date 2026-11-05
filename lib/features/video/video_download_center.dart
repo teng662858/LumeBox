@@ -1,3 +1,4 @@
+import '../../core/source/source_runtime_pins.dart';
 import '../../core/media/playback_focus.dart';
 import '../../core/net/lume_net.dart';
 import '../../core/net/lume_http.dart';
@@ -247,6 +248,10 @@ class VideoDownloadCenter extends ChangeNotifier {
           ..autoUncompress = false;
         await _save();
         notifyListeners();
+        final releaseRuntime = SourceRuntimePins.retain(
+          Section.video,
+          task.sourceId,
+        );
         try {
           if (task.hasLocalPlaylist && await localFile(task).exists()) {
             await _mergeDownloaded(task);
@@ -312,6 +317,7 @@ class VideoDownloadCenter extends ChangeNotifier {
                 .replaceAll(RegExp(r'https?://[^\s]+'), '[地址]');
           }
         } finally {
+          releaseRuntime();
           _client?.close(force: true);
           _client = null;
           _active = null;

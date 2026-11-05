@@ -105,6 +105,29 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
   String contentGroup = 'all';
   final _currentSourceKey = GlobalKey();
   bool _locateCurrent = true;
+  List<SourceDescriptor>? _sortInput, _sorted;
+  List<SourceDescriptor> _orderedSources() {
+    if (identical(_sortInput, sources) && _sorted != null) return _sorted!;
+    _sortInput = sources;
+    final compare = SourceOrder.comparator(
+      widget.section,
+      sources.map((s) => s.id).toList(),
+    );
+    final pins = {
+      for (final source in sources)
+        source.id: SourcePreferences.read(widget.section, source.id).pinned,
+    };
+    return _sorted = List<SourceDescriptor>.of(sources)
+      ..sort((a, b) {
+        final pa = pins[a.id]!, pb = pins[b.id]!;
+        return pa == pb
+            ? compare(a.id, b.id)
+            : pa
+            ? -1
+            : 1;
+      });
+  }
+
   final busy = <String>{};
   final results = <String, SourceTestResult>{};
 
@@ -324,6 +347,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
           await prefs
               .copyWith(pinned: !prefs.pinned)
               .save(widget.section, source.id);
+          _sorted = null;
           widget.onChanged?.call();
         case SourceQuickAction.preferences:
           await openSettings(source);
@@ -443,7 +467,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final visible = sources
+    final visible = _orderedSources()
         .where(
           (source) =>
               source.enabled &&
@@ -458,15 +482,6 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
         .toList();
     final order = sources.map((s) => s.id).toList();
     final compareOrder = SourceOrder.comparator(widget.section, order);
-    final pinned = {
-      for (final source in visible)
-        source.id: SourcePreferences.read(widget.section, source.id).pinned,
-    };
-    visible.sort((a, b) {
-      final pinA = pinned[a.id]!;
-      final pinB = pinned[b.id]!;
-      return pinA != pinB ? (pinA ? -1 : 1) : compareOrder(a.id, b.id);
-    });
     Future<void> move(
       List<SourceDescriptor> entries,
       String from,
@@ -481,7 +496,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
         entries.indexWhere((s) => s.id == from),
         entries.indexWhere((s) => s.id == to),
       );
-      if (mounted) setState(() {});
+      if (mounted) setState(() => _sorted = null);
     }
 
     // 猫源卡片：左滑露出设置 / 删除；长按拖拽仍由外层 SourceDragTile 负责。
@@ -514,66 +529,20 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
       child: sourceTile(source),
     );
 
-    Widget list(List<SourceDescriptor> entries) {
-      // 所有板块统一用长按拖拽排序；猫源的设置/删除走左滑，不抢长按。
-      Widget tile(BuildContext context, int i) => SourceDragTile(
-        key: ValueKey('picker-drag-${entries[i].id}'),
-        id: entries[i].id,
-        name: entries[i].name,
-        accepts: (id) => entries.any((s) => s.id == id),
-        onMove: (from, to) => move(entries, from, to),
-        child: widget.section == Section.cat
-            ? catCard(entries[i])
-            : swipeCard(entries[i]),
-      );
-      if (entries.isEmpty) {
-        return Center(child: Text(query.isEmpty ? '暂无源' : '没有匹配的源'));
-      }
-      // 与视频源一致，每行两张等宽卡片；保留长按拖拽和左滑操作。
-      if (columns) {
-        Widget slot(int index) => index < entries.length
-            ? tile(context, index)
-            : const SizedBox.shrink();
-
-        return ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: EdgeInsets.symmetric(
-            horizontal: widget.section == Section.cat ? 16 : 14,
-          ),
-          itemCount: (entries.length + 1) ~/ 2,
-          itemBuilder: (context, row) => Padding(
-            padding: EdgeInsets.only(
-              bottom: widget.section == Section.cat
-                  ? 6
-                  : SourceCardMetrics.rowGap,
-            ),
-            child: SizedBox(
-              height: widget.section == Section.cat
-                  ? CatSiteTile.compactHeight
-                  : SourceCardMetrics.height,
-              child: Row(
-                children: [
-                  Expanded(child: slot(row * 2)),
-                  const SizedBox(width: SourceCardMetrics.columnGap),
-                  Expanded(child: slot(row * 2 + 1)),
-                ],
-              ),
-            ),
-          ),
-        );
-      }
-      return ListView.separated(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.symmetric(
-          horizontal: widget.section == Section.cat ? 16 : 14,
-        ),
-        itemCount: entries.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 6),
-        itemBuilder: tile,
-      );
-    }
+    Widget tile(
+      BuildContext context,
+      SourceDescriptor source,
+      List<SourceDescriptor> entries,
+    ) => SourceDragTile(
+      key: ValueKey('picker-drag-${source.id}'),
+      id: source.id,
+      name: source.name,
+      accepts: (id) => entries.any((s) => s.id == id),
+      onMove: (from, to) => move(entries, from, to),
+      child: widget.section == Section.cat
+          ? catCard(source)
+          : swipeCard(source),
+    );
 
     final grouped = {
       for (final group in SourcePickerGroups.forSection(widget.section))
@@ -615,31 +584,64 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                         60,
                   ) +
               (columns ? currentIndex ~/ 2 : currentIndex) * rowHeight);
+    final rows = <WidgetBuilder>[];
+    for (final group in groupDefinitions) {
+      final entries = grouped[group.$1]!;
+      if (entries.isEmpty) continue;
+      rows.add(
+        (context) => Semantics(
+          header: true,
+          child: Padding(
+            key: ValueKey('picker-group-${group.$1}'),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: Text(
+              group.$2,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+          ),
+        ),
+      );
+      for (var i = 0; i < entries.length; i += columns ? 2 : 1) {
+        final index = i;
+        rows.add(
+          (context) => Padding(
+            padding: EdgeInsets.fromLTRB(
+              widget.section == Section.cat ? 16 : 14,
+              0,
+              widget.section == Section.cat ? 16 : 14,
+              widget.section == Section.cat ? 6 : SourceCardMetrics.rowGap,
+            ),
+            child: SizedBox(
+              height: widget.section == Section.cat
+                  ? CatSiteTile.compactHeight
+                  : SourceCardMetrics.height,
+              child: columns
+                  ? Row(
+                      children: [
+                        Expanded(child: tile(context, entries[index], entries)),
+                        const SizedBox(width: SourceCardMetrics.columnGap),
+                        Expanded(
+                          child: index + 1 < entries.length
+                              ? tile(context, entries[index + 1], entries)
+                              : const SizedBox(),
+                        ),
+                      ],
+                    )
+                  : tile(context, entries[index], entries),
+            ),
+          ),
+        );
+      }
+      rows.add((_) => const SizedBox(height: 8));
+    }
     final singleList = visible.isEmpty
         ? Center(child: Text(query.isEmpty ? '暂无源' : '没有匹配的源'))
         : SourcePickerScrollList(
             key: const ValueKey('picker-grouped-list'),
             focusKey: focusKey,
             estimatedOffset: initialOffset,
-            padding: const EdgeInsets.only(bottom: 16),
-            children: [
-              for (final group in groupDefinitions)
-                if (grouped[group.$1]!.isNotEmpty) ...[
-                  Semantics(
-                    header: true,
-                    child: Padding(
-                      key: ValueKey('picker-group-${group.$1}'),
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-                      child: Text(
-                        group.$2,
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                    ),
-                  ),
-                  list(grouped[group.$1]!),
-                  const SizedBox(height: 8),
-                ],
-            ],
+            itemCount: rows.length,
+            itemBuilder: (context, index) => rows[index](context),
           );
 
     final groupedList = singleList;
