@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 
 import '../net/lume_http.dart';
 import '../net/source_subscription.dart';
+import '../net/private_github_subscription.dart';
 import '../session/section.dart';
 import '../session/section_scope.dart';
 import '../util/lume_log.dart';
@@ -317,6 +318,16 @@ class SourceSubscriptionSync {
     Iterable<String> urls, {
     bool autoInstallNew = false,
   }) async {
+    final credentials = await PrivateGithubSubscription.load();
+    for (final raw in urls) {
+      final input = raw.trim();
+      final parsed = Uri.tryParse(input);
+      if (parsed?.userInfo.isNotEmpty == true ||
+          (credentials?.targetsRepository(input) == true &&
+              credentials?.apiFor(input) == null)) {
+        throw const FormatException('私有订阅地址不能包含凭据，且须使用已配置的分支');
+      }
+    }
     for (final raw in urls) {
       final url = SubscriptionCatalog.canonical(raw.trim(), section);
       if (!_validUrl(url)) throw const FormatException('订阅地址须为完整 HTTP(S) 地址');

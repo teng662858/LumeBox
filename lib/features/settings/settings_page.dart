@@ -54,6 +54,7 @@ import 'sandbox_settings_page.dart';
 import 'bangumi_settings_page.dart';
 import 'settings_ui.dart';
 import 'translation_languages_page.dart';
+import 'private_subscription_settings_page.dart';
 
 import 'section_cache.dart';
 import 'usage_guide_page.dart';
@@ -332,6 +333,8 @@ class SettingsPage extends StatelessWidget {
         '总订阅导入导出': () => _push(context, const TotalSubscriptionPage()),
         'TVBox 聚合配置导入': () => _push(context, const TvBoxImportPage()),
         'GitHub 仓库源管理': () => _push(context, const SourceRepositoryPage()),
+        '私有 GitHub 订阅': () =>
+            _push(context, const PrivateSubscriptionSettingsPage()),
         '一键同步全部订阅': () => _push(context, const SubscriptionSyncPage()),
       },
       onTap: () => _push(
@@ -366,6 +369,13 @@ class SettingsPage extends StatelessWidget {
               onTap: () => _push(context, const SubscriptionSyncPage()),
             ),
             const SettingsGroupTitle('高级导入与仓库'),
+            SettingsEntryCard(
+              icon: Icons.lock_outline,
+              title: '私有 GitHub 订阅',
+              subtitle: '配置仓库和只读 Token',
+              onTap: () =>
+                  _push(context, const PrivateSubscriptionSettingsPage()),
+            ),
             SettingsEntryCard(
               icon: Icons.subscriptions_outlined,
               title: '总订阅导入导出',

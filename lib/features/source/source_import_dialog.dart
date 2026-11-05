@@ -922,14 +922,7 @@ class _SourceImportDialogState extends State<SourceImportDialog> {
   static Future<SourceFetchResult> _fetchSubscriptionText(String url) async {
     final http = LumeHttp();
     try {
-      final response = await http.send(url: url);
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw StateError('HTTP ${response.statusCode}');
-      }
-      return SourceFetchResult(
-        bytes: response.body,
-        text: stripScriptBom(response.text),
-      );
+      return await SourceSubscription.fetchSubscription(http, url);
     } finally {
       http.dispose();
     }

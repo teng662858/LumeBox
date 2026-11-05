@@ -715,22 +715,27 @@ class _SourceRepositoryPageState extends State<SourceRepositoryPage> {
                 '仓库源列表',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
-              DropdownButtonFormField<String>(
-                key: ValueKey('repository-filter-$_filterKind'),
-                initialValue: _filterKind,
-                decoration: const InputDecoration(labelText: '浏览分类'),
-                items: [
-                  const DropdownMenuItem(value: 'all', child: Text('全部分类')),
-                  for (final entry in GithubSourceRepository.kinds.entries)
-                    DropdownMenuItem(
-                      value: entry.key,
-                      child: Text(entry.value),
-                    ),
-                ],
-                onChanged: _busy
-                    ? null
-                    : (value) => setState(() => _filterKind = value!),
+              const SizedBox(height: 12),
+              Semantics(
+                label: '浏览分类',
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey('repository-filter-$_filterKind'),
+                  initialValue: _filterKind,
+                  decoration: const InputDecoration(hintText: '浏览分类'),
+                  items: [
+                    const DropdownMenuItem(value: 'all', child: Text('全部分类')),
+                    for (final entry in GithubSourceRepository.kinds.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                  ],
+                  onChanged: _busy
+                      ? null
+                      : (value) => setState(() => _filterKind = value!),
+                ),
               ),
+              const SizedBox(height: 12),
               TextField(
                 controller: _search,
                 decoration: const InputDecoration(labelText: '搜索仓库源'),

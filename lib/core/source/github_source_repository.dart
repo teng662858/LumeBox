@@ -515,11 +515,11 @@ class GithubSourceRepository {
     final run = runs.first;
     final url = '${run['html_url'] ?? ''}';
     if (run['status'] != 'completed') {
-      return RepositoryPublication('正在校验、更新订阅并核对双线路', url: url);
+      return RepositoryPublication('正在校验、更新并核对订阅', url: url);
     }
     return RepositoryPublication(
       run['conclusion'] == 'success'
-          ? '已发布：GitHub 与国内 CDN 内容核对通过'
+          ? '已发布：订阅内容核对通过'
           : '发布未完成，请查看 GitHub 流程；main 可能已更新，先刷新核对再重试',
       url: url,
       finished: true,

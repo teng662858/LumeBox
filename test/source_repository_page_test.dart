@@ -139,6 +139,18 @@ void main() {
       await tester.tap(find.text('授权并读取仓库'));
       await pumpIoAndSettle(tester);
       expect(store.value['token'], 'test-token');
+      final heading = find.text('仓库源列表');
+      final filter = find.byKey(const ValueKey('repository-filter-all'));
+      final search = find.widgetWithText(TextField, '搜索仓库源');
+      expect(
+        tester.getRect(filter).top,
+        greaterThan(tester.getRect(heading).bottom),
+      );
+      expect(
+        tester.getRect(search).top,
+        greaterThan(tester.getRect(filter).bottom),
+      );
+      expect(find.text('浏览分类'), findsNothing);
       await tester.scrollUntilVisible(
         find.text('远端测试源'),
         200,
@@ -220,6 +232,11 @@ void main() {
         -200,
         scrollable: find.byType(Scrollable).first,
       );
+      await Scrollable.ensureVisible(
+        tester.element(find.text('手动发布已提交的变更')),
+        alignment: .5,
+      );
+      await tester.pumpAndSettle();
       expect(RepositoryOperation.parse(store.value['operation'])?.manual, true);
       await tester.tap(find.text('手动发布已提交的变更'));
       await tester.pump(const Duration(milliseconds: 350));
