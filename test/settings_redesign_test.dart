@@ -109,10 +109,12 @@ void main() {
     restored.dispose();
   });
   testWidgets('材质参数进入真实表面，高对比度自动使用实色', (tester) async {
-    await FrostedSettings.instance.setStyle(
-      GlassModule.video,
-      GlassPart.cards,
-      const LiquidGlassStyle().withValue(GlassParameter.opacity, .25),
+    await tester.runAsync(
+      () => FrostedSettings.instance.setStyle(
+        GlassModule.video,
+        GlassPart.cards,
+        const LiquidGlassStyle().withValue(GlassParameter.opacity, .25),
+      ),
     );
     Widget scene(bool contrast) => MaterialApp(
       home: MediaQuery(
@@ -246,12 +248,14 @@ void main() {
       240,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.drag(
-      find.byKey(const ValueKey('native-glass-tint')),
-      const Offset(40, 0),
-    );
+    await tester.runAsync(() async {
+      await tester.drag(
+        find.byKey(const ValueKey('native-glass-tint')),
+        const Offset(40, 0),
+      );
+      await FrostedSettings.instance.save();
+    });
     await tester.pumpAndSettle();
-    await tester.runAsync(() => FrostedSettings.instance.save());
     expect(FrostedSettings.instance.native.tintOpacity, greaterThan(0));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());

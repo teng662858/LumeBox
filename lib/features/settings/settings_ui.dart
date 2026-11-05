@@ -2,6 +2,7 @@ import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/lume_theme.dart';
+import '../../core/session/app_preferences.dart';
 import '../../shared/widgets/glass_card.dart';
 
 /// 设置模块统一的脚注颜色（用户指定 #8E8E93）。
@@ -402,8 +403,10 @@ class SettingsCategory {
     this.icon,
     this.children, {
     this.keywords = '',
+    this.status,
   });
   final String title, description, keywords;
+  final String Function()? status;
   final IconData icon;
   final List<Widget> children;
 }
@@ -459,9 +462,9 @@ class SettingsCategoryPage extends StatelessWidget {
         padding: GlassScaffold.barInset(context)
             .add(const EdgeInsets.fromLTRB(20, 20, 20, 36)),
         children: [
-          SettingsPageIntro(
-            title: category.title,
-            description: category.description,
+          SettingsFooterNote(
+            category.description,
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
           ),
           ...settingsGroupedChildren(category.children),
         ],
@@ -470,252 +473,363 @@ class SettingsCategoryPage extends StatelessWidget {
   );
 }
 
+class SettingsShortcut {
+  const SettingsShortcut(this.id, this.title, this.icon, this.onTap);
+  final String id, title;
+  final IconData icon;
+  final VoidCallback onTap;
+}
+
+/// Home is a directory only; settings are mounted on their own routes.
 class SettingsHome extends StatefulWidget {
-  const SettingsHome({super.key, required this.categories});
+  const SettingsHome({
+    super.key,
+    required this.categories,
+    this.shortcuts = const [],
+    this.footer,
+  });
   final List<SettingsCategory> categories;
+  final List<SettingsShortcut> shortcuts;
+  final Widget? footer;
   @override
   State<SettingsHome> createState() => _SettingsHomeState();
 }
 
 class _SettingsHomeState extends State<SettingsHome> {
   String query = '';
-  String? expanded;
+
+  List<SettingsShortcut> get selectedShortcuts {
+    final ids = AppPreferences.instance.settingsShortcuts;
+    final selected = <SettingsShortcut>[
+      for (final id in ids)
+        for (final item in widget.shortcuts)
+          if (item.id == id) item,
+    ];
+    return selected.isEmpty
+        ? widget.shortcuts.take(3).toList()
+        : selected.take(3).toList();
+  }
+
+  Future<void> _openCategory(SettingsCategory category) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => SettingsCategoryPage(category: category),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _editShortcuts() async {
+    final ids = selectedShortcuts.map((s) => s.id).toList();
+    final saved = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => SizedBox(
+          height: MediaQuery.sizeOf(context).height * .7,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        '编辑常用入口',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '关闭',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('选择 1–3 项，按选择顺序排列（${ids.length}/3）'),
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  children: [
+                    for (final item in widget.shortcuts)
+                      CheckboxListTile(
+                        title: Text(item.title),
+                        secondary: Icon(item.icon),
+                        value: ids.contains(item.id),
+                        onChanged: !ids.contains(item.id) && ids.length >= 3
+                            ? null
+                            : (value) => update(() {
+                                if (value == true) {
+                                  ids.add(item.id);
+                                } else {
+                                  ids.remove(item.id);
+                                }
+                              }),
+                      ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: ids.isEmpty
+                        ? null
+                        : () => Navigator.pop(context, ids),
+                    child: const Text('保存'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (saved == null || !mounted) return;
+    AppPreferences.instance.settingsShortcuts = List.of(saved);
+    AppPreferences.instance.save();
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final accent = LumeTheme.accent;
     final search = query.trim().toLowerCase();
     final matches = widget.categories
         .where(
-          (c) =>
-              ('${c.title} ${c.description} ${c.keywords} ${c.children.whereType<SettingsEntryCard>().map((e) => '${e.title} ${e.subtitle} ${e.searchTargets.keys.join(' ')}').join(' ')}')
+          (category) =>
+              ('${category.title} ${category.description} ${category.keywords} '
+                      '${category.children.whereType<SettingsEntryCard>().map((e) => '${e.title} ${e.subtitle ?? ''} ${e.searchTargets.keys.join(' ')}').join(' ')}')
                   .toLowerCase()
                   .contains(search),
         )
         .toList();
+    final shortcuts = selectedShortcuts;
     return ListView(
+      key: const PageStorageKey('settings-directory'),
       padding: GlassScaffold.barInset(context)
-          .add(const EdgeInsets.fromLTRB(20, 20, 20, 36)),
+          .add(const EdgeInsets.fromLTRB(20, 16, 20, 36)),
       children: [
-        const SettingsPageIntro(
-          title: '让 LumeBox 更像你',
-          description: '外观、内容与使用习惯，从这里调整。',
+        TextField(
+          key: const ValueKey('settings-search'),
+          onChanged: (value) => setState(() => query = value),
+          decoration: InputDecoration(
+            hintText: '搜索设置',
+            prefixIcon: const Icon(Icons.search_rounded),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide.none,
+            ),
+            filled: true,
+          ),
         ),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: dark
-                  ? Colors.white.withValues(alpha: .06)
-                  : Colors.white.withValues(alpha: .78),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: dark
-                    ? Colors.white.withValues(alpha: .08)
-                    : Colors.white.withValues(alpha: .9),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: dark ? .12 : .035),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
+        const SizedBox(height: 16),
+        if (search.isEmpty) ...[
+          if (shortcuts.isNotEmpty) ...[
+            Row(
+              children: [
+                const Expanded(child: SettingsGroupTitle('常用')),
+                TextButton(
+                  key: const ValueKey('edit-settings-shortcuts'),
+                  onPressed: _editShortcuts,
+                  child: const Text('编辑'),
                 ),
               ],
             ),
-            child: TextField(
-              key: const ValueKey('settings-search'),
-              onChanged: (value) => setState(() => query = value),
-              decoration: InputDecoration(
-                hintText: '搜索设置',
-                prefixIcon: Icon(
-                  Icons.search_rounded,
-                  color: accent.withValues(alpha: .8),
-                ),
-                filled: false,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                disabledBorder: InputBorder.none,
-              ),
-            ),
-          ),
-        ),
-        for (final category in matches) ...[
-          _SettingsCategoryCard(
-            category: category,
-            expanded: expanded == category.title,
-            onTap: () => setState(() {
-              expanded = expanded == category.title ? null : category.title;
-            }),
-          ),
-          if (expanded == category.title)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SettingsIconScope(
-                    color: settingsCategoryColor(category.title),
-                    grouped: true,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: settingsGroupedChildren(category.children),
-                    ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < shortcuts.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 10),
+                  Expanded(
+                    child: _SettingsShortcutTile(shortcut: shortcuts[i]),
                   ),
                 ],
-              ),
+              ],
             ),
-          if (search.isNotEmpty && expanded != category.title)
+            const SizedBox(height: 18),
+          ],
+          const SettingsGroupTitle('全部设置'),
+        ] else
+          const SettingsGroupTitle('搜索结果'),
+        for (var start = 0; start < matches.length; start += 4)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: SettingsGroupCard(
+              children: [
+                for (final category in matches.skip(start).take(4))
+                  _SettingsDirectoryRow(
+                    category: category,
+                    onTap: () => _openCategory(category),
+                  ),
+              ],
+            ),
+          ),
+        if (search.isNotEmpty)
+          for (final category in matches)
             for (final entry
-                in category.children.whereType<SettingsEntryCard>())
+                in category.children.whereType<SettingsEntryCard>()) ...[
+              if ('${entry.title} ${entry.subtitle ?? ''}'
+                  .toLowerCase()
+                  .contains(search))
+                SettingsEntryCard(
+                  icon: entry.icon,
+                  title: entry.title,
+                  subtitle: category.title,
+                  onTap: entry.onTap,
+                ),
               for (final target in entry.searchTargets.entries)
-                if (target.key.toLowerCase().contains(search))
+                if (target.key.toLowerCase().contains(search) &&
+                    target.key != entry.title)
                   SettingsEntryCard(
                     icon: entry.icon,
                     title: target.key,
-                    subtitle: entry.title,
+                    subtitle: '${category.title} · ${entry.title}',
                     onTap: target.value,
                   ),
-          if (search.isNotEmpty && expanded != category.title)
-            for (final entry
-                in category.children.whereType<SettingsEntryCard>())
-              if (('${entry.title} ${entry.subtitle}').toLowerCase().contains(
-                search,
-              ))
-                entry,
-        ],
+            ],
         if (matches.isEmpty)
           const SettingsNoteCard('没有找到相关设置，试试“主题”“播放”或“缓存”。'),
+        if (search.isEmpty && widget.footer != null) widget.footer!,
       ],
     );
   }
 }
 
-/// 首页入口使用柔和高光和阴影，保持各分类入口的触控面积与搜索行为。
-class _SettingsCategoryCard extends StatelessWidget {
-  const _SettingsCategoryCard({
-    required this.category,
-    required this.onTap,
-    required this.expanded,
-  });
+class _SettingsShortcutTile extends StatelessWidget {
+  const _SettingsShortcutTile({required this.shortcut});
+  final SettingsShortcut shortcut;
+  @override
+  Widget build(BuildContext context) => Material(
+    color: LumeTheme.accent.withValues(alpha: .09),
+    borderRadius: BorderRadius.circular(16),
+    child: InkWell(
+      key: ValueKey('settings-shortcut-${shortcut.id}'),
+      borderRadius: BorderRadius.circular(16),
+      onTap: shortcut.onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
+        child: Column(
+          children: [
+            Icon(shortcut.icon, color: LumeTheme.accent, size: 25),
+            const SizedBox(height: 8),
+            Text(
+              shortcut.title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
+class _SettingsDirectoryRow extends StatelessWidget {
+  const _SettingsDirectoryRow({required this.category, required this.onTap});
   final SettingsCategory category;
   final VoidCallback onTap;
-  final bool expanded;
-
-  Color _categoryColor() => switch (category.title) {
-    '阅读与播放' => const Color(0xFF6851C5),
-    '内容与订阅' => const Color(0xFF366AAE),
-    '个性与界面' => const Color(0xFF9955A0),
-    '导航与首页' => const Color(0xFF347D81),
-    '存储与安全' => const Color(0xFF387A53),
-    '网络与服务' => const Color(0xFF9B622C),
-    '诊断与关于' => const Color(0xFF596D89),
-    _ => LumeTheme.accent,
-  };
-
   @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final accent = _categoryColor();
-    final radius = BorderRadius.circular(24);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: dark
-                ? [
-                    Colors.white.withValues(alpha: .11),
-                    Colors.white.withValues(alpha: .045),
-                  ]
-                : [
-                    Colors.white.withValues(alpha: .96),
-                    Colors.white.withValues(alpha: .72),
-                  ],
-          ),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: dark ? .10 : .92),
-          ),
-        ),
-        child: GlassCard(
-          radius: 24,
-          padding: EdgeInsets.zero,
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-            child: Row(
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: accent,
-                    boxShadow: [
-                      BoxShadow(
-                        color: accent.withValues(alpha: dark ? .22 : .18),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+  Widget build(BuildContext context) => InkWell(
+    key: ValueKey('settings-category-${category.title}'),
+    onTap: onTap,
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      child: LayoutBuilder(
+        builder: (context, size) {
+          final compact =
+              size.maxWidth < 320 ||
+              MediaQuery.textScalerOf(context).scale(14) > 18;
+          final value =
+              category.status?.call() ??
+              switch (category.title) {
+                '阅读与播放' => '阅读器与播放器',
+                '内容与订阅' => '源与订阅',
+                '导航与首页' => '首页与导航',
+                '网络与服务' => '网络与第三方',
+                '诊断与关于' => '帮助与版本',
+                _ => category.description,
+              };
+          return Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: settingsCategoryColor(category.title),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Center(
+                  child: LumeIcon(
+                    category.icon,
+                    size: 19,
+                    color: Colors.white,
+                    slot: 'settings.entry.${category.title}',
+                    label: category.title,
+                    group: '设置',
                   ),
-                  child: Center(
-                    child: LumeIcon(
-                      category.icon,
-                      slot: 'settings.entry.${category.title}',
-                      label: category.title,
-                      group: '设置',
-                      size: 23,
-                      color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      category.title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: interfaceFontWeight(
+                          context,
+                          FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (compact)
+                      Text(
+                        value,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: LumeTheme.textSecondary,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (!compact) ...[
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    value,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: LumeTheme.textSecondary,
                     ),
                   ),
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        category.title,
-                        style: TextStyle(
-                          fontSize: LumeTypography.titleSize,
-                          fontWeight: interfaceFontWeight(
-                            context,
-                            FontWeight.w600,
-                          ),
-                          color: LumeTheme.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        category.description,
-                        style: TextStyle(
-                          fontSize: LumeTypography.descriptionSize,
-                          height: 1.4,
-                          color: LumeTheme.descriptionColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  expanded
-                      ? Icons.expand_less_rounded
-                      : Icons.expand_more_rounded,
-                  size: 21,
-                  color: LumeTheme.muted,
-                ),
               ],
-            ),
-          ),
-        ),
+              const SizedBox(width: 6),
+              Icon(Icons.chevron_right, size: 18, color: LumeTheme.muted),
+            ],
+          );
+        },
       ),
-    );
-  }
+    ),
+  );
 }

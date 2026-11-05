@@ -54,6 +54,7 @@ void main() {
     // 时钟里，首次打开要创建目录（真实异步），在测试体里 await 会等不到。
     for (final section in Section.values) {
       await SectionScope.open(section);
+      await ReadingLibrary.open(section);
     }
   });
 
@@ -91,15 +92,8 @@ void main() {
         240,
         scrollable: find.byType(Scrollable).first,
       );
-      final probe = label == '缓存管理'
-          ? '存储与缓存'
-          : ['运行日志', '错误报告'].contains(label)
-          ? '问题排查'
-          : label;
-      if (find.text(probe).evaluate().isEmpty) {
-        await tester.tap(find.text(category));
-        await tester.pumpAndSettle();
-      }
+      await tester.tap(find.byKey(ValueKey('settings-category-$category')));
+      await tester.pumpAndSettle();
     }
     final hub = label == '缓存管理'
         ? '存储与缓存'
@@ -312,17 +306,15 @@ void main() {
     await pumpSettings(tester);
 
     await scrollTo(tester, '源管理');
-    await tester.tap(find.text('源管理'));
-    await tester.pumpAndSettle();
     expect(find.text('一键导入全部订阅源'), findsOneWidget);
-    await tester.tap(find.text('添加与管理源'));
+    await tester.tap(find.text('源管理'));
     await pumpIoAndSettle(tester);
 
     expect(find.widgetWithText(AppBar, '源总管理'), findsOneWidget);
     expect(find.byTooltip('一键导入全部订阅源'), findsNothing);
   });
 
-  testWidgets('源仓库设置最多三级，首页分类展开不压栈', (tester) async {
+  testWidgets('源仓库设置保持三级，分类目录进入独立页面', (tester) async {
     final observer = _PageDepthObserver();
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -340,10 +332,6 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('内容与订阅'));
-    await tester.pumpAndSettle();
-    expect(observer.depth, 1);
-    await tester.ensureVisible(find.text('源管理'));
-    await tester.tap(find.text('源管理'));
     await tester.pumpAndSettle();
     expect(observer.depth, 2);
     await tester.scrollUntilVisible(
@@ -462,7 +450,8 @@ void main() {
     expect(find.text('各模块独立设置'), findsNothing);
     await scrollTo(tester, '播放器设置');
     expect(find.text('播放器设置'), findsOneWidget);
-    await tester.ensureVisible(find.text('播放与选集'));
+    await tester.tap(find.text('播放器设置'));
+    await pumpIoAndSettle(tester);
     await tester.tap(find.text('播放与选集'));
     await pumpIoAndSettle(tester);
     expect(find.text('后台播放'), findsOneWidget);
@@ -592,15 +581,7 @@ void main() {
       expect(find.text(group), findsOneWidget, reason: '缺少分组「$group」');
     }
 
-    for (final item in [
-      '外观',
-      '主题色',
-      '页面底色',
-      '悬浮模块',
-      '底部导航栏管理',
-      '播放器设置',
-      '运行日志',
-    ]) {
+    for (final item in ['主题色', '页面底色', '悬浮模块', '底部导航栏管理', '播放器设置', '运行日志']) {
       expect(find.text(item), findsNothing, reason: '具体设置不再平铺在首页');
     }
 

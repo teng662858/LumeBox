@@ -53,6 +53,8 @@ import 'log_viewer_page.dart';
 import 'sandbox_settings_page.dart';
 import 'bangumi_settings_page.dart';
 import 'settings_ui.dart';
+import '../../core/theme/appearance.dart';
+import '../../core/session/privacy_settings.dart';
 import 'translation_languages_page.dart';
 import 'private_subscription_settings_page.dart';
 
@@ -114,13 +116,24 @@ class SettingsPage extends StatelessWidget {
     ];
     final groups = <SettingsCategory>[];
     for (final entry in entries) {
-      if (entry is SettingsGroupTitle) {
+      if (entry is SettingsGroupTitle && descriptions.containsKey(entry.text)) {
         groups.add(
           SettingsCategory(
             entry.text,
             descriptions[entry.text]!,
             icons[groups.length],
             [],
+            status: switch (entry.text) {
+              '个性与界面' =>
+                () => switch (AppearanceController.instance.settings.mode) {
+                  ThemeMode.system => '跟随系统',
+                  ThemeMode.light => '浅色',
+                  ThemeMode.dark => '深色',
+                },
+              '存储与安全' =>
+                () => PrivacySettings.instance.appLock ? '应用锁已开启' : '应用锁未开启',
+              _ => null,
+            },
             keywords: entry.text == '个性与界面'
                 ? '外观 主题色 页面底色 App 图标 应用图标库'
                 : entry.text == '阅读与播放'
@@ -148,7 +161,54 @@ class SettingsPage extends StatelessWidget {
       effectModule: GlassModule.settings,
       behindBar: true,
       title: '设置',
-      child: SettingsIconScope(child: SettingsHome(categories: groups)),
+      child: SettingsIconScope(
+        child: SettingsHome(
+          categories: groups,
+          footer: const _SettingsVersionFooter(),
+          shortcuts: [
+            SettingsShortcut(
+              'appearance',
+              '外观',
+              Icons.palette_outlined,
+              () => _push(
+                context,
+                SettingsCategoryPage(
+                  category: groups.firstWhere((c) => c.title == '个性与界面'),
+                ),
+              ),
+            ),
+            SettingsShortcut(
+              'sources',
+              '源管理',
+              Icons.layers_outlined,
+              () => _push(context, const GlobalSourcePage()),
+            ),
+            SettingsShortcut(
+              'player',
+              '播放器',
+              Icons.play_circle_outline,
+              () => _push(context, const PlayerSettingsHost()),
+            ),
+            for (final item in [
+              ('reading', '阅读', '阅读与播放', Icons.menu_book_outlined),
+              ('subscriptions', '订阅', '内容与订阅', Icons.subscriptions_outlined),
+              ('network', '网络', '网络与服务', Icons.wifi),
+              ('storage', '存储', '存储与安全', Icons.storage_outlined),
+            ])
+              SettingsShortcut(
+                item.$1,
+                item.$2,
+                item.$4,
+                () => _push(
+                  context,
+                  SettingsCategoryPage(
+                    category: groups.firstWhere((c) => c.title == item.$3),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -189,6 +249,7 @@ class SettingsPage extends StatelessWidget {
     ),
 
     const SettingsGroupTitle('阅读与播放'),
+    const SettingsGroupTitle('阅读', topPadding: 0),
     SettingsEntryCard(
       icon: Icons.menu_book_outlined,
       title: '小说设置',
@@ -235,60 +296,30 @@ class SettingsPage extends StatelessWidget {
         ),
       ),
     ),
-    const Padding(
-      padding: EdgeInsets.fromLTRB(4, 12, 4, 10),
-      child: Text('播放器设置', style: TextStyle(fontWeight: FontWeight.w600)),
+    const SettingsGroupTitle('播放'),
+    SettingsEntryCard(
+      icon: Icons.play_circle_outline,
+      title: '播放器设置',
+      subtitle: '画面、字幕与播放行为',
+      searchTargets: {
+        for (final entry in const [
+          ('playback', '播放与选集'),
+          ('intro', '片头片尾'),
+          ('picture', '画面与显示'),
+          ('audio', '声音与字幕'),
+          ('danmaku', '弹幕与匹配'),
+          ('controls', '手势与外观'),
+          ('advanced', '内核与网络'),
+          ('playback', '播放倍速'),
+          ('playback', '后台播放'),
+          ('audio', '字幕'),
+          ('danmaku', '弹幕'),
+        ])
+          entry.$2: () =>
+              _push(context, PlayerSettingsHost(focusCategory: entry.$1)),
+      },
+      onTap: () => _push(context, const PlayerSettingsHost()),
     ),
-    for (final entry in const [
-      ('playback', '播放与选集', '播放速度、画质与选集偏好', Icons.play_circle_outline),
-      ('intro', '片头片尾', '跳过片头片尾与同剧记忆', Icons.skip_next_outlined),
-      ('picture', '画面与显示', '缩放、画面比例与方向', Icons.aspect_ratio),
-      ('audio', '声音与字幕', '字幕样式、音轨与延迟', Icons.closed_caption_outlined),
-      ('danmaku', '弹幕与匹配', '弹幕样式、屏蔽与匹配', Icons.chat_bubble_outline),
-      ('controls', '手势与外观', '控制栏样式与手势灵敏度', Icons.touch_app_outlined),
-      (
-        'advanced',
-        '内核与网络',
-        '播放内核、解码和网络选项',
-        Icons.settings_input_component_outlined,
-      ),
-    ])
-      SettingsEntryCard(
-        icon: entry.$4,
-        title: entry.$2,
-        subtitle: entry.$3,
-        searchTargets: switch (entry.$1) {
-          'playback' => {
-            '视频播放器': () => _push(
-              context,
-              const PlayerSettingsHost(focusCategory: 'playback'),
-            ),
-            '播放倍速': () => _push(
-              context,
-              const PlayerSettingsHost(focusCategory: 'playback'),
-            ),
-            '后台播放': () => _push(
-              context,
-              const PlayerSettingsHost(focusCategory: 'playback'),
-            ),
-          },
-          'audio' => {
-            '字幕': () => _push(
-              context,
-              const PlayerSettingsHost(focusCategory: 'audio'),
-            ),
-          },
-          'danmaku' => {
-            '弹幕': () => _push(
-              context,
-              const PlayerSettingsHost(focusCategory: 'danmaku'),
-            ),
-          },
-          _ => {},
-        },
-        onTap: () =>
-            _push(context, PlayerSettingsHost(focusCategory: entry.$1)),
-      ),
     SettingsEntryCard(
       icon: Icons.comment_outlined,
       title: '弹幕服务',
@@ -301,6 +332,7 @@ class SettingsPage extends StatelessWidget {
       subtitle: '独立音频内核 · 后台与锁屏控制',
       onTap: () => _push(context, const AudioPlaybackSettingsPage()),
     ),
+    const SettingsGroupTitle('通用体验'),
     SettingsEntryCard(
       icon: Icons.history,
       title: '继续看／读／听',
@@ -324,76 +356,54 @@ class SettingsPage extends StatelessWidget {
     ),
 
     const SettingsGroupTitle('内容与订阅'),
+    const SettingsGroupTitle('源与订阅', topPadding: 0),
+    const TotalSubscriptionImportEntry(),
     SettingsEntryCard(
-      icon: Icons.tune,
+      icon: Icons.playlist_add,
       title: '源管理',
-      subtitle: '添加源、管理订阅、更新与检测',
-      searchTargets: {
-        '源总管理': () => _push(context, const GlobalSourcePage()),
-        '总订阅导入导出': () => _push(context, const TotalSubscriptionPage()),
-        'TVBox 聚合配置导入': () => _push(context, const TvBoxImportPage()),
-        '仓库维护': () => _push(context, const SourceRepositoryPage()),
-        '私有 GitHub 订阅': () =>
-            _push(context, const PrivateSubscriptionSettingsPage()),
-        '一键同步全部订阅': () => _push(context, const SubscriptionSyncPage()),
-      },
-      onTap: () => _push(
-        context,
-        SettingsCategoryPage(
-          category: SettingsCategory('源管理', '添加、检查和更新站点与订阅', Icons.tune, [
-            const TotalSubscriptionImportEntry(),
-            SettingsEntryCard(
-              icon: Icons.playlist_add,
-              title: '添加与管理源',
-              subtitle: '添加源、批量检测和管理漫画与视频站点',
-              onTap: () => _push(context, const GlobalSourcePage()),
-            ),
-            for (final section in [Section.comic, Section.video])
-              SettingsEntryCard(
-                icon: Icons.subscriptions_outlined,
-                title: '${section.label}订阅',
-                subtitle: '添加、选择安装及更新订阅源',
-                onTap: () =>
-                    _push(context, SourceSubscriptionPage(section: section)),
-              ),
-            SettingsEntryCard(
-              icon: Icons.pets_outlined,
-              title: '猫源订阅',
-              subtitle: '管理猫源订阅和站点',
-              onTap: () => _push(context, const CatSubscriptionPage()),
-            ),
-            SettingsEntryCard(
-              icon: Icons.sync,
-              title: '一键同步全部订阅',
-              subtitle: '更新漫画、视频和猫源订阅',
-              onTap: () => _push(context, const SubscriptionSyncPage()),
-            ),
-            const SettingsGroupTitle('高级导入与仓库'),
-            SettingsEntryCard(
-              icon: Icons.lock_outline,
-              title: '私有 GitHub 订阅',
-              subtitle: '配置仓库和只读 Token',
-              onTap: () =>
-                  _push(context, const PrivateSubscriptionSettingsPage()),
-            ),
-            SettingsEntryCard(
-              icon: Icons.subscriptions_outlined,
-              title: '总订阅导入导出',
-              onTap: () => _push(context, const TotalSubscriptionPage()),
-            ),
-            SettingsEntryCard(
-              icon: Icons.playlist_add,
-              title: 'TVBox 聚合配置导入',
-              onTap: () => _push(context, const TvBoxImportPage()),
-            ),
-            SettingsEntryCard(
-              icon: Icons.cloud_upload_outlined,
-              title: '仓库维护',
-              onTap: () => _push(context, const SourceRepositoryPage()),
-            ),
-          ]),
-        ),
+      subtitle: '添加源、批量检测和管理漫画与视频站点',
+      onTap: () => _push(context, const GlobalSourcePage()),
+    ),
+    for (final section in [Section.comic, Section.video])
+      SettingsEntryCard(
+        icon: Icons.subscriptions_outlined,
+        title: '${section.label}订阅',
+        subtitle: '添加、选择安装及更新订阅源',
+        onTap: () => _push(context, SourceSubscriptionPage(section: section)),
       ),
+    SettingsEntryCard(
+      icon: Icons.pets_outlined,
+      title: '猫源订阅',
+      subtitle: '管理猫源订阅和站点',
+      onTap: () => _push(context, const CatSubscriptionPage()),
+    ),
+    SettingsEntryCard(
+      icon: Icons.sync,
+      title: '一键同步全部订阅',
+      subtitle: '更新漫画、视频和猫源订阅',
+      onTap: () => _push(context, const SubscriptionSyncPage()),
+    ),
+    const SettingsGroupTitle('高级导入与仓库'),
+    SettingsEntryCard(
+      icon: Icons.lock_outline,
+      title: '私有 GitHub 订阅',
+      subtitle: '配置仓库和只读 Token',
+      onTap: () => _push(context, const PrivateSubscriptionSettingsPage()),
+    ),
+    SettingsEntryCard(
+      icon: Icons.subscriptions_outlined,
+      title: '总订阅导入导出',
+      onTap: () => _push(context, const TotalSubscriptionPage()),
+    ),
+    SettingsEntryCard(
+      icon: Icons.playlist_add,
+      title: 'TVBox 聚合配置导入',
+      onTap: () => _push(context, const TvBoxImportPage()),
+    ),
+    SettingsEntryCard(
+      icon: Icons.cloud_upload_outlined,
+      title: '仓库维护',
+      onTap: () => _push(context, const SourceRepositoryPage()),
     ),
     SettingsEntryCard(
       icon: Icons.search,
@@ -669,4 +679,26 @@ class _BuildInfoRowState extends State<_BuildInfoRow> {
       },
     );
   }
+}
+
+class _SettingsVersionFooter extends StatefulWidget {
+  const _SettingsVersionFooter();
+  @override
+  State<_SettingsVersionFooter> createState() => _SettingsVersionFooterState();
+}
+
+class _SettingsVersionFooterState extends State<_SettingsVersionFooter> {
+  late final Future<PackageInfo> info = PackageInfo.fromPlatform();
+  @override
+  Widget build(BuildContext context) => FutureBuilder<PackageInfo>(
+    future: info,
+    builder: (context, snapshot) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Text(
+        snapshot.hasData ? 'LumeBox · ${snapshot.data!.version}' : 'LumeBox',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 12, color: LumeTheme.textSecondary),
+      ),
+    ),
+  );
 }

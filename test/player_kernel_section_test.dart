@@ -89,6 +89,8 @@ void main() {
     expect(find.text('各模块独立设置'), findsNothing);
     await tester.tap(find.text('阅读与播放'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('播放器设置'));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('内核与网络'));
     await tester.tap(find.text('内核与网络'));
     await tester.pumpAndSettle();
