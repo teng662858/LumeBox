@@ -73,6 +73,12 @@ class _LumeBoxAppState extends State<LumeBoxApp> {
             fontBold: appearance.fontBold,
             fontItalic: appearance.fontItalic,
             background: appearance.background,
+            lightBackground: appearance.lightBackgroundArgb == null
+                ? null
+                : Color(appearance.lightBackgroundArgb!),
+            darkBackground: appearance.darkBackgroundArgb == null
+                ? null
+                : Color(appearance.darkBackgroundArgb!),
           ),
           darkTheme: LumeTheme.build(
             brightness: Brightness.dark,
@@ -82,6 +88,12 @@ class _LumeBoxAppState extends State<LumeBoxApp> {
             fontBold: appearance.fontBold,
             fontItalic: appearance.fontItalic,
             background: appearance.background,
+            lightBackground: appearance.lightBackgroundArgb == null
+                ? null
+                : Color(appearance.lightBackgroundArgb!),
+            darkBackground: appearance.darkBackgroundArgb == null
+                ? null
+                : Color(appearance.darkBackgroundArgb!),
           ),
           themeMode: appearance.mode,
           // 页面里的静态色名（`LumeTheme.textPrimary` 等）按进程级亮度取色，
@@ -93,7 +105,15 @@ class _LumeBoxAppState extends State<LumeBoxApp> {
               appearance.accent,
               customAccent: appearance.customAccent,
             );
-            LumeTheme.applyBackground(appearance.background);
+            LumeTheme.applyBackground(
+              appearance.background,
+              light: appearance.lightBackgroundArgb == null
+                  ? null
+                  : Color(appearance.lightBackgroundArgb!),
+              dark: appearance.darkBackgroundArgb == null
+                  ? null
+                  : Color(appearance.darkBackgroundArgb!),
+            );
             return ThemeRefreshBoundary(
               identity: LumeTheme.themeId,
               child: MediaQuery(

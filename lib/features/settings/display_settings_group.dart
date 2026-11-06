@@ -1,3 +1,4 @@
+import 'appearance_color_controls.dart';
 import '../../shared/widgets/native_glass_controls.dart';
 
 import 'package:flutter/material.dart';
@@ -82,8 +83,10 @@ class DisplaySettingsGroup extends StatelessWidget {
           SettingsEntryCard(
             icon: Icons.format_color_fill_outlined,
             title: '页面底色',
-            subtitle: '独立控制亮色页面背景',
-            trailingValue: c.settings.background == ThemeBackground.grouped
+            subtitle: '浅色与深色底色 · 自定义颜色',
+            trailingValue: c.settings.lightBackgroundArgb != null
+                ? '自定义'
+                : c.settings.background == ThemeBackground.grouped
                 ? '雾白'
                 : '柔灰',
             onTap: () => Navigator.of(context).push(
@@ -139,22 +142,29 @@ class AppearancePalettePage extends StatelessWidget {
             SettingsPageIntro(
               title: backgroundOnly ? '让内容更舒适' : '选择你的色彩',
               description: backgroundOnly
-                  ? '比较两种底色与卡片的层次，点选后立即生效。深色模式保持独立。'
+                  ? '浅色和深色分别选底色，点选立即生效，也可保存整套配色。'
                   : '主题色用于选中状态与操作强调，预览会随选择更新。',
             ),
             _AppearancePreview(
-              background: backgroundOnly
-                  ? c.settings.background.color
-                  : LumeTheme.base,
+              background: c.settings.backgroundColorFor(
+                Theme.of(context).brightness,
+              ),
               accent: accent,
             ),
             const SizedBox(height: 20),
             if (backgroundOnly) ...[
+              const BackgroundColorControls(),
+              const SizedBox(height: 12),
               for (final bg in ThemeBackground.values)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: GlassCard(
-                    onTap: () => c.apply(c.settings.copyWith(background: bg)),
+                    onTap: () => c.apply(
+                      c.settings.copyWith(
+                        background: bg,
+                        resetLightBackground: true,
+                      ),
+                    ),
                     child: Row(
                       children: [
                         Container(
@@ -187,10 +197,13 @@ class AppearancePalettePage extends StatelessWidget {
                           ),
                         ),
                         Icon(
-                          c.settings.background == bg
+                          c.settings.background == bg &&
+                                  c.settings.lightBackgroundArgb == null
                               ? Icons.check_circle
                               : Icons.circle_outlined,
-                          color: c.settings.background == bg
+                          color:
+                              c.settings.background == bg &&
+                                  c.settings.lightBackgroundArgb == null
                               ? LumeTheme.readableForeground(
                                   accent,
                                   LumeTheme.surface,
@@ -261,6 +274,8 @@ class AppearancePalettePage extends StatelessWidget {
                 },
               ),
             ],
+            const SizedBox(height: 16),
+            const SavedAppearancePalettesCard(),
             const SettingsFooterNote('选择自动保存，无需再次确认。'),
           ],
         );

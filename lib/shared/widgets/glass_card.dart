@@ -702,7 +702,7 @@ class _SettingsBackplane extends StatelessWidget {
     color: LumeTheme.base,
     child: Ink(
       decoration: BoxDecoration(
-        gradient: gradient
+        gradient: gradient && LumeTheme.base != Colors.black
             ? LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,

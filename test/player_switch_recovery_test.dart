@@ -1,3 +1,7 @@
+import 'package:lume_box/features/video/player_settings_sheet.dart';
+import 'package:lume_box/features/video/source_playback_profiles.dart';
+import 'package:lume_box/features/video/video_player_settings.dart';
+
 import 'dart:async';
 
 import 'package:lume_box/features/video/player_kernel_picker.dart';
@@ -70,6 +74,7 @@ void main() {
   Future<void> pumpVideo(
     WidgetTester tester, {
     required AbstractPlayer? Function(PlayerKernel) factory,
+    String? sourceId,
     Set<PlayerKernel> available = const <PlayerKernel>{
       PlayerKernel.avplayer,
       PlayerKernel.mpv,
@@ -82,6 +87,7 @@ void main() {
         theme: LumeTheme.build(),
         home: VideoPlayerPage(
           fullscreenOnly: false,
+          sourceId: sourceId,
           media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
           catalog: _Catalog(available),
           playerFactory: factory,
@@ -90,6 +96,53 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('独立源内核启动不污染全局，关闭后恢复全局内核', (tester) async {
+    final library = ReadingLibrary.find(Section.video)!;
+    final global = VideoPlayerSettingsStore(library);
+    global.save(const PlayerSettings());
+    final profiles = SourcePlaybackProfiles(library);
+    profiles.save(
+      'profile-source',
+      const PlayerSettings().copyWith(kernel: PlayerKernel.mpv, speed: 1.5),
+      15,
+    );
+    final created = <_FakePlayer>[];
+    await pumpVideo(
+      tester,
+      sourceId: 'profile-source',
+      factory: (kernel) {
+        final player = _FakePlayer(kernel);
+        created.add(player);
+        return player;
+      },
+    );
+    expect(created.single.kernel, PlayerKernel.mpv);
+    expect(global.load().kernel, PlayerKernel.avplayer);
+    await tester.tap(find.byTooltip('播放器设置'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('player-category-advanced')),
+    );
+    await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
+    await tester.pumpAndSettle();
+    final toggle = find.byKey(const ValueKey('source-playback-profile'));
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(profiles.contains('profile-source'), isFalse);
+    expect(created.last.kernel, PlayerKernel.avplayer);
+    expect(global.load().kernel, PlayerKernel.avplayer);
+    expect(
+      tester
+          .widget<PlayerSettingsSheet>(find.byType(PlayerSettingsSheet))
+          .settings
+          .kernel,
+      PlayerKernel.avplayer,
+    );
+  });
 
   testWidgets('正常准备不闪提示卡，慢启动三秒后显示重试且就绪后消失', (tester) async {
     final ready = Completer<void>();

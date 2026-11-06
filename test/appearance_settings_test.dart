@@ -78,7 +78,7 @@ void main() {
     },
   );
 
-  testWidgets('页面底色只保留两项，纯白旧值迁移到浅灰', (tester) async {
+  testWidgets('浅色底色预设保持兼容，可与自定义深色底色并存', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: LumeTheme.build(),
@@ -92,12 +92,16 @@ void main() {
       AppearanceSettings.fromJson({'background': 'white'}).background,
       ThemeBackground.grouped,
     );
+    await tester.ensureVisible(find.text('#F2F2F7').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('#F2F2F7').last);
     await tester.pumpAndSettle();
     expect(
       AppearanceController.instance.settings.background,
       ThemeBackground.grouped,
     );
+    await tester.ensureVisible(find.text('#F5F5F5'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('#F5F5F5'));
     await tester.pumpAndSettle();
     expect(

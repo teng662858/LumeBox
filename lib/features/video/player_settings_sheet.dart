@@ -10,6 +10,7 @@ import 'danmaku/danmaku_panel.dart';
 import 'playback_glass.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 
 import '../../core/player/playback_orientation.dart';
 import '../../core/player/player_capabilities.dart';
@@ -28,6 +29,7 @@ import 'player_kernel_picker.dart';
 Future<void> showPlayerSettingsSheet({
   required BuildContext context,
   required PlayerSettings settings,
+  ValueListenable<PlayerSettings>? settingsListenable,
   required PlayerCapabilities capabilities,
   required ValueChanged<PlayerSettings> onChanged,
   PlayerKernelCatalog catalog = const PlatformPlayerKernelCatalog(),
@@ -47,20 +49,27 @@ Future<void> showPlayerSettingsSheet({
   Widget? danmakuControls,
   bool showPlaybackShortcuts = true,
 }) {
-  final glass = ValueNotifier(settings.playbackGlass);
+  final live = ValueNotifier(settings);
+  void synchronize() {
+    live.value = settingsListenable!.value;
+  }
+
+  settingsListenable?.addListener(synchronize);
   return showDanmakuPanel<void>(
     context: context,
-    builder: (_) => ValueListenableBuilder<bool>(
-      valueListenable: glass,
-      builder: (context, enabled, _) => PlaybackGlass(
-        enabled: enabled,
+    builder: (_) => ValueListenableBuilder<PlayerSettings>(
+      valueListenable: live,
+      builder: (context, current, _) => PlaybackGlass(
+        enabled: current.playbackGlass,
         child: PlayerSettingsSheet(
           showDanmakuPanel: false,
           showPlaybackShortcuts: showPlaybackShortcuts,
-          settings: settings,
-          capabilities: capabilities,
+          settings: current,
+          capabilities: current.kernel == settings.kernel
+              ? capabilities
+              : PlayerCapabilities.of(current.kernel),
           onChanged: (next) {
-            glass.value = next.playbackGlass;
+            live.value = next;
             onChanged(next);
           },
           catalog: catalog,
@@ -81,7 +90,10 @@ Future<void> showPlayerSettingsSheet({
         ),
       ),
     ),
-  ).whenComplete(glass.dispose);
+  ).whenComplete(() {
+    settingsListenable?.removeListener(synchronize);
+    live.dispose();
+  });
 }
 
 /// 共用播放器偏好面板：播放页按分类显示，全局页保留完整设置。
@@ -529,6 +541,31 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       ),
     );
 
+    final landscape =
+        MediaQuery.sizeOf(context).width > MediaQuery.sizeOf(context).height;
+    final quickActions = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          Chip(label: Text(settings.kernel.label)),
+          const SizedBox(width: 8),
+          ActionChip(
+            label: Text(settings.subtitlesEnabled ? '字幕：开' : '字幕：关'),
+            onPressed: () => _update(
+              settings.copyWith(subtitlesEnabled: !settings.subtitlesEnabled),
+            ),
+          ),
+          if (widget.showPlaybackShortcuts) ...[
+            const SizedBox(width: 8),
+            ActionChip(
+              label: Text('倍速 ${settings.speed}×'),
+              onPressed: () => setState(() => _selectedCategory = 'playback'),
+            ),
+          ],
+        ],
+      ),
+    );
     final content = SafeArea(
       top: false,
       child: ConstrainedBox(
@@ -539,11 +576,28 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             _handle(context),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _categoryNavigation(),
-            ),
-            Flexible(child: list),
+            quickActions,
+            if (landscape)
+              Flexible(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: 132,
+                      child: _categoryNavigation(vertical: true),
+                    ),
+                    const VerticalDivider(width: 1),
+                    Expanded(child: list),
+                  ],
+                ),
+              )
+            else ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _categoryNavigation(),
+              ),
+              Flexible(child: list),
+            ],
           ],
         ),
       ),
@@ -585,7 +639,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     }
   }
 
-  Widget _categoryNavigation() {
+  Widget _categoryNavigation({bool vertical = false}) {
     final choices = <Widget>[
       for (final category in _categories)
         if ((category.$1 != 'intro' ||
@@ -611,7 +665,22 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     return Padding(
       key: _navigationKey,
       padding: const EdgeInsets.only(bottom: 8),
-      child: widget.embedded
+      child: vertical
+          ? SingleChildScrollView(
+              key: const ValueKey('player-landscape-categories'),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final choice in choices)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: choice,
+                    ),
+                ],
+              ),
+            )
+          : widget.embedded
           ? Wrap(spacing: 6, runSpacing: 6, children: choices)
           : SingleChildScrollView(
               scrollDirection: Axis.horizontal,

@@ -195,6 +195,7 @@ class LumePalette {
     ThemeAccent accent, {
     ThemeBackground background = ThemeBackground.grouped,
     Color? customAccent,
+    Color? customBackground,
   }) => LumePalette(
     brightness: brightness,
     accent: LumeTheme.readableForeground(
@@ -205,7 +206,9 @@ class LumePalette {
           : customAccent,
       surfaceAlt,
     ),
-    base: brightness == Brightness.light ? background.color : base,
+    base:
+        customBackground ??
+        (brightness == Brightness.light ? background.color : base),
     surface: surface,
     surfaceAlt: surfaceAlt,
     glass: glass,
@@ -281,12 +284,26 @@ class LumeTheme {
   static ThemeAccent _accent = ThemeAccent.fallback;
   static Color? _customAccent;
   static ThemeBackground _background = ThemeBackground.grouped;
-  static void applyBackground(ThemeBackground value) => _background = value;
+  static Color? _lightBackground, _darkBackground;
+  static void applyBackground(
+    ThemeBackground value, {
+    Color? light,
+    Color? dark,
+  }) {
+    _background = value;
+    _lightBackground = light;
+    _darkBackground = dark;
+  }
 
   /// 当前生效色板：亮度定结构、主题色定主色。
-  static LumePalette get palette => LumePalette.of(
-    _brightness,
-  ).withAccent(_accent, background: _background, customAccent: _customAccent);
+  static LumePalette get palette => LumePalette.of(_brightness).withAccent(
+    _accent,
+    background: _background,
+    customAccent: _customAccent,
+    customBackground: _brightness == Brightness.light
+        ? _lightBackground
+        : _darkBackground,
+  );
 
   /// 按亮度取色板（供需要显式区分的场合，如阅读页的工具栏）。
   static LumePalette paletteOf(Brightness brightness) =>
@@ -313,7 +330,7 @@ class LumeTheme {
   /// 换 key **重建不了子树**：`child` 是带 GlobalKey 的 Navigator，换 key 只会
   /// 把它换个位置、子树原样复用（实测，见 settings_page_test 的深色用例）。
   static String get themeId =>
-      '${_brightness.name}-${_accent.id}-${_background.id}${_customAccent == null ? '' : '-${_customAccent!.toARGB32()}'}';
+      '${_brightness.name}-${_accent.id}-${_background.id}-${_lightBackground?.toARGB32()}-${_darkBackground?.toARGB32()}${_customAccent == null ? '' : '-${_customAccent!.toARGB32()}'}';
 
   // ------------------------------------------------------------------ 色板
 
@@ -457,13 +474,15 @@ class LumeTheme {
     ThemeAccent accent = ThemeAccent.fallback,
     ThemeBackground background = ThemeBackground.grouped,
     Color? customAccent,
+    Color? lightBackground,
+    Color? darkBackground,
     String? fontFamily,
     bool fontBold = true,
     bool fontItalic = false,
   }) {
     applyBrightness(brightness);
     applyAccent(accent, customAccent: customAccent);
-    applyBackground(background);
+    applyBackground(background, light: lightBackground, dark: darkBackground);
     // 局部别名：下面所有裸 `accent` 要的都是**颜色**，而参数是档位。
     final accentColor = palette.accent;
     final fillColor = accentFill;

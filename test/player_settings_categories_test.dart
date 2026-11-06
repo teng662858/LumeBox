@@ -48,6 +48,17 @@ void main() {
       );
       await tester.tap(find.text('打开'));
       await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('player-landscape-categories')),
+        size.width > size.height ? findsOneWidget : findsNothing,
+      );
+      final previousSubtitles = settings.subtitlesEnabled;
+      await tester.tap(
+        find.widgetWithText(ActionChip, previousSubtitles ? '字幕：开' : '字幕：关'),
+      );
+      await tester.pumpAndSettle();
+      expect(settings.subtitlesEnabled, !previousSubtitles);
+
       await tester.ensureVisible(find.widgetWithText(ChoiceChip, '2x'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(ChoiceChip, '2x'));

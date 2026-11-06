@@ -77,6 +77,9 @@ class AppearanceSettings {
     this.mode = ThemeMode.system,
     this.accent = ThemeAccent.fallback,
     this.background = ThemeBackground.grouped,
+    this.lightBackgroundArgb,
+    this.darkBackgroundArgb,
+    this.savedPalettes = const [],
     this.customAccentArgb = 0xFFFF2D55,
     this.useCustomAccent = false,
     this.adaptiveColor = false,
@@ -92,6 +95,24 @@ class AppearanceSettings {
   /// 主题色。
   final ThemeAccent accent;
   final ThemeBackground background;
+  final int? lightBackgroundArgb, darkBackgroundArgb;
+  final List<SavedAppearancePalette> savedPalettes;
+  Color backgroundColorFor(Brightness brightness) =>
+      brightness == Brightness.dark
+      ? Color(darkBackgroundArgb ?? 0xFF121214)
+      : Color(lightBackgroundArgb ?? background.color.toARGB32());
+
+  static int normalizeBackground(int argb, Brightness brightness) {
+    var color = Color(argb | 0xFF000000);
+    final light = brightness == Brightness.light;
+    for (var i = 0; i < 40; i++) {
+      final luminance = color.computeLuminance();
+      if (light ? luminance >= .65 : luminance <= .08) break;
+      color = Color.lerp(color, light ? Colors.white : Colors.black, .12)!;
+    }
+    return color.toARGB32() | 0xFF000000;
+  }
+
   final int customAccentArgb;
   final bool useCustomAccent, adaptiveColor, fontBold, fontItalic;
 
@@ -113,6 +134,11 @@ class AppearanceSettings {
     ThemeMode? mode,
     ThemeAccent? accent,
     ThemeBackground? background,
+    int? lightBackgroundArgb,
+    int? darkBackgroundArgb,
+    bool resetLightBackground = false,
+    bool resetDarkBackground = false,
+    List<SavedAppearancePalette>? savedPalettes,
     int? customAccentArgb,
     bool? useCustomAccent,
     bool? adaptiveColor,
@@ -124,6 +150,17 @@ class AppearanceSettings {
     mode: mode ?? this.mode,
     accent: accent ?? this.accent,
     background: background ?? this.background,
+    lightBackgroundArgb: resetLightBackground
+        ? null
+        : lightBackgroundArgb == null
+        ? this.lightBackgroundArgb
+        : normalizeBackground(lightBackgroundArgb, Brightness.light),
+    darkBackgroundArgb: resetDarkBackground
+        ? null
+        : darkBackgroundArgb == null
+        ? this.darkBackgroundArgb
+        : normalizeBackground(darkBackgroundArgb, Brightness.dark),
+    savedPalettes: savedPalettes ?? this.savedPalettes,
     customAccentArgb: customAccentArgb ?? this.customAccentArgb,
     useCustomAccent: useCustomAccent ?? this.useCustomAccent,
     adaptiveColor: adaptiveColor ?? this.adaptiveColor,
@@ -137,6 +174,9 @@ class AppearanceSettings {
     'mode': mode.name,
     'accent': accent.id,
     'background': background.id,
+    'lightBackgroundArgb': lightBackgroundArgb,
+    'darkBackgroundArgb': darkBackgroundArgb,
+    'savedPalettes': savedPalettes.map((p) => p.toJson()).toList(),
     'customAccentArgb': customAccentArgb,
     'useCustomAccent': useCustomAccent,
     'adaptiveColor': adaptiveColor,
@@ -155,6 +195,23 @@ class AppearanceSettings {
       'system' => ThemeMode.system,
       _ => defaults.mode,
     };
+    int? backgroundValue(String key, Brightness brightness) {
+      final value = json[key];
+      return value is int && value >= 0xFF000000 && value <= 0xFFFFFFFF
+          ? normalizeBackground(value, brightness)
+          : null;
+    }
+
+    final palettes = <SavedAppearancePalette>[];
+    final rawPalettes = json['savedPalettes'];
+    if (rawPalettes is List) {
+      for (final value in rawPalettes.take(12)) {
+        final palette = SavedAppearancePalette.parse(value);
+        if (palette != null && !palettes.any((p) => p.name == palette.name)) {
+          palettes.add(palette);
+        }
+      }
+    }
     final custom = json['customAccentArgb'];
     final validCustom =
         custom is int && custom >= 0xFF000000 && custom <= 0xFFFFFFFF;
@@ -164,6 +221,15 @@ class AppearanceSettings {
       mode: mode,
       accent: ThemeAccent.fromId('${json['accent']}'),
       background: ThemeBackground.fromId('${json['background']}'),
+      lightBackgroundArgb: backgroundValue(
+        'lightBackgroundArgb',
+        Brightness.light,
+      ),
+      darkBackgroundArgb: backgroundValue(
+        'darkBackgroundArgb',
+        Brightness.dark,
+      ),
+      savedPalettes: List.unmodifiable(palettes),
       customAccentArgb: validCustom ? custom : defaults.customAccentArgb,
       useCustomAccent: validCustom && json['useCustomAccent'] == true,
       adaptiveColor: json['adaptiveColor'] == true,
@@ -184,6 +250,10 @@ class AppearanceSettings {
       other.mode == mode &&
       other.accent == accent &&
       other.background == background &&
+      other.lightBackgroundArgb == lightBackgroundArgb &&
+      other.darkBackgroundArgb == darkBackgroundArgb &&
+      jsonEncode(other.savedPalettes.map((p) => p.toJson()).toList()) ==
+          jsonEncode(savedPalettes.map((p) => p.toJson()).toList()) &&
       other.customAccentArgb == customAccentArgb &&
       other.useCustomAccent == useCustomAccent &&
       other.adaptiveColor == adaptiveColor &&
@@ -197,6 +267,9 @@ class AppearanceSettings {
     mode,
     accent,
     background,
+    lightBackgroundArgb,
+    darkBackgroundArgb,
+    jsonEncode(savedPalettes.map((p) => p.toJson()).toList()),
     customAccentArgb,
     useCustomAccent,
     adaptiveColor,
@@ -205,6 +278,41 @@ class AppearanceSettings {
     fontItalic,
     fontId,
   );
+}
+
+/// A color-only snapshot; fonts, accounts and navigation never enter it.
+class SavedAppearancePalette {
+  const SavedAppearancePalette(this.name, this.colors);
+  final String name;
+  final Map<String, Object?> colors;
+  static const keys = {
+    'accent',
+    'background',
+    'customAccentArgb',
+    'useCustomAccent',
+    'adaptiveColor',
+    'lightBackgroundArgb',
+    'darkBackgroundArgb',
+  };
+  factory SavedAppearancePalette.capture(
+    String name,
+    AppearanceSettings settings,
+  ) => SavedAppearancePalette(name, {
+    for (final entry in settings.toJson().entries)
+      if (keys.contains(entry.key)) entry.key: entry.value,
+  });
+  Map<String, Object?> toJson() => {'name': name, 'colors': colors};
+  static SavedAppearancePalette? parse(Object? raw) {
+    if (raw is! Map || raw['name'] is! String || raw['colors'] is! Map) {
+      return null;
+    }
+    final name = (raw['name'] as String).trim();
+    if (name.isEmpty || name.length > 32) return null;
+    return SavedAppearancePalette(name, {
+      for (final entry in (raw['colors'] as Map).entries)
+        if (keys.contains(entry.key)) '${entry.key}': entry.value,
+    });
+  }
 }
 
 /// 外观设置的持久化（应用级，与板块无关）。
@@ -302,6 +410,40 @@ class AppearanceController extends ChangeNotifier {
       LumeLog.warn('外观设置写库失败，本次仍按已生效的值显示');
     }
   }
+
+  void savePalette(String name) {
+    name = name.trim();
+    if (name.isEmpty || name.length > 32) throw ArgumentError('方案名称应为 1–32 个字');
+    final next = _settings.savedPalettes.where((p) => p.name != name).toList();
+    if (next.length >= 12) throw StateError('最多保存 12 套配色，请先删除一套');
+    next.add(SavedAppearancePalette.capture(name, _settings));
+    apply(_settings.copyWith(savedPalettes: List.unmodifiable(next)));
+  }
+
+  void applyPalette(SavedAppearancePalette palette) {
+    final colors = AppearanceSettings.fromJson(palette.colors);
+    apply(
+      _settings.copyWith(
+        accent: colors.accent,
+        background: colors.background,
+        customAccentArgb: colors.customAccentArgb,
+        useCustomAccent: colors.useCustomAccent,
+        adaptiveColor: colors.adaptiveColor,
+        lightBackgroundArgb: colors.lightBackgroundArgb,
+        darkBackgroundArgb: colors.darkBackgroundArgb,
+        resetLightBackground: colors.lightBackgroundArgb == null,
+        resetDarkBackground: colors.darkBackgroundArgb == null,
+      ),
+    );
+  }
+
+  void removePalette(String name) => apply(
+    _settings.copyWith(
+      savedPalettes: _settings.savedPalettes
+          .where((p) => p.name != name)
+          .toList(),
+    ),
+  );
 
   /// 仅测试用：回到默认并断开存储。
   void resetForTesting() {

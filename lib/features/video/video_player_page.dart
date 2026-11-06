@@ -1,3 +1,4 @@
+import 'source_playback_profiles.dart';
 import '../../core/source/source_runtime_pins.dart';
 import 'player_snapshot_selector.dart';
 import 'player_edge_back.dart';
@@ -246,6 +247,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
   VideoPlayerSettingsStore? _store;
   PlayerSettings _settings = const PlayerSettings();
+  final _settingsForSheet = ValueNotifier(const PlayerSettings());
+  SourcePlaybackProfiles? _sourceProfiles;
+  String? _settingsSourceId;
+  bool get _usesSourceProfile =>
+      _sourceProfiles?.contains(_settingsSourceId) ?? false;
   AbstractPlayer? _player;
   PipSession? _session;
   PlayerMedia? _media;
@@ -791,6 +797,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   @override
   void dispose() {
     _rebuildSeq++;
+    _settingsForSheet.dispose();
     _library?.settingsRevision.removeListener(_onSharedSettingsChanged);
     DanmakuSourcesStore.revision.removeListener(_danmakuServiceChanged);
     _introGeneration++;
@@ -1235,6 +1242,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _pendingDanmakuSave = null;
       setState(() {
         _library = library;
+        _sourceProfiles = SourcePlaybackProfiles(library);
+        _settingsSourceId = widget.target?.sourceId ?? widget.sourceId;
         if (!_danmakuSettingsDirty) _danmakuSettings = loaded;
         // 「前向缓冲」在**模块设置**里（与设置页同一份数据），派生成内核参数；
         // 装载前经 setBuffering 交给内核（见 _rebuildPlayer）。
@@ -1256,7 +1265,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       final store = result;
       if (!mounted) return;
       _store = store;
-      _settings = store.load();
+      _settings =
+          _sourceProfiles?.load(_settingsSourceId, store.load()) ??
+          store.load();
+      if (_sourceProfiles != null && _library != null) {
+        _buffering = BufferingConfig.forForwardBuffer(
+          Duration(
+            seconds: _sourceProfiles!.bufferSeconds(
+              _settingsSourceId,
+              SectionModuleSettings.load(_library!).buffer.inSeconds,
+            ),
+          ),
+        );
+      }
       final work = widget.target;
       final rememberedKernel = work == null
           ? null
@@ -1264,7 +1285,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       final preferred = PlayerKernel.values
           .where((k) => k.name == rememberedKernel && _catalog.isAvailable(k))
           .firstOrNull;
-      if (preferred != null) _settings = _settings.copyWith(kernel: preferred);
+      if (preferred != null && !_usesSourceProfile) {
+        _settings = _settings.copyWith(kernel: preferred);
+      }
       final experience = PlayerExperienceStore.current;
       _muted = experience.flag('muted');
       _musicMode = experience.flag('musicMode');
@@ -1360,8 +1383,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     //（见 [_suppressProgressSave]）。
     _saveProgress(force: true);
     final previous = _player;
-    final resume =
-        previous != null && previous.snapshot.value.position > Duration.zero
+    final resume = !loadCurrentMedia
+        ? null
+        : previous != null && previous.snapshot.value.position > Duration.zero
         ? _ResumePoint.of(previous)
         : _kernelResume;
     _kernelResume = resume;
@@ -1447,7 +1471,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final player = launch.player;
     _activeKernel = launch.kernel;
     try {
-      _store?.save(_settings);
+      _savePlayerSettings(_settings);
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       LumeLog.warn('[player] 播放器设置写库失败，本次仍按已生效的内核播放');
@@ -1623,6 +1647,78 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   }
 
   /// 设置变更：落库并立即生效；换内核走重建，其余项直接应用到当前内核。
+  void _savePlayerSettings(PlayerSettings next) {
+    _settingsForSheet.value = next;
+    final profiles = _sourceProfiles;
+    final id = _settingsSourceId;
+    if (profiles != null && id != null && profiles.contains(id)) {
+      profiles.save(id, next, _buffering.forwardBuffer.inSeconds);
+      final global = _store?.load();
+      if (global != null) {
+        // Only these fields belong to the source profile; unrelated controls
+        // continue to save globally without leaking the source's kernel/prefs.
+        _store?.save(
+          next.copyWith(
+            kernel: global.kernel,
+            prefs: global.prefs,
+            presentation: global.presentation,
+            subtitlesEnabled: global.subtitlesEnabled,
+            hardwareDecoding: global.hardwareDecoding,
+          ),
+        );
+      }
+    } else {
+      _store?.save(next);
+    }
+  }
+
+  Future<void> _activateSourceProfile(
+    String? id, {
+    bool reloadMedia = false,
+  }) async {
+    final store = _store;
+    final library = _library;
+    if (store == null || library == null) return;
+    final oldKernel = _settings.kernel;
+    _settingsSourceId = id;
+    final next = _sourceProfiles?.load(id, store.load()) ?? store.load();
+    setState(() {
+      _settings = next;
+      _preferredSubtitleApplied = false;
+      _buffering = BufferingConfig.forForwardBuffer(
+        Duration(
+          seconds:
+              _sourceProfiles?.bufferSeconds(
+                id,
+                SectionModuleSettings.load(library).buffer.inSeconds,
+              ) ??
+              SectionModuleSettings.load(library).buffer.inSeconds,
+        ),
+      );
+    });
+    _settingsForSheet.value = _settings;
+    if (next.kernel != oldKernel) {
+      await _rebuildPlayer(loadCurrentMedia: reloadMedia);
+    } else {
+      await _player?.setBuffering(_buffering);
+      await _player?.applySettings(next);
+    }
+  }
+
+  Future<void> _setSourceProfile(bool enabled) async {
+    final id = _settingsSourceId;
+    final profiles = _sourceProfiles;
+    if (id == null || id.isEmpty || profiles == null) return;
+    if (enabled) {
+      profiles.save(id, _settings, _buffering.forwardBuffer.inSeconds);
+      setState(() {});
+    } else {
+      profiles.clear(id);
+      await _activateSourceProfile(id, reloadMedia: true);
+      if (mounted) unawaited(_applyPreferredSubtitle());
+    }
+  }
+
   Future<void> _applySettings(PlayerSettings next) async {
     final subtitlePreferenceChanged =
         next.presentation.subtitleLanguage !=
@@ -1654,7 +1750,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     if (kernelChanged) {
       await _rebuildPlayer();
     } else {
-      _store?.save(next);
+      _savePlayerSettings(next);
       await _player?.applySettings(next);
       _player?.setFastSeekSnapToKeyframe(next.fastSeekSnap);
       if (subtitlePreferenceChanged) unawaited(_applyPreferredSubtitle());
@@ -1767,7 +1863,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _settings = _settings.copyWith(
         manualQualityLabel: _qualities[index].label,
       );
-      _store?.save(_settings);
+      _savePlayerSettings(_settings);
       return;
     }
     final player = _player;
@@ -1806,7 +1902,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       if (!mounted) return;
       setState(() => _qualityIndex = index);
       _settings = _settings.copyWith(manualQualityLabel: quality.label);
-      _store?.save(_settings);
+      _savePlayerSettings(_settings);
       unawaited(_applyPreferredSubtitle());
       _showToast('已切换到 ${quality.label}，继续当前进度');
     } catch (failure) {
@@ -1904,6 +2000,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       return;
     }
     if (!mounted) return;
+
+    final requestedSource = target?.sourceId ?? widget.sourceId;
+    if (requestedSource != _settingsSourceId) {
+      if (_target != null) _saveProgress(force: true);
+      await _activateSourceProfile(requestedSource);
+      if (!mounted || _player == null) return;
+    }
 
     // 防盗链降级：图源给了**逐媒体请求头**，而当前内核带不了时改用能带的内核
     // （当前三套内核都能带，这里保留为安全网：将来某个内核退化时仍然成立）。
@@ -3584,9 +3687,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   /// 设置仅保留偏好和高级参数，已有独立按钮的操作不重复列出。
   Future<void> _openSettings() async {
     _cancelAutoHide();
+    _settingsForSheet.value = _settings;
     await showPlayerSettingsSheet(
       context: context,
       settings: _settings,
+      settingsListenable: _settingsForSheet,
       showPlaybackShortcuts: false,
       capabilities: _capabilities,
       catalog: _catalog,
@@ -3726,6 +3831,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                       },
               ),
             ],
+            if (group == 'connection' && _settingsSourceId?.isNotEmpty == true)
+              SwitchListTile(
+                key: const ValueKey('source-playback-profile'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('此源独立播放设置'),
+                subtitle: Text(
+                  _usesSourceProfile
+                      ? '已记住此源的内核、缓冲、硬解与字幕偏好'
+                      : '当前跟随全局默认；开启后只影响此源',
+                ),
+                value: _usesSourceProfile,
+                onChanged: (enabled) async {
+                  await _setSourceProfile(enabled);
+                  if (mounted) update(() {});
+                },
+              ),
             if (group == 'connection') ...[
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -3786,7 +3907,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                         );
                         update(() {});
                         final library = _library;
-                        if (library != null) {
+                        if (_usesSourceProfile) {
+                          _savePlayerSettings(_settings);
+                        } else if (library != null) {
                           SectionModuleSettings.load(library)
                               .copyWith(bufferSeconds: seconds)
                               .save(library);
@@ -3937,7 +4060,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     if (id == null) return;
     if (!_settings.subtitlesEnabled) {
       _settings = _settings.copyWith(subtitlesEnabled: true);
-      _store?.save(_settings);
+      _savePlayerSettings(_settings);
     }
     await player.selectSubtitleTrack(id);
   }

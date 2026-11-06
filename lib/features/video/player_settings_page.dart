@@ -55,7 +55,39 @@ class PlayerSettingsPage extends StatefulWidget {
 }
 
 class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
-  late String selected = widget.focusCategory ?? 'playback';
+  late PlayerSettings _settings = widget.settings;
+
+  @override
+  void didUpdateWidget(covariant PlayerSettingsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.settings != widget.settings) _settings = widget.settings;
+  }
+
+  void _change(PlayerSettings value) {
+    setState(() => _settings = value);
+    widget.onChanged(value);
+  }
+
+  void _openCategory(String id) {
+    var current = _settings;
+    showSettingsDetail(
+      context,
+      StatefulBuilder(
+        builder: (context, update) => PlayerSettingsPage(
+          settings: current,
+          catalog: widget.catalog,
+          focusCategory: id,
+          danmaku: widget.danmaku,
+          onDanmakuChanged: widget.onDanmakuChanged,
+          onChanged: (value) {
+            update(() => current = value);
+            _change(value);
+          },
+        ),
+      ),
+    );
+  }
+
   static const _categories = <(String, String, String, IconData)>[
     ('playback', '播放与选集', '播放速度、画质与选集偏好', Icons.play_circle_outline),
     ('intro', '片头片尾', '跳过片头片尾与同剧记忆', Icons.skip_next_outlined),
@@ -82,10 +114,10 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
       PlayerSettingsSheet(
         key: ValueKey(id),
         categoryOnly: id,
-        settings: widget.settings,
-        capabilities: PlayerCapabilities.of(widget.settings.kernel),
+        settings: _settings,
+        capabilities: PlayerCapabilities.of(_settings.kernel),
         catalog: widget.catalog,
-        onChanged: widget.onChanged,
+        onChanged: _change,
         orientation: PlaybackOrientationController.instance.orientation,
         onOrientationChanged: PlaybackOrientationController.instance.apply,
         danmaku: widget.danmaku,
@@ -102,28 +134,69 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
     ],
   );
   @override
-  Widget build(BuildContext context) => GlassScaffold(
-    effectModule: GlassModule.video,
-    settingsSurface: true,
-    title: '播放器设置',
-    child: Column(
-      children: [
-        SettingsTabBar(
-          selected: selected,
-          tabs: [
-            for (final entry in _categories) (entry.$1, entry.$2),
-            ('audioPlayer', '音频播放器'),
-          ],
-          onSelected: (id) => setState(() => selected = id),
-        ),
-        Expanded(
-          child: selected == 'intro'
-              ? const IntroSettingsPage(embedded: true)
-              : selected == 'audioPlayer'
-              ? const AudioPlaybackSettingsPage(embedded: true)
-              : _categoryBody(context, selected),
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    final id = widget.focusCategory;
+    final title = id == 'audioPlayer'
+        ? '音频播放器'
+        : _categories.where((entry) => entry.$1 == id).firstOrNull?.$2;
+    return GlassScaffold(
+      effectModule: GlassModule.video,
+      settingsSurface: true,
+      title: title ?? '播放器设置',
+      child: id != null
+          ? id == 'intro'
+                ? const IntroSettingsPage(embedded: true)
+                : id == 'audioPlayer'
+                ? const AudioPlaybackSettingsPage(embedded: true)
+                : _categoryBody(context, id)
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                SettingsGroupCard(
+                  children: [
+                    ListTile(
+                      leading: const Icon(
+                        Icons.settings_input_component_outlined,
+                      ),
+                      title: const Text('默认播放内核'),
+                      subtitle: Text(_settings.kernel.label),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _openCategory('advanced'),
+                    ),
+                  ],
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                  child: Text('这里设置全局默认值；启用独立设置的源使用自己的播放偏好。'),
+                ),
+                const SettingsGroupTitle('播放设置'),
+                SettingsGroupCard(
+                  children: [
+                    for (final entry in _categories)
+                      ListTile(
+                        key: ValueKey('global-player-category-${entry.$1}'),
+                        leading: Icon(entry.$4),
+                        title: Text(entry.$2),
+                        subtitle: Text(entry.$3),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => _openCategory(entry.$1),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SettingsGroupCard(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.headphones_outlined),
+                      title: const Text('音频播放器'),
+                      subtitle: const Text('音频播放的独立偏好'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _openCategory('audioPlayer'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+    );
+  }
 }
