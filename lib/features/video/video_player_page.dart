@@ -5042,20 +5042,26 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
     if (player == null) {
       final kernel = _pendingKernel ?? _effectiveKernel;
+      final isAvPlayer = kernel == PlayerKernel.avplayer;
       final hint = kernel == PlayerKernel.mpv
           ? 'MPV 首次启动要装载原生库，可能需要几秒；超过预算会自动回退 AVPlayer。'
+          : isAvPlayer
+          ? '播放器准备时间较长，可以重试，或通过播放器设置更换内核。'
           : '初始化完成后即可播放；一直没有响应可以切回 AVPlayer。';
-      return _PlayerStageNotice(
-        icon: Icons.hourglass_top_outlined,
-        title: '正在准备 ${kernel.label} 播放器…',
-        detail: hint,
-        busy: true,
-        actions: <Widget>[
-          OutlinedButton(
-            onPressed: _switchToAvPlayer,
-            child: const Text('切回 AVPlayer'),
-          ),
-        ],
+      return _DelayedPlayerPreparation(
+        key: ValueKey(kernel),
+        notice: _PlayerStageNotice(
+          icon: Icons.hourglass_top_outlined,
+          title: '正在准备 ${kernel.label} 播放器…',
+          detail: hint,
+          busy: true,
+          actions: <Widget>[
+            OutlinedButton(
+              onPressed: isAvPlayer ? _retryFailedKernel : _switchToAvPlayer,
+              child: Text(isAvPlayer ? '重试' : '切回 AVPlayer'),
+            ),
+          ],
+        ),
       );
     }
 
@@ -6409,6 +6415,41 @@ class _ResumePoint {
 ///
 /// 每种状态都**必须带出口**（重试或切回 AVPlayer）：播放器起不来时，用户手上
 /// 得有点得动的东西，而不是一个没有说明、也不知道要等多久的转圈。
+class _DelayedPlayerPreparation extends StatefulWidget {
+  const _DelayedPlayerPreparation({super.key, required this.notice});
+
+  final Widget notice;
+
+  @override
+  State<_DelayedPlayerPreparation> createState() =>
+      _DelayedPlayerPreparationState();
+}
+
+class _DelayedPlayerPreparationState extends State<_DelayedPlayerPreparation> {
+  Timer? _timer;
+  bool _showNotice = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Normal startup should not flash a recovery card on every route entry.
+    _timer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _showNotice = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _showNotice
+      ? widget.notice
+      : const Center(child: CircularProgressIndicator(color: Colors.white70));
+}
+
 class _PlayerStageNotice extends StatelessWidget {
   const _PlayerStageNotice({
     required this.icon,
