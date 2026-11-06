@@ -1,4 +1,4 @@
-// LumeSource: {"id":"alicesw_comic","name":"爱丽丝书屋","version":"1.1.2","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.alicesw.com","https://www.alicesw1.homes","https://www.alicesw.tw"],"network":"proxy","icon":"https://www.alicesw.com/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（alicesw.click）","url":"https://alicesw.click/","description":"官方发布页：海外永久地址 alicesw.com，大陆地址 alicesw.quest，大陆备用 alicesw1.homes，繁体站 alicesw.tw"},{"key":"note","type":"info","title":"站点说明","description":"爱丽丝书屋（成人小说站，全站 18+，diyquge 模板）：题材分类 /lists/{id}.html、总列表 /all/order/{排序}+desc.html、排行 /other/rank_hits/order/hits*.html、详情 /novel/{id}.html、目录 /other/chapters/id/{id}.html、正文 /book/{书号}/{章节}.html。正文是纯文本 <p> 段落。主站与镜像都在境外（解析到 38.46.217.x），源站会按 IP 拒美国 Utah，其他地区正常；本源走代理更稳。"}]}
+// LumeSource: {"id":"alicesw_comic","name":"爱丽丝书屋","version":"1.2.0","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.alicesw.com","https://www.alicesw1.homes","https://www.alicesw.tw"],"network":"proxy","icon":"https://www.alicesw.com/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（alicesw.click）","url":"https://alicesw.click/","description":"官方发布页：海外永久地址 alicesw.com，大陆地址 alicesw.quest，大陆备用 alicesw1.homes，繁体站 alicesw.tw"},{"key":"note","type":"info","title":"站点说明","description":"爱丽丝书屋（成人小说站，全站 18+，diyquge 模板）：题材分类 /lists/{id}.html、总列表 /all/order/{排序}+desc.html、排行 /other/rank_hits/order/hits*.html、详情 /novel/{id}.html、目录 /other/chapters/id/{id}.html、正文 /book/{书号}/{章节}.html。正文是纯文本 <p> 段落。主站与镜像都在境外（解析到 38.46.217.x），源站会按 IP 拒美国 Utah，其他地区正常；本源走代理更稳。 列表不再逐本等待详情补图；需要补图时由新版 App 按可见封面单独加载。"}]}
 // LumeRuntime: javascript
 //
 // 站点：爱丽丝书屋（https://www.alicesw.com，成人网络小说站，全站 18+）
@@ -348,90 +348,6 @@ function pageInfo(html) {
 }
 
 // ---------------------------------------------------------------- 列表封面回填
-// 站点列表页没有封面，只能按 id 去详情页取 `.imgbox img`。这里做「并发 + 缓存 + 预算」三件事。
-var COVER_CACHE_KEY = 'covers.json';
-var COVER_TTL = 12 * 60 * 60 * 1000; // 12 小时
-var COVER_MAX = 380;                 // 单条值上限 64 KiB，380 条约 45 KB
-var COVER_CONCURRENCY = 6;
-var COVER_REQUEST_TIMEOUT = 4500;
-var COVER_BUDGET = 6000;             // 列表补图预算（App 默认调用 10 秒，预留列表请求与解析余量）
-var COVER_HOME_BUDGET = 6000;        // 首页板块多，给封面多一点预算
-var COVER_HOME_PER_BOARD = 6;        // 首页每个板块只补前 6 条（交错取，保证每个板块首屏都有图）
-
-var coverCache = null;
-
-function nowMs() {
-  return Date.now();
-}
-
-async function loadCoverCache() {
-  if (coverCache) return coverCache;
-  var map = {};
-  try {
-    var raw = await LumeSource.fs.readText(COVER_CACHE_KEY);
-    if (raw) {
-      var parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        for (var key in parsed) {
-          var row = parsed[key];
-          if (row && typeof row.u === 'string' && typeof row.t === 'number') map[key] = row;
-        }
-      }
-    }
-  } catch (error) {
-    map = {}; // 缓存坏了就当没有，不挡路
-  }
-  coverCache = map;
-  return map;
-}
-
-function pruneCoverCache(map) {
-  var keys = [];
-  for (var key in map) keys.push(key);
-  if (keys.length <= COVER_MAX) return false;
-  keys.sort(function (a, b) {
-    return (map[a].t || 0) - (map[b].t || 0);
-  });
-  for (var i = 0; i < keys.length - COVER_MAX; i++) delete map[keys[i]];
-  return true;
-}
-
-async function saveCoverCache(map) {
-  pruneCoverCache(map); // 超上限先淘汰最旧的，再落盘
-  try {
-    await LumeSource.fs.writeText(COVER_CACHE_KEY, JSON.stringify(map));
-  } catch (error) {
-    // 超限/写失败都不影响本次列表
-  }
-}
-
-// 沙箱若没有定时器，就只依赖宿主的请求超时
-function withTimeout(promise, ms) {
-  if (typeof setTimeout !== 'function') return promise;
-  return new Promise(function (resolve) {
-    var done = false;
-    var timer = setTimeout(function () {
-      if (done) return;
-      done = true;
-      resolve(null);
-    }, ms);
-    promise.then(
-      function (value) {
-        if (done) return;
-        done = true;
-        try { clearTimeout(timer); } catch (error) {}
-        resolve(value);
-      },
-      function () {
-        if (done) return;
-        done = true;
-        try { clearTimeout(timer); } catch (error) {}
-        resolve(null);
-      }
-    );
-  });
-}
-
 function extractCover(html) {
   var block = /<div\b[^>]*class=["'][^"']*\bimgbox\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(html);
   var tag = block && /<img\b[^>]*>/i.exec(block[1]);
@@ -446,69 +362,21 @@ function coverHeaders() {
   return { Referer: base() + '/', 'User-Agent': UA };
 }
 
-async function fetchCover(id, deadline) {
-  var left = deadline - nowMs();
-  if (left < 200) return null;
-  var reply = await withTimeout(
-    LumeSource.http.get(abs('/novel/' + id + '.html'), { headers: headers() }),
-    Math.min(COVER_REQUEST_TIMEOUT, left)
-  );
-  if (!reply || Number(reply.status) !== 200) return null;
-  var cover = extractCover(String(reply.body || ''));
-  return cover ? { id: id, url: cover } : null;
-}
-
-// rows：{id, title, cover?, ...}[]；只补 cover 为空的条目，最多 limit 条去发请求
-async function fillCovers(rows, limit, budget) {
-  if (!rows || !rows.length) return rows;
-  var map = await loadCoverCache();
-  var stamp = nowMs();
-  var missing = [];
-  var i;
-  for (i = 0; i < rows.length; i++) {
+// Keep list loading independent of detail requests. New hosts resolve these
+// locators in the image queue; direct home-page images remain direct URLs.
+async function fillCovers(rows) {
+  for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
     if (!row) continue;
-    if (row.cover) { row.coverHeaders = coverHeaders(); continue; }
-    var hit = map[row.id];
-    if (hit && hit.u && stamp - hit.t <= COVER_TTL) {
-      row.cover = hit.u;
-      row.coverHeaders = coverHeaders();
-      continue;
+    row.coverHeaders = coverHeaders();
+    if (!row.cover) {
+      row.cover = abs('/novel/' + row.id + '.html');
+      row.coverHeaders['x-lume-image-page-selector'] = '.imgbox img';
     }
-    if (missing.length < limit) missing.push(row.id);
-  }
-  if (!missing.length) return rows;
-
-  var deadline = nowMs() + (Number(budget) || COVER_BUDGET);
-  var changed = false;
-  var cursor = 0;
-  async function worker() {
-    while (cursor < missing.length && nowMs() < deadline) {
-      var id = missing[cursor++];
-      var found = await fetchCover(id, deadline).catch(function () { return null; });
-      if (found && found.url) {
-        map[found.id] = { u: found.url, t: nowMs() };
-        changed = true;
-      }
-    }
-  }
-  var workers = [];
-  for (var n = 0; n < Math.min(COVER_CONCURRENCY, missing.length); n++) workers.push(worker());
-  await Promise.all(workers);
-  if (changed) await saveCoverCache(map);
-
-  for (i = 0; i < rows.length; i++) {
-    var item = rows[i];
-    if (!item) continue;
-    if (item.cover) { item.coverHeaders = coverHeaders(); continue; }
-    var cached = map[item.id];
-    if (cached && cached.u) item.cover = cached.u;
-    if (item.cover) item.coverHeaders = coverHeaders();
   }
   return rows;
 }
 
-// ---------------------------------------------------------------- 首页
 function splitHomeSections(html) {
   var marks = [];
   var re = /<h2 class="layout-tit">/g;
@@ -574,7 +442,7 @@ function parseHomeSection(segment) {
 var LumeSource = {
   id: 'alicesw_comic',
   name: '爱丽丝书屋',
-  version: '1.1.2',
+  version: '1.2.0',
   category: 'comic',
   contentCategory: 'adult',
 
@@ -610,15 +478,7 @@ var LumeSource = {
       boards.push(board);
     }
     if (!boards.length) throw new Error('首页没解析出任何板块（站点模板可能改了）');
-    // 首页纯文字条目没有封面：每个板块交错取前 COVER_HOME_PER_BOARD 条一起补，
-    // 这样后面的板块也有图（若按板块顺序取，只补得满前两个板块）。
-    var flat = [];
-    for (var k = 0; k < COVER_HOME_PER_BOARD; k++) {
-      for (var b = 0; b < boards.length; b++) {
-        if (boards[b].items[k]) flat.push(boards[b].items[k]);
-      }
-    }
-    await fillCovers(flat, boards.length * COVER_HOME_PER_BOARD, COVER_HOME_BUDGET);
+    for (var b = 0; b < boards.length; b++) await fillCovers(boards[b].items);
     return boards;
   },
 
@@ -632,7 +492,7 @@ var LumeSource = {
       var searchPage = await getPage(searchPath);
       var found = parseSearchItems(searchPage.html);
       var info = pageInfo(searchPage.html);
-      await fillCovers(found, found.length);
+      await fillCovers(found);
       return { items: found, hasMore: info ? page < info.total : found.length >= 10 };
     }
 
@@ -651,7 +511,7 @@ var LumeSource = {
     if (pager) hasMore = page < pager.total;
     else hasMore = menu.paged ? items.length >= PAGE_SIZE : false;
     if (!items.length && page === 1) throw new Error('这个分类没有取到条目（' + menu.title + '）');
-    await fillCovers(items, items.length);
+    await fillCovers(items);
     return { items: items, hasMore: hasMore };
   },
 
@@ -665,11 +525,6 @@ var LumeSource = {
     var title = oneLine((/<h1>([\s\S]*?)<\/h1>/.exec(html) || [])[1] || '');
     if (!title) return null;
     var cover = extractCover(html);
-    if (cover) {
-      var cachedCovers = await loadCoverCache();
-      cachedCovers[id] = { u: cover, t: nowMs() };
-      await saveCoverCache(cachedCovers);
-    }
     var author = oneLine((/作者：(?:<a[^>]*>)?([\s\S]*?)(?:<\/a>)?<\/p>/.exec(html) || [])[1] || '');
     var category = oneLine((/分类：(?:<a[^>]*>)?([\s\S]*?)(?:<\/a>)?<\/p>/.exec(html) || [])[1] || '');
     var heat = oneLine((/热度：([\s\S]*?)<\/p>/.exec(html) || [])[1] || '');

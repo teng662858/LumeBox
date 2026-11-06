@@ -1,4 +1,4 @@
-// LumeSource: {"id":"shuba_novel","name":"69书吧","version":"1.0.0","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.69shuba.com"],"network":"direct","icon":"https://www.69shuba.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"69书吧（69shuba.com，jieqi 模板的小说站）：全站页面在 Cloudflare managed challenge 后面——本机首次访问一律 403「Just a moment...」，用真实浏览器过完校验、拿到 cf_clearance 之后才正常。源里照约定抛 NEED_WEBVIEW_VERIFY，请用 App 的网页视图过一次校验（Cookie 会按站点保存复用）。页面编码是 GBK，App 侧走 gb18030 解码通道（iOS 原生解码）；在其它平台跑测会看到乱码，属工具限制。分类 /novels/class/{0-12}.htm（13 个：全部分类/玄幻魔法/修真武侠/言情小说/历史军事/游戏竞技/科幻空间/悬疑惊悚/同人小说/都市小说/官场职场/青春校园/穿越时空）；榜单 /novels/hot、/novels/male、/novels/female、/novels/full、/last.html；详情 /book/{id}.htm；目录 /book/{id}/；正文 /txt/{书号}/{章节号}；搜索 POST /modules/article/search.php（searchkey）。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点首页","url":"https://www.69shuba.com/","description":"站点会换域名，打不开时先从这里找当前地址"}]}
+// LumeSource: {"id":"shuba_novel","name":"69书吧","version":"1.0.1","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.69shuba.com"],"network":"direct","icon":"https://www.69shuba.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"69书吧（69shuba.com，jieqi 模板的小说站）：全站页面在 Cloudflare managed challenge 后面——本机首次访问一律 403「Just a moment...」，用真实浏览器过完校验、拿到 cf_clearance 之后才正常。源里照约定抛 NEED_WEBVIEW_VERIFY，请用 App 的网页视图过一次校验（Cookie 会按站点保存复用）。页面编码是 GBK，App 侧走 gb18030 解码通道（iOS 原生解码）；在其它平台跑测会看到乱码，属工具限制。分类 /novels/class/{0-12}.htm（13 个：全部分类/玄幻魔法/修真武侠/言情小说/历史军事/游戏竞技/科幻空间/悬疑惊悚/同人小说/都市小说/官场职场/青春校园/穿越时空）；榜单 /novels/hot、/novels/male、/novels/female、/novels/full、/last.html；详情 /book/{id}.htm；目录 /book/{id}/；正文 /txt/{书号}/{章节号}；搜索 POST /modules/article/search.php（searchkey）。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点首页","url":"https://www.69shuba.com/","description":"站点会换域名，打不开时先从这里找当前地址"}]}
 // LumeRuntime: javascript
 //
 // 站点：69书吧（www.69shuba.com，jieqi 小说站，GBK 编码，全站 CF managed challenge）
@@ -64,7 +64,10 @@ function absolute(url) {
 
 function decodeEntities(text) {
   return String(text == null ? '' : text)
-    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;(?=(?:emsp|ensp|thinsp|nbsp|#(?:x[0-9a-f]+|[0-9]+));)/gi, '&')
+    .replace(/&(?:nbsp|emsp|ensp|thinsp);/gi, ' ')
+    .replace(/&#x([0-9a-f]+);/gi, function (_, n) { var c = parseInt(n, 16); return c <= 0x10ffff ? String.fromCodePoint(c) : ''; })
+    .replace(/&#([0-9]+);/g, function (_, n) { var c = Number(n); return c <= 0x10ffff ? String.fromCodePoint(c) : ''; })
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -182,7 +185,7 @@ function channelPath(categoryId) {
 var LumeSource = {
   id: 'shuba_novel',
   name: '69书吧',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'comic',
   contentCategory: 'adult',
   mediaType: 'novel',

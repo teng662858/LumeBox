@@ -12,6 +12,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart'
     show visibleForTesting, ValueNotifier, setEquals;
 import 'package:http/http.dart' as http;
+import 'package:html/parser.dart' as html_parser;
 import 'package:path/path.dart' as p;
 
 import '../net/lume_http.dart';
@@ -1031,6 +1032,8 @@ class SectionImagePipeline {
     String url, {
     bool withReferer = true,
     bool Function()? isForeground,
+    Map<String, String>? resolvedHeaders,
+    bool allowPageCover = true,
   }) async {
     try {
       final bound = _boundSource;
@@ -1044,7 +1047,8 @@ class SectionImagePipeline {
       // 图片通道是 ephemeral 会话、不读 Cookie 仓库），源站一上 Cloudflare 校验，
       // 正文能看、封面却一批批空白（真机反馈）。这里补上同一份会话。
       final session = _sessionFor(url);
-      final explicitHeaders = _imageHeaders[url] ?? const <String, String>{};
+      final explicitHeaders =
+          resolvedHeaders ?? _imageHeaders[url] ?? const <String, String>{};
       // 源自己写死的 Cookie（`coverHeaders`）优先：它比会话更懂那张图要什么。
       final hasExplicitCookie = explicitHeaders.keys.any(
         (key) => key.toLowerCase() == 'cookie',
@@ -1138,6 +1142,69 @@ class SectionImagePipeline {
         if (bytes.isEmpty) {
           LumeLog.warn('图片响应为空: $url');
           return (bytes: null, retryable: true, forbidden: false);
+        }
+        // A source may expose a detail page as a lazy cover locator. Resolve it
+        // only when the image pipeline needs this tile, never during list loading.
+        final selector = explicitHeaders.entries
+            .where(
+              (entry) =>
+                  entry.key.toLowerCase() == 'x-lume-image-page-selector',
+            )
+            .map((entry) => entry.value)
+            .firstOrNull;
+        if (allowPageCover && selector != null) {
+          final document = html_parser.parse(
+            utf8.decode(bytes, allowMalformed: true),
+          );
+          String? image;
+          for (final element in document.querySelectorAll(selector)) {
+            final candidate =
+                element.attributes['data-src'] ??
+                element.attributes['data-original'] ??
+                element.attributes['_src'] ??
+                element.attributes['src'];
+            if (candidate == null || candidate.trim().isEmpty) continue;
+            final uri = Uri.parse(target).resolve(candidate.trim());
+            if (!const {'http', 'https'}.contains(uri.scheme) ||
+                uri.host.isEmpty ||
+                uri.toString() == target) {
+              continue;
+            }
+            image = uri.toString();
+            break;
+          }
+          if (image == null) {
+            _failures[url] = '源站未提供封面';
+            return (bytes: null, retryable: false, forbidden: false);
+          }
+          // Rebuild the destination's own session; never carry page credentials
+          // or page-only directives to a separate image host.
+          final imageHeaders = <String, String>{
+            for (final entry in explicitHeaders.entries)
+              if (!const {
+                    'cookie',
+                    'authorization',
+                    'referer',
+                    'host',
+                  }.contains(entry.key.toLowerCase()) &&
+                  !entry.key.toLowerCase().startsWith('x-lume-image-'))
+                entry.key: entry.value,
+            'Referer': target,
+          };
+          final result = await _fetchOnce(
+            image,
+            withReferer: withReferer,
+            isForeground: isForeground,
+            resolvedHeaders: imageHeaders,
+            allowPageCover: false,
+          );
+          if (result.bytes == null && _failures.containsKey(image)) {
+            _failures[url] = _failures[image]!;
+            if (_verificationTargets.containsKey(image)) {
+              _verificationTargets[url] = _verificationTargets[image]!;
+            }
+          }
+          return result;
         }
         final prefix = String.fromCharCodes(bytes.take(160))
             .trimLeft()

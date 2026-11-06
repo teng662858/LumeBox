@@ -18,6 +18,46 @@ import 'package:lume_box/core/reading/image_bytes_decoder.dart';
 
 void main() {
   test(
+    'base64 XOR covers match the public renderer and reject an incorrect key',
+    () {
+      final png = Uint8List.fromList([
+        137,
+        80,
+        78,
+        71,
+        13,
+        10,
+        26,
+        10,
+        1,
+        2,
+        3,
+        4,
+        5,
+      ]);
+      final key = utf8.encode('sample-key');
+      final cipher = Uint8List.fromList(
+        List.generate(png.length, (i) => png[i] ^ key[i % key.length]),
+      );
+      final body = Uint8List.fromList(utf8.encode(base64Encode(cipher)));
+      expect(
+        decodeSourceImage(body, {
+          'x-lume-image-encoding': 'xor-base64',
+          'x-lume-image-key': 'sample-key',
+        }),
+        orderedEquals(png),
+      );
+      expect(
+        () => decodeSourceImage(body, {
+          'x-lume-image-encoding': 'xor-base64',
+          'x-lume-image-key': 'wrong',
+        }),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test(
     'legacy multi-block ECB/CBC covers decode off UI, including data URIs',
     () async {
       final key = Uint8List.fromList(utf8.encode('0123456789abcdef'));
@@ -235,10 +275,21 @@ void main() {
     // wrapped_key = key XOR SHA-256(固定串 + nonce + 摘要 + 0 + asset_id + 0 + role)。
     const assetId = 'asset-9e1c';
     const role = 'work-cover';
-    final key = Uint8List.fromList(List.generate(32, (i) => (i * 11 + 5) & 0xff));
-    final nonce = Uint8List.fromList(List.generate(12, (i) => (i * 3 + 1) & 0xff));
+    final key = Uint8List.fromList(
+      List.generate(32, (i) => (i * 11 + 5) & 0xff),
+    );
+    final nonce = Uint8List.fromList(
+      List.generate(12, (i) => (i * 3 + 1) & 0xff),
+    );
     final image = Uint8List.fromList([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0x89,
+      0x50,
+      0x4e,
+      0x47,
+      0x0d,
+      0x0a,
+      0x1a,
+      0x0a,
       ...List.generate(200, (i) => (i * 13) & 0xff),
     ]);
     final digest = crypto.sha256.convert(image).bytes;
@@ -288,7 +339,8 @@ void main() {
     });
     expect(decoded, image);
 
-    final tampered = Uint8List.fromList(envelope)..[envelope.length - 1] ^= 0x01;
+    final tampered = Uint8List.fromList(envelope)
+      ..[envelope.length - 1] ^= 0x01;
     expect(
       () => decodeSourceImage(tampered, const {
         'x-lume-image-encoding': 'tvimage1',
@@ -296,9 +348,10 @@ void main() {
       throwsFormatException,
     );
     expect(
-      () => decodeSourceImage(Uint8List.fromList(utf8.encode('TVIMAGE1')), const {
-        'x-lume-image-encoding': 'tvimage1',
-      }),
+      () => decodeSourceImage(
+        Uint8List.fromList(utf8.encode('TVIMAGE1')),
+        const {'x-lume-image-encoding': 'tvimage1'},
+      ),
       throwsFormatException,
     );
   });

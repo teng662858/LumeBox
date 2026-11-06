@@ -211,6 +211,11 @@ class SourceHealthCheck {
             uri.userInfo.isNotEmpty) {
           throw const FormatException('封面地址无效');
         }
+        if (item.coverHeaders.keys.any(
+          (key) => key.toLowerCase() == 'x-lume-image-page-selector',
+        )) {
+          return '封面按可见条目单独解析；体检不预取详情和整张封面，实际加载时检查图片。';
+        }
         var headers = <String, String>{
           'User-Agent':
               WafSessions.userAgentFor(section, descriptor.id) ??
@@ -258,7 +263,10 @@ class SourceHealthCheck {
             '';
         if (response.body.isEmpty ||
             contentType.contains('json') ||
-            contentType.startsWith('text/') ||
+            (contentType.startsWith('text/') &&
+                !item.coverHeaders.keys.any(
+                  (key) => key.toLowerCase() == 'x-lume-image-encoding',
+                )) ||
             RegExp(
               r'^\s*(<!doctype html|<html)',
               caseSensitive: false,

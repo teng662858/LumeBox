@@ -1,4 +1,4 @@
-// LumeSource: {"id":"ciyuanji_novel","name":"次元姬","version":"1.0.0","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.ciyuanji.com"],"network":"direct","icon":"https://www.ciyuanji.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"次元姬（www.ciyuanji.com，Next.js SSR 的成人轻小说站）。所有页面都是服务端渲染，数据在 __NEXT_DATA__ 里，用桌面 UA 请求才会带全（手机 UA 只给空壳）。首页 /index 的 regionList 是七个推荐区块；分类用 /tags 的 67 个标签（/tags/{tagId} 给该标签下的书）；书籍详情 /book_detail/{bookId} 直接给书名、作者、字数、简介和完整目录（实测 329 章）；正文 /chapter/{bookId}_{chapterId}.html 里的 chapterContent.content 是 DES-ECB 密文（PKCS7 填充），密钥是站点 config 里 rk 的前 8 个字符 ZUreQN0E——本源内联了一份纯 JS 的 DES 实现来解，实测解密出正文 441 字。手打的书详情地址 /bookDetails?params=… 是加密串，本源不用它。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点首页","url":"https://www.ciyuanji.com/","description":"站点入口"}]}
+// LumeSource: {"id":"ciyuanji_novel","name":"次元姬","version":"1.0.1","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.ciyuanji.com"],"network":"direct","icon":"https://www.ciyuanji.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"次元姬（www.ciyuanji.com，Next.js SSR 的成人轻小说站）。所有页面都是服务端渲染，数据在 __NEXT_DATA__ 里，用桌面 UA 请求才会带全（手机 UA 只给空壳）。首页 /index 的 regionList 是七个推荐区块；分类用 /tags 的 67 个标签（/tags/{tagId} 给该标签下的书）；书籍详情 /book_detail/{bookId} 直接给书名、作者、字数、简介和完整目录（实测 329 章）；正文 /chapter/{bookId}_{chapterId}.html 里的 chapterContent.content 是 DES-ECB 密文（PKCS7 填充），密钥是站点 config 里 rk 的前 8 个字符 ZUreQN0E——本源内联了一份纯 JS 的 DES 实现来解，实测解密出正文 441 字。手打的书详情地址 /bookDetails?params=… 是加密串，本源不用它。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点首页","url":"https://www.ciyuanji.com/","description":"站点入口"}]}
 // LumeRuntime: javascript
 //
 // 站点：次元姬（www.ciyuanji.com），Next.js SSR 成人轻小说站。
@@ -81,15 +81,19 @@ function bookFromRecom(node, out, seen) {
     for (var i = 0; i < node.length; i++) bookFromRecom(node[i], out, seen);
     return;
   }
-  var id = node.bookId || node.id;
-  if (id && (node.bookName || node.name)) {
+  // Recommendation rows use resourceId/contentName. Region id/name pairs
+  // are layout containers, not books; resourceType=3 is an activity banner.
+  var id = node.bookId || (String(node.resourceType) === '1' ? node.resourceId : null)
+    || (node.regionId == null && (node.imgUrl || node.blurryImgUrl || node.cover) ? node.id : null);
+  if (id && (node.bookName || node.contentName || node.name)) {
     var key = String(id);
     if (!seen[key]) {
       seen[key] = true;
       out.push({
         id: key,
-        title: String(node.bookName || node.name),
+        title: String(node.bookName || node.contentName || node.name),
         cover: absolute(node.imgUrl || node.blurryImgUrl || node.cover || ''),
+        coverHeaders: { Referer: base() + '/', 'User-Agent': UA },
         subtitle: [node.authorName || node.author || '', node.firstClassifyName || '', node.secondClassifyName || '']
           .filter(Boolean)
           .join(' · '),
@@ -114,7 +118,7 @@ function booksOf(props) {
 var LumeSource = {
   id: 'ciyuanji_novel',
   name: '次元姬',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'comic',
   contentCategory: 'adult',
   mediaType: 'novel',
@@ -191,6 +195,7 @@ var LumeSource = {
       id: id,
       title: book.bookName || ('书 ' + id),
       cover: absolute(book.imgUrl || book.blurryImgUrl || ''),
+      coverHeaders: { Referer: base() + '/', 'User-Agent': UA },
       subtitle: [book.authorName || '', book.firstClassifyName || ''].filter(Boolean).join(' · '),
       description: lines.join('\n'),
       mediaType: 'novel'

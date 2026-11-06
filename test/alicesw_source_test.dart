@@ -86,7 +86,7 @@ void main() {
         expect(result.isOk, isTrue, reason: result.error?.message);
         expect(
           (((result.value as Map)['items'] as List).single as Map)['cover'],
-          'https://images.test/a.webp',
+          'https://www.alicesw1.homes/novel/123.html',
         );
       }
       expect(primary, 1);
@@ -95,7 +95,7 @@ void main() {
     }
   });
 
-  test('真实QuickJS：慢详情仍回填封面，懒加载图片被解析且详情结果复用', () async {
+  test('真实QuickJS：列表不等待慢详情，封面使用按需定位页', () async {
     expect(available, isTrue);
     enableEngineOnThisPlatform();
     var details = 0;
@@ -133,19 +133,23 @@ void main() {
       expect(firstResult.isOk, isTrue, reason: firstResult.error?.message);
       final first = firstResult.value as Map;
       final item = (first['items'] as List).single as Map;
-      expect(item['cover'], 'https://images.test/book.webp');
+      expect(item['cover'], 'https://www.alicesw.com/novel/123.html');
+      expect(
+        (item['coverHeaders'] as Map)['x-lume-image-page-selector'],
+        '.imgbox img',
+      );
       expect(
         (item['coverHeaders'] as Map)['Referer'],
         'https://www.alicesw.com/',
       );
-      expect(details, 1);
+      expect(details, 0, reason: '列表不能逐本请求详情');
       final detail = await engine.call('detail', {'id': '123'}) as Map;
       expect(detail['cover'], 'https://images.test/book.webp');
       final count = details;
       final again = await engine.call('list', {'page': 1}) as Map;
       expect(
         ((again['items'] as List).single as Map)['cover'],
-        detail['cover'],
+        'https://www.alicesw.com/novel/123.html',
       );
       expect(
         (((again['items'] as List).single as Map)['coverHeaders']

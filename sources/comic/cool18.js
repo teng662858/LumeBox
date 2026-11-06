@@ -1,4 +1,4 @@
-// LumeSource: {"id":"cool18_comic","name":"酷18","version":"1.0.0","category":"comic","contentCategory":"adult","contentTypes":["novel","photo","video"],"settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.cool18.com"],"network":"direct","icon":"https://www.cool18.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"酷18（cool18.com）综合成人论坛，本源收 9 个板块：禁忌书屋 / 情色趣闻 / 性趣论坛（文字小说）、性趣贴图 / 情色靓影 / 私房自拍 / 色色动漫 / 卡通漫画（图片）、成人影视（视频，站点要求登录后才给播放页，源里会明确提示）。所有请求都带 Cookie isok=true 过年龄门。列表来自页面里的 const _PageData 数组（一页 150~260 帖）；排序走 act=hot（热门）/ act=gold（精华）；筛选走栏目搜索 act=threadsearch（keywords）。正文在 div#content-section 的 <pre> 里：文字帖按 <p></p>/<br> 折行，图片帖收集 img src（图床 img.xwbo.com 等，带 Referer）。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点首页","url":"https://www.cool18.com/index.php","description":"站点入口（年龄门点「进入」）"}]}
+// LumeSource: {"id":"cool18_comic","name":"酷18","version":"1.0.1","category":"comic","contentCategory":"adult","contentTypes":["novel","photo","video"],"settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.cool18.com"],"network":"direct","icon":"https://www.cool18.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"酷18（cool18.com）综合成人论坛，本源收 9 个板块：禁忌书屋 / 情色趣闻 / 性趣论坛（文字小说）、性趣贴图 / 情色靓影 / 私房自拍 / 色色动漫 / 卡通漫画（图片）、成人影视（视频，站点要求登录后才给播放页，源里会明确提示）。所有请求都带 Cookie isok=true 过年龄门。列表来自页面里的 const _PageData 数组（一页 150~260 帖）；排序走 act=hot（热门）/ act=gold（精华）；筛选走栏目搜索 act=threadsearch（keywords）。正文在 div#content-section 的 <pre> 里：文字帖按 <p></p>/<br> 折行，图片帖收集 img src（图床 img.xwbo.com 等，带 Referer）。 论坛文字帖可能没有配图；图片帖封面由新版 App 按需读取帖子首图，不阻塞列表。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点首页","url":"https://www.cool18.com/index.php","description":"站点入口（年龄门点「进入」）"}]}
 // LumeRuntime: javascript
 //
 // 站点：酷18（www.cool18.com），老式论坛 + 年龄门（Cookie isok=true）。
@@ -103,6 +103,18 @@ function boardOf(id) {
   return BOARDS[0];
 }
 
+function lazyCover(item) {
+  if (!item || item.cover) return item;
+  var match = /^([a-z0-9]+):(\d+)$/.exec(item.id);
+  if (!match) return item;
+  // Text-only forums have no cover. Never fetch hundreds of text posts for art.
+  if (/^(bbs4|bbs5|bj)$/.test(match[1])) return item;
+  item.cover = base() + '/' + match[1] + '/index.php?app=forum&act=threadview&tid=' + match[2];
+  item.coverHeaders = headers();
+  item.coverHeaders['x-lume-image-page-selector'] = '#content-section img';
+  return item;
+}
+
 function parsePageData(html) {
   var text = String(html || '');
   var matched = /const _PageData = (\[[\s\S]*?\]);/.exec(text);
@@ -132,7 +144,7 @@ function parsePageData(html) {
       mediaType: 'novel'
     });
   }
-  return out;
+  return out.map(lazyCover);
 }
 
 function parseAnchors(html, board) {
@@ -156,7 +168,7 @@ function parseAnchors(html, board) {
     seen[tid] = true;
     out.push({ id: board + ':' + tid, title: title, cover: '', subtitle: '酷18 · ' + board, mediaType: 'novel' });
   }
-  return out;
+  return out.map(lazyCover);
 }
 
 function contentSection(html) {
@@ -239,7 +251,7 @@ function parseSearch(html) {
       mediaType: 'novel'
     });
   }
-  return out;
+  return out.map(lazyCover);
 }
 
 // 热门榜：<tr><td class="rank-col">第N位</td><td class="title-col"><a href="…tid=NNN"> 标题 - 作者 (123 bytes) <i>日期</i> (123 reads) </td></tr>
@@ -261,13 +273,13 @@ function parseRank(html, board) {
     seen[tid] = true;
     out.push({ id: board + ':' + tid, title: raw, cover: '', subtitle: '酷18 · 热门', mediaType: 'novel' });
   }
-  return out;
+  return out.map(lazyCover);
 }
 
 var LumeSource = {
   id: 'cool18_comic',
   name: '酷18',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'comic',
   contentCategory: 'adult',
   contentTypes: ['novel', 'photo', 'video'],
@@ -332,6 +344,7 @@ var LumeSource = {
           id: item.id,
           title: String(item.title || '').replace(/^[.\s·]+/, '').trim(),
           cover: item.cover,
+          coverHeaders: item.coverHeaders,
           subtitle: item.subtitle,
           mediaType: 'novel'
         };
@@ -368,6 +381,7 @@ var LumeSource = {
       id: board.id + ':' + tid,
       title: title,
       cover: images[0] || '',
+      coverHeaders: headers(),
       subtitle: board.title,
       description: lines.join('\n'),
       mediaType: board.type === 'photo' ? 'comic' : 'novel'

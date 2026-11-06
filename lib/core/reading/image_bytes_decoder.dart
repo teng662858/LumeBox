@@ -18,7 +18,11 @@ typedef _LegacyImageWork = ({Uint8List bytes, Uint8List key, Uint8List? iv});
 /// 站点前端拿到图片后做 `for (i=0; i<100; i++) bytes[i] ^= key[i % key.length]`
 /// 再交给浏览器，所以 CDN 上放的是「前 100 字节被 XOR、其余是原图」的文件。
 /// 这里按同样的规则还原前 [length] 字节，后面的原样保留。
-Uint8List xorRepairImageBytes(Uint8List bytes, Uint8List key, {int length = 100}) {
+Uint8List xorRepairImageBytes(
+  Uint8List bytes,
+  Uint8List key, {
+  int length = 100,
+}) {
   if (bytes.isEmpty || key.isEmpty) return bytes;
   final limit = length <= 0
       ? bytes.length
@@ -75,15 +79,7 @@ Uint8List? decodeImageDataUri(String url) {
     // covers do). Accept only known image subtypes; do not turn `data:text/…`
     // into an image by accident.
     final subtype = meta.split(';').first;
-    const imageSubtypes = {
-      'png',
-      'jpeg',
-      'jpg',
-      'gif',
-      'webp',
-      'bmp',
-      'avif',
-    };
+    const imageSubtypes = {'png', 'jpeg', 'jpg', 'gif', 'webp', 'bmp', 'avif'};
     if (!imageSubtypes.contains(subtype)) return null;
     meta =
         'image/${subtype == 'jpg' ? 'jpeg' : subtype}'
@@ -151,6 +147,16 @@ Uint8List decodeSourceImage(Uint8List bytes, Map<String, String> headers) {
   }
   // INS AV 的图床把真图整段包成 `data:image/jpeg;base64,…` 纯文本下发
   //（响应头还写着 image/jpeg，直接当图片解会裂）。解出 data URI 即可，无密钥。
+  if (encoding == 'xor-base64') {
+    final key = Uint8List.fromList(utf8.encode(field('x-lume-image-key')));
+    if (key.isEmpty) throw const FormatException('Missing XOR image key');
+    final encoded = base64Decode(utf8.decode(bytes).trim());
+    final decoded = xorRepairImageBytes(encoded, key, length: encoded.length);
+    if (!_isPlainImage(decoded)) {
+      throw const FormatException('Invalid XOR source image');
+    }
+    return decoded;
+  }
   if (encoding == 'data-uri') {
     if (_isPlainImage(bytes)) return bytes;
     final inline = decodeImageDataUri(utf8.decode(bytes, allowMalformed: true));
@@ -196,8 +202,7 @@ Uint8List decodeSourceImage(Uint8List bytes, Map<String, String> headers) {
     if (cipherBytes.isEmpty || cipherBytes.length % 16 != 0) {
       throw const FormatException('Invalid base64 source image');
     }
-    final cipher = ECBBlockCipher(AESEngine())
-      ..init(false, KeyParameter(key));
+    final cipher = ECBBlockCipher(AESEngine())..init(false, KeyParameter(key));
     final plain = Uint8List(cipherBytes.length);
     for (var offset = 0; offset < cipherBytes.length; offset += 16) {
       cipher.processBlock(cipherBytes, offset, plain, offset);
@@ -378,7 +383,10 @@ Uint8List _decodeTvImageEnvelope(Uint8List bytes) {
   }
   final assetId = meta['asset_id'];
   final role = meta['role'];
-  if (assetId is! String || assetId.isEmpty || role is! String || role.isEmpty) {
+  if (assetId is! String ||
+      assetId.isEmpty ||
+      role is! String ||
+      role.isEmpty) {
     throw invalid;
   }
   final digestHex = '${meta['plaintext_sha256'] ?? ''}';
@@ -408,10 +416,7 @@ Uint8List _decodeTvImageEnvelope(Uint8List bytes) {
   Uint8List plain;
   try {
     final cipher = GCMBlockCipher(AESEngine())
-      ..init(
-        false,
-        AEADParameters(KeyParameter(key), 128, nonce, headerBytes),
-      );
+      ..init(false, AEADParameters(KeyParameter(key), 128, nonce, headerBytes));
     plain = cipher.process(Uint8List.sublistView(bytes, bodyStart));
   } on Object {
     throw invalid;

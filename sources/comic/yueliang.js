@@ -1,4 +1,4 @@
-// LumeSource: {"id":"yueliang_comic","name":"月亮小说","version":"1.0.0","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://yueliangxiaoshuo.com"],"network":"direct","icon":"https://yueliangxiaoshuo.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"月亮小说（yueliangxiaoshuo.com，中文小说社区，含 R-18 分区）：新书 /novel/new?p=N（30 条/页、实测 100 页）；榜单 /novel/ranking?mode=daily|weekly|monthly|rookie|total&r18=0|1|2（0 普通 / 1 全部 / 2 R-18，实测三档内容不同）；系列（书） /novel/series/{id}（目录 30 章/页，?p=N，最长实测 47 页）；单章 /novel/show/{id}（正文 div#novel-body）；搜索 /search/novels?q=&p=。全部免费、不需要登录。"}]}
+// LumeSource: {"id":"yueliang_comic","name":"月亮小说","version":"1.0.1","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://yueliangxiaoshuo.com"],"network":"direct","icon":"https://yueliangxiaoshuo.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"月亮小说（yueliangxiaoshuo.com，中文小说社区，含 R-18 分区）：新书 /novel/new?p=N（30 条/页、实测 100 页）；榜单 /novel/ranking?mode=daily|weekly|monthly|rookie|total&r18=0|1|2（0 普通 / 1 全部 / 2 R-18，实测三档内容不同）；系列（书） /novel/series/{id}（目录 30 章/页，?p=N，最长实测 47 页）；单章 /novel/show/{id}（正文 div#novel-body）；搜索 /search/novels?q=&p=。全部免费、不需要登录。 原站大量小说未上传封面，网页使用颜色与书名占位；无图片时 App 同样保留书名占位。"}]}
 // LumeRuntime: javascript
 //
 // 站点：月亮小说（yueliangxiaoshuo.com，PHP 渲染的静态 HTML，含 R-18 分区）
@@ -118,7 +118,7 @@ function parseCards(html) {
     var title = oneLine(titleHit[3]);
     if (!title) continue;
     var cover = /<img[^>]*src="([^"]+)"/i.exec(block);
-    var coverPlaceholder = /cover-placeholder/.test(block);
+    var coverPlaceholder = /<span[^>]*class="cover-placeholder"/.test(block);
     var author = /class="novel-card-author"[\s\S]{0,160}?<a[^>]*>([\s\S]*?)<\/a>/i.exec(block);
     var words = /([0-9,]+)\s*字/.exec(block);
     var rank = /class="rank-badge">(\d+)</i.exec(block);
@@ -128,6 +128,7 @@ function parseCards(html) {
       id: key,
       title: title,
       cover: cover && !coverPlaceholder ? absolute(cover[1]) : '',
+      coverHeaders: { Referer: base() + '/', 'User-Agent': UA },
       subtitle: [
         rank ? '第 ' + rank[1] + ' 名' : '',
         author ? oneLine(author[1]) : '',
@@ -209,7 +210,7 @@ function novelBodyText(html) {
 var LumeSource = {
   id: 'yueliang_comic',
   name: '月亮小说',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'comic',
   contentCategory: 'adult',
   mediaType: 'novel',

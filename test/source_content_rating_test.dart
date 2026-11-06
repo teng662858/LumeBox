@@ -180,6 +180,7 @@ void main() {
       'ciyuanji_novel',
       'cool18_comic',
       'diyibanzhu_novel',
+      'miaobo_video',
     ]) {
       expect(SourceContentRating.isAdult(id, ''), isTrue);
       expect(SourceContentRating.isAdult('subscription:$id', ''), isTrue);

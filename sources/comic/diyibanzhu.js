@@ -1,4 +1,4 @@
-// LumeSource: {"id":"diyibanzhu_novel","name":"第一版主","version":"1.0.1","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.01bzw.us","https://www.111bz.cc","https://www.bz1111111.net"],"network":"direct","icon":"https://www.01bzw.us/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"第一版主（qula 模板小说站）。用户给的 bz1111111.net 与 diyibanzhu.app 在 Cloudflare 后面：bz1111111.net 是 managed challenge（本机所在网络连 challenges.cloudflare.com 都被断，浏览器也过不去），diyibanzhu.app 是 WAF 直接返回「Sorry, you have been blocked」。所以本源默认走可直连的同站镜像 01bzw.us（UTF-8，实测 200），另两个镜像 111bz.cc（GBK）与 bz1111111.net 按顺序备用。分类 /sort/{1-10}/{页码}/（玄幻/武侠/都市/历史/侦探/网游/科幻/恐怖/散文/辣文）；详情 /bookcv/{id}/ 的 og:novel:* 里有书名/作者/类别/状态；章节 /html/{p}/{书号}/{章节号}.html；正文在 div#content，站点把部分汉字换成 <img class=zi data-word=字> 做防采集，源里会还原。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（diyibanzhu.app）","url":"https://diyibanzhu.app/","description":"官方发布页；本机网络被 Cloudflare 拦住，手机数据网络通常能开"}]}
+// LumeSource: {"id":"diyibanzhu_novel","name":"第一版主","version":"1.0.2","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.01bzw.us","https://www.111bz.cc","https://www.bz1111111.net"],"network":"direct","icon":"https://www.01bzw.us/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"第一版主（qula 模板小说站）。用户给的 bz1111111.net 与 diyibanzhu.app 在 Cloudflare 后面：bz1111111.net 是 managed challenge（本机所在网络连 challenges.cloudflare.com 都被断，浏览器也过不去），diyibanzhu.app 是 WAF 直接返回「Sorry, you have been blocked」。所以本源默认走可直连的同站镜像 01bzw.us（UTF-8，实测 200），另两个镜像 111bz.cc（GBK）与 bz1111111.net 按顺序备用。分类 /sort/{1-10}/{页码}/（玄幻/武侠/都市/历史/侦探/网游/科幻/恐怖/散文/辣文）；详情 /bookcv/{id}/ 的 og:novel:* 里有书名/作者/类别/状态；章节 /html/{p}/{书号}/{章节号}.html；正文在 div#content，站点把部分汉字换成 <img class=zi data-word=字> 做防采集，源里会还原。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（diyibanzhu.app）","url":"https://diyibanzhu.app/","description":"官方发布页；本机网络被 Cloudflare 拦住，手机数据网络通常能开"}]}
 // LumeRuntime: javascript
 //
 // 站点：第一版主（qula 小说模板），主用镜像 https://www.01bzw.us
@@ -82,6 +82,13 @@ async function fetchHtml(path, referer) {
   return body;
 }
 
+function imageHeaders() { return { Referer: base() + '/', 'User-Agent': UA }; }
+function coverUrl(value, id) {
+  if (value) return absolute(value).replace(/^http:/i, 'https:');
+  // Same canonical image layout as the site's own image cards.
+  return 'https://www.dybzw.me/images/' + Math.floor(Number(id) / 1000) + '/' + id + '/' + id + 's.jpg';
+}
+
 function parseItems(html) {
   var text = String(html || '');
   var out = [];
@@ -90,7 +97,7 @@ function parseItems(html) {
   function push(id, title, cover, subtitle) {
     if (!id || !title || seen[id]) return;
     seen[id] = true;
-    out.push({ id: id, title: title, cover: cover || '', subtitle: subtitle || '', mediaType: 'novel' });
+    out.push({ id: id, title: title, cover: coverUrl(cover, id), coverHeaders: imageHeaders(), subtitle: subtitle || '', mediaType: 'novel' });
   }
 
   // 1) 大卡片：<div class="item"><div class="image"><a href="/bookcv/{id}/"><img …></a></div>
@@ -156,7 +163,8 @@ function parseSearch(html) {
     out.push({
       id: id,
       title: title,
-      cover: '',
+      cover: coverUrl('', id),
+      coverHeaders: imageHeaders(),
       subtitle: [clean(hit[1]).replace(/^\[|\]$/g, ''), hit[4] ? '作者：' + clean(hit[4]) : ''].filter(Boolean).join(' · '),
       mediaType: 'novel'
     });
@@ -167,7 +175,7 @@ function parseSearch(html) {
 var LumeSource = {
   id: 'diyibanzhu_novel',
   name: '第一版主',
-  version: '1.0.1',
+  version: '1.0.2',
   category: 'comic',
   contentCategory: 'adult',
   mediaType: 'novel',
@@ -239,7 +247,8 @@ var LumeSource = {
     return {
       id: id,
       title: title,
-      cover: cover ? absolute(cover[1]) : '',
+      cover: coverUrl(cover ? cover[1] : '', id),
+      coverHeaders: imageHeaders(),
       subtitle: [meta('author'), meta('category')].filter(Boolean).join(' · ') || '第一版主',
       description: lines.join('\n'),
       mediaType: 'novel'

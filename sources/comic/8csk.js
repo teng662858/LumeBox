@@ -1,4 +1,4 @@
-// LumeSource: {"id":"8csk_comic","name":"八叉书库","version":"1.0.0","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://8csk.org","https://8csk.net","https://8csk.cc","https://bxsk.net","https://bxsk.org","https://bcshuku.com","https://bcsk8.com","https://baxsk.com","https://8xsk.net","https://8xsk.info"],"network":"direct","icon":"https://8csk.org/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（8csk.xyz）","url":"https://8csk.xyz/","description":"官方地址发布页：发布页域名 8xsk.top / 8csk.xyz，站点域名 8csk.net/org/cc、bxsk.net/org/cc、bcshuku.com/cc/net、bcsk8.com/net/cc/xyz、bacsk.com/cc、baxsk.com/cc、8xsk.net/info/xyz"},{"key":"note","type":"info","title":"站点说明","description":"八叉书库（8xsk 字站，全站 18+ 成人小说）：分类 /booklist1-9；最新更新 /latest、最新入库 /release、热门排行 /popular、完本 /completed（分页 /xxx/index_N.html，分类分页 /booklistN/{页-1}.html）；题材 /genre/{slug}/index_N.html；详情 /novel{id}/，章节列表 /novel{id}/?p=N（每页 51 章）；正文不在 HTML 里——章节页内嵌一次性令牌，POST /conapi.php 取纯文本（本源已复刻）。站内搜索 /e/search/index.php?keyboard=&show=title,writer,byr&searchget=1，翻页带 searchid。"}]}
+// LumeSource: {"id":"8csk_comic","name":"八叉书库","version":"1.0.1","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://8csk.org","https://8csk.net","https://8csk.cc","https://bxsk.net","https://bxsk.org","https://bcshuku.com","https://bcsk8.com","https://baxsk.com","https://8xsk.net","https://8xsk.info"],"network":"direct","icon":"https://8csk.org/favicon.ico","settings":[{"key":"publishPage","type":"action","action":"openWebsite","title":"打开发布页（8csk.xyz）","url":"https://8csk.xyz/","description":"官方地址发布页：发布页域名 8xsk.top / 8csk.xyz，站点域名 8csk.net/org/cc、bxsk.net/org/cc、bcshuku.com/cc/net、bcsk8.com/net/cc/xyz、bacsk.com/cc、baxsk.com/cc、8xsk.net/info/xyz"},{"key":"note","type":"info","title":"站点说明","description":"八叉书库（8xsk 字站，全站 18+ 成人小说）：分类 /booklist1-9；最新更新 /latest、最新入库 /release、热门排行 /popular、完本 /completed（分页 /xxx/index_N.html，分类分页 /booklistN/{页-1}.html）；题材 /genre/{slug}/index_N.html；详情 /novel{id}/，章节列表 /novel{id}/?p=N（每页 51 章）；正文不在 HTML 里——章节页内嵌一次性令牌，POST /conapi.php 取纯文本（本源已复刻）。站内搜索 /e/search/index.php?keyboard=&show=title,writer,byr&searchget=1，翻页带 searchid。 部分原站封面文件自身返回 404；这些作品保留书名占位，不使用其它书籍图片。"}]}
 // LumeRuntime: javascript
 //
 // 站点：八叉书库（8csk.org，WordPress + 「truyen」小说主题，全站 18+ 成人小说）
@@ -174,7 +174,7 @@ function parseCards(html) {
   var text = String(html || '');
   var items = [];
   var seen = {};
-  var blocks = text.split('home-truyendecu');
+  var blocks = text.split(/(?:home-truyendecu|<div class="normal-image1\b)/);
   for (var i = 1; i < blocks.length; i++) {
     var block = blocks[i];
     var link = /<a\s+href="\/novel(\d+)\/"[^>]*title="([^"]*)"/.exec(block);
@@ -197,6 +197,7 @@ function parseCards(html) {
       id: id,
       title: title,
       cover: cover ? absolute(cover[1]) : '',
+      coverHeaders: { Referer: base() + '/', 'User-Agent': UA },
       subtitle: [
         status ? oneLine(status[1]) : '',
         author ? oneLine(author[1]) : '',
@@ -221,7 +222,8 @@ function parseRows(html) {
     var title = oneLine(link[2]);
     if (!id || !title || seen[id]) continue;
     seen[id] = true;
-    items.push({ id: id, title: title, mediaType: 'novel' });
+    items.push({ id: id, title: title, cover: base() + '/novel' + id + '/',
+      coverHeaders: { Referer: base() + '/', 'User-Agent': UA, 'x-lume-image-page-selector': 'img[itemprop=image]' }, mediaType: 'novel' });
   }
   return items;
 }
@@ -358,7 +360,7 @@ async function poolMap(list, limit, worker) {
 var LumeSource = {
   id: '8csk_comic',
   name: '八叉书库',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'comic',
   contentCategory: 'adult',
   mediaType: 'novel',
@@ -483,6 +485,7 @@ var LumeSource = {
       id: id,
       title: title,
       cover: cover ? absolute(cover[1]) : '',
+      coverHeaders: { Referer: base() + '/', 'User-Agent': UA },
       subtitle: [author ? oneLine(author[1]) : '', genres.slice(0, 3).join(' ')].filter(Boolean).join(' · '),
       description: lines.join('\n'),
       mediaType: 'novel'

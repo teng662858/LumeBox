@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -33,6 +34,93 @@ void main() {
     SectionPreloader.discard();
     CoverWarmup.discard();
     MediaPreload.instance.update(images: true);
+  });
+
+  test('lazy page cover resolves only in image queue and never forwards page credentials', () async {
+    final cache = Directory.systemTemp.createTempSync('lazy-cover-');
+    addTearDown(() => cache.deleteSync(recursive: true));
+    final requests = <NetworkRequest>[];
+    final pipeline = SectionImagePipeline(
+      cacheDir: cache.path,
+      diskCache: true,
+      maxConcurrent: 1,
+      maxRetries: 0,
+      requestSender: (request) async {
+        requests.add(request);
+        if (request.url == 'https://books.test/book/1') {
+          return NetworkResponse(
+            statusCode: 200,
+            headers: const {},
+            body: utf8.encode(
+              '<html><img src="/ad.png"><div class="imgbox"><img src="/blank.png" data-src="//cdn.test/cover.png"></div></html>',
+            ),
+          );
+        }
+        return _response();
+      },
+    );
+    addTearDown(pipeline.dispose);
+    pipeline.configureImageHeaders({
+      'https://books.test/book/1': {
+        'x-lume-image-page-selector': '.imgbox img',
+        'Cookie': 'private=1',
+        'Authorization': 'secret',
+        'User-Agent': 'test-agent',
+      },
+    });
+    expect(requests, isEmpty);
+    expect(
+      await pipeline.bytes('https://books.test/book/1'),
+      orderedEquals(_png),
+    );
+    expect(requests.map((r) => r.url), [
+      'https://books.test/book/1',
+      'https://cdn.test/cover.png',
+    ]);
+    expect(
+      requests.last.headers.keys.map((k) => k.toLowerCase()),
+      isNot(
+        anyElement(
+          anyOf('cookie', 'authorization', 'x-lume-image-page-selector'),
+        ),
+      ),
+    );
+    expect(requests.last.headers['Referer'], 'https://books.test/book/1');
+    await pipeline.bytes('https://books.test/book/1');
+    expect(
+      requests.length,
+      2,
+      reason: 'resolved bytes reuse the page URL cache',
+    );
+  });
+
+  test('lazy page cover without an image or with a non-HTTP image stops without recursion', () async {
+    for (final html in [
+      '<html><p>No cover</p></html>',
+      '<html><img src="javascript:bad()"></html>',
+      '<html><img src="https://books.test/book/1"></html>',
+    ]) {
+      var calls = 0;
+      final pipeline = SectionImagePipeline(
+        cacheDir: '',
+        diskCache: false,
+        maxRetries: 0,
+        requestSender: (_) async {
+          calls++;
+          return NetworkResponse(
+            statusCode: 200,
+            headers: const {},
+            body: utf8.encode(html),
+          );
+        },
+      );
+      pipeline.configureImageHeaders({
+        'https://books.test/book/1': {'x-lume-image-page-selector': 'img'},
+      });
+      expect(await pipeline.bytes('https://books.test/book/1'), isNull);
+      expect(calls, 1);
+      pipeline.dispose();
+    }
   });
 
   test('thumbnail wins over the full cover and keeps its own headers', () {

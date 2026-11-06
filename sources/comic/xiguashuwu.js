@@ -1,4 +1,4 @@
-// LumeSource: {"id":"xiguashuwu_comic","name":"西瓜书屋","version":"1.0.0","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.xiguashuwu2.com","https://www.xiguashuwu.com"],"network":"direct","icon":"https://www.xiguashuwu2.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"西瓜书屋（原 simishuwu，成人网络小说站，全站 18+）：分类 /category/{分类}/{页}.html、筛选 /category/{完本|vip}/{分类}/{页}.html、榜单 /rank/{all|week|month}/{分类}/{页}.html、详情 /book/{id}/、目录 /book/{id}/catalog/{页}.html（100 章/页）、正文 /book/{id}/{章节}.html（长章节拆成 {章节}_2.html）。站点把 VIP 书标了 vipok 角标，但 VIP 书的正文接口照样全量下发（实测 4 本 VIP 书首/中/末章都有 1.1–1.8 千字正文），本源直接按普通书读。唯一限制：站内搜索 /search/{词} 挂在 Cloudflare managed challenge 后面（列表/详情/正文都不受影响），搜索会抛 NEED_WEBVIEW_VERIFY 让 App 过校验。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开备用短域名（xiguashuwu.com）","url":"https://www.xiguashuwu.com/","description":"站点页脚写的官方新短域名；本机实测 503（站方未启用/被墙），主用仍是 xiguashuwu2.com"}]}
+// LumeSource: {"id":"xiguashuwu_comic","name":"西瓜书屋","version":"1.0.1","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.xiguashuwu2.com","https://www.xiguashuwu.com"],"network":"direct","icon":"https://www.xiguashuwu2.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"西瓜书屋（原 simishuwu，成人网络小说站，全站 18+）：分类 /category/{分类}/{页}.html、筛选 /category/{完本|vip}/{分类}/{页}.html、榜单 /rank/{all|week|month}/{分类}/{页}.html、详情 /book/{id}/、目录 /book/{id}/catalog/{页}.html（100 章/页）、正文 /book/{id}/{章节}.html（长章节拆成 {章节}_2.html）。站点把 VIP 书标了 vipok 角标，但 VIP 书的正文接口照样全量下发（实测 4 本 VIP 书首/中/末章都有 1.1–1.8 千字正文），本源直接按普通书读。唯一限制：站内搜索 /search/{词} 挂在 Cloudflare managed challenge 后面（列表/详情/正文都不受影响），搜索会抛 NEED_WEBVIEW_VERIFY 让 App 过校验。 原站部分封面文件已失效（HTTP 404）；无真实图片时显示书名占位，不替换成其它作品封面。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开备用短域名（xiguashuwu.com）","url":"https://www.xiguashuwu.com/","description":"站点页脚写的官方新短域名；本机实测 503（站方未启用/被墙），主用仍是 xiguashuwu2.com"}]}
 // LumeRuntime: javascript
 //
 // 站点：西瓜书屋（www.xiguashuwu2.com，成人网络小说站，全站 18+）
@@ -158,6 +158,8 @@ function parseUnits(html) {
     items.push({
       id: id,
       title: title,
+      cover: (function () { var image = /<img[^>]*(?:_src|data-src)=["']([^"']+)["']/i.exec(block); return image ? absolute(image[1]) : ''; })(),
+      coverHeaders: { Referer: base() + '/', 'User-Agent': UA },
       subtitle: [
         rank ? '第 ' + rank[1] + ' 名' : '',
         vip ? 'VIP' : '',
@@ -198,6 +200,7 @@ function parseGrid(html) {
       id: id,
       title: title,
       cover: cover ? absolute(cover[1]) : '',
+      coverHeaders: { Referer: base() + '/', 'User-Agent': UA },
       subtitle: vip ? 'VIP' : '',
       mediaType: 'novel'
     });
@@ -366,7 +369,7 @@ function segmentText(seg) {
 var LumeSource = {
   id: 'xiguashuwu_comic',
   name: '西瓜书屋',
-  version: '1.0.0',
+  version: '1.0.1',
   category: 'comic',
   contentCategory: 'adult',
   mediaType: 'novel',
@@ -505,6 +508,7 @@ var LumeSource = {
       id: id,
       title: title,
       cover: coverUrl,
+      coverHeaders: { Referer: base() + '/', 'User-Agent': UA },
       subtitle: [author ? oneLine(author[1]) : '', category ? oneLine(category[1]) : '', isVip ? 'VIP' : '']
         .filter(Boolean).join(' · '),
       description: lines.join('\n'),
