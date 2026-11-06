@@ -206,7 +206,7 @@ class _SpeechModesPanelState extends State<SpeechModesPanel> {
     final fromFile = await showGlassDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('启用本地离线朗读'),
+        title: const Text('启用sherpa-onnx离线朗读'),
         content: const SingleChildScrollView(
           child: Text(
             '这是普通话离线音色包，压缩资源约 147 MB，支持 174 种音色。'

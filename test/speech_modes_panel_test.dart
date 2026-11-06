@@ -95,9 +95,9 @@ void main() {
     Future<void> chooseLocal() async {
       await tester.tap(find.byType(DropdownButton<SpeechMode>));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('本地离线朗读（先启用音色包）').last);
+      await tester.tap(find.text('sherpa-onnx离线朗读（先启用音色包）').last);
       await tester.pumpAndSettle();
-      expect(find.text('启用本地离线朗读'), findsOneWidget);
+      expect(find.text('启用sherpa-onnx离线朗读'), findsOneWidget);
     }
 
     await chooseLocal();

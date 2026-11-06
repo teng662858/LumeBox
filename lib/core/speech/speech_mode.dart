@@ -1,6 +1,6 @@
 enum SpeechMode {
   system('系统朗读'),
-  local('本地离线朗读'),
+  local('sherpa-onnx离线朗读'),
   kokoro('Kokoro 离线朗读'),
   cloud('在线朗读 · 标准'),
   cloudAi('在线朗读 · 智能');
