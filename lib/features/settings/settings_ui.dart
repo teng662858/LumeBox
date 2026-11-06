@@ -128,7 +128,6 @@ class SettingsIconScope extends InheritedWidget {
   '私有 GitHub 订阅' => (Icons.lock, Color(0xFF4D7897)),
   '总订阅导入导出' => (Icons.import_export, Color(0xFF527BA8)),
   'TVBox 聚合配置导入' => (Icons.live_tv, Color(0xFF5289A0)),
-  '仓库维护' => (Icons.cloud_upload, Color(0xFF526DA2)),
   '搜索' => (Icons.search, Color(0xFF547EB6)),
   '网络设置' => (Icons.wifi, Color(0xFF9B622C)),
   'TMDB配置' => (Icons.movie, Color(0xFFAC7437)),

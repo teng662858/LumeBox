@@ -1,10 +1,8 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/source/source_import_routing.dart';
-import 'package:lume_box/core/source/github_source_repository.dart';
 import 'package:lume_box/core/source/source_subscription_sync.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/features/source/source_import_flow.dart';
@@ -52,24 +50,6 @@ void main() {
       'contentTypes': ['audio', 'video'],
     }).replaceFirst('Sample', '听友听书');
     expect(SourceImportRouting.section(mixed), Section.video);
-  });
-  test('Upload chooses directory automatically, preserving identity and marking audio for older Apps', () {
-    final upload = GithubSourceRepository.prepareUpload(
-      'audio.js',
-      Uint8List.fromList(
-        utf8.encode(script({'category': 'video', 'mediaType': 'audio'})),
-      ),
-      fallbackKind: 'video',
-    );
-    expect(upload.path, 'audiobook/audio.js');
-    expect(upload.metadata.category, 'comic');
-    expect(utf8.decode(upload.bytes), contains('"mediaType":"audio"'));
-    final movie = GithubSourceRepository.prepareUpload(
-      'film.js',
-      Uint8List.fromList(utf8.encode(script({'category': 'video'}))),
-      contentCategory: 'movie',
-    );
-    expect(movie.path, 'movie/film.js');
   });
   testWidgets(
     'Importing audio from video automatically installs into comic and notifies selection',

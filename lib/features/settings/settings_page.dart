@@ -34,7 +34,6 @@ import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/notice_card.dart';
 import '../source/global_source_page.dart';
-import '../source/source_repository_page.dart';
 import '../source/tvbox_import_page.dart';
 import '../source/source_subscription_page.dart';
 import '../cat/cat_subscription_page.dart';
@@ -100,7 +99,7 @@ class SettingsPage extends StatelessWidget {
       '个性与界面': '外观、配色与图标',
       '导航与首页': '首页布局、导航与液态玻璃',
       '阅读与播放': '小说、漫画、播放器与共用体验',
-      '内容与订阅': '订阅更新、导入与仓库维护',
+      '内容与订阅': '订阅更新与源导入',
       '网络与服务': '网络连接与第三方服务',
       '存储与安全': '缓存、备份与隐私保护',
       '诊断与关于': '使用帮助、诊断与版本信息',
@@ -373,7 +372,7 @@ class SettingsPage extends StatelessWidget {
       subtitle: '更新漫画、视频和猫源订阅',
       onTap: () => _push(context, const SubscriptionSyncPage()),
     ),
-    const SettingsGroupTitle('高级导入与仓库'),
+    const SettingsGroupTitle('高级导入'),
     SettingsEntryCard(
       icon: Icons.lock_outline,
       title: '私有 GitHub 订阅',
@@ -389,11 +388,6 @@ class SettingsPage extends StatelessWidget {
       icon: Icons.playlist_add,
       title: 'TVBox 聚合配置导入',
       onTap: () => _push(context, const TvBoxImportPage()),
-    ),
-    SettingsEntryCard(
-      icon: Icons.cloud_upload_outlined,
-      title: '仓库维护',
-      onTap: () => _push(context, const SourceRepositoryPage()),
     ),
     const SettingsGroupTitle('网络与服务'),
     SettingsEntryCard(

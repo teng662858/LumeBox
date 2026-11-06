@@ -1,7 +1,7 @@
 import Flutter
 import Security
 
-/// Device-only credential for the remote source repository. Never exported.
+/// Device-only private subscription credentials and local storage key. Never exported.
 enum SourceRepositoryCredentials {
   static func register(with messenger: FlutterBinaryMessenger) {
     FlutterMethodChannel(name: "lumebox/source_repository", binaryMessenger: messenger).setMethodCallHandler { call, result in
@@ -21,11 +21,10 @@ enum SourceRepositoryCredentials {
         guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else { result(FlutterError(code: "keychain", message: "无法保存私密存储密钥", details: nil)); return }
         result(data.base64EncodedString()); return
       }
-      let privateSubscription = call.method == "privateRead" || call.method == "privateWrite"
       let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: privateSubscription ? "lumebox.private-subscription" : "lumebox.source-repository",
+        kSecAttrService as String: "lumebox.private-subscription",
         kSecAttrAccount as String: "github"]
-      if call.method == "read" || call.method == "privateRead" {
+      if call.method == "privateRead" {
         var read = query; read[kSecReturnData as String] = true
         var value: CFTypeRef?
         let status = SecItemCopyMatching(read as CFDictionary, &value)
@@ -33,7 +32,7 @@ enum SourceRepositoryCredentials {
           result(FlutterError(code: "keychain", message: "无法读取 GitHub 授权", details: nil)); return
         }
         result((value as? Data).flatMap { String(data: $0, encoding: .utf8) } ?? "")
-      } else if (call.method == "write" || call.method == "privateWrite"), let text = call.arguments as? String {
+      } else if call.method == "privateWrite", let text = call.arguments as? String {
         var status: OSStatus
         if text.isEmpty { status = SecItemDelete(query as CFDictionary) }
         else {

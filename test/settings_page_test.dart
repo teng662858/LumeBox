@@ -357,40 +357,24 @@ void main() {
     });
   }
 
-  testWidgets('源仓库设置保持三级，分类目录进入独立页面', (tester) async {
-    final observer = _PageDepthObserver();
-    final messenger =
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    const channel = MethodChannel('lumebox/source_repository');
-    messenger.setMockMethodCallHandler(channel, (_) async => '');
-    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-    await tester.binding.setSurfaceSize(const Size(900, 1400));
+  testWidgets('内容订阅保留导入更新入口，不再提供仓库维护', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 2400));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
         theme: LumeTheme.build(),
-        navigatorObservers: [observer],
         home: const SettingsPage(runtimeAvailable: true),
       ),
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('内容与订阅'));
     await tester.pumpAndSettle();
-    expect(observer.depth, 2);
-    await tester.scrollUntilVisible(
-      find.text('仓库维护'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(find.text('仓库维护'));
-    await tester.pumpAndSettle();
-    expect(observer.depth, 3);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(observer.depth, 2);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(observer.depth, 1);
+    expect(find.text('仓库维护'), findsNothing);
+    expect(find.text('高级导入与仓库'), findsNothing);
+    expect(find.text('一键同步全部订阅'), findsOneWidget);
+    expect(find.text('私有 GitHub 订阅'), findsOneWidget);
+    expect(find.text('总订阅导入导出'), findsOneWidget);
+    expect(find.text('TVBox 聚合配置导入'), findsOneWidget);
   });
 
   testWidgets('小说设置写入小说阅读器使用的现有设置', (tester) async {
