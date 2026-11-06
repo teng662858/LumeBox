@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:lume_box/shared/widgets/frosted_glass_widget.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/session/app_preferences.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
@@ -94,49 +96,87 @@ void main() {
     );
   });
 
-  testWidgets('常用入口最多三项，取消不更改，保存写入偏好文件', (tester) async {
+  testWidgets('常用入口最多四项，取消不更改，保存写入偏好文件', (tester) async {
     await pump(tester);
     await tester.tap(find.byKey(const ValueKey('edit-settings-shortcuts')));
     await tester.pumpAndSettle();
-    expect(
-      tester
-          .widget<CheckboxListTile>(find.widgetWithText(CheckboxListTile, '网络'))
-          .onChanged,
-      isNull,
-    );
-    await tester.tap(find.widgetWithText(CheckboxListTile, '源管理'));
-    await tester.pump();
-    await tester.tap(find.widgetWithText(CheckboxListTile, '网络'));
+    final fourth = find.widgetWithText(CheckboxListTile, '网络');
+    expect(tester.widget<CheckboxListTile>(fourth).onChanged, isNotNull);
+    await tester.tap(fourth);
+    await tester.pumpAndSettle();
+    expect(find.text('选择 1–4 项，按选择顺序排列（4/4）'), findsOneWidget);
     await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    expect(
+      AppPreferences.instance.settingsShortcuts,
+      AppPreferences.defaultSettingsShortcuts,
+    );
+    await tester.tap(find.byKey(const ValueKey('edit-settings-shortcuts')));
+    await tester.pumpAndSettle();
+    await tester.tap(fourth);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
     expect(AppPreferences.instance.settingsShortcuts, [
       'appearance',
       'sources',
       'player',
+      'network',
     ]);
-    await tester.tap(find.byKey(const ValueKey('edit-settings-shortcuts')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(CheckboxListTile, '源管理'));
-    await tester.pump();
-    await tester.tap(find.widgetWithText(CheckboxListTile, '网络'));
-    await tester.tap(find.text('保存'));
-    await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey('settings-shortcut-network')),
-      findsOneWidget,
+      (jsonDecode(AppPreferences.instance.file!.readAsStringSync())
+          as Map)['settingsShortcuts'],
+      ['appearance', 'sources', 'player', 'network'],
     );
-    expect(
-      find.byKey(const ValueKey('settings-shortcut-sources')),
-      findsNothing,
+    final boxes = <Rect>[];
+    for (final id in AppPreferences.instance.settingsShortcuts) {
+      final finder = find.byKey(ValueKey('settings-shortcut-$id'));
+      boxes.add(tester.getRect(finder));
+      expect(
+        tester
+            .widget<FrostedGlassWidget>(
+              find.byKey(ValueKey('settings-shortcut-glass-$id')),
+            )
+            .nativeGlass,
+        isTrue,
+      );
+    }
+    expect(boxes.map((r) => r.top).toSet(), hasLength(1), reason: '四项在同一行');
+    expect(boxes[0].left, lessThan(boxes[1].left));
+    expect(boxes[2].left, lessThan(boxes[3].left));
+    expect(tester.takeException(), isNull);
+  });
+
+  test('四个入口从偏好文件恢复时不截断，顺序不变', () async {
+    final file = AppPreferences.instance.file!;
+    file.writeAsStringSync(
+      jsonEncode({
+        'settingsShortcuts': ['network', 'player', 'sources', 'appearance'],
+      }),
     );
-    final stored =
-        jsonDecode(AppPreferences.instance.file!.readAsStringSync()) as Map;
-    expect(stored['settingsShortcuts'], ['appearance', 'player', 'network']);
-    await tester.pumpWidget(const SizedBox());
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    messenger.setMockMethodCallHandler(channel, (_) async => root.path);
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    final restored = AppPreferences();
+    await restored.boot();
+    expect(restored.settingsShortcuts, [
+      'network',
+      'player',
+      'sources',
+      'appearance',
+    ]);
   });
 
   for (final size in [(320.0, 1.0), (320.0, 2.0), (430.0, 2.0)]) {
     testWidgets('目录与常用入口适配宽 ${size.$1} 字号 ${size.$2}', (tester) async {
+      AppPreferences.instance.settingsShortcuts = [
+        'appearance',
+        'sources',
+        'player',
+        'network',
+      ];
       await pump(tester, width: size.$1, scale: size.$2);
       await tester.tap(find.byKey(const ValueKey('settings-category-阅读与播放')));
       await tester.pumpAndSettle();

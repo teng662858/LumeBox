@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/session/app_preferences.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/frosted_glass_widget.dart';
 
 /// 设置模块统一的脚注颜色（用户指定 #8E8E93）。
 ///
@@ -507,8 +508,8 @@ class _SettingsHomeState extends State<SettingsHome> {
           if (item.id == id) item,
     ];
     return selected.isEmpty
-        ? widget.shortcuts.take(3).toList()
-        : selected.take(3).toList();
+        ? widget.shortcuts.take(AppPreferences.maxSettingsShortcuts).toList()
+        : selected.take(AppPreferences.maxSettingsShortcuts).toList();
   }
 
   Future<void> _openCategory(SettingsCategory category) async {
@@ -561,7 +562,7 @@ class _SettingsHomeState extends State<SettingsHome> {
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('选择 1–3 项，按选择顺序排列（${ids.length}/3）'),
+                  child: Text('选择 1–4 项，按选择顺序排列（${ids.length}/4）'),
                 ),
               ),
               Expanded(
@@ -572,7 +573,10 @@ class _SettingsHomeState extends State<SettingsHome> {
                         title: Text(item.title),
                         secondary: Icon(item.icon),
                         value: ids.contains(item.id),
-                        onChanged: !ids.contains(item.id) && ids.length >= 3
+                        onChanged:
+                            !ids.contains(item.id) &&
+                                ids.length >=
+                                    AppPreferences.maxSettingsShortcuts
                             ? null
                             : (value) => update(() {
                                 if (value == true) {
@@ -720,12 +724,17 @@ class _SettingsShortcutTile extends StatelessWidget {
   const _SettingsShortcutTile({required this.shortcut});
   final SettingsShortcut shortcut;
   @override
-  Widget build(BuildContext context) => Material(
-    color: LumeTheme.accent.withValues(alpha: .09),
-    borderRadius: BorderRadius.circular(16),
+  Widget build(BuildContext context) => FrostedGlassWidget(
+    key: ValueKey('settings-shortcut-glass-${shortcut.id}'),
+    nativeGlass: true,
+    translucentOverlay: true,
+    neutralTint: true,
+    interactive: true,
+    radius: 18,
+    opacity: .16,
     child: InkWell(
       key: ValueKey('settings-shortcut-${shortcut.id}'),
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       onTap: shortcut.onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
@@ -736,6 +745,8 @@ class _SettingsShortcutTile extends StatelessWidget {
             Text(
               shortcut.title,
               textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 14),
             ),
           ],
