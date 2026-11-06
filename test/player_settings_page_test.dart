@@ -38,6 +38,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('播放与选集'));
     await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byType(BackButton), findsOneWidget);
     await tester.tap(find.widgetWithText(ChoiceChip, '2x'));
     await tester.pumpAndSettle();
     expect(settings.speed, 2);

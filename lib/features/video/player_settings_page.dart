@@ -70,19 +70,20 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
 
   void _openCategory(String id) {
     var current = _settings;
-    showSettingsDetail(
-      context,
-      StatefulBuilder(
-        builder: (context, update) => PlayerSettingsPage(
-          settings: current,
-          catalog: widget.catalog,
-          focusCategory: id,
-          danmaku: widget.danmaku,
-          onDanmakuChanged: widget.onDanmakuChanged,
-          onChanged: (value) {
-            update(() => current = value);
-            _change(value);
-          },
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => StatefulBuilder(
+          builder: (context, update) => PlayerSettingsPage(
+            settings: current,
+            catalog: widget.catalog,
+            focusCategory: id,
+            danmaku: widget.danmaku,
+            onDanmakuChanged: widget.onDanmakuChanged,
+            onChanged: (value) {
+              update(() => current = value);
+              _change(value);
+            },
+          ),
         ),
       ),
     );
