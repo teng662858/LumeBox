@@ -250,6 +250,7 @@ class SourceItem {
     this.cover,
     this.coverHeaders = const {},
     this.subtitle,
+    this.mediaInfo = const {},
     this.mediaType = '',
     this.duration,
     this.updatedAt,
@@ -260,6 +261,7 @@ class SourceItem {
   final String? cover;
   final Map<String, String> coverHeaders;
   final String? subtitle;
+  final Map<String, dynamic> mediaInfo;
 
   /// 时长（可选能力）：视频类图源常给（搜索结果里要显示「时长」）。
   final String mediaType;
@@ -297,6 +299,9 @@ class SourceItem {
       mediaType:
           _text(json['mediaType'] ?? json['contentType'] ?? json['kind']) ?? '',
       subtitle: _text(json['subtitle']),
+      mediaInfo: json['mediaInfo'] is Map
+          ? Map<String, dynamic>.from(json['mediaInfo'])
+          : const {},
       duration: parseDuration(
         json['duration'] ?? json['时长'] ?? json['length'] ?? json['runtime'],
       ),

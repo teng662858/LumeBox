@@ -1,3 +1,4 @@
+import 'media_badge_settings_page.dart';
 import '../source/total_subscription_import_entry.dart';
 import '../reading/continue_activity_page.dart';
 import 'performance_page.dart';
@@ -292,6 +293,12 @@ class SettingsPage extends StatelessWidget {
       onTap: () => _push(context, const ComicSettingsPage()),
     ),
     const SettingsGroupTitle('播放'),
+    SettingsEntryCard(
+      icon: Icons.label_outline,
+      title: '媒体徽章',
+      subtitle: '规格标签、显示位置与样式预览',
+      onTap: () => _push(context, const MediaBadgeSettingsPage()),
+    ),
     SettingsEntryCard(
       icon: Icons.play_circle_outline,
       title: '播放器设置',

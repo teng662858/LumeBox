@@ -20,6 +20,7 @@ class AppPreferences {
   static const defaultSettingsShortcuts = ['appearance', 'sources', 'player'];
   List<String> settingsShortcuts = List.of(defaultSettingsShortcuts);
   HapticStrength hapticStrength = HapticStrength.medium;
+  Map<String, dynamic> mediaBadges = {};
   File? file;
   Future<void> boot() async {
     file = File(
@@ -28,6 +29,9 @@ class AppPreferences {
     if (!file!.existsSync()) return;
     try {
       final data = jsonDecode(file!.readAsStringSync()) as Map;
+      mediaBadges = Map<String, dynamic>.from(
+        data['mediaBadges'] is Map ? data['mediaBadges'] : {},
+      );
       final shortcuts = data['settingsShortcuts'];
       settingsShortcuts = shortcuts is List
           ? shortcuts
@@ -61,6 +65,7 @@ class AppPreferences {
         'hapticStrength': hapticStrength.name,
         'backgroundPlayback': backgroundPlayback,
         'autoBackup': autoBackup,
+        'mediaBadges': mediaBadges,
       }),
       flush: true,
     );

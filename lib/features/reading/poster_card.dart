@@ -1,3 +1,4 @@
+import '../../shared/widgets/media_badges.dart';
 import '../../shared/widgets/source_translation.dart';
 
 import 'package:lume_box/shared/widgets/lume_icon.dart';
@@ -474,6 +475,12 @@ class PosterTile extends StatelessWidget {
     // 标题风格是全局偏好（设置页可切），这里按当前值渲染。
     final style = BrowseLayoutSettings.instance.gridTitleStyle;
     return PosterCard(
+      badge: MediaBadges(
+        values: MediaBadgeData.fromMap(item.mediaInfo),
+        location: 'card',
+        overlay: true,
+        limit: 2,
+      ),
       onTap: onTap,
       // 标题风格：遮罩内置（白字压在封面上）/ 外置独立（黑字在封面下方）。
       // 外置时封面不画任何遮罩，文字落在卡片浅色底上，因此用主题主文字色。

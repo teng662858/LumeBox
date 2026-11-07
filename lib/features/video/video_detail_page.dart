@@ -1,3 +1,4 @@
+import '../../shared/widgets/media_badges.dart';
 import '../../core/audio_book/audio_book_player.dart';
 import 'playback_entry_preparation.dart';
 import '../../core/source/source_content_type.dart';
@@ -2815,6 +2816,9 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                         if (_playFailure != null) playbackRecovery(),
                         compactEpisodeSection(),
                         const SizedBox(height: 24),
+                        MediaBadges(
+                          values: MediaBadgeData.fromMap(widget.item.mediaInfo),
+                        ),
                         summaryBlock(title, synopsis),
                         if (playbackFailed && lines.length > 1)
                           OutlinedButton.icon(
@@ -3107,6 +3111,11 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                                 ),
                               ),
                               const SizedBox(height: 12),
+                              MediaBadges(
+                                values: MediaBadgeData.fromMap(
+                                  widget.item.mediaInfo,
+                                ),
+                              ),
                               summaryBlock(
                                 detail?.title ?? widget.item.title,
                                 synopsis,

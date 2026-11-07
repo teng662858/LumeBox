@@ -1,3 +1,4 @@
+import '../../shared/widgets/media_badges.dart';
 import 'source_playback_profiles.dart';
 import '../../core/source/source_runtime_pins.dart';
 import 'player_snapshot_selector.dart';
@@ -4702,17 +4703,28 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           if (stats.resolutionText != null) stats.resolutionText!,
         ];
         if (parts.isEmpty) return const SizedBox.shrink();
-        return Text(
-          parts.join(' · '),
-          key: const Key('fullscreen-media-caption'),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontSize: LumeTypography.captionSize,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFFE4E4E4),
-            shadows: _controlShadows,
-          ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              parts.join(' · '),
+              key: const Key('fullscreen-media-caption'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: LumeTypography.captionSize,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFE4E4E4),
+                shadows: _controlShadows,
+              ),
+            ),
+            MediaBadges(
+              values: MediaBadgeData.fromStats(stats),
+              location: 'player',
+              overlay: true,
+            ),
+          ],
         );
       }
 
@@ -5407,6 +5419,31 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             children: <Widget>[
               // 画面本身居中，并按设置做取景 / 缩放 / 旋转 / 镜像。
               Center(child: _buildPicture(player, constraints)),
+              Positioned(
+                top: 16,
+                left: 20,
+                right: 20,
+                child: IgnorePointer(
+                  child: ListenableBuilder(
+                    listenable: MediaBadgeSettings.instance,
+                    builder: (context, _) =>
+                        (!_fullscreen ||
+                            (!_overlayVisible &&
+                                !MediaBadgeSettings.instance.enabled(
+                                  'followControls',
+                                )))
+                        ? ValueListenableBuilder<PlayerStats>(
+                            valueListenable: player.stats,
+                            builder: (context, stats, _) => MediaBadges(
+                              values: MediaBadgeData.fromStats(stats),
+                              location: 'player',
+                              overlay: true,
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ),
               // 亮度遮罩：**降级路径**用（平台不支持改系统亮度时）。
               if (!_systemBrightness && _brightness < 1.0)
                 Positioned.fill(

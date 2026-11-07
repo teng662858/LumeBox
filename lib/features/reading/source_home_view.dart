@@ -1,3 +1,4 @@
+import '../../shared/widgets/media_badges.dart';
 import 'source_loading_surface.dart';
 import '../../core/util/source_load_profile.dart';
 import '../../shared/widgets/network_owned_state.dart';
@@ -667,6 +668,12 @@ class _HomeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = BrowseLayoutSettings.instance.gridTitleStyle;
     return PosterCard(
+      badge: MediaBadges(
+        values: MediaBadgeData.fromMap(item.mediaInfo),
+        location: 'card',
+        overlay: true,
+        limit: 2,
+      ),
       onTap: onTap,
       footnoteBelow: style == GridTitleStyle.below,
       footnoteGap: ThreeColumnPosterLayout.titleGap,
