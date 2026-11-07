@@ -698,6 +698,30 @@ def _decoded(value):
     return value or {}
 
 
+def _cover_fields(entry):
+    """Translate TVBox image suffix headers into the app's image contract."""
+    url = str(entry.get("vod_pic", entry.get("pic", "")) or "")
+    headers = {}
+    suffixes = list(re.finditer(r"@(Referer|User-Agent|Cookie|Origin|Authorization|Accept)=", url, re.I))
+    if suffixes:
+        for index, match in enumerate(suffixes):
+            end = suffixes[index + 1].start() if index + 1 < len(suffixes) else len(url)
+            value = url[match.end():end]
+            if not any(ord(c) < 32 or ord(c) == 127 for c in value):
+                headers[match[1]] = value
+        url = url[:suffixes[0].start()]
+    explicit = entry.get("coverHeaders", entry.get("vod_pic_header", entry.get("picHeader", {})))
+    if isinstance(explicit, str):
+        try: explicit = json.loads(explicit)
+        except ValueError: explicit = {}
+    if isinstance(explicit, dict):
+        for name, value in explicit.items():
+            if isinstance(name, str) and isinstance(value, str) and re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name) and not any(ord(c) < 32 or ord(c) == 127 for c in value):
+                headers = {k: v for k, v in headers.items() if k.lower() != name.lower()}
+                headers[name] = value
+    return {"cover": url, "coverHeaders": headers}
+
+
 def _items(value):
     raw = _decoded(value)
     entries = raw if isinstance(raw, list) else raw.get("list", [])
@@ -705,7 +729,7 @@ def _items(value):
         return []
     return [{"id": "py:" + str(x.get("vod_id", x.get("id", ""))),
              "title": str(x.get("vod_name", x.get("name", ""))),
-             "cover": x.get("vod_pic", x.get("pic", "")),
+             **_cover_fields(x),
              "mediaType": x.get("mediaType", x.get("contentType", x.get("kind", ""))),
              "subtitle": str(x.get("vod_remarks", x.get("remarks", "")))}
             for x in entries if isinstance(x, dict) and x.get("vod_id", x.get("id")) is not None]
@@ -890,7 +914,7 @@ def _dispatch(state, method, arg):
         raw = _detail(state, item_id[3:] if item_id.startswith("py:") else item_id)
         if method == "detail":
             return {"id": item_id, "title": raw.get("vod_name", ""),
-                    "cover": raw.get("vod_pic", ""), "subtitle": raw.get("vod_remarks", ""),
+                    **_cover_fields(raw), "subtitle": raw.get("vod_remarks", ""),
                     "description": raw.get("vod_content", ""),
                     "mediaType": raw.get("mediaType", raw.get("contentType", raw.get("kind", "")))}
         flags = str(raw.get("vod_play_from", "")).split("$$$")
@@ -934,7 +958,7 @@ def _dispatch(state, method, arg):
         if not url:
             raise ValueError("源未返回播放地址；请检查站点、外部解析后端或 Android 专属依赖")
         headers = _decoded(raw.get("header", raw.get("headers", {})))
-        return {"kind": raw.get("kind") if raw.get("kind") in ("audio", "audiobook", "video") else "audio" if source_audio and raw.get("kind") != "webplayer" else "video", "url": url, "headers": headers,
+        return {"kind": raw.get("kind") if raw.get("kind") in ("audio", "audiobook", "video") else "audio" if (source_audio or re.search(r"\.(?:mp3|m4a|aac|flac|wav|ogg|opus)(?:$|[?#])", url, re.I)) and raw.get("kind") != "webplayer" else "video", "url": url, "headers": headers,
                 "webPlayer": raw.get("webPlayer") is True or raw.get("kind") == "webplayer",
                 "pageUrl": str(raw.get("pageUrl") or url),
                 "webParse": str(raw.get("parse", 0)) == "1" or (str(raw.get("jx", 0)) == "1" and not re.search(r"\.(?:mp4|m3u8|mp3|m4a|aac|flac|mkv|webm|mpd)(?:$|[?#])", url, re.I))}

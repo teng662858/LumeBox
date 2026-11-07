@@ -46,6 +46,7 @@ class _PlayerKernelButtonState extends State<PlayerKernelButton> {
             Tooltip(
               message: widget.catalog.unavailableReason(kernel) ?? kernel.label,
               child: PlayerVerticalMenu.option(
+                context: context,
                 label: kernel.label,
                 selected: widget.selected == kernel,
                 onSelected: widget.catalog.isAvailable(kernel)

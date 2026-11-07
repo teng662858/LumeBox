@@ -11,6 +11,7 @@ void main() {
       double? selected;
       await tester.pumpWidget(
         MaterialApp(
+          theme: ThemeData(useMaterial3: false),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context)
                 .copyWith(textScaler: const TextScaler.linear(1.3)),
@@ -39,6 +40,7 @@ void main() {
       );
       expect(menuSize.width, 184);
       expect(menuSize.height, lessThanOrEqualTo(264));
+
       expect(find.byType(ChoiceChip), findsNWidgets(7));
       expect(
         tester

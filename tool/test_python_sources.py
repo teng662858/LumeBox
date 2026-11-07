@@ -580,6 +580,31 @@ Spider.playerContent = lambda *args: {'url': args[0].getProxyUrl() + '&kind=bina
         with self.assertRaises(OSError):
             socket.create_connection(('127.0.0.1', port), timeout=1)
 
+    def test_tvbox_cover_header_suffix_is_split_for_lists_and_details(self):
+        script = FIXTURE.replace("'https://fixture.invalid/cover.jpg'", "'https://fixture.invalid/cover.jpg@Referer=https://site.invalid/@User-Agent=Mobile'")
+        script = script.replace("'vod_name':tid", "'vod_name':tid,'vod_pic':'https://fixture.invalid/cover.jpg@Referer=https://site.invalid/'")
+        script = script.replace("'vod_name':'详情'", "'vod_name':'详情','vod_pic':'https://fixture.invalid/book.jpg@Referer=https://site.invalid/'")
+        self.assertTrue(call('cover-suffix', 'load', script=script)['ok'])
+        item = call('cover-suffix', method='list', argument={'categoryId':'1'})['value']['items'][0]
+        self.assertEqual(item['cover'], 'https://fixture.invalid/cover.jpg')
+        self.assertEqual(item['coverHeaders']['Referer'], 'https://site.invalid/')
+        fields = host._cover_fields({'vod_pic':'https://img.invalid/a@name.jpg@Referer=https://site.invalid/@User-Agent=Mobile', 'coverHeaders':{'referer':'https://override.invalid/'}})
+        self.assertEqual(fields['cover'], 'https://img.invalid/a@name.jpg')
+        self.assertEqual(fields['coverHeaders'], {'User-Agent':'Mobile', 'referer':'https://override.invalid/'})
+        detail = call('cover-suffix', method='detail', argument={'id':'py:one'})['value']
+        self.assertEqual(detail['cover'], 'https://fixture.invalid/book.jpg')
+        self.assertEqual(detail['coverHeaders']['Referer'], 'https://site.invalid/')
+        self.assertEqual(host._cover_fields({'vod_pic':'https://img.invalid/a@name.jpg'})['cover'], 'https://img.invalid/a@name.jpg')
+        self.assertEqual(host._cover_fields({'vod_pic':'https://img.invalid/a.jpg@Referer=bad\r\nInjected: yes'})['coverHeaders'], {})
+
+    def test_untyped_music_url_uses_audio_content_without_changing_explicit_video(self):
+        for explicit, expected in [(False, 'audio'), (True, 'video')]:
+            source = FIXTURE + "\n    def playerContent(self, *args): return {" + ("'kind':'video'," if explicit else '') + "'url':'https://media.invalid/track.mp3?token=example'}\n"
+            self.assertTrue(call('music-url', 'load', script=source)['ok'])
+            result = call('music-url', method='content', argument={'id':'py:one','chapterId':json.dumps({'id':'token'})})
+            self.assertTrue(result['ok'], result)
+            self.assertEqual(result['value']['kind'], expected)
+
     def test_threadpool_retains_source_identity(self):
         source = FIXTURE + '''
     def homeVideoContent(self):

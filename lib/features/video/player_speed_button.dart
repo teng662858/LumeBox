@@ -190,10 +190,12 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                                     Colors.transparent,
                                   ),
                                   backgroundColor: Colors.transparent,
-                                  selectedColor: Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withValues(alpha: .14),
+                                  selectedColor: Colors.transparent,
+                                  disabledColor: Colors.transparent,
+                                  surfaceTintColor: Colors.transparent,
+                                  shadowColor: Colors.transparent,
+                                  elevation: 0,
+                                  pressElevation: 0,
                                   labelStyle: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,

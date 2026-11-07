@@ -94,6 +94,83 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('左右划切换类型，返回还原滚动位置且不切源不关闭抽屉', (tester) async {
+    final manager = FakeSourceManager(
+      sources: [
+        for (var i = 0; i < 80; i++)
+          SourceDescriptor(
+            id: 'comic-$i',
+            name: '漫画$i',
+            version: '1',
+            enabled: true,
+          ),
+        const SourceDescriptor(
+          id: 'photo',
+          name: '图库',
+          version: '1',
+          enabled: true,
+          mediaKind: 'photo',
+        ),
+        const SourceDescriptor(
+          id: 'novel',
+          name: '小说源',
+          version: '1',
+          enabled: true,
+          mediaKind: 'novel',
+        ),
+      ],
+    );
+    String? selected;
+    await showBar(tester, Section.comic, manager, (id) => selected = id);
+    final comic = find.widgetWithText(ChoiceChip, '漫画');
+    await tester.tap(comic);
+    await tester.pumpAndSettle();
+    final list = find
+        .descendant(
+          of: find.byKey(const ValueKey('picker-grouped-list')),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.drag(list, const Offset(0, -300));
+    await tester.pumpAndSettle();
+    final offset = tester.state<ScrollableState>(list).position.pixels;
+    expect(offset, greaterThan(0));
+    await tester.drag(
+      find.byKey(const ValueKey('reading-type-swipe')),
+      const Offset(-120, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '美图')).selected,
+      isTrue,
+    );
+    await tester.drag(
+      find.byKey(const ValueKey('reading-type-swipe')),
+      const Offset(120, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.widget<ChoiceChip>(comic).selected, isTrue);
+    expect(
+      tester.state<ScrollableState>(list).position.pixels,
+      closeTo(offset, 1),
+    );
+    expect(selected, isNull);
+    expect(manager.removed, isEmpty);
+    expect(find.byType(SourcePickerSheet), findsOneWidget);
+    // Hidden types are skipped, and the end of the strip does not wrap.
+    SourceContentVisibility.instance.setVisible('photo', false);
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const ValueKey('reading-type-swipe')),
+      const Offset(-120, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '小说')).selected,
+      isTrue,
+    );
+  });
+
   testWidgets('漫画源同分类固定两列，奇数末行保留半宽', (tester) async {
     final manager = FakeSourceManager(
       sources: const [

@@ -1,3 +1,4 @@
+import '../../shared/widgets/source_type_swipe.dart';
 import 'source_entry_order_sheet.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
 import '../../shared/widgets/source_picker_card.dart';
@@ -103,6 +104,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
           });
   String query = '';
   String contentGroup = 'all';
+  final _typeKeys = <String, GlobalKey>{};
   final _currentSourceKey = GlobalKey();
   bool _locateCurrent = true;
   List<SourceDescriptor>? _sortInput, _sorted;
@@ -145,6 +147,41 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
     SourceSubscriptionSync.revision(widget.section)
         .addListener(_subscriptionChanged);
     SourceContentVisibility.instance.addListener(_onVisibility);
+  }
+
+  void _chooseGroup(String value) {
+    if (value == contentGroup) return;
+    setState(() {
+      contentGroup = value;
+      _locateCurrent = false;
+    });
+    ReadingLibrary.find(widget.section)
+        ?.setSetting(SourcePickerSheet.contentFilterKey, value);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final target = _typeKeys[value]?.currentContext;
+      if (target != null) {
+        Scrollable.ensureVisible(
+          target,
+          alignment: .5,
+          duration: const Duration(milliseconds: 180),
+        );
+      }
+    });
+  }
+
+  void _stepGroup(int direction) {
+    final values = [
+      'all',
+      ...SourceContentVisibility.instance
+          .groups(widget.section)
+          .map((g) => g.$1),
+    ];
+    final index = values.indexOf(contentGroup);
+    final next = index + direction;
+    if (index >= 0 && next >= 0 && next < values.length) {
+      _chooseGroup(values[next]);
+    }
   }
 
   void _subscriptionChanged() {
@@ -638,6 +675,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
         ? Center(child: Text(query.isEmpty ? '暂无源' : '没有匹配的源'))
         : SourcePickerScrollList(
             key: const ValueKey('picker-grouped-list'),
+            storageKey: PageStorageKey('reading-source-$contentGroup-$query'),
             focusKey: focusKey,
             estimatedOffset: initialOffset,
             itemCount: rows.length,
@@ -745,24 +783,24 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                         Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: ChoiceChip(
+                            key: _typeKeys.putIfAbsent(group.$1, GlobalKey.new),
                             label: Text(group.$2),
                             selected: contentGroup == group.$1,
-                            onSelected: (_) {
-                              setState(() {
-                                contentGroup = group.$1;
-                                _locateCurrent = false;
-                              });
-                              ReadingLibrary.find(widget.section)?.setSetting(
-                                SourcePickerSheet.contentFilterKey,
-                                group.$1,
-                              );
-                            },
+                            onSelected: (_) => _chooseGroup(group.$1),
                           ),
                         ),
                     ],
                   ),
                 ),
-              Expanded(child: groupedList),
+              Expanded(
+                child: widget.section == Section.comic
+                    ? SourceTypeSwipe(
+                        key: const ValueKey('reading-type-swipe'),
+                        onStep: _stepGroup,
+                        child: groupedList,
+                      )
+                    : groupedList,
+              ),
             ],
           ),
         ),

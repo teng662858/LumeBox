@@ -630,6 +630,41 @@ void main() {
     expect(find.text('Kazumi 源'), findsNothing);
     expect(find.text('普通视频源'), findsOneWidget);
   });
+  testWidgets('长左右划切换可见源类型，不改变已选源或删除源', (tester) async {
+    await pump(tester);
+    await tester.tap(find.byKey(const ValueKey('video-source-type-ordinary')));
+    await tester.pumpAndSettle();
+    final selected = manager.selected;
+    await tester.drag(
+      find.byKey(const ValueKey('video-type-swipe')),
+      const Offset(-120, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ChoiceChip>(
+            find.byKey(const ValueKey('video-source-type-cat')),
+          )
+          .selected,
+      isTrue,
+    );
+    await tester.drag(
+      find.byKey(const ValueKey('video-type-swipe')),
+      const Offset(120, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ChoiceChip>(
+            find.byKey(const ValueKey('video-source-type-ordinary')),
+          )
+          .selected,
+      isTrue,
+    );
+    expect(manager.selected, selected);
+    expect(manager.removed, isEmpty);
+  });
+
   testWidgets('左滑先露出删除，取消保留，确认才删除且相邻卡片保留', (tester) async {
     manager.sources.add(
       const SourceDescriptor(
@@ -642,7 +677,7 @@ void main() {
     await pump(tester);
     final tile = find.byKey(const ValueKey('video-picker-swipe-ordinary'));
     Future<void> reveal() async {
-      await tester.drag(tile, const Offset(-110, 0));
+      await tester.drag(tile, const Offset(-50, 0));
       await tester.pumpAndSettle();
       await tester.tap(find.descendant(of: tile, matching: find.text('删除')));
       await tester.pumpAndSettle();
@@ -674,7 +709,7 @@ void main() {
     service.selectedSiteId = site.id;
     final tile = find.byKey(ValueKey('video-picker-swipe-${site.id}'));
     await tester.ensureVisible(tile);
-    await tester.drag(tile, const Offset(-110, 0));
+    await tester.drag(tile, const Offset(-50, 0));
     await tester.pumpAndSettle();
     await tester.tap(find.descendant(of: tile, matching: find.text('删除')));
     await tester.pumpAndSettle();

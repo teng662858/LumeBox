@@ -18,6 +18,12 @@ void main() {
     PlayerKernel? selected;
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(
+          useMaterial3: false,
+          chipTheme: const ChipThemeData(
+            color: WidgetStatePropertyAll(Colors.white),
+          ),
+        ),
         home: Scaffold(
           body: PlayerKernelButton(
             selected: PlayerKernel.avplayer,
@@ -51,6 +57,20 @@ void main() {
           .materialOpacity,
       VideoGlassSurface.panelOpacity,
     );
+
+    final chipMaterials = tester.widgetList<Material>(
+      find.descendant(
+        of: find.byKey(const Key('player-kernel-menu')),
+        matching: find.byType(Material),
+      ),
+    );
+    expect(chipMaterials, isNotEmpty);
+    final chipContext = tester.element(find.widgetWithText(ChoiceChip, 'MPV'));
+    expect(Theme.of(chipContext).canvasColor, Colors.transparent);
+    for (final material in chipMaterials) {
+      expect(material.color == null || material.color!.a == 0, isTrue);
+    }
+
     await tester.tap(find.widgetWithText(ChoiceChip, 'MPV'));
     await tester.pumpAndSettle();
     expect(selected, PlayerKernel.mpv);

@@ -15,6 +15,7 @@ class SourcePickerScrollList extends StatefulWidget {
     this.focusKey,
     this.estimatedOffset = 0,
     this.padding = const EdgeInsets.only(bottom: 16),
+    this.storageKey,
   });
   final List<Widget> children;
   final IndexedWidgetBuilder? itemBuilder;
@@ -22,6 +23,7 @@ class SourcePickerScrollList extends StatefulWidget {
   final GlobalKey? focusKey;
   final double estimatedOffset;
   final EdgeInsets padding;
+  final PageStorageKey<String>? storageKey;
 
   @override
   State<SourcePickerScrollList> createState() => _SourcePickerScrollListState();
@@ -29,7 +31,7 @@ class SourcePickerScrollList extends StatefulWidget {
 
 class _SourcePickerScrollListState extends State<SourcePickerScrollList> {
   late final _controller = ScrollController(
-    keepScrollOffset: false,
+    keepScrollOffset: widget.storageKey != null,
     initialScrollOffset: widget.focusKey == null ? 0 : widget.estimatedOffset,
   );
   bool _pending = true, _scheduled = false;
@@ -99,6 +101,7 @@ class _SourcePickerScrollListState extends State<SourcePickerScrollList> {
             return false;
           },
           child: ListView.builder(
+            key: widget.storageKey,
             controller: _controller,
             primary: false,
             physics: const BouncingScrollPhysics(),

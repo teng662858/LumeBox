@@ -42,6 +42,7 @@ abstract final class PlayerVerticalMenu {
   );
 
   static Widget option({
+    required BuildContext context,
     required String label,
     required bool selected,
     required ValueChanged<bool>? onSelected,
@@ -52,11 +53,23 @@ abstract final class PlayerVerticalMenu {
         width: double.infinity,
         child: Text(label, textAlign: TextAlign.center),
       ),
-      labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+      labelStyle: TextStyle(
+        fontSize: 13,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
       visualDensity: VisualDensity.compact,
       selected: selected,
       showCheckmark: true,
       color: const WidgetStatePropertyAll(Colors.transparent),
+      backgroundColor: Colors.transparent,
+      selectedColor: Colors.transparent,
+      disabledColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      elevation: 0,
+      pressElevation: 0,
+      checkmarkColor: Theme.of(context).colorScheme.onSurface,
       side: BorderSide.none,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,

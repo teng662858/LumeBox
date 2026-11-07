@@ -4256,15 +4256,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     return GlassScaffold(
       effectModule: GlassModule.video,
       title: widget.title ?? _target?.title ?? '播放',
-      actions: [
-        _kernelControl(
-          (open) => _compactIcon(
-            icon: VideoPlayerPage.playerKernelIcon,
-            tooltip: '播放内核',
-            onPressed: open,
-          ),
-        ),
-      ],
+      actions: [_kernelControl((open) => _kernelNameButton(open))],
       behindBar: true,
       child: Padding(padding: GlassScaffold.barInset(context), child: body),
     );
@@ -4774,11 +4766,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 const SizedBox(width: 4),
                 if (!narrow) ...[_buildPipButton(), const SizedBox(width: 8)],
                 _kernelControl(
-                  (open) => _topIcon(
-                    icon: VideoPlayerPage.playerKernelIcon,
-                    tooltip: '播放内核',
-                    onPressed: open,
-                  ),
+                  (open) => _kernelNameButton(open, overlay: true),
                 ),
                 const SizedBox(width: 8),
                 _topIcon(
@@ -4793,6 +4781,39 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       );
     },
   );
+
+  Widget _kernelNameButton(VoidCallback open, {bool overlay = false}) {
+    final kernel =
+        _activeKernel ??
+        (_anyKernelAvailable ? _effectiveKernel : _settings.kernel);
+    final label = kernel == PlayerKernel.aether ? 'Aether' : kernel.label;
+    return Tooltip(
+      message: '播放内核',
+      child: SizedBox(
+        width: 76,
+        height: _box,
+        child: TextButton(
+          onPressed: open,
+          style: TextButton.styleFrom(
+            foregroundColor: overlay ? const Color(0xFFF8F8F8) : null,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              key: const Key('player-kernel-name'),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                shadows: overlay ? _controlShadows : null,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _kernelControl(Widget Function(VoidCallback open) builder) =>
       PlayerKernelButton(
