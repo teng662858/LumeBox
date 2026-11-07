@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
+
+import '../../shared/widgets/video_glass_surface.dart';
 
 import '../../core/player/player_settings.dart';
 
@@ -59,11 +60,12 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
       ),
     ),
     menuChildren: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
+      VideoGlassSurface(
+        radius: 16,
+        dark: Theme.of(context).brightness == Brightness.dark,
+        materialOpacity: VideoGlassSurface.panelOpacity,
+        child: Builder(
+          builder: (context) => Container(
             key: const Key('player-speed-menu'),
             width: 208,
             height: math.max(
@@ -71,11 +73,6 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
               math.min(304, MediaQuery.sizeOf(context).height - 80),
             ),
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: const Color(0xC42A2C32),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0x26FFFFFF), width: .5),
-            ),
             child: Column(
               children: [
                 Expanded(
@@ -85,11 +82,13 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                         width: 38,
                         child: Column(
                           children: [
-                            const Text(
+                            Text(
                               '4×',
                               style: TextStyle(
                                 fontSize: 10,
-                                color: Colors.white54,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                               ),
                             ),
                             Expanded(
@@ -104,9 +103,16 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                                     overlayShape: const RoundSliderOverlayShape(
                                       overlayRadius: 14,
                                     ),
-                                    activeTrackColor: const Color(0xFF4F9DFF),
-                                    inactiveTrackColor: Colors.white12,
-                                    thumbColor: Colors.white,
+                                    activeTrackColor: Theme.of(context)
+                                        .colorScheme
+                                        .primary,
+                                    inactiveTrackColor: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: .12),
+                                    thumbColor: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface,
                                   ),
                                   child: Slider(
                                     value: _speed,
@@ -121,11 +127,13 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                                 ),
                               ),
                             ),
-                            const Text(
+                            Text(
                               '0.25×',
                               style: TextStyle(
                                 fontSize: 10,
-                                color: Colors.white54,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -155,15 +163,17 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                                           MainAxisAlignment.center,
                                       children: [
                                         if (_speed == speed) ...[
-                                          const Icon(
+                                          Icon(
                                             Icons.check_rounded,
                                             size: 15,
-                                            color: Color(0xFF75B2FF),
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
                                           ),
                                           const SizedBox(width: 4),
                                         ],
                                         Text(PlayerSpeedButton.label(speed)),
-                                        if (speed == 1) const Text(' 常速'),
+                                        if (speed == 1) Text(' 常速'),
                                       ],
                                     ),
                                   ),
@@ -177,13 +187,18 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                                   ),
                                   side: BorderSide.none,
                                   backgroundColor: Colors.transparent,
-                                  selectedColor: const Color(0x334F9DFF),
+                                  selectedColor: Theme.of(context)
+                                      .colorScheme
+                                      .primary
+                                      .withValues(alpha: .14),
                                   labelStyle: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w500,
                                     color: _speed == speed
-                                        ? const Color(0xFF75B2FF)
-                                        : Colors.white,
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context)
+                                              .colorScheme
+                                              .onSurface,
                                   ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
@@ -197,10 +212,13 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                     ],
                   ),
                 ),
-                const Divider(height: 16, color: Colors.white12),
+                Divider(height: 16, color: Theme.of(context).dividerColor),
                 Text(
                   '${PlayerSpeedButton.label(_speed)}${_speed == 1 ? ' 常速' : ''}',
-                  style: const TextStyle(fontSize: 12, color: Colors.white70),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),

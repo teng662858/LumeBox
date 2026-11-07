@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lume_box/shared/widgets/video_glass_surface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
@@ -43,6 +44,12 @@ void main() {
     expect(
       tester.getSize(find.byKey(const Key('player-kernel-menu'))).height,
       lessThanOrEqualTo(160),
+    );
+    expect(
+      tester
+          .widget<VideoGlassSurface>(find.byType(VideoGlassSurface))
+          .materialOpacity,
+      VideoGlassSurface.panelOpacity,
     );
     await tester.tap(find.widgetWithText(ChoiceChip, 'MPV'));
     await tester.pumpAndSettle();

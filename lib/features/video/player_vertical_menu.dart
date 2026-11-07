@@ -1,16 +1,29 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/widgets/video_glass_surface.dart';
+
 abstract final class PlayerVerticalMenu {
   static const width = 128.0;
   static MenuStyle get style => MenuStyle(
-    padding: const WidgetStatePropertyAll(EdgeInsets.all(4)),
+    padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+    backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+    surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
     shape: WidgetStatePropertyAll(
       RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
   );
 
-  static Widget body({required Key key, required List<Widget> children}) =>
-      SizedBox(
+  static Widget body({
+    required BuildContext context,
+    required Key key,
+    required List<Widget> children,
+  }) => VideoGlassSurface(
+    radius: 12,
+    dark: Theme.of(context).brightness == Brightness.dark,
+    materialOpacity: VideoGlassSurface.panelOpacity,
+    child: Padding(
+      padding: const EdgeInsets.all(4),
+      child: SizedBox(
         key: key,
         width: width,
         child: ConstrainedBox(
@@ -24,7 +37,9 @@ abstract final class PlayerVerticalMenu {
             ),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   static Widget option({
     required String label,

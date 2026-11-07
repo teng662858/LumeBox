@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lume_box/shared/widgets/video_glass_surface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/features/video/player_speed_button.dart';
 
@@ -27,6 +28,12 @@ void main() {
       );
       await tester.tap(find.text('打开'));
       await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<VideoGlassSurface>(find.byType(VideoGlassSurface))
+            .materialOpacity,
+        VideoGlassSurface.panelOpacity,
+      );
       expect(find.byType(ChoiceChip), findsNWidgets(7));
       expect(
         tester

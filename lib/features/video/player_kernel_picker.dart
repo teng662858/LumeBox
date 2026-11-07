@@ -39,6 +39,7 @@ class _PlayerKernelButtonState extends State<PlayerKernelButton> {
     style: PlayerVerticalMenu.style,
     menuChildren: [
       PlayerVerticalMenu.body(
+        context: context,
         key: const Key('player-kernel-menu'),
         children: [
           for (final kernel in PlayerKernel.values)

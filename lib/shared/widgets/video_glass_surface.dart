@@ -17,6 +17,7 @@ class VideoGlassSurface extends StatelessWidget {
 
   static const tint = Colors.white;
   static const opacity = .58;
+  static const panelOpacity = .78;
   static const foreground = Color(0xFF17181B);
   final Widget child;
   final double radius;
