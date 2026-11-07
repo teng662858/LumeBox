@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/lume_theme.dart';
 import 'source_card_metrics.dart';
 
-/// 猫源专用极简卡片：没有左侧图标、没有右侧菜单，文字单行居中。
+/// 猫源专用极简卡片：没有左侧图标、可选右侧三点菜单，文字单行居中。
 ///
 /// 高度 / 圆角 / 描边与漫画 / 视频的源卡片共用
 /// [SourceCardMetrics]：所有源选择卡片统一 55 高、10 圆角、1px 描边。
@@ -11,8 +11,7 @@ import 'source_card_metrics.dart';
 /// 左右各留 16 的内边距，给省略号一点落点；上下由 [Center] 保持等距呼吸空间。
 ///
 /// 视觉沿用全局卡片的圆角 + 紧凑轻阴影（[SourceCardMetrics.shadow]）。
-/// 这里刻意不用半透明的 GlassCard：左滑操作区在卡片背后，半透明底会把
-/// 「设置 / 删除」的颜色透上来；用不透明底色既保住阴影，也不串色。
+/// 不透明底色保持卡片阴影清晰。
 /// 未选中描边用 [SourceCardMetrics.unselectedBorder]，选中态改用
 /// [Theme.primaryColor]（跟随当前主题，而不是写死紫色）。
 /// 其它板块的源列表不受这里的尺寸影响。
@@ -23,6 +22,8 @@ class CatSiteTile extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.busy = false,
+    this.onMore,
+    this.moreKey,
     this.height = defaultHeight,
   });
 
@@ -38,6 +39,8 @@ class CatSiteTile extends StatelessWidget {
 
   /// 源操作进行中：中间显示一个小转圈，仍然保持同样的高度与居中。
   final bool busy;
+  final VoidCallback? onMore;
+  final Key? moreKey;
 
   @override
   Widget build(BuildContext context) {
@@ -67,36 +70,55 @@ class CatSiteTile extends StatelessWidget {
           child: InkWell(
             borderRadius: radius,
             onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Center(
-                child: busy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Row(
-                        children: <Widget>[
-                          // Expanded + maxLines 1 + ellipsis：双列再窄也只显示一行，
-                          // 绝不换行。textAlign.center 让文字在整行宽度里水平居中。
-                          Expanded(
-                            child: Text(
-                              label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w500,
-                                color: LumeTheme.textPrimary,
-                                height: 1.2,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: onMore == null ? 16 : 40,
+                  ),
+                  child: Center(
+                    child: busy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Row(
+                            children: <Widget>[
+                              // Expanded + maxLines 1 + ellipsis：双列再窄也只显示一行，
+                              // 绝不换行。textAlign.center 让文字在整行宽度里水平居中。
+                              Expanded(
+                                child: Text(
+                                  label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    color: LumeTheme.textPrimary,
+                                    height: 1.2,
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
-              ),
+                  ),
+                ),
+                if (onMore != null)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    child: IconButton(
+                      key: moreKey,
+                      tooltip: '$label的更多操作',
+                      onPressed: onMore,
+                      icon: const Icon(Icons.more_vert, size: 18),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),

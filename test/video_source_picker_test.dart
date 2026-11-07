@@ -539,6 +539,8 @@ void main() {
     expect(manager.imported, isEmpty);
     await tester.tap(find.byTooltip('本地直播的设置'));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('源设置'));
+    await tester.pumpAndSettle();
     expect(find.text('本地 HTML 已保存在 App 内，可以修改名称或删除。'), findsOneWidget);
     final html = store.items.single.html;
     await tester.enterText(find.byType(TextField).last, '我的直播');
@@ -547,6 +549,8 @@ void main() {
     expect(store.items.single.name, '我的直播');
     expect(store.items.single.html, html);
     await tester.tap(find.byTooltip('我的直播的设置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('源设置'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('删除').last);
     await flush();
@@ -578,6 +582,8 @@ void main() {
     expect(store.items.single.url, 'https://example.com/home');
     expect(store.items.single.isLocal, false);
     await tester.tap(find.byTooltip('网页首页的设置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('源设置'));
     await tester.pumpAndSettle();
     await tester.enterText(fields.at(0), '取消改名');
     await tester.tap(find.text('取消'));
@@ -665,7 +671,7 @@ void main() {
     expect(manager.removed, isEmpty);
   });
 
-  testWidgets('左滑先露出删除，取消保留，确认才删除且相邻卡片保留', (tester) async {
+  testWidgets('左滑不露出删除，菜单删除可取消或确认且相邻卡片保留', (tester) async {
     manager.sources.add(
       const SourceDescriptor(
         id: 'neighbor',
@@ -675,11 +681,14 @@ void main() {
       ),
     );
     await pump(tester);
-    final tile = find.byKey(const ValueKey('video-picker-swipe-ordinary'));
+    final tile = find.byKey(const ValueKey('video-picker-source-ordinary'));
     Future<void> reveal() async {
       await tester.drag(tile, const Offset(-50, 0));
       await tester.pumpAndSettle();
-      await tester.tap(find.descendant(of: tile, matching: find.text('删除')));
+      expect(find.text('删除源'), findsNothing);
+      await tester.tap(find.byTooltip('普通视频长名称测试的设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除源'));
       await tester.pumpAndSettle();
     }
 
@@ -707,11 +716,14 @@ void main() {
     final record = service.subscriptions.single;
     final site = record.sites.first;
     service.selectedSiteId = site.id;
-    final tile = find.byKey(ValueKey('video-picker-swipe-${site.id}'));
+    final tile = find.byKey(ValueKey('video-picker-source-${site.id}'));
     await tester.ensureVisible(tile);
     await tester.drag(tile, const Offset(-50, 0));
     await tester.pumpAndSettle();
-    await tester.tap(find.descendant(of: tile, matching: find.text('删除')));
+    expect(find.text('删除源'), findsNothing);
+    await tester.tap(find.byTooltip('${site.name}的设置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除源'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton, '删除').last);
     for (var i = 0; i < 5; i++) {

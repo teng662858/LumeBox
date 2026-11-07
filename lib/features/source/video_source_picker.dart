@@ -41,7 +41,6 @@ import 'source_preferences_page.dart';
 import 'source_section_page.dart';
 import 'source_maintenance.dart';
 import '../settings/subscription_sync_page.dart';
-import '../../shared/widgets/source_swipe_tile.dart';
 
 enum _VideoImportAction { kazumi }
 
@@ -837,66 +836,76 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
     final prefs = SourcePreferences.read(section, id);
     final js =
         descriptor != null && SourceContentCategories.appliesTo(descriptor);
-    return SourceSwipeTile(
-      key: ValueKey('video-picker-swipe-$id'),
+    return SourcePickerCard(
+      key: selected ? _currentSourceKey : null,
+      tapKey: ValueKey('video-picker-source-$id'),
+      title: name,
+      titleMaxLines: js ? 2 : 1,
       height: SourceCardMetrics.height,
-      actions: [
-        SourceSwipeAction(
-          label: '删除',
-          color: LumeTheme.danger,
-          onTap: onDelete,
-        ),
-      ],
-      child: SourcePickerCard(
-        key: selected ? _currentSourceKey : null,
-        tapKey: ValueKey('video-picker-source-$id'),
-        title: name,
-        titleMaxLines: js ? 2 : 1,
-        height: SourceCardMetrics.height,
-        subtitle: Row(
-          children: [
-            Flexible(
-              child: Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+      subtitle: Row(
+        children: [
+          Flexible(
+            child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          if (SourceContentRating.isAdult(id, name) ||
+              (js &&
+                  SourceContentCategories.forSource(descriptor) ==
+                      SourceContentCategory.adult))
+            const Padding(
+              padding: EdgeInsets.only(left: 4),
+              child: SourceRatingBadge(compact: true),
+            ),
+          if (prefs.pinned)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: LumeIcon(
+                Icons.push_pin,
+                slot: 'source_picker_sheet.2',
+                size: 11,
+                color: Theme.of(context).colorScheme.primary,
               ),
             ),
-            if (SourceContentRating.isAdult(id, name) ||
-                (js &&
-                    SourceContentCategories.forSource(descriptor) ==
-                        SourceContentCategory.adult))
-              const Padding(
-                padding: EdgeInsets.only(left: 4),
-                child: SourceRatingBadge(compact: true),
-              ),
-            if (prefs.pinned)
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: LumeIcon(
-                  Icons.push_pin,
-                  slot: 'source_picker_sheet.2',
-                  size: 11,
-                  color: Theme.of(context).colorScheme.primary,
+        ],
+      ),
+      selected: selected,
+      onTap: onTap,
+      onMore: () async {
+        final action = await showGlassModalBottomSheet<String>(
+          context: context,
+          builder: (menuContext) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(title: Text(name)),
+                ListTile(
+                  leading: const Icon(Icons.settings_outlined),
+                  title: const Text('源设置'),
+                  onTap: () => Navigator.pop(menuContext, 'settings'),
                 ),
-              ),
-          ],
-        ),
-        selected: selected,
-        onTap: onTap,
-        onMore: onMore,
-        moreTooltip: '$name的设置',
-        icon: SourceIcon(
-          name: name,
-          siteUrl: descriptor?.siteUrl ?? siteUrl,
-          iconUrl: prefs.iconUrl.trim().isEmpty
-              ? descriptor?.iconUrl ?? ''
-              : prefs.iconUrl,
-          size: SourceCardMetrics.iconSize,
-          radius: 8,
-          section: section,
-          sourceId: id,
-        ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: const Text('删除源'),
+                  onTap: () => Navigator.pop(menuContext, 'delete'),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (!mounted) return;
+        if (action == 'delete') onDelete();
+        if (action == 'settings') onMore();
+      },
+      moreTooltip: '$name的设置',
+      icon: SourceIcon(
+        name: name,
+        siteUrl: descriptor?.siteUrl ?? siteUrl,
+        iconUrl: prefs.iconUrl.trim().isEmpty
+            ? descriptor?.iconUrl ?? ''
+            : prefs.iconUrl,
+        size: SourceCardMetrics.iconSize,
+        radius: 8,
+        section: section,
+        sourceId: id,
       ),
     );
   }

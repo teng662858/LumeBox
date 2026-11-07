@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Page-like swipes change the displayed source type. Short card swipes retain
-/// their existing actions, and edge gestures belong to the enclosing drawer.
+/// Page-like swipes change the displayed source type. Short swipes leave cards
+/// in place, and edge gestures belong to the enclosing drawer.
 class SourceTypeSwipe extends StatefulWidget {
   const SourceTypeSwipe({super.key, required this.onStep, required this.child});
   final ValueChanged<int> onStep;

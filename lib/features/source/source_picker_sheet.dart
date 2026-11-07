@@ -12,7 +12,6 @@ import '../../shared/widgets/browse_side_drawer.dart';
 import '../../core/source/source_subscription_sync.dart';
 import '../../shared/widgets/cat_site_tile.dart';
 import '../../shared/widgets/source_drag_tile.dart';
-import '../../shared/widgets/source_swipe_tile.dart';
 import '../../shared/widgets/source_card_metrics.dart';
 import '../../shared/widgets/source_icon.dart';
 import '../../core/source/source_content_rating.dart';
@@ -39,7 +38,7 @@ import 'source_drawer_actions.dart';
 import '../shell/section_preloader.dart';
 import '../settings/subscription_sync_page.dart';
 
-enum SourceQuickAction { pin, preferences, browse, test, update }
+enum SourceQuickAction { pin, preferences, browse, test, update, delete }
 
 Future<String?> showSourcePicker({
   required BuildContext context,
@@ -349,13 +348,16 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                         (SourceQuickAction.browse, Icons.open_in_new, '浏览'),
                         (SourceQuickAction.test, Icons.network_check, '测试连通性'),
                         (SourceQuickAction.update, Icons.refresh, '更新订阅源'),
+                        (SourceQuickAction.delete, Icons.delete_outline, '删除源'),
                       ])
                         ListTile(
                           leading: LumeIcon(
                             entry.$2,
                             slot: 'source_picker_sheet.1',
                             variant: true,
-                            color: LumeTheme.accent,
+                            color: entry.$1 == SourceQuickAction.delete
+                                ? LumeTheme.danger
+                                : LumeTheme.accent,
                           ),
                           title: Text(entry.$3),
                           enabled:
@@ -375,6 +377,10 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
     if (selected == null || !mounted) return;
     if (selected == SourceQuickAction.browse) {
       Navigator.pop(context, source.id);
+      return;
+    }
+    if (selected == SourceQuickAction.delete) {
+      await deleteSource(source);
       return;
     }
     setState(() => busy.add(source.id));
@@ -412,6 +418,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
             SourceUpdateStatus.skipped => '跳过：${result.message}',
             SourceUpdateStatus.failed => '更新失败：${result.message}',
           });
+        case SourceQuickAction.delete:
         case SourceQuickAction.browse:
           break;
       }
@@ -426,7 +433,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
   Widget sourceTile(SourceDescriptor source) {
     final selected = source.id == widget.currentId;
     final busyNow = busy.contains(source.id);
-    // 猫源走**单独的**极简卡片：没有左侧图标、没有右侧三点，文字单行居中。
+    // 猫源使用无图标的紧凑卡片，三点菜单统一提供设置和删除。
     // 高度 / 圆角 / 描边与其它三个板块共用 SourceCardMetrics。
     if (widget.section == Section.cat) {
       return KeyedSubtree(
@@ -435,6 +442,8 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
           key: ValueKey('picker-source-${source.id}'),
           height: CatSiteTile.compactHeight,
           label: source.name,
+          onMore: () => action(source),
+          moreKey: ValueKey('picker-more-${source.id}'),
           selected: selected,
           busy: busyNow,
           onTap: busyNow ? null : () => Navigator.pop(context, source.id),
@@ -536,36 +545,6 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
       if (mounted) setState(() => _sorted = null);
     }
 
-    // 猫源卡片：左滑露出设置 / 删除；长按拖拽仍由外层 SourceDragTile 负责。
-    Widget catCard(SourceDescriptor source) => SourceSwipeTile(
-      height: CatSiteTile.compactHeight,
-      actions: <SourceSwipeAction>[
-        SourceSwipeAction(
-          label: '设置',
-          color: LumeTheme.accent,
-          onTap: () => openSettings(source),
-        ),
-        SourceSwipeAction(
-          label: '删除',
-          color: LumeTheme.danger,
-          onTap: () => deleteSource(source),
-        ),
-      ],
-      child: sourceTile(source),
-    );
-
-    Widget swipeCard(SourceDescriptor source) => SourceSwipeTile(
-      key: ValueKey('picker-swipe-${source.id}'),
-      actions: [
-        SourceSwipeAction(
-          label: '删除',
-          color: LumeTheme.danger,
-          onTap: () => deleteSource(source),
-        ),
-      ],
-      child: sourceTile(source),
-    );
-
     Widget tile(
       BuildContext context,
       SourceDescriptor source,
@@ -576,9 +555,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
       name: source.name,
       accepts: (id) => entries.any((s) => s.id == id),
       onMove: (from, to) => move(entries, from, to),
-      child: widget.section == Section.cat
-          ? catCard(source)
-          : swipeCard(source),
+      child: sourceTile(source),
     );
 
     final grouped = {
@@ -761,7 +738,7 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                    '点击选择源，长按拖动排序，左滑打开设置/删除',
+                    '点击选择源，长按拖动排序，点三个点管理源',
                     style: TextStyle(
                       fontSize: LumeTypography.captionSize,
                       color: LumeTheme.muted,

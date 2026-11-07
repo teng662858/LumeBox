@@ -2429,15 +2429,8 @@ void main() {
         }
         expect(find.byTooltip(RegExp(r'^下一集')), findsOneWidget);
         expect(find.text('记片头'), findsOneWidget);
-        if (size.height > size.width) {
-          expect(find.byTooltip('片头片尾设置'), findsOneWidget);
-          await tester.tap(find.byTooltip('上滑切下一集：关'));
-          await tester.pumpAndSettle();
-          expect(find.byTooltip('上滑切下一集：开'), findsOneWidget);
-          await tester.tap(find.byTooltip('上滑切下一集：开'));
-          await tester.pumpAndSettle();
-          expect(find.byTooltip('上滑切下一集：关'), findsOneWidget);
-        }
+        expect(find.byTooltip('片头片尾设置'), findsNothing);
+        expect(find.byTooltip(RegExp('上滑切下一集：')), findsNothing);
         expect(tester.takeException(), isNull);
         final gradient = tester.getRect(
           find.byKey(const Key('fullscreen-control-gradient')),

@@ -5019,27 +5019,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           child: _skipQuickButton(withIcon: true),
         ),
       ];
-      final shortcuts = <Widget>[
-        action(
-          '片头尾',
-          '片头片尾设置',
-          Icons.fast_forward_outlined,
-          _openOriginalIntro,
-        ),
-        Semantics(
-          toggled: _settings.swipeUpNext,
-          child: action(
-            '上滑',
-            '上滑切下一集：${_settings.swipeUpNext ? '开' : '关'}',
-            _settings.swipeUpNext ? Icons.swipe_up : Icons.swipe_up_outlined,
-            () => unawaited(
-              _applySettings(
-                _settings.copyWith(swipeUpNext: !_settings.swipeUpNext),
-              ),
-            ),
-          ),
-        ),
-      ];
       final trailing = <Widget>[
         action(
           '弹幕',
@@ -5077,7 +5056,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               child: Wrap(
                 key: const Key('fullscreen-transport-group'),
                 crossAxisAlignment: WrapCrossAlignment.center,
-                children: [...transport, ...shortcuts],
+                children: transport,
               ),
             ),
             const SizedBox(width: 12),

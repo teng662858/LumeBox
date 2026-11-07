@@ -468,7 +468,7 @@ void main() {
       expect(find.byType(SourcePickerSheet), findsNothing);
     });
   }
-  testWidgets('猫源极简卡片：名称居中、长按拖拽、左滑菜单、点击选中', (tester) async {
+  testWidgets('猫源极简卡片：名称居中、长按拖拽、三点菜单、点击选中', (tester) async {
     final manager = FakeSourceManager(
       sources: const [
         SourceDescriptor(
@@ -558,11 +558,11 @@ void main() {
     );
     expect(material.shape, isNull, reason: '没有 Material 描边');
     expect(find.byType(SourceIcon), findsNothing);
-    expect(find.byKey(const ValueKey('picker-more-c1')), findsNothing);
+    expect(find.byKey(const ValueKey('picker-more-c1')), findsOneWidget);
     expect(find.byKey(const ValueKey('picker-drag-c1')), findsOneWidget);
     expect(find.text('猫源站点甲'), findsOneWidget);
     expect(find.text('1.0.0'), findsNothing);
-    expect(find.text('点击选择源，长按拖动排序，左滑打开设置/删除'), findsOneWidget);
+    expect(find.text('点击选择源，长按拖动排序，点三个点管理源'), findsOneWidget);
     // 单列：名称水平、垂直都居中。
     expect(
       tester.getCenter(find.text('猫源站点甲')).dx,
@@ -573,14 +573,15 @@ void main() {
       closeTo(tester.getCenter(card).dy, 1),
     );
 
-    // 单列左滑：露出设置 / 删除，删除走确认框。
+    // 左滑不露出操作区；删除由三点菜单进入确认框。
     final closedX = tester.getTopLeft(card).dx;
     await tester.drag(card, const Offset(-90, 0));
     await tester.pumpAndSettle();
-    expect(tester.getTopLeft(card).dx, lessThan(closedX));
-    expect(find.text('设置').hitTestable(), findsOneWidget);
-    expect(find.text('删除').hitTestable(), findsOneWidget);
-    await tester.tap(find.text('删除').hitTestable());
+    expect(tester.getTopLeft(card).dx, closedX);
+    expect(find.text('删除源'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('picker-more-c1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除源'));
     await tester.pumpAndSettle();
     expect(find.text('删除源'), findsOneWidget);
     await tester.tap(find.text('取消'));
@@ -610,18 +611,11 @@ void main() {
       closeTo(tester.getCenter(second).dy, 1),
     );
 
-    // 双列左滑同样可用。
     final closedDoubleX = tester.getTopLeft(card).dx;
     await tester.drag(card, const Offset(-80, 0));
     await tester.pumpAndSettle();
-    expect(tester.getTopLeft(card).dx, lessThan(closedDoubleX));
-    expect(find.text('设置').hitTestable(), findsOneWidget);
-    // 收起的起点必须落在卡片露出的前缘（滑开后中间已被操作区占据）。
-    final slot = tester.getTopLeft(
-      find.byKey(const ValueKey('picker-drag-c1')),
-    );
-    await tester.dragFrom(slot + const Offset(24, 32), const Offset(140, 0));
-    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(card).dx, closedDoubleX);
+    expect(find.text('删除源'), findsNothing);
 
     // 双列里同样支持长按拖动：把右侧的 c1 拖回左侧。
     await longPressDrag(tester, card, second);
