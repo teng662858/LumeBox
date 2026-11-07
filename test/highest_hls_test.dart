@@ -43,6 +43,32 @@ void main() {
       throwsA(anyOf(isA<SocketException>(), isA<HttpException>())),
     );
   });
+  test('slow optional quality inspection yields to native playback within its budget', () async {
+    HttpOverrides.global = null;
+    final remote = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    var requests = 0;
+    remote.listen((request) async {
+      requests++;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      try {
+        request.response.write('#EXTM3U\n#EXT-X-ENDLIST\n');
+        await request.response.close();
+      } catch (_) {}
+    });
+    final resolver = HighestHls(
+      inspectionTimeout: const Duration(milliseconds: 80),
+    );
+    addTearDown(() async {
+      await resolver.close();
+      await remote.close(force: true);
+    });
+    final uri = Uri.parse('http://127.0.0.1:${remote.port}/slow.m3u8');
+    final watch = Stopwatch()..start();
+    expect(await resolver.resolve(uri, null), uri);
+    expect(watch.elapsed, lessThan(const Duration(milliseconds: 400)));
+    expect(requests, 1);
+  });
+
   test('起播前固定最高分辨率，保留独立音频、字幕和会话密钥', () {
     final result = HighestHls.singleRendition('''#EXTM3U
 #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="sound",URI="audio/main.m3u8"

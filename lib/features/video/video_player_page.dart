@@ -948,6 +948,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   Stopwatch? _startupWatch;
   Stopwatch? _firstFrameWatch;
 
+  // Interactive network seeks allow a 1s native tolerance plus snapshot delay.
+  Duration get _seekLandingTolerance => _media?.isNetwork == true
+      ? const Duration(seconds: 2)
+      : const Duration(seconds: 1);
+
   final _verifiedPlaybackSources = <String>{};
   void _onSnapshotChanged() {
     _syncPipPlaybackState();
@@ -958,7 +963,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         (snapshot.error != null ||
             (!snapshot.buffering &&
                 (snapshot.position - seekTarget).abs() <=
-                    const Duration(seconds: 1)))) {
+                    _seekLandingTolerance))) {
       _seekDisplayTimeout?.cancel();
       _seekWatchdog?.cancel();
       _seekWatchdogGeneration++;
@@ -3522,7 +3527,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       if (!acknowledged.isCompleted &&
           !player.snapshot.value.buffering &&
           (player.snapshot.value.position - target).abs() <=
-              const Duration(seconds: 1)) {
+              _seekLandingTolerance) {
         acknowledged.complete(true);
       }
     }
@@ -3584,7 +3589,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       final snapshot = player.snapshot.value;
       final stalled =
           snapshot.error == null &&
-          (snapshot.position - target).abs() > const Duration(seconds: 1) &&
+          (snapshot.position - target).abs() > _seekLandingTolerance &&
           (_committedSeekTarget == target ||
               (snapshot.buffering &&
                   (snapshot.position - anchor).abs() <=

@@ -81,7 +81,11 @@ void main() {
     expect(find.text('125.0MB/s'), findsOneWidget);
     stats.value = const PlayerStats();
     await tester.pump();
-    expect(find.text('1.0MB/s'), findsOneWidget, reason: '没有真实读数时用源测速');
+    expect(
+      find.text('线路测速 1.0MB/s'),
+      findsOneWidget,
+      reason: '源测速必须标明是另一条请求链路',
+    );
   });
 
   testWidgets('全屏顶栏那一排：分辨率与速率横排，速率不带「网速」字样', (tester) async {
@@ -103,11 +107,11 @@ void main() {
       ),
     );
     expect(find.text('1920×1080'), findsOneWidget);
-    expect(find.text('125.0MB/s'), findsOneWidget);
+    expect(find.text('下载 125.0MB/s'), findsOneWidget);
     expect(find.textContaining('网速'), findsNothing);
     // 两格横排：速率的左边缘在分辨率右边缘之后，且同一行（dy 相同）。
     final resolution = tester.getRect(find.text('1920×1080'));
-    final speed = tester.getRect(find.text('125.0MB/s'));
+    final speed = tester.getRect(find.text('下载 125.0MB/s'));
     expect(speed.left, greaterThanOrEqualTo(resolution.right));
     expect(speed.center.dy, closeTo(resolution.center.dy, 1));
     // 一个读数都没有（没分辨率、没速率）时整块不渲染，不留空白。

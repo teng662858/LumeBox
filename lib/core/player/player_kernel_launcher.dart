@@ -229,7 +229,9 @@ class PlayerPrelaunch {
     PlayerMedia media, {
     PlayerMedia? requestMedia,
     PlayerSettings? settings,
-    Duration timeout = const Duration(seconds: 4),
+    // Slow network initialization must not discard the first session after 4s
+    // and start the same CDN downloads again when the route takes ownership.
+    Duration timeout = const Duration(seconds: 30),
     Duration sizeTimeout = const Duration(milliseconds: 250),
   }) async {
     if (_consumed || _preparedMedia != null) return;

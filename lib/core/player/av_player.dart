@@ -260,8 +260,14 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
         return;
       }
       await _applySpeed();
-      await _configurePresentation();
       await controller.setVolume(_volume);
+      // Metadata can require extra HLS requests. Playback must not await track
+      // selection/status inspection after the native item is already playable.
+      unawaited(
+        _configurePresentation().catchError((Object error, StackTrace stack) {
+          LumeLog.warn('[avplayer] 播放信息读取未完成：$error');
+        }),
+      );
       if (_disposed ||
           generation != _loadGeneration ||
           !identical(controller, _controller)) {

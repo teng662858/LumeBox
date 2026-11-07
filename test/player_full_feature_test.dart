@@ -2118,6 +2118,31 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('网络跳转落到容差内并已播放，不因快照延迟重新下载', (tester) async {
+      final players = await pump(tester);
+      final player = players.single;
+      player.emit(
+        position: const Duration(seconds: 30),
+        duration: const Duration(minutes: 10),
+      );
+      final gate = Completer<void>();
+      player.seekGate = gate;
+      await tester.tap(find.byTooltip('前进 10 秒'));
+      await tester.pump();
+      final target = player.seeks.single;
+      player.emit(
+        position: target + const Duration(milliseconds: 1500),
+        buffering: false,
+        playing: true,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 9));
+      expect(player.seeks, hasLength(1), reason: '允许原生1秒落点容差与快照间隔，不能重发已成功的跳转');
+      player.seekGate = null;
+      gate.complete();
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('松手后内核跳转不返回：预览不滞留，自动重发一次', (tester) async {
       final players = await pump(tester);
       players.single.emit(

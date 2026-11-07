@@ -373,8 +373,21 @@ private enum LumePresentation {
   static func audioCodecs(_ option: AVMediaSelectionOption) -> [String] {
     option.mediaSubTypes.map { fourCC($0.uint32Value) }
   }
-  static func handle(_ method: String, args: [String: Any], player: AVPlayer, item: AVPlayerItem, result: FlutterResult) {
-    let group = item.asset.mediaSelectionGroup(forMediaCharacteristic: .legible)
+  static func handle(_ method: String, args: [String: Any], player: AVPlayer, item: AVPlayerItem, result: @escaping FlutterResult) {
+    Task { @MainActor in
+      await handleAsync(method, args: args, player: player, item: item, result: result)
+    }
+  }
+
+  @MainActor
+  private static func handleAsync(_ method: String, args: [String: Any], player: AVPlayer, item: AVPlayerItem, result: FlutterResult) async {
+    // Asset inspection may fetch HLS metadata. Never synchronously load it on
+    // the platform thread, and never inspect subtitle groups for status polls.
+    var group: AVMediaSelectionGroup?
+    if ["subtitleTracks", "selectSubtitle", "configure"].contains(method) {
+      group = try? await item.asset.loadMediaSelectionGroup(for: .legible)
+    }
+    guard player.currentItem === item else { result(nil); return }
     switch method {
     case "subtitleTracks":
       guard let group = group else { result([]); return }
@@ -409,20 +422,23 @@ private enum LumePresentation {
         item.textStyleRules = AVTextStyleRule(textMarkupAttributes: attributes).map { [$0] } ?? []
       } else { item.textStyleRules = [] }
       if args["selectAudio"] as? Bool == true,
-         let audio = item.asset.mediaSelectionGroup(forMediaCharacteristic: .audible) {
+         let audio = try? await item.asset.loadMediaSelectionGroup(for: .audible) {
+        guard player.currentItem === item else { result(nil); return }
         let preferDolby = args["dolbyAudio"] as? Bool != false
         let option = audio.options.first { option in
           let dolby = audioCodecs(option).contains { ["ac-3", "ec-3", "ac-4"].contains($0) }
           return dolby == preferDolby
         }
-        if let option = option { item.select(option, in: audio) }
+        if let option = option, item.currentMediaSelection.selectedMediaOption(in: audio) != option {
+          item.select(option, in: audio)
+        }
       }
       result(nil)
     case "status":
       var status: [String] = []
-      if let track = item.asset.tracks(withMediaType: .video).first,
-         let format = track.formatDescriptions.first {
-        let description = format as! CMFormatDescription
+      if let track = (try? await item.asset.loadTracks(withMediaType: .video))?.first,
+         let descriptions = try? await track.load(.formatDescriptions),
+         let description = descriptions.first {
         let codec = fourCC(CMFormatDescriptionGetMediaSubType(description))
         let transfer = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_TransferFunction) as? String ?? ""
         let hdr = track.hasMediaCharacteristic(.containsHDRVideo)
@@ -432,7 +448,7 @@ private enum LumePresentation {
         status.append("片源：\(type) · \(codec.uppercased())")
       }
       status.append(AVPlayer.eligibleForHDRPlayback ? "设备：具备 HDR 播放条件" : "设备：当前无 HDR 播放条件")
-      if let audio = item.asset.mediaSelectionGroup(forMediaCharacteristic: .audible),
+      if let audio = try? await item.asset.loadMediaSelectionGroup(for: .audible),
          let selected = item.currentMediaSelection.selectedMediaOption(in: audio) {
         status.append("音轨：\(selected.displayName) · \(audioCodecs(selected).joined(separator: "/"))")
       }

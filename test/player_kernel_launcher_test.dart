@@ -149,6 +149,31 @@ void main() {
     await player.dispose();
   });
 
+  testWidgets(
+    'slow first load over 4s keeps its session instead of downloading again',
+    (tester) async {
+      final player = _PreflightPlayer()..pending = Completer<void>();
+      final prelaunch = PlayerPrelaunch.start(
+        PlayerKernel.avplayer,
+        factory: (_) => player,
+      );
+      final media = PlayerMedia(
+        uri: Uri.parse('https://example.test/slow.m3u8'),
+      );
+      final preparing = prelaunch.prepareMedia(media);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 5));
+      expect(player.disposals, 0);
+      expect(player.loads, 1);
+      player.pending!.complete();
+      await tester.pump();
+      await preparing;
+      expect((await prelaunch.take())?.player, same(player));
+      expect(prelaunch.hasPreparedMedia(media), isTrue);
+      await player.dispose();
+    },
+  );
+
   test('timed out preflight disposes the loading instance and allows a fresh launch', () async {
     final player = _PreflightPlayer()..pending = Completer<void>();
     final prelaunch = PlayerPrelaunch.start(

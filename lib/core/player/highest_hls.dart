@@ -9,6 +9,10 @@ import '../net/network_settings.dart';
 /// Select the highest HLS rendition before opening the native player.
 /// A single-rendition master preserves separate audio and subtitle groups.
 class HighestHls {
+  HighestHls({this.inspectionTimeout = const Duration(milliseconds: 800)});
+
+  /// Optional quality inspection must not hold native startup for several seconds.
+  final Duration inspectionTimeout;
   HttpServer? _server;
 
   static String? singleRendition(
@@ -118,10 +122,7 @@ class HighestHls {
     }
     final http = LumeHttp(
       source: '起播画质选择',
-      settings: const NetworkSettings(
-        timeout: Duration(seconds: 4),
-        maxRetries: 0,
-      ),
+      settings: NetworkSettings(timeout: inspectionTimeout, maxRetries: 0),
     );
     try {
       var base = uri;
@@ -129,7 +130,7 @@ class HighestHls {
       final watch = Stopwatch()..start();
       late LumeHttpResponse response;
       for (var redirect = 0; redirect <= 3; redirect++) {
-        final remaining = const Duration(seconds: 5) - watch.elapsed;
+        final remaining = inspectionTimeout - watch.elapsed;
         if (remaining <= Duration.zero) return uri;
         response = await http
             .sendWithoutRedirects(
