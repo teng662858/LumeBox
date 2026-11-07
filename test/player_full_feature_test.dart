@@ -2444,6 +2444,18 @@ void main() {
             reason: '播放控制保持同一排',
           );
         }
+        if (size.height > size.width) {
+          final left = tester.getRect(
+            find.byKey(const Key('fullscreen-transport-group')),
+          );
+          final right = tester.getRect(
+            find.byKey(const Key('fullscreen-options-group')),
+          );
+          final row = tester.getRect(controls);
+          expect(left.left, row.left);
+          expect(right.right, row.right);
+          expect(right.left - left.right, greaterThanOrEqualTo(15.9));
+        }
         expect(find.byTooltip('片头片尾设置'), findsNothing);
         expect(find.byTooltip(RegExp('上滑切下一集：')), findsNothing);
         expect(tester.takeException(), isNull);

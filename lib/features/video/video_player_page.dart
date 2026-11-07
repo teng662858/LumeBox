@@ -5048,12 +5048,35 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         ),
       ];
       if (compact) {
-        final actions = [...transport, ...trailing];
+        final leftWidth = _box * 2 + 82;
+        final rightWidth = _box * 3;
+        final scale = math.min(
+          1.0,
+          math.max(0.0, constraints.maxWidth - 16) / (leftWidth + rightWidth),
+        );
         return Row(
           key: const Key('fullscreen-actions'),
           children: [
-            for (var i = 0; i < actions.length; i++)
-              Expanded(flex: i == 2 ? 2 : 1, child: actions[i]),
+            SizedBox(
+              width: leftWidth * scale,
+              child: Row(
+                key: const Key('fullscreen-transport-group'),
+                children: [
+                  for (var i = 0; i < transport.length; i++)
+                    Expanded(flex: i == 2 ? 2 : 1, child: transport[i]),
+                ],
+              ),
+            ),
+            const Spacer(),
+            SizedBox(
+              width: rightWidth * scale,
+              child: Row(
+                key: const Key('fullscreen-options-group'),
+                children: [
+                  for (final action in trailing) Expanded(child: action),
+                ],
+              ),
+            ),
           ],
         );
       }
