@@ -617,7 +617,7 @@ class _SettingsHomeState extends State<SettingsHome> {
     return ListView(
       key: const PageStorageKey('settings-directory'),
       padding: GlassScaffold.barInset(context)
-          .add(const EdgeInsets.fromLTRB(20, 16, 20, 36)),
+          .add(const EdgeInsets.fromLTRB(20, 8, 20, 36)),
       children: [
         if (shortcuts.isNotEmpty) ...[
           Row(
@@ -678,17 +678,17 @@ class _SettingsShortcutTile extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       onTap: shortcut.onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 18),
         child: Column(
           children: [
-            Icon(shortcut.icon, color: LumeTheme.accent, size: 25),
-            const SizedBox(height: 8),
+            Icon(shortcut.icon, color: LumeTheme.accent, size: 29),
+            const SizedBox(height: 10),
             Text(
               shortcut.title,
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14),
+              style: const TextStyle(fontSize: 15),
             ),
           ],
         ),
@@ -706,7 +706,7 @@ class _SettingsDirectoryRow extends StatelessWidget {
     key: ValueKey('settings-category-${category.title}'),
     onTap: onTap,
     child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       child: LayoutBuilder(
         builder: (context, size) {
           final compact =
@@ -725,16 +725,16 @@ class _SettingsDirectoryRow extends StatelessWidget {
           return Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: settingsCategoryColor(category.title),
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Center(
                   child: LumeIcon(
                     category.icon,
-                    size: 19,
+                    size: 21,
                     color: Colors.white,
                     slot: 'settings.entry.${category.title}',
                     label: category.title,
@@ -750,7 +750,7 @@ class _SettingsDirectoryRow extends StatelessWidget {
                     Text(
                       category.title,
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 17,
                         fontWeight: interfaceFontWeight(
                           context,
                           FontWeight.w600,
@@ -761,7 +761,7 @@ class _SettingsDirectoryRow extends StatelessWidget {
                       Text(
                         value,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
                           color: LumeTheme.textSecondary,
                         ),
                       ),
@@ -777,14 +777,14 @@ class _SettingsDirectoryRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.end,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 13,
                       color: LumeTheme.textSecondary,
                     ),
                   ),
                 ),
               ],
               const SizedBox(width: 6),
-              Icon(Icons.chevron_right, size: 18, color: LumeTheme.muted),
+              Icon(Icons.chevron_right, size: 20, color: LumeTheme.muted),
             ],
           );
         },
