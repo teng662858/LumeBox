@@ -64,8 +64,8 @@ class SectionModuleSettings {
   static const int minLongPressMs = 300;
   static const int maxLongPressMs = 800;
 
-  /// 前向缓冲秒数；**0 = 交给内核自动决定**（默认，起播最快）。
-  static const int maxBufferSeconds = 30;
+  /// 前向缓冲秒数；0 使用默认预读策略，不等待缓存填满才起播。
+  static const int maxBufferSeconds = 180;
 
   static const double minControlScale = 0.85;
   static const double maxControlScale = 1.15;

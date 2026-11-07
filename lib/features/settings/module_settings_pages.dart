@@ -526,7 +526,7 @@ class _SectionModuleSettingsPageState extends State<SectionModuleSettingsPage> {
       children.add(
         _Slider(
           label: '前向缓冲',
-          hint: '0 = 交给播放内核自动决定（起播最快）',
+          hint: '0 = 默认预读 60 秒；增大可减少播放中等待',
           value: _module.bufferSeconds.toDouble(),
           min: 0,
           max: SectionModuleSettings.maxBufferSeconds.toDouble(),

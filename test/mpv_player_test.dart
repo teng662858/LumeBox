@@ -198,8 +198,9 @@ void main() {
         <String, String>{
           'cache': 'yes',
           'cache-pause-initial': 'no',
-          'demuxer-readahead-secs': '15',
-          'demuxer-max-bytes': '${64 * 1024 * 1024}',
+          'cache-secs': '60',
+          'demuxer-readahead-secs': '60',
+          'demuxer-max-bytes': '${128 * 1024 * 1024}',
           'demuxer-max-back-bytes': '${16 * 1024 * 1024}',
         },
       );
