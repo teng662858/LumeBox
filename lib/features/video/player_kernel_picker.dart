@@ -1,6 +1,8 @@
 import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
+import 'player_vertical_menu.dart';
+
 import '../../core/player/player_factory.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/theme/lume_theme.dart';
@@ -34,47 +36,26 @@ class _PlayerKernelButtonState extends State<PlayerKernelButton> {
     consumeOutsideTap: true,
     onOpen: widget.onOpen,
     onClose: widget.onClose,
-    style: MenuStyle(
-      padding: const WidgetStatePropertyAll(EdgeInsets.all(12)),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      ),
-    ),
+    style: PlayerVerticalMenu.style,
     menuChildren: [
-      SizedBox(
+      PlayerVerticalMenu.body(
         key: const Key('player-kernel-menu'),
-        width: 256,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('播放内核'),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                for (final kernel in PlayerKernel.values)
-                  Tooltip(
-                    message:
-                        widget.catalog.unavailableReason(kernel) ??
-                        kernel.label,
-                    child: ChoiceChip(
-                      label: Text(kernel.label),
-                      selected: widget.selected == kernel,
-                      showCheckmark: false,
-                      onSelected: widget.catalog.isAvailable(kernel)
-                          ? (_) {
-                              menu.close();
-                              widget.onChanged(kernel);
-                            }
-                          : null,
-                    ),
-                  ),
-              ],
+        children: [
+          for (final kernel in PlayerKernel.values)
+            Tooltip(
+              message: widget.catalog.unavailableReason(kernel) ?? kernel.label,
+              child: PlayerVerticalMenu.option(
+                label: kernel.label,
+                selected: widget.selected == kernel,
+                onSelected: widget.catalog.isAvailable(kernel)
+                    ? (_) {
+                        menu.close();
+                        widget.onChanged(kernel);
+                      }
+                    : null,
+              ),
             ),
-          ],
-        ),
+        ],
       ),
     ],
     builder: (context, controller, child) => widget.builder(

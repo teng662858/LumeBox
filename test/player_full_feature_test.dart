@@ -1384,6 +1384,8 @@ void main() {
       await pump(tester);
       await tester.tap(find.byTooltip('播放速度（1.0x）'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, '1.5×'));
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(ChoiceChip, '1.5×'));
       await tester.pumpAndSettle();
       expect(find.byTooltip('播放速度（1.5x）'), findsOneWidget);
@@ -1401,13 +1403,18 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('播放速度（1.0x）'));
       await tester.pumpAndSettle();
-      final slider = tester.widget<Slider>(
-        find.descendant(
-          of: find.byKey(const Key('player-speed-menu')),
-          matching: find.byType(Slider),
-        ),
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '1×'))
+            .selected,
+        isTrue,
       );
-      expect(slider.value, 1.0);
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '1.5×'))
+            .selected,
+        isFalse,
+      );
     });
 
     testWidgets('弹幕独立入口有效，播放器设置不重复弹幕面板', (tester) async {
@@ -1736,6 +1743,8 @@ void main() {
       await tester.tap(find.byTooltip('播放速度（1.0x）'));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('player-speed-menu')), findsOneWidget);
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, '2×'));
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(ChoiceChip, '2×'));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('player-speed-menu')), findsNothing);

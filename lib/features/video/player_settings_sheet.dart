@@ -207,6 +207,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
   @override
   void initState() {
     super.initState();
+    if (!widget.embedded) _selectedCategory = widget.initialCategory;
     if (widget.embedded && widget.initialCategory != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -413,7 +414,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 '竖屏短剧上滑切下一集',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  fontSize: LumeTypography.titleSize,
+                  fontSize: widget.embedded ? LumeTypography.titleSize : 14,
                   color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
@@ -431,7 +432,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               : '关闭时画面中间的竖直滑动不做动作',
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: LumeTypography.descriptionSize,
+            fontSize: widget.embedded ? LumeTypography.descriptionSize : 12,
             height: 1.4,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -535,7 +536,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           '起播后在后台检查链接，失效时提示；不会自动切换线路。关闭后不做后台检查。',
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: LumeTypography.descriptionSize,
+            fontSize: widget.embedded ? LumeTypography.descriptionSize : 12,
             height: 1.4,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -572,42 +573,20 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       ),
     );
 
-    final quickActions = SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Row(
-        children: [
-          Chip(label: Text(settings.kernel.label)),
-          const SizedBox(width: 8),
-          ActionChip(
-            label: Text(settings.subtitlesEnabled ? '字幕：开' : '字幕：关'),
-            onPressed: () => _update(
-              settings.copyWith(subtitlesEnabled: !settings.subtitlesEnabled),
-            ),
-          ),
-          if (widget.showPlaybackShortcuts) ...[
-            const SizedBox(width: 8),
-            ActionChip(
-              label: Text('倍速 ${settings.speed}×'),
-              onPressed: () => setState(() => _selectedCategory = 'playback'),
-            ),
-          ],
-        ],
-      ),
-    );
     final content = SafeArea(
       top: false,
-      child: Column(
-        children: <Widget>[
-          _handle(context),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _categoryNavigation(),
-          ),
-          const Divider(height: 1),
-          quickActions,
-          Expanded(child: list),
-        ],
+      child: PopScope(
+        canPop: _selectedCategory == null,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) setState(() => _selectedCategory = null);
+        },
+        child: Column(
+          children: [
+            _handle(context),
+            const Divider(height: 1),
+            Expanded(child: _selectedCategory == null ? _categoryHome() : list),
+          ],
+        ),
       ),
     );
     final legacy = ClipRRect(
@@ -622,6 +601,16 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               contentPadding: EdgeInsets.zero,
               minVerticalPadding: 4,
               visualDensity: VisualDensity.compact,
+              titleTextStyle: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+              subtitleTextStyle: TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           child: content,
@@ -631,7 +620,14 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     return legacy;
   }
 
-  String _selectedCategory = 'playback';
+  String? _selectedCategory;
+  final _homeScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _homeScroll.dispose();
+    super.dispose();
+  }
 
   final _categoryKeys = <String, GlobalKey>{};
   final _navigationKey = GlobalKey();
@@ -714,7 +710,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (widget.categoryOnly == null)
+              if (widget.embedded && widget.categoryOnly == null)
                 Row(
                   children: [
                     Icon(
@@ -738,8 +734,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                       ),
                   ],
                 ),
-              if (widget.categoryOnly == null)
-                widget.embedded ? const Divider() : const SizedBox(height: 8),
+              if (widget.embedded && widget.categoryOnly == null)
+                const Divider(),
               ...children,
             ],
           ),
@@ -751,11 +747,19 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
       child: Row(
         children: <Widget>[
+          if (_selectedCategory != null)
+            IconButton(
+              tooltip: '返回分类',
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+              onPressed: () => setState(() => _selectedCategory = null),
+            ),
           Expanded(
             child: Text(
-              '播放器设置',
+              _selectedCategory == null
+                  ? '播放器设置'
+                  : _categoryTitle(_selectedCategory!),
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: Theme.of(context).colorScheme.onSurface,
               ),
@@ -782,7 +786,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           Text(
             title,
             style: TextStyle(
-              fontSize: LumeTypography.sectionTitleSize,
+              fontSize: widget.embedded ? LumeTypography.sectionTitleSize : 13,
               fontWeight: FontWeight.w600,
               color: Theme.of(context).colorScheme.onSurface,
             ),
@@ -793,7 +797,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
             style: TextStyle(
               fontWeight: FontWeight.w400,
               height: 1.4,
-              fontSize: LumeTypography.descriptionSize,
+              fontSize: widget.embedded ? LumeTypography.descriptionSize : 12,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
@@ -802,9 +806,53 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     );
   }
 
+  Widget _settingsCard({
+    required Widget child,
+    double radius = 14,
+    EdgeInsetsGeometry? padding,
+  }) => widget.embedded
+      ? GlassCard(radius: radius, padding: padding, child: child)
+      : Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: child);
+
+  String _categoryTitle(String id) => switch (id) {
+    'playback' => '播放与画质',
+    'intro' => '片头片尾',
+    'picture' => '画面与显示',
+    'audio' => '声音与字幕',
+    'danmaku' => '弹幕',
+    'controls' => '手势与外观',
+    _ => '内核与网络',
+  };
+
+  Widget _categoryHome() => SingleChildScrollView(
+    key: const Key('player-settings-home'),
+    controller: _homeScroll,
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    child: Column(
+      children: [
+        for (final category in _categories)
+          if ((category.$1 != 'intro' ||
+                  widget.showPlaybackShortcuts ||
+                  widget.introControls != null) &&
+              (category.$1 != 'danmaku' ||
+                  _danmaku != null ||
+                  widget.danmakuControls != null)) ...[
+            ListTile(
+              key: ValueKey('player-category-${category.$1}'),
+              minTileHeight: 48,
+              title: Text(_categoryTitle(category.$1)),
+              trailing: const Icon(Icons.chevron_right_rounded, size: 18),
+              onTap: () => setState(() => _selectedCategory = category.$1),
+            ),
+            const Divider(height: 1, indent: 0),
+          ],
+      ],
+    ),
+  );
+
   Widget _speedSlider(BuildContext context) {
     final speed = settings.speed;
-    return GlassCard(
+    return _settingsCard(
       radius: 14,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Column(
@@ -844,7 +892,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
 
   Widget _pictureCard(BuildContext context) {
     final prefs = settings.current;
-    return GlassCard(
+    return _settingsCard(
       radius: 14,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
@@ -897,7 +945,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
 
   /// 方向锁定：三档芯片（与全局设置里的「横屏播放」写的是同一份偏好）。
   Widget _orientationCard(BuildContext context) {
-    return GlassCard(
+    return _settingsCard(
       radius: 14,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
@@ -928,7 +976,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   '自动隐藏控制栏',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: LumeTypography.titleSize,
+                    fontSize: widget.embedded ? LumeTypography.titleSize : 14,
                     color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
@@ -945,8 +993,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 ? '全屏 3 秒无操作自动收起，点屏幕唤回（默认开）'
                 : '控制栏常显（关闭自动隐藏）',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: LumeTypography.descriptionSize,
+              fontWeight: widget.embedded ? FontWeight.w600 : FontWeight.w400,
+              fontSize: widget.embedded ? LumeTypography.descriptionSize : 12,
               height: 1.4,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -959,7 +1007,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   '快进吸附关键帧（实验）',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: LumeTypography.titleSize,
+                    fontSize: widget.embedded ? LumeTypography.titleSize : 14,
                     color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
@@ -976,8 +1024,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 ? '拖动时直接吸到上一个关键帧（最快档，画面可能按关键帧间隔跳；松手仍精确）'
                 : '拖动时用 400ms 容差（较快，误差 ≤0.4 秒）',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: LumeTypography.descriptionSize,
+              fontWeight: widget.embedded ? FontWeight.w600 : FontWeight.w400,
+              fontSize: widget.embedded ? LumeTypography.descriptionSize : 12,
               height: 1.4,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -990,8 +1038,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                       ? '全屏一律横屏；全局设置里的「横屏播放」开关就是这一档'
                       : '按视频比例判断：竖屏短剧竖屏全屏，普通横片横屏全屏'),
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: LumeTypography.descriptionSize,
+              fontWeight: widget.embedded ? FontWeight.w600 : FontWeight.w400,
+              fontSize: widget.embedded ? LumeTypography.descriptionSize : 12,
               height: 1.5,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -1005,7 +1053,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     final prefs = settings.current;
     final enabled = settings.subtitlesEnabled;
     final style = capabilities.subtitleStyle;
-    return GlassCard(
+    return _settingsCard(
       radius: 14,
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
       child: Column(
@@ -1018,7 +1066,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   '显示字幕',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: LumeTypography.titleSize,
+                    fontSize: widget.embedded ? LumeTypography.titleSize : 14,
                     color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
@@ -1238,7 +1286,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
 
   Widget _audioCard(BuildContext context) {
     final prefs = settings.current;
-    return GlassCard(
+    return _settingsCard(
       radius: 14,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
@@ -1279,8 +1327,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           Text(
             '正值 = 音频延后出现（画面比声音快时往大调）',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: LumeTypography.descriptionSize,
+              fontWeight: widget.embedded ? FontWeight.w600 : FontWeight.w400,
+              fontSize: widget.embedded ? LumeTypography.descriptionSize : 12,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
@@ -1291,7 +1339,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
 
   Widget _decodingCard(BuildContext context) {
     final enabled = settings.hardwareDecoding;
-    return GlassCard(
+    return _settingsCard(
       radius: 14,
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
       child: Column(
@@ -1304,7 +1352,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   '硬件解码',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: LumeTypography.titleSize,
+                    fontSize: widget.embedded ? LumeTypography.titleSize : 14,
                     color: Theme.of(context).colorScheme.onSurface,
                   ),
                 ),
@@ -1350,8 +1398,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                       : '关闭：使用软件解码；可能短暂重载，播放位置保留')
                 : '当前内核没有切换解码链的通道（点击看提示与可换的内核）',
             style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: LumeTypography.descriptionSize,
+              fontWeight: widget.embedded ? FontWeight.w600 : FontWeight.w400,
+              fontSize: widget.embedded ? LumeTypography.descriptionSize : 12,
               height: 1.5,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -1380,7 +1428,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       text,
       style: TextStyle(
         fontWeight: FontWeight.w600,
-        fontSize: LumeTypography.descriptionSize,
+        fontSize: widget.embedded ? LumeTypography.descriptionSize : 12,
         color: dim
             ? Theme.of(context).colorScheme.onSurfaceVariant
                   .withValues(alpha: 0.5)

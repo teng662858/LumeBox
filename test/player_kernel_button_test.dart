@@ -13,7 +13,7 @@ class _Catalog implements PlayerKernelCatalog {
 }
 
 void main() {
-  testWidgets('内核使用倍速同宽小菜单，禁用不可用项，选择后关闭', (tester) async {
+  testWidgets('内核使用倍速同宽竖向小菜单，禁用不可用项，选择后关闭', (tester) async {
     PlayerKernel? selected;
     await tester.pumpWidget(
       MaterialApp(
@@ -32,7 +32,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester.getSize(find.byKey(const Key('player-kernel-menu'))).width,
-      256,
+      144,
     );
     expect(
       tester

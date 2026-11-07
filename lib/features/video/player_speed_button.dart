@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import 'player_vertical_menu.dart';
+
 import '../../core/player/player_settings.dart';
 
-/// 倍速直接在按钮旁展开，常用档一按即选，其余档位由滑杆细调。
+/// 按钮旁展开竖向浮层，保留全部倍速档位。
 class PlayerSpeedButton extends StatefulWidget {
   const PlayerSpeedButton({
     super.key,
@@ -47,54 +49,18 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
     consumeOutsideTap: true,
     onOpen: widget.onOpen,
     onClose: widget.onClose,
-    style: MenuStyle(
-      padding: const WidgetStatePropertyAll(EdgeInsets.all(12)),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      ),
-    ),
+    style: PlayerVerticalMenu.style,
     menuChildren: [
-      SizedBox(
+      PlayerVerticalMenu.body(
         key: const Key('player-speed-menu'),
-        width: 256,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Expanded(child: Text('倍速')),
-                Text(
-                  PlayerSpeedButton.label(_speed),
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ],
+        children: [
+          for (final speed in PlayerSettings.speeds)
+            PlayerVerticalMenu.option(
+              label: PlayerSpeedButton.label(speed),
+              selected: _speed == speed,
+              onSelected: (_) => _select(speed),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                for (final speed in const [.75, 1.0, 1.25, 1.5, 2.0, 3.0])
-                  ChoiceChip(
-                    label: Text(PlayerSpeedButton.label(speed)),
-                    selected: _speed == speed,
-                    showCheckmark: false,
-                    onSelected: (_) => _select(speed),
-                  ),
-              ],
-            ),
-            Slider(
-              value: _speed,
-              min: PlayerSettings.minSpeed,
-              max: PlayerSettings.maxSpeed,
-              divisions: PlayerSettings.speeds.length - 1,
-              label: PlayerSpeedButton.label(_speed),
-              onChanged: (speed) => setState(() => _speed = speed),
-              onChangeEnd: _select,
-            ),
-          ],
-        ),
+        ],
       ),
     ],
     builder: (context, controller, child) => widget.builder(

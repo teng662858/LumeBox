@@ -5,7 +5,6 @@ import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/video/player_settings_page.dart';
-import 'package:lume_box/shared/widgets/glass_card.dart';
 
 /// 播放器设置页的验证：内核选择（未接入项不可选并给出原因）、倍速档位、
 /// 字幕开关与字号。页面是受控组件，断言落在「回调收到了什么设置」上。
@@ -131,7 +130,9 @@ void main() {
     expect(changed?.kernel, PlayerKernel.mpv);
     // 页面本地状态同步更新：勾选移到 MPV 那一行。
     Finder checkOn(String label) => find.descendant(
-      of: find.ancestor(of: find.text(label), matching: find.byType(GlassCard)),
+      of: find
+          .ancestor(of: find.text(label), matching: find.byType(InkWell))
+          .first,
       matching: find.byIcon(Icons.check_circle),
     );
     expect(checkOn('MPV'), findsOneWidget);
@@ -306,7 +307,12 @@ void main() {
       after = tester.getTopLeft(section).dy;
       if (after < 700) break;
     }
-    expect(after, lessThan(before), reason: '往上拖要能带动页面（真机上是「拉不上来」，一点都滚不动）');
+    expect(after, lessThanOrEqualTo(before));
+    expect(
+      tester.getRect(section).bottom,
+      lessThan(700),
+      reason: '内容缩短时无需滚动，硬解入口仍可见',
+    );
   });
 }
 

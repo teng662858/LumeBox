@@ -3727,230 +3727,226 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     builder: (context, update) {
       final buffer = _buffering.forwardBuffer.inSeconds;
       final supported = _player?.capabilities.bufferingParams ?? false;
-      return GlassCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (group == 'connection')
-              ListenableBuilder(
-                listenable: Listenable.merge([
-                  _networkSpeed.busy,
-                  _networkSpeed.failed,
-                  _networkSpeed.kbps,
-                ]),
-                builder: (context, _) => ListTile(
-                  title: const Text('当前线路测速'),
-                  subtitle: Text(
-                    _networkSpeed.busy.value
-                        ? '正在测速…'
-                        : _networkSpeed.failed.value
-                        ? '测速未成功，可手动重试'
-                        : PlaybackSpeedMeter.describe(
-                                _networkSpeed.kbps.value,
-                              ) ??
-                              '测量线路速率，不代表播放器实时流量',
-                  ),
-                  trailing: TextButton(
-                    onPressed: _networkSpeed.busy.value
-                        ? null
-                        : () async {
-                            final media = _media;
-                            if (media == null || !media.isNetwork) {
-                              _showToast('当前不是网络视频，无需测速');
-                              return;
-                            }
-                            await _networkSpeed.measure(
-                              media.uri,
-                              headers: _playbackRequestHeaders,
-                              force: true,
-                            );
-                          },
-                    child: const Text('测速'),
-                  ),
-                ),
-              ),
-            if (group == 'connection' && _player is PresentationEngine)
-              Builder(
-                builder: (context) {
-                  final engine = _player! as PresentationEngine;
-                  return ValueListenableBuilder<List<String>>(
-                    valueListenable: engine.presentationStatus,
-                    builder: (context, lines, _) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                        lines.join('\n'),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            if (group == 'intro') _skipQuickButton(inPanel: true),
-            if (group == 'intro')
-              ListTile(
-                title: const Text('片头片尾与同剧记忆'),
-                subtitle: const Text('记一次，后续各集自动沿用；无需作品 ID'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  unawaited(_openOriginalIntro());
-                },
-              ),
-            if (group == 'playback' && _fullscreen && _media != null)
-              ListTile(
-                title: const Text('画质'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  unawaited(_openQualityMenu());
-                },
-              ),
-            if (group == 'audio') ...[
-              SwitchListTile(
-                title: const Text('静音'),
-                value: _muted,
-                onChanged: (value) {
-                  setState(() => _muted = value);
-                  update(() {});
-                  _savePlaybackPreferences();
-                  unawaited(_player?.setVolume(_effectiveVolume));
-                },
-              ),
-              SwitchListTile(
-                title: const Text('音乐模式'),
-                subtitle: const Text('隐藏画面，保留音频和播放控制'),
-                value: _musicMode,
-                onChanged: (value) {
-                  setState(() => _musicMode = value);
-                  update(() {});
-                  _savePlaybackPreferences();
-                },
-              ),
-              Text('音量 ${(_gesture.volume * 100).round()}%'),
-              NativeGlassSlider(
-                value: _gesture.volume,
-                min: 0,
-                max: 1,
-                onChanged: _player == null
-                    ? null
-                    : (value) {
-                        setState(
-                          () => _gesture = _gesture.copyWith(volume: value),
-                        );
-                        update(() {});
-                        _muted = false;
-                        _savePlaybackPreferences();
-                        unawaited(_player!.setVolume(value));
-                      },
-              ),
-            ],
-            if (group == 'connection' && _settingsSourceId?.isNotEmpty == true)
-              SwitchListTile(
-                key: const ValueKey('source-playback-profile'),
-                contentPadding: EdgeInsets.zero,
-                title: const Text('此源独立播放设置'),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (group == 'connection')
+            ListenableBuilder(
+              listenable: Listenable.merge([
+                _networkSpeed.busy,
+                _networkSpeed.failed,
+                _networkSpeed.kbps,
+              ]),
+              builder: (context, _) => ListTile(
+                title: const Text('当前线路测速'),
                 subtitle: Text(
-                  _usesSourceProfile
-                      ? '已记住此源的内核、缓冲、硬解与字幕偏好'
-                      : '当前跟随全局默认；开启后只影响此源',
+                  _networkSpeed.busy.value
+                      ? '正在测速…'
+                      : _networkSpeed.failed.value
+                      ? '测速未成功，可手动重试'
+                      : PlaybackSpeedMeter.describe(_networkSpeed.kbps.value) ??
+                            '测量线路速率，不代表播放器实时流量',
                 ),
-                value: _usesSourceProfile,
-                onChanged: (enabled) async {
-                  await _setSourceProfile(enabled);
-                  if (mounted) update(() {});
-                },
-              ),
-            if (group == 'connection') ...[
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('显示实时下载与缓冲'),
-                subtitle: const Text('显示实际下载速度；缓冲时同时显示已缓冲秒数'),
-                value: _showNetworkSpeed,
-                onChanged: (value) {
-                  setState(() => _showNetworkSpeed = value);
-                  update(() {});
-                  _savePlaybackPreferences();
-                },
-              ),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('播放信息'),
-                onTap: _showPlaybackInfo,
-                subtitle: Text(
-                  [
-                    '内核：${_effectiveKernel.label}',
-                    ...?_player?.stats.value.chips,
-                  ].join(' · '),
-                ),
-                trailing: IconButton(
-                  tooltip: '复制地址',
-                  icon: const Icon(Icons.copy),
-                  onPressed: _media == null
+                trailing: TextButton(
+                  onPressed: _networkSpeed.busy.value
                       ? null
                       : () async {
-                          await Clipboard.setData(
-                            ClipboardData(text: _media!.uri.toString()),
+                          final media = _media;
+                          if (media == null || !media.isNetwork) {
+                            _showToast('当前不是网络视频，无需测速');
+                            return;
+                          }
+                          await _networkSpeed.measure(
+                            media.uri,
+                            headers: _playbackRequestHeaders,
+                            force: true,
                           );
-                          if (mounted) _showToast('已复制播放地址');
                         },
+                  child: const Text('测速'),
                 ),
               ),
-
-              Text(
-                supported
-                    ? '前向缓冲 ${buffer == 0 ? '自动' : '$buffer 秒'}'
-                    : '当前内核未提供缓冲参数',
+            ),
+          if (group == 'connection' && _player is PresentationEngine)
+            Builder(
+              builder: (context) {
+                final engine = _player! as PresentationEngine;
+                return ValueListenableBuilder<List<String>>(
+                  valueListenable: engine.presentationStatus,
+                  builder: (context, lines, _) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      lines.join('\n'),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                );
+              },
+            ),
+          if (group == 'intro') _skipQuickButton(inPanel: true),
+          if (group == 'intro')
+            ListTile(
+              title: const Text('片头片尾与同剧记忆'),
+              subtitle: const Text('记一次，后续各集自动沿用；无需作品 ID'),
+              onTap: () {
+                Navigator.of(context).pop();
+                unawaited(_openOriginalIntro());
+              },
+            ),
+          if (group == 'playback' && _fullscreen && _media != null)
+            ListTile(
+              title: const Text('画质'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).pop();
+                unawaited(_openQualityMenu());
+              },
+            ),
+          if (group == 'audio') ...[
+            SwitchListTile(
+              title: const Text('静音'),
+              value: _muted,
+              onChanged: (value) {
+                setState(() => _muted = value);
+                update(() {});
+                _savePlaybackPreferences();
+                unawaited(_player?.setVolume(_effectiveVolume));
+              },
+            ),
+            SwitchListTile(
+              title: const Text('音乐模式'),
+              subtitle: const Text('隐藏画面，保留音频和播放控制'),
+              value: _musicMode,
+              onChanged: (value) {
+                setState(() => _musicMode = value);
+                update(() {});
+                _savePlaybackPreferences();
+              },
+            ),
+            Text('音量 ${(_gesture.volume * 100).round()}%'),
+            NativeGlassSlider(
+              value: _gesture.volume,
+              min: 0,
+              max: 1,
+              onChanged: _player == null
+                  ? null
+                  : (value) {
+                      setState(
+                        () => _gesture = _gesture.copyWith(volume: value),
+                      );
+                      update(() {});
+                      _muted = false;
+                      _savePlaybackPreferences();
+                      unawaited(_player!.setVolume(value));
+                    },
+            ),
+          ],
+          if (group == 'connection' && _settingsSourceId?.isNotEmpty == true)
+            SwitchListTile(
+              key: const ValueKey('source-playback-profile'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('此源独立播放设置'),
+              subtitle: Text(
+                _usesSourceProfile
+                    ? '已记住此源的内核、缓冲、硬解与字幕偏好'
+                    : '当前跟随全局默认；开启后只影响此源',
               ),
-              NativeGlassSlider(
-                value: buffer.toDouble().clamp(
-                  0,
-                  SectionModuleSettings.maxBufferSeconds.toDouble(),
-                ),
-                min: 0,
-                max: SectionModuleSettings.maxBufferSeconds.toDouble(),
-                divisions: SectionModuleSettings.maxBufferSeconds,
-                onChanged: !supported
+              value: _usesSourceProfile,
+              onChanged: (enabled) async {
+                await _setSourceProfile(enabled);
+                if (mounted) update(() {});
+              },
+            ),
+          if (group == 'connection') ...[
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('显示实时下载与缓冲'),
+              subtitle: const Text('显示实际下载速度；缓冲时同时显示已缓冲秒数'),
+              value: _showNetworkSpeed,
+              onChanged: (value) {
+                setState(() => _showNetworkSpeed = value);
+                update(() {});
+                _savePlaybackPreferences();
+              },
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('播放信息'),
+              onTap: _showPlaybackInfo,
+              subtitle: Text(
+                [
+                  '内核：${_effectiveKernel.label}',
+                  ...?_player?.stats.value.chips,
+                ].join(' · '),
+              ),
+              trailing: IconButton(
+                tooltip: '复制地址',
+                icon: const Icon(Icons.copy),
+                onPressed: _media == null
                     ? null
-                    : (value) {
-                        final seconds = value.round();
-                        setState(
-                          () => _buffering = BufferingConfig.forForwardBuffer(
-                            Duration(seconds: seconds),
-                          ),
+                    : () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: _media!.uri.toString()),
                         );
-                        update(() {});
-                        final library = _library;
-                        if (_usesSourceProfile) {
-                          _savePlayerSettings(_settings);
-                        } else if (library != null) {
-                          SectionModuleSettings.load(library)
-                              .copyWith(bufferSeconds: seconds)
-                              .save(library);
-                        }
-                        final player = _player;
-                        if (player != null) {
-                          unawaited(
-                            player.setBuffering(_buffering).catchError((
-                              Object error,
-                            ) {
-                              if (mounted) _showToast('本次缓冲调整未完成，将在下次播放时应用');
-                            }),
-                          );
-                        }
+                        if (mounted) _showToast('已复制播放地址');
                       },
               ),
-            ],
-            if (group == 'playback')
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('自动连播'),
-                value: _autoNext,
-                onChanged: (value) {
-                  _setAutoNext(value);
-                  update(() {});
-                },
+            ),
+
+            Text(
+              supported
+                  ? '前向缓冲 ${buffer == 0 ? '自动' : '$buffer 秒'}'
+                  : '当前内核未提供缓冲参数',
+            ),
+            NativeGlassSlider(
+              value: buffer.toDouble().clamp(
+                0,
+                SectionModuleSettings.maxBufferSeconds.toDouble(),
               ),
+              min: 0,
+              max: SectionModuleSettings.maxBufferSeconds.toDouble(),
+              divisions: SectionModuleSettings.maxBufferSeconds,
+              onChanged: !supported
+                  ? null
+                  : (value) {
+                      final seconds = value.round();
+                      setState(
+                        () => _buffering = BufferingConfig.forForwardBuffer(
+                          Duration(seconds: seconds),
+                        ),
+                      );
+                      update(() {});
+                      final library = _library;
+                      if (_usesSourceProfile) {
+                        _savePlayerSettings(_settings);
+                      } else if (library != null) {
+                        SectionModuleSettings.load(library)
+                            .copyWith(bufferSeconds: seconds)
+                            .save(library);
+                      }
+                      final player = _player;
+                      if (player != null) {
+                        unawaited(
+                          player.setBuffering(_buffering).catchError((
+                            Object error,
+                          ) {
+                            if (mounted) _showToast('本次缓冲调整未完成，将在下次播放时应用');
+                          }),
+                        );
+                      }
+                    },
+            ),
           ],
-        ),
+          if (group == 'playback')
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('自动连播'),
+              value: _autoNext,
+              onChanged: (value) {
+                _setAutoNext(value);
+                update(() {});
+              },
+            ),
+        ],
       );
     },
   );
