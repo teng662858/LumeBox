@@ -34,6 +34,11 @@ void main() {
             .materialOpacity,
         VideoGlassSurface.panelOpacity,
       );
+      final menuSize = tester.getSize(
+        find.byKey(const Key('player-speed-menu')),
+      );
+      expect(menuSize.width, 184);
+      expect(menuSize.height, lessThanOrEqualTo(264));
       expect(find.byType(ChoiceChip), findsNWidgets(7));
       expect(
         tester

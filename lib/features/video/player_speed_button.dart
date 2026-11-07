@@ -67,19 +67,19 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
         child: Builder(
           builder: (context) => Container(
             key: const Key('player-speed-menu'),
-            width: 208,
+            width: 184,
             height: math.max(
               160,
-              math.min(304, MediaQuery.sizeOf(context).height - 80),
+              math.min(264, MediaQuery.sizeOf(context).height - 80),
             ),
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(8),
             child: Column(
               children: [
                 Expanded(
                   child: Row(
                     children: [
                       SizedBox(
-                        width: 38,
+                        width: 30,
                         child: Column(
                           children: [
                             Text(
@@ -96,12 +96,12 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                                 quarterTurns: 3,
                                 child: SliderTheme(
                                   data: SliderTheme.of(context).copyWith(
-                                    trackHeight: 14,
+                                    trackHeight: 12,
                                     thumbShape: const RoundSliderThumbShape(
-                                      enabledThumbRadius: 9,
+                                      enabledThumbRadius: 8,
                                     ),
                                     overlayShape: const RoundSliderOverlayShape(
-                                      overlayRadius: 14,
+                                      overlayRadius: 12,
                                     ),
                                     activeTrackColor: Theme.of(context)
                                         .colorScheme
@@ -139,7 +139,7 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Expanded(
                         child: SingleChildScrollView(
                           primary: false,
@@ -183,7 +183,7 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                                       MaterialTapTargetSize.shrinkWrap,
                                   visualDensity: VisualDensity.compact,
                                   padding: const EdgeInsets.symmetric(
-                                    vertical: 3,
+                                    vertical: 1,
                                   ),
                                   side: BorderSide.none,
                                   backgroundColor: Colors.transparent,
@@ -192,7 +192,7 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                                       .primary
                                       .withValues(alpha: .14),
                                   labelStyle: TextStyle(
-                                    fontSize: 13,
+                                    fontSize: 12,
                                     fontWeight: FontWeight.w500,
                                     color: _speed == speed
                                         ? Theme.of(context).colorScheme.primary
@@ -212,11 +212,11 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                     ],
                   ),
                 ),
-                Divider(height: 16, color: Theme.of(context).dividerColor),
+                Divider(height: 12, color: Theme.of(context).dividerColor),
                 Text(
                   '${PlayerSpeedButton.label(_speed)}${_speed == 1 ? ' 常速' : ''}',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
