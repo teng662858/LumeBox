@@ -464,12 +464,19 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
             ),
           for (final record in visibleSubscriptions)
             Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(bottom: 8),
               child: GlassCard(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ListTile(
+                      dense: true,
+                      visualDensity: const VisualDensity(vertical: -2),
+                      minVerticalPadding: 4,
                       contentPadding: EdgeInsets.zero,
                       leading: SourceIcon(
                         name: record.name,
@@ -603,12 +610,20 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
                         label: Text(record.hash.isEmpty ? '下载并读取站点' : '重新读取站点'),
                       ),
                     const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
+                      padding: EdgeInsets.symmetric(vertical: 4),
                       child: Divider(height: 1),
                     ),
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 36),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                         onPressed: working || service.busy
                             ? null
                             : () => configure(record),
