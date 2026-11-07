@@ -2429,6 +2429,21 @@ void main() {
         }
         expect(find.byTooltip(RegExp(r'^下一集')), findsOneWidget);
         expect(find.text('记片头'), findsOneWidget);
+        final controls = find.byKey(const Key('fullscreen-actions'));
+        final rowCenter = tester.getCenter(controls).dy;
+        for (final label in [
+          RegExp(r'^下一集'),
+          RegExp(r'^播放速度'),
+          RegExp(r'^弹幕：'),
+          RegExp(r'^线路 / 选集$'),
+          RegExp(r'^记片头（'),
+        ]) {
+          expect(
+            tester.getCenter(find.byTooltip(label)).dy,
+            closeTo(rowCenter, 1),
+            reason: '播放控制保持同一排',
+          );
+        }
         expect(find.byTooltip('片头片尾设置'), findsNothing);
         expect(find.byTooltip(RegExp('上滑切下一集：')), findsNothing);
         expect(tester.takeException(), isNull);

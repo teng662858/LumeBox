@@ -5048,26 +5048,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         ),
       ];
       if (compact) {
+        final actions = [...transport, ...trailing];
         return Row(
           key: const Key('fullscreen-actions'),
-          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Expanded(
-              child: Wrap(
-                key: const Key('fullscreen-transport-group'),
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: transport,
-              ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: _box * 2,
-              child: Wrap(
-                key: const Key('fullscreen-options-group'),
-                alignment: WrapAlignment.end,
-                children: trailing,
-              ),
-            ),
+            for (var i = 0; i < actions.length; i++)
+              Expanded(flex: i == 2 ? 2 : 1, child: actions[i]),
           ],
         );
       }
