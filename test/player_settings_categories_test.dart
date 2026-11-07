@@ -50,7 +50,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('player-landscape-categories')),
-        size.width > size.height ? findsOneWidget : findsNothing,
+        findsNothing,
+      );
+      final contentWidth = tester
+          .getSize(find.byType(DropdownButtonFormField<DefaultQuality>))
+          .width;
+      final panelWidth = tester
+          .getSize(find.byKey(const ValueKey('danmaku-panel-frame')))
+          .width;
+      expect(
+        contentWidth,
+        greaterThan(panelWidth - 48),
+        reason: '内容使用整列宽度，不再被侧栏挤窄',
       );
       final previousSubtitles = settings.subtitlesEnabled;
       await tester.tap(

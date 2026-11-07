@@ -272,7 +272,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           if (widget.showPlaybackShortcuts) ...[
             _section('播放倍速', '0.25x ~ 4x，步长 0.25x；切换立即生效'),
             _speedSlider(context),
-            const SizedBox(height: 20),
+            SizedBox(height: widget.embedded ? 20 : 12),
           ],
           if (widget.extraControls != null) widget.extraControls!,
           _section('清晰度偏好', '起播与切集时使用的画质选择'),
@@ -300,7 +300,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
             onChanged: (value) =>
                 _update(settings.copyWith(rememberManualQuality: value)),
           ),
-          const SizedBox(height: 20),
+          SizedBox(height: widget.embedded ? 20 : 12),
         ],
       ),
       if (widget.showPlaybackShortcuts || widget.introControls != null)
@@ -321,7 +321,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       _group('picture', '画面与显示', Icons.aspect_ratio, [
         _section('画面', '缩放 / 旋转 / 镜像（三套内核都支持）'),
         _pictureCard(context),
-        const SizedBox(height: 20),
+        SizedBox(height: widget.embedded ? 20 : 12),
         if (widget.onOrientationChanged != null) ...<Widget>[
           _section(
             '方向锁定',
@@ -329,7 +329,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 '（竖屏短剧竖屏全屏、横片横屏全屏）',
           ),
           _orientationCard(context),
-          const SizedBox(height: 20),
+          SizedBox(height: widget.embedded ? 20 : 12),
         ],
         PresentationSettingsCard(
           settings: settings,
@@ -346,7 +346,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               '外挂字幕与内置字幕轨；文字叠加字幕不随系统画中画显示',
         ),
         _subtitleCard(context),
-        const SizedBox(height: 20),
+        SizedBox(height: widget.embedded ? 20 : 12),
         _section('音频', '多音轨选择与音频延迟（音画不同步时用）'),
         _audioCard(context),
         PresentationSettingsCard(
@@ -368,7 +368,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                       _updateDanmaku(_danmaku!.copyWith(avoidSubtitles: value)),
           ),
           if (_danmaku != null && widget.showDanmakuPanel) ...<Widget>[
-            const SizedBox(height: 20),
+            SizedBox(height: widget.embedded ? 20 : 12),
             _section(
               '弹幕',
               '开关 / 不透明度 / 字号 / 显示区域 / 速度 / 描边 / '
@@ -383,7 +383,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               onChanged: _updateDanmaku,
             ),
           ],
-          const SizedBox(height: 20),
+          SizedBox(height: widget.embedded ? 20 : 12),
         ]),
       _group('controls', '手势与外观', Icons.touch_app_outlined, [
         _section('按钮样式', '切换立即生效；全屏弹幕、倍速、选集保留文字'),
@@ -396,7 +396,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           onSelectionChanged: (values) =>
               _update(settings.copyWith(controlStyle: values.first)),
         ),
-        const SizedBox(height: 20),
+        SizedBox(height: widget.embedded ? 20 : 12),
         _section('手势', 'AVPlayer / MPV / MDK 共用，横竖屏立即生效；锁屏时停用'),
         NativeSwitchListTile.adaptive(
           title: const Text('启用播放器手势'),
@@ -504,7 +504,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 ),
         ),
         const Text('长按使用所选速度，松手恢复原速度；不会降低当前已设置的更高倍速。亮度不可由系统调整时使用画面遮罩。'),
-        const SizedBox(height: 20),
+        SizedBox(height: widget.embedded ? 20 : 12),
       ]),
       _group('advanced', '内核与网络', Icons.settings_input_component_outlined, [
         _section('播放内核', '切换播放内核；倍速、画面与字幕设置分别保存'),
@@ -519,10 +519,10 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
             _update(settings);
           },
         ),
-        const SizedBox(height: 20),
+        SizedBox(height: widget.embedded ? 20 : 12),
         _section('解码', '硬件解码（部分设备硬解 HEVC 花屏时可切软解）'),
         _decodingCard(context),
-        const SizedBox(height: 20),
+        SizedBox(height: widget.embedded ? 20 : 12),
         if (widget.connectionControls != null) widget.connectionControls!,
         NativeSwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,
@@ -572,8 +572,6 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       ),
     );
 
-    final landscape =
-        MediaQuery.sizeOf(context).width > MediaQuery.sizeOf(context).height;
     final quickActions = SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -599,38 +597,17 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     );
     final content = SafeArea(
       top: false,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            _handle(context),
-            quickActions,
-            if (landscape)
-              Flexible(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SizedBox(
-                      width: 132,
-                      child: _categoryNavigation(vertical: true),
-                    ),
-                    const VerticalDivider(width: 1),
-                    Expanded(child: list),
-                  ],
-                ),
-              )
-            else ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _categoryNavigation(),
-              ),
-              Flexible(child: list),
-            ],
-          ],
-        ),
+      child: Column(
+        children: <Widget>[
+          _handle(context),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _categoryNavigation(),
+          ),
+          const Divider(height: 1),
+          quickActions,
+          Expanded(child: list),
+        ],
       ),
     );
     final legacy = ClipRRect(
@@ -639,7 +616,16 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
         color: VideoGlassScope.active(context)
             ? Colors.transparent
             : LumeTheme.base,
-        child: content,
+        child: Theme(
+          data: Theme.of(context).copyWith(
+            listTileTheme: Theme.of(context).listTileTheme.copyWith(
+              contentPadding: EdgeInsets.zero,
+              minVerticalPadding: 4,
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+          child: content,
+        ),
       ),
     );
     return legacy;
@@ -670,7 +656,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     }
   }
 
-  Widget _categoryNavigation({bool vertical = false}) {
+  Widget _categoryNavigation() {
     final choices = <Widget>[
       for (final category in _categories)
         if ((category.$1 != 'intro' ||
@@ -695,23 +681,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     ];
     return Padding(
       key: _navigationKey,
-      padding: const EdgeInsets.only(bottom: 8),
-      child: vertical
-          ? SingleChildScrollView(
-              key: const ValueKey('player-landscape-categories'),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final choice in choices)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: choice,
-                    ),
-                ],
-              ),
-            )
-          : widget.embedded
+      padding: const EdgeInsets.only(bottom: 4),
+      child: widget.embedded
           ? Wrap(spacing: 6, runSpacing: 6, children: choices)
           : SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -739,7 +710,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       ? const SizedBox.shrink()
       : Padding(
           key: _categoryKeys.putIfAbsent(id, GlobalKey.new),
-          padding: const EdgeInsets.only(top: 8, bottom: 20),
+          padding: EdgeInsets.only(top: 8, bottom: widget.embedded ? 20 : 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -767,7 +738,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                       ),
                   ],
                 ),
-              if (widget.categoryOnly == null) const Divider(),
+              if (widget.categoryOnly == null)
+                widget.embedded ? const Divider() : const SizedBox(height: 8),
               ...children,
             ],
           ),
@@ -803,7 +775,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
 
   Widget _section(String title, String detail) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
+      padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -819,7 +791,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           Text(
             detail,
             style: TextStyle(
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w400,
+              height: 1.4,
               fontSize: LumeTypography.descriptionSize,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),

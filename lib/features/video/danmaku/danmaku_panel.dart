@@ -19,6 +19,7 @@ Future<T?> showDanmakuPanel<T>({
   required WidgetBuilder builder,
   bool edgeDrawer = true,
   double? maxPortraitHeight,
+  bool compact = false,
 }) {
   return showGlassModalBottomSheet<T>(
     context: context,
@@ -40,6 +41,7 @@ Future<T?> showDanmakuPanel<T>({
           ),
         ),
         DanmakuPanelFrame(
+          compact: compact,
           edgeDrawer: edgeDrawer,
           maxPortraitHeight: maxPortraitHeight,
           child: PlayerPanelScope(child: builder(context)),
@@ -56,7 +58,9 @@ class DanmakuPanelFrame extends StatefulWidget {
     this.screenPadding,
     this.edgeDrawer = true,
     this.maxPortraitHeight,
+    this.compact = false,
   });
+  final bool compact;
   final Widget child;
   final EdgeInsets? screenPadding;
   final bool edgeDrawer;
@@ -129,12 +133,16 @@ class _DanmakuPanelFrameState extends State<DanmakuPanelFrame>
         alignment: landscape ? Alignment.centerRight : Alignment.bottomCenter,
         child: SizedBox(
           key: const ValueKey('danmaku-panel-frame'),
-          width: edge
+          width: widget.compact
+              ? math.min(340, media.size.width - safe.horizontal)
+              : edge
               ? media.size.width * .4
               : landscape
               ? PlayerLayout.panelWidth(media.size.width - safe.horizontal - 32)
               : 560,
-          height: edge
+          height: widget.compact
+              ? math.min(340, available)
+              : edge
               ? math.max(0, media.size.height - keyboard)
               : landscape
               ? math.min(available, media.size.height * .85)

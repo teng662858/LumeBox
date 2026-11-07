@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/player/player_factory.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/theme/lume_theme.dart';
-import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/video_glass_surface.dart';
 
 /// 播放内核选择列表。
 ///
@@ -41,19 +41,27 @@ class PlayerKernelPicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: <Widget>[
-        for (final kernel in PlayerKernel.values)
-          _KernelTile(
-            kernel: kernel,
-            available: catalog.isAvailable(kernel),
-            reason: catalog.unavailableReason(kernel),
-            selected: selected == kernel,
-            retryable: retryKernel == kernel && onRetry != null,
-            onRetry: onRetry,
-            onTap: () => onChanged(kernel),
-          ),
-      ],
+    return Material(
+      color: VideoGlassScope.active(context)
+          ? Colors.white.withValues(alpha: .22)
+          : Theme.of(context).colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (final kernel in PlayerKernel.values)
+            _KernelTile(
+              kernel: kernel,
+              available: catalog.isAvailable(kernel),
+              reason: catalog.unavailableReason(kernel),
+              selected: selected == kernel,
+              retryable: retryKernel == kernel && onRetry != null,
+              onRetry: onRetry,
+              onTap: () => onChanged(kernel),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -81,69 +89,71 @@ class _KernelTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: GlassCard(
-        radius: 14,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        onTap: available ? onTap : null,
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    kernel.label,
-                    style: TextStyle(
-                      fontSize: LumeTypography.titleSize,
-                      fontWeight: FontWeight.w600,
-                      color: available
-                          ? LumeTheme.textPrimary
-                          : LumeTheme.muted,
-                    ),
-                  ),
-                  if (reason != null) ...<Widget>[
-                    const SizedBox(height: 2),
+    return InkWell(
+      onTap: available ? onTap : null,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
                     Text(
-                      reason!,
+                      kernel.label,
                       style: TextStyle(
+                        fontSize: LumeTypography.bodySize,
                         fontWeight: FontWeight.w600,
-                        fontSize: LumeTypography.descriptionSize,
-                        color: LumeTheme.descriptionColor,
+                        color: available
+                            ? LumeTheme.textPrimary
+                            : LumeTheme.muted,
                       ),
                     ),
+                    if (reason != null) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Text(
+                        reason!,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w400,
+                          height: 1.3,
+                          fontSize: LumeTypography.descriptionSize,
+                          color: LumeTheme.descriptionColor,
+                        ),
+                      ),
+                    ],
                   ],
-                ],
-              ),
-            ),
-            if (retryable)
-              TextButton(
-                onPressed: onRetry,
-                child: const Text(
-                  '重试',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: LumeTypography.bodySize,
-                  ),
                 ),
-              )
-            else if (selected)
-              LumeIcon(
-                Icons.check_circle,
-                slot: 'player_kernel_picker.1',
-                size: 20,
-                color: LumeTheme.textPrimary,
-              )
-            else if (available)
-              LumeIcon(
-                Icons.radio_button_unchecked,
-                slot: 'player_kernel_picker.2',
-                size: 20,
-                color: LumeTheme.muted,
               ),
-          ],
+              if (retryable)
+                TextButton(
+                  onPressed: onRetry,
+                  child: const Text(
+                    '重试',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: LumeTypography.bodySize,
+                    ),
+                  ),
+                )
+              else if (selected)
+                LumeIcon(
+                  Icons.check_circle,
+                  slot: 'player_kernel_picker.1',
+                  size: 20,
+                  color: LumeTheme.textPrimary,
+                )
+              else if (available)
+                LumeIcon(
+                  Icons.radio_button_unchecked,
+                  slot: 'player_kernel_picker.2',
+                  size: 20,
+                  color: LumeTheme.muted,
+                ),
+            ],
+          ),
         ),
       ),
     );

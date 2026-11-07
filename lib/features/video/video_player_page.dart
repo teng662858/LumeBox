@@ -1956,6 +1956,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     bool isScrollControlled = false,
     bool useSafeArea = false,
     bool edgeDrawer = true,
+    bool compact = false,
   }) async {
     _panelOpen = true;
     if (mounted) setState(() {});
@@ -1964,6 +1965,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         context: context,
         builder: builder,
         edgeDrawer: edgeDrawer,
+        compact: compact,
         glass: _settings.playbackGlass,
         backgroundColor: backgroundColor,
         isScrollControlled: isScrollControlled,
@@ -4791,11 +4793,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _cancelAutoHide();
     final selected = await _playbackMenu<PlayerKernel>(
       context: context,
+      compact: true,
       useSafeArea: true,
       isScrollControlled: true,
       builder: (context) => SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -4806,7 +4809,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                       '播放内核',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        fontSize: LumeTypography.pageTitleSize,
+                        fontSize: LumeTypography.titleSize,
                       ),
                     ),
                   ),
