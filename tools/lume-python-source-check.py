@@ -120,6 +120,16 @@ def check(path):
         report['calls']['playable'] = {'ok': playable, 'probe': {
             'ok': playable, 'status': status, 'type': headers.get('content-type', ''),
         }}
+        # A source-owned streaming server must remain usable after the
+        # playerContent deadline, rather than succeeding only on its first read.
+        if playable and content['url'].startswith(('http://127.0.0.1:', 'http://localhost:')) and status == 206:
+            host._contexts['cli-source']['deadline'] = 0
+            second, range_headers, chunk = http_request(content['url'], headers={
+                **content.get('headers', {}), 'Range': 'bytes=1048576-1049599',
+            })
+            range_ok = second == 206 and range_headers.get('content-range', '').startswith('bytes 1048576-1049599/') and len(chunk) == 1024
+            report['calls']['continuedRange'] = {'ok': range_ok, 'status': second, 'bytes': len(chunk)}
+            playable = playable and range_ok
         report['ok'] = playable
     except Exception as error:
         report['calls']['run'] = {'ok': False, 'error': str(error)}

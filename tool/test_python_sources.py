@@ -531,6 +531,55 @@ Spider.playerContent = lambda *args: {'url': args[0].getProxyUrl() + '&kind=bina
         bad = call("bad", "load", script="import a_missing_spider_dependency\n" + FIXTURE)
         self.assertIn("a_missing_spider_dependency", bad["error"]["message"])
 
+    def test_background_range_server_survives_call_deadline_and_closes_on_dispose(self):
+        import socket
+        source = FIXTURE + r"""
+    def homeVideoContent(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                import requests
+                assert requests.get('https://fixture.invalid/cookie').json()['ok']
+                body = b'fixture-media'
+                self.send_response(206)
+                self.send_header('Content-Type', 'video/mp4')
+                self.send_header('Content-Range', 'bytes 0-12/13')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            def log_message(self, *args): pass
+        self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        return {'list':[{'vod_id':str(self.server.server_port), 'vod_name':'本地流'}]}
+"""
+        self.assertTrue(call('background-range', 'load', script=source)['ok'])
+        result = call('background-range', method='home')
+        self.assertTrue(result['ok'], result)
+        port = int(result['value'][0]['id'].removeprefix('py:'))
+        # The originating player/home call has ended and its budget has expired.
+        host._contexts['background-range']['deadline'] = 0
+        self.assertTrue(call('other-foreground', 'load', script=FIXTURE)['ok'])
+        self.assertTrue(call('other-foreground', method='categories')['ok'])
+        CALLS.clear()
+        with socket.create_connection(('127.0.0.1', port), timeout=3) as connection:
+            connection.sendall(b'GET /media HTTP/1.0\r\nHost: localhost\r\nRange: bytes=0-12\r\n\r\n')
+            parts = []
+            while True:
+                part = connection.recv(4096)
+                if not part: break
+                parts.append(part)
+        response = b''.join(parts)
+        self.assertIn(b'206', response.split(b'\r\n', 1)[0])
+        self.assertIn(b'Content-Range: bytes 0-12/13', response)
+        self.assertTrue(response.endswith(b'fixture-media'))
+        self.assertEqual(CALLS[-1]['sourceId'], 'background-range')
+        self.assertGreater(CALLS[-1]['timeout'], 0)
+        self.assertLessEqual(CALLS[-1]['timeout'], 30)
+        self.assertTrue(call('background-range', 'dispose')['ok'])
+        with self.assertRaises(OSError):
+            socket.create_connection(('127.0.0.1', port), timeout=1)
+
     def test_threadpool_retains_source_identity(self):
         source = FIXTURE + '''
     def homeVideoContent(self):

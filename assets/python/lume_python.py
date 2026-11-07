@@ -15,6 +15,7 @@ import hmac
 import sys
 import time
 import threading
+import http.server
 import types
 import inspect
 import ast
@@ -34,6 +35,8 @@ from requests.structures import CaseInsensitiveDict
 
 _contexts = {}
 _active = contextvars.ContextVar("lume_source")
+_background = contextvars.ContextVar("lume_background", default=False)
+_deadline = contextvars.ContextVar("lume_deadline", default=None)
 _aliases = {
     "init": ("init", "initialize"),
     "homeContent": ("homeContent", "getHomeContent", "home"),
@@ -100,7 +103,11 @@ def _http_timeout(value):
 
 def _host(method, payload, timeout=None):
     state = _active.get()
-    remaining = state["deadline"] - time.monotonic()
+    if _contexts.get(state.get("source_id")) is not state:
+        raise RuntimeError("Python 源已释放")
+    # Source-owned HTTP handlers outlive playerContent. Each background host
+    # operation has its own bounded timeout; it must not reuse an expired call.
+    remaining = 30 if _background.get() else (_deadline.get() or state["deadline"]) - time.monotonic()
     if remaining <= 0:
         raise TimeoutError("Python 源执行超时")
     budget = min(remaining, 30)
@@ -505,21 +512,57 @@ def _source_thread_init(self, *args, **kwargs):
 
 
 def _source_thread_run(self):
-    return self._lume_context.run(_thread_run, self)
+    def run():
+        token = _background.set(True)
+        try:
+            return _thread_run(self)
+        finally:
+            _background.reset(token)
+    return self._lume_context.run(run)
 
 
 threading.Thread.__init__ = _source_thread_init
 threading.Thread.run = _source_thread_run
 
 
+_server_init = http.server.HTTPServer.__init__
+_serve_forever = http.server.HTTPServer.serve_forever
+
+
+def _source_server_init(self, *args, **kwargs):
+    _server_init(self, *args, **kwargs)
+    state = _active.get(None)
+    if state is not None:
+        self._lume_source_state = state
+        state.setdefault("servers", []).append(self)
+
+
+def _source_serve_forever(self, *args, **kwargs):
+    state = getattr(self, "_lume_source_state", None)
+    if state is not None and _contexts.get(state.get("source_id")) is not state:
+        self.server_close()
+        return
+    self._lume_serving = True
+    try:
+        return _serve_forever(self, *args, **kwargs)
+    finally:
+        self._lume_serving = False
+
+
+http.server.HTTPServer.__init__ = _source_server_init
+http.server.HTTPServer.serve_forever = _source_serve_forever
+
+
 @contextmanager
 def _budget(state, seconds):
     state["deadline"] = time.monotonic() + min(max(float(seconds), 1), 60)
     token = _active.set(state)
+    deadline_token = _deadline.set(state["deadline"])
+    deadline = state["deadline"]
     previous = sys.gettrace()
 
     def trace(frame, event, arg):
-        if time.monotonic() > state["deadline"]:
+        if time.monotonic() > deadline:
             raise TimeoutError("Python 源执行超时")
         return trace
 
@@ -535,6 +578,7 @@ def _budget(state, seconds):
     finally:
         sys.settrace(previous)
         _active.reset(token)
+        _deadline.reset(deadline_token)
 
 
 @contextmanager
@@ -574,7 +618,16 @@ def _source_modules(state):
 def _close_source(state):
     if state:
         directory = state.get("directory")
+        servers = list(state.get("servers", []))
         state.clear()
+        for server in servers:
+            try:
+                if getattr(server, "_lume_serving", False):
+                    server.shutdown()
+                server.block_on_close = False
+                server.server_close()
+            except Exception:
+                pass
         if directory:
             directory.cleanup()
 
@@ -952,7 +1005,7 @@ def execute(request):
                 if isinstance(node.func.value, ast.Name) and node.func.value.id in ("os", "subprocess") and node.func.attr in ("system", "popen", "Popen", "run", "fork", "execv"):
                     warnings.append("含系统进程接口；iOS 无法执行该路径")
         if local_server:
-            warnings.append("含自建本地 HTTP 服务；后台线程与宿主网络桥未保证兼容，导入成功不代表能够播放，请验证源站支持的播放路径")
+            warnings.append("含自建本地 HTTP 服务；由源管理并随源释放，实际播放仍取决于源站与响应格式")
         for name in sorted(imports):
             if name in ("java", "jnius", "android", "dalvik", "chaquopy"):
                 warnings.append("含 Android 专属依赖 " + name + "；对应功能需要其他实现或外部后端")

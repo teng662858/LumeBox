@@ -4,22 +4,24 @@
 @interface LumePythonController ()
 @property(nonatomic, strong) FlutterMethodChannel *channel;
 @property(nonatomic, strong) dispatch_queue_t worker;
-@property(nonatomic, copy) NSString *activeSource;
+@property(nonatomic, strong) NSMutableSet<NSString *> *loadedSources;
 @property(nonatomic, assign) PyObject *runFunction;
 @end
 
 static LumePythonController *LumePythonHost;
 
-// This callback is entered only from the serial Python worker. Waiting releases
-// the GIL; the platform channel and Flutter HTTP remain on the main run loop.
+// Source-owned background handlers may call after the foreground call returns.
+// Loaded source membership is synchronized; waiting releases the GIL.
 static PyObject *LumeHostInvoke(PyObject *self, PyObject *args) {
   const char *request;
   if (!PyArg_ParseTuple(args, "s", &request)) return NULL;
   LumePythonController *host = LumePythonHost;
   NSString *json = [NSString stringWithUTF8String:request];
-  NSString *source = host.activeSource;
   NSDictionary *decoded = json ? [NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
-  if (!json || !source || ![decoded isKindOfClass:NSDictionary.class] || ![source isEqual:decoded[@"sourceId"]]) {
+  NSString *source = [decoded isKindOfClass:NSDictionary.class] && [decoded[@"sourceId"] isKindOfClass:NSString.class] ? decoded[@"sourceId"] : nil;
+  BOOL available = NO;
+  @synchronized(host) { available = source && [host.loadedSources containsObject:source]; }
+  if (!json || !available) {
     PyErr_SetString(PyExc_RuntimeError, "Python host is unavailable");
     return NULL;
   }
@@ -64,6 +66,7 @@ static PyObject *PyInit_lume_host(void) { return PyModule_Create(&LumeHostModule
   host.channel = [FlutterMethodChannel methodChannelWithName:@"lumebox/python_sources"
                                             binaryMessenger:registrar.messenger];
   host.worker = dispatch_queue_create("lumebox.python.sources", DISPATCH_QUEUE_SERIAL);
+  host.loadedSources = [NSMutableSet set];
   LumePythonHost = host;
   [registrar addMethodCallDelegate:host channel:host.channel];
 }
@@ -135,7 +138,10 @@ static PyObject *PyInit_lume_host(void) { return PyModule_Create(&LumeHostModule
         });
         return;
       }
-      self.activeSource = request[@"sourceId"];
+      @synchronized(self) {
+        if ([request[@"action"] isEqual:@"load"]) [self.loadedSources addObject:request[@"sourceId"]];
+        if ([request[@"action"] isEqual:@"dispose"]) [self.loadedSources removeObject:request[@"sourceId"]];
+      }
       PyGILState_STATE gil = PyGILState_Ensure();
       NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
       PyObject *argument = PyUnicode_FromString(json.UTF8String);
@@ -149,7 +155,12 @@ static PyObject *PyInit_lume_host(void) { return PyModule_Create(&LumeHostModule
       Py_XDECREF(argument);
       if (!text) PyErr_Clear();
       PyGILState_Release(gil);
-      self.activeSource = nil;
+      if ([request[@"action"] isEqual:@"load"]) {
+        NSDictionary *replyData = text ? [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+        if (![replyData isKindOfClass:NSDictionary.class] || ![replyData[@"ok"] boolValue]) {
+          @synchronized(self) { [self.loadedSources removeObject:request[@"sourceId"]]; }
+        }
+      }
       dispatch_async(dispatch_get_main_queue(), ^{
         if (text) result(text);
         else result([FlutterError errorWithCode:@"python" message:@"Python 源执行失败" details:nil]);
