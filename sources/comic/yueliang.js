@@ -1,4 +1,4 @@
-// LumeSource: {"id":"yueliang_comic","name":"月亮小说","version":"1.0.1","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://yueliangxiaoshuo.com"],"network":"direct","icon":"https://yueliangxiaoshuo.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"月亮小说（yueliangxiaoshuo.com，中文小说社区，含 R-18 分区）：新书 /novel/new?p=N（30 条/页、实测 100 页）；榜单 /novel/ranking?mode=daily|weekly|monthly|rookie|total&r18=0|1|2（0 普通 / 1 全部 / 2 R-18，实测三档内容不同）；系列（书） /novel/series/{id}（目录 30 章/页，?p=N，最长实测 47 页）；单章 /novel/show/{id}（正文 div#novel-body）；搜索 /search/novels?q=&p=。全部免费、不需要登录。 原站大量小说未上传封面，网页使用颜色与书名占位；无图片时 App 同样保留书名占位。"}]}
+// LumeSource: {"id":"yueliang_comic","name":"月亮小说","version":"1.0.3","category":"comic","contentCategory":"adult","mediaType":"novel","settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://yueliangxiaoshuo.com"],"network":"direct","icon":"https://yueliangxiaoshuo.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"月亮小说（yueliangxiaoshuo.com，中文小说社区，含 R-18 分区）：新书 /novel/new?p=N（30 条/页、实测 100 页）；榜单 /novel/ranking?mode=daily|weekly|monthly|rookie|total&r18=0|1|2（0 普通 / 1 全部 / 2 R-18，实测三档内容不同）；系列（书） /novel/series/{id}（目录 30 章/页，?p=N，最长实测 47 页）；单章 /novel/show/{id}（正文 div#novel-body）；搜索 /search/novels?q=&p=。全部免费、不需要登录。 原站大量小说未上传封面，网页使用颜色与书名占位；无图片时 App 同样保留书名占位。"}]}
 // LumeRuntime: javascript
 //
 // 站点：月亮小说（yueliangxiaoshuo.com，PHP 渲染的静态 HTML，含 R-18 分区）
@@ -17,12 +17,14 @@
 //                 列表里的条目有两种落点：series = 一部书（有目录），show = 单章/短篇。
 //
 // 限制：`r18` 只对榜单生效（/novel/new?r18=2 与不传完全一样），所以本源只在榜单通道里用它。
-// 系列目录按 30 章/页翻，一本 1400 章的书要 47 页（源里 6 路并发，并封顶 60 页）。
+// 系列目录按 30 章/页翻，一本 1400 章的书要 47 页（源里 6 路并发，最多支持 400 页，超出时明确提示而不是截断目录）。
 
 var BASE_URL = 'https://yueliangxiaoshuo.com';
 var UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 var PAGE_SIZE = 30;
-var MAX_TOC_PAGES = 60;
+var MAX_TOC_PAGES = 400;
+var seriesPage = null;
+var seriesDirectory = null;
 
 var MODES = [
   { id: 'daily', title: '今日榜' },
@@ -173,7 +175,7 @@ async function poolMap(list, limit, worker) {
       try {
         out[index] = await worker(list[index]);
       } catch (error) {
-        out[index] = '';
+        throw new Error('目录第 ' + list[index] + ' 页加载失败，请重试：' + String(error));
       }
     }
   };
@@ -210,7 +212,7 @@ function novelBodyText(html) {
 var LumeSource = {
   id: 'yueliang_comic',
   name: '月亮小说',
-  version: '1.0.1',
+  version: '1.0.3',
   category: 'comic',
   contentCategory: 'adult',
   mediaType: 'novel',
@@ -291,6 +293,7 @@ var LumeSource = {
     var path = ref.kind === 'series' ? '/novel/series/' + ref.id : '/novel/show/' + ref.id;
     var html = await fetchHtml(path);
     if (!html) return null;
+    if (ref.kind === 'series') seriesPage = { id: ref.id, html: html };
     var pageTitle = /<title>([^<]*)<\/title>/i.exec(html);
     var h1 = /<h1[^>]*>([\s\S]{0,200}?)<\/h1>/i.exec(html);
     var title = '';
@@ -333,26 +336,47 @@ var LumeSource = {
     };
   },
 
+  // 新宿主每次最多读取6个目录分页，避免整本长篇超过单次沙箱时限。
   async chapters(argument) {
+    var all = [], page = 1;
+    do {
+      var batch = await LumeSource.chapterPage({ id: argument && argument.id, page: page });
+      all = all.concat(batch.items);
+      page = batch.nextPage;
+    } while (page);
+    return all;
+  },
+
+  async chapterPage(argument) {
     var ref = parseRef(argument && argument.id);
-    if (!ref) return [];
+    if (!ref) return { items: [], nextPage: null };
     if (ref.kind === 'show') {
-      return [{ id: 'show:' + ref.id, title: '正文' }];
+      return { items: [{ id: 'show:' + ref.id, title: '正文' }], nextPage: null };
     }
-    var first = await fetchHtml('/novel/series/' + ref.id);
-    var chapters = parseCards(first);
-    var maxPage = Math.min(maxPageOf(first, '/novel/series/' + ref.id + '\\?p='), MAX_TOC_PAGES);
-    if (maxPage > 1) {
-      var rest = [];
-      for (var p = 2; p <= maxPage; p++) rest.push(p);
-      var pages = await poolMap(rest, 6, function (pageNo) {
-        return fetchHtml('/novel/series/' + ref.id + '?p=' + pageNo);
-      });
-      for (var i = 0; i < pages.length; i++) {
-        var more = parseCards(pages[i] || '');
-        for (var k = 0; k < more.length; k++) {
-          if (more[k].id.indexOf('show:') === 0) chapters.push(more[k]);
-        }
+    var startPage = Math.max(1, Number(argument.page) || 1);
+    var chapters = [], maxPage;
+    if (startPage === 1) {
+      var first = seriesPage && seriesPage.id === ref.id
+        ? seriesPage.html : await fetchHtml('/novel/series/' + ref.id);
+      seriesPage = null;
+      chapters = parseCards(first);
+      maxPage = maxPageOf(first, '/novel/series/' + ref.id + '\\?p=');
+      if (maxPage > MAX_TOC_PAGES) throw new Error('目录超过 ' + MAX_TOC_PAGES + ' 页，请在网页查看完整目录');
+      seriesDirectory = { id: ref.id, maxPage: maxPage };
+    } else {
+      if (!seriesDirectory || seriesDirectory.id !== ref.id) throw new Error('目录会话已失效，请重试');
+      maxPage = seriesDirectory.maxPage;
+    }
+    var endPage = Math.min(startPage + 5, maxPage);
+    var rest = [];
+    for (var p = startPage === 1 ? 2 : startPage; p <= endPage; p++) rest.push(p);
+    var pages = await poolMap(rest, 6, function (pageNo) {
+      return fetchHtml('/novel/series/' + ref.id + '?p=' + pageNo);
+    });
+    for (var i = 0; i < pages.length; i++) {
+      var more = parseCards(pages[i] || '');
+      for (var k = 0; k < more.length; k++) {
+        if (more[k].id.indexOf('show:') === 0) chapters.push(more[k]);
       }
     }
     var out = [];
@@ -366,7 +390,7 @@ var LumeSource = {
     }
     // 目录里还有其它 series 卡片（推荐位），只保留 show 章节
     if (!out.length) throw new Error('目录里没有章节（series:' + ref.id + '）');
-    return out;
+    return { items: out, nextPage: endPage < maxPage ? endPage + 1 : null };
   },
 
   async content(argument) {

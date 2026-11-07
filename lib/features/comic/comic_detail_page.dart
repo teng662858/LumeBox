@@ -173,9 +173,10 @@ class _ComicDetailPageState extends State<ComicDetailPage>
           .where((entry) => entry.id == widget.target.sourceId)
           .firstOrNull;
       _isGallery =
+          descriptor?.mediaKind == 'photo' ||
           descriptor != null &&
-          SourcePickerGroups.groupFor(widget.library.section, descriptor) ==
-              'photo';
+              SourcePickerGroups.groupFor(widget.library.section, descriptor) ==
+                  'photo';
       setState(() {
         _isAudio = descriptor?.isAudio == true;
       });
@@ -192,6 +193,22 @@ class _ComicDetailPageState extends State<ComicDetailPage>
         });
         return;
       }
+      // 单一小说源无需等待整本目录和正文探测后才进入小说详情。
+      if (widget.detectContent &&
+          descriptor?.mediaKind == 'novel' &&
+          descriptor?.mixedContent != true) {
+        setState(() {
+          _loading = false;
+          _typedDetail = contentDetailPage(
+            type: SourceContentType.novel,
+            source: source,
+            library: widget.library,
+            manager: widget.manager,
+            target: widget.target,
+          );
+        });
+        return;
+      }
       final detail = await networkRequests.run(
         'detail',
         () => source.detail(widget.target.itemId),
@@ -200,12 +217,29 @@ class _ComicDetailPageState extends State<ComicDetailPage>
       if (detail?.cover != null) {
         _pipeline.configureImageHeaders({detail!.cover!: detail.coverHeaders});
       }
+      final declaredType = SourceContentType.parse(detail?.mediaType);
+      if (widget.detectContent &&
+          declaredType != null &&
+          declaredType != SourceContentType.comic) {
+        setState(() {
+          _loading = false;
+          _typedDetail = contentDetailPage(
+            type: declaredType,
+            source: source,
+            library: widget.library,
+            manager: widget.manager,
+            target: widget.target,
+          );
+        });
+        return;
+      }
       setState(() {
         _source = source;
         _detail = detail;
         final mediaType = detail?.mediaType.toLowerCase();
         if (mediaType != null && mediaType.isNotEmpty) {
           _isAudio = mediaType == 'audio' || mediaType == 'audiobook';
+          _isGallery = _isGallery || mediaType == 'photo';
         }
         _loading = false;
         _chaptersLoading = true;

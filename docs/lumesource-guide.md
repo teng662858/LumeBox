@@ -480,3 +480,12 @@ class Komiic extends ComicSource {
 2. 本机起一个静态站，把脚本里的 `BASE_URL` 指过去，用三份示例源对照——
    本仓库的 `test/js_sandbox/smoke_test.dart` 就是这么做的
    （`flutter test test/js_sandbox/smoke_test.dart` 一条命令跑完三类内容形态）。
+
+
+## 可选的分批目录（2026-11-07）
+
+长目录可以实现 `chapterPage({id, page})`，返回 `{items: [{id,title}], nextPage: 整数或null}`。
+`page` 从 1 开始；`nextPage` 必须递增且不超过 400，`null` 表示完成。宿主逐批调用，
+每批单独受沙箱时限约束，合并时按章节 ID 去重，全部成功后才缓存；任何批次失败都保留错误。
+仍须实现 `chapters({id})` 供旧宿主调用；未实现 `chapterPage` 的源继续按旧契约读取。
+不要在一批中抓取整本目录。月亮小说每批最多 6 个站点分页。

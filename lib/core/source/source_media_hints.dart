@@ -34,6 +34,11 @@ abstract final class SourceMediaHints {
               data['category'] == 'novel') {
             return 'novel';
           }
+          if (['photo', 'gallery'].contains(kind) ||
+              data['category'] == 'photo' ||
+              '${data['id'] ?? ''}'.endsWith('_photo')) {
+            return 'photo';
+          }
           if (['photo', 'comic'].contains(data['category'])) {
             return '${data['category']}';
           }

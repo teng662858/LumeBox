@@ -475,6 +475,7 @@ class LumeSourceBridge {
     'list': <String>['getList', 'list'],
     'detail': <String>['getDetail', 'getBookInfo', 'detail'],
     'chapters': <String>['getChapters', 'getChapterList', 'chapters'],
+    'chapterPage': <String>['chapterPage'],
     'content': <String>['getContent', 'getChapterContent', 'content'],
     // 首页（可选契约，用户口径任务 3）：多板块模式 / 旧兼容的纯列表模式。
     'home': <String>['getHome', 'getHomeContent', 'home'],

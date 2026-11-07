@@ -124,6 +124,36 @@ void main() {
     expect(((result['items'] as List).single as Map)['cover'], '');
   });
 
+  test('月亮小说复用详情目录首页，超过60页的长目录不截断', () async {
+    var firstRequests = 0;
+    String card(int id) =>
+        '<article class="novel-card"><h3 class="novel-card-title">'
+        '<a href="/novel/show/$id">第$id章</a></h3></article>';
+    final runtime = await engine('yueliang', (uri) {
+      final page = int.parse(uri.queryParameters['p'] ?? '1');
+      if (page == 1) firstRequests++;
+      return '<h1>长篇小说</h1>${card(page)}'
+          '<a href="/novel/series/1?p=61">末页</a>';
+    });
+    await runtime.call('detail', {'id': 'series:1'});
+    final chapters = await runtime.call('chapters', {'id': 'series:1'}) as List;
+    expect(firstRequests, 1);
+    expect(chapters, hasLength(61));
+    expect((chapters.last as Map)['id'], 'show:61');
+  });
+
+  test('月亮小说目录分页失败明确报错，不悄悄丢章', () async {
+    final runtime = await engine('yueliang', (uri) {
+      if (uri.queryParameters['p'] == '2') throw StateError('offline');
+      return '<article class="novel-card"><h3 class="novel-card-title">'
+          '<a href="/novel/show/1">第1章</a></h3></article>'
+          '<a href="/novel/series/1?p=2">末页</a>';
+    });
+    final result = await runtime.callResult('chapters', {'id': 'series:1'});
+    expect(result.isOk, isFalse);
+    expect(result.error?.message, contains('目录第 2 页加载失败'));
+  });
+
   test('秒播真实QuickJS解开两层页面并传递封面解码与站点播放路径', () async {
     final html =
         '<a href="/index.php/vod/type/id/3.html">栏目甲</a><a href="/index.php/vod/type/id/4.html">栏目乙</a>'

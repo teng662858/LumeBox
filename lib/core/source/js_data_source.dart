@@ -62,6 +62,7 @@ class JsSourceContract {
   static const String home = 'home';
   static const String detail = 'detail';
   static const String chapters = 'chapters';
+  static const String chapterPage = 'chapterPage';
   static const String content = 'content';
 
   /// 全部契约方法名，供文档与测试遍历。
@@ -74,6 +75,7 @@ class JsSourceContract {
     // 可选契约（有别名表、可被脚本实现；没实现也不影响导入）。
     home,
     filters,
+    chapterPage,
   ];
 }
 
@@ -303,9 +305,40 @@ class JsDataSource
     final key = 'chapters|$itemId';
     final cached = cache?.read(section, id, key);
     if (cached is List<SourceChapter>) return cached;
-    final value = parseChapters(
-      await _invoke(JsSourceContract.chapters, <String, Object?>{'id': itemId}),
-    );
+    final value = <SourceChapter>[];
+    if ((await _contractMethods()).contains('chapterPage')) {
+      var page = 1;
+      final seen = <String>{};
+      while (true) {
+        final response = await _invoke('chapterPage', {
+          'id': itemId,
+          'page': page,
+        });
+        if (response is! Map || response['items'] is! List) {
+          throw const SourceException(SourceErrorKind.callFailed, '目录分页格式错误');
+        }
+        for (final chapter in parseChapters(response['items'])) {
+          if (seen.add(chapter.id)) value.add(chapter);
+        }
+        final next = response['nextPage'];
+        if (next == null) break;
+        if (next is! int || next <= page || next > 400) {
+          throw const SourceException(
+            SourceErrorKind.callFailed,
+            '目录分页未前进或超过上限',
+          );
+        }
+        page = next;
+      }
+    } else {
+      value.addAll(
+        parseChapters(
+          await _invoke(JsSourceContract.chapters, <String, Object?>{
+            'id': itemId,
+          }),
+        ),
+      );
+    }
     cache?.write(section, id, key, value);
     return value;
   }

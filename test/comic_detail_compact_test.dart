@@ -65,6 +65,15 @@ class LoadingAudioSource extends CompactComicSource {
   Future<List<SourceChapter>> chapters(String itemId) => pending.future;
 }
 
+class LoadingNovelSource extends LoadingAudioSource {
+  int detailCalls = 0;
+  @override
+  Future<SourceDetail?> detail(String id) async {
+    detailCalls++;
+    return SourceDetail(id: id, title: '小说作品', mediaType: 'novel');
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory root;
@@ -178,6 +187,41 @@ void main() {
     expect(find.text('漫画详情'), findsNothing);
     expect(find.text('开始阅读'), findsNothing);
     expect(find.text('章节加载中…'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    source.pending.complete([]);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('小说源目录未完成前直接进入小说详情且只请求一次详情', (tester) async {
+    final source = LoadingNovelSource();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ComicDetailPage(
+          library: library,
+          manager: FakeSourceManager(
+            sources: const [
+              SourceDescriptor(
+                id: 'a',
+                name: '小说源',
+                version: '1',
+                enabled: true,
+                mediaKind: 'novel',
+              ),
+            ],
+            opened: {'a': source},
+          ),
+          target: target,
+          imagePipeline: pipeline,
+          runtimeAvailable: true,
+        ),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(find.text('小说详情'), findsOneWidget);
+    expect(find.text('漫画详情'), findsNothing);
+    expect(source.detailCalls, 1);
     await tester.pumpWidget(const SizedBox());
     source.pending.complete([]);
     await tester.pumpAndSettle();

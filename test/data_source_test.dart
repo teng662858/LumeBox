@@ -11,11 +11,19 @@ import 'package:lume_box/core/source/source.dart';
 /// 有了它，JS 适配器在没有图源引擎的平台上（Windows / Android）也能被
 /// 完整验证：断言方法名、入参裁剪、结果解析与错误归一。
 class _FakeRuntime implements JsSourceRuntime {
-
   @override
-  Future<Set<String>> contractMethods() async =>
-      const <String>{'categories', 'list', 'detail', 'chapters', 'content'};
-  _FakeRuntime(this.reply);
+  Future<Set<String>> contractMethods() async => methodsAvailable;
+  _FakeRuntime(
+    this.reply, {
+    this.methodsAvailable = const <String>{
+      'categories',
+      'list',
+      'detail',
+      'chapters',
+      'content',
+    },
+  });
+  final Set<String> methodsAvailable;
 
   final Future<Object?> Function(String method, Object? argument) reply;
   final List<String> methods = <String>[];
@@ -30,6 +38,53 @@ class _FakeRuntime implements JsSourceRuntime {
 }
 
 void main() {
+  test('分批目录合并去重，分页调用各自使用运行时预算', () async {
+    final runtime = _FakeRuntime((method, args) async {
+      expect(method, 'chapterPage');
+      final page = (args as Map)['page'];
+      return {
+        'items': [
+          {'id': 'shared', 'title': '共同章'},
+          {'id': '$page', 'title': '第$page章'},
+        ],
+        'nextPage': page == 1 ? 7 : null,
+      };
+    }, methodsAvailable: {'chapters', 'chapterPage'});
+    final source = JsDataSource(
+      id: 'batch',
+      name: 'batch',
+      section: Section.comic,
+      runtime: runtime,
+    );
+    expect((await source.chapters('book')).map((c) => c.id), [
+      'shared',
+      '1',
+      '7',
+    ]);
+    expect(runtime.arguments, [
+      {'id': 'book', 'page': 1},
+      {'id': 'book', 'page': 7},
+    ]);
+  });
+  test('目录分页不前进时终止，不缓存半本目录', () async {
+    final runtime = _FakeRuntime(
+      (method, args) async => {
+        'items': [
+          {'id': 'one', 'title': '第一章'},
+        ],
+        'nextPage': 1,
+      },
+      methodsAvailable: {'chapters', 'chapterPage'},
+    );
+    final source = JsDataSource(
+      id: 'batch',
+      name: 'batch',
+      section: Section.comic,
+      runtime: runtime,
+    );
+    await expectLater(source.chapters('book'), throwsA(isA<SourceException>()));
+  });
+
   test('镜像耗尽属于可恢复网络错误，JS能力错误保留原分类', () async {
     final source = JsDataSource(
       id: 'network-test',
@@ -73,8 +128,6 @@ void main() {
     );
   });
   group('模拟实现：四个板块共用一套接口', () {
-
-
     test('页码语义：第一页还有更多，第二页到底', () async {
       const source = MockDataSource(section: Section.video);
       expect((await source.list(page: 1)).hasMore, isTrue);
@@ -105,11 +158,11 @@ void main() {
 
   group('JS 适配器：接口语义 → JS 契约', () {
     JsDataSource build(_FakeRuntime runtime) => JsDataSource(
-          id: 'demo',
-          name: '示例源',
-          section: Section.video,
-          runtime: runtime,
-        );
+      id: 'demo',
+      name: '示例源',
+      section: Section.video,
+      runtime: runtime,
+    );
 
     test('分类：无入参，结果按模型解析', () async {
       final runtime = _FakeRuntime((method, argument) async {
@@ -136,11 +189,8 @@ void main() {
           'hasMore': true,
         };
       });
-      final result = await build(runtime).list(
-        categoryId: '  ',
-        keyword: '',
-        page: 0,
-      );
+      final result = await build(runtime)
+          .list(categoryId: '  ', keyword: '', page: 0);
       expect(result.items.single.id, 'a');
       expect(result.hasMore, isTrue);
       expect(runtime.methods.single, JsSourceContract.list);
@@ -149,7 +199,9 @@ void main() {
 
     test('列表：分类与关键词裁剪后进入参数', () async {
       final runtime = _FakeRuntime(
-        (method, argument) async => const <String, Object?>{'items': <Object?>[]},
+        (method, argument) async => const <String, Object?>{
+          'items': <Object?>[],
+        },
       );
       await build(runtime).list(categoryId: 'c1', keyword: ' 关键词 ', page: 3);
       expect(runtime.arguments.single, <String, Object?>{
@@ -306,20 +358,22 @@ void main() {
     tearDown(cache.clearAll);
 
     JsDataSource build(_FakeRuntime runtime) => JsDataSource(
-          id: 'demo',
-          name: '示例源',
-          section: Section.video,
-          runtime: runtime,
-          cache: cache,
-        );
+      id: 'demo',
+      name: '示例源',
+      section: Section.video,
+      runtime: runtime,
+      cache: cache,
+    );
 
     int callsOf(_FakeRuntime runtime, String method) =>
         runtime.methods.where((name) => name == method).length;
 
     test('分类：第二次读命中缓存，不再调脚本', () async {
-      final runtime = _FakeRuntime((method, argument) async => <Object?>[
-            <String, Object?>{'id': 'c1', 'title': '分类一'},
-          ]);
+      final runtime = _FakeRuntime(
+        (method, argument) async => <Object?>[
+          <String, Object?>{'id': 'c1', 'title': '分类一'},
+        ],
+      );
       final source = build(runtime);
 
       expect((await source.categories()).single.title, '分类一');
@@ -333,12 +387,12 @@ void main() {
         final id = (argument as Map)['id'];
         return switch (method) {
           JsSourceContract.detail => <String, Object?>{
-              'id': id,
-              'title': '条目 $id',
-            },
+            'id': id,
+            'title': '条目 $id',
+          },
           JsSourceContract.chapters => <Object?>[
-              <String, Object?>{'id': '$id-e1', 'title': '第 1 集'},
-            ],
+            <String, Object?>{'id': '$id-e1', 'title': '第 1 集'},
+          ],
           _ => null,
         };
       });
@@ -362,14 +416,14 @@ void main() {
       final runtime = _FakeRuntime(
         (method, argument) async => switch (method) {
           JsSourceContract.list => <String, Object?>{
-              'items': <Object?>[
-                <String, Object?>{'id': 'a', 'title': 'A'},
-              ],
-            },
+            'items': <Object?>[
+              <String, Object?>{'id': 'a', 'title': 'A'},
+            ],
+          },
           JsSourceContract.content => <String, Object?>{
-              'kind': 'video',
-              'url': 'https://example.com/a.mp4',
-            },
+            'kind': 'video',
+            'url': 'https://example.com/a.mp4',
+          },
           _ => null,
         },
       );
@@ -404,9 +458,11 @@ void main() {
     });
 
     test('清空板块缓存后重新走脚本（设置页「清空」的效果）', () async {
-      final runtime = _FakeRuntime((method, argument) async => <Object?>[
-            <String, Object?>{'id': 'c1', 'title': '分类一'},
-          ]);
+      final runtime = _FakeRuntime(
+        (method, argument) async => <Object?>[
+          <String, Object?>{'id': 'c1', 'title': '分类一'},
+        ],
+      );
       final source = build(runtime);
 
       await source.categories();
@@ -419,9 +475,11 @@ void main() {
     });
 
     test('不传 cache 的适配器（测试与旧调用方）没有缓存行为', () async {
-      final runtime = _FakeRuntime((method, argument) async => <Object?>[
-            <String, Object?>{'id': 'c1', 'title': '分类一'},
-          ]);
+      final runtime = _FakeRuntime(
+        (method, argument) async => <Object?>[
+          <String, Object?>{'id': 'c1', 'title': '分类一'},
+        ],
+      );
       final source = JsDataSource(
         id: 'demo',
         name: '示例源',
