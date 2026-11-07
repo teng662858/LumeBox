@@ -6,7 +6,18 @@ import '../../core/player/player_stats.dart';
 class MediaBadgeSettings extends ChangeNotifier {
   static final instance = MediaBadgeSettings();
   bool enabled(String key) => AppPreferences.instance.mediaBadges[key] != false;
-  bool get graphic => AppPreferences.instance.mediaBadges['graphic'] == true;
+  String get style =>
+      AppPreferences.instance.mediaBadges['style'] as String? ??
+      (AppPreferences.instance.mediaBadges['graphic'] == true
+          ? 'graphic'
+          : 'compact');
+  bool get graphic => style == 'graphic';
+  void setStyle(String value) {
+    AppPreferences.instance.mediaBadges['style'] = value;
+    AppPreferences.instance.save();
+    notifyListeners();
+  }
+
   void set(String key, bool value) {
     AppPreferences.instance.mediaBadges[key] = value;
     AppPreferences.instance.save();
@@ -15,7 +26,50 @@ class MediaBadgeSettings extends ChangeNotifier {
 }
 
 /// Explicit media metadata only; titles are never scanned for specifications.
+enum MediaBadgeKind {
+  resolution('分辨率', Icons.hd_outlined),
+  dynamicRange('HDR / 动态范围', Icons.brightness_6_outlined),
+  videoCodec('视频编码', Icons.memory_outlined),
+  bitDepth('位深', Icons.gradient),
+  audioCodec('音频格式', Icons.graphic_eq),
+  channels('声道', Icons.surround_sound_outlined),
+  fps('帧率', Icons.speed),
+  language('语言', Icons.translate);
+
+  const MediaBadgeKind(this.label, this.icon);
+  final String label;
+  final IconData icon;
+}
+
 class MediaBadgeData {
+  static MediaBadgeKind kind(String label) {
+    final value = label.toUpperCase().replaceAll(' ', '');
+    if (RegExp(r'^(\d+[PK]|\d+×\d+|UHD|FHD|HD)$').hasMatch(value)) {
+      return MediaBadgeKind.resolution;
+    }
+    if (value.contains('HDR') ||
+        value.contains('VISION') ||
+        value == 'HLG' ||
+        value == 'SDR') {
+      return MediaBadgeKind.dynamicRange;
+    }
+    if (value.contains('BIT')) return MediaBadgeKind.bitDepth;
+    if (value.contains('FPS')) return MediaBadgeKind.fps;
+    if (RegExp(r'^\d+\.\d+$').hasMatch(value) ||
+        value == 'STEREO' ||
+        value == 'MONO') {
+      return MediaBadgeKind.channels;
+    }
+    if (RegExp(r'HEVC|AVC|H\.?26[45]|AV1|VP[89]|MPEG').hasMatch(value)) {
+      return MediaBadgeKind.videoCodec;
+    }
+    if (RegExp(r'ATMOS|TRUEHD|DTS|AAC|AC3|EAC3|FLAC|OPUS|MP3|PCM|DOLBY')
+        .hasMatch(value)) {
+      return MediaBadgeKind.audioCodec;
+    }
+    return MediaBadgeKind.language;
+  }
+
   static List<String> fromMap(Map<String, dynamic> data) {
     final out = <String>[];
     for (final key in [
@@ -78,17 +132,46 @@ class MediaBadges extends StatelessWidget {
         return const SizedBox.shrink();
       }
       final colors = Theme.of(context).colorScheme;
+      final filtered = <String>[];
+      final seen = <MediaBadgeKind>{};
+      for (final value in values) {
+        final category = MediaBadgeData.kind(value);
+        if (!settings.enabled('kind.${category.name}') || !seen.add(category)) {
+          continue;
+        }
+        if (location == 'player' &&
+            ![
+              MediaBadgeKind.resolution,
+              MediaBadgeKind.dynamicRange,
+              MediaBadgeKind.audioCodec,
+            ].contains(category)) {
+          continue;
+        }
+        filtered.add(value);
+      }
+      final visible = filtered.take(location == 'card' ? 2 : limit).toList();
+      if (settings.style == 'text') {
+        return Text(
+          visible.join(' · '),
+          style: TextStyle(
+            fontSize: 11,
+            color: overlay ? Colors.white : colors.onSurfaceVariant,
+          ),
+        );
+      }
       return Wrap(
         spacing: 4,
         runSpacing: 4,
         children: [
-          for (final value in values.take(limit))
+          for (final value in visible)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
               decoration: BoxDecoration(
                 color: overlay
                     ? Colors.black.withValues(alpha: .58)
-                    : colors.surfaceContainerHighest,
+                    : MediaBadgeData.kind(value) == MediaBadgeKind.dynamicRange
+                    ? colors.primaryContainer.withValues(alpha: .65)
+                    : colors.surfaceContainerHighest.withValues(alpha: .6),
                 borderRadius: BorderRadius.circular(5),
               ),
               child: Row(
@@ -96,7 +179,7 @@ class MediaBadges extends StatelessWidget {
                 children: [
                   if (settings.graphic) ...[
                     Icon(
-                      Icons.movie_outlined,
+                      MediaBadgeData.kind(value).icon,
                       size: 12,
                       color: overlay ? Colors.white : colors.onSurfaceVariant,
                     ),
