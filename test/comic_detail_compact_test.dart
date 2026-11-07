@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -53,6 +54,15 @@ class CompactComicSource extends FakeReadingDataSource {
     contentCalls++;
     return super.content(itemId: itemId, chapterId: chapterId);
   }
+}
+
+class LoadingAudioSource extends CompactComicSource {
+  final pending = Completer<List<SourceChapter>>();
+  @override
+  Future<SourceDetail?> detail(String id) async =>
+      SourceDetail(id: id, title: '有声作品');
+  @override
+  Future<List<SourceChapter>> chapters(String itemId) => pending.future;
 }
 
 void main() {
@@ -135,6 +145,43 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('有声源目录尚未加载时显示有声详情与收听入口', (tester) async {
+    final source = LoadingAudioSource();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ComicDetailPage(
+          library: library,
+          manager: FakeSourceManager(
+            sources: const [
+              SourceDescriptor(
+                id: 'a',
+                name: '听书源',
+                version: '1',
+                enabled: true,
+                mediaKind: 'audio',
+              ),
+            ],
+            opened: {'a': source},
+          ),
+          target: target,
+          imagePipeline: pipeline,
+          runtimeAvailable: true,
+        ),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(find.text('有声详情'), findsOneWidget);
+    expect(find.text('开始收听'), findsOneWidget);
+    expect(find.text('漫画详情'), findsNothing);
+    expect(find.text('开始阅读'), findsNothing);
+    expect(find.text('章节加载中…'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    source.pending.complete([]);
+    await tester.pumpAndSettle();
+  });
 
   test('扩展详情只解析源提供的元信息，旧格式保持兼容', () {
     final metadata = SourceDetail.parse({

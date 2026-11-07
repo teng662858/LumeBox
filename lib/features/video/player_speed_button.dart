@@ -186,6 +186,9 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                                     vertical: 1,
                                   ),
                                   side: BorderSide.none,
+                                  color: const WidgetStatePropertyAll(
+                                    Colors.transparent,
+                                  ),
                                   backgroundColor: Colors.transparent,
                                   selectedColor: Theme.of(context)
                                       .colorScheme

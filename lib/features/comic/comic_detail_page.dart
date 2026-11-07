@@ -100,6 +100,7 @@ class _ComicDetailPageState extends State<ComicDetailPage>
   bool _onShelf = false;
   static const _layoutKey = 'comic.detail.compactLayout';
   bool _compact = true, _descriptionExpanded = false, _isGallery = false;
+  bool _isAudio = false;
   static const _originalColumnsKey = 'comic.detail.originalColumns';
   int? _originalColumns;
   bool _originalSearchVisible = false;
@@ -175,6 +176,9 @@ class _ComicDetailPageState extends State<ComicDetailPage>
           descriptor != null &&
           SourcePickerGroups.groupFor(widget.library.section, descriptor) ==
               'photo';
+      setState(() {
+        _isAudio = descriptor?.isAudio == true;
+      });
       _pipeline.bindSource(source);
       // 详情页封面也在源站自己的域名上：把源站会话挂到管线上，脚本带什么它就带什么
       // （源站上了 Cloudflare 校验而图片请求不带 cf_clearance 时，封面就是一片空白）。
@@ -199,6 +203,10 @@ class _ComicDetailPageState extends State<ComicDetailPage>
       setState(() {
         _source = source;
         _detail = detail;
+        final mediaType = detail?.mediaType.toLowerCase();
+        if (mediaType != null && mediaType.isNotEmpty) {
+          _isAudio = mediaType == 'audio' || mediaType == 'audiobook';
+        }
         _loading = false;
         _chaptersLoading = true;
         _onShelf = widget.library.onShelf(
@@ -721,13 +729,17 @@ class _ComicDetailPageState extends State<ComicDetailPage>
                   ),
                   onPressed: _chapters.isEmpty ? null : _continueReading,
                   icon: Icon(
-                    _isGallery
+                    _isAudio
+                        ? Icons.headphones_rounded
+                        : _isGallery
                         ? Icons.photo_library_outlined
                         : Icons.menu_book_outlined,
                     size: 19,
                   ),
                   label: Text(
-                    _isGallery
+                    _isAudio
+                        ? (_progress == null ? '开始收听' : '继续收听')
+                        : _isGallery
                         ? '浏览图集'
                         : _progress == null
                         ? '开始阅读'
@@ -1176,7 +1188,13 @@ class _ComicDetailPageState extends State<ComicDetailPage>
       return Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
-          title: Text(_isGallery ? '图集详情' : '漫画详情'),
+          title: Text(
+            _isAudio
+                ? '有声详情'
+                : _isGallery
+                ? '图集详情'
+                : '漫画详情',
+          ),
           actions: [_layoutMenu()],
         ),
         body: SafeArea(top: false, child: _compactBody()),
@@ -1391,7 +1409,11 @@ class _ComicDetailPageState extends State<ComicDetailPage>
                         slot: 'comic_detail_page.1',
                         size: 18,
                       ),
-                      label: Text(progress == null ? '开始阅读' : '继续阅读'),
+                      label: Text(
+                        _isAudio
+                            ? (progress == null ? '开始收听' : '继续收听')
+                            : (progress == null ? '开始阅读' : '继续阅读'),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
