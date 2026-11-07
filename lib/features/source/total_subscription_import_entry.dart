@@ -42,19 +42,69 @@ class _TotalSubscriptionImportEntryState
   Future<void> _importAllSubscriptions() async {
     final route = await showGlassDialog<SubscriptionRoute>(
       context: context,
-      builder: (context) => SimpleDialog(
+      builder: (context) => AlertDialog(
         title: const Text('选择总订阅线路'),
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
-            child: Text('选择一条线路，自动导入全部订阅源。'),
-          ),
-          for (final route in SubscriptionCatalog.availableRoutes)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, route),
-              child: Text(route.label),
+        content: SizedBox(
+          width: 360,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('选择一条线路，自动导入全部订阅源。'),
+                const SizedBox(height: 20),
+                for (final route in SubscriptionCatalog.availableRoutes)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.all(16),
+                        alignment: Alignment.centerLeft,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context, route),
+                      child: Row(
+                        children: [
+                          Icon(
+                            route == SubscriptionRoute.github
+                                ? Icons.code_rounded
+                                : Icons.cloud_outlined,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  route.label,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  route == SubscriptionRoute.github
+                                      ? '从 GitHub 仓库导入'
+                                      : '从 Cloudflare 线路导入',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.chevron_right_rounded),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          SimpleDialogOption(
+          ),
+        ),
+        actions: [
+          TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('取消'),
           ),

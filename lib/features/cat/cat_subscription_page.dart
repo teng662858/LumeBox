@@ -325,12 +325,6 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
     title: '猫源配置中心',
     actions: [
       IconButton(
-        tooltip: '从本地 ZIP 导入',
-        icon: const Icon(Icons.file_open_outlined),
-        onPressed: working ? null : importLocal,
-      ),
-
-      IconButton(
         tooltip: '添加订阅',
         icon: const LumeIcon(Icons.add, slot: 'cat_subscription_page.1'),
         onPressed: working ? null : () => add(),
@@ -367,43 +361,61 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
                     ),
                   ),
           ),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.file_open_outlined),
-            label: const Text('从本地 ZIP 导入'),
-            onPressed: working ? null : importLocal,
-          ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            icon: const LumeIcon(
-              Icons.system_update_alt,
-              slot: 'cat_subscription_page.3',
+          GlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('订阅管理', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 4),
+                Text(
+                  '共 ${service.subscriptions.length} 个订阅 · ${service.subscriptions.where((s) => s.enabled).length} 个已启用',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.file_open_outlined),
+                  label: const Text('从本地 ZIP 导入'),
+                  onPressed: working ? null : importLocal,
+                ),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  icon: const LumeIcon(
+                    Icons.system_update_alt,
+                    slot: 'cat_subscription_page.3',
+                  ),
+                  label: const Text('一键更新全部订阅'),
+                  onPressed: working
+                      ? null
+                      : () async {
+                          setState(() => working = true);
+                          var failed = 0;
+                          for (final record
+                              in service.subscriptions
+                                  .where(
+                                    (record) =>
+                                        record.enabled && !record.isLocal,
+                                  )
+                                  .toList()) {
+                            try {
+                              await service.update(record);
+                            } catch (_) {
+                              failed++;
+                            }
+                          }
+                          if (mounted) {
+                            setState(() {
+                              working = false;
+                              error = failed == 0
+                                  ? null
+                                  : '$failed 个订阅更新失败，已保留旧版本';
+                            });
+                          }
+                        },
+                ),
+              ],
             ),
-            label: const Text('一键更新全部订阅'),
-            onPressed: working
-                ? null
-                : () async {
-                    setState(() => working = true);
-                    var failed = 0;
-                    for (final record
-                        in service.subscriptions
-                            .where(
-                              (record) => record.enabled && !record.isLocal,
-                            )
-                            .toList()) {
-                      try {
-                        await service.update(record);
-                      } catch (_) {
-                        failed++;
-                      }
-                    }
-                    if (mounted) {
-                      setState(() {
-                        working = false;
-                        error = failed == 0 ? null : '$failed 个订阅更新失败，已保留旧版本';
-                      });
-                    }
-                  },
           ),
+          const SizedBox(height: 20),
           TextField(
             onChanged: (value) => setState(() => sourceQuery = value),
             decoration: const InputDecoration(
@@ -414,12 +426,25 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
               hintText: '搜索猫源订阅',
             ),
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('只显示已启用'),
-            value: enabledOnly,
-            onChanged: (value) => setState(() => enabledOnly = value),
+          const SizedBox(height: 12),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              Text(
+                '我的订阅 · ${visibleSubscriptions.length}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              FilterChip(
+                label: const Text('只显示已启用'),
+                selected: enabledOnly,
+                onSelected: (value) => setState(() => enabledOnly = value),
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
 
           if (working || service.busy) ...[
             const LinearProgressIndicator(),
@@ -427,155 +452,175 @@ class _CatSubscriptionPageState extends State<CatSubscriptionPage> {
           ],
           if (error != null)
             Padding(padding: const EdgeInsets.all(12), child: Text(error!)),
+          if (visibleSubscriptions.isEmpty && !working && !service.busy)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                service.subscriptions.isEmpty
+                    ? '还没有订阅，可从本地 ZIP 导入或添加常用订阅。'
+                    : '没有匹配的订阅，试试其他关键词或关闭筛选。',
+                textAlign: TextAlign.center,
+              ),
+            ),
           for (final record in visibleSubscriptions)
-            GlassCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: SourceIcon(
-                      name: record.name,
-                      iconUrl: SourcePreferences.read(
-                        Section.cat,
-                        record.id,
-                      ).iconUrl,
-                      section: Section.cat,
-                      sourceId: record.id,
-                    ),
-                    title: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          record.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                    subtitle: Text(
-                      '${record.isLocal ? '本地 ZIP · ' : ''}${record.hash.isEmpty
-                          ? (record.error.contains('401') ? '需要作者授权' : '未下载')
-                          : record.sites.isEmpty
-                          ? '站点尚未读取'
-                          : '${record.sites.length} 个站点'} · ${record.enabled ? '已启用' : '已停用'}',
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Switch(
-                          value: record.enabled,
-                          onChanged: working || service.busy
-                              ? null
-                              : (value) => run(() async {
-                                  record.enabled = value;
-                                  await service.save();
-                                  if (value) {
-                                    if (record.hash.isEmpty) {
-                                      await service.update(record);
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: GlassCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: SourceIcon(
+                        name: record.name,
+                        iconUrl: SourcePreferences.read(
+                          Section.cat,
+                          record.id,
+                        ).iconUrl,
+                        section: Section.cat,
+                        sourceId: record.id,
+                      ),
+                      title: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            record.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                      subtitle: Text(
+                        '${record.isLocal ? '本地 ZIP · ' : ''}${record.hash.isEmpty
+                            ? (record.error.contains('401') ? '需要作者授权' : '未下载')
+                            : record.sites.isEmpty
+                            ? '站点尚未读取'
+                            : '${record.sites.length} 个站点'} · ${record.enabled ? '已启用' : '已停用'}',
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(
+                            value: record.enabled,
+                            onChanged: working || service.busy
+                                ? null
+                                : (value) => run(() async {
+                                    record.enabled = value;
+                                    await service.save();
+                                    if (value) {
+                                      if (record.hash.isEmpty) {
+                                        await service.update(record);
+                                      }
+                                      await service.refreshSites(record);
                                     }
-                                    await service.refreshSites(record);
-                                  }
-                                }),
-                        ),
-                        PopupMenuButton<String>(
-                          tooltip: '更多',
-                          enabled: !working && !service.busy,
-                          onSelected: (action) => more(record, action),
-                          itemBuilder: (_) => [
-                            PopupMenuItem(
-                              value: 'pin',
-                              child: Text(
-                                SourcePreferences.read(
-                                      Section.cat,
-                                      record.id,
-                                    ).pinned
-                                    ? '取消置顶'
-                                    : '置顶此源',
+                                  }),
+                          ),
+                          PopupMenuButton<String>(
+                            tooltip: '更多',
+                            enabled: !working && !service.busy,
+                            onSelected: (action) => more(record, action),
+                            itemBuilder: (_) => [
+                              PopupMenuItem(
+                                value: 'pin',
+                                child: Text(
+                                  SourcePreferences.read(
+                                        Section.cat,
+                                        record.id,
+                                      ).pinned
+                                      ? '取消置顶'
+                                      : '置顶此源',
+                                ),
                               ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'preferences',
-                              child: Text('源设置'),
-                            ),
+                              const PopupMenuItem(
+                                value: 'preferences',
+                                child: Text('源设置'),
+                              ),
 
-                            if (!record.isLocal)
+                              if (!record.isLocal)
+                                const PopupMenuItem(
+                                  value: 'update',
+                                  child: Text('立即更新'),
+                                ),
+                              if (!record.isLocal)
+                                CheckedPopupMenuItem(
+                                  value: 'automatic',
+                                  checked: record.automatic,
+                                  child: const Text('自动更新'),
+                                ),
+                              if (!record.isLocal)
+                                const PopupMenuItem(
+                                  value: 'auth',
+                                  child: Text('编辑地址 / 授权'),
+                                ),
                               const PopupMenuItem(
-                                value: 'update',
-                                child: Text('立即更新'),
+                                value: 'info',
+                                child: Text('订阅信息'),
                               ),
-                            if (!record.isLocal)
-                              CheckedPopupMenuItem(
-                                value: 'automatic',
-                                checked: record.automatic,
-                                child: const Text('自动更新'),
-                              ),
-                            if (!record.isLocal)
+                              if (!record.isLocal)
+                                const PopupMenuItem(
+                                  value: 'copy',
+                                  child: Text('复制订阅链接'),
+                                ),
                               const PopupMenuItem(
-                                value: 'auth',
-                                child: Text('编辑地址 / 授权'),
+                                value: 'remove',
+                                child: Text('移除订阅'),
                               ),
-                            const PopupMenuItem(
-                              value: 'info',
-                              child: Text('订阅信息'),
-                            ),
-                            if (!record.isLocal)
-                              const PopupMenuItem(
-                                value: 'copy',
-                                child: Text('复制订阅链接'),
-                              ),
-                            const PopupMenuItem(
-                              value: 'remove',
-                              child: Text('移除订阅'),
-                            ),
-                          ],
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (record.error.isNotEmpty)
+                      Text(
+                        record.error,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    if (record.error.contains('401'))
+                      TextButton.icon(
+                        onPressed: working
+                            ? null
+                            : () => add(name: record.name, url: record.url),
+                        icon: const LumeIcon(
+                          Icons.key_outlined,
+                          slot: 'cat_subscription_page.5',
                         ),
-                      ],
-                    ),
-                  ),
-                  if (record.error.isNotEmpty)
-                    Text(
-                      record.error,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  if (record.error.contains('401'))
-                    TextButton.icon(
-                      onPressed: working
-                          ? null
-                          : () => add(name: record.name, url: record.url),
-                      icon: const LumeIcon(
-                        Icons.key_outlined,
-                        slot: 'cat_subscription_page.5',
+                        label: const Text('填写作者提供的订阅授权'),
+                      )
+                    else if (record.hash.isEmpty || record.sites.isEmpty)
+                      TextButton.icon(
+                        onPressed: working || service.busy
+                            ? null
+                            : () => run(() async {
+                                record.enabled = true;
+                                await service.save();
+                                await service.refreshSites(record);
+                              }),
+                        icon: const LumeIcon(
+                          Icons.refresh,
+                          slot: 'cat_subscription_page.6',
+                        ),
+                        label: Text(record.hash.isEmpty ? '下载并读取站点' : '重新读取站点'),
                       ),
-                      label: const Text('填写作者提供的订阅授权'),
-                    )
-                  else if (record.hash.isEmpty || record.sites.isEmpty)
-                    TextButton.icon(
-                      onPressed: working || service.busy
-                          ? null
-                          : () => run(() async {
-                              record.enabled = true;
-                              await service.save();
-                              await service.refreshSites(record);
-                            }),
-                      icon: const LumeIcon(
-                        Icons.refresh,
-                        slot: 'cat_subscription_page.6',
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Divider(height: 1),
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: working || service.busy
+                            ? null
+                            : () => configure(record),
+                        icon: const LumeIcon(
+                          Icons.cloud_outlined,
+                          slot: 'cat_subscription_page.7',
+                        ),
+                        label: Text(record.enabled ? '网盘登录 · 站点配置' : '启用并打开配置'),
                       ),
-                      label: Text(record.hash.isEmpty ? '下载并读取站点' : '重新读取站点'),
                     ),
-                  TextButton.icon(
-                    onPressed: working || service.busy
-                        ? null
-                        : () => configure(record),
-                    icon: const LumeIcon(
-                      Icons.cloud_outlined,
-                      slot: 'cat_subscription_page.7',
-                    ),
-                    label: Text(record.enabled ? '网盘登录 · 站点配置' : '启用并打开配置'),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           const SizedBox(height: 20),
