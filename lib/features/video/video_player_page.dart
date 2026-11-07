@@ -4256,10 +4256,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       effectModule: GlassModule.video,
       title: widget.title ?? _target?.title ?? '播放',
       actions: [
-        _compactIcon(
-          icon: VideoPlayerPage.playerKernelIcon,
-          tooltip: '播放内核',
-          onPressed: _openKernelPicker,
+        _kernelControl(
+          (open) => _compactIcon(
+            icon: VideoPlayerPage.playerKernelIcon,
+            tooltip: '播放内核',
+            onPressed: open,
+          ),
         ),
       ],
       behindBar: true,
@@ -4770,10 +4772,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 ),
                 const SizedBox(width: 4),
                 if (!narrow) ...[_buildPipButton(), const SizedBox(width: 8)],
-                _topIcon(
-                  icon: VideoPlayerPage.playerKernelIcon,
-                  tooltip: '播放内核',
-                  onPressed: _openKernelPicker,
+                _kernelControl(
+                  (open) => _topIcon(
+                    icon: VideoPlayerPage.playerKernelIcon,
+                    tooltip: '播放内核',
+                    onPressed: open,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 _topIcon(
@@ -4789,56 +4793,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     },
   );
 
-  Future<void> _openKernelPicker() async {
-    _cancelAutoHide();
-    final selected = await _playbackMenu<PlayerKernel>(
-      context: context,
-      compact: true,
-      useSafeArea: true,
-      isScrollControlled: true,
-      builder: (context) => SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      '播放内核',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: LumeTypography.titleSize,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: '关闭',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const LumeIcon(
-                      Icons.close,
-                      slot: 'video_player_page.2',
-                    ),
-                  ),
-                ],
-              ),
-              PlayerKernelPicker(
-                selected: _settings.kernel,
-                catalog: _catalog,
-                onChanged: (kernel) => Navigator.pop(context, kernel),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (!mounted) return;
-    if (selected != null && selected != _settings.kernel) {
-      await _applySettings(_settings.copyWith(kernel: selected));
-    }
-    _scheduleAutoHide();
-  }
+  Widget _kernelControl(Widget Function(VoidCallback open) builder) =>
+      PlayerKernelButton(
+        selected: _settings.kernel,
+        catalog: _catalog,
+        onOpen: _cancelAutoHide,
+        onClose: _scheduleAutoHide,
+        onChanged: (kernel) {
+          if (kernel != _settings.kernel) {
+            unawaited(_applySettings(_settings.copyWith(kernel: kernel)));
+          }
+        },
+        builder: builder,
+      );
 
   /// 顶栏上的紧凑图标按钮（白字 + 投影，压在画面上也看得清）。
   Widget _topIcon({

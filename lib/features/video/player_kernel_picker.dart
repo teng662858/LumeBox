@@ -6,6 +6,83 @@ import '../../core/player/player_settings.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/video_glass_surface.dart';
 
+/// 与倍速入口相同的锚点小菜单，点击选项后立即收起。
+class PlayerKernelButton extends StatefulWidget {
+  const PlayerKernelButton({
+    super.key,
+    required this.selected,
+    required this.catalog,
+    required this.onChanged,
+    required this.builder,
+    this.onOpen,
+    this.onClose,
+  });
+  final PlayerKernel selected;
+  final PlayerKernelCatalog catalog;
+  final ValueChanged<PlayerKernel> onChanged;
+  final Widget Function(VoidCallback open) builder;
+  final VoidCallback? onOpen, onClose;
+  @override
+  State<PlayerKernelButton> createState() => _PlayerKernelButtonState();
+}
+
+class _PlayerKernelButtonState extends State<PlayerKernelButton> {
+  final menu = MenuController();
+  @override
+  Widget build(BuildContext context) => MenuAnchor(
+    controller: menu,
+    consumeOutsideTap: true,
+    onOpen: widget.onOpen,
+    onClose: widget.onClose,
+    style: MenuStyle(
+      padding: const WidgetStatePropertyAll(EdgeInsets.all(12)),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+    ),
+    menuChildren: [
+      SizedBox(
+        key: const Key('player-kernel-menu'),
+        width: 256,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('播放内核'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final kernel in PlayerKernel.values)
+                  Tooltip(
+                    message:
+                        widget.catalog.unavailableReason(kernel) ??
+                        kernel.label,
+                    child: ChoiceChip(
+                      label: Text(kernel.label),
+                      selected: widget.selected == kernel,
+                      showCheckmark: false,
+                      onSelected: widget.catalog.isAvailable(kernel)
+                          ? (_) {
+                              menu.close();
+                              widget.onChanged(kernel);
+                            }
+                          : null,
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ],
+    builder: (context, controller, child) => widget.builder(
+      () => controller.isOpen ? controller.close() : controller.open(),
+    ),
+  );
+}
+
 /// 播放内核选择列表。
 ///
 /// **视频板块的右上角快捷菜单与全局设置的逃生入口共用这一份 UI**——两处显示与
