@@ -156,7 +156,8 @@ class _DanmakuPanelFrameState extends State<DanmakuPanelFrame>
             child: VideoGlassSurface(
               radius: edge ? 0 : 24,
               dark: Theme.of(context).brightness == Brightness.dark,
-              materialOpacity: VideoGlassSurface.panelOpacity,
+              materialOpacity: .94,
+              filledOptions: true,
               child: MediaQuery.removeViewInsets(
                 context: context,
                 removeBottom: true,

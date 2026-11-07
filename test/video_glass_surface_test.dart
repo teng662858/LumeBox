@@ -9,6 +9,33 @@ import 'package:lume_box/shared/widgets/native_glass_surfaces.dart';
 import 'package:lume_box/shared/widgets/video_glass_surface.dart';
 
 void main() {
+  testWidgets('面板恢复选项底色，普通菜单仍透明', (tester) async {
+    for (final filled in [false, true]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VideoGlassSurface(
+            filledOptions: filled,
+            child: const ChoiceChip(
+              key: Key('option'),
+              label: Text('选项'),
+              selected: true,
+            ),
+          ),
+        ),
+      );
+      final colors = Theme.of(tester.element(find.byKey(const Key('option'))))
+          .chipTheme
+          .color!;
+      for (final states in [
+        <WidgetState>{},
+        {WidgetState.selected},
+      ]) {
+        final color = colors.resolve(states)!;
+        expect(color.a, filled ? greaterThan(0) : 0);
+      }
+    }
+  });
+
   testWidgets('玻璃保留背景冷暖颜色，文字图标不参与模糊和透明度', (tester) async {
     final capture = GlobalKey();
     await tester.pumpWidget(

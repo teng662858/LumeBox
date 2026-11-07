@@ -13,6 +13,7 @@ class VideoGlassSurface extends StatelessWidget {
     this.radius = 28,
     this.dark = false,
     this.materialOpacity = opacity,
+    this.filledOptions = false,
   });
 
   static const tint = Colors.white;
@@ -23,6 +24,7 @@ class VideoGlassSurface extends StatelessWidget {
   final double radius;
   final bool dark;
   final double materialOpacity;
+  final bool filledOptions;
 
   @override
   Widget build(BuildContext context) {
@@ -44,12 +46,24 @@ class VideoGlassSurface extends StatelessWidget {
       scaffoldBackgroundColor: Colors.transparent,
       canvasColor: Colors.transparent,
       disabledColor: const Color(0xFF777880),
-      chipTheme: inherited.chipTheme.copyWith(
-        color: const WidgetStatePropertyAll(Colors.transparent),
-        backgroundColor: Colors.transparent,
-        selectedColor: Colors.transparent,
-        disabledColor: Colors.transparent,
-      ),
+      chipTheme: filledOptions
+          ? inherited.chipTheme.copyWith(
+              color: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.disabled)) {
+                  return scheme.onSurface.withValues(alpha: .06);
+                }
+                return states.contains(WidgetState.selected)
+                    ? scheme.primaryContainer
+                    : scheme.surfaceContainerHighest;
+              }),
+              labelStyle: TextStyle(color: scheme.onSurface),
+            )
+          : inherited.chipTheme.copyWith(
+              color: const WidgetStatePropertyAll(Colors.transparent),
+              backgroundColor: Colors.transparent,
+              selectedColor: Colors.transparent,
+              disabledColor: Colors.transparent,
+            ),
       dividerColor: Colors.black.withValues(alpha: .12),
       textTheme: inherited.textTheme.apply(bodyColor: ink, displayColor: ink),
       iconTheme: IconThemeData(color: ink),
