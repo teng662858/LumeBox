@@ -29,6 +29,7 @@ import '../../core/net/ios_verified_webview.dart';
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart' show listEquals, mapEquals;
@@ -1810,24 +1811,33 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: const Color(0xCC1C1C1E),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0x33FFFFFF), width: .5),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-            child: Text(
-              hint,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 13,
-                height: 1.25,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFFF6F6F6),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0xA6222429),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0x24FFFFFF), width: .5),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 11,
+                ),
+                child: Text(
+                  hint,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.25,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFFF6F6F6),
+                  ),
+                ),
               ),
             ),
           ),
@@ -4994,68 +5004,97 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         ),
       );
       final playing = snapshot.playing && snapshot.error == null;
-      return Row(
-        key: const Key('fullscreen-actions'),
-        children: [
-          action(
-            playing ? '暂停' : '播放',
-            playing ? '暂停' : '播放',
-            playing ? Icons.pause : Icons.play_arrow,
-            _player == null
-                ? null
-                : () => unawaited(playing ? _player!.pause() : _player!.play()),
-          ),
-          if (!compact) ...[
-            const SizedBox(width: 4),
-            action(
-              '下集',
-              '下一集 · ${_nextEpisodeBuffer.status}',
-              Icons.skip_next,
-              target == null || _advancing
-                  ? null
-                  : () => _playEpisodeAt(target.chapterIndex + 1),
+      final transport = <Widget>[
+        action(
+          playing ? '暂停' : '播放',
+          playing ? '暂停' : '播放',
+          playing ? Icons.pause : Icons.play_arrow,
+          _player == null
+              ? null
+              : () => unawaited(playing ? _player!.pause() : _player!.play()),
+        ),
+        action(
+          '下集',
+          '下一集 · ${_nextEpisodeBuffer.status}',
+          Icons.skip_next,
+          target == null || _advancing
+              ? null
+              : () => _playEpisodeAt(target.chapterIndex + 1),
+        ),
+        SizedBox(
+          width: 82,
+          height: _box,
+          child: _skipQuickButton(withIcon: true),
+        ),
+      ];
+      final shortcuts = <Widget>[
+        action(
+          '片头尾',
+          '片头片尾设置',
+          Icons.fast_forward_outlined,
+          _openOriginalIntro,
+        ),
+        Semantics(
+          toggled: _settings.swipeUpNext,
+          child: action(
+            '上滑',
+            '上滑切下一集：${_settings.swipeUpNext ? '开' : '关'}',
+            _settings.swipeUpNext ? Icons.swipe_up : Icons.swipe_up_outlined,
+            () => unawaited(
+              _applySettings(
+                _settings.copyWith(swipeUpNext: !_settings.swipeUpNext),
+              ),
             ),
-            const SizedBox(width: 4),
-            SizedBox(
-              width: 82,
-              height: _box,
-              child: _skipQuickButton(withIcon: true),
+          ),
+        ),
+      ];
+      final trailing = <Widget>[
+        action(
+          '弹幕',
+          _danmakuSettings.enabled ? '弹幕：开' : '弹幕：关',
+          Icons.forum_outlined,
+          _openDanmakuSettings,
+          forceText: true,
+        ),
+        _speedControl(
+          (open) => action(
+            PlayerSpeedButton.label(_settings.speed),
+            '播放速度（${_settings.speed}x）',
+            Icons.speed,
+            open,
+            forceText: true,
+            onLongPress: _settings.speed == 1
+                ? null
+                : () => unawaited(_applySettings(_settings.copyWith(speed: 1))),
+          ),
+        ),
+        action(
+          '选集',
+          '线路 / 选集',
+          Icons.grid_view_rounded,
+          _openSourceSheet,
+          forceText: true,
+        ),
+      ];
+      if (compact) {
+        return Column(
+          key: const Key('fullscreen-actions'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [...transport, ...shortcuts],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: trailing,
             ),
           ],
-          const Spacer(),
-          Semantics(
-            toggled: _danmakuSettings.enabled,
-            child: action(
-              '弹幕',
-              _danmakuSettings.enabled ? '弹幕：开' : '弹幕：关',
-              Icons.forum_outlined,
-              _openDanmakuSettings,
-              forceText: true,
-            ),
-          ),
-          const SizedBox(width: 4),
-          _speedControl(
-            (open) => action(
-              PlayerSpeedButton.label(_settings.speed),
-              '播放速度（${_settings.speed}x）',
-              Icons.speed,
-              open,
-              forceText: true,
-              onLongPress: _settings.speed == 1
-                  ? null
-                  : () =>
-                        unawaited(_applySettings(_settings.copyWith(speed: 1))),
-            ),
-          ),
-          const SizedBox(width: 4),
-          action(
-            '选集',
-            '线路 / 选集',
-            Icons.grid_view_rounded,
-            _openSourceSheet,
-            forceText: true,
-          ),
-        ],
+        );
+      }
+      return Row(
+        key: const Key('fullscreen-actions'),
+        children: [...transport, const Spacer(), ...trailing],
       );
     },
   );
@@ -5065,9 +5104,20 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   /// 文字按钮与图标按钮走同一个 [VideoPlayerPage.controlBox] 触达盒、同一个 13 号字，
   /// 因此一排看上去是等高等宽的方块，而不是「文字比图标大一号」。
   List<Widget> _essentialActions() => <Widget>[
+    _compactIcon(
+      icon: Icons.skip_next,
+      tooltip: '下一集',
+      onPressed: _target == null || _advancing
+          ? null
+          : () => _playEpisodeAt(_target!.chapterIndex + 1),
+    ),
     _actionLabel('选集', '线路 / 选集', _openSourceSheet),
     _skipQuickButton(),
-    _actionLabel('片头尾', '片头片尾设置', _openOriginalIntro),
+    _compactIcon(
+      icon: Icons.fast_forward_outlined,
+      tooltip: '片头片尾设置',
+      onPressed: _openOriginalIntro,
+    ),
     if (_media != null) _actionLabel('画质', '清晰度', _openQualityMenu),
     _actionLabel(
       '弹',
@@ -6205,8 +6255,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   /// 控制栏右侧的小图标），其余按钮的居中排布与大小、间距、颜色都不动。
   Widget _buildSecondaryControls() => Padding(
     padding: const EdgeInsets.only(top: 4),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+    child: Wrap(
+      alignment: WrapAlignment.spaceEvenly,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: _essentialActions(),
     ),
   );

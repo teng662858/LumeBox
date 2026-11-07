@@ -406,6 +406,37 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
             settings.copyWith(gestures: settings.gestures.copyWith(enabled: v)),
           ),
         ),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                '竖屏短剧上滑切下一集',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: LumeTypography.titleSize,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ),
+            Switch(
+              value: settings.swipeUpNext,
+              onChanged: (value) =>
+                  _update(settings.copyWith(swipeUpNext: value)),
+            ),
+          ],
+        ),
+        Text(
+          settings.swipeUpNext
+              ? '竖屏时在画面中间上滑即切下一集（左右两侧仍是亮度/音量）'
+              : '关闭时画面中间的竖直滑动不做动作',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: LumeTypography.descriptionSize,
+            height: 1.4,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
         for (final item in [
           ('左侧上下滑调亮度', settings.gestures.brightness, 'brightness'),
           ('右侧上下滑调音量', settings.gestures.volume, 'volume'),
@@ -952,37 +983,6 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  '竖屏短剧上滑切下一集',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: LumeTypography.titleSize,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-              ),
-              Switch(
-                value: settings.swipeUpNext,
-                onChanged: (value) =>
-                    _update(settings.copyWith(swipeUpNext: value)),
-              ),
-            ],
-          ),
-          Text(
-            settings.swipeUpNext
-                ? '竖屏时在画面中间上滑即切下一集（左右两侧仍是亮度/音量）'
-                : '关闭时画面中间的竖直滑动不做动作',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: LumeTypography.descriptionSize,
-              height: 1.4,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
                   '快进吸附关键帧（实验）',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
@@ -1058,34 +1058,31 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
             ],
           ),
           // 内置字幕轨 / 外挂字幕：不支持的项仍然显示，点了弹提示。
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: <Widget>[
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: capabilities.subtitleTracks
-                      ? widget.onPickSubtitleTrack
-                      : () => _unsupported(context),
-                  icon: const LumeIcon(
-                    Icons.subtitles_outlined,
-                    slot: 'player_settings_sheet.2',
-                    size: 18,
-                  ),
-                  label: const Text('字幕轨'),
+              OutlinedButton.icon(
+                onPressed: capabilities.subtitleTracks
+                    ? widget.onPickSubtitleTrack
+                    : () => _unsupported(context),
+                icon: const LumeIcon(
+                  Icons.subtitles_outlined,
+                  slot: 'player_settings_sheet.2',
+                  size: 18,
                 ),
+                label: const Text('字幕轨'),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: capabilities.externalSubtitle
-                      ? widget.onPickSubtitleFile
-                      : () => _unsupported(context),
-                  icon: const LumeIcon(
-                    Icons.file_open_outlined,
-                    slot: 'player_settings_sheet.3',
-                    size: 18,
-                  ),
-                  label: const Text('外挂字幕'),
+              OutlinedButton.icon(
+                onPressed: capabilities.externalSubtitle
+                    ? widget.onPickSubtitleFile
+                    : () => _unsupported(context),
+                icon: const LumeIcon(
+                  Icons.file_open_outlined,
+                  slot: 'player_settings_sheet.3',
+                  size: 18,
                 ),
+                label: const Text('外挂字幕'),
               ),
             ],
           ),
