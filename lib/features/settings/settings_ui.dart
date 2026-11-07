@@ -642,14 +642,43 @@ class _SettingsHomeState extends State<SettingsHome> {
               ),
             ],
           ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (var i = 0; i < shortcuts.length; i++) ...[
-                if (i > 0) const SizedBox(width: 10),
-                Expanded(child: _SettingsShortcutTile(shortcut: shortcuts[i])),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: Theme.of(context).brightness == Brightness.dark
+                        ? .12
+                        : .045,
+                  ),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
+                ),
               ],
-            ],
+            ),
+            child: FrostedGlassWidget(
+              key: const ValueKey('settings-shortcuts-glass'),
+              nativeGlass: true,
+              translucentOverlay: true,
+              neutralTint: true,
+              radius: 24,
+              opacity: .2,
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final shortcut in shortcuts)
+                        Expanded(
+                          child: _SettingsShortcutTile(shortcut: shortcut),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 18),
         ],
@@ -673,40 +702,69 @@ class _SettingsHomeState extends State<SettingsHome> {
   }
 }
 
-class _SettingsShortcutTile extends StatelessWidget {
+class _SettingsShortcutTile extends StatefulWidget {
   const _SettingsShortcutTile({required this.shortcut});
   final SettingsShortcut shortcut;
   @override
-  Widget build(BuildContext context) => FrostedGlassWidget(
-    key: ValueKey('settings-shortcut-glass-${shortcut.id}'),
-    nativeGlass: true,
-    translucentOverlay: true,
-    neutralTint: true,
-    interactive: true,
-    radius: 18,
-    opacity: .16,
-    child: InkWell(
+  State<_SettingsShortcutTile> createState() => _SettingsShortcutTileState();
+}
+
+class _SettingsShortcutTileState extends State<_SettingsShortcutTile> {
+  bool _pressed = false;
+  @override
+  Widget build(BuildContext context) {
+    final shortcut = widget.shortcut;
+    final (icon, color) = switch (shortcut.id) {
+      'player' => (Icons.play_circle_filled, const Color(0xFF7154CE)),
+      'subscriptions' => (Icons.subscriptions, const Color(0xFF447EB4)),
+      'sources' => (Icons.layers, const Color(0xFF378B8A)),
+      'appearance' => (Icons.palette, const Color(0xFFAA6194)),
+      'reading' => (Icons.menu_book, const Color(0xFF8862B5)),
+      'network' => (Icons.wifi, const Color(0xFFAC783F)),
+      'storage' => (Icons.storage, const Color(0xFF478764)),
+      _ => (shortcut.icon, LumeTheme.accent),
+    };
+    final duration = Duration(
+      milliseconds: MediaQuery.disableAnimationsOf(context) ? 0 : 140,
+    );
+    return InkWell(
       key: ValueKey('settings-shortcut-${shortcut.id}'),
       borderRadius: BorderRadius.circular(18),
       onTap: shortcut.onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 18),
-        child: Column(
-          children: [
-            Icon(shortcut.icon, color: LumeTheme.accent, size: 29),
-            const SizedBox(height: 10),
-            Text(
-              shortcut.title,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 15),
-            ),
-          ],
+      onHighlightChanged: (value) => setState(() => _pressed = value),
+      splashColor: color.withValues(alpha: .08),
+      highlightColor: Colors.transparent,
+      child: AnimatedContainer(
+        duration: duration,
+        decoration: BoxDecoration(
+          color: _pressed ? color.withValues(alpha: .09) : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
+        child: AnimatedScale(
+          scale: _pressed ? .96 : 1,
+          duration: duration,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 29),
+              const SizedBox(height: 10),
+              Text(
+                shortcut.title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _SettingsDirectoryRow extends StatelessWidget {

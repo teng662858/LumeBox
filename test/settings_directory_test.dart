@@ -133,14 +133,18 @@ void main() {
       final finder = find.byKey(ValueKey('settings-shortcut-$id'));
       boxes.add(tester.getRect(finder));
       expect(
-        tester
-            .widget<FrostedGlassWidget>(
-              find.byKey(ValueKey('settings-shortcut-glass-$id')),
-            )
-            .nativeGlass,
-        isTrue,
+        find.descendant(of: finder, matching: find.byType(FrostedGlassWidget)),
+        findsNothing,
       );
     }
+    expect(
+      tester
+          .widget<FrostedGlassWidget>(
+            find.byKey(const ValueKey('settings-shortcuts-glass')),
+          )
+          .nativeGlass,
+      isTrue,
+    );
     expect(boxes.map((r) => r.top).toSet(), hasLength(1), reason: '四项在同一行');
     expect(boxes[0].left, lessThan(boxes[1].left));
     expect(boxes[2].left, lessThan(boxes[3].left));
