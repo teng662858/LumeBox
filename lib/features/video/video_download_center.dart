@@ -1,3 +1,6 @@
+import '../../core/experience/content_center.dart';
+import '../../core/reading/reading.dart';
+import '../../core/experience/offline_policy.dart';
 import '../../core/source/source_runtime_pins.dart';
 import '../../core/media/playback_focus.dart';
 import '../../core/net/lume_net.dart';
@@ -231,13 +234,53 @@ class VideoDownloadCenter extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<int> pruneWatched() async {
+    await boot();
+    if (!ContentCenter.instance.enabled('cleanupWatched')) return 0;
+    final library = await ReadingLibrary.open(Section.video);
+    var removed = 0;
+    for (final task in List<VideoDownloadTask>.of(tasks)) {
+      if (task.state != 'done' || identical(_active, task)) continue;
+      final progress = library.videoEpisodeProgress(
+        task.itemId,
+        task.chapterId,
+        sourceId: task.sourceId,
+      );
+      if (progress?.isFinished != true) continue;
+      final file = localFile(task);
+      if (!await file.exists() ||
+          DateTime.now().difference(await file.lastModified()) <
+              const Duration(days: 7)) {
+        continue;
+      }
+      await remove(task, deleteFiles: true);
+      removed++;
+    }
+    return removed;
+  }
+
+  Future<void> _policyCheckpoint(VideoDownloadTask task) async {
+    _check(task);
+    final reason = await OfflinePolicy.blocked();
+    if (reason != null) throw OfflinePolicyPaused(reason);
+  }
+
   Future<void> _drain() async {
     if (_draining) return;
     _draining = true;
     try {
+      await pruneWatched();
       while (true) {
         final task = tasks.where((t) => t.state == 'queued').firstOrNull;
         if (task == null) break;
+        final blocked = await OfflinePolicy.blocked();
+        if (blocked != null) {
+          task.state = 'paused';
+          task.error = blocked;
+          await _save();
+          notifyListeners();
+          continue;
+        }
         _active = task;
         task.state = 'running';
         task.error = null;
@@ -303,6 +346,8 @@ class VideoDownloadCenter extends ChangeNotifier {
             ..reset()
             ..start();
           _speedBytes = 0;
+          final blockedNow = await OfflinePolicy.blocked();
+          if (blockedNow != null) throw OfflinePolicyPaused(blockedNow);
           await _download(task, uri, content.headers);
           _check(task);
           if (task.hasLocalPlaylist) {
@@ -312,7 +357,11 @@ class VideoDownloadCenter extends ChangeNotifier {
           task.state = 'done';
         } catch (error) {
           if (task.running) {
-            task.state = task.hasLocalPlaylist ? 'merge_failed' : 'failed';
+            task.state = error is OfflinePolicyPaused
+                ? 'paused'
+                : task.hasLocalPlaylist
+                ? 'merge_failed'
+                : 'failed';
             task.error = SensitiveData.redact('$error')
                 .replaceAll(RegExp(r'https?://[^\s]+'), '[地址]');
           }
@@ -560,12 +609,18 @@ class VideoDownloadCenter extends ChangeNotifier {
     );
     final watch = Stopwatch()..start();
     var interval = 0;
+    var policyBytes = 0;
     try {
       await for (final bytes in stream()) {
         _check(task);
         sink.add(bytes);
         task.bytes += bytes.length;
         interval += bytes.length;
+        policyBytes += bytes.length;
+        if (policyBytes >= 8 * 1024 * 1024) {
+          await _policyCheckpoint(task);
+          policyBytes = 0;
+        }
         if (watch.elapsedMilliseconds >= 300) {
           task.bytesPerSecond = interval * 1000 / watch.elapsedMilliseconds;
           interval = 0;
@@ -762,7 +817,10 @@ class VideoDownloadCenter extends ChangeNotifier {
           _notifyProgress();
         }());
         output.add(relative);
-        if (pending.length >= (_yieldToPlayback ? 1 : 3)) await flushSegments();
+        if (pending.length >= (_yieldToPlayback ? 1 : 3)) {
+          await _policyCheckpoint(task);
+          await flushSegments();
+        }
       } else {
         output.add(line);
       }

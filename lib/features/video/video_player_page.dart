@@ -1,3 +1,7 @@
+import '../experience/clip_editor.dart';
+import '../experience/subtitle_center_page.dart';
+import '../../core/experience/content_center.dart';
+import 'video_download_center.dart';
 import '../../shared/widgets/media_badges.dart';
 import 'source_playback_profiles.dart';
 import '../../core/source/source_runtime_pins.dart';
@@ -24,7 +28,10 @@ import 'playback_glass.dart';
 import 'playback_failure_panel.dart';
 import '../../core/session/app_preferences.dart';
 
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File, Directory;
+
+import 'package:crypto/crypto.dart' show sha256;
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/net/ios_verified_webview.dart';
 
@@ -449,6 +456,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   bool _returnedFromBackground = false;
   bool _recoveringPlayback = false;
   bool _rangeFallbackAttempted = false;
+  final Set<String> _recoveryLines = {};
+  bool _autoRecovering = false;
+  String? _prefetchedEpisode;
   Duration _healthyPosition = Duration.zero;
   AppLifecycleState _lifecycle = AppLifecycleState.resumed;
 
@@ -1058,6 +1068,46 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _cancelAutoHide();
       _logPlaybackFailure(snapshot!);
       final error = snapshot.error!.toLowerCase();
+      if (ContentCenter.instance.enabled('autoRecover') &&
+          !_autoRecovering &&
+          !_switchingQuality &&
+          _target != null &&
+          !error.contains('403') &&
+          !error.contains('401') &&
+          !error.contains('-12939') &&
+          !error.contains('byte range')) {
+        _autoRecovering = true;
+        scheduleMicrotask(() async {
+          try {
+            final target = _target;
+            final source = await _openSource();
+            if (target == null || source == null || !mounted) return;
+            final all = await VideoEpisodeCatalog.load(source, target.itemId);
+            if (!mounted || _target?.isSameEpisode(target) != true) return;
+            final current = all
+                .where((c) => c.id == target.chapterId)
+                .firstOrNull;
+            if (current == null) return;
+            final group = VideoEpisodeCatalog.group(all);
+            final line = group.keys
+                .where(
+                  (line) =>
+                      line != VideoEpisodeCatalog.lineOf(current) &&
+                      !_recoveryLines.contains('${target.identity}:$line'),
+                )
+                .firstOrNull;
+            if (line != null) {
+              _recoveryLines.add('${target.identity}:$line');
+              _showToast('播放失败，正在尝试备用线路：$line');
+              await _offerAlternativeLines(selectedLine: line);
+            }
+          } catch (_) {
+            if (mounted) _showToast('自动恢复未成功，可手动换源或重试');
+          } finally {
+            _autoRecovering = false;
+          }
+        });
+      }
       if (!_rangeFallbackAttempted &&
           _settings.kernel == PlayerKernel.avplayer &&
           _catalog.isAvailable(PlayerKernel.mpv) &&
@@ -1080,6 +1130,48 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       // 首帧到了（播放中且不在缓冲）才去排测速：起播抢带宽的事不做（见
       // 片头片尾：每次快照变化判一次（判定本身是纯函数，跳过一次后不再重复）。
       _scheduleSourceValidation(snapshot);
+      if (playing &&
+          ContentCenter.instance.enabled('autoNextDownloads') &&
+          _target != null &&
+          _prefetchedEpisode != _target!.chapterId) {
+        final target = _target!;
+        _prefetchedEpisode = target.chapterId;
+        unawaited(() async {
+          try {
+            final source = await _openSource();
+            if (source == null) return;
+            final all = await VideoEpisodeCatalog.load(source, target.itemId);
+            if (!mounted || _target?.isSameEpisode(target) != true) return;
+            final current = all
+                .where((c) => c.id == target.chapterId)
+                .firstOrNull;
+            if (current == null) return;
+            final line = all
+                .where(
+                  (c) =>
+                      VideoEpisodeCatalog.lineOf(c) ==
+                      VideoEpisodeCatalog.lineOf(current),
+                )
+                .toList();
+            final index = line.indexOf(current);
+            await VideoDownloadCenter.instance.enqueue(
+              sourceId: target.sourceId,
+              itemId: target.itemId,
+              title: target.title,
+              chapters: line
+                  .skip(index + 1)
+                  .take(
+                    ContentCenter.instance
+                        .number('nextDownloads', 2)
+                        .clamp(1, 5),
+                  )
+                  .toList(),
+            );
+          } catch (_) {
+            /* Optional offline prefetch must not interrupt playback. */
+          }
+        }());
+      }
       final stats = _player?.stats.value;
       final bufferedAhead = stats?.buffered ?? Duration.zero;
       final probeAllowed = PlaybackSpeedMeter.canProbeInBackground(
@@ -3898,6 +3990,25 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               ),
             ),
 
+            if (_target != null)
+              ListTile(
+                leading: const Icon(Icons.bookmark_add_outlined),
+                title: const Text('保存当前时间点到摘录'),
+                onTap: () {
+                  final target = _target!;
+                  saveContentClip(
+                    context,
+                    ContentRef(
+                      _library?.section ?? Section.video,
+                      target.sourceId,
+                      target.itemId,
+                      target.title,
+                    ),
+                    chapter: target.chapterIndex,
+                    seconds: _player?.snapshot.value.position.inSeconds,
+                  );
+                },
+              ),
             Text(
               supported
                   ? '前向缓冲 ${buffer == 0 ? '自动' : '$buffer 秒'}'
@@ -4021,8 +4132,46 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   }
 
   /// 按设置里的“字幕语言”自动选一次字幕；用户手动选过就不再覆盖。
+  String? get _externalSubtitleKey => _target == null
+      ? null
+      : 'video.externalSubtitle.${_target!.identity}.${_target!.chapterId}';
+  Future<void> _rememberExternalSubtitle(String path) async {
+    _preferredSubtitleApplied = true;
+    final key = _externalSubtitleKey;
+    if (!_settings.presentation.rememberSubtitle ||
+        key == null ||
+        !await File(path).exists()) {
+      return;
+    }
+    final directory = Directory(
+      '${(await getApplicationSupportDirectory()).path}/external_subtitles',
+    );
+    await directory.create(recursive: true);
+    final name = '${sha256.convert(utf8.encode(key))}.srt';
+    final target = File('${directory.path}/$name');
+    if (File(path).absolute.path != target.absolute.path) {
+      await File(path).copy(target.path);
+    }
+    _library?.setSetting(key, name);
+  }
+
   Future<void> _applyPreferredSubtitle() async {
     if (_preferredSubtitleApplied || !_settings.subtitlesEnabled) return;
+    final externalKey = _externalSubtitleKey;
+    if (_settings.presentation.rememberSubtitle && externalKey != null) {
+      final name = _library?.setting(externalKey);
+      if (name != null && RegExp(r'^[a-f0-9]{64}\.srt$').hasMatch(name)) {
+        final file = File(
+          '${(await getApplicationSupportDirectory()).path}/external_subtitles/$name',
+        );
+        if (await file.exists() &&
+            _player != null &&
+            await _player!.loadSubtitleFile(file.path)) {
+          _preferredSubtitleApplied = true;
+          return;
+        }
+      }
+    }
     var preference = _settings.presentation.subtitleLanguage;
     Map? remembered;
     final memoryKey = _subtitleMemoryKey;
@@ -4136,6 +4285,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         title: const Text('导入外挂字幕'),
         children: [
           SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'center'),
+            child: const Text('在线搜索／双语字幕'),
+          ),
+          SimpleDialogOption(
             onPressed: () => Navigator.pop(context, 'file'),
             child: const Text('选择本地文件'),
           ),
@@ -4147,6 +4300,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       ),
     );
     if (!mounted || source == null) return;
+    if (source == 'center') {
+      final path = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              SubtitleCenterPage(title: _target?.title ?? widget.title ?? ''),
+        ),
+      );
+      if (!mounted || path == null) return;
+      final ok = await player.loadSubtitleFile(path);
+      if (ok) await _rememberExternalSubtitle(path);
+      if (ok && mounted && !_settings.subtitlesEnabled) {
+        await _applySettings(_settings.copyWith(subtitlesEnabled: true));
+      }
+      if (mounted) _showToast(ok ? '已加载字幕' : '字幕加载失败，请尝试其他内核');
+      return;
+    }
     if (source == 'url') {
       await _pickSubtitleUrl(player);
       return;
@@ -4155,6 +4325,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     if (file == null || !mounted) return;
     _preferredSubtitleApplied = true;
     final ok = await player.loadSubtitleFile(file.path);
+    if (ok) await _rememberExternalSubtitle(file.path);
     if (!mounted) return;
     if (!ok) {
       _showToast('字幕导入失败：AVPlayer 支持 SRT / VTT，ASS 请使用 MPV');

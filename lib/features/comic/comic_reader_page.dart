@@ -1,3 +1,6 @@
+import '../experience/reading_offline.dart';
+import '../experience/clip_editor.dart';
+import '../../core/experience/content_center.dart';
 import '../../core/net/network_queue.dart';
 import '../../core/source/source_content_type.dart';
 import 'reader_interaction_surface.dart';
@@ -629,6 +632,17 @@ class _ComicReaderPageState extends State<ComicReaderPage>
           // 不能等到翻页或退出才写。
           _saveProgress();
           _showStartupZoneHint();
+          unawaited(
+            ReadingOffline.prefetch(
+              source: widget.dataSource,
+              library: widget.library,
+              target: widget.target,
+              chapters: _chapters,
+              current: _chapterIndex,
+              novel: false,
+              cancelled: () => !mounted || loadSequence != _chapterLoadSequence,
+            ),
+          );
           if (_translationScope == 'series') unawaited(_translatePages(true));
         case TextContent():
         case VideoContent():

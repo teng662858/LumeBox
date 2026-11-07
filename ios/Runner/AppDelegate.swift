@@ -10,6 +10,7 @@ import Security
   /// 语音朗读控制器（AVSpeechSynthesizer）：生命周期跟随 App。
   private let speech = SpeechController()
   private let mediaTracks = MediaTrackProbe()
+  private let experience = NativeExperienceController()
 
   /// 屏幕亮度控制器（UIScreen.brightness）：生命周期跟随 App。
   private let brightness = BrightnessController()
@@ -48,6 +49,7 @@ import Security
     }
     if let messenger = engineBridge.pluginRegistry.registrar(forPlugin: "LumeBoxConfiguration")?.messenger() {
       configurationExport.register(with: messenger)
+      experience.register(with: messenger)
       videoMerge.register(with: messenger)
       introRecognition.register(with: messenger)
       referenceCredentials.register(with: messenger)

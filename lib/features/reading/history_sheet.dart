@@ -1,3 +1,4 @@
+import '../experience/content_center_page.dart';
 import '../../core/reading/chapter_updates.dart';
 import '../../core/net/network_cancellation.dart';
 import '../../core/reading/browse_layout.dart';
@@ -294,6 +295,16 @@ class _ReadingHistorySheetState extends State<ReadingHistorySheet> {
                     ListTile(
                       title: Text('${widget.section.label} · $title'),
                       subtitle: Text('${items.length} 条 · 最近在前'),
+                      leading: IconButton(
+                        tooltip: '统一内容中心',
+                        icon: const Icon(Icons.dashboard_outlined),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute<void>(
+                            builder: (_) => const ContentCenterPage(),
+                          ),
+                        ),
+                      ),
                       trailing: IconButton(
                         tooltip: '关闭',
                         icon: const LumeIcon(

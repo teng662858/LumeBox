@@ -129,7 +129,8 @@ jobs:
             ios/Runner/SpeechStream.swift ios/Runner/SpeechController.swift \
             ios/Runner/ICloudSyncController.swift ios/Runner/ComicImageToolsController.swift \
             ios/Runner/IntroRecognitionController.swift ios/Runner/LumeGlassBackdrop.swift \
-            ios/Runner/LumeSystemTabBar.swift ios/Runner/SourceRepositoryCredentials.swift
+            ios/Runner/LumeSystemTabBar.swift ios/Runner/SourceRepositoryCredentials.swift \
+            ios/Runner/ExperienceController.swift
 
       - name: System tab bar simulator check (no IPA)
         if: ${{ inputs.typecheck_only == true }}

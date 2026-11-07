@@ -1,3 +1,5 @@
+import '../experience/clip_editor.dart';
+import '../../core/experience/content_center.dart';
 import '../../shared/widgets/native_glass_controls.dart';
 
 import 'package:lume_box/shared/widgets/lume_icon.dart';
@@ -20,11 +22,13 @@ class AudioPlayerPage extends StatefulWidget {
     required this.resource,
     required this.tracks,
     this.initialIndex,
+    this.initialPosition,
     this.restart = false,
   });
   final MediaResource resource;
   final List<AudioBookTrack> tracks;
   final int? initialIndex;
+  final Duration? initialPosition;
   final bool restart;
   @override
   State<AudioPlayerPage> createState() => _AudioPlayerPageState();
@@ -51,6 +55,10 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
         index: widget.initialIndex,
         restart: widget.restart,
       );
+      if (widget.initialPosition != null &&
+          session.resource?.id == widget.resource.id) {
+        await session.seek(widget.initialPosition!);
+      }
     } finally {
       if (mounted) setState(() => _starting = false);
     }
@@ -71,6 +79,22 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
       flexibleSpace: const SizedBox.expand(),
       title: const Text('音频播放'),
       actions: [
+        IconButton(
+          tooltip: '保存听书书签',
+          icon: const Icon(Icons.bookmark_add_outlined),
+          onPressed: () => saveContentClip(
+            context,
+            ContentRef(
+              widget.resource.destination,
+              '@audio-library',
+              widget.resource.id,
+              widget.resource.title,
+            ),
+            chapter: session.current,
+            seconds: session.position.inSeconds,
+          ),
+        ),
+
         IconButton(
           tooltip: '音频播放器设置',
           icon: const LumeIcon(

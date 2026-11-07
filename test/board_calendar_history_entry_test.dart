@@ -41,6 +41,8 @@ void main() {
     await SectionScope.open(Section.video);
     await SectionScope.open(Section.comic);
     await ReadingLibrary.open(Section.cat);
+    await ReadingLibrary.open(Section.comic);
+    await ReadingLibrary.open(Section.video);
   });
 
   tearDown(() async {

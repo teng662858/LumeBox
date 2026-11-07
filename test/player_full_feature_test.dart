@@ -2510,7 +2510,11 @@ void main() {
       expect(speed.bottom, lessThanOrEqualTo(slider.top));
       expect(speed.right, closeTo(actions.right, .1));
       expect(find.byTooltip('清晰度'), findsNothing);
-      expect(find.text('800P'), findsNothing);
+      expect(
+        find.text('800P'),
+        findsOneWidget,
+        reason: '媒体徽章显示实际高度，标题仍保留完整分辨率',
+      );
       players.single.pushStats(const PlayerStats(width: 1280, height: 720));
       await tester.pumpAndSettle();
       expect(find.text('第1集 · 1280×720'), findsOneWidget);

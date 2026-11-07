@@ -13,6 +13,7 @@ Future<void> openMediaResource(
   BuildContext context,
   MediaResource entry, {
   int? index,
+  Duration? position,
   ResolvedMedia? initialMedia,
   bool restartAudio = false,
 }) async {
@@ -31,6 +32,7 @@ Future<void> openMediaResource(
             initialMedia: initialMedia,
           ),
           initialIndex: index,
+          initialPosition: position,
           restart: restartAudio,
         ),
       ),

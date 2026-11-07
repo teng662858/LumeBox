@@ -1,3 +1,6 @@
+import '../experience/reading_offline.dart';
+import '../experience/clip_editor.dart';
+import '../../core/experience/content_center.dart';
 import '../../shared/widgets/network_owned_state.dart';
 import '../../core/source/source_content_type.dart';
 
@@ -388,11 +391,17 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     try {
       final content = await networkRequests.run(
         'chapter',
-        () => SourceContentRead.read(
-          widget.source,
-          itemId: widget.target.itemId,
-          chapterId: widget.chapters[_chapter].id,
-        ),
+        () async =>
+            await ReadingOffline.read(
+              widget.source,
+              widget.target.itemId,
+              widget.chapters[_chapter].id,
+            ) ??
+            await SourceContentRead.read(
+              widget.source,
+              itemId: widget.target.itemId,
+              chapterId: widget.chapters[_chapter].id,
+            ),
       );
       if (!mounted || revision != _revision) return;
       if (content is! TextContent || content.text.trim().isEmpty) {
@@ -407,6 +416,17 @@ class _NovelReaderPageState extends State<NovelReaderPage>
         _layoutKey = null;
       });
       _save();
+      unawaited(
+        ReadingOffline.prefetch(
+          source: widget.source,
+          library: widget.library,
+          target: widget.target,
+          chapters: widget.chapters,
+          current: _chapter,
+          novel: true,
+          cancelled: () => !mounted || revision != _revision,
+        ),
+      );
       if (_continueSpeech) {
         _continueSpeech = false;
         await _startSpeech();
@@ -554,6 +574,26 @@ class _NovelReaderPageState extends State<NovelReaderPage>
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
+            IconButton(
+              tooltip: '保存摘录',
+              icon: const Icon(Icons.bookmark_add_outlined),
+              onPressed: _loading
+                  ? null
+                  : () => saveContentClip(
+                      context,
+                      ContentRef(
+                        widget.library.section,
+                        widget.target.sourceId,
+                        widget.target.itemId,
+                        widget.target.title,
+                      ),
+                      chapter: _chapter,
+                      text: _text.substring(
+                        _offset.clamp(0, _text.length),
+                        (_offset + 300).clamp(0, _text.length),
+                      ),
+                    ),
+            ),
             if (_speech.isActive || _speech.isPaused || _continueSpeech)
               IconButton(
                 onPressed: () {

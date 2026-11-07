@@ -1,3 +1,5 @@
+import '../experience/experience_settings_page.dart';
+import '../experience/content_center_page.dart';
 import 'media_badge_settings_page.dart';
 import '../source/total_subscription_import_entry.dart';
 import '../reading/continue_activity_page.dart';
@@ -293,6 +295,18 @@ class SettingsPage extends StatelessWidget {
       onTap: () => _push(context, const ComicSettingsPage()),
     ),
     const SettingsGroupTitle('播放'),
+    SettingsEntryCard(
+      icon: Icons.auto_awesome_outlined,
+      title: '内容与播放增强',
+      subtitle: '离线策略、字幕、源档案与摘录',
+      onTap: () => _push(context, const ExperienceSettingsPage()),
+    ),
+    SettingsEntryCard(
+      icon: Icons.dashboard_outlined,
+      title: '内容中心',
+      subtitle: '统一继续、作品追更、版本关联与摘录',
+      onTap: () => _push(context, const ContentCenterPage()),
+    ),
     SettingsEntryCard(
       icon: Icons.label_outline,
       title: '媒体徽章',

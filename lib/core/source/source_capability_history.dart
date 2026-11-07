@@ -18,10 +18,21 @@ class SourceCapabilityHistory {
         'issues': [for (final step in steps) step.issue.name],
         'steps': [
           for (final step in steps)
-            {'title': step.title, 'issue': step.issue.name},
+            {
+              'title': step.title,
+              'issue': step.issue.name,
+              'deferred': step.message.contains('不预取'),
+            },
         ],
       }),
     );
+    if (steps.isNotEmpty &&
+        steps.every((s) => s.issue == SourceHealthIssue.none && !s.running)) {
+      library.setSetting(
+        'source.health.success.$sourceId',
+        DateTime.now().toIso8601String(),
+      );
+    }
   }
 
   static Map<String, dynamic>? read(ReadingLibrary library, String id) {
@@ -46,6 +57,8 @@ class SourceCapabilityHistory {
     for (final (title, label) in [
       ('运行环境与依赖', '加载'),
       ('搜索接口', '搜索'),
+      ('封面图片', '封面'),
+      ('目录／选集', '目录'),
       ('详情解析', '详情'),
       ('正文／播放地址解析', '地址解析'),
     ]) {
@@ -53,6 +66,8 @@ class SourceCapabilityHistory {
       result.add(
         '$label：${step == null
             ? '未测'
+            : step['deferred'] == true
+            ? '待实际加载验证'
             : step['issue'] == 'none'
             ? '通过'
             : '未通过'}',
@@ -65,6 +80,13 @@ class SourceCapabilityHistory {
             .split('.')
             .first ??
         '未知时间';
-    return '${record['version'] != version ? '旧版本检测 · ' : ''}${result.join(' · ')}\n检测时间：$at\n$playback';
+    final issues = (record['issues'] as List? ?? []);
+    final auth = issues.contains('authentication')
+        ? '需要登录或授权'
+        : issues.contains('verification')
+        ? '需要网页验证'
+        : '本次检测未遇到登录要求';
+    final success = library.setting('source.health.success.$id');
+    return '${record['version'] != version ? '旧版本检测 · ' : ''}${result.join(' · ')}\n登录状态：$auth\n检测时间：$at\n最近检测成功：${success ?? '未记录'}\n$playback';
   }
 }

@@ -1,3 +1,4 @@
+import 'features/experience/tracking_service.dart';
 import 'shared/widgets/theme_refresh_boundary.dart';
 
 import 'package:flutter/material.dart';
@@ -40,10 +41,12 @@ class _LumeBoxAppState extends State<LumeBoxApp> {
     super.initState();
     _cachePruner.start();
     IconCustomization.instance.boot();
+    TrackingService.instance.boot();
   }
 
   @override
   void dispose() {
+    TrackingService.instance.dispose();
     _cachePruner.dispose();
     _dock.dispose();
     super.dispose();
