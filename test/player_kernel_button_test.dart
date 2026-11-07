@@ -32,13 +32,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester.getSize(find.byKey(const Key('player-kernel-menu'))).width,
-      144,
+      128,
     );
     expect(
       tester
           .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'MDK'))
           .onSelected,
       isNull,
+    );
+    expect(
+      tester.getSize(find.byKey(const Key('player-kernel-menu'))).height,
+      lessThanOrEqualTo(160),
     );
     await tester.tap(find.widgetWithText(ChoiceChip, 'MPV'));
     await tester.pumpAndSettle();

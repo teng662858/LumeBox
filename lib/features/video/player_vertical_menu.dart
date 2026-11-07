@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 abstract final class PlayerVerticalMenu {
-  static const width = 144.0;
+  static const width = 128.0;
   static MenuStyle get style => MenuStyle(
-    padding: const WidgetStatePropertyAll(EdgeInsets.all(6)),
+    padding: const WidgetStatePropertyAll(EdgeInsets.all(4)),
     shape: WidgetStatePropertyAll(
       RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
@@ -16,7 +16,7 @@ abstract final class PlayerVerticalMenu {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 280),
           child: SingleChildScrollView(
-          primary: false,
+            primary: false,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -31,17 +31,18 @@ abstract final class PlayerVerticalMenu {
     required bool selected,
     required ValueChanged<bool>? onSelected,
   }) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
+    padding: const EdgeInsets.symmetric(vertical: 1),
     child: ChoiceChip(
       label: SizedBox(
         width: double.infinity,
         child: Text(label, textAlign: TextAlign.center),
       ),
       labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+      visualDensity: VisualDensity.compact,
       selected: selected,
       showCheckmark: false,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-      materialTapTargetSize: MaterialTapTargetSize.padded,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       onSelected: onSelected,
     ),
   );
