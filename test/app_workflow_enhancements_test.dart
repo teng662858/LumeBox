@@ -123,33 +123,27 @@ void main() {
     restored.clearAppearance('work');
     expect(restored.appearanceFor('work').toJson(), original.toJson());
   });
-  testWidgets('设置搜索能命中深层选项并直达指定入口', (tester) async {
+  testWidgets('设置首页不显示搜索且分类入口可用', (tester) async {
     var opened = false;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: SettingsHome(
             categories: [
-              SettingsCategory('网络与服务', '服务', Icons.settings, [
-                SettingsEntryCard(
-                  icon: Icons.movie,
-                  title: 'TMDB配置',
-                  onTap: () {},
-                  searchTargets: {'背景亮度': () => opened = true},
-                ),
-              ]),
+              SettingsCategory(
+                '网络与服务',
+                '服务',
+                Icons.settings,
+                const [],
+                onTap: () => opened = true,
+              ),
             ],
           ),
         ),
       ),
     );
-    await tester.enterText(
-      find.byKey(const ValueKey('settings-search')),
-      '背景亮度',
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('背景亮度', findRichText: false).last, findsOneWidget);
-    await tester.tap(find.text('背景亮度', findRichText: false).last);
+    expect(find.byKey(const ValueKey('settings-search')), findsNothing);
+    await tester.tap(find.text('网络与服务'));
     expect(opened, isTrue);
   });
   test('流畅度报告按设备帧预算统计慢帧和分位数，并保留构建模式', () {

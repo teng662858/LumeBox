@@ -498,8 +498,6 @@ class SettingsHome extends StatefulWidget {
 }
 
 class _SettingsHomeState extends State<SettingsHome> {
-  String query = '';
-
   List<SettingsShortcut> get selectedShortcuts {
     final ids = AppPreferences.instance.settingsShortcuts;
     final selected = <SettingsShortcut>[
@@ -614,74 +612,42 @@ class _SettingsHomeState extends State<SettingsHome> {
 
   @override
   Widget build(BuildContext context) {
-    final search = query.trim().toLowerCase();
-    final matches = widget.categories
-        .where(
-          (category) =>
-              ('${category.title} ${category.description} ${category.keywords} '
-                      '${category.children.whereType<SettingsEntryCard>().map((e) => '${e.title} ${e.subtitle ?? ''} ${e.searchTargets.keys.join(' ')}').join(' ')}')
-                  .toLowerCase()
-                  .contains(search),
-        )
-        .toList();
     final shortcuts = selectedShortcuts;
+    final categories = widget.categories;
     return ListView(
       key: const PageStorageKey('settings-directory'),
       padding: GlassScaffold.barInset(context)
           .add(const EdgeInsets.fromLTRB(20, 16, 20, 36)),
       children: [
-        TextField(
-          key: const ValueKey('settings-search'),
-          onChanged: (value) => setState(() => query = value),
-          decoration: InputDecoration(
-            hintText: '搜索设置',
-            prefixIcon: const Icon(Icons.search_rounded),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide.none,
-            ),
-            filled: true,
+        if (shortcuts.isNotEmpty) ...[
+          Row(
+            children: [
+              const Expanded(child: SettingsGroupTitle('常用', topPadding: 0)),
+              TextButton(
+                key: const ValueKey('edit-settings-shortcuts'),
+                onPressed: _editShortcuts,
+                child: const Text('编辑'),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 16),
-        if (search.isEmpty) ...[
-          if (shortcuts.isNotEmpty) ...[
-            Row(
-              children: [
-                const Expanded(child: SettingsGroupTitle('常用')),
-                TextButton(
-                  key: const ValueKey('edit-settings-shortcuts'),
-                  onPressed: _editShortcuts,
-                  child: const Text('编辑'),
-                ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < shortcuts.length; i++) ...[
+                if (i > 0) const SizedBox(width: 10),
+                Expanded(child: _SettingsShortcutTile(shortcut: shortcuts[i])),
               ],
-            ),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var i = 0; i < shortcuts.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 10),
-                  Expanded(
-                    child: _SettingsShortcutTile(shortcut: shortcuts[i]),
-                  ),
-                ],
-              ],
-            ),
-            const SizedBox(height: 18),
-          ],
-          const SettingsGroupTitle('全部设置'),
-        ] else
-          const SettingsGroupTitle('搜索结果'),
-        for (var start = 0; start < matches.length; start += 4)
+            ],
+          ),
+          const SizedBox(height: 18),
+        ],
+        const SettingsGroupTitle('全部设置'),
+        for (var start = 0; start < categories.length; start += 4)
           Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: SettingsGroupCard(
               children: [
-                for (final category in matches.skip(start).take(4))
+                for (final category in categories.skip(start).take(4))
                   _SettingsDirectoryRow(
                     category: category,
                     onTap: () => _openCategory(category),
@@ -689,32 +655,7 @@ class _SettingsHomeState extends State<SettingsHome> {
               ],
             ),
           ),
-        if (search.isNotEmpty)
-          for (final category in matches)
-            for (final entry
-                in category.children.whereType<SettingsEntryCard>()) ...[
-              if ('${entry.title} ${entry.subtitle ?? ''}'
-                  .toLowerCase()
-                  .contains(search))
-                SettingsEntryCard(
-                  icon: entry.icon,
-                  title: entry.title,
-                  subtitle: category.title,
-                  onTap: entry.onTap,
-                ),
-              for (final target in entry.searchTargets.entries)
-                if (target.key.toLowerCase().contains(search) &&
-                    target.key != entry.title)
-                  SettingsEntryCard(
-                    icon: entry.icon,
-                    title: target.key,
-                    subtitle: '${category.title} · ${entry.title}',
-                    onTap: target.value,
-                  ),
-            ],
-        if (matches.isEmpty)
-          const SettingsNoteCard('没有找到相关设置，试试“主题”“播放”或“缓存”。'),
-        if (search.isEmpty && widget.footer != null) widget.footer!,
+        if (widget.footer != null) widget.footer!,
       ],
     );
   }
@@ -829,9 +770,11 @@ class _SettingsDirectoryRow extends StatelessWidget {
               ),
               if (!compact) ...[
                 const SizedBox(width: 8),
-                Flexible(
+                Expanded(
                   child: Text(
                     value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.end,
                     style: TextStyle(
                       fontSize: 12,

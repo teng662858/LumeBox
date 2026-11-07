@@ -198,7 +198,7 @@ void main() {
       });
     }
   }
-  testWidgets('首页搜索定位功能，使用体验从配置备份移至阅读播放', (tester) async {
+  testWidgets('首页目录进入功能，使用体验保留在阅读播放', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: LumeTheme.build(),
@@ -206,11 +206,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('settings-search')),
-      '后台播放',
-    );
-    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('settings-search')), findsNothing);
     expect(find.text('阅读与播放'), findsOneWidget);
     await tester.tap(find.text('阅读与播放'));
     await tester.pumpAndSettle();

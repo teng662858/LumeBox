@@ -19,7 +19,6 @@ import 'package:lume_box/core/util/lume_log.dart';
 import 'package:lume_box/features/settings/log_report.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
 import 'package:lume_box/features/settings/novel_settings_page.dart';
-import 'package:lume_box/features/video/player_settings_host.dart';
 import 'package:lume_box/features/shell/app_shell.dart';
 import 'package:lume_box/features/shell/shell_dock.dart';
 import 'package:lume_box/shared/widgets/glass_card.dart';
@@ -341,8 +340,12 @@ void main() {
       }
       if (path.$2 == '播放器设置') {
         for (final tab in ['advanced', 'audio', 'playback']) {
-          await tester.ensureVisible(find.byKey(ValueKey('settings-tab-$tab')));
-          await tester.tap(find.byKey(ValueKey('settings-tab-$tab')));
+          final category = find.byKey(ValueKey('global-player-category-$tab'));
+          await tester.ensureVisible(category);
+          await tester.tap(category);
+          await tester.pumpAndSettle();
+          expect(observer.depth, 4);
+          await tester.pageBack();
           await tester.pumpAndSettle();
           expect(observer.depth, 3);
         }
@@ -453,21 +456,21 @@ void main() {
     expect(store.cloudRecords(includeSettings: false), rows);
   });
 
-  testWidgets('设置搜索可直达小说行距和播放器字幕', (tester) async {
+  testWidgets('设置首页不再显示搜索框', (tester) async {
     await pumpSettings(tester);
-    await tester.enterText(find.byKey(const ValueKey('settings-search')), '行距');
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('小说行距'));
-    await pumpIoAndSettle(tester);
-    expect(find.text('行距 1.5'), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('settings-search')), '字幕');
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('字幕').last);
-    await pumpIoAndSettle(tester);
-    expect(find.byType(PlayerSettingsHost), findsOneWidget);
-    expect(find.text('声音与字幕'), findsOneWidget);
+    expect(find.byKey(const ValueKey('settings-search')), findsNothing);
+    expect(find.text('搜索设置'), findsNothing);
+    expect(find.text('常用'), findsOneWidget);
+    double? right;
+    for (final category in ['阅读与播放', '内容与订阅', '源管理', '个性与界面']) {
+      final arrow = find.descendant(
+        of: find.byKey(ValueKey('settings-category-$category')),
+        matching: find.byIcon(Icons.chevron_right),
+      );
+      final edge = tester.getRect(arrow).right;
+      right ??= edge;
+      expect(edge, closeTo(right, .1), reason: '不同长度说明文字不能带偏右侧箭头');
+    }
   });
 
   testWidgets('播放器内核：全局设置里保留逃生入口', (tester) async {
