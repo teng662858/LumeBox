@@ -107,6 +107,8 @@ class SettingsIconScope extends InheritedWidget {
   '漫画设置' => (Icons.auto_stories, Color(0xFF8956B1)),
   '漫画阅读器设置' => (Icons.chrome_reader_mode, Color(0xFF8956B1)),
   'AI 图片超分与上色' => (Icons.auto_fix_high, Color(0xFFAA5C9B)),
+  '播放器设置' => (Icons.play_circle_filled, Color(0xFF6851C5)),
+  '关于 LumeBox' => (Icons.info, Color(0xFF627A96)),
   '播放与选集' => (Icons.video_library, Color(0xFF6851C5)),
   '片头片尾' => (Icons.skip_next, Color(0xFF6B70BA)),
   '画面与显示' => (Icons.aspect_ratio, Color(0xFF5675B2)),
@@ -195,7 +197,8 @@ class SettingsEntryCard extends StatelessWidget {
         ? _settingsEntryIcon(title)
         : null;
     final scope = SettingsIconScope.of(context);
-    final tint = scope?.color ?? style?.$2 ?? iconColor ?? LumeTheme.accent;
+    final tint = style?.$2 ?? scope?.color ?? iconColor ?? LumeTheme.accent;
+    final solid = scope?.grouped ?? false;
     final content = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
@@ -203,7 +206,12 @@ class SettingsEntryCard extends StatelessWidget {
           Container(
             width: scope == null ? 42 : 30,
             height: scope == null ? 42 : 30,
-            decoration: style == null
+            decoration: solid
+                ? BoxDecoration(
+                    color: tint,
+                    borderRadius: BorderRadius.circular(9),
+                  )
+                : style == null
                 ? BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
@@ -231,7 +239,11 @@ class SettingsEntryCard extends StatelessWidget {
                 label: title,
                 group: '设置',
                 size: scope == null ? 22 : 18,
-                color: style == null ? (iconColor ?? LumeTheme.accent) : tint,
+                color: solid
+                    ? Colors.white
+                    : style == null
+                    ? (iconColor ?? LumeTheme.accent)
+                    : tint,
               ),
             ),
           ),

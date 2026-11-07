@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/theme/frosted_settings.dart';
@@ -213,6 +214,18 @@ void main() {
     expect(find.text('小说设置'), findsOneWidget);
     expect(find.text('漫画设置'), findsOneWidget);
     expect(find.text('播放器设置'), findsOneWidget);
+    final glyph = find.byWidgetPredicate(
+      (widget) => widget is LumeIcon && widget.slot == 'settings.entry.播放器设置',
+    );
+    final icon = tester.widget<LumeIcon>(glyph);
+    expect(icon.icon, Icons.play_circle_filled);
+    expect(icon.size, 18, reason: '二级图标尺寸保持不变');
+    expect(icon.color, Colors.white);
+    final tile = tester.widget<Container>(
+      find.ancestor(of: glyph, matching: find.byType(Container)).first,
+    );
+    expect((tile.decoration as BoxDecoration).color?.a, 1, reason: '图标底色为实体彩色');
+
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
     await tester.pumpWidget(
