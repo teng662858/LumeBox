@@ -295,41 +295,61 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
           const SizedBox(height: 16),
           if (widget.section == Section.comic ||
               widget.section == Section.video) ...[
-            const Text('官方订阅', style: TextStyle(fontWeight: FontWeight.w600)),
-            const Text('选择分类和线路后立即添加并检查可安装的源。'),
-            if (widget.section == Section.video) ...[
-              Wrap(
-                spacing: 8,
+            GlassCard(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ChoiceChip(
-                    label: const Text('全部视频订阅'),
-                    selected: !_mixedSubscription,
-                    onSelected: _busy
-                        ? null
-                        : (_) => setState(() => _mixedSubscription = false),
+                  const Text(
+                    '官方订阅',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
-                  ChoiceChip(
-                    label: const Text('综合源订阅'),
-                    selected: _mixedSubscription,
-                    onSelected: _busy
-                        ? null
-                        : (_) => setState(() => _mixedSubscription = true),
+                  const SizedBox(height: 6),
+                  Text(
+                    '选择分类和线路后立即添加并检查可安装的源。',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  if (widget.section == Section.video) ...[
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('全部视频订阅'),
+                          selected: !_mixedSubscription,
+                          onSelected: _busy
+                              ? null
+                              : (_) =>
+                                    setState(() => _mixedSubscription = false),
+                        ),
+                        ChoiceChip(
+                          label: const Text('综合源订阅'),
+                          selected: _mixedSubscription,
+                          onSelected: _busy
+                              ? null
+                              : (_) =>
+                                    setState(() => _mixedSubscription = true),
+                        ),
+                      ],
+                    ),
+                    if (_mixedSubscription)
+                      const Text('综合源包含多种内容；成人内容仍受隐私设置控制。'),
+                  ],
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final route in SubscriptionCatalog.availableRoutes)
+                        ActionChip(
+                          label: Text(route.label),
+                          onPressed: _busy || service == null
+                              ? null
+                              : () => _addOfficial(route),
+                        ),
+                    ],
                   ),
                 ],
               ),
-              if (_mixedSubscription) const Text('综合源包含多种内容；成人内容仍受隐私设置控制。'),
-            ],
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final route in SubscriptionCatalog.availableRoutes)
-                  ActionChip(
-                    label: Text(route.label),
-                    onPressed: _busy || service == null
-                        ? null
-                        : () => _addOfficial(route),
-                  ),
-              ],
             ),
             const SizedBox(height: 16),
           ],
