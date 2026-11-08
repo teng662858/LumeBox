@@ -56,6 +56,16 @@ class SettingsSurfaceList extends StatelessWidget {
     padding: padding,
     children: children.map((child) {
       if (child is SizedBox || child is Text || child is Divider) return child;
+      // Filled and elevated buttons already draw their own surface. The app's
+      // outlined buttons are borderless and use the card as their surface.
+      if (child is FilledButton || child is ElevatedButton) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: child,
+        );
+      }
+      final input = child is TextField || child is TextFormField;
+      final theme = Theme.of(context);
       return Padding(
         padding: const EdgeInsets.only(bottom: 10),
         child: GlassCard(
@@ -66,7 +76,34 @@ class SettingsSurfaceList extends StatelessWidget {
                   child is ExpansionTile
               ? EdgeInsets.zero
               : const EdgeInsets.all(12),
-          child: child,
+          child: input
+              ? Theme(
+                  data: theme.copyWith(
+                    inputDecorationTheme: theme.inputDecorationTheme.copyWith(
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.primary,
+                          width: 1.5,
+                        ),
+                      ),
+                      errorBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: theme.colorScheme.error),
+                      ),
+                      focusedErrorBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.error,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  child: child,
+                )
+              : child,
         ),
       );
     }).toList(),

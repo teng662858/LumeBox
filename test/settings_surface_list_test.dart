@@ -7,6 +7,57 @@ import 'package:lume_box/features/experience/subtitle_center_page.dart';
 import 'package:lume_box/shared/widgets/glass_card.dart';
 
 void main() {
+  for (final brightness in Brightness.values) {
+    testWidgets('输入框只有一层卡面，聚焦有提示，实心按钮不再套卡片 $brightness', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: LumeTheme.build(brightness: brightness),
+          home: Scaffold(
+            body: SettingsSurfaceList(
+              children: [
+                const TextField(decoration: InputDecoration(labelText: '订阅地址')),
+                FilledButton(onPressed: () {}, child: const Text('导入')),
+                OutlinedButton(onPressed: () {}, child: const Text('导出')),
+              ],
+            ),
+          ),
+        ),
+      );
+      final field = find.byType(TextField);
+      expect(
+        find.ancestor(of: field, matching: find.byType(GlassCard)),
+        findsOneWidget,
+      );
+      final decorator = find.descendant(
+        of: field,
+        matching: find.byType(InputDecorator),
+      );
+      expect(
+        tester.widget<InputDecorator>(decorator).decoration.filled,
+        isFalse,
+      );
+      expect(
+        tester.widget<InputDecorator>(decorator).decoration.enabledBorder,
+        InputBorder.none,
+      );
+      await tester.tap(field);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<InputDecorator>(decorator).decoration.focusedBorder,
+        isA<UnderlineInputBorder>(),
+      );
+      expect(
+        find.ancestor(of: find.text('导入'), matching: find.byType(GlassCard)),
+        findsNothing,
+      );
+      expect(
+        find.ancestor(of: find.text('导出'), matching: find.byType(GlassCard)),
+        findsOneWidget,
+      );
+      await tester.enterText(field, 'https://example.test/subscription');
+      expect(find.text('https://example.test/subscription'), findsOneWidget);
+    });
+  }
   setUp(() {
     AppPreferences.instance.file = null;
     AppPreferences.instance.experience = {};

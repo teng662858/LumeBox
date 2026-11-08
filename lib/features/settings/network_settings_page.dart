@@ -283,7 +283,10 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
                 decoration: const InputDecoration(
                   labelText: '全局 User-Agent',
                   hintText: '留空 = 内置默认 UA',
-                  border: OutlineInputBorder(),
+                  filled: false,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
                 ),
                 onChanged: (_) => setState(() => _dirty = true),
               ),
@@ -299,7 +302,10 @@ class _NetworkSettingsPageState extends State<NetworkSettingsPage> {
                 decoration: const InputDecoration(
                   labelText: '其他平台代理（iOS 跟随系统）',
                   hintText: 'http://127.0.0.1:7890；留空 = 直连',
-                  border: OutlineInputBorder(),
+                  filled: false,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
                 ),
                 onChanged: (_) => setState(() => _dirty = true),
               ),
