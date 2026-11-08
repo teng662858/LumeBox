@@ -33,6 +33,14 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('TMDB配置'), findsOneWidget);
+    final appearance = tester.widget<ExpansionTile>(
+      find.byKey(const Key('tmdb-appearance-section')),
+    );
+    expect(appearance.tilePadding, const EdgeInsets.symmetric(horizontal: 16));
+    expect(
+      appearance.childrenPadding,
+      const EdgeInsets.fromLTRB(16, 0, 16, 12),
+    );
     // 全局表单兜底：浅色输入框纯白底 + 浅灰边框；切换器同款。
     final theme = Theme.of(tester.element(find.byType(TmdbSettingsPage)));
     expect(theme.inputDecorationTheme.fillColor, Colors.white);

@@ -198,8 +198,8 @@ class _TmdbSettingsPageState extends State<TmdbSettingsPage> {
   Widget appearanceSection() => ExpansionTile(
     key: const Key('tmdb-appearance-section'),
     initiallyExpanded: widget.focusAppearance != null,
-    tilePadding: EdgeInsets.zero,
-    childrenPadding: EdgeInsets.zero,
+    tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
     title: const Text('详情页外观调节', style: TextStyle(fontSize: 14)),
     subtitle: const Text('背景 · 海报 · 渐变 · 标识', style: TextStyle(fontSize: 12)),
     children: [

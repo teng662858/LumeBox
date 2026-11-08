@@ -9,8 +9,38 @@ import 'package:lume_box/core/session/app_preferences.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/settings/settings_ui.dart';
 import 'package:lume_box/shared/widgets/glass_card.dart';
+import 'package:lume_box/features/source/total_subscription_import_entry.dart';
 
 void main() {
+  testWidgets('有状态的一键导入与相邻订阅入口同组，点击仍可选择线路', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SettingsCategoryPage(
+          category: SettingsCategory('内容与订阅', '订阅管理', Icons.subscriptions, [
+            const TotalSubscriptionImportEntry(),
+            SettingsEntryCard(icon: Icons.book, title: '漫画订阅', onTap: () {}),
+          ]),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final first = find.ancestor(
+      of: find.text('一键导入全部订阅源'),
+      matching: find.byType(SettingsGroupCard),
+    );
+    final second = find.ancestor(
+      of: find.text('漫画订阅'),
+      matching: find.byType(SettingsGroupCard),
+    );
+    expect(first, findsOneWidget);
+    expect(second, findsOneWidget);
+    expect(tester.element(first), same(tester.element(second)));
+    await tester.tap(find.text('一键导入全部订阅源'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择总订阅线路'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+  });
   late List<String> oldShortcuts;
   late File? oldFile;
   late Directory root;

@@ -435,6 +435,10 @@ Color settingsCategoryColor(String title) => switch (title) {
   '诊断与关于' => const Color(0xFF596D89),
   _ => LumeTheme.accent,
 };
+
+/// Stateful entries can participate in the same group as regular settings rows.
+abstract interface class SettingsGroupEntry {}
+
 List<Widget> settingsGroupedChildren(List<Widget> children) {
   final result = <Widget>[];
   var entries = <Widget>[];
@@ -450,7 +454,7 @@ List<Widget> settingsGroupedChildren(List<Widget> children) {
   }
 
   for (final child in children) {
-    if (child is SettingsEntryCard) {
+    if (child is SettingsEntryCard || child is SettingsGroupEntry) {
       entries.add(child);
     } else {
       flush();

@@ -9,7 +9,8 @@ import '../../shared/widgets/native_glass_surfaces.dart';
 import '../settings/settings_ui.dart';
 
 /// Entry in source management for installing subscriptions from a selected route.
-class TotalSubscriptionImportEntry extends StatefulWidget {
+class TotalSubscriptionImportEntry extends StatefulWidget
+    implements SettingsGroupEntry {
   const TotalSubscriptionImportEntry({
     super.key,
     this.managerFactory,
