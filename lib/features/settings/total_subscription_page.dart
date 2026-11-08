@@ -123,7 +123,7 @@ class _TotalSubscriptionPageState extends State<TotalSubscriptionPage> {
   Widget build(BuildContext context) => GlassScaffold(
     effectModule: GlassModule.settings,
     title: '总订阅导入导出',
-    child: ListView(
+    child: SettingsSurfaceList(
       padding: const EdgeInsets.all(16),
       children: [
         if (results != null)

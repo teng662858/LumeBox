@@ -25,7 +25,7 @@ class ExperienceSettingsPage extends StatelessWidget {
       return GlassScaffold(
         effectModule: GlassModule.settings,
         title: '内容与播放增强',
-        child: ListView(
+        child: SettingsSurfaceList(
           children: [
             ListTile(
               leading: const Icon(Icons.dashboard_outlined),
@@ -151,7 +151,7 @@ class _SourceProfilesPageState extends State<SourceProfilesPage> {
     effectModule: GlassModule.settings,
     title: '源能力档案',
     actions: [IconButton(onPressed: load, icon: const Icon(Icons.refresh))],
-    child: ListView(
+    child: SettingsSurfaceList(
       children: [
         if (error.isNotEmpty) Text(error),
         for (final record in records)

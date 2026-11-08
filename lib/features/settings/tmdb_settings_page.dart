@@ -330,7 +330,7 @@ class _TmdbSettingsPageState extends State<TmdbSettingsPage> {
         settings.detailAppearance,
         settings.detailOverrides,
       ]),
-      builder: (context, _) => ListView(
+      builder: (context, _) => SettingsSurfaceList(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
           NativeSwitchListTile.adaptive(

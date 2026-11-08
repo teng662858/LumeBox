@@ -182,7 +182,7 @@ class _PrivateSubscriptionSettingsPageState
     title: '私有 GitHub 订阅',
     effectModule: GlassModule.sources,
     settingsSurface: true,
-    child: ListView(
+    child: SettingsSurfaceList(
       padding: const EdgeInsets.all(16),
       children: [
         const Text('为这个仓库配置单独的只读 Token。清单及同一仓库内的源文件通过 GitHub API 读取。'),

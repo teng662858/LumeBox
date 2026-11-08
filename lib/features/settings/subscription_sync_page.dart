@@ -87,7 +87,7 @@ class _SubscriptionSyncPageState extends State<SubscriptionSyncPage> {
   Widget build(BuildContext context) => GlassScaffold(
     effectModule: GlassModule.settings,
     title: widget.section == null ? '一键同步全部订阅' : '同步${widget.section!.label}订阅',
-    child: ListView(
+    child: SettingsSurfaceList(
       padding: const EdgeInsets.all(16),
       children: [
         const Text('立即更新已启用的订阅。单个订阅失败时保留原内容并继续其他订阅；本地手动源、收藏和历史会保留。'),

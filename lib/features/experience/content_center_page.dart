@@ -468,7 +468,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
           ),
           child: TabBarView(
             children: [
-              ListView(
+              SettingsSurfaceList(
                 children: [
                   if (recent.isEmpty)
                     const ListTile(title: Text('开始观看、阅读或收听后，记录会出现在这里')),
@@ -524,7 +524,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
                   ),
                 ],
               ),
-              ListView(
+              SettingsSurfaceList(
                 children: [
                   ListTile(
                     leading: const Icon(Icons.rule),
@@ -578,7 +578,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
                     ),
                 ],
               ),
-              ListView(
+              SettingsSurfaceList(
                 children: [
                   ListTile(
                     leading: const Icon(Icons.link),
@@ -607,7 +607,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
                     ),
                 ],
               ),
-              ListView(
+              SettingsSurfaceList(
                 children: [
                   Padding(
                     padding: const EdgeInsets.all(12),

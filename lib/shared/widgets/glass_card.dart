@@ -39,6 +39,40 @@ class SettingsSurfaceScope extends InheritedWidget {
       enabled != oldWidget.enabled;
 }
 
+/// Scrollable settings rows with the same floating surfaces as grouped pages.
+/// Spacing and section labels remain outside cards; content stays lazy.
+class SettingsSurfaceList extends StatelessWidget {
+  const SettingsSurfaceList({
+    super.key,
+    required this.children,
+    this.padding = const EdgeInsets.all(16),
+  });
+
+  final List<Widget> children;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: padding,
+    children: children.map((child) {
+      if (child is SizedBox || child is Text || child is Divider) return child;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: GlassCard(
+          padding:
+              child is ListTile ||
+                  child is SwitchListTile ||
+                  child is CheckboxListTile ||
+                  child is ExpansionTile
+              ? EdgeInsets.zero
+              : const EdgeInsets.all(12),
+          child: child,
+        ),
+      );
+    }).toList(),
+  );
+}
+
 /// 清透微磨砂玻璃层：低透明底色、极浅描边与可调的轻微背景模糊。
 ///
 /// 用在「浮在内容之上」的表面上（顶部栏 / 底部栏 / 覆盖面板）——它下面有东西

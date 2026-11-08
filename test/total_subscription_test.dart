@@ -349,7 +349,11 @@ void main() {
     await tester.tap(find.text('导入'));
     await tester.pumpAndSettle();
     expect(fixture.imported, 1);
-    await tester.ensureVisible(find.text('生成总订阅导出'));
+    await tester.scrollUntilVisible(
+      find.text('生成总订阅导出'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('生成总订阅导出'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(

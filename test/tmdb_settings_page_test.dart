@@ -73,7 +73,11 @@ void main() {
     await tester.enterText(input('图片代理地址'), 'https://images.test/t/p');
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('断开连接'));
+    await tester.scrollUntilVisible(
+      find.text('断开连接'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.tap(find.text('断开连接'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('取消'));

@@ -121,7 +121,7 @@ class _SubtitleCenterPageState extends State<SubtitleCenterPage> {
         icon: const Icon(Icons.key_outlined),
       ),
     ],
-    child: ListView(
+    child: SettingsSurfaceList(
       padding: const EdgeInsets.all(16),
       children: [
         TextField(

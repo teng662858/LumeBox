@@ -29,7 +29,7 @@ class _PerformancePageState extends State<PerformancePage> {
   Widget build(BuildContext context) => GlassScaffold(
     effectModule: GlassModule.settings,
     title: '流畅度采集',
-    child: ListView(
+    child: SettingsSurfaceList(
       padding: const EdgeInsets.all(16),
       children: [
         ExpansionTile(
