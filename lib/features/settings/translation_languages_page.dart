@@ -10,7 +10,8 @@ import '../../shared/widgets/glass_card.dart';
 import 'settings_ui.dart';
 
 class TranslationLanguagesPage extends StatefulWidget {
-  const TranslationLanguagesPage({super.key});
+  const TranslationLanguagesPage({super.key, this.embedded = false});
+  final bool embedded;
   @override
   State<TranslationLanguagesPage> createState() =>
       _TranslationLanguagesPageState();
@@ -103,6 +104,7 @@ class _TranslationLanguagesPageState extends State<TranslationLanguagesPage>
         .toList();
     return GlassScaffold(
       title: '翻译语言包',
+      embedded: widget.embedded,
       effectModule: GlassModule.settings,
       actions: [
         IconButton(
@@ -118,16 +120,23 @@ class _TranslationLanguagesPageState extends State<TranslationLanguagesPage>
             title: '一次下载，各个源共用',
             description: '这些语言包供标题和漫画的系统本地翻译共用；AI 翻译不需要下载语言包。下载时 iOS 可能逐项要求确认，建议连接 Wi-Fi。',
           ),
-          SettingsEntryCard(
-            icon: Icons.translate_rounded,
-            iconColor: const Color(0xFF366AAE),
-            title: '全局翻译设置',
-            subtitle: '系统翻译、AI 翻译与失败自动补译',
-            onTap: () => showSettingsDetail(
-              context,
-              const ComicImageToolsSettingsPage(translation: true),
+          if (widget.embedded)
+            SettingsEntryCard(
+              icon: Icons.refresh,
+              title: '刷新语言包状态',
+              onTap: _loading || _busy ? null : _reload,
             ),
-          ),
+          if (!widget.embedded)
+            SettingsEntryCard(
+              icon: Icons.translate_rounded,
+              iconColor: const Color(0xFF366AAE),
+              title: '全局翻译设置',
+              subtitle: '系统翻译、AI 翻译与失败自动补译',
+              onTap: () => showSettingsDetail(
+                context,
+                const ComicImageToolsSettingsPage(translation: true),
+              ),
+            ),
           if (_loading)
             const Center(child: CircularProgressIndicator())
           else if (_error != null) ...[

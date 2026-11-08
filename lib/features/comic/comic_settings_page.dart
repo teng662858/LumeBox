@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../shared/widgets/glass_card.dart';
 import '../settings/settings_ui.dart';
+import '../settings/global_translation_settings_page.dart';
 import 'comic_reader_settings_host.dart';
 import 'comic_image_tools_page.dart';
 
@@ -36,9 +37,8 @@ class _ComicSettingsPageState extends State<ComicSettingsPage> {
             key: ValueKey(selected),
             child: switch (selected) {
               'images' => const ComicImageToolsSettingsPage(embedded: true),
-              'translation' => const ComicImageToolsSettingsPage(
+              'translation' => const GlobalTranslationSettingsPage(
                 embedded: true,
-                translation: true,
               ),
               _ => ComicReaderSettingsHost(
                 embedded: true,

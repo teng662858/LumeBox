@@ -479,19 +479,22 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
                   subtitle: '一次填好接口地址、模型和密钥',
                   onTap: busy ? null : importTranslationConfig,
                 ),
-                const ExpansionTile(
-                  leading: Icon(Icons.help_outline),
-                  title: Text('翻译方式与配置说明'),
-                  childrenPadding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  children: [
-                    SelectableText(
-                      '设备端：使用 Apple 翻译与系统语言包，不能导入第三方语言包。语言识别不准时，可把“原文语言”改成漫画实际语言。\n\n'
-                      '自填 AI 接口：不必自己部署服务器。填写服务商提供的完整 HTTPS Chat Completions 地址（通常以 /v1/chat/completions 结尾）、准确的模型名称和 API Key，保存后返回阅读器开启翻译。此方式先在本机识字，只上传文字；请使用支持结构化 JSON 译文的模型。\n\n'
-                      '漫画翻译服务器：需先部署兼容 manga-image-translator 的后端，或使用已有服务。填写 HTTPS 根地址，App 会调用 /translate/with-form/image；后端需先配置 OCR、翻译器密钥、擦字与排版模型。此方式上传整张漫画，返回处理好的图片。\n\n'
-                      'Cloudflare：网关支持直接调用 Cloudflare 内置 AI，使用者可导入私人配置文件，无需另申请 AI 服务商密钥。源码在 deploy/translation-worker，完整步骤见项目 docs/漫画翻译与Cloudflare.md。也可配置第三方 AI 转发；整图擦字和排版仍需独立图片后端。\n\n'
-                      '圈选翻译：在阅读页圈出一个对话框或区域，只识别并翻译选中部分，适合自动识别遗漏或误识别时补译。',
-                    ),
-                  ],
+                GlassCard(
+                  padding: EdgeInsets.zero,
+                  child: const ExpansionTile(
+                    leading: Icon(Icons.help_outline),
+                    title: Text('翻译方式与配置说明'),
+                    childrenPadding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    children: [
+                      SelectableText(
+                        '设备端：使用 Apple 翻译与系统语言包，不能导入第三方语言包。语言识别不准时，可把“原文语言”改成漫画实际语言。\n\n'
+                        '自填 AI 接口：不必自己部署服务器。填写服务商提供的完整 HTTPS Chat Completions 地址（通常以 /v1/chat/completions 结尾）、准确的模型名称和 API Key，保存后返回阅读器开启翻译。此方式先在本机识字，只上传文字；请使用支持结构化 JSON 译文的模型。\n\n'
+                        '漫画翻译服务器：需先部署兼容 manga-image-translator 的后端，或使用已有服务。填写 HTTPS 根地址，App 会调用 /translate/with-form/image；后端需先配置 OCR、翻译器密钥、擦字与排版模型。此方式上传整张漫画，返回处理好的图片。\n\n'
+                        'Cloudflare：网关支持直接调用 Cloudflare 内置 AI，使用者可导入私人配置文件，无需另申请 AI 服务商密钥。源码在 deploy/translation-worker，完整步骤见项目 docs/漫画翻译与Cloudflare.md。也可配置第三方 AI 转发；整图擦字和排版仍需独立图片后端。\n\n'
+                        '圈选翻译：在阅读页圈出一个对话框或区域，只识别并翻译选中部分，适合自动识别遗漏或误识别时补译。',
+                      ),
+                    ],
+                  ),
                 ),
                 const SettingsGroupTitle('语言与翻译方式'),
                 SettingsGroupCard(
@@ -827,36 +830,39 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
                   '设备端超分目前支持 iOS。首次准备在后台进行，可能稍慢；不会在启动 App 时一次编译全部模型。',
                   padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
                 ),
-                ExpansionTile(
-                  key: const Key('advanced-image-models'),
-                  title: const Text('模型高级管理'),
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: busy ? null : () => manage('prepareModel'),
-                      icon: const LumeIcon(
-                        Icons.play_circle_outline,
-                        slot: 'comic_image_tools_page.3',
+                GlassCard(
+                  padding: EdgeInsets.zero,
+                  child: ExpansionTile(
+                    key: const Key('advanced-image-models'),
+                    title: const Text('模型高级管理'),
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: busy ? null : () => manage('prepareModel'),
+                        icon: const LumeIcon(
+                          Icons.play_circle_outline,
+                          slot: 'comic_image_tools_page.3',
+                        ),
+                        label: const Text('准备当前模型'),
                       ),
-                      label: const Text('准备当前模型'),
-                    ),
-                    TextButton(
-                      onPressed: busy ? null : installBundled,
-                      child: const Text('重新安装全部内置模型（8 个）'),
-                    ),
-                    TextButton.icon(
-                      key: const Key('import-super-resolution-model'),
-                      onPressed: busy ? null : importModel,
-                      icon: const LumeIcon(
-                        Icons.file_open_outlined,
-                        slot: 'comic_image_tools_page.4',
+                      TextButton(
+                        onPressed: busy ? null : installBundled,
+                        child: const Text('重新安装全部内置模型（8 个）'),
                       ),
-                      label: const Text('从本地安装超分模型'),
-                    ),
-                    TextButton(
-                      onPressed: busy ? null : () => manage('clearModels'),
-                      child: const Text('清理模型编译缓存'),
-                    ),
-                  ],
+                      TextButton.icon(
+                        key: const Key('import-super-resolution-model'),
+                        onPressed: busy ? null : importModel,
+                        icon: const LumeIcon(
+                          Icons.file_open_outlined,
+                          slot: 'comic_image_tools_page.4',
+                        ),
+                        label: const Text('从本地安装超分模型'),
+                      ),
+                      TextButton(
+                        onPressed: busy ? null : () => manage('clearModels'),
+                        child: const Text('清理模型编译缓存'),
+                      ),
+                    ],
+                  ),
                 ),
                 if (status != null)
                   Padding(

@@ -14,7 +14,6 @@ import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'diagnostic_export_tile.dart';
 import 'configuration_settings_page.dart';
 import 'privacy_settings_page.dart';
-import '../comic/comic_image_tools_page.dart';
 import 'total_subscription_page.dart';
 import 'subscription_sync_page.dart';
 import 'tmdb_settings_page.dart';
@@ -57,7 +56,7 @@ import 'bangumi_settings_page.dart';
 import 'settings_ui.dart';
 import '../../core/theme/appearance.dart';
 import '../../core/session/privacy_settings.dart';
-import 'translation_languages_page.dart';
+import 'global_translation_settings_page.dart';
 import 'private_subscription_settings_page.dart';
 
 import 'section_cache.dart';
@@ -359,16 +358,12 @@ class SettingsPage extends StatelessWidget {
     const SizedBox(height: 12),
     SettingsEntryCard(
       icon: Icons.translate,
-      title: '翻译语言包',
-      subtitle: '一次下载所有可用语言包 · 各个源共用',
-      onTap: () => _push(context, const TranslationLanguagesPage()),
-    ),
-    SettingsEntryCard(
-      icon: Icons.translate,
       title: '全局翻译',
-      subtitle: '标题、搜索与漫画共用 · 系统 / AI / 自动补译',
-      onTap: () =>
-          _push(context, const ComicImageToolsSettingsPage(translation: true)),
+      subtitle: '翻译方式、AI 配置与系统语言包',
+      searchTargets: {
+        '翻译语言包': () => _push(context, const GlobalTranslationSettingsPage()),
+      },
+      onTap: () => _push(context, const GlobalTranslationSettingsPage()),
     ),
 
     const SettingsGroupTitle('内容与订阅'),

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/translation/translation_languages.dart';
 import 'package:lume_box/features/settings/translation_languages_page.dart';
+import 'package:lume_box/features/settings/global_translation_settings_page.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +24,33 @@ void main() {
     {'code': 'ja', 'name': '日语', 'status': ready ? 'installed' : 'supported'},
     {'code': 'ko', 'name': '韩语', 'status': ready ? 'installed' : 'supported'},
   ];
+
+  testWidgets('合并翻译设置与语言包，页内切换不新增标题栏或触发下载', (tester) async {
+    var downloads = 0;
+    messenger.setMockMethodCallHandler(TranslationLanguages.channel, (
+      call,
+    ) async {
+      if (call.method == 'translationLanguages') return packs();
+      downloads++;
+      return [];
+    });
+    await tester.pumpWidget(
+      const MaterialApp(home: GlobalTranslationSettingsPage()),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('实时翻译'), findsOneWidget);
+    expect(find.byType(AppBar), findsOneWidget);
+    await tester.tap(find.text('语言包'));
+    await tester.pumpAndSettle();
+    expect(allButton, findsOneWidget);
+    expect(find.byType(AppBar), findsOneWidget);
+    expect(downloads, 0);
+    expect(find.text('全局翻译设置'), findsNothing);
+    await tester.tap(find.text('翻译设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('实时翻译'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   test('language status must come from a valid system response', () async {
     messenger.setMockMethodCallHandler(
