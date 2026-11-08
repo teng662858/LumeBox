@@ -1186,6 +1186,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             _networkSpeed.measure(
               media.uri,
               headers: media.headers,
+              force: true,
               background: true,
             ),
           );

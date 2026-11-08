@@ -61,7 +61,10 @@ class PlaybackSpeedMeter {
   bool _background = false;
 
   void cancelBackground() {
-    if (_background) _cancelProbe();
+    if (_background) {
+      _measured = null;
+      _cancelProbe();
+    }
   }
 
   void _cancelProbe() {

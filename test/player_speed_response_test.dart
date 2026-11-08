@@ -49,6 +49,38 @@ void main() {
     client.dispose();
   });
 
+  test(
+    'cancelled background request can be retried for the same address',
+    () async {
+      final entered = Completer<void>();
+      final response = Completer<http.Response>();
+      var requests = 0;
+      final client = LumeHttp(
+        client: MockClient((_) async {
+          requests++;
+          if (requests == 1) {
+            entered.complete();
+            return response.future;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+          return http.Response('x' * 16384, 206);
+        }),
+      );
+      final meter = PlaybackSpeedMeter(http: client);
+      final uri = Uri.parse('https://example.test/video.mp4');
+      final pending = meter.measure(uri, background: true);
+      await entered.future;
+      meter.cancelBackground();
+      await pending;
+      await meter.measure(uri, background: true);
+      expect(requests, 2);
+      expect(meter.kbps.value, greaterThan(0));
+      response.complete(http.Response('', 200));
+      meter.dispose();
+      client.dispose();
+    },
+  );
+
   test('HLS 测媒体分片而非索引，保留防盗链头', () async {
     final urls = <String>[];
     final meter = PlaybackSpeedMeter(
