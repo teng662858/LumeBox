@@ -9,7 +9,7 @@ import '../net/network_settings.dart';
 /// Select the highest HLS rendition before opening the native player.
 /// A single-rendition master preserves separate audio and subtitle groups.
 class HighestHls {
-  HighestHls({this.inspectionTimeout = const Duration(milliseconds: 800)});
+  HighestHls({this.inspectionTimeout = const Duration(milliseconds: 250)});
 
   /// Optional quality inspection must not hold native startup for several seconds.
   final Duration inspectionTimeout;

@@ -220,7 +220,7 @@ class NextEpisodeBuffer {
                         SourcePlayback.contentHeaders(content, source: source)),
             ),
           )
-          .timeout(const Duration(seconds: 8));
+          .timeout(const Duration(seconds: 30));
       if (stale()) return;
       await instance.pause();
       if (stale() || instance.snapshot.value.error != null) return;

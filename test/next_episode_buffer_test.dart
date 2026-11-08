@@ -127,6 +127,30 @@ void main() {
       buffer.dispose();
     },
   );
+  testWidgets(
+    'slow next episode remains available for adoption after eight seconds',
+    (tester) async {
+      final source = _Source();
+      final player = _Player()..pending = Completer<void>();
+      final buffer = NextEpisodeBuffer();
+      final task = buffer.prepare(
+        target,
+        settings,
+        () async => source,
+        (_) => player,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 9));
+      expect(player.disposals, 0);
+      player.pending!.complete();
+      await tester.pump();
+      await task;
+      expect(buffer.take(target, 1, settings.kernel)?.player, same(player));
+      buffer.dispose();
+      await player.dispose();
+    },
+  );
+
   test('clearing disposes an in-flight native preload exactly once', () async {
     final source = _Source();
     final player = _Player()..pending = Completer<void>();
