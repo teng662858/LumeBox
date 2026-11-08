@@ -1,3 +1,4 @@
+import 'package:lume_box/core/session/app_preferences.dart';
 import 'package:lume_box/core/player/playback_diagnostics.dart';
 import 'package:lume_box/features/video/player_source_sheet.dart';
 
@@ -2564,6 +2565,9 @@ void main() {
     }
 
     testWidgets('集名后显示完整分辨率，速率在进度条上方且随媒体更新', (tester) async {
+      final badges = AppPreferences.instance.mediaBadges;
+      AppPreferences.instance.mediaBadges = {'enabled': true};
+      addTearDown(() => AppPreferences.instance.mediaBadges = badges);
       const title = '播放布局验证';
       final players = await pump(
         tester,
