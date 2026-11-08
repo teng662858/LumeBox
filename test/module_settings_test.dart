@@ -24,13 +24,14 @@ void main() {
     root = Directory.systemTemp.createTempSync('lume_box_module_settings');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (call) async => call.method == 'getApplicationSupportDirectory'
-          ? root.path
-          : null,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => call.method == 'getApplicationSupportDirectory'
+              ? root.path
+              : null,
+        );
     for (final section in Section.values) {
       await SectionScope.open(section);
+      await ReadingLibrary.open(section);
     }
   });
 
@@ -45,9 +46,16 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(440, 1400));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
-      MaterialApp(theme: LumeTheme.build(), home: const ModuleSettingsHubPage()),
+      MaterialApp(
+        theme: LumeTheme.build(),
+        home: const ModuleSettingsHubPage(),
+      ),
     );
     await tester.pumpAndSettle();
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    });
   }
 
   Future<void> pumpSection(WidgetTester tester, Section section) async {
@@ -60,6 +68,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    });
   }
 
   testWidgets('三个模块入口都在，小说入口已移除', (tester) async {
@@ -72,7 +84,13 @@ void main() {
 
   testWidgets('五个分组都在，且默认**收起**（不把设置堆一页）', (tester) async {
     await pumpSection(tester, Section.comic);
-    for (final title in <String>['UI 与控件', '手势 & 触发灵敏度', '内容排版', '阅读 / 播放行为', '高级']) {
+    for (final title in <String>[
+      'UI 与控件',
+      '手势 & 触发灵敏度',
+      '内容排版',
+      '阅读 / 播放行为',
+      '高级',
+    ]) {
       expect(find.text(title), findsOneWidget, reason: '缺分组：$title');
     }
     // 收起态：组内的滑杆还没出现（展开了才建）。
@@ -92,10 +110,7 @@ void main() {
         .copyWith(toolbarToggleDelayMs: 520)
         .save(comicLibrary);
 
-    expect(
-      SectionModuleSettings.load(comicLibrary).toolbarToggleDelayMs,
-      520,
-    );
+    expect(SectionModuleSettings.load(comicLibrary).toolbarToggleDelayMs, 520);
     expect(
       SectionModuleSettings.load(novelLibrary).toolbarToggleDelayMs,
       SectionModuleSettings.defaultToolbarToggleDelayMs,
@@ -111,16 +126,31 @@ void main() {
       'controlScale': 9.9,
       'preset': 'roomy',
     });
-    expect(parsed.toolbarToggleDelayMs, SectionModuleSettings.maxToolbarToggleDelayMs);
-    expect(parsed.doubleTapWindowMs, SectionModuleSettings.minDoubleTapWindowMs);
-    expect(parsed.swipeTurnThresholdPx, SectionModuleSettings.minSwipeTurnThresholdPx);
+    expect(
+      parsed.toolbarToggleDelayMs,
+      SectionModuleSettings.maxToolbarToggleDelayMs,
+    );
+    expect(
+      parsed.doubleTapWindowMs,
+      SectionModuleSettings.minDoubleTapWindowMs,
+    );
+    expect(
+      parsed.swipeTurnThresholdPx,
+      SectionModuleSettings.minSwipeTurnThresholdPx,
+    );
     expect(parsed.controlScale, SectionModuleSettings.maxControlScale);
     expect(parsed.layoutPreset, ModuleLayoutPreset.roomy);
     expect(parsed.animationEnabled, isTrue, reason: '缺项回退默认');
+    expect(parsed.bufferMiB, 150);
+    final capacity = parsed.copyWith(bufferMiB: 256);
+    expect(SectionModuleSettings.fromJson(capacity.toJson()).bufferMiB, 256);
+    expect(SectionModuleSettings.fromJson({'bufferMiB': 9999}).bufferMiB, 512);
   });
 
   test('预制方案：选一套就带上尺寸与间距（不开放自定义坐标）', () {
-    final compact = const SectionModuleSettings().withPreset(ModuleLayoutPreset.compact);
+    final compact = const SectionModuleSettings().withPreset(
+      ModuleLayoutPreset.compact,
+    );
     expect(compact.controlScale, ModuleLayoutPreset.compact.controlScale);
     expect(compact.spacingScale, ModuleLayoutPreset.compact.spacingScale);
     expect(compact.layoutPreset, ModuleLayoutPreset.compact);

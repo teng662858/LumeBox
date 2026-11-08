@@ -307,6 +307,17 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   /// 调库失败或还没读到时就是默认值——与历史行为一致（默认值 = 起播最快那套）。
   BufferingConfig _buffering = BufferingConfig.defaults;
 
+  BufferingConfig _bufferingForDuration(Duration duration) =>
+      BufferingConfig.forForwardBuffer(
+        duration,
+        maxBufferBytes:
+            (_library == null
+                ? 150
+                : SectionModuleSettings.load(_library!).bufferMiB) *
+            1024 *
+            1024,
+      );
+
   /// 浏览页预启动的内核实例：**只有第一次重建**能接手（见 [_rebuildPlayer]）。
   PlayerPrelaunch? _prelaunch;
   PlayerMedia? _preparedInitialMedia;
@@ -1346,7 +1357,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         if (!_danmakuSettingsDirty) _danmakuSettings = loaded;
         // 「前向缓冲」在**模块设置**里（与设置页同一份数据），派生成内核参数；
         // 装载前经 setBuffering 交给内核（见 _rebuildPlayer）。
-        _buffering = BufferingConfig.forForwardBuffer(
+        _buffering = _bufferingForDuration(
           SectionModuleSettings.load(library).buffer,
         );
       });
@@ -1368,7 +1379,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           _sourceProfiles?.load(_settingsSourceId, store.load()) ??
           store.load();
       if (_sourceProfiles != null && _library != null) {
-        _buffering = BufferingConfig.forForwardBuffer(
+        _buffering = _bufferingForDuration(
           Duration(
             seconds: _sourceProfiles!.bufferSeconds(
               _settingsSourceId,
@@ -1784,7 +1795,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     setState(() {
       _settings = next;
       _preferredSubtitleApplied = false;
-      _buffering = BufferingConfig.forForwardBuffer(
+      _buffering = _bufferingForDuration(
         Duration(
           seconds:
               _sourceProfiles?.bufferSeconds(
@@ -4009,6 +4020,47 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   );
                 },
               ),
+            if (_effectiveKernel == PlayerKernel.mpv ||
+                _effectiveKernel == PlayerKernel.aether) ...[
+              Text('缓存容量上限：${_buffering.maxBufferBytes ~/ (1024 * 1024)} MiB'),
+              const Text('视频板块共用；时长与容量先达到任一上限即停止预读。'),
+              NativeGlassSlider(
+                value: (_buffering.maxBufferBytes / (1024 * 1024))
+                    .clamp(32, 512)
+                    .toDouble(),
+                min: 32,
+                max: 512,
+                divisions: 30,
+                onChanged: _library == null
+                    ? null
+                    : (value) {
+                        final mib = value.round();
+                        final library = _library!;
+                        SectionModuleSettings.load(library)
+                            .copyWith(bufferMiB: mib)
+                            .save(library);
+                        setState(
+                          () => _buffering = _buffering.withMaxBufferBytes(
+                            mib * 1024 * 1024,
+                          ),
+                        );
+                        update(() {});
+                      },
+                onChangeEnd: (_) {
+                  final player = _player;
+                  if (player != null) {
+                    unawaited(
+                      player
+                          .setBuffering(_buffering)
+                          .catchError(
+                            (Object error, StackTrace stack) =>
+                                LumeLog.error(error, stack),
+                          ),
+                    );
+                  }
+                },
+              ),
+            ],
             Text(
               supported
                   ? '前向缓冲 ${buffer == 0 ? '自动' : '$buffer 秒'}'
@@ -4027,7 +4079,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   : (value) {
                       final seconds = value.round();
                       setState(
-                        () => _buffering = BufferingConfig.forForwardBuffer(
+                        () => _buffering = _bufferingForDuration(
                           Duration(seconds: seconds),
                         ),
                       );
@@ -4040,17 +4092,17 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                             .copyWith(bufferSeconds: seconds)
                             .save(library);
                       }
-                      final player = _player;
-                      if (player != null) {
-                        unawaited(
-                          player.setBuffering(_buffering).catchError((
-                            Object error,
-                          ) {
-                            if (mounted) _showToast('本次缓冲调整未完成，将在下次播放时应用');
-                          }),
-                        );
-                      }
                     },
+              onChangeEnd: (_) {
+                final player = _player;
+                if (player != null) {
+                  unawaited(
+                    player.setBuffering(_buffering).catchError((Object error) {
+                      if (mounted) _showToast('本次缓冲调整未完成，将在下次播放时应用');
+                    }),
+                  );
+                }
+              },
             ),
           ],
           if (group == 'playback')

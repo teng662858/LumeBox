@@ -314,9 +314,11 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
   /// 把缓冲参数写进原生侧（只写一次；失败只记日志，不打断起播）。
   Future<void> _applyBufferingOnce() async {
     if (_bufferingWritten) return;
-    _bufferingWritten = true;
     try {
       await _buffering.apply(_config);
+      _bufferingWritten =
+          _buffering is! MethodChannelBufferingBackend ||
+          _buffering.channelKnown;
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       LumeLog.warn('[avplayer] 写缓冲参数失败，本次按系统默认缓冲策略播放');

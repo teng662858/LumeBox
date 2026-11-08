@@ -86,12 +86,12 @@ class MpvPlayer extends AbstractPlayer implements PresentationEngine {
   PlayerCapabilities get capabilities =>
       PlayerCapabilities.of(PlayerKernel.mpv);
 
-  /// 起播缓冲参数（见 [BufferingConfig]）：**下次装载**生效（libmpv 的
-  /// cache / 预读时长是打开文件时读一次的属性，见 [load]）。
+  /// 同步当前预读队列，并保留配置供下一次装载使用。
   @override
   Future<void> setBuffering(BufferingConfig config) async {
     if (_disposed) return;
     buffering = config;
+    await _engine.setBuffering(config);
   }
 
   @override

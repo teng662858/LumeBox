@@ -9,6 +9,7 @@ import 'package:fvp/mdk.dart' as mdk;
 
 import '../util/lume_log.dart';
 import 'abstract_player.dart';
+import 'buffering.dart';
 import 'highest_hls.dart';
 import 'player_capabilities.dart';
 import 'player_settings.dart';
@@ -36,11 +37,8 @@ import 'player_stats.dart';
 ///   video_player 后端就是这么传的：`'Key: Value\r\n'` 形式）。必须在
 ///   `prepare()` **之前**写进去——fvp 的 `media` 只收一个 URL 字符串，没有
 ///   headers 参数，属性通道是唯一入口。
-/// - **缓冲大小类参数**：libmdk 没有可查证的缓冲大小属性名（`Player.setProperty`
-///   的属性表没有权威文档），因此这里**不写猜测的属性名**，只写 fvp 源码里
-///   实际在用、语义明确的网络重连两项（`avio.reconnect` /
-///   `avio.reconnect_delay_max`）——它们解决的是「起播/播放中连接被掐断后
-///   要重新握手」这一类卡顿，与缓冲策略是两回事，如实分开说。
+/// - **缓冲时长**：通过 fvp 暴露的正式 `setBufferRange` API 设置毫秒范围；
+///   字节容量没有等价通道，不用 avio 属性冒充缓存大小。
 class MdkEngine extends AbstractPlayer
     implements VideoFrameCapture, PresentationEngine {
   PlaybackPresentation _presentation = const PlaybackPresentation();
@@ -101,6 +99,50 @@ class MdkEngine extends AbstractPlayer
   }
 
   final mdk.Player _player;
+  BufferingConfig _buffering = BufferingConfig.defaults;
+  Duration? _preparedReadAhead;
+
+  @override
+  Future<void> setBuffering(BufferingConfig config) async {
+    if (!_live) return;
+    final changed = _preparedReadAhead != config.readAhead;
+    _buffering = config;
+    _applyBuffering();
+    final media = _currentMedia;
+    if (!changed || media == null) return;
+    // The native packet queues retain their original range until prepared again.
+    final position = _snapshot.value.position;
+    final playing = _snapshot.value.playing;
+    final audio = List<int>.of(_player.activeAudioTracks);
+    final subtitles = List<int>.of(_subtitleSelection);
+    final external = _externalSubtitle;
+    if (_player.state != mdk.PlaybackState.stopped) {
+      final stopped = _player.onStateChanged
+          .firstWhere((event) => event.newValue == mdk.PlaybackState.stopped)
+          .timeout(const Duration(seconds: 5));
+      _player.state = mdk.PlaybackState.stopped;
+      await stopped;
+    }
+    if (!_live || _currentMedia != media) return;
+    await load(media);
+    if (!_live || _currentMedia != media) return;
+    if (external != null) await loadSubtitleFile(external);
+    _player.activeAudioTracks = audio;
+    _subtitleSelection = subtitles;
+    _applySubtitleState();
+    await seek(position);
+    if (playing) {
+      await play();
+    } else {
+      await pause();
+    }
+  }
+
+  void _applyBuffering() => _player.setBufferRange(
+    min: _buffering.mdkMinBufferMs,
+    max: _buffering.mdkMaxBufferMs,
+    drop: false,
+  );
 
   final ValueNotifier<PlayerSnapshot> _snapshot = ValueNotifier<PlayerSnapshot>(
     const PlayerSnapshot(),
@@ -359,8 +401,11 @@ class MdkEngine extends AbstractPlayer
     _applyHeaders(media.headers);
     _player.videoDecoders = decoderPriority(_hardwareDecoding);
     _player.media = uri.toString();
+    final preparingReadAhead = _buffering.readAhead;
+    _applyBuffering();
     // fvp 要求显式 prepare 才会真正起播（内部会等首个媒体信息到达）。
     await _player.prepare();
+    _preparedReadAhead = preparingReadAhead;
     _duration = Duration(milliseconds: _player.mediaInfo.duration);
     _emit(duration: _duration, position: Duration.zero);
     _applySubtitleState();
@@ -481,7 +526,10 @@ class MdkEngine extends AbstractPlayer
   @override
   Future<void> seek(Duration position) async {
     if (!_live) return;
-    await _player.seek(position: position.inMilliseconds);
+    await _player.seek(
+      position: position.inMilliseconds,
+      flags: mdk.SeekFlag(mdk.SeekFlag.fromStart | mdk.SeekFlag.inCache),
+    );
     _emit(position: position);
   }
 
@@ -491,7 +539,12 @@ class MdkEngine extends AbstractPlayer
     if (!_live) return;
     await _player.seek(
       position: position.inMilliseconds,
-      flags: mdk.SeekFlag(mdk.SeekFlag.keyFrame | mdk.SeekFlag.fast),
+      flags: mdk.SeekFlag(
+        mdk.SeekFlag.fromStart |
+            mdk.SeekFlag.inCache |
+            mdk.SeekFlag.keyFrame |
+            mdk.SeekFlag.fast,
+      ),
     );
     _emit(position: position);
   }

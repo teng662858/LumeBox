@@ -17,22 +17,22 @@ import '../util/lume_log.dart';
 ///   `VideoPlayerOptions` 只暴露 `mixWithOthers` / `allowBackgroundPlayback`
 ///   （已核对 2.14.1 的源码）；
 /// - MPV：libmpv 的 `cache` / `demuxer-*` 属性（media_kit 的高层 API 不开放）；
-/// - MDK：libmdk 的 `avio.*` 属性（fvp 只给了 `setProperty` 这一条通道）。
+/// - MDK：fvp 的 `setBufferRange` 毫秒队列接口。
 ///
 /// 因此本文件定义**一个统一的参数对象 + 一个原生写通道**：符合平台条件时写
 /// 原生参数，不符合时如实降级（[UnsupportedBufferingBackend]），绝不假装已生效。
 @immutable
 class BufferingConfig {
   const BufferingConfig({
-    this.forwardBuffer = const Duration(seconds: 60),
+    this.forwardBuffer = const Duration(seconds: 120),
     this.minimizeStalling = false,
-    this.readAhead = const Duration(seconds: 60),
-    this.maxBufferBytes = 128 * 1024 * 1024,
+    this.readAhead = const Duration(seconds: 120),
+    this.maxBufferBytes = 150 * 1024 * 1024,
     this.maxBackBufferBytes = 16 * 1024 * 1024,
     this.seekTolerance = Duration.zero,
   });
 
-  /// 默认预读 60 秒，前向缓存最多 128 MiB，回退缓存 16 MiB。
+  /// 默认预读 120 秒，前向缓存最多 150 MiB，回退缓存 16 MiB。
   /// 扩大播放中的预读空间，同时保持 minimizeStalling = false，
   /// 不为了填满前向缓存推迟起播。原生内核仍可按媒体与网络调整实际预读量。
   static const BufferingConfig defaults = BufferingConfig();
@@ -40,20 +40,25 @@ class BufferingConfig {
   /// 由「前向缓冲」设置（模块设置里的秒数）派生一份参数。
   ///
   /// 为什么要有这条派生：那个滑杆此前只把值存进库，**没有任何内核消费它**
-  /// （真机上「调了没反应」）。用户口径是一个设置，因此这里映射到两套内核
+  /// （真机上「调了没反应」）。用户口径是一个设置，因此这里映射到各内核
   /// **等价的那一项**：
   /// - AVPlayer：`preferredForwardBufferDuration`（[forwardBuffer]）；
-  /// - MPV：`cache-secs` 与 `demuxer-readahead-secs`（[readAhead]）。
+  /// - MPV：`cache-secs` 与 `demuxer-readahead-secs`（[readAhead]）；
+  /// - MDK：`setBufferRange`；Aether：约 4 秒一段的前向分段队列。
   ///
-  /// [forwardBuffer] 为 0 / 负 = 使用默认的 60 秒预读策略。
+  /// [forwardBuffer] 为 0 / 负 = 使用默认的 120 秒预读策略。
   /// **[minimizeStalling] 永远保持 false**：它是「不为了填缓冲而推迟起播」的
   /// 底线（见 [defaults] 的说明），前向缓冲只决定播放中预读多少，不许变成
   /// 起播前的一次等待。
-  factory BufferingConfig.forForwardBuffer(Duration forwardBuffer) {
-    if (forwardBuffer <= Duration.zero) return defaults;
+  factory BufferingConfig.forForwardBuffer(
+    Duration forwardBuffer, {
+    int maxBufferBytes = 150 * 1024 * 1024,
+  }) {
+    if (forwardBuffer <= Duration.zero) forwardBuffer = defaults.forwardBuffer;
     return BufferingConfig(
       forwardBuffer: forwardBuffer,
       readAhead: forwardBuffer,
+      maxBufferBytes: maxBufferBytes,
     );
   }
 
@@ -85,12 +90,30 @@ class BufferingConfig {
     seekTolerance: tolerance,
   );
 
+  BufferingConfig withMaxBufferBytes(int bytes) => BufferingConfig(
+    forwardBuffer: forwardBuffer,
+    minimizeStalling: minimizeStalling,
+    readAhead: readAhead,
+    maxBufferBytes: bytes,
+    maxBackBufferBytes: maxBackBufferBytes,
+    seekTolerance: seekTolerance,
+  );
+
+  /// MDK's documented packet queue API uses milliseconds, not avio properties.
+  int get mdkMinBufferMs => readAhead.inMilliseconds.clamp(0, 1000);
+  int get mdkMaxBufferMs => readAhead.inMilliseconds.clamp(1, 180000);
+
   /// MPV 属性写法：字符串值 + 单位已在属性名里约定。
   Map<String, String> get mpvProperties => <String, String>{
     // 网络流开启缓存（本地文件由 libmpv 自行忽略）。
     'cache': 'yes',
     // 不要「等缓存填满再起播」——这是 mpv 侧的同一个开关。
     'cache-pause-initial': 'no',
+    // Recover with a small reserve; never wait for the full read-ahead window.
+    'cache-pause': 'yes',
+    'cache-pause-wait':
+        '${readAhead.inMilliseconds < 2000 ? readAhead.inMilliseconds / 1000 : 2}',
+    'demuxer-seekable-cache': 'yes',
     // 网络缓存开启时 cache-secs 才是有效的时长上限。
     'cache-secs': '${readAhead.inSeconds}',
     'demuxer-readahead-secs': '${readAhead.inSeconds}',
@@ -191,6 +214,7 @@ class MethodChannelBufferingBackend implements BufferingBackend {
 
   @override
   Future<void> apply(BufferingConfig config) async {
+    _channelKnown = false;
     try {
       await _methods.invokeMethod<void>('apply', config.toChannelArguments());
       _channelKnown = true;

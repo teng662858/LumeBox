@@ -13,6 +13,26 @@ import 'package:lume_box/core/player/buffering.dart';
 /// 就能直接生效；三件事：通道名与调用方法固定、参数形状固定、原生未接入时如实
 /// 降级为「不支持」而不是抛异常。
 void main() {
+  test('卡顿恢复门槛独立于预读时长，MDK使用毫秒且容量修改保留其他参数', () {
+    final config = BufferingConfig.forForwardBuffer(
+      const Duration(seconds: 90),
+    );
+    expect(config.mpvProperties['cache-pause-initial'], 'no');
+    expect(config.mpvProperties['cache-pause-wait'], '2');
+    expect(config.mdkMinBufferMs, 1000);
+    expect(config.mdkMaxBufferMs, 90000);
+    final small = BufferingConfig.forForwardBuffer(
+      const Duration(milliseconds: 500),
+    );
+    expect(small.mdkMinBufferMs, 500);
+    expect(small.mpvProperties['cache-pause-wait'], '0.5');
+    final larger = config.withMaxBufferBytes(256 * 1024 * 1024);
+    expect(larger.readAhead, config.readAhead);
+    expect(larger.minimizeStalling, false);
+    expect(larger.maxBackBufferBytes, config.maxBackBufferBytes);
+    expect(larger.mpvProperties['demuxer-max-bytes'], '${256 * 1024 * 1024}');
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const methods = MethodChannel(MethodChannelBufferingBackend.channelName);
@@ -24,6 +44,21 @@ void main() {
     messenger().setMockMethodCallHandler(methods, null);
   });
 
+  test('原生写入失败不能沿用上次成功标记', () async {
+    var fail = false;
+    messenger().setMockMethodCallHandler(methods, (_) async {
+      if (fail) throw PlatformException(code: 'unavailable');
+      return null;
+    });
+    final backend = MethodChannelBufferingBackend();
+    await backend.apply(BufferingConfig.defaults);
+    expect(backend.channelKnown, true);
+    fail = true;
+    await backend.apply(
+      const BufferingConfig(readAhead: Duration(seconds: 30)),
+    );
+    expect(backend.channelKnown, false);
+  });
   test('通道名固定：原生 Swift 侧按这个名字注册', () {
     expect(MethodChannelBufferingBackend.channelName, 'lumebox/buffering');
   });
@@ -58,8 +93,8 @@ void main() {
     final args = calls.last.arguments as Map<Object?, Object?>;
     expect(
       args['forwardBufferSeconds'],
-      60.0,
-      reason: '默认请求 AVFoundation 预读 60 秒',
+      120.0,
+      reason: '默认请求 AVFoundation 预读 120 秒',
     );
     expect(
       args['minimizeStalling'],
@@ -87,10 +122,10 @@ void main() {
   group('参数对象', () {
     test('默认值：以「尽快出画面」为准', () {
       const config = BufferingConfig.defaults;
-      expect(config.forwardBuffer, const Duration(seconds: 60));
+      expect(config.forwardBuffer, const Duration(seconds: 120));
       expect(config.minimizeStalling, isFalse);
-      expect(config.readAhead, const Duration(seconds: 60));
-      expect(config.maxBufferBytes, 128 * 1024 * 1024);
+      expect(config.readAhead, const Duration(seconds: 120));
+      expect(config.maxBufferBytes, 150 * 1024 * 1024);
       expect(config.maxBackBufferBytes, 16 * 1024 * 1024);
     });
 
@@ -98,9 +133,12 @@ void main() {
       expect(BufferingConfig.defaults.mpvProperties, <String, String>{
         'cache': 'yes',
         'cache-pause-initial': 'no',
-        'cache-secs': '60',
-        'demuxer-readahead-secs': '60',
-        'demuxer-max-bytes': '${128 * 1024 * 1024}',
+        'cache-pause': 'yes',
+        'cache-pause-wait': '2',
+        'demuxer-seekable-cache': 'yes',
+        'cache-secs': '120',
+        'demuxer-readahead-secs': '120',
+        'demuxer-max-bytes': '${150 * 1024 * 1024}',
         'demuxer-max-back-bytes': '${16 * 1024 * 1024}',
       });
     });
@@ -116,7 +154,7 @@ void main() {
       expect(config.mpvProperties['demuxer-max-back-bytes'], '567');
     });
 
-    test('自动使用60秒预读，长缓冲设置同步到原生与MPV且不增加起播等待', () {
+    test('自动使用120秒预读，长缓冲设置同步到原生与MPV且不增加起播等待', () {
       expect(
         BufferingConfig.forForwardBuffer(Duration.zero),
         BufferingConfig.defaults,
@@ -129,7 +167,7 @@ void main() {
       expect(config.mpvProperties['cache-pause-initial'], 'no');
       expect(config.mpvProperties['cache-secs'], '180');
       expect(config.mpvProperties['demuxer-readahead-secs'], '180');
-      expect(config.maxBufferBytes, 128 * 1024 * 1024);
+      expect(config.maxBufferBytes, 150 * 1024 * 1024);
     });
 
     test('相等性与文案：配置可比较（避免重复写属性）', () {

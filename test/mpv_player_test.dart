@@ -13,6 +13,17 @@ import 'package:lume_box/core/player/player_settings.dart';
 /// 用替身引擎驱动 [MpvPlayer]——libmpv 通过 [MpvEngine] 端口挡在外面，
 /// 因此没有原生库的机器（含 CI）也能把这条链路验完。
 void main() {
+  test('交互跳转保留准确定位，拖动预览才走关键帧', () async {
+    final engine = _FastSeekFake();
+    final player = MpvPlayer(engine: engine);
+    await player.seekInteractive(const Duration(seconds: 42));
+    expect(engine.calls, ['seek:42']);
+    await player.seekFast(const Duration(seconds: 44));
+    expect(engine.calls.last, 'fast:44');
+    await player.seek(const Duration(seconds: 43));
+    expect(engine.calls.last, 'seek:43');
+    await player.dispose();
+  });
   test('MPV 字幕位置使用范围内的整数百分比', () {
     expect(MpvProperties.subtitlePosition(0), '100');
     expect(MpvProperties.subtitlePosition(0.123), '98');
@@ -182,6 +193,18 @@ void main() {
     await player.dispose();
   });
 
+  test('播放中修改缓冲直接下发，下一媒体仍保留配置', () async {
+    await player.load(PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')));
+    final next = BufferingConfig.forForwardBuffer(
+      const Duration(seconds: 90),
+      maxBufferBytes: 256 * 1024 * 1024,
+    );
+    await player.setBuffering(next);
+    expect(engine.buffering, next);
+    await player.load(PlayerMedia(uri: Uri.parse('https://example.com/b.mp4')));
+    expect(engine.buffering, next);
+  });
+
   test('单位换算：mpv 的 bps 在引擎层换算成 kbps（HUD 口径统一）', () {
     expect(MediaKitMpvEngine.toKbps(1800000), 1800);
     expect(MediaKitMpvEngine.toKbps(320000), 320);
@@ -198,9 +221,12 @@ void main() {
         <String, String>{
           'cache': 'yes',
           'cache-pause-initial': 'no',
-          'cache-secs': '60',
-          'demuxer-readahead-secs': '60',
-          'demuxer-max-bytes': '${128 * 1024 * 1024}',
+          'cache-pause': 'yes',
+          'cache-pause-wait': '2',
+          'demuxer-seekable-cache': 'yes',
+          'cache-secs': '120',
+          'demuxer-readahead-secs': '120',
+          'demuxer-max-bytes': '${150 * 1024 * 1024}',
           'demuxer-max-back-bytes': '${16 * 1024 * 1024}',
         },
       );
@@ -371,4 +397,10 @@ class _PropertyFakeEngine extends _FakeMpvEngine
     properties[name] = value;
     return true;
   }
+}
+
+class _FastSeekFake extends _FakeMpvEngine implements FastSeekEngine {
+  @override
+  Future<void> seekFast(Duration position) async =>
+      calls.add('fast:${position.inSeconds}');
 }

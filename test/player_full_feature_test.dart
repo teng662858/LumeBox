@@ -120,7 +120,7 @@ void main() {
       }
       expect(avplayer.bufferingParams, isTrue);
       expect(mpv.bufferingParams, isTrue);
-      expect(mdk.bufferingParams, isFalse);
+      expect(mdk.bufferingParams, isTrue);
     });
 
     test('统一提示文案（用户点名的口径）', () {

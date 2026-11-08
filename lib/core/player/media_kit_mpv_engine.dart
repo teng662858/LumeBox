@@ -268,12 +268,9 @@ class MediaKitMpvEngine
   @override
   Future<void> setBuffering(BufferingConfig config) async {
     if (_disposed) return;
-    final changed = config != _bufferingConfig;
     _bufferingConfig = config;
-    // 没变就不重复写：`open()` 之前还会统一应用一次，值相同的那次是多余的。
-    if (!changed) return;
-    // 已经打开媒体时也写一遍：这几项属性在播放中改对**下一个**文件生效，
-    // 因此不会打断正在播的画面（下一集 / 下次起播就会用上新值）。
+    // 成功应用的相同配置由 _appliedBuffering 去重；失败写入允许重试。
+    // 预读时长与容量为运行时选项，更新当前解复用缓存。
     await _applyBufferingProperties();
   }
 
@@ -566,6 +563,7 @@ class MediaKitMpvEngine
     // libmpv silently ignores a seek issued before the file is ready.
     if (_duration <= Duration.zero) {
       _pendingSeek = position;
+      _pendingSeekFast = false;
       return;
     }
     _pendingSeek = null;
@@ -581,6 +579,7 @@ class MediaKitMpvEngine
     final generation = ++_seekGeneration;
     if (_duration <= Duration.zero) {
       _pendingSeek = position;
+      _pendingSeekFast = true;
       return;
     }
     _pendingSeek = null;
@@ -595,6 +594,8 @@ class MediaKitMpvEngine
     try {
       final platform = _player.platform;
       if (platform is NativePlayer) {
+        // Keep the requested landing point while discarding intermediate frames.
+        await platform.setProperty('hr-seek-framedrop', 'yes');
         await platform.setProperty('hr-seek', exact ? 'yes' : 'no');
       }
     } catch (error) {
@@ -603,6 +604,7 @@ class MediaKitMpvEngine
   }
 
   Duration? _pendingSeek;
+  bool _pendingSeekFast = false;
 
   /// 与 AVPlayer 内核同口径：回到起点并暂停，不卸载媒体。
   ///
@@ -951,7 +953,10 @@ class MediaKitMpvEngine
         if (value > Duration.zero && pending != null) {
           _pendingSeek = null;
           unawaited(
-            _player.seek(pending).catchError((Object error, StackTrace stack) {
+            (_pendingSeekFast ? seekFast(pending) : seek(pending)).catchError((
+              Object error,
+              StackTrace stack,
+            ) {
               LumeLog.error(error, stack);
             }),
           );

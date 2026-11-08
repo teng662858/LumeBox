@@ -45,6 +45,7 @@ class SectionModuleSettings {
     this.swipeTurnThresholdPx = defaultSwipeTurnThresholdPx,
     this.longPressMs = defaultLongPressMs,
     this.bufferSeconds = 0,
+    this.bufferMiB = 150,
   });
 
   /// 呼出工具栏（含底部面板）的延后：**这是防误触的那个阈值**，越大越不容易误触。
@@ -84,6 +85,7 @@ class SectionModuleSettings {
   final int swipeTurnThresholdPx;
   final int longPressMs;
   final int bufferSeconds;
+  final int bufferMiB;
 
   Duration get toolbarToggleDelay =>
       Duration(milliseconds: toolbarToggleDelayMs);
@@ -101,6 +103,7 @@ class SectionModuleSettings {
     int? swipeTurnThresholdPx,
     int? longPressMs,
     int? bufferSeconds,
+    int? bufferMiB,
   }) => SectionModuleSettings(
     layoutPreset: layoutPreset ?? this.layoutPreset,
     controlScale: controlScale ?? this.controlScale,
@@ -111,6 +114,7 @@ class SectionModuleSettings {
     swipeTurnThresholdPx: swipeTurnThresholdPx ?? this.swipeTurnThresholdPx,
     longPressMs: longPressMs ?? this.longPressMs,
     bufferSeconds: bufferSeconds ?? this.bufferSeconds,
+    bufferMiB: bufferMiB ?? this.bufferMiB,
   );
 
   /// 套用一套预制方案：尺寸与间距跟着方案走（阈值等其它项不动）。
@@ -130,6 +134,7 @@ class SectionModuleSettings {
     'swipeThresholdPx': swipeTurnThresholdPx,
     'longPressMs': longPressMs,
     'bufferSeconds': bufferSeconds,
+    'bufferMiB': bufferMiB,
   };
 
   /// 从落盘 JSON 还原；缺项与非法值一律回退默认（旧配置不会让页面起不来），
@@ -182,6 +187,7 @@ class SectionModuleSettings {
         defaultLongPressMs,
       ),
       bufferSeconds: _clampInt(json['bufferSeconds'], 0, maxBufferSeconds, 0),
+      bufferMiB: _clampInt(json['bufferMiB'], 32, 512, 150),
     );
   }
 

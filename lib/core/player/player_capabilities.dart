@@ -92,7 +92,7 @@ class PlayerCapabilities {
   ///   走原生公开 API；位图字幕只调整时序，硬件偏好允许软件回退。
   /// - **MDK**（fvp 0.39 / libmdk）：轨道、外挂字幕及字幕延迟可用；
   ///   解码通过 `videoDecoders` 选择并保留进度重载；内封字幕样式、
-  ///   音频延迟与缓冲参数没有已验证通路，如实标不支持。
+  ///   缓冲时长走 setBufferRange；内封字幕样式与音频延迟仍不支持。
   static PlayerCapabilities of(PlayerKernel kernel) => switch (kernel) {
     PlayerKernel.avplayer => const PlayerCapabilities(
       subtitleTracks: true,
@@ -128,6 +128,7 @@ class PlayerCapabilities {
     ),
     PlayerKernel.mdk => const PlayerCapabilities(
       hardwareDecoding: true,
+      bufferingParams: true,
       audioTracks: true,
       subtitleTracks: true,
       externalSubtitle: true,

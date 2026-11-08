@@ -315,6 +315,13 @@ void main() {
       );
       expect(backend.applied, isEmpty);
       expect(platform.created, hasLength(1), reason: '缓冲通道失败照样起播');
+      backend.failure = null;
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.com/b.mp4')),
+      );
+      expect(backend.applied, [
+        BufferingConfig.defaults,
+      ], reason: '下次装载应重试失败的参数写入');
 
       await player.dispose();
     });
