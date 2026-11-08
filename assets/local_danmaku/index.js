@@ -1,9 +1,12 @@
 'use strict'
 // LumeBox adapter; upstream AGPL-3.0 source and modifications: manifest.json.
 const crypto = require('node:crypto')
+const fs = require('node:fs')
+const path = require('node:path')
 const { AsyncLocalStorage } = require('node:async_hooks')
 module.exports.start = async function start(config) {
   const upstream = require(config.upstreamPath)
+  if (upstream.setDataRoot) upstream.setDataRoot(config.dataRoot || path.dirname(config.upstreamPath))
   const networkState = new AsyncLocalStorage()
   if (config.nativeNetwork && globalThis.catNativeDanmakuFetch) {
     upstream.setFetch(async (...args) => {
@@ -20,14 +23,20 @@ module.exports.start = async function start(config) {
   }
   const token = String(config.token || '')
   if (token.length < 32) throw new Error('Local danmaku token missing')
-  const env = Object.freeze({
+  const settingsFile = path.join(config.dataRoot || path.dirname(config.upstreamPath), "settings.json")
+  const allowed = ["AI_BASE_URL","AI_MODEL","AI_API_KEY","TITLE_MAPPING_TABLE_URL","AUTO_MATCH_MAPPING_TABLE_URL"]
+  let settings = {}
+  try { settings = JSON.parse(fs.readFileSync(settingsFile, "utf8")) } catch {}
+  const env = {
     TOKEN: token,
     SOURCE_ORDER: '360,douban,renren,hanjutv',
     PLATFORM_ORDER: 'qq,qiyi,youku,mgtv,bilibili',
     SEARCH_CACHE_MINUTES: '1', COMMENT_CACHE_MINUTES: '2',
     RATE_LIMIT_MAX_REQUESTS: '0',
     MAX_REQUESTS: '2',
-  })
+    ADMIN_TOKEN: token,
+    ...Object.fromEntries(allowed.filter(k => typeof settings[k] === 'string').map(k => [k, settings[k]])),
+  }
   const equal = value => {
     const a = Buffer.from(value), b = Buffer.from(token)
     return a.length === b.length && crypto.timingSafeEqual(a, b)
@@ -37,18 +46,38 @@ module.exports.start = async function start(config) {
     const parts = url.pathname.split('/')
     if (!equal(parts[1] || '')) { res.writeHead(403); res.end(); return }
     const route = '/' + parts.slice(2).join('/')
-    if (req.method !== 'GET') { res.writeHead(405); res.end(); return }
+    const read = req.method === 'GET' && /^\/api\/v2\/(?:search\/episodes|bangumi\/[^/]+|comment(?:\/[^/]+)?|favorite\/list)$/.test(route)
+    const write = req.method === 'POST' && /^\/api\/v2\/(?:match|segmentcomment|favorite\/(?:add|refresh|remove))$/.test(route)
+    let body = ''
+    if (req.method === 'POST') {
+      for await (const chunk of req) {
+        body += chunk
+        if (Buffer.byteLength(body) > 128 * 1024) { res.writeHead(413); res.end(); return }
+      }
+    }
+    if (route === '/_settings' && ['GET','POST'].includes(req.method)) {
+      try {
+        if (req.method === 'POST') {
+          const input = JSON.parse(body)
+          for (const key of allowed) if (typeof input[key] === 'string') env[key] = input[key].trim()
+          fs.writeFileSync(settingsFile, JSON.stringify(Object.fromEntries(allowed.filter(k=>env[k]).map(k=>[k,env[k]]))), {mode:0o600})
+          upstream.reset?.()
+        }
+        res.writeHead(200, {'content-type':'application/json'})
+        res.end(JSON.stringify({...Object.fromEntries(allowed.filter(k=>k!=='AI_API_KEY').map(k=>[k,env[k]||''])),hasAiKey:!!env.AI_API_KEY})); return
+      } catch { res.writeHead(400); res.end(); return }
+    }
     if (route === '/_health') {
       res.writeHead(200, { 'content-type': 'application/json' })
-      res.end('{"ok":true,"service":"local-danmaku"}'); return
+      res.end(JSON.stringify({ok:true,service:'local-danmaku',version:upstream.version})); return
     }
     // No upstream admin UI, file upload, arbitrary URL proxy or config writes.
-    if (!/^\/api\/v2\/(?:search\/episodes|bangumi\/[^/]+|comment\/[^/]+)$/.test(route)) {
+    if (!read && !write) {
       res.writeHead(404); res.end(); return
     }
     try {
       const state = { failed: 0 }
-      const result = await networkState.run(state, () => upstream.handle('http://127.0.0.1' + url.pathname + url.search, env))
+      const result = await networkState.run(state, () => upstream.handle('http://127.0.0.1' + url.pathname + url.search, env, req.method, body || undefined))
       const bytes = Buffer.from(await result.arrayBuffer())
       if (res.destroyed) return
       // Upstream sometimes suppresses platform errors and returns success + [].

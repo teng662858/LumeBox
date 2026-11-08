@@ -2667,7 +2667,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 target.chapterTitle,
                 chapterIndex: target.chapterIndex,
               );
-              if (!config.official && !config.builtin) {
+              if (!config.official) {
                 try {
                   match = await client.match(
                     '${target.title} ${target.chapterTitle}',
@@ -2718,7 +2718,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 }
               }
             }
-            if (track == null && !config.official && !config.builtin) {
+            if (track == null && !config.official) {
               try {
                 final streamClient = DandanplayClient(credentials: config);
                 final payload = await streamClient

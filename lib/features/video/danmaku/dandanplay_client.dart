@@ -459,6 +459,13 @@ class DandanplayClient {
         }, body: descriptor).timeout(const Duration(seconds: 45)),
       );
 
+  Future<Map<String, dynamic>> localSettings([Map<String, Object?>? values]) =>
+      _request(
+        '/_settings',
+        {},
+        body: values,
+      ).timeout(const Duration(seconds: 45));
+
   Future<Map<String, dynamic>> favorites() => _get('/api/v2/favorite/list', {});
 
   Future<void> updateFavorite(String action, String keyword) async {

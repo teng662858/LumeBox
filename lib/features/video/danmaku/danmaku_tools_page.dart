@@ -76,6 +76,68 @@ class _State extends State<DanmakuToolsPage> {
     }
   }
 
+  Future<void> configureLocal() async {
+    final settings = await client!.localSettings();
+    if (!mounted) return;
+    const fields = {
+      'AI_BASE_URL': 'AI 接口地址',
+      'AI_MODEL': 'AI 模型',
+      'AI_API_KEY': 'AI 密钥（留空保留已有密钥）',
+      'TITLE_MAPPING_TABLE_URL': '远程标题映射 URL',
+      'AUTO_MATCH_MAPPING_TABLE_URL': '远程季集映射 URL',
+    };
+    final inputs = {
+      for (final key in fields.keys)
+        key: TextEditingController(text: '${settings[key] ?? ''}'),
+    };
+    try {
+      final save = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('本机 AI 与远程映射'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('AI 请求会发送作品名称到所配置的模型服务，可能产生费用。'),
+                  for (final field in fields.entries)
+                    TextField(
+                      controller: inputs[field.key],
+                      obscureText: field.key == 'AI_API_KEY',
+                      decoration: InputDecoration(labelText: field.value),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      );
+      if (save == true) {
+        await client!.localSettings({
+          for (final entry in inputs.entries)
+            if (entry.key != 'AI_API_KEY' || entry.value.text.trim().isNotEmpty)
+              entry.key: entry.value.text.trim(),
+        });
+      }
+    } finally {
+      for (final input in inputs.values) {
+        input.dispose();
+      }
+    }
+  }
+
   @override
   void dispose() {
     name.dispose();
@@ -88,7 +150,7 @@ class _State extends State<DanmakuToolsPage> {
   @override
   Widget build(BuildContext context) {
     final config = credentials;
-    final supported = config != null && !config.official && !config.builtin;
+    final supported = config != null && !config.official;
     return GlassScaffold(
       title: '弹幕匹配与对齐',
       settingsSurface: true,
@@ -97,7 +159,6 @@ class _State extends State<DanmakuToolsPage> {
           if (message != null) Text(message!),
           if (busy) const LinearProgressIndicator(),
           if (config == null) const Text('正在读取服务配置…'),
-          if (config?.builtin == true) const Text('内置旧服务暂不支持扩展接口，请切换新版兼容服务器。'),
           if (config?.official == true)
             const Text('当前为官方服务，兼容服务器的链接、收藏与服务端 AI 接口不可用。'),
           TextField(
@@ -231,6 +292,12 @@ class _State extends State<DanmakuToolsPage> {
                     ],
                   ),
                 ),
+            if (config.builtin)
+              ListTile(
+                title: const Text('配置本机 AI 与远程季集映射'),
+                trailing: const Icon(Icons.settings),
+                onTap: busy ? null : () => run(configureLocal),
+              ),
             if (!config.builtin)
               ListTile(
                 title: const Text('打开服务管理：AI、远程季集映射'),

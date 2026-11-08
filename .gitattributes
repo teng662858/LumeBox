@@ -1,3 +1,6 @@
 
 assets/local_danmaku/upstream.cjs -text
 assets/source_icons/*.svg -text
+
+assets/local_danmaku/index.js -text whitespace=cr-at-eol
+assets/local_danmaku/manifest.json -text

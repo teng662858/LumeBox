@@ -1,44 +1,8 @@
 {
-  "project": "https://github.com/YYDS678/danmu_api",
-  "upstreamTagCommit": "a40778b202ebaf10fc84fe199360b169af0690bd",
-  "upstreamReleaseSha256": "f398d6ffdcf2bc0a1f80977aa82790b1508c73ff33695738bacf49e2787b831e",
-  "patchedSha256": "2cb7a22b8271168002740a551ece5439112763f4cf306bc77e91f1cb0fcf4ca8",
-  "patches": [
-    [
-      "iHe();x3e();function t3e()",
-      "function t3e()"
-    ],
-    [
-      "process.on(\"SIGTERM\",()=>PU(0));process.on(\"SIGINT\",()=>PU(0));",
-      ""
-    ],
-    [
-      "cHe().catch(e=>{console.error(\"[server] Failed to start server:\",e),PU(1)});",
-      "module.exports={handle:(url,env)=>bye(new An(url,{method:\"GET\"}),env,\"node\",\"127.0.0.1\")};"
-    ],
-    [
-      "process.cwd()",
-      "(__dirname+\"/data\")"
-    ],
-    [
-      "wt.systemEnvBackup=e3e;",
-      "wt.systemEnvBackup=null;"
-    ],
-    [
-      "typeof process<\"u\"&&process.env?.[t]?",
-      "false?"
-    ],
-    [
-      "async function H6(e,t){return new Promise",
-      "var lumeNativeFetch;async function H6(e,t){if(lumeNativeFetch){let n=new An(e,t),b=Buffer.from(await n.arrayBuffer()),r=await lumeNativeFetch(n.url,{method:n.method,headers:Object.fromEntries(n.headers),body:b.toString(\"base64\"),signal:n.signal,redirect:n.redirect});return new ir(Buffer.from(r.body,\"base64\"),{status:r.status,headers:r.headers,url:n.url})}return new Promise"
-    ],
-    [
-      "module.exports={handle:(url,env)=>bye(new An(url,{method:\"GET\"}),env,\"node\",\"127.0.0.1\")};",
-      "module.exports={setFetch:fn=>{La();lumeNativeFetch=fn},handle:(url,env)=>bye(new An(url,{method:\"GET\"}),env,\"node\",\"127.0.0.1\")};"
-    ],
-    [
-      "function U4(){return $4}",
-      "function U4(){return !!lumeNativeFetch||$4}"
-    ]
-  ]
+  "project": "https://github.com/huangxd-/danmu_api",
+  "version": "1.21.9",
+  "patchedSha256": "9d0e9be4c278949f7ae5b063e1e7cef90bfb0f9be22d1f10a61d8649fae8685a",
+  "upstreamTagCommit": "d4e9447c3fff14d0a71871da7a6c450ecdbee36f",
+  "adapterSha256": "0e6530ef893499c5c8ed4b291a9a83e2e70be0f7a1e41fb92dcb0b7efa6e7dc4",
+  "build": "tool/build_builtin_danmaku.mjs"
 }

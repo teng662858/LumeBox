@@ -55,7 +55,16 @@ try {
       const get=route=>fetch(base+route,{signal:AbortSignal.timeout(10000)});
       assert.equal((await get('/bad/_health')).status,403);
       assert.equal((await get('/'+token+'/_health')).status,200);
-      for(const route of ['/api/config','/api/logs','/api/v2/comment?url=https://example.org']) assert.equal((await get('/'+token+route)).status,404);
+      for(const route of ['/api/config','/api/logs','/api/env/set']) assert.equal((await get('/'+token+route)).status,404);
+      const settingsUrl=base+'/'+token+'/_settings';
+      assert.equal((await fetch(settingsUrl,{method:'POST',body:JSON.stringify({AI_API_KEY:'test-only-local-key'})})).status,200);
+      const localSettings=await (await fetch(settingsUrl)).json();
+      assert.equal(localSettings.hasAiKey,true);
+      assert.equal(localSettings.AI_API_KEY,undefined);
+      assert.equal(process.env.AI_API_KEY,undefined);
+      await fetch(settingsUrl,{method:'POST',body:JSON.stringify({AI_API_KEY:''})});
+      const unmatched=await fetch(base+'/'+token+'/api/v2/match',{method:'POST',body:'{}'});
+      assert.equal(unmatched.status,400,'real match endpoint validates request body');
       const result=await get('/'+token+'/api/v2/search/episodes?anime=');
       assert.equal(result.status,400,'real bundled API must validate requests, not return a mock');
       assert.equal((await result.json()).errorCode,400);

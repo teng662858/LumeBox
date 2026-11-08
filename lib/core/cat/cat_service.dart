@@ -1,3 +1,4 @@
+import 'builtin_danmaku_bundle.dart';
 import 'cat_local_bundle.dart';
 
 import 'dart:async';
@@ -859,37 +860,35 @@ class CatService extends ChangeNotifier {
         await _stopLocalDanmaku();
       }
     }
-    final directory = Directory('${_root!.path}/builtin-danmaku/2cb7a22b8271');
-    await directory.create(recursive: true);
-    for (final name in ['index.js', 'upstream.cjs']) {
-      final bytes = await rootBundle.load('assets/local_danmaku/$name');
-      final data = bytes.buffer.asUint8List(
-        bytes.offsetInBytes,
-        bytes.lengthInBytes,
+    final dataRoot = Directory('${_root!.path}/builtin-danmaku');
+    final directory = await BuiltinDanmakuBundle.install(dataRoot);
+    Future<Uri> launch(Directory bundle) async {
+      final config = File('${bundle.path}/index.config.js');
+      await config.writeAsString(
+        'module.exports = ${jsonEncode({'token': _token, 'upstreamPath': '${bundle.path}/upstream.cjs', 'nativeNetwork': Platform.isIOS, 'dataRoot': dataRoot.path})};',
+        flush: true,
       );
-      if (name == 'upstream.cjs' &&
-          sha256.convert(data).toString() !=
-              '2cb7a22b8271168002740a551ece5439112763f4cf306bc77e91f1cb0fcf4ca8') {
-        throw StateError('内置弹幕组件完整性校验失败');
-      }
-      final file = File('${directory.path}/$name');
-      if (!await file.exists() ||
-          sha256.convert(await file.readAsBytes()).toString() !=
-              sha256.convert(data).toString()) {
-        await file.writeAsBytes(data, flush: true);
-      }
+      return _launchSource({
+        'id': _localDanmakuId,
+        'index': '${bundle.path}/index.js',
+        'config': config.path,
+        'dataRoot': dataRoot.path,
+      });
     }
-    final config = File('${directory.path}/index.config.js');
-    await config.writeAsString(
-      'module.exports = ${jsonEncode({'token': _token, 'upstreamPath': '${directory.path}/upstream.cjs', 'nativeNetwork': Platform.isIOS})};',
-      flush: true,
-    );
-    final base = await _launchSource({
-      'id': _localDanmakuId,
-      'index': '${directory.path}/index.js',
-      'config': config.path,
-      'dataRoot': directory.path,
-    });
+
+    Uri base;
+    try {
+      base = await launch(directory);
+    } catch (_) {
+      if (directory.path == '${dataRoot.path}/bundled') rethrow;
+      await File('${dataRoot.path}/rejected').writeAsString(
+        directory.uri.pathSegments.where((s) => s.isNotEmpty).last,
+        flush: true,
+      );
+      final active = File('${dataRoot.path}/active.json');
+      if (await active.exists()) await active.delete();
+      base = await launch(await BuiltinDanmakuBundle.install(dataRoot));
+    }
     _localDanmakuBase = base;
     return base.replace(path: '/$_token');
   });
