@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/widgets/media_badges.dart';
+import '../../shared/widgets/glass_card.dart';
 
 class MediaBadgeSettingsPage extends StatelessWidget {
   const MediaBadgeSettingsPage({super.key});
@@ -14,9 +15,9 @@ class MediaBadgeSettingsPage extends StatelessWidget {
     '24FPS',
     '中文',
   ];
-  Widget _scene(BuildContext context, String title, Widget child) => Card(
-    margin: const EdgeInsets.only(top: 8, bottom: 8),
-    child: Padding(
+  Widget _scene(BuildContext context, String title, Widget child) => Padding(
+    padding: const EdgeInsets.only(top: 8, bottom: 8),
+    child: GlassCard(
       padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -33,12 +34,14 @@ class MediaBadgeSettingsPage extends StatelessWidget {
     listenable: MediaBadgeSettings.instance,
     builder: (context, _) {
       final settings = MediaBadgeSettings.instance;
-      return Scaffold(
-        appBar: AppBar(title: const Text('媒体徽章')),
-        body: ListView(
+      return GlassScaffold(
+        effectModule: GlassModule.settings,
+        title: '媒体徽章',
+        child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Card(
+            GlassCard(
+              padding: EdgeInsets.zero,
               child: Column(
                 children: [
                   for (final entry in const [

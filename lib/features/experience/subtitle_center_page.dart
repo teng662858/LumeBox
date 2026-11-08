@@ -1,3 +1,5 @@
+import '../../shared/widgets/glass_card.dart';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -109,17 +111,17 @@ class _SubtitleCenterPageState extends State<SubtitleCenterPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('字幕中心'),
-      actions: [
-        IconButton(
-          onPressed: () => run(configure),
-          icon: const Icon(Icons.key_outlined),
-        ),
-      ],
-    ),
-    body: ListView(
+  Widget build(BuildContext context) => GlassScaffold(
+    effectModule: GlassModule.video,
+    settingsSurface: true,
+    title: '字幕中心',
+    actions: [
+      IconButton(
+        onPressed: () => run(configure),
+        icon: const Icon(Icons.key_outlined),
+      ),
+    ],
+    child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
         TextField(

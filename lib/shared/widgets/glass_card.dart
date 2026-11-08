@@ -372,6 +372,7 @@ class GlassScaffold extends StatelessWidget {
     this.bottom,
     this.leading,
     this.floatingActionButton,
+    this.bottomNavigationBar,
     this.behindBar = false,
     this.floatingBar = false,
     this.mergeHomeHeader = false,
@@ -400,6 +401,7 @@ class GlassScaffold extends StatelessWidget {
 
   final Widget? leading;
   final Widget? floatingActionButton;
+  final Widget? bottomNavigationBar;
 
   /// 内容是否铺到顶栏之下（见类文档）。
   final bool behindBar;
@@ -525,8 +527,9 @@ class GlassScaffold extends StatelessWidget {
                   ? _buildBar()
                   : _ShiftedAppBar(dy: unusedInset, child: _buildBar())),
         floatingActionButton: floatingActionButton,
+        bottomNavigationBar: bottomNavigationBar,
         body: _SettingsBackplane(
-          gradient: effectModule == GlassModule.settings,
+          gradient: settingsSurface || effectModule == GlassModule.settings,
           child: _GlassBarHeight(
             height: merge ? trimmedTopInset(statusInset) : height,
             child: HomeHeaderScope(

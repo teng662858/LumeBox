@@ -1,3 +1,5 @@
+import '../../shared/widgets/glass_card.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../core/experience/content_center.dart';
@@ -20,9 +22,10 @@ class ExperienceSettingsPage extends StatelessWidget {
         context,
         MaterialPageRoute<void>(builder: (_) => page),
       );
-      return Scaffold(
-        appBar: AppBar(title: const Text('内容与播放增强')),
-        body: ListView(
+      return GlassScaffold(
+        effectModule: GlassModule.settings,
+        title: '内容与播放增强',
+        child: ListView(
           children: [
             ListTile(
               leading: const Icon(Icons.dashboard_outlined),
@@ -144,12 +147,11 @@ class _SourceProfilesPageState extends State<SourceProfilesPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('源能力档案'),
-      actions: [IconButton(onPressed: load, icon: const Icon(Icons.refresh))],
-    ),
-    body: ListView(
+  Widget build(BuildContext context) => GlassScaffold(
+    effectModule: GlassModule.settings,
+    title: '源能力档案',
+    actions: [IconButton(onPressed: load, icon: const Icon(Icons.refresh))],
+    child: ListView(
       children: [
         if (error.isNotEmpty) Text(error),
         for (final record in records)

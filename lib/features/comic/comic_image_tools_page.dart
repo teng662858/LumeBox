@@ -441,7 +441,7 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
           ? GlassModule.settings
           : GlassModule.comic,
       settingsSurface: true,
-      embedded: widget.translation ? true : widget.embedded,
+      embedded: widget.embedded,
       title: widget.translation ? '全局翻译' : 'AI 图片超分与上色',
       child: ListView(
         padding: EdgeInsets.fromLTRB(
@@ -974,15 +974,7 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
               ],
       ),
     );
-    if (!widget.translation || widget.embedded) return content;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.translation ? '全局翻译' : 'AI 图片超分与上色'),
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        surfaceTintColor: Colors.transparent,
-      ),
-      body: SafeArea(top: false, bottom: false, child: content),
-    );
+    return content;
   }
 }
 

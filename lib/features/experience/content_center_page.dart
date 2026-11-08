@@ -1,3 +1,5 @@
+import '../../shared/widgets/glass_card.dart';
+
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
@@ -452,20 +454,19 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
       return DefaultTabController(
         length: 4,
         initialIndex: widget.initialTab,
-        child: Scaffold(
-          appBar: AppBar(
-            title: const Text('内容中心'),
-            bottom: const TabBar(
-              isScrollable: true,
-              tabs: [
-                Tab(text: '继续'),
-                Tab(text: '追更'),
-                Tab(text: '作品与版本'),
-                Tab(text: '摘录'),
-              ],
-            ),
+        child: GlassScaffold(
+          effectModule: GlassModule.settings,
+          title: '内容中心',
+          bottom: const TabBar(
+            isScrollable: true,
+            tabs: [
+              Tab(text: '继续'),
+              Tab(text: '追更'),
+              Tab(text: '作品与版本'),
+              Tab(text: '摘录'),
+            ],
           ),
-          body: TabBarView(
+          child: TabBarView(
             children: [
               ListView(
                 children: [

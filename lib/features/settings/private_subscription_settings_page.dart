@@ -181,6 +181,7 @@ class _PrivateSubscriptionSettingsPageState
   Widget build(BuildContext context) => GlassScaffold(
     title: '私有 GitHub 订阅',
     effectModule: GlassModule.sources,
+    settingsSurface: true,
     child: ListView(
       padding: const EdgeInsets.all(16),
       children: [

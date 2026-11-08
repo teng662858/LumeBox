@@ -323,18 +323,33 @@ class _IconPickerPageState extends State<IconPickerPage> {
       final name =
           store.slots.where((s) => s.id == widget.slot).firstOrNull?.name ??
           '当前图标';
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('选择图标'),
-          actions: [
-            IconButton(
-              tooltip: '导入自己的图片',
-              onPressed: busy ? null : _importImage,
-              icon: const Icon(Icons.add_photo_alternate_outlined),
+      return GlassScaffold(
+        effectModule: GlassModule.settings,
+        title: '选择图标',
+        actions: [
+          IconButton(
+            tooltip: '导入自己的图片',
+            onPressed: busy ? null : _importImage,
+            icon: const Icon(Icons.add_photo_alternate_outlined),
+          ),
+        ],
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                key: const Key('icons.apply'),
+                onPressed: busy || selected == null || !store.valid(selected!)
+                    ? null
+                    : _apply,
+                child: const Text('使用这个图标'),
+              ),
             ),
-          ],
+          ),
         ),
-        body: SafeArea(
+        child: SafeArea(
           bottom: false,
           child: CustomScrollView(
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -515,22 +530,6 @@ class _IconPickerPageState extends State<IconPickerPage> {
                   ),
                 ),
             ],
-          ),
-        ),
-        bottomNavigationBar: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                key: const Key('icons.apply'),
-                onPressed: busy || selected == null || !store.valid(selected!)
-                    ? null
-                    : _apply,
-                child: const Text('使用这个图标'),
-              ),
-            ),
           ),
         ),
       );
