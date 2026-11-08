@@ -5,7 +5,9 @@ import '../../core/player/player_stats.dart';
 
 class MediaBadgeSettings extends ChangeNotifier {
   static final instance = MediaBadgeSettings();
-  bool enabled(String key) => AppPreferences.instance.mediaBadges[key] != false;
+  bool enabled(String key) => key == 'enabled'
+      ? AppPreferences.instance.mediaBadges[key] == true
+      : AppPreferences.instance.mediaBadges[key] != false;
   String get style =>
       AppPreferences.instance.mediaBadges['style'] as String? ??
       (AppPreferences.instance.mediaBadges['graphic'] == true

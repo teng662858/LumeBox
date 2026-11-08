@@ -9,6 +9,14 @@ void main() {
   setUp(() {
     AppPreferences.instance.mediaBadges = {};
   });
+  test('媒体徽章默认关闭，已保存的开关状态有效', () {
+    expect(MediaBadgeSettings.instance.enabled('enabled'), isFalse);
+    expect(MediaBadgeSettings.instance.enabled('card'), isTrue);
+    AppPreferences.instance.mediaBadges['enabled'] = true;
+    expect(MediaBadgeSettings.instance.enabled('enabled'), isTrue);
+    AppPreferences.instance.mediaBadges['enabled'] = false;
+    expect(MediaBadgeSettings.instance.enabled('enabled'), isFalse);
+  });
   test('未知规格省略，不把裁剪视频猜成标准分辨率', () {
     expect(MediaBadgeData.fromStats(PlayerStats.empty), isEmpty);
     expect(
@@ -18,6 +26,7 @@ void main() {
     expect(MediaBadgeData.fromMap({'title': '4K Dolby Vision'}), isEmpty);
   });
   testWidgets('卡片只显示两个且位置与总开关即时生效', (tester) async {
+    MediaBadgeSettings.instance.set('enabled', true);
     await tester.pumpWidget(
       const MaterialApp(
         home: MediaBadges(
@@ -38,6 +47,7 @@ void main() {
     expect(find.text('4K'), findsNothing);
   });
   testWidgets('按类别关闭并去重，播放器仅保留关键规格', (tester) async {
+    MediaBadgeSettings.instance.set('enabled', true);
     await tester.pumpWidget(
       const MaterialApp(
         home: MediaBadges(
@@ -57,6 +67,7 @@ void main() {
     expect(find.text('4K · Atmos'), findsOneWidget);
   });
   testWidgets('设置开关与图形样式实时预览', (tester) async {
+    MediaBadgeSettings.instance.set('enabled', true);
     await tester.pumpWidget(const MaterialApp(home: MediaBadgeSettingsPage()));
     expect(find.text('启用媒体徽章'), findsOneWidget);
     MediaBadgeSettings.instance.setStyle('graphic');
