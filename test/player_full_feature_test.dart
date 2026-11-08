@@ -197,7 +197,7 @@ void main() {
     test('偏好 JSON 往返：坏值只影响那一项', () {
       const prefs = KernelPrefs(
         speed: 1.25,
-        zoom: ZoomMode.scale125,
+        zoom: ZoomMode.stretch,
         rotation: RotationMode.cw270,
         mirrored: true,
         subtitleSize: SubtitleSize.large,
@@ -1047,15 +1047,56 @@ void main() {
       expect(find.byType(BottomSheet), findsWidgets);
     });
 
+    test('画面适配只有三项，旧倍率回落原比例', () {
+      expect(ZoomMode.values.map((mode) => mode.label), [
+        '原比例',
+        '填满屏幕',
+        '拉伸铺满',
+      ]);
+      for (final id in ['0.75', '1.0', '1.25', '1.5']) {
+        expect(ZoomMode.fromId(id), ZoomMode.fit);
+      }
+      expect(ZoomMode.fromId('fill'), ZoomMode.fill);
+      expect(ZoomMode.fromId('stretch'), ZoomMode.stretch);
+    });
+
+    for (final mode in ZoomMode.values) {
+      testWidgets('横屏画面适配实际布局 ${mode.label}', (tester) async {
+        await tester.binding.setSurfaceSize(const Size(932, 430));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final library = await ReadingLibrary.open(Section.video);
+        VideoPlayerSettingsStore(library)
+            .save(const PlayerSettings().copyWith(zoom: mode));
+        final players = await pump(tester);
+        players.single.pushStats(const PlayerStats(width: 1920, height: 800));
+        await tester.tap(find.byTooltip('全屏'));
+        await tester.binding.setSurfaceSize(const Size(932, 430));
+        players.single.pushStats(const PlayerStats(width: 1920, height: 800));
+        await tester.pumpAndSettle();
+        final rect = tester.getRect(find.text('fake-view'));
+        if (mode == ZoomMode.stretch) {
+          expect(rect.width, closeTo(932, 1));
+          expect(rect.height, closeTo(430, 1));
+        } else {
+          expect(rect.width / rect.height, closeTo(2.4, .01));
+          expect(
+            mode == ZoomMode.fill ? rect.height : rect.width,
+            closeTo(mode == ZoomMode.fill ? 430 : 932, 1),
+          );
+        }
+        expect(tester.takeException(), isNull);
+      });
+    }
+
     testWidgets('重新播放保留上次选择的画面适配', (tester) async {
       final library = await ReadingLibrary.open(Section.video);
       VideoPlayerSettingsStore(library)
-          .save(const PlayerSettings().copyWith(zoom: ZoomMode.scale75));
+          .save(const PlayerSettings().copyWith(zoom: ZoomMode.fit));
       final players = await pump(tester);
       players.single.pushStats(const PlayerStats(width: 1920, height: 1080));
       await tester.pumpAndSettle();
       final picture = tester.getRect(find.text('fake-view'));
-      expect(picture.width, closeTo(675, 1));
+      expect(picture.width, closeTo(900, 1));
       expect(picture.width / picture.height, closeTo(16 / 9, 0.01));
     });
 

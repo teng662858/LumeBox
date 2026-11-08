@@ -7,6 +7,7 @@ import 'package:lume_box/features/video/danmaku/danmaku_panel.dart';
 import 'package:lume_box/features/video/player_settings_panel.dart';
 import 'package:lume_box/shared/widgets/native_glass_surfaces.dart';
 import 'package:lume_box/shared/widgets/video_glass_surface.dart';
+import 'package:lume_box/core/theme/lume_theme.dart';
 
 void main() {
   testWidgets('面板恢复选项底色，普通菜单仍透明', (tester) async {
@@ -32,6 +33,16 @@ void main() {
       ]) {
         final color = colors.resolve(states)!;
         expect(color.a, filled ? greaterThan(0) : 0);
+      }
+      if (filled) {
+        final chip = tester.widget<RawChip>(find.byType(RawChip));
+        expect(
+          LumeTheme.contrast(
+            colors.resolve({WidgetState.selected})!,
+            chip.labelStyle!.color!,
+          ),
+          greaterThanOrEqualTo(4.5),
+        );
       }
     }
   });

@@ -5765,7 +5765,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     );
   }
 
-  /// 画面取景与变换：适应 / 填充 / 倍率 + 旋转 + 镜像。
+  /// 画面取景与变换：原比例 / 填满屏幕 / 拉伸铺满 + 旋转 + 镜像。
   ///
   /// 为什么放在页面层而不是各内核里：这三件事都是「把内核渲染好的画面怎么摆」，
   /// 与解码链无关。三套内核都只提供「一块能画画的区域」，因此这里按视频宽高比
@@ -5795,20 +5795,35 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       return _transformed(view, prefs);
     }
 
-    // 旋转 90 / 270 时用户看到的宽高是反的，取景要按「换轴后」的比例算。
-    final visible = prefs.rotation.swapsAxes ? 1 / aspect : aspect;
-    final containWidth = math.min(width, height * visible);
-    final containHeight = containWidth / visible;
-    final coverWidth = math.max(width, height * visible);
-    final coverHeight = coverWidth / visible;
-    final boxWidth = prefs.zoom.covers ? coverWidth : containWidth;
-    final boxHeight = prefs.zoom.covers ? coverHeight : containHeight;
-
+    final visibleAspect = prefs.rotation.swapsAxes ? 1 / aspect : aspect;
+    final boxWidth = prefs.zoom == ZoomMode.fill
+        ? math.max(width, height * visibleAspect)
+        : math.min(width, height * visibleAspect);
+    final boxHeight = boxWidth / visibleAspect;
+    // Keep the engine surface at its natural aspect ratio. The outer fit
+    // chooses letterboxing, cropping or stretching without tight parent
+    // constraints accidentally squeezing a cover-sized video surface.
     return ClipRect(
-      child: Center(
-        child: _transformed(
-          SizedBox(width: boxWidth, height: boxHeight, child: view),
-          prefs,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: FittedBox(
+          fit: switch (prefs.zoom) {
+            ZoomMode.fit => BoxFit.contain,
+            ZoomMode.fill => BoxFit.cover,
+            ZoomMode.stretch => BoxFit.fill,
+          },
+          child: RotatedBox(
+            quarterTurns: prefs.rotation.degrees ~/ 90,
+            child: Transform.flip(
+              flipX: prefs.mirrored,
+              child: SizedBox(
+                width: prefs.rotation.swapsAxes ? boxHeight : boxWidth,
+                height: prefs.rotation.swapsAxes ? boxWidth : boxHeight,
+                child: view,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -5824,16 +5839,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     return width / height;
   }
 
-  /// 倍率 + 旋转 + 镜像（顺序固定：先转再镜像、最后缩放）。
+  /// 旋转与镜像；画面适配由外层取景决定。
   Widget _transformed(Widget child, KernelPrefs prefs) {
     final matrix = Matrix4.identity();
     if (prefs.rotation.degrees != 0) {
       matrix.rotateZ(prefs.rotation.degrees * math.pi / 180);
     }
     if (prefs.mirrored) matrix.scaleByDouble(-1.0, 1.0, 1.0, 1.0);
-    if (prefs.zoom.scale != 1.0) {
-      matrix.scaleByDouble(prefs.zoom.scale, prefs.zoom.scale, 1.0, 1.0);
-    }
     return Transform(
       transform: matrix,
       alignment: Alignment.center,

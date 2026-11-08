@@ -53,10 +53,15 @@ class VideoGlassSurface extends StatelessWidget {
                   return scheme.onSurface.withValues(alpha: .06);
                 }
                 return states.contains(WidgetState.selected)
-                    ? scheme.primaryContainer
+                    ? scheme.primary
                     : scheme.surfaceContainerHighest;
               }),
               labelStyle: TextStyle(color: scheme.onSurface),
+              secondaryLabelStyle: TextStyle(
+                color: scheme.onPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+              checkmarkColor: scheme.onPrimary,
             )
           : inherited.chipTheme.copyWith(
               color: const WidgetStatePropertyAll(Colors.transparent),

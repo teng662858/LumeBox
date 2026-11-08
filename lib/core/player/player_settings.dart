@@ -121,28 +121,16 @@ enum SubtitleOutline {
   }
 }
 
-/// 画面缩放模式（文档要求：0.75x / 1.0 / 1.25x / 1.5x / 填充 / 适应）。
-///
-/// 「适应」与「填充」是两种**取景方式**（留黑边 vs 裁满框），其余四档是在
-/// 「适应」基础上的倍率——两组语义放在同一个菜单里，因为用户就是这么用的：
-/// 先在「适应 / 填充」里挑一个取景，再用倍率微调。
+/// 画面适配：保留原比例、等比裁满屏幕、非等比拉伸铺满。
+/// 旧倍率设置读取时回落原比例，不再显示或继续应用隐藏倍率。
 enum ZoomMode {
-  fit('fit', '适应', 1.0, false),
-  fill('fill', '填充', 1.0, true),
-  scale75('0.75', '0.75x', 0.75, false),
-  scale100('1.0', '1.0x', 1.0, false),
-  scale125('1.25', '1.25x', 1.25, false),
-  scale150('1.5', '1.5x', 1.5, false);
+  fit('fit', '原比例', false),
+  fill('fill', '填满屏幕', true),
+  stretch('stretch', '拉伸铺满', false);
 
-  const ZoomMode(this.id, this.label, this.scale, this.covers);
-
+  const ZoomMode(this.id, this.label, this.covers);
   final String id;
   final String label;
-
-  /// 在取景尺寸之上的倍率。
-  final double scale;
-
-  /// 是否「裁满整框」（填充）：true 时按 cover 取景，false 时按 contain 取景。
   final bool covers;
 
   static ZoomMode fromId(String? id) {
