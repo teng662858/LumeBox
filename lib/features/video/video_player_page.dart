@@ -1,3 +1,5 @@
+import 'danmaku/danmaku_tools_page.dart';
+import 'danmaku/danmaku_stream.dart';
 import '../../core/player/playback_failure.dart';
 import '../../core/player/playback_health.dart';
 import 'line_performance.dart';
@@ -726,10 +728,138 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     );
   }
 
+  DanmakuStream? _danmakuStream;
+  bool _loadingDanmakuSegment = false;
+  double _danmakuSourceDuration = 0;
+  String get _durationKey => "$_alignmentKey.${_target?.chapterId}.duration";
+  String get _alignmentKey =>
+      'video.danmaku.align.${_target?.sourceId}.${_target?.itemId}';
+  double get _workOffset =>
+      double.tryParse(_library?.setting('$_alignmentKey.offset') ?? '') ?? 0;
+  bool get _workScale => _library?.setting('$_alignmentKey.scale') == 'true';
+
+  Future<void> _loadDanmakuAtPosition() async {
+    final stream = _danmakuStream;
+    if (stream == null || _loadingDanmakuSegment) return;
+    _loadingDanmakuSegment = true;
+    try {
+      final position = _player?.snapshot.value.position ?? Duration.zero;
+      final ratio =
+          _workScale &&
+              _danmakuSourceDuration > 0 &&
+              (_player?.snapshot.value.duration.inMilliseconds ?? 0) > 0
+          ? _player!.snapshot.value.duration.inMilliseconds /
+                1000 /
+                _danmakuSourceDuration
+          : 1.0;
+      final previousRevision = stream.revision;
+      await stream.loadAt(
+        Duration(
+          milliseconds: ((position.inMilliseconds - _workOffset * 1000) / ratio)
+              .round(),
+        ),
+      );
+      if (mounted &&
+          identical(stream, _danmakuStream) &&
+          previousRevision != stream.revision) {
+        setState(() {
+          _publicDanmakuTrack = stream.track;
+          _publicDanmakuCount = stream.track.length;
+          _danmaku = _combinedDanmaku();
+        });
+      }
+    } catch (e) {
+      if (mounted && identical(stream, _danmakuStream)) {
+        _publicDanmakuStatus = '分片加载失败，可重新加载：$e';
+        _notifyDanmakuSheet();
+      }
+    } finally {
+      _loadingDanmakuSegment = false;
+    }
+  }
+
+  Future<void> _openDanmakuTools() async {
+    final target = _target;
+    if (target == null) return;
+    final alignmentKey = _alignmentKey;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => DanmakuToolsPage(
+          title: '${target.title} ${target.chapterTitle}',
+          offset: _workOffset,
+          scale: _workScale,
+          sourceDuration: _danmakuSourceDuration,
+          videoDuration:
+              (_player?.snapshot.value.duration.inMilliseconds ?? 0) / 1000,
+          onAlignment: (offset, scale) {
+            _library?.setSetting('$alignmentKey.offset', '$offset');
+            _library?.setSetting('$alignmentKey.scale', '$scale');
+            if (mounted) setState(() => _danmaku = _combinedDanmaku());
+          },
+          onLoad: ({id, url}) async {
+            final revision = ++_publicDanmakuSeq;
+            final config = await DandanplayCredentials.load();
+            final client = DandanplayClient(credentials: config);
+            DanmakuStream? stream;
+            try {
+              final payload = await client.commentPayload(
+                id: id,
+                videoUrl: url,
+              );
+              stream = DanmakuStream(client, payload);
+              await stream.loadAt(
+                _player?.snapshot.value.position ?? Duration.zero,
+              );
+              if (!mounted ||
+                  revision != _publicDanmakuSeq ||
+                  !(_target?.isSameEpisode(target) ?? false)) {
+                stream.close();
+                return 0.0;
+              }
+              _danmakuStream?.close();
+              _danmakuStream = stream;
+              _danmakuSourceDuration = stream.duration;
+              _library?.setSetting(_durationKey, "${stream.duration}");
+              setState(() {
+                _publicDanmakuTrack = stream!.track;
+                _publicDanmakuCount = stream.track.length;
+                _publicDanmakuStatus = '已加载 $_publicDanmakuCount 条公共弹幕';
+                _danmaku = _combinedDanmaku();
+              });
+              _notifyDanmakuSheet();
+              return stream.duration;
+            } catch (_) {
+              stream?.close();
+              client.close();
+              rethrow;
+            }
+          },
+        ),
+      ),
+    );
+  }
+
   DanmakuTrack _combinedDanmaku() => DanmakuTrack.parse(
     {
       ..._sourceDanmakuTrack.items,
-      ..._publicDanmakuTrack.items,
+      ..._publicDanmakuTrack.items.map((item) {
+        final videoSeconds =
+            (_player?.snapshot.value.duration.inMilliseconds ?? 0) / 1000;
+        final ratio =
+            _workScale && videoSeconds > 0 && _danmakuSourceDuration > 0
+            ? videoSeconds / _danmakuSourceDuration
+            : 1.0;
+        return DanmakuItem(
+          time: Duration(
+            milliseconds:
+                (item.time.inMilliseconds * ratio + _workOffset * 1000).round(),
+          ),
+          text: item.text,
+          mode: item.mode,
+          color: item.color,
+          fontSize: item.fontSize,
+        );
+      }),
       ..._localDanmakuTrack.items,
     }.toList(),
   );
@@ -841,6 +971,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _episodeImages?.dispose();
     _intro?.dispose();
     _nextEpisodeBuffer.dispose();
+    _danmakuStream?.close();
     _unlockTimer?.cancel();
     _hintTimer?.cancel();
     _hintOverlay?.remove();
@@ -991,6 +1122,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
   final _verifiedPlaybackSources = <String>{};
   void _onSnapshotChanged() {
+    unawaited(_loadDanmakuAtPosition());
     _syncPipPlaybackState();
     final snapshot = _player?.snapshot.value;
     final seekTarget = _committedSeekTarget;
@@ -2427,6 +2559,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     }
     _danmakuClients.clear();
     _sourceDanmakuTrack = DanmakuTrack.empty;
+    _danmakuStream?.close();
+    _danmakuStream = null;
+    _danmakuSourceDuration =
+        double.tryParse(_library?.setting(_durationKey) ?? "") ?? 0;
     _publicDanmakuTrack = DanmakuTrack.empty;
     _localDanmakuTrack = target == null
         ? DanmakuTrack.empty
@@ -2531,8 +2667,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 target.chapterTitle,
                 chapterIndex: target.chapterIndex,
               );
-              matches = await client.search(target.title, episode: number);
-              match = DandanplayClient.exactMatch(
+              if (!config.official && !config.builtin) {
+                try {
+                  match = await client.match(
+                    '${target.title} ${target.chapterTitle}',
+                  );
+                } catch (e) {
+                  LumeLog.info('[danmaku] 服务端匹配未完成，回退搜索：$e');
+                }
+              }
+              matches = match == null
+                  ? await client.search(target.title, episode: number)
+                  : [match];
+              match ??= DandanplayClient.exactMatch(
                 matches,
                 target.title,
                 episode: number,
@@ -2569,6 +2716,37 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   );
                   return;
                 }
+              }
+            }
+            if (track == null && !config.official && !config.builtin) {
+              try {
+                final streamClient = DandanplayClient(credentials: config);
+                final payload = await streamClient
+                    .commentPayload(id: id)
+                    .catchError((Object error) {
+                      streamClient.close();
+                      throw error;
+                    });
+                final stream = DanmakuStream(streamClient, payload);
+                try {
+                  await stream.loadAt(
+                    _player?.snapshot.value.position ?? Duration.zero,
+                  );
+                } catch (_) {
+                  stream.close();
+                  rethrow;
+                }
+                if (!publicCurrent()) {
+                  stream.close();
+                  return;
+                }
+                _danmakuStream?.close();
+                _danmakuStream = stream;
+                _danmakuSourceDuration = stream.duration;
+                _library?.setSetting(_durationKey, "${stream.duration}");
+                track = stream.track;
+              } catch (e) {
+                LumeLog.info('[danmaku] 分片接口不可用，回退完整弹幕：$e');
               }
             }
             track ??= await client.comments(id);
@@ -2614,7 +2792,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           if (resolvedTrack == null) return;
           if (!publicCurrent()) return;
           if (!resolvedTrack.isEmpty) {
-            _publicDanmakuCache.put(cacheKey, target.chapterId, resolvedTrack);
+            if (_danmakuStream?.segments.isNotEmpty != true) {
+              _publicDanmakuCache.put(
+                cacheKey,
+                target.chapterId,
+                resolvedTrack,
+              );
+            }
           }
           setState(() {
             _publicDanmakuTrack = resolvedTrack;
@@ -2731,6 +2915,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         target.chapterId,
         track,
       );
+      _danmakuStream?.close();
+      _danmakuStream = null;
       _publicDanmakuTrack = track;
       _applyDanmakuSettings(_danmakuSettings.copyWith(enabled: true));
       applied = true;
@@ -2770,6 +2956,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _library?.setSetting(_matchingKey(target, config.baseUrl), '');
     _library?.setSetting('${_matchingKey(target, config.baseUrl)}.label', '');
     _publicDanmakuCache.clear();
+    _danmakuStream?.close();
+    _danmakuStream = null;
     setState(() {
       _publicDanmakuMatchLabel = null;
       _publicDanmakuLoading = false;
@@ -2801,6 +2989,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           serviceLabel: _danmakuServiceLabel,
           matchLabel: _publicDanmakuMatchLabel,
           onClearMatch: _clearDanmakuMatch,
+          onTools: _openDanmakuTools,
           onMatch: _matchPublicDanmaku,
           onConfigureService: () => _configureDanmakuService(panelContext),
           onReload: () => _loadDanmaku(_target, force: true),

@@ -77,8 +77,9 @@ class DandanplayClient {
 
   Future<Map<String, dynamic>> _request(
     String path,
-    Map<String, String> query,
-  ) async {
+    Map<String, String> query, {
+    Map<String, Object?>? body,
+  }) async {
     Uri? base;
     if (credentials.builtin) {
       try {
@@ -118,7 +119,12 @@ class DandanplayClient {
     // explicitly so signatures never follow the request to another origin.
     for (var redirects = 0; redirects <= 5; redirects++) {
       final timestamp = '${DateTime.now().millisecondsSinceEpoch ~/ 1000}';
-      final request = http.Request('GET', url)..followRedirects = false;
+      final request = http.Request(body == null ? 'GET' : 'POST', url)
+        ..followRedirects = false;
+      if (body != null) {
+        request.headers['Content-Type'] = 'application/json';
+        request.body = jsonEncode(body);
+      }
       request.headers.addAll({
         if (credentials.official && DandanplayCredentials.isOfficial(url)) ...{
           'X-AppId': credentials.appId.trim(),
@@ -147,6 +153,11 @@ class DandanplayClient {
           next.userInfo.isNotEmpty ||
           (url.scheme == 'https' && next.scheme != 'https')) {
         throw const DandanplayException('弹幕服务跳转无效，请检查服务地址');
+      }
+      if (body != null &&
+          (next.origin != url.origin ||
+              ![307, 308].contains(response.statusCode))) {
+        throw const DandanplayException('弹幕服务不允许转发此操作，请使用最终服务地址');
       }
       url = next;
     }
@@ -392,6 +403,73 @@ class DandanplayClient {
       }
     }
     return result;
+  }
+
+  /// Compatible LogVar APIs; official service keeps its existing matching path.
+  Future<DandanplayEpisode?> match(String fileName) async {
+    if (credentials.official) return null;
+    final json = await _request(
+      '/api/v2/match',
+      {},
+      body: {'fileName': fileName},
+    ).timeout(const Duration(seconds: 45));
+    if (json['isMatched'] != true || json['matches'] is! List) return null;
+    for (final raw in json['matches'] as List) {
+      if (raw is! Map || raw['episodeId'] == null) continue;
+      final item = DandanplayEpisode(
+        id: '${raw['episodeId']}',
+        title: '${raw['animeTitle'] ?? ''}',
+        episode: '${raw['episodeTitle'] ?? ''}',
+        animeId: '${raw['animeId'] ?? ''}',
+      );
+      if (!item.supplementary && item.title.isNotEmpty) return item;
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> commentPayload({
+    String? id,
+    Uri? videoUrl,
+    bool segments = true,
+  }) {
+    if (videoUrl != null &&
+        (!['http', 'https'].contains(videoUrl.scheme) ||
+            videoUrl.host.isEmpty ||
+            videoUrl.userInfo.isNotEmpty)) {
+      throw const DandanplayException('请填写有效的平台视频链接');
+    }
+    return _get(
+      id == null
+          ? '/api/v2/comment'
+          : '/api/v2/comment/${Uri.encodeComponent(id)}',
+      {
+        'format': 'json',
+        'duration': 'true',
+        'withRelated': 'true',
+        if (!credentials.official && segments) 'segmentflag': 'true',
+        if (videoUrl != null) 'url': videoUrl.toString(),
+      },
+    );
+  }
+
+  Future<DanmakuTrack> segment(Map<String, dynamic> descriptor) async =>
+      parseComments(
+        await _request('/api/v2/segmentcomment', {
+          'format': 'json',
+        }, body: descriptor).timeout(const Duration(seconds: 45)),
+      );
+
+  Future<Map<String, dynamic>> favorites() => _get('/api/v2/favorite/list', {});
+
+  Future<void> updateFavorite(String action, String keyword) async {
+    if (!['add', 'refresh', 'remove'].contains(action)) {
+      throw ArgumentError.value(action);
+    }
+    await _request(
+      '/api/v2/favorite/$action',
+      {},
+      body: {'keyword': keyword},
+    ).timeout(const Duration(seconds: 45));
   }
 
   Future<DanmakuTrack> comments(String id) async {
