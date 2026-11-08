@@ -172,6 +172,73 @@ void main() {
     },
   );
 
+  testWidgets('首次发现的重复片段必须确认，即使自动跳过倒计时为零', (tester) async {
+    store.update({
+      ...disabled(),
+      'active': true,
+      'autoSkip': true,
+      'countdown': 0,
+      'idleOnly': true,
+    });
+    var seeks = 0;
+    final controller = IntroController(store, backend: FakeBackend.new);
+    controller.bind(request(), (_) async {
+      seeks++;
+    }, deferQueries: true);
+    controller.segments = [
+      const SkipSegment(
+        kind: SegmentKind.opening,
+        startMs: 5000,
+        endMs: 65000,
+        confidence: .93,
+        source: 'fingerprint.repeat',
+      ),
+    ];
+    controller.update(
+      const PlayerSnapshot(
+        playing: true,
+        position: Duration(seconds: 10),
+        duration: Duration(milliseconds: duration),
+      ),
+      foreground: true,
+      pictureInPicture: false,
+    );
+    expect(controller.prompt, isNotNull);
+    await tester.pump(const Duration(seconds: 6));
+    expect(seeks, 0);
+    await controller.skipNow();
+    expect(seeks, 1);
+    expect(store.hasSeriesMemory(episode), true);
+    controller.dispose();
+  });
+
+  test('首集无打点时学习边缘指纹，但不编造跳过时间', () async {
+    store.update({
+      ...disabled(),
+      'repeat': true,
+      'phash': true,
+      'dhash': true,
+      'maxSamples': 10,
+      'scanSeconds': 5,
+    });
+    final backend = FakeBackend();
+    final service = IntroRecognitionService(store: store, backend: backend);
+    final result = await service.recognize(
+      request(),
+      IntroCancellation(),
+      allowHeavy: true,
+    );
+    expect(result, isEmpty);
+    expect(backend.sampleCalls, greaterThanOrEqualTo(6));
+    final learned = store.fingerprints(
+      const EpisodeIdentity(series: 'test-series', season: 1, episode: 2),
+    );
+    expect(learned, hasLength(1));
+    expect(learned.single['segments'], isEmpty);
+    expect(learned.single['durationMs'], duration);
+    await service.close();
+  });
+
   test('manual four points, generated results and seasons have distinct persistence', () {
     store.saveSegments(episode, duration, [opening], manual: true);
     store.saveSegments(episode, duration, [
@@ -328,7 +395,8 @@ void main() {
       RecognitionStage.manual,
     ]);
     expect(options.order.toSet(), RecognitionStage.values.toSet());
-    expect(IntroOptions.switches.length, 17);
+    expect(IntroOptions.switches.length, 18);
+    expect(IntroOptions.switches['repeat'], '学习同季重复片段');
   });
   test('community identity changes invalidate machine results and preserve manual marks', () {
     store.saveSegments(episode, duration, [opening]);
@@ -391,6 +459,7 @@ void main() {
       position = const Duration(seconds: 42);
       final current = find.widgetWithText(TextButton, '当前位置').first;
       await tester.ensureVisible(current);
+      await tester.pumpAndSettle();
       await tester.tap(current);
       await tester.pump();
       expect(find.text('0:42.000'), findsOneWidget);

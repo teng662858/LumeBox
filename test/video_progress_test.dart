@@ -1,3 +1,4 @@
+import 'package:lume_box/core/session/app_preferences.dart';
 import 'package:lume_box/features/video/video_play_target.dart';
 import 'package:lume_box/features/video/player_source_sheet.dart';
 import 'package:lume_box/core/player/player_experience_store.dart';
@@ -114,6 +115,73 @@ void main() {
     return created;
   }
 
+  testWidgets('持续停滞自动切到同集备用线路并保留断点，授权失败不换线', (tester) async {
+    AppPreferences.instance.experience['autoRecover'] = true;
+    var healthNow = DateTime(2026);
+    addTearDown(() => AppPreferences.instance.experience.remove('autoRecover'));
+    source.chapterList = const [
+      SourceChapter(id: 'a1', title: '第1集', line: 'A'),
+      SourceChapter(id: 'b1', title: '第1集', line: 'B'),
+    ];
+    final players = <_FakePlayer>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VideoPlayerPage(
+          healthClock: () => healthNow,
+          media: PlayerMedia(uri: Uri.parse('https://example.com/a1.mp4')),
+          target: const VideoPlayTarget(
+            sourceId: 'demo-video',
+            itemId: 'movie-1',
+            title: '影片',
+            chapterId: 'a1',
+            chapterIndex: 0,
+            chapterTitle: '第1集',
+          ),
+          source: source,
+          sourceManager: manager,
+          fullscreenOnly: false,
+          catalog: const _FakeCatalog({PlayerKernel.avplayer}),
+          library: ReadingLibrary.find(Section.video),
+          playerFactory: (kernel) {
+            final p = _FakePlayer(kernel);
+            players.add(p);
+            return p;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    players.last.emit(
+      position: const Duration(seconds: 40),
+      playing: true,
+      error: 'HTTP 401 Unauthorized',
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    await tester.pumpAndSettle();
+    expect(players.last.media!.uri.path, '/a1.mp4');
+    players.last.emit(position: const Duration(seconds: 40), playing: true);
+    for (var i = 0; i < 4; i++) {
+      healthNow = healthNow.add(const Duration(seconds: 5));
+      await tester.pump(const Duration(seconds: 5));
+    }
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 80)),
+    );
+    await tester.pumpAndSettle();
+    expect(players.last.media!.uri.path, '/b1.mp4');
+    expect(players.last.seeks, contains(const Duration(seconds: 40)));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    AppPreferences.instance.experience.remove('autoRecover');
+  });
+
   for (final playing in [false, true]) {
     testWidgets('画质切换失败恢复原线路、进度与暂停状态：playing=$playing', (tester) async {
       final player = _FakePlayer(PlayerKernel.avplayer)
@@ -215,6 +283,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(players.last.media!.uri.path, '/e1-1080.mp4');
       await tapWithDetailPlay(tester, find.byTooltip('播放器设置'));
+      await tester.tap(find.byKey(const ValueKey('player-category-playback')));
+      await tester.pumpAndSettle();
       final qualityEntry = find.widgetWithText(ListTile, '画质');
       await tester.ensureVisible(qualityEntry);
       await tapWithDetailPlay(tester, qualityEntry);
@@ -917,7 +987,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.byTooltip('播放器设置'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const ValueKey('player-category-intro')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('player-category-intro')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('player-category-intro')));
     await tester.pumpAndSettle();
@@ -978,7 +1050,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.byTooltip('播放器设置'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const ValueKey('player-category-intro')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('player-category-intro')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('player-category-intro')));
     await tester.pumpAndSettle();
@@ -1373,11 +1447,8 @@ void main() {
       });
       await tester.pumpAndSettle();
 
-      await tester.dragUntilVisible(
-        find.text('自动连播'),
-        find.byType(PlayerSettingsSheet),
-        const Offset(0, -250),
-      );
+      await tester.tap(find.byKey(const ValueKey('player-category-playback')));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.widgetWithText(SwitchListTile, '自动连播'));
       await tester.pump();
       await tester.runAsync(() async {

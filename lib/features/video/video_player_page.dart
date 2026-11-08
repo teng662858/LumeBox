@@ -1,3 +1,6 @@
+import '../../core/player/playback_failure.dart';
+import '../../core/player/playback_health.dart';
+import 'line_performance.dart';
 import '../experience/clip_editor.dart';
 import '../experience/subtitle_center_page.dart';
 import '../../core/experience/content_center.dart';
@@ -112,6 +115,7 @@ import '../../core/player/playback_logs.dart';
 import 'intro_episode_sheet.dart';
 
 part 'video_player_intro.dart';
+part 'video_player_routes.dart';
 
 /// 独立播放器页：视频**唯一的**播放入口。
 ///
@@ -144,10 +148,14 @@ class VideoPlayerPage extends StatefulWidget {
     this.library,
     this.playbackBackend,
     this.speedMeter,
+    this.healthClock,
     this.prelaunch,
     this.sourceValidator,
     this.fullscreenOnly = true,
   });
+
+  /// Injectable time source for deterministic stall recovery checks.
+  final DateTime Function()? healthClock;
 
   /// 起播媒体（含防盗链请求头）。
   ///
@@ -469,6 +477,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   bool _rangeFallbackAttempted = false;
   final Set<String> _recoveryLines = {};
   bool _autoRecovering = false;
+  final _stallGuard = PlaybackStallGuard();
+  final _linePerformanceCache = <String, LinePerformance>{};
+  PlaybackSpeedMeter? _benchmarkMeter;
   String? _prefetchedEpisode;
   Duration _healthyPosition = Duration.zero;
   AppLifecycleState _lifecycle = AppLifecycleState.resumed;
@@ -820,6 +831,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   @override
   void dispose() {
     _rebuildSeq++;
+    _benchmarkMeter?.dispose();
+    _benchmarkMeter = null;
     _settingsForSheet.dispose();
     _library?.settingsRevision.removeListener(_onSharedSettingsChanged);
     DanmakuSourcesStore.revision.removeListener(_danmakuServiceChanged);
@@ -1021,6 +1034,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         uri: _media?.uri,
         elapsedMs: startupWatch.elapsedMilliseconds,
       );
+      final target = _target;
+      if (target != null) {
+        unawaited(_recordLineStartup(target, startupWatch.elapsedMilliseconds));
+      }
       _startupWatch = null;
     }
     if (snapshot != null) _syncOriginalIntro(snapshot);
@@ -1079,46 +1096,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _cancelAutoHide();
       _logPlaybackFailure(snapshot!);
       final error = snapshot.error!.toLowerCase();
-      if (ContentCenter.instance.enabled('autoRecover') &&
-          !_autoRecovering &&
-          !_switchingQuality &&
-          _target != null &&
-          !error.contains('403') &&
-          !error.contains('401') &&
-          !error.contains('-12939') &&
-          !error.contains('byte range')) {
-        _autoRecovering = true;
-        scheduleMicrotask(() async {
-          try {
-            final target = _target;
-            final source = await _openSource();
-            if (target == null || source == null || !mounted) return;
-            final all = await VideoEpisodeCatalog.load(source, target.itemId);
-            if (!mounted || _target?.isSameEpisode(target) != true) return;
-            final current = all
-                .where((c) => c.id == target.chapterId)
-                .firstOrNull;
-            if (current == null) return;
-            final group = VideoEpisodeCatalog.group(all);
-            final line = group.keys
-                .where(
-                  (line) =>
-                      line != VideoEpisodeCatalog.lineOf(current) &&
-                      !_recoveryLines.contains('${target.identity}:$line'),
-                )
-                .firstOrNull;
-            if (line != null) {
-              _recoveryLines.add('${target.identity}:$line');
-              _showToast('播放失败，正在尝试备用线路：$line');
-              await _offerAlternativeLines(selectedLine: line);
-            }
-          } catch (_) {
-            if (mounted) _showToast('自动恢复未成功，可手动换源或重试');
-          } finally {
-            _autoRecovering = false;
-          }
-        });
-      }
+      scheduleMicrotask(() => _recoverAlternative());
       if (!_rangeFallbackAttempted &&
           _settings.kernel == PlayerKernel.avplayer &&
           _catalog.isAvailable(PlayerKernel.mpv) &&
@@ -2855,8 +2833,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _progressTimer?.cancel();
     _progressTimer = Timer.periodic(_progressInterval, (_) {
       final snapshot = _player?.snapshot.value;
-      if (snapshot == null || !snapshot.playing) return;
-      _saveProgress();
+      if (snapshot == null) return;
+      _checkPlaybackStall(snapshot);
+      if (snapshot.playing) _saveProgress();
     });
   }
 
@@ -5795,6 +5774,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 child: ValueListenableBuilder<PlayerSnapshot>(
                   valueListenable: player.snapshot,
                   builder: (context, snapshot, _) => PlayerWaitingOverlay(
+                    stats: player.stats.value,
                     snapshot: snapshot,
                     operation: _operation,
                     locked: _locked,
@@ -6139,35 +6119,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           );
         },
         includeQualityTab: true,
-        loadLines: target == null
-            ? null
-            : () async {
-                final source = await _openSource();
-                if (source == null) throw StateError('图源不可用');
-                final all = await VideoEpisodeCatalog.load(
-                  source,
-                  target.itemId,
-                );
-                final current = all
-                    .where((c) => c.id == target.chapterId)
-                    .firstOrNull;
-                return [
-                  for (final group in VideoEpisodeCatalog.group(all).entries)
-                    PlayerSourceLine(
-                      group.key,
-                      current:
-                          current != null &&
-                          group.key == VideoEpisodeCatalog.lineOf(current),
-                      available:
-                          current != null &&
-                          VideoEpisodeCatalog.matchingIndex(
-                                current,
-                                group.value,
-                              ) >=
-                              0,
-                    ),
-                ];
-              },
+        loadLines: target == null ? null : () => _rankedLines(target),
+        onBenchmarkLines: target == null ? null : () => _benchmarkLines(target),
         onSelectLine: (line) async {
           if (target == null || _target?.isSameEpisode(target) != true) {
             return false;
@@ -6218,6 +6171,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         onSelectQuality: _selectQuality,
       ),
     );
+    _benchmarkMeter?.dispose();
+    _benchmarkMeter = null;
     if (mounted) _scheduleAutoHide();
   }
 
@@ -6631,6 +6586,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         address: media.uri,
         stats: player.stats,
         snapshot: player.snapshot,
+        operation: _operation,
         onCopied: _showToast,
         line: line(),
         source: _source?.name ?? target?.sourceId ?? '手动地址',

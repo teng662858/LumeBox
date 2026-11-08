@@ -1,3 +1,5 @@
+import 'repeated_segments.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -143,6 +145,7 @@ class IntroRecognitionService {
         token.check();
         store.saveFingerprint(request.episode, request.durationMs, {
           'frames': data,
+          'durationMs': request.durationMs,
           'segments': segments.map((s) => s.toJson()).toList(),
         });
       } on IntroCancelled {
@@ -538,6 +541,26 @@ class IntroRecognitionService {
         );
       }
     }
+    if (allowHeavy &&
+        !request.episode.movie &&
+        options.enabled('repeat') &&
+        (options.enabled('phash') || options.enabled('joint'))) {
+      try {
+        final data = await fingerprints();
+        token.check();
+        if (data.length >= 6) {
+          store.saveFingerprint(request.episode, request.durationMs, {
+            'frames': data,
+            'durationMs': request.durationMs,
+            'segments': <Object?>[],
+          });
+        }
+      } on IntroCancelled {
+        rethrow;
+      } catch (_) {
+        /* Resource gates also apply to learning the first episode. */
+      }
+    }
     return [];
   }
 
@@ -611,8 +634,16 @@ List<SkipSegment> _matchFingerprintBatch(
     Map<String, Object?>,
   )
   data,
-) =>
-    FingerprintSegments.match(data.$1, data.$2, data.$3, IntroOptions(data.$4));
+) {
+  final options = IntroOptions(data.$4);
+  final known = FingerprintSegments.match(data.$1, data.$2, data.$3, options);
+  return known.isNotEmpty
+      ? known
+      : options.enabled('repeat')
+      ? RepeatedSegments.discover(data.$1, data.$2, data.$3, options)
+      : <SkipSegment>[];
+}
+
 List<SkipSegment> _heuristicBatch(
   (List<IntroSample>, int, Map<String, Object?>) data,
 ) => HeuristicSegments.detect(data.$1, data.$2, IntroOptions(data.$3));

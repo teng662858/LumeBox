@@ -1,3 +1,5 @@
+import '../../core/player/playback_health.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,9 +20,11 @@ class PlayerPlaybackInfo extends StatelessWidget {
     required this.stats,
     required this.snapshot,
     this.onCopied,
+    this.operation,
   });
 
   final Uri address;
+  final String? operation;
   final String source, quality, kernel;
   final Future<String?> line;
   final ValueListenable<PlayerStats> stats;
@@ -36,6 +40,7 @@ class PlayerPlaybackInfo extends StatelessWidget {
         final value = stats.value;
         final state = snapshot.value;
         final details = <String, String>{
+          '诊断建议': PlaybackHealth.describe(state, value, operation: operation),
           '源': source,
           '线路': route.connectionState == ConnectionState.waiting
               ? '正在读取…'

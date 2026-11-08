@@ -170,7 +170,11 @@ extension _OriginalIntro on _VideoPlayerPageState {
                     onPressed: controller.skipNow,
                     style: TextButton.styleFrom(foregroundColor: Colors.white),
                     child: Text(
-                      '跳过$label${controller.store.value.autoSkip ? ' · ${controller.secondsLeft}s' : ''}',
+                      '跳过$label${segment.source == 'fingerprint.repeat'
+                          ? ' · 重复片段待确认'
+                          : controller.store.value.autoSkip
+                          ? ' · ${controller.secondsLeft}s'
+                          : ''}',
                     ),
                   ),
                   IconButton(

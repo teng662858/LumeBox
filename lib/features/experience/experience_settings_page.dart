@@ -64,7 +64,11 @@ class ExperienceSettingsPage extends StatelessWidget {
               onChanged: (v) => center.put('skipUnhealthy', v),
             ),
             for (final entry in const [
-              ('autoRecover', '播放失败自动尝试备用线路', '只尝试同作品的其他线路；登录或授权失败不自动重试'),
+              (
+                'autoRecover',
+                '播放失败或持续卡顿时自动换线',
+                '停滞约 15 秒后尝试对应集，保留进度；优先测速较好的线路，登录或授权失败不重试',
+              ),
               (
                 'autoReadDownloads',
                 '阅读时下载后续章节',
@@ -78,7 +82,10 @@ class ExperienceSettingsPage extends StatelessWidget {
               SwitchListTile(
                 title: Text(entry.$2),
                 subtitle: Text(entry.$3),
-                value: center.enabled(entry.$1),
+                value: center.enabled(
+                  entry.$1,
+                  fallback: entry.$1 == 'autoRecover',
+                ),
                 onChanged: (v) => center.put(entry.$1, v),
               ),
             ListTile(

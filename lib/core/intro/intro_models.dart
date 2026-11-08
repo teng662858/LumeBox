@@ -101,6 +101,7 @@ class IntroOptions {
     'dhash': '图像 dHash',
     'mfcc': '音频 MFCC',
     'joint': '音视频联合指纹',
+    'repeat': '学习同季重复片段',
     'videoAI': 'MobileCLIP 视频片段分类',
     'audioAI': 'YAMNet 对白／音乐分类',
     'manual': '手动四点标记',

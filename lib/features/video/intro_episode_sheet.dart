@@ -176,6 +176,29 @@ class _IntroEpisodeSheetState extends State<IntroEpisodeSheet> {
             padding: const EdgeInsets.all(16),
             children: [
               Text(widget.controller.status),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                key: const ValueKey('intro-smart-repeat'),
+                title: const Text('智能识别同季重复片头片尾'),
+                value:
+                    widget.controller.store.value.active &&
+                    widget.controller.store.value.enabled('repeat'),
+                onChanged: (value) => widget.controller.store.update({
+                  'repeat': value,
+                  if (value) ...{
+                    'active': true,
+                    'phash': true,
+                    'dhash': true,
+                    'joint': true,
+                    'wifiOnly': true,
+                    'idleOnly': true,
+                  },
+                }),
+              ),
+              const Text(
+                '前台暂停且连接 Wi-Fi 时学习同季各集的重复片段；首次匹配先提示确认，不直接跳过。无需填写作品 ID。',
+              ),
+
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),

@@ -1,3 +1,6 @@
+import '../video/video_player_settings.dart';
+import '../video/playback_quality_preference.dart';
+import 'tracking_resume.dart';
 import '../../shared/widgets/glass_card.dart';
 
 import 'dart:io';
@@ -150,9 +153,18 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
     if (mounted) setState(() {});
   }
 
+  String _trackingResumeLabel(ContentRef ref) {
+    final library = libraries
+        .where((lib) => lib.section == ref.section)
+        .firstOrNull;
+    final progress = library?.progress(ref.item, sourceId: ref.source);
+    return '${progress is VideoProgress ? '上次观看：${progress.chapterTitle} · ' : ''}${TrackingResume.label(progress is VideoProgress ? progress : null)}';
+  }
+
   Future<void> open(
     ContentRef ref, {
     bool resume = true,
+    bool nextUnwatched = false,
     int? chapter,
     int? seconds,
     int? page,
@@ -191,11 +203,28 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
       manager: manager,
       target: target,
     );
-    if (resume && (progress != null || chapter != null)) {
-      final chapters = await source
+    if (resume &&
+        (progress != null ||
+            chapter != null ||
+            (nextUnwatched && ref.section == Section.video))) {
+      var chapters = await source
           .chapters(ref.item)
           .timeout(const Duration(seconds: 40));
       if (chapters.isEmpty) throw StateError('目录为空');
+      if (ref.section == Section.video) {
+        chapters = TrackingResume.episodes(
+          chapters,
+          progress is VideoProgress ? progress : null,
+        );
+        if (nextUnwatched) {
+          final next = TrackingResume.index(
+            chapters,
+            progress is VideoProgress ? progress : null,
+          );
+          if (next < 0) throw StateError('当前线路暂无下一集，或上次剧集已变更，请在详情页选择');
+          chapter = next;
+        }
+      }
       final saved = chapters.indexWhere((c) => c.id == progress?.chapterId);
       final index =
           (chapter ?? (saved >= 0 ? saved : progress?.chapterIndex ?? 0)).clamp(
@@ -224,12 +253,22 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
             .content(itemId: ref.item, chapterId: chapters[index].id)
             .timeout(const Duration(seconds: 40));
         if (content is VideoContent) {
-          final uri = SourcePlayback.contentAddress(content);
+          final qualities = SourcePlayback.contentQualities(
+            content,
+            source: source,
+          );
+          final selected = PlaybackQualityPreference.select(
+            qualities,
+            VideoPlayerSettingsStore(lib).load(),
+          );
+          final uri = selected?.url ?? SourcePlayback.contentAddress(content);
           if (uri == null) throw StateError('没有播放地址');
           screen = VideoPlayerPage(
             media: PlayerMedia(
               uri: uri,
-              headers: content.headers,
+              headers:
+                  selected?.headers ??
+                  SourcePlayback.contentHeaders(content, source: source),
               title: ref.title,
             ),
             source: source,
@@ -244,7 +283,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
               chapterId: chapters[index].id,
               chapterTitle: chapters[index].title,
             ),
-            qualities: content.qualities,
+            qualities: qualities,
           );
           if (seconds != null) {
             lib.saveProgress(
@@ -557,10 +596,19 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
                         when ref.visible)
                       row(
                         ref,
-                        '${update['count']} 个新章节 · ${update['latest']}\n${update['read'] == true ? '已读' : '未读'}',
+                        '${update['count']} 个新章节 · ${update['latest']}\n${ref.section == Section.video
+                            ? _trackingResumeLabel(ref)
+                            : update['read'] == true
+                            ? '已读'
+                            : '未读'}',
                         tap: () {
-                          center.markRead('${update['id']}');
-                          run(() => open(ref));
+                          run(() async {
+                            await open(
+                              ref,
+                              nextUnwatched: ref.section == Section.video,
+                            );
+                            center.markRead('${update['id']}');
+                          });
                         },
                         trailing: IconButton(
                           onPressed: () => center.markRead('${update['id']}'),

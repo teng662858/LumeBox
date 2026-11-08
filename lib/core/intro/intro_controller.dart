@@ -221,6 +221,11 @@ class IntroController extends ChangeNotifier {
     if (candidate == null) return;
     prompt = candidate;
     secondsLeft = store.value.countdown;
+    // Repeated material can be a recap or logo; ask once before skipping it.
+    if (prompt?.source == 'fingerprint.repeat') {
+      _notify();
+      return;
+    }
     if (store.value.autoSkip && secondsLeft == 0) {
       unawaited(skipNow(remember: false));
       return;

@@ -14,8 +14,10 @@ class PlayerSourceLine {
     this.name, {
     this.current = false,
     this.available = true,
+    this.detail,
   });
   final String name;
+  final String? detail;
   final bool current, available;
 }
 
@@ -43,6 +45,7 @@ class PlayerSourceSheet extends StatefulWidget {
     this.onSelectEpisode,
     this.onSwitchLine,
     this.loadLines,
+    this.onBenchmarkLines,
     this.onSelectLine,
     this.initialTab = PlayerSourceTab.episodes,
     this.includeQualityTab = true,
@@ -65,6 +68,7 @@ class PlayerSourceSheet extends StatefulWidget {
   final Future<bool> Function(int)? onSelectEpisode;
   final VoidCallback? onSwitchLine;
   final Future<List<PlayerSourceLine>> Function()? loadLines;
+  final Future<void> Function()? onBenchmarkLines;
   final Future<bool> Function(String)? onSelectLine;
   final PlayerSourceTab initialTab;
   final bool includeQualityTab;
@@ -83,6 +87,7 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
   late PlayerEpisodeView _view = widget.initialView;
   double _rowExtent = 52;
   final _scroll = ScrollController();
+  bool _benchmarking = false;
   bool _busy = false, _reverse = false, _located = false;
   String? _error;
   int? _pending;
@@ -475,8 +480,9 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
         if (snapshot.hasError) {
           return Center(
             child: TextButton(
-              onPressed: () =>
-                  setState(() => _lines = widget.loadLines?.call()),
+              onPressed: () => setState(() {
+                _lines = widget.loadLines?.call();
+              }),
               child: const Text('线路加载失败，点击重试'),
             ),
           );
@@ -494,6 +500,39 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
               minVerticalPadding: 10,
               subtitle: Text('仅切换到对应集，保留当前进度和暂停状态'),
             ),
+            if (widget.onBenchmarkLines != null)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(_benchmarking ? '正在逐条测速…' : '测速并排序'),
+                subtitle: const Text('每条请求最多 768 KiB，结果保留 6 小时；探测速度不等于播放速度'),
+                trailing: _benchmarking
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(),
+                      )
+                    : const Icon(Icons.speed),
+                onTap: _benchmarking || _busy
+                    ? null
+                    : () async {
+                        setState(() {
+                          _benchmarking = true;
+                          _error = null;
+                        });
+                        try {
+                          await widget.onBenchmarkLines!();
+                          if (mounted) {
+                            setState(() {
+                              _lines = widget.loadLines?.call();
+                            });
+                          }
+                        } catch (_) {
+                          if (mounted) setState(() => _error = '测速未完成，请重试');
+                        } finally {
+                          if (mounted) setState(() => _benchmarking = false);
+                        }
+                      },
+              ),
             const Divider(height: 20),
             for (final line in lines)
               ListTile(
@@ -505,11 +544,16 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                subtitle: line.current
-                    ? const Text('当前线路')
-                    : !line.available
-                    ? const Text('没有对应集，请在详情页手动选择')
-                    : null,
+                subtitle: line.available && !line.current && line.detail == null
+                    ? null
+                    : Text(
+                        !line.available
+                            ? '没有对应集，请在详情页手动选择'
+                            : [
+                                if (line.current) '当前线路',
+                                if (line.detail != null) line.detail!,
+                              ].join(' · '),
+                      ),
                 enabled: !_busy && line.available,
                 trailing: line.current ? const Icon(Icons.check) : null,
                 onTap: () => line.current

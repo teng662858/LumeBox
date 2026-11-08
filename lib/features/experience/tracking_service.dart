@@ -1,3 +1,4 @@
+import 'tracking_resume.dart';
 import 'reading_offline.dart';
 
 import 'dart:async';
@@ -114,18 +115,42 @@ class TrackingService with WidgetsBindingObserver {
             if (cancelled?.call() == true) {
               return TrackingReport(success, failed, fresh, true);
             }
+            if (lib.section == Section.video) {
+              // Migrate previous per-route IDs without announcing existing episodes again.
+              final baselines = Map<String, dynamic>.from(
+                center.data['baselines'] as Map? ?? {},
+              );
+              final old = baselines[ref.key];
+              if (old is List) {
+                final aliases = {
+                  for (final c in chapters)
+                    jsonEncode([c.line, c.id]): TrackingResume.chapterKey(c),
+                };
+                baselines[ref.key] = old
+                    .map((key) => aliases[key] ?? key)
+                    .toSet()
+                    .toList();
+                center.data['baselines'] = baselines;
+              }
+            }
             final added = center.compare(
               ref,
-              chapters
-                  .map(
-                    (c) =>
-                        SourceChapterFact(jsonEncode([c.line, c.id]), c.title),
-                  )
-                  .toList(),
+              lib.section == Section.video
+                  ? TrackingResume.facts(chapters)
+                  : chapters
+                        .map(
+                          (c) => SourceChapterFact(
+                            jsonEncode([c.line, c.id]),
+                            c.title,
+                          ),
+                        )
+                        .toList(),
             );
             lib.syncChapters(
               item.itemId,
-              chapters.length,
+              lib.section == Section.video
+                  ? TrackingResume.facts(chapters).length
+                  : chapters.length,
               sourceId: item.sourceId,
             );
             if (added.isNotEmpty &&
@@ -137,7 +162,7 @@ class TrackingService with WidgetsBindingObserver {
                 itemId: item.itemId,
                 title: item.title,
                 chapters: chapters
-                    .where((c) => ids.contains(jsonEncode([c.line, c.id])))
+                    .where((c) => ids.remove(TrackingResume.chapterKey(c)))
                     .take(center.number('nextDownloads', 2).clamp(1, 5))
                     .toList(),
               );

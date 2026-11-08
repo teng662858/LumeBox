@@ -1,3 +1,6 @@
+import '../../core/player/player_stats.dart';
+import '../../core/player/playback_health.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -12,10 +15,12 @@ class PlayerWaitingOverlay extends StatefulWidget {
     required this.onRetry,
     required this.onSwitchLine,
     this.operation,
+    this.stats = PlayerStats.empty,
     this.locked = false,
   });
 
   final PlayerSnapshot snapshot;
+  final PlayerStats stats;
   final String? operation;
   final bool locked;
   final VoidCallback onRetry, onSwitchLine;
@@ -97,6 +102,26 @@ class _PlayerWaitingOverlayState extends State<PlayerWaitingOverlay> {
                     style: const TextStyle(color: Colors.white, fontSize: 13),
                   ),
                 ),
+                if (_longWait) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    PlaybackHealth.describe(
+                      widget.snapshot,
+                      widget.stats,
+                      operation: widget.operation,
+                    ),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                  if (widget.stats.buffered != null)
+                    Text(
+                      '已缓冲 ${(widget.stats.buffered!.inMilliseconds / 1000).toStringAsFixed(1)} 秒',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
                 const SizedBox(height: 10),
                 const SizedBox(
                   width: 120,
