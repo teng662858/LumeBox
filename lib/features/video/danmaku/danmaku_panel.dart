@@ -21,6 +21,7 @@ Future<T?> showDanmakuPanel<T>({
   double? maxPortraitHeight,
   bool compact = false,
 }) {
+  final back = PlayerPanelBackController();
   return showGlassModalBottomSheet<T>(
     context: context,
     videoGlass: false,
@@ -44,7 +45,10 @@ Future<T?> showDanmakuPanel<T>({
           compact: compact,
           edgeDrawer: edgeDrawer,
           maxPortraitHeight: maxPortraitHeight,
-          child: PlayerPanelScope(child: builder(context)),
+          child: PlayerPanelScope(
+            back: back,
+            child: _PanelBackGesture(back: back, child: builder(context)),
+          ),
         ),
       ],
     ),
@@ -192,12 +196,58 @@ class _DanmakuPanelFrameState extends State<DanmakuPanelFrame>
 }
 
 /// Marks content opened from the player without changing global settings dialogs.
+class PlayerPanelBackController {
+  bool Function()? onBack;
+}
+
 class PlayerPanelScope extends InheritedWidget {
-  const PlayerPanelScope({super.key, required super.child});
+  const PlayerPanelScope({super.key, required this.back, required super.child});
+  final PlayerPanelBackController back;
+  static PlayerPanelBackController? backOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<PlayerPanelScope>()?.back;
   static bool active(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<PlayerPanelScope>() != null;
   @override
   bool updateShouldNotify(PlayerPanelScope oldWidget) => false;
+}
+
+class _PanelBackGesture extends StatefulWidget {
+  const _PanelBackGesture({required this.back, required this.child});
+  final PlayerPanelBackController back;
+  final Widget child;
+  @override
+  State<_PanelBackGesture> createState() => _PanelBackGestureState();
+}
+
+class _PanelBackGestureState extends State<_PanelBackGesture> {
+  double distance = 0;
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      widget.child,
+      Positioned(
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 20,
+        child: GestureDetector(
+          key: const ValueKey('player-panel-back-edge'),
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: (_) => distance = 0,
+          onHorizontalDragUpdate: (event) =>
+              distance += event.primaryDelta ?? 0,
+          onHorizontalDragEnd: (_) {
+            if (distance >= 64 && !(widget.back.onBack?.call() ?? false)) {
+              Navigator.of(context, rootNavigator: true).maybePop();
+            }
+            distance = 0;
+          },
+          onHorizontalDragCancel: () => distance = 0,
+        ),
+      ),
+    ],
+  );
 }
 
 /// Input and help dialogs use the same player frame as episode selection.

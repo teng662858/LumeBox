@@ -21,7 +21,7 @@ class LiquidGlassSettingsPage extends StatelessWidget {
         builder: (context, _) {
           final style = settings.native;
           return ListView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             children: [
               const SettingsPageIntro(
                 title: '系统材质',

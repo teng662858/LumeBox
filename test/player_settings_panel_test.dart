@@ -95,7 +95,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('识别日志'), findsOneWidget);
     expect(tester.getSize(frame).width, closeTo(956 * .4, .01));
-    await tester.tap(find.byTooltip('返回上一级'));
+    await tester.drag(
+      find.byKey(const ValueKey('player-panel-back-edge')),
+      const Offset(100, 0),
+    );
     await tester.pumpAndSettle();
     expect(find.text('片头片尾识别'), findsOneWidget);
     tester.view.physicalSize = const Size(440, 956);

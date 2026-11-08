@@ -10,6 +10,49 @@ import 'package:lume_box/features/video/player_source_sheet.dart';
 import 'package:lume_box/features/video/player_waiting_overlay.dart';
 
 void main() {
+  testWidgets('抽屉右滑先返回上个页签，再关闭抽屉', (tester) async {
+    tester.view.physicalSize = const Size(932, 430);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showDanmakuPanel<void>(
+                context: context,
+                builder: (_) => PlayerSourceSheet(
+                  address: '',
+                  loadEpisodes: () async => const [
+                    SourceChapter(id: '1', title: '第1集'),
+                  ],
+                  qualities: [
+                    VideoQuality(
+                      label: '原画',
+                      url: Uri.parse('https://example.test/a.mp4'),
+                    ),
+                  ],
+                ),
+              ),
+              child: const Text('打开抽屉'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开抽屉'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('画质'));
+    await tester.pumpAndSettle();
+    expect(find.text('原画'), findsOneWidget);
+    final edge = find.byKey(const ValueKey('player-panel-back-edge'));
+    await tester.drag(edge, const Offset(100, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('第1集'), findsOneWidget);
+    await tester.drag(edge, const Offset(100, 0));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlayerSourceSheet), findsNothing);
+  });
   testWidgets('紧凑横屏选集仍完整显示三位数集名', (tester) async {
     tester.view.physicalSize = const Size(932, 430);
     tester.view.devicePixelRatio = 1;

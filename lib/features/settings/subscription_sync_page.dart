@@ -95,14 +95,19 @@ class _SubscriptionSyncPageState extends State<SubscriptionSyncPage> {
         Text(current),
         if (busy)
           for (final section in [Section.comic, Section.video])
-            ValueListenableBuilder<String>(
-              valueListenable: SourceSubscriptionSync.progress(section),
-              builder: (_, text, child) => text.isEmpty
-                  ? const SizedBox.shrink()
-                  : Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text('${section.label}：$text'),
-                    ),
+            SizedBox(
+              child: ValueListenableBuilder<String>(
+                valueListenable: SourceSubscriptionSync.progress(section),
+                builder: (_, text, child) => text.isEmpty
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: GlassCard(
+                          padding: const EdgeInsets.all(12),
+                          child: Text('${section.label}：$text'),
+                        ),
+                      ),
+              ),
             ),
         if (busy)
           const Padding(

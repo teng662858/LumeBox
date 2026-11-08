@@ -1,4 +1,5 @@
 import '../../shared/widgets/video_glass_surface.dart';
+import '../../shared/widgets/glass_card.dart';
 
 import 'package:flutter/material.dart';
 
@@ -31,6 +32,31 @@ class PlayerSettingsNavigation extends StatefulWidget {
 
 class _PlayerSettingsNavigationState extends State<PlayerSettingsNavigation> {
   final navigator = GlobalKey<NavigatorState>();
+  PlayerPanelBackController? back;
+  bool _goBack() {
+    final current = navigator.currentState;
+    if (current == null || !current.canPop()) return false;
+    current.pop();
+    return true;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final next = PlayerPanelScope.backOf(context);
+    if (back != next) {
+      if (back?.onBack == _goBack) back?.onBack = null;
+      back = next;
+      back?.onBack = _goBack;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (back?.onBack == _goBack) back?.onBack = null;
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, bounds) => MediaQuery(
@@ -199,23 +225,34 @@ class PlayerSettingsSection extends StatelessWidget {
               ),
             ),
           ),
-        Material(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: BorderSide(
-              color: Theme.of(context).colorScheme.outlineVariant
-                  .withValues(alpha: .45),
+        if (context
+                .dependOnInheritedWidgetOfExactType<_PlayerSettingsScope>() ==
+            null)
+          GlassCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children,
+            ),
+          )
+        else
+          Material(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(
+                color: Theme.of(context).colorScheme.outlineVariant
+                    .withValues(alpha: .45),
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            color: VideoGlassScope.active(context)
+                ? Colors.white.withValues(alpha: .22)
+                : Theme.of(context).colorScheme.surfaceContainerLow,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children,
             ),
           ),
-          clipBehavior: Clip.antiAlias,
-          color: VideoGlassScope.active(context)
-              ? Colors.white.withValues(alpha: .22)
-              : Theme.of(context).colorScheme.surfaceContainerLow,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: children,
-          ),
-        ),
       ],
     ),
   );

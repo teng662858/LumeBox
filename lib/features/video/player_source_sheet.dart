@@ -89,6 +89,28 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
   final _scroll = ScrollController();
   bool _benchmarking = false;
   bool _busy = false, _reverse = false, _located = false;
+  final List<PlayerSourceTab> _tabHistory = [];
+  PlayerPanelBackController? _panelBack;
+  bool _backTab() {
+    if (_busy || _tabHistory.isEmpty) return _busy;
+    setState(() {
+      _tab = _tabHistory.removeLast();
+      _error = null;
+    });
+    return true;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final next = PlayerPanelScope.backOf(context);
+    if (_panelBack != next) {
+      if (_panelBack?.onBack == _backTab) _panelBack?.onBack = null;
+      _panelBack = next;
+      _panelBack?.onBack = _backTab;
+    }
+  }
+
   String? _error;
   int? _pending;
   int _columns = 4, _segment = 0;
@@ -97,6 +119,7 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
 
   @override
   void dispose() {
+    if (_panelBack?.onBack == _backTab) _panelBack?.onBack = null;
     _scroll.dispose();
     super.dispose();
   }
@@ -694,6 +717,7 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
                         onPressed: _busy
                             ? null
                             : () => setState(() {
+                                if (_tab != entry.$1) _tabHistory.add(_tab);
                                 _tab = entry.$1;
                                 _error = null;
                               }),

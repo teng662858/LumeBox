@@ -137,7 +137,7 @@ class AppearancePalettePage extends StatelessWidget {
         final accent = c.settings.accentColorFor(Theme.of(context).brightness);
         return ListView(
           padding: GlassScaffold.barInset(context)
-              .add(const EdgeInsets.fromLTRB(20, 20, 20, 32)),
+              .add(const EdgeInsets.fromLTRB(16, 20, 16, 32)),
           children: [
             SettingsPageIntro(
               title: backgroundOnly ? '让内容更舒适' : '选择你的色彩',

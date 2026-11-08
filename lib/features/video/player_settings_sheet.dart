@@ -556,7 +556,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     // 滚动交给外层——这也是「整页只有一个滚动视图」的常规做法。
     if (widget.embedded) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        padding: const EdgeInsets.only(bottom: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: children,

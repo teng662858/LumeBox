@@ -90,7 +90,7 @@ class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
     child: ListenableBuilder(
       listenable: policy,
       builder: (context, _) => ListView(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 28),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
           SettingsGroupCard(
             children: [

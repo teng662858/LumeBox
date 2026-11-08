@@ -359,7 +359,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
         icon: const Icon(Icons.refresh),
       ),
     ],
-    child: ListView(
+    child: SettingsSurfaceList(
       padding: const EdgeInsets.all(16),
       children: [
         const Text('汇总各板块最近进度。视频进入续播详情，漫画和小说继续原章节；记录仍保存在原板块。'),

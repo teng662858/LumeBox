@@ -474,7 +474,7 @@ class SettingsCategoryPage extends StatelessWidget {
       behindBar: true,
       child: ListView(
         padding: GlassScaffold.barInset(context)
-            .add(const EdgeInsets.fromLTRB(20, 20, 20, 36)),
+            .add(const EdgeInsets.fromLTRB(16, 20, 16, 36)),
         children: [
           SettingsFooterNote(
             category.description,
@@ -629,7 +629,7 @@ class _SettingsHomeState extends State<SettingsHome> {
     return ListView(
       key: const PageStorageKey('settings-directory'),
       padding: GlassScaffold.barInset(context)
-          .add(const EdgeInsets.fromLTRB(20, 8, 20, 36)),
+          .add(const EdgeInsets.fromLTRB(16, 8, 16, 36)),
       children: [
         if (shortcuts.isNotEmpty) ...[
           Row(
