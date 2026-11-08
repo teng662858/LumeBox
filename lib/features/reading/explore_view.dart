@@ -1122,9 +1122,19 @@ class _ExploreViewState extends State<ExploreView>
     });
     // 预热缓存作废：用户明确要求要新的。
     SectionPreloader.discard(widget.section);
-    await _loadCategories();
-    if (!mounted || refreshSeq != _bootstrapSeq) return;
-    await _loadPage();
+    // Python sources share a serial worker: prioritize visible results for
+    // the unfiltered list, then refresh metadata after the first page arrives.
+    if (_current?.runtimeKind == 'python' &&
+        _categoryId == null &&
+        _facetFilters.isEmpty) {
+      await _loadPage();
+      if (!mounted || refreshSeq != _bootstrapSeq) return;
+      await _loadCategories();
+    } else {
+      await _loadCategories();
+      if (!mounted || refreshSeq != _bootstrapSeq) return;
+      await _loadPage();
+    }
   }
 
   /// 这一页里有几条是**新**的（按 id 与已有列表比）。
