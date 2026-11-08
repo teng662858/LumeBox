@@ -824,30 +824,47 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
     _ => '内核与网络',
   };
 
-  Widget _categoryHome() => SingleChildScrollView(
-    key: const Key('player-settings-home'),
-    controller: _homeScroll,
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-    child: Column(
-      children: [
-        for (final category in _categories)
-          if ((category.$1 != 'intro' ||
-                  widget.showPlaybackShortcuts ||
-                  widget.introControls != null) &&
-              (category.$1 != 'danmaku' ||
-                  _danmaku != null ||
-                  widget.danmakuControls != null)) ...[
-            ListTile(
-              key: ValueKey('player-category-${category.$1}'),
-              minTileHeight: 48,
-              title: Text(_categoryTitle(category.$1)),
-              trailing: const Icon(Icons.chevron_right_rounded, size: 18),
-              onTap: () => setState(() => _selectedCategory = category.$1),
-            ),
-            const Divider(height: 1, indent: 0),
+  Widget _categoryHome() => LayoutBuilder(
+    builder: (context, bounds) {
+      final categories = _categories
+          .where(
+            (category) =>
+                (category.$1 != 'intro' ||
+                    widget.showPlaybackShortcuts ||
+                    widget.introControls != null) &&
+                (category.$1 != 'danmaku' ||
+                    _danmaku != null ||
+                    widget.danmakuControls != null),
+          )
+          .toList();
+      final rowHeight = ((bounds.maxHeight - 12) / categories.length).clamp(
+        56.0 * MediaQuery.textScalerOf(context).scale(1),
+        double.infinity,
+      );
+      return SingleChildScrollView(
+        key: const Key('player-settings-home'),
+        controller: _homeScroll,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Column(
+          children: [
+            for (final category in categories)
+              ListTile(
+                key: ValueKey('player-category-${category.$1}'),
+                minTileHeight: rowHeight,
+                title: Text(
+                  _categoryTitle(category.$1),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded, size: 22),
+                onTap: () => setState(() => _selectedCategory = category.$1),
+              ),
           ],
-      ],
-    ),
+        ),
+      );
+    },
   );
 
   Widget _speedSlider(BuildContext context) {

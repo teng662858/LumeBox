@@ -350,6 +350,14 @@ void main() {
       player.loadError = StateError('fixture load failure');
       await openPlayerAction(tester, '播放源 / 更换线路');
       await tester.pumpAndSettle();
+      final selectedChip = tester
+          .widgetList<ChoiceChip>(find.byType(ChoiceChip))
+          .firstWhere((chip) => chip.selected);
+      final selectedFill = selectedChip.color!.resolve({WidgetState.selected})!;
+      expect(
+        LumeTheme.contrast(selectedFill, selectedChip.labelStyle!.color!),
+        greaterThanOrEqualTo(4.5),
+      );
       await tester.tap(find.text('第2集'));
       await tester.pumpAndSettle();
       expect(find.byType(PlayerSourceSheet), findsOneWidget);
@@ -1263,7 +1271,41 @@ void main() {
       expect(find.widgetWithText(TextButton, '画质'), findsNothing);
     });
 
-    testWidgets('返回与右上角图标至少48点击区域，按钮间保留8间距', (tester) async {
+    testWidgets('播放器设置分类放大并填满面板可用高度', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(932, 430));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pump(tester);
+      await tester.tap(find.byTooltip('全屏'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('播放器设置'));
+      await tester.pumpAndSettle();
+      final home = tester.getRect(
+        find.byKey(const Key('player-settings-home')),
+      );
+      final first = tester.getRect(
+        find.byKey(const ValueKey('player-category-playback')),
+      );
+      final last = tester.getRect(
+        find.byKey(const ValueKey('player-category-advanced')),
+      );
+      expect(first.height, greaterThanOrEqualTo(56));
+      expect(first.top, closeTo(home.top + 6, .01));
+      expect(last.bottom, greaterThanOrEqualTo(home.bottom - 6.01));
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('player-category-advanced')),
+        100,
+        scrollable: find.descendant(
+          of: find.byKey(const Key('player-settings-home')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('返回分类'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('返回至少48点击区域，右上角按钮与右下角等间距', (tester) async {
       await tester.binding.setSurfaceSize(const Size(932, 430));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await pump(tester);
@@ -1274,7 +1316,14 @@ void main() {
       final settings = tester.getRect(find.byTooltip('播放器设置'));
       expect(back.width, greaterThanOrEqualTo(48));
       expect(back.height, greaterThanOrEqualTo(48));
-      expect(settings.left - kernel.right, greaterThanOrEqualTo(8));
+      expect(settings.left - kernel.right, closeTo(0, .01));
+      final speed = tester.getRect(find.byTooltip('播放速度（1.0x）'));
+      final episodes = tester.getRect(find.byTooltip('线路 / 选集'));
+      expect(
+        settings.center.dx - kernel.center.dx,
+        closeTo(episodes.center.dx - speed.center.dx, .01),
+      );
+      expect(settings.width, greaterThanOrEqualTo(44));
       await tester.tapAt(back.topLeft + const Offset(3, 3));
       await tester.pumpAndSettle();
       expect(

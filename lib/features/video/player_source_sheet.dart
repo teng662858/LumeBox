@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/source/source.dart';
-import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/video_glass_surface.dart';
 import 'player_layout.dart';
 import 'danmaku/danmaku_panel.dart';
@@ -405,16 +404,30 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
                             ),
                     ),
                     selected: current,
+                    // Explicit state colors override the glass panel's chip
+                    // theme, which otherwise pairs a pale fill with white ink.
+                    color: WidgetStateProperty.resolveWith((states) {
+                      final colors = Theme.of(context).colorScheme;
+                      return states.contains(WidgetState.selected)
+                          ? colors.primary
+                          : colors.surfaceContainerHighest;
+                    }),
                     showCheckmark: false,
                     padding: EdgeInsets.zero,
                     labelPadding: const EdgeInsets.symmetric(horizontal: 2),
                     labelStyle: TextStyle(
                       fontSize: 13,
+                      fontWeight: current ? FontWeight.w600 : FontWeight.w500,
                       color: current
-                          ? LumeTheme.onAccentFillOf(context)
+                          ? Theme.of(context).colorScheme.onPrimary
                           : Theme.of(context).colorScheme.onSurface,
                     ),
-                    selectedColor: LumeTheme.accentFillOf(context),
+                    selectedColor: Theme.of(context).colorScheme.primary,
+                    side: BorderSide(
+                      color: current
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.outlineVariant,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),

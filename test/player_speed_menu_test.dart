@@ -42,6 +42,8 @@ void main() {
       expect(menuSize.height, lessThanOrEqualTo(264));
 
       expect(find.byType(ChoiceChip), findsNWidgets(7));
+      expect(find.byType(Divider), findsNothing);
+      expect(find.text('1× 常速'), findsNothing);
       expect(
         tester
             .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '1×'))

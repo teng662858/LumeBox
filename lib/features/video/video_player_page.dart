@@ -4947,12 +4947,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   ),
                 ),
                 const SizedBox(width: 4),
-                if (!narrow) ...[_buildPipButton(), const SizedBox(width: 8)],
+                if (!narrow) _buildPipButton(),
                 _kernelControl(
                   (open) => _kernelNameButton(open, overlay: true),
                 ),
-                const SizedBox(width: 8),
                 _topIcon(
+                  matchControlBox: true,
                   icon: Icons.more_horiz,
                   tooltip: '播放器设置',
                   onPressed: _openSettings,
@@ -4973,7 +4973,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     return Tooltip(
       message: '播放内核',
       child: SizedBox(
-        width: 76,
+        width: overlay ? _box : 76,
         height: _box,
         child: TextButton(
           onPressed: open,
@@ -5018,13 +5018,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     required String tooltip,
     required VoidCallback? onPressed,
     bool highlighted = false,
+    bool matchControlBox = false,
   }) {
     if (_fullscreen) {
       return Tooltip(
         message: tooltip,
         child: SizedBox(
-          width: 48,
-          height: 48,
+          width: matchControlBox ? _box : 48,
+          height: matchControlBox ? _box : 48,
           child: TextButton(
             onPressed: onPressed,
             style: TextButton.styleFrom(
@@ -6595,6 +6596,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final session = _session;
     if (session == null) {
       return _topIcon(
+        matchControlBox: true,
         icon: Icons.picture_in_picture_alt,
         tooltip: '画中画：正在准备',
         onPressed: null,
@@ -6608,6 +6610,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           return const SizedBox.shrink();
         }
         return _topIcon(
+          matchControlBox: true,
           icon: snapshot.isActive
               ? Icons.picture_in_picture
               : Icons.picture_in_picture_alt,

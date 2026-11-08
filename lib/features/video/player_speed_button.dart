@@ -217,14 +217,6 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                     ],
                   ),
                 ),
-                Divider(height: 12, color: Theme.of(context).dividerColor),
-                Text(
-                  '${PlayerSpeedButton.label(_speed)}${_speed == 1 ? ' 常速' : ''}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
               ],
             ),
           ),
