@@ -77,12 +77,14 @@ class PlayerStatsInline extends StatelessWidget {
     this.stacked = false,
     this.showResolution = true,
     this.showSpeed = true,
+    this.showBuffer = false,
     this.dimmed = false,
   });
 
   final bool stacked;
   final bool showResolution;
   final bool showSpeed;
+  final bool showBuffer;
 
   /// 弱化样式：字号小一号、颜色半透明（全屏网速这类次要信息用）。
   final bool dimmed;
@@ -117,14 +119,14 @@ class PlayerStatsInline extends StatelessWidget {
         final labels = <String>[
           if (showResolution && value.resolutionText != null)
             value.resolutionText!,
-          if (showSpeed && value.buffering)
-            value.buffered == null
-                ? '正在缓冲 · 时长未知'
-                : '已缓冲 ${value.buffered!.inMilliseconds / 1000 < 1 ? '<1' : value.buffered!.inSeconds} 秒',
           if (showSpeed && speedText(value, kbps) != null)
             value.downloadBytesPerSecond != null
                 ? '下载 ${speedText(value, kbps)!}'
                 : speedText(value, kbps)!,
+          if (showBuffer && (value.buffered != null || value.buffering))
+            value.buffered == null
+                ? '正在缓冲 · 时长未知'
+                : '已缓冲 ${value.buffered!.inMilliseconds < 1000 ? '<1' : value.buffered!.inSeconds} 秒',
         ];
         if (labels.isEmpty) return const SizedBox.shrink();
         final texts = labels

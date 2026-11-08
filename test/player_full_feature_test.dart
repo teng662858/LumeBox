@@ -2634,14 +2634,21 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
       await tester.dragUntilVisible(
-        find.text('显示实时下载与缓冲'),
+        find.text('显示下载速度'),
         find.byType(PlayerSettingsSheet),
         const Offset(0, -160),
       );
-      await tester.tap(find.text('显示实时下载与缓冲'));
+      await tester.tap(find.text('显示下载速度'));
       await tester.pumpAndSettle();
       expect(
         PlayerExperienceStore.current.flag('showNetworkSpeed', true),
+        isFalse,
+      );
+      await tester.ensureVisible(find.text('显示缓冲时长'));
+      await tester.tap(find.text('显示缓冲时长'));
+      await tester.pumpAndSettle();
+      expect(
+        PlayerExperienceStore.current.flag('showBufferedTime', true),
         isFalse,
       );
       Navigator.of(tester.element(find.byType(PlayerSettingsSheet))).pop();

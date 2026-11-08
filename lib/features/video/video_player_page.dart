@@ -376,6 +376,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   Timer? _unlockTimer;
   bool _muted = false, _musicMode = false;
   bool _showNetworkSpeed = true;
+  bool _showBufferedTime = true;
   double get _effectiveVolume => _muted ? 0 : _gesture.volume;
 
   /// 全屏（沉浸）模式：顶栏与控制栏收起，点画面切换浮层控制栏。
@@ -1381,6 +1382,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _muted = experience.flag('muted');
       _musicMode = experience.flag('musicMode');
       _showNetworkSpeed = experience.flag('showNetworkSpeed', true);
+      _showBufferedTime = experience.flag(
+        'showBufferedTime',
+        _showNetworkSpeed,
+      );
       _gesture = _gesture.copyWith(
         volume: experience.number('volume', 1, 0, 1),
       );
@@ -3948,11 +3953,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           if (group == 'connection') ...[
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('显示实时下载与缓冲'),
-              subtitle: const Text('显示实际下载速度；缓冲时同时显示已缓冲秒数'),
+              title: const Text('显示下载速度'),
+              subtitle: const Text('显示实际下载速度或线路测速'),
               value: _showNetworkSpeed,
               onChanged: (value) {
                 setState(() => _showNetworkSpeed = value);
+                update(() {});
+                _savePlaybackPreferences();
+              },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('显示缓冲时长'),
+              subtitle: const Text('显示当前播放位置前方已缓冲的时长'),
+              value: _showBufferedTime,
+              onChanged: (value) {
+                setState(() => _showBufferedTime = value);
                 update(() {});
                 _savePlaybackPreferences();
               },
@@ -4849,6 +4865,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       'muted': _muted,
       'musicMode': _musicMode,
       'showNetworkSpeed': _showNetworkSpeed,
+      'showBufferedTime': _showBufferedTime,
     });
   }
 
@@ -5126,7 +5143,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (_showNetworkSpeed && _player != null)
+              if ((_showNetworkSpeed || _showBufferedTime) && _player != null)
                 Align(
                   alignment: Alignment.centerRight,
                   child: ConstrainedBox(
@@ -5136,6 +5153,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                       stats: _player!.stats,
                       networkKbps: _networkSpeed.kbps,
                       showResolution: false,
+                      showSpeed: _showNetworkSpeed,
+                      showBuffer: _showBufferedTime,
+                      stacked: true,
                       dimmed: true,
                     ),
                   ),
@@ -5712,10 +5732,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   right: 0,
                   bottom: 0,
                   child: IgnorePointer(
-                    child: PlayerHud(
-                      stats: player.stats,
-                      networkKbps: _networkSpeed.kbps,
-                      showDetails: false,
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: PlayerStatsInline(
+                        stats: player.stats,
+                        networkKbps: _networkSpeed.kbps,
+                        showResolution: false,
+                        showSpeed: _showNetworkSpeed,
+                        showBuffer: _showBufferedTime,
+                        stacked: true,
+                      ),
                     ),
                   ),
                 ),

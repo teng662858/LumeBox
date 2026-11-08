@@ -83,7 +83,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: PlayerStatsInline(stats: stats, networkKbps: probe),
+          body: PlayerStatsInline(
+            stats: stats,
+            networkKbps: probe,
+            showBuffer: true,
+          ),
         ),
       ),
     );
