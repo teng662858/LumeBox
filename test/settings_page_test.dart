@@ -18,6 +18,8 @@ import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/core/util/lume_log.dart';
 import 'package:lume_box/features/settings/log_report.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
+import 'package:lume_box/features/settings/settings_ui.dart';
+import 'package:lume_box/features/settings/experience_settings_card.dart';
 import 'package:lume_box/features/settings/novel_settings_page.dart';
 import 'package:lume_box/features/shell/app_shell.dart';
 import 'package:lume_box/features/shell/shell_dock.dart';
@@ -131,6 +133,47 @@ void main() {
     ),
     matching: find.widgetWithText(TextButton, '清理'),
   );
+
+  testWidgets('通用功能分别归入界面、内容和服务，阅读播放不再重复收录', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        home: const SettingsPage(runtimeAvailable: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final groups = tester
+        .widget<SettingsHome>(find.byType(SettingsHome))
+        .categories;
+    List<Widget> children(String title) =>
+        groups.firstWhere((g) => g.title == title).children;
+    List<String> titles(String title) =>
+        children(title)
+            .whereType<SettingsEntryCard>()
+            .map((e) => e.title)
+            .toList();
+    expect(titles('内容与订阅'), containsAll(['内容中心', '继续看／读／听']));
+    expect(titles('网络与服务'), contains('全局翻译'));
+    expect(children('个性与界面').whereType<ExperienceSettingsCard>(), hasLength(1));
+    expect(
+      groups.firstWhere((g) => g.title == '个性与界面').keywords,
+      contains('触感强度'),
+    );
+    expect(
+      groups.firstWhere((g) => g.title == '阅读与播放').keywords,
+      isNot(contains('触感')),
+    );
+    expect(
+      titles('阅读与播放'),
+      isNot(anyOf(contains('内容中心'), contains('继续看／读／听'), contains('全局翻译'))),
+    );
+    expect(children('阅读与播放').whereType<ExperienceSettingsCard>(), isEmpty);
+    expect(titles('阅读与播放'), contains('内容与播放增强'));
+    expect(
+      children('阅读与播放').whereType<SettingsGroupTitle>().map((g) => g.text),
+      isNot(contains('通用体验')),
+    );
+  });
 
   testWidgets('删除参考播放器后只提供原播放器设置入口', (tester) async {
     await pumpSettings(tester);

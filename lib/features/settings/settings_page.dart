@@ -98,11 +98,11 @@ class SettingsPage extends StatelessWidget {
     }
     final entries = _entries(context);
     final descriptions = <String, String>{
-      '个性与界面': '外观、配色与图标',
+      '个性与界面': '外观、配色、图标与触感',
       '导航与首页': '首页布局、导航与液态玻璃',
-      '阅读与播放': '小说、漫画、播放器与共用体验',
-      '内容与订阅': '订阅更新与源导入',
-      '网络与服务': '网络连接与第三方服务',
+      '阅读与播放': '小说、漫画、视频与音频设置',
+      '内容与订阅': '继续记录、内容追更与订阅管理',
+      '网络与服务': '全局翻译、网络与第三方服务',
       '存储与安全': '缓存、备份与隐私保护',
       '诊断与关于': '使用帮助、诊断与版本信息',
     };
@@ -136,9 +136,9 @@ class SettingsPage extends StatelessWidget {
               _ => null,
             },
             keywords: entry.text == '个性与界面'
-                ? '外观 主题色 页面底色 App 图标 应用图标库'
+                ? '外观 主题色 页面底色 App 图标 应用图标库 触感反馈 触感强度'
                 : entry.text == '阅读与播放'
-                ? '播放器设置 视频播放器 触感反馈 触感强度 后台播放 字号 行距 朗读 漫画 图片工具 音频 内核 弹幕'
+                ? '播放器设置 视频播放器 后台播放 字号 行距 朗读 漫画 图片工具 音频 内核 弹幕'
                 : entry.text == '诊断与关于'
                 ? '问题排查 高级设置 诊断包 导出诊断包'
                 : '',
@@ -245,6 +245,9 @@ class SettingsPage extends StatelessWidget {
       subtitle: '逐项换图标 · 长按编辑 · 导入自己的图片和图标包',
       onTap: () => _push(context, const IconLibraryPage()),
     ),
+    const SettingsGroupTitle('交互体验'),
+    const ExperienceSettingsCard(),
+    const SizedBox(height: 12),
     const SettingsGroupTitle('导航与首页'),
     const AdaptiveColorSetting(),
     const SizedBox(height: 12),
@@ -301,12 +304,6 @@ class SettingsPage extends StatelessWidget {
       onTap: () => _push(context, const ExperienceSettingsPage()),
     ),
     SettingsEntryCard(
-      icon: Icons.dashboard_outlined,
-      title: '内容中心',
-      subtitle: '统一继续、作品追更、版本关联与摘录',
-      onTap: () => _push(context, const ContentCenterPage()),
-    ),
-    SettingsEntryCard(
       icon: Icons.label_outline,
       title: '媒体徽章',
       subtitle: '规格标签、显示位置与样式预览',
@@ -347,27 +344,23 @@ class SettingsPage extends StatelessWidget {
       subtitle: '独立音频内核 · 后台与锁屏控制',
       onTap: () => _push(context, const AudioPlaybackSettingsPage()),
     ),
-    const SettingsGroupTitle('通用体验'),
+
+    const SettingsGroupTitle('内容与订阅'),
+    const SettingsGroupTitle('记录与追更', topPadding: 0),
+    SettingsEntryCard(
+      icon: Icons.dashboard_outlined,
+      title: '内容中心',
+      subtitle: '统一继续、作品追更、版本关联与摘录',
+      onTap: () => _push(context, const ContentCenterPage()),
+    ),
     SettingsEntryCard(
       icon: Icons.history,
       title: '继续看／读／听',
       subtitle: '汇总视频、漫画、小说与听书进度',
       onTap: () => _push(context, const ContinueActivityPage()),
     ),
-    const ExperienceSettingsCard(),
-    const SizedBox(height: 12),
-    SettingsEntryCard(
-      icon: Icons.translate,
-      title: '全局翻译',
-      subtitle: '翻译方式、AI 配置与系统语言包',
-      searchTargets: {
-        '翻译语言包': () => _push(context, const GlobalTranslationSettingsPage()),
-      },
-      onTap: () => _push(context, const GlobalTranslationSettingsPage()),
-    ),
 
-    const SettingsGroupTitle('内容与订阅'),
-    const SettingsGroupTitle('源与订阅', topPadding: 0),
+    const SettingsGroupTitle('源与订阅'),
     const TotalSubscriptionImportEntry(),
     for (final section in [Section.comic, Section.video])
       SettingsEntryCard(
@@ -406,6 +399,16 @@ class SettingsPage extends StatelessWidget {
       onTap: () => _push(context, const TvBoxImportPage()),
     ),
     const SettingsGroupTitle('网络与服务'),
+    SettingsEntryCard(
+      icon: Icons.translate,
+      title: '全局翻译',
+      subtitle: '翻译方式、AI 配置与系统语言包',
+      searchTargets: {
+        '翻译语言包': () => _push(context, const GlobalTranslationSettingsPage()),
+      },
+      onTap: () => _push(context, const GlobalTranslationSettingsPage()),
+    ),
+
     SettingsEntryCard(
       icon: Icons.wifi_tethering,
       title: '网络设置',

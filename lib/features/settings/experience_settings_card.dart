@@ -18,7 +18,7 @@ class _ExperienceSettingsCardState extends State<ExperienceSettingsCard> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: Text('使用体验', style: Theme.of(context).textTheme.headlineSmall),
+          child: Text('触感设置', style: Theme.of(context).textTheme.headlineSmall),
         ),
         SwitchListTile(
           title: const Text('触感反馈'),
