@@ -977,7 +977,18 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
                   '手动超分与上色结果可以保存 / 分享，原图与下载文件不会被覆盖。',
                   padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
                 ),
-              ],
+              ].map((child) {
+                if (child is SizedBox ||
+                    child is Text ||
+                    child is SettingsFooterNote ||
+                    child is GlassCard) {
+                  return child;
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: GlassCard(padding: EdgeInsets.zero, child: child),
+                );
+              }).toList(),
       ),
     );
     return content;

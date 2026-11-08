@@ -217,6 +217,7 @@ class AppearancePalettePage extends StatelessWidget {
             ] else ...[
               LayoutBuilder(
                 builder: (context, box) => GridView.count(
+                  padding: EdgeInsets.zero,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   crossAxisCount: box.maxWidth < 360 ? 2 : 3,

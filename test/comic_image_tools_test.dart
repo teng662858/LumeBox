@@ -254,6 +254,9 @@ void main() {
         find.byKey(const Key('advanced-image-models')),
         250,
       );
+      await tester.ensureVisible(
+        find.byKey(const Key('advanced-image-models')),
+      );
       await tester.tap(find.byKey(const Key('advanced-image-models')));
       await tester.pumpAndSettle();
       final button = find.byKey(const Key('import-super-resolution-model'));
@@ -284,6 +287,7 @@ void main() {
       find.byKey(const Key('advanced-image-models')),
       250,
     );
+    await tester.ensureVisible(find.byKey(const Key('advanced-image-models')));
     await tester.tap(find.byKey(const Key('advanced-image-models')));
     await tester.pumpAndSettle();
     final button = find.byKey(const Key('import-super-resolution-model'));

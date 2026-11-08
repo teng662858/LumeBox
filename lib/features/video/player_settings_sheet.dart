@@ -736,7 +736,15 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 ),
               if (widget.embedded && widget.categoryOnly == null)
                 const Divider(),
-              ...children,
+              if (widget.embedded && (id == 'controls' || id == 'danmaku'))
+                GlassCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: children,
+                  ),
+                )
+              else
+                ...children,
             ],
           ),
         );

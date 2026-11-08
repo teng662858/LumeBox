@@ -27,6 +27,31 @@ void main() {
     root.deleteSync(recursive: true);
     LumeTheme.build();
   });
+  testWidgets('主题色网格不重复添加 iPhone 顶部安全区', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            padding: const EdgeInsets.only(top: 59, bottom: 34),
+            viewPadding: const EdgeInsets.only(top: 59, bottom: 34),
+          ),
+          child: child!,
+        ),
+        home: const AppearancePalettePage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final grid = find.byType(GridView);
+    final firstCard = find
+        .descendant(of: grid, matching: find.byType(InkWell))
+        .first;
+    expect(
+      tester.getTopLeft(firstCard).dy,
+      closeTo(tester.getTopLeft(grid).dy, 1),
+    );
+    expect(tester.takeException(), isNull);
+  });
   test('旧配色保持默认，自定义底色分别进入实际亮暗主题', () {
     final old = AppearanceSettings.fromJson({
       'accent': 'mint',

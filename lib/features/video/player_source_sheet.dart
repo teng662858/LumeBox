@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/source/source.dart';
 import '../../shared/widgets/video_glass_surface.dart';
+import '../../shared/widgets/glass_card.dart';
 import 'player_layout.dart';
 import 'danmaku/danmaku_panel.dart';
 import 'video_episode_catalog.dart';
@@ -474,20 +475,25 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
     if (widget.qualities.isEmpty) {
       return const Center(child: Text('当前片源未提供多画质选项'));
     }
-    return ListView(
-      children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text('按片源原始名称显示，切换后恢复当前进度', style: TextStyle(fontSize: 13)),
-        ),
-        for (var i = 0; i < widget.qualities.length; i++)
-          ListTile(
-            title: Text(widget.qualities[i].label),
-            trailing: i == widget.currentIndex ? const Icon(Icons.check) : null,
-            enabled: !_busy && widget.onSelectQuality != null,
-            onTap: () => _select(i, quality: true),
+    return SettingsSurfaceScope(
+      enabled: true,
+      child: SettingsSurfaceList(
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('按片源原始名称显示，切换后恢复当前进度', style: TextStyle(fontSize: 13)),
           ),
-      ],
+          for (var i = 0; i < widget.qualities.length; i++)
+            ListTile(
+              title: Text(widget.qualities[i].label),
+              trailing: i == widget.currentIndex
+                  ? const Icon(Icons.check)
+                  : null,
+              enabled: !_busy && widget.onSelectQuality != null,
+              onTap: () => _select(i, quality: true),
+            ),
+        ],
+      ),
     );
   }
 
