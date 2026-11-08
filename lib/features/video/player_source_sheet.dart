@@ -53,7 +53,7 @@ class PlayerSourceSheet extends StatefulWidget {
     this.onPlaybackInfo,
   });
 
-  /// 竖屏抽屉铺满屏幕宽度：卡片贴边，只有工具条保留内边距。
+  /// 抽屉外壳铺满宽度，工具条与内容均保留左右 14 点内边距。
   final bool fullBleed;
   final VoidCallback? onPlaybackInfo;
   final String address;
@@ -782,11 +782,16 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
               ),
             ),
           Expanded(
-            child: switch (_tab) {
-              PlayerSourceTab.episodes => _buildEpisodes(),
-              PlayerSourceTab.quality => _variants(),
-              PlayerSourceTab.lines => _buildLines(),
-            },
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.fullBleed ? 14 : 0,
+              ),
+              child: switch (_tab) {
+                PlayerSourceTab.episodes => _buildEpisodes(),
+                PlayerSourceTab.quality => _variants(),
+                PlayerSourceTab.lines => _buildLines(),
+              },
+            ),
           ),
         ],
       ),

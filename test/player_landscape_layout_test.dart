@@ -4,8 +4,39 @@ import 'package:lume_box/features/video/player_settings_panel.dart';
 import 'package:lume_box/features/video/player_source_sheet.dart';
 import 'package:lume_box/features/video/danmaku/danmaku_settings.dart';
 import 'package:lume_box/features/video/danmaku/danmaku_settings_sheet.dart';
+import 'package:lume_box/core/source/source.dart';
 
 void main() {
+  for (final view in PlayerEpisodeView.values) {
+    testWidgets('选集抽屉左右各留14点，视图 $view', (tester) async {
+      tester.view.physicalSize = const Size(380, 430);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PlayerSourceSheet(
+              address: 'https://fixture.invalid/video.m3u8',
+              fullBleed: true,
+              initialView: view,
+              loadEpisodes: () async => List.generate(
+                8,
+                (i) => SourceChapter(id: '$i', title: '第${i + 1}集'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final content = view == PlayerEpisodeView.grid
+          ? find.byType(GridView)
+          : find.byType(ListView);
+      final bounds = tester.getRect(content);
+      expect(bounds.left, closeTo(14, .01));
+      expect(380 - bounds.right, closeTo(14, .01));
+      expect(tester.takeException(), isNull);
+    });
+  }
   for (final scale in [1.0, 1.6]) {
     testWidgets('横屏弹幕设置保留右侧抽屉并可使用较大字体，字号 $scale', (tester) async {
       tester.view.physicalSize = const Size(932, 430);
