@@ -56,6 +56,7 @@ class PlayerSettingsPage extends StatefulWidget {
 
 class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
   late PlayerSettings _settings = widget.settings;
+  String _danmakuTab = 'sources';
 
   @override
   void didUpdateWidget(covariant PlayerSettingsPage oldWidget) {
@@ -77,8 +78,6 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
             settings: current,
             catalog: widget.catalog,
             focusCategory: id,
-            danmaku: widget.danmaku,
-            onDanmakuChanged: widget.onDanmakuChanged,
             onChanged: (value) {
               update(() => current = value);
               _change(value);
@@ -94,7 +93,6 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
     ('intro', '片头片尾', '跳过片头片尾与同剧记忆', Icons.skip_next_outlined),
     ('picture', '画面与显示', '缩放、画面比例与方向', Icons.aspect_ratio),
     ('audio', '声音与字幕', '字幕样式、音轨与延迟', Icons.subtitles_outlined),
-    ('danmaku', '弹幕与匹配', '弹幕样式、屏蔽与服务', Icons.chat_bubble_outline),
     ('controls', '手势与外观', '控制栏样式与手势灵敏度', Icons.touch_app_outlined),
     (
       'advanced',
@@ -124,24 +122,37 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
         danmaku: widget.danmaku,
         onDanmakuChanged: widget.onDanmakuChanged,
         embedded: true,
-        danmakuControls: ListTile(
-          leading: const Icon(Icons.comment_outlined),
-          title: const Text('弹幕服务'),
-          subtitle: const Text('内置本机服务 · 弹弹play 开放平台 · 自定义服务器'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push<void>(
-            MaterialPageRoute<void>(builder: (_) => const DanmakuSourcesPage()),
-          ),
+      ),
+    ],
+  );
+
+  Widget _danmakuBody(BuildContext context) => Column(
+    children: [
+      SettingsTabBar(
+        tabs: const [('sources', '弹幕源'), ('matching', '弹幕与匹配')],
+        selected: _danmakuTab,
+        onSelected: (tab) => setState(() => _danmakuTab = tab),
+      ),
+      Expanded(
+        child: IndexedStack(
+          index: _danmakuTab == 'sources' ? 0 : 1,
+          children: [
+            const DanmakuSourcesPage(embedded: true),
+            _categoryBody(context, 'danmaku'),
+          ],
         ),
       ),
     ],
   );
+
   @override
   Widget build(BuildContext context) {
     final id = widget.focusCategory;
-    final title = id == 'audioPlayer'
-        ? '音频播放器'
-        : _categories.where((entry) => entry.$1 == id).firstOrNull?.$2;
+    final title = switch (id) {
+      'audioPlayer' => '音频播放器',
+      'danmaku' => '弹幕服务',
+      _ => _categories.where((entry) => entry.$1 == id).firstOrNull?.$2,
+    };
     return GlassScaffold(
       effectModule: GlassModule.video,
       settingsSurface: true,
@@ -151,6 +162,8 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
                 ? const IntroSettingsPage(embedded: true)
                 : id == 'audioPlayer'
                 ? const AudioPlaybackSettingsPage(embedded: true)
+                : id == 'danmaku'
+                ? _danmakuBody(context)
                 : _categoryBody(context, id)
           : ListView(
               padding: const EdgeInsets.all(16),

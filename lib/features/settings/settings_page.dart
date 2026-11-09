@@ -6,7 +6,6 @@ import '../reading/continue_activity_page.dart';
 import 'performance_page.dart';
 import '../comic/download_center_page.dart';
 import '../video/player_settings_host.dart';
-import '../video/danmaku/danmaku_sources_page.dart';
 import '../comic/comic_settings_page.dart';
 
 import 'package:lume_box/shared/widgets/lume_icon.dart';
@@ -319,13 +318,11 @@ class SettingsPage extends StatelessWidget {
           ('intro', '片头片尾'),
           ('picture', '画面与显示'),
           ('audio', '声音与字幕'),
-          ('danmaku', '弹幕与匹配'),
           ('controls', '手势与外观'),
           ('advanced', '内核与网络'),
           ('playback', '播放倍速'),
           ('playback', '后台播放'),
           ('audio', '字幕'),
-          ('danmaku', '弹幕'),
         ])
           entry.$2: () =>
               _push(context, PlayerSettingsHost(focusCategory: entry.$1)),
@@ -335,8 +332,13 @@ class SettingsPage extends StatelessWidget {
     SettingsEntryCard(
       icon: Icons.comment_outlined,
       title: '弹幕服务',
-      subtitle: '内置本机服务 · 弹弹play · 自定义服务器',
-      onTap: () => _push(context, const DanmakuSourcesPage()),
+      subtitle: '弹幕源、显示样式、匹配与屏蔽',
+      searchTargets: {
+        '弹幕与匹配': () =>
+            _push(context, const PlayerSettingsHost(focusCategory: 'danmaku')),
+      },
+      onTap: () =>
+          _push(context, const PlayerSettingsHost(focusCategory: 'danmaku')),
     ),
     SettingsEntryCard(
       icon: Icons.headphones_outlined,

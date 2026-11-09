@@ -55,19 +55,24 @@ class _PlayerSettingsHostState extends State<PlayerSettingsHost> {
 
   Future<void> _boot() async {
     try {
+      if (widget.focusCategory == 'danmaku') {
+        final library = await ReadingLibrary.open(Section.video);
+        if (!mounted) return;
+        setState(() {
+          _library = library;
+          _settings = const PlayerSettings();
+          _danmaku = DanmakuSettingsStore(library).load();
+        });
+        library.settingsRevision.addListener(_sharedSettingsChanged);
+        return;
+      }
       final opener = widget.storeOpener ?? VideoPlayerSettingsStore.open;
       final store = await opener();
-      if (!mounted) return;
-      // 弹幕设置也在视频板块的库里：全局设置页要能直接改它（用户口径）。
-      final library = await ReadingLibrary.open(Section.video);
       if (!mounted) return;
       setState(() {
         _store = store;
         _settings = store.load();
-        _library = library;
-        _danmaku = DanmakuSettingsStore(library).load();
       });
-      library.settingsRevision.addListener(_sharedSettingsChanged);
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       if (!mounted) return;
@@ -123,7 +128,7 @@ class _PlayerSettingsHostState extends State<PlayerSettingsHost> {
       settings: settings,
       catalog: widget.catalog ?? const PlatformPlayerKernelCatalog(),
       onChanged: _apply,
-      danmaku: _danmaku,
+      danmaku: _library == null ? null : _danmaku,
       onDanmakuChanged: _applyDanmaku,
     );
   }

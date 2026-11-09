@@ -23,6 +23,8 @@ import 'package:lume_box/features/settings/experience_settings_card.dart';
 import 'package:lume_box/features/settings/novel_settings_page.dart';
 import 'package:lume_box/features/shell/app_shell.dart';
 import 'package:lume_box/features/shell/shell_dock.dart';
+import 'package:lume_box/features/video/danmaku/danmaku_settings.dart';
+import 'package:lume_box/features/video/danmaku/danmaku_sources_page.dart';
 import 'package:lume_box/shared/widgets/glass_card.dart';
 
 /// 设置页面的验证：缓存管理（分板块统计与清理，互不影响）、运行日志查看、
@@ -343,6 +345,7 @@ void main() {
   for (final path in const [
     ('阅读与播放', '漫画设置'),
     ('阅读与播放', '播放器设置'),
+    ('阅读与播放', '弹幕服务'),
     ('存储与安全', '预载与清理'),
     ('存储与安全', '缓存管理'),
     ('诊断与关于', '运行日志'),
@@ -352,6 +355,18 @@ void main() {
   ]) {
     testWidgets('${path.$2} 最多三级，页内切换不增加返回层级', (tester) async {
       final observer = _PageDepthObserver();
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        DanmakuSourcesStore.channel,
+        (_) async => <String, String>{'profilesJson': '[]'},
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(
+          DanmakuSourcesStore.channel,
+          null,
+        ),
+      );
       await tester.binding.setSurfaceSize(const Size(900, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
@@ -382,6 +397,10 @@ void main() {
         }
       }
       if (path.$2 == '播放器设置') {
+        expect(
+          find.byKey(const ValueKey('global-player-category-danmaku')),
+          findsNothing,
+        );
         for (final tab in ['advanced', 'audio', 'playback']) {
           final category = find.byKey(ValueKey('global-player-category-$tab'));
           await tester.ensureVisible(category);
@@ -392,6 +411,20 @@ void main() {
           await tester.pumpAndSettle();
           expect(observer.depth, 3);
         }
+      }
+      if (path.$2 == '弹幕服务') {
+        expect(find.text('内置本机服务').hitTestable(), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('settings-tab-matching')));
+        await tester.pumpAndSettle();
+        expect(observer.depth, 3);
+        final library = await tester.runAsync(
+          () => ReadingLibrary.open(Section.video),
+        );
+        final store = DanmakuSettingsStore(library!);
+        final previous = store.load().avoidSubtitles;
+        await tester.tap(find.text('避让底部字幕').hitTestable());
+        await tester.pumpAndSettle();
+        expect(store.load().avoidSubtitles, !previous);
       }
       await tester.pageBack();
       await tester.pumpAndSettle();

@@ -12,7 +12,9 @@ import 'danmaku_connection_test.dart';
 export 'danmaku_credentials.dart' show DanmakuSourcesStore;
 
 class DanmakuSourcesPage extends StatefulWidget {
-  const DanmakuSourcesPage({super.key});
+  const DanmakuSourcesPage({super.key, this.embedded = false});
+
+  final bool embedded;
   @override
   State<DanmakuSourcesPage> createState() => _DanmakuSourcesPageState();
 }
@@ -368,6 +370,7 @@ class _DanmakuSourcesPageState extends State<DanmakuSourcesPage> {
   @override
   Widget build(BuildContext context) => PlayerSettingsScaffold(
     title: '弹幕源',
+    embedded: widget.embedded,
     actions: [
       IconButton(
         tooltip: '添加弹幕源',
@@ -380,6 +383,7 @@ class _DanmakuSourcesPageState extends State<DanmakuSourcesPage> {
         : _error != null
         ? Center(child: Text(_error!))
         : ListView(
+            primary: widget.embedded ? false : null,
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
             children: [
               Padding(

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
+import 'package:lume_box/features/video/danmaku/danmaku_settings.dart';
 import 'package:lume_box/features/video/danmaku/danmaku_sources_page.dart';
 import 'package:lume_box/features/video/player_settings_page.dart';
 import 'package:lume_box/shared/widgets/glass_card.dart';
@@ -28,7 +29,7 @@ void main() {
     expect(find.text('播放与选集'), findsOneWidget);
     expect(find.text('画面与显示'), findsOneWidget);
     expect(find.text('声音与字幕'), findsOneWidget);
-    expect(find.text('弹幕与匹配'), findsOneWidget);
+    expect(find.text('弹幕与匹配'), findsNothing);
     expect(find.text('手势与外观'), findsOneWidget);
     expect(find.text('默认播放内核'), findsOneWidget);
     expect(find.text('播放倍速'), findsNothing);
@@ -85,13 +86,14 @@ void main() {
           catalog: catalog,
           onChanged: onChanged,
           focusCategory: category,
+          danmaku: category == 'danmaku' ? DanmakuSettings.defaults : null,
         ),
       ),
     );
     await tester.pumpAndSettle();
   }
 
-  testWidgets('全局弹幕服务铺满页面并可返回弹幕设置', (tester) async {
+  testWidgets('全局弹幕服务铺满页面并在同一页切换弹幕设置', (tester) async {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(
@@ -113,18 +115,20 @@ void main() {
       category: 'danmaku',
     );
 
-    await tester.tap(find.text('弹幕服务'));
-    await tester.pumpAndSettle();
-
-    final header = find.widgetWithText(AppBar, '弹幕源');
-    expect(tester.getTopLeft(header).dy, 0);
-    expect(tester.getTopLeft(find.text('弹幕源')).dy, greaterThan(59));
+    final header = find.widgetWithText(AppBar, '弹幕服务');
+    expect(tester.getTopLeft(header).dy, lessThanOrEqualTo(0));
+    expect(tester.getCenter(find.text('弹幕服务')).dy, greaterThan(59));
     expect(find.byTooltip('添加弹幕源'), findsOneWidget);
     expect(find.byType(BottomSheet), findsNothing);
 
-    await tester.pageBack();
+    await tester.tap(find.byKey(const ValueKey('settings-tab-matching')));
     await tester.pumpAndSettle();
-    expect(find.text('弹幕服务'), findsOneWidget);
+    expect(find.text('避让底部字幕').hitTestable(), findsOneWidget);
+    expect(header, findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('settings-tab-sources')));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('添加弹幕源').hitTestable(), findsOneWidget);
   });
 
   testWidgets('内核：当前项打勾；未接入项不可选并显示原因', (tester) async {
