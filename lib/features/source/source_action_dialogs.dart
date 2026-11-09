@@ -12,6 +12,87 @@ import '../../core/net/network_settings.dart';
 import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/frosted_glass_widget.dart';
+import '../../shared/widgets/native_glass_surfaces.dart';
+
+enum SourceQuickAction { pin, preferences, browse, test, update, delete }
+
+Future<SourceQuickAction?> showSourceQuickActions({
+  required BuildContext context,
+  required String name,
+  bool pinned = false,
+  bool subscribed = false,
+  bool maintenance = true,
+}) {
+  return showGlassDialog<SourceQuickAction>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: .28),
+    builder: (dialogContext) => Dialog(
+      constraints: const BoxConstraints(maxWidth: 320),
+      backgroundColor: Colors.transparent,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: FrostedGlassWidget(
+          nativeGlass: false,
+          neutralTint: true,
+          color: LumeTheme.surface,
+          opacity: .96,
+          radius: 24,
+          child: Material(
+            color: LumeTheme.surface,
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    for (final entry in [
+                      if (maintenance)
+                        (
+                          SourceQuickAction.pin,
+                          Icons.push_pin_outlined,
+                          pinned ? '取消置顶' : '置顶此源',
+                        ),
+                      (SourceQuickAction.preferences, Icons.tune, '源设置'),
+                      (SourceQuickAction.browse, Icons.open_in_new, '浏览'),
+                      if (maintenance)
+                        (SourceQuickAction.test, Icons.network_check, '测试连通性'),
+                      if (maintenance)
+                        (SourceQuickAction.update, Icons.refresh, '更新订阅源'),
+                      (SourceQuickAction.delete, Icons.delete_outline, '删除源'),
+                    ])
+                      ListTile(
+                        leading: LumeIcon(
+                          entry.$2,
+                          slot: 'source_picker_sheet.1',
+                          variant: true,
+                          color: entry.$1 == SourceQuickAction.delete
+                              ? LumeTheme.danger
+                              : LumeTheme.accent,
+                        ),
+                        title: Text(entry.$3),
+                        enabled:
+                            entry.$1 != SourceQuickAction.update || subscribed,
+                        onTap: () => Navigator.pop(dialogContext, entry.$1),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
 class SourceTestResultDialog extends StatelessWidget {
   const SourceTestResultDialog({
@@ -420,8 +501,8 @@ class SourceNetworkDialogState extends State<SourceNetworkDialog>
     );
   }
 
-  List<SourceSetting> get _extensionFields => SourceSettingsPolicy
-      .visibleExtensions(
+  List<SourceSetting> get _extensionFields =>
+      SourceSettingsPolicy.visibleExtensions(
         widget.source.siteConfig.sourceDefinitions,
         embedded: widget.embedded,
       );

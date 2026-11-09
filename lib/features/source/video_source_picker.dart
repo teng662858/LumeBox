@@ -40,6 +40,7 @@ import 'source_import_dialog.dart';
 import 'source_preferences_page.dart';
 import 'source_section_page.dart';
 import 'source_maintenance.dart';
+import 'source_action_dialogs.dart';
 import '../settings/subscription_sync_page.dart';
 
 enum _VideoImportAction { kazumi }
@@ -870,30 +871,57 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
       selected: selected,
       onTap: onTap,
       onMore: () async {
-        final action = await showGlassModalBottomSheet<String>(
+        final action = await showSourceQuickActions(
           context: context,
-          builder: (menuContext) => SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(title: Text(name)),
-                ListTile(
-                  leading: const Icon(Icons.settings_outlined),
-                  title: const Text('源设置'),
-                  onTap: () => Navigator.pop(menuContext, 'settings'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.delete_outline),
-                  title: const Text('删除源'),
-                  onTap: () => Navigator.pop(menuContext, 'delete'),
-                ),
-              ],
-            ),
-          ),
+          name: name,
+          pinned: prefs.pinned,
+          subscribed: descriptor?.subscribed ?? false,
+          maintenance: descriptor != null,
         );
-        if (!mounted) return;
-        if (action == 'delete') onDelete();
-        if (action == 'settings') onMore();
+        if (!mounted || action == null) return;
+        try {
+          switch (action) {
+            case SourceQuickAction.browse:
+              onTap();
+            case SourceQuickAction.delete:
+              onDelete();
+            case SourceQuickAction.preferences:
+              onMore();
+            case SourceQuickAction.pin:
+              await prefs.copyWith(pinned: !prefs.pinned).save(section, id);
+              if (mounted) changed();
+            case SourceQuickAction.test:
+              final result = await widget.manager.testConnectivity(id);
+              if (!mounted) return;
+              await showGlassDialog<void>(
+                context: context,
+                builder: (_) =>
+                    SourceTestResultDialog(sourceName: name, result: result),
+              );
+            case SourceQuickAction.update:
+              final result = await widget.manager.updateFromSubscription(id);
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(switch (result.status) {
+                    SourceUpdateStatus.updated =>
+                      '「$name」已更新：${result.versionChange}',
+                    SourceUpdateStatus.unchanged => '「$name」已是最新',
+                    SourceUpdateStatus.skipped => '跳过：${result.message}',
+                    SourceUpdateStatus.failed => '更新失败：${result.message}',
+                  }),
+                ),
+              );
+              if (result.status == SourceUpdateStatus.updated) {
+                await load();
+                if (mounted) changed();
+              }
+          }
+        } catch (error) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('操作失败：$error')));
+        }
       },
       moreTooltip: '$name的设置',
       icon: SourceIcon(

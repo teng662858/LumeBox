@@ -2,6 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/source/source_content_rating.dart';
 
 void main() {
+  test('Stripchat 直播源按 18+ 隔离', () {
+    expect(SourceContentRating.isAdult('stripchat_live_video', '直播源'), isTrue);
+  });
   test('PY合集成人源全部登记', () {
     for (final id in <String>[
       'pypack_02c9b149e1a6c17c',

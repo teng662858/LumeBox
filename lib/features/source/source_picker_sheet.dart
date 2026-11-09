@@ -19,8 +19,6 @@ import '../../shared/widgets/source_rating_badge.dart';
 import '../../core/source/source_order.dart';
 import '../../core/source/source_content_visibility.dart';
 
-import '../../shared/widgets/frosted_glass_widget.dart';
-
 import 'package:flutter/material.dart';
 
 import '../../core/reading/reading_library.dart';
@@ -37,8 +35,6 @@ import 'add_source_button.dart';
 import 'source_drawer_actions.dart';
 import '../shell/section_preloader.dart';
 import '../settings/subscription_sync_page.dart';
-
-enum SourceQuickAction { pin, preferences, browse, test, update, delete }
 
 Future<String?> showSourcePicker({
   required BuildContext context,
@@ -308,71 +304,11 @@ class _SourcePickerSheetState extends State<SourcePickerSheet> {
   Future<void> action(SourceDescriptor source) async {
     if (busy.contains(source.id)) return;
     final prefs = SourcePreferences.read(widget.section, source.id);
-    final selected = await showGlassDialog<SourceQuickAction>(
+    final selected = await showSourceQuickActions(
       context: context,
-      barrierColor: Colors.black.withValues(alpha: .28),
-      builder: (dialogContext) => Dialog(
-        constraints: const BoxConstraints(maxWidth: 320),
-        backgroundColor: Colors.transparent,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: FrostedGlassWidget(
-            nativeGlass: false,
-            neutralTint: true,
-            color: LumeTheme.surface,
-            opacity: .96,
-            radius: 24,
-            child: Material(
-              color: LumeTheme.surface,
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                        child: Text(
-                          source.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      for (final entry in [
-                        (
-                          SourceQuickAction.pin,
-                          Icons.push_pin_outlined,
-                          prefs.pinned ? '取消置顶' : '置顶此源',
-                        ),
-                        (SourceQuickAction.preferences, Icons.tune, '源设置'),
-                        (SourceQuickAction.browse, Icons.open_in_new, '浏览'),
-                        (SourceQuickAction.test, Icons.network_check, '测试连通性'),
-                        (SourceQuickAction.update, Icons.refresh, '更新订阅源'),
-                        (SourceQuickAction.delete, Icons.delete_outline, '删除源'),
-                      ])
-                        ListTile(
-                          leading: LumeIcon(
-                            entry.$2,
-                            slot: 'source_picker_sheet.1',
-                            variant: true,
-                            color: entry.$1 == SourceQuickAction.delete
-                                ? LumeTheme.danger
-                                : LumeTheme.accent,
-                          ),
-                          title: Text(entry.$3),
-                          enabled:
-                              entry.$1 != SourceQuickAction.update ||
-                              source.subscribed,
-                          onTap: () => Navigator.pop(dialogContext, entry.$1),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+      name: source.name,
+      pinned: prefs.pinned,
+      subscribed: source.subscribed,
     );
     if (selected == null || !mounted) return;
     if (selected == SourceQuickAction.browse) {

@@ -780,11 +780,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     }
   }
 
-  Future<void> _openDanmakuTools() async {
+  Future<void> _openDanmakuTools(BuildContext panelContext) async {
     final target = _target;
     if (target == null) return;
     final alignmentKey = _alignmentKey;
-    await Navigator.of(context).push(
+    await Navigator.of(panelContext).push(
       MaterialPageRoute<void>(
         builder: (_) => DanmakuToolsPage(
           title: '${target.title} ${target.chapterTitle}',
@@ -3010,7 +3010,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           serviceLabel: _danmakuServiceLabel,
           matchLabel: _publicDanmakuMatchLabel,
           onClearMatch: _clearDanmakuMatch,
-          onTools: _openDanmakuTools,
+          onTools: () => _openDanmakuTools(panelContext),
           onMatch: _matchPublicDanmaku,
           onConfigureService: () => _configureDanmakuService(panelContext),
           onReload: () => _loadDanmaku(_target, force: true),
@@ -3881,6 +3881,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _seekWatchdog?.cancel();
     final generation = ++_seekWatchdogGeneration;
     final anchor = player.snapshot.value.position;
+    final bufferedAtStart = player.stats.value.buffered;
     final revision = _seekRevision;
     _seekWatchdog = Timer(const Duration(seconds: 6), () {
       if (!mounted ||
@@ -3890,10 +3891,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         return;
       }
       final snapshot = player.snapshot.value;
+      final buffered = player.stats.value.buffered;
+      if (snapshot.buffering &&
+          buffered != null &&
+          buffered > (bufferedAtStart ?? Duration.zero)) {
+        // Keep the active request when the target is still receiving data.
+        _armSeekWatchdog(player, target, retried: retried);
+        return;
+      }
       final stalled =
           snapshot.error == null &&
-          (snapshot.position - target).abs() > _seekLandingTolerance &&
-          (_committedSeekTarget == target ||
+          _committedSeekTarget == target &&
+          ((snapshot.position - target).abs() > _seekLandingTolerance ||
               (snapshot.buffering &&
                   (snapshot.position - anchor).abs() <=
                       const Duration(seconds: 1)));

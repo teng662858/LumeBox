@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../shared/widgets/glass_card.dart';
+import '../player_settings_panel.dart';
 import 'dandanplay_client.dart';
 
 class DanmakuToolsPage extends StatefulWidget {
@@ -151,10 +152,9 @@ class _State extends State<DanmakuToolsPage> {
   Widget build(BuildContext context) {
     final config = credentials;
     final supported = config != null && !config.official;
-    return GlassScaffold(
+    return PlayerSettingsScaffold(
       title: '弹幕匹配与对齐',
-      settingsSurface: true,
-      child: SettingsSurfaceList(
+      body: SettingsSurfaceList(
         children: [
           if (message != null) Text(message!),
           if (busy) const LinearProgressIndicator(),

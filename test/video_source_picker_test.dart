@@ -688,6 +688,9 @@ void main() {
       expect(find.text('删除源'), findsNothing);
       await tester.tap(find.byTooltip('普通视频长名称测试的设置'));
       await tester.pumpAndSettle();
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(find.text('置顶此源'), findsOneWidget);
+      expect(find.text('测试连通性'), findsOneWidget);
       await tester.tap(find.text('删除源'));
       await tester.pumpAndSettle();
     }

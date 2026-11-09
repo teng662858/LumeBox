@@ -147,6 +147,7 @@ class SourceContentRating {
     'horrorporn_video',
     'av18_video',
     'xhamsterlive_video',
+    'stripchat_live_video',
     'chaturbetter_video',
     'lxxlxx_video',
     'kxmanhua1_comic',

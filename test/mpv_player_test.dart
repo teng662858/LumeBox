@@ -224,7 +224,7 @@ void main() {
           'cache': 'yes',
           'cache-pause-initial': 'no',
           'cache-pause': 'yes',
-          'cache-pause-wait': '2',
+          'cache-pause-wait': '1',
           'demuxer-seekable-cache': 'yes',
           'cache-secs': '120',
           'demuxer-readahead-secs': '120',

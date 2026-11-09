@@ -18,8 +18,8 @@ void main() {
       const Duration(seconds: 90),
     );
     expect(config.mpvProperties['cache-pause-initial'], 'no');
-    expect(config.mpvProperties['cache-pause-wait'], '2');
-    expect(config.mdkMinBufferMs, 1000);
+    expect(config.mpvProperties['cache-pause-wait'], '1');
+    expect(config.mdkMinBufferMs, 750);
     expect(config.mdkMaxBufferMs, 90000);
     final small = BufferingConfig.forForwardBuffer(
       const Duration(milliseconds: 500),
@@ -134,7 +134,7 @@ void main() {
         'cache': 'yes',
         'cache-pause-initial': 'no',
         'cache-pause': 'yes',
-        'cache-pause-wait': '2',
+        'cache-pause-wait': '1',
         'demuxer-seekable-cache': 'yes',
         'cache-secs': '120',
         'demuxer-readahead-secs': '120',

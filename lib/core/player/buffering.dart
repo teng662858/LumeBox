@@ -100,7 +100,7 @@ class BufferingConfig {
   );
 
   /// MDK's documented packet queue API uses milliseconds, not avio properties.
-  int get mdkMinBufferMs => readAhead.inMilliseconds.clamp(0, 1000);
+  int get mdkMinBufferMs => readAhead.inMilliseconds.clamp(0, 750);
   int get mdkMaxBufferMs => readAhead.inMilliseconds.clamp(1, 180000);
 
   /// MPV 属性写法：字符串值 + 单位已在属性名里约定。
@@ -112,7 +112,7 @@ class BufferingConfig {
     // Recover with a small reserve; never wait for the full read-ahead window.
     'cache-pause': 'yes',
     'cache-pause-wait':
-        '${readAhead.inMilliseconds < 2000 ? readAhead.inMilliseconds / 1000 : 2}',
+        '${readAhead.inMilliseconds < 1000 ? readAhead.inMilliseconds / 1000 : 1}',
     'demuxer-seekable-cache': 'yes',
     // 网络缓存开启时 cache-secs 才是有效的时长上限。
     'cache-secs': '${readAhead.inSeconds}',
