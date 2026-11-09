@@ -18,18 +18,35 @@ class SpeechTurns {
     final result = <SpeechTurn>[];
     final speakers = <String, SpeechRole>{};
     final pattern = RegExp(r'[^\n]+\n?|\n');
-    final prefix = RegExp(r'^\s*([^\s：:，。！？、]{1,12})\s*[：:]');
+    final prefix = RegExp(
+      r'^[ \t　]*([\u3400-\u9fffA-Za-z0-9·]{1,8})[ \t　]*[：:]',
+    );
+    final narrativeLabels = RegExp(
+      r'^(?:旁白|叙述|作者|注|备注|例如|比如|注意|提示|答案|原因|结果|说明|第.+[章节卷])$|'
+      r'(?:是|有|如下|写着|显示|说道|说|问|答|喊|道)$',
+    );
+    final quotes = RegExp(r'“[^”\n]+”|「[^」\n]+」|『[^』\n]+』|"[^"\n]+"');
+    const cue = r'([他她])(?:轻声|低声|大声|笑着)?(?:说道|问道|答道|喊道|说|问|答|喊|道)';
+    final beforeQuote = RegExp('$cue[：:]?[ \\t　]*\$');
+    final afterQuote = RegExp('^[ \\t　]*[，,]?[ \\t　]*$cue');
     var start = 0;
     var currentRole = SpeechRole.narrator;
+    void changeRole(int at, SpeechRole role) {
+      if (currentRole == role) return;
+      result.addAll(_chunks(text.substring(start, at), start, currentRole));
+      start = at;
+      currentRole = role;
+    }
+
     for (final line in pattern.allMatches(text)) {
       final content = line.group(0)!;
       if (content.trim().isEmpty) continue;
       final match = prefix.firstMatch(content);
-      var role = SpeechRole.narrator;
-      if (match != null) {
-        final name = match.group(1)!;
-        if (!const {'旁白', '叙述', '作者', '注', '备注'}.contains(name)) {
-          role = speakers.putIfAbsent(name, () {
+      final name = match?.group(1);
+      if (name != null && !narrativeLabels.hasMatch(name)) {
+        changeRole(
+          line.start,
+          speakers.putIfAbsent(name, () {
             if (RegExp(r'她|女|姐|妹|妈|娘|婆|太太|夫人|小姐').hasMatch(name)) {
               return SpeechRole.female;
             }
@@ -37,15 +54,23 @@ class SpeechTurns {
               return SpeechRole.male;
             }
             return speakers.length.isEven ? SpeechRole.male : SpeechRole.female;
-          });
-        }
-      }
-      if (role != currentRole) {
-        result.addAll(
-          _chunks(text.substring(start, line.start), start, currentRole),
+          }),
         );
-        start = line.start;
-        currentRole = role;
+        continue;
+      }
+      changeRole(line.start, SpeechRole.narrator);
+      for (final quote in quotes.allMatches(content)) {
+        final speaker =
+            beforeQuote
+                .firstMatch(content.substring(0, quote.start))
+                ?.group(1) ??
+            afterQuote.firstMatch(content.substring(quote.end))?.group(1);
+        if (speaker == null) continue;
+        changeRole(
+          line.start + quote.start,
+          speaker == '她' ? SpeechRole.female : SpeechRole.male,
+        );
+        changeRole(line.start + quote.end, SpeechRole.narrator);
       }
     }
     result.addAll(_chunks(text.substring(start), start, currentRole));

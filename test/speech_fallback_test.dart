@@ -10,8 +10,83 @@ import 'package:lume_box/core/speech/speech_cloud.dart';
 import 'package:lume_box/core/speech/speech_settings.dart';
 import 'package:lume_box/core/speech/speech_segments.dart';
 
+class _ControlledAudio extends SpeechCloudClient {
+  _ControlledAudio(super.config);
+  final started = <String>[];
+  final nextStarted = Completer<void>();
+  @override
+  Stream<List<int>> audio(String text, String voice, double speed) async* {
+    started.add(text);
+    if (started.length == 2) nextStarted.complete();
+    yield [started.length, 0];
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('系统分角色朗读在跨片段后沿用同一角色，并由原生回报进度', () async {
+    const methods = MethodChannel('lumebox/speech');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final source = AdvancedSpeechSource(methods);
+    final finished = Completer<void>();
+    final roles = <String>[];
+    var pcmMarks = 0;
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'streamSystem') {
+        roles.add((call.arguments as Map)['role'] as String);
+      }
+      if (call.method == 'streamMark') pcmMarks++;
+      if (call.method == 'streamFinish') finished.complete();
+      return null;
+    });
+    addTearDown(() {
+      source.cancel();
+      messenger.setMockMethodCallHandler(methods, null);
+    });
+    const third = SpeechSegment(text: '乙：又见面了。', start: 12);
+    source.prepare(const [
+      SpeechSegment(text: '甲：你好。', start: 0),
+      SpeechSegment(text: '乙：你好。', start: 6),
+      third,
+    ]);
+    await source.speak(third, const SpeechSettings(autoDialogue: true));
+    await finished.future.timeout(const Duration(seconds: 2));
+    expect(roles, ['female']);
+    expect(pcmMarks, 0);
+  });
+  test('在线下一角色在当前 PCM 等待期间预取，播放仍按原顺序', () async {
+    const methods = MethodChannel('lumebox/speech');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final audio = _ControlledAudio(SpeechCloudConfig());
+    final source = AdvancedSpeechSource(methods, clientFactory: (_) => audio);
+    final firstPcm = Completer<void>();
+    final finished = Completer<void>();
+    final received = <int>[];
+    messenger.setMockMethodCallHandler(methods, (call) async {
+      if (call.method == 'streamPCM') {
+        received.add(((call.arguments as Map)['bytes'] as Uint8List).first);
+        if (received.length == 1) await firstPcm.future;
+      }
+      if (call.method == 'streamFinish') finished.complete();
+      return null;
+    });
+    addTearDown(() {
+      if (!firstPcm.isCompleted) firstPcm.complete();
+      source.cancel();
+      messenger.setMockMethodCallHandler(methods, null);
+    });
+    await source.speak(
+      const SpeechSegment(text: '旁白：第一段。\n妹妹：第二段。', start: 0),
+      const SpeechSettings(mode: SpeechMode.cloud, autoDialogue: true),
+    );
+    await audio.nextStarted.future.timeout(const Duration(seconds: 2));
+    expect(received, [1]);
+    firstPcm.complete();
+    await finished.future.timeout(const Duration(seconds: 2));
+    expect(received, [1, 2]);
+  });
   for (final failure in ['network', 'invalid SSML', 'rewritten text']) {
     test(
       'AI $failure automatically falls back to plain TTS without failed event',

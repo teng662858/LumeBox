@@ -85,6 +85,22 @@ void main() {
       expect(() => SpeechTurns.ssml(bad, text), throwsFormatException);
     }
   });
+  test('识别带明确说话线索的引号，只给引号内台词换音色', () {
+    const text = '例如：这句是旁白。\n她低声说：“你好😀。”天亮了。\n“我知道。”他答道。\n“无人署名。”';
+    final turns = SpeechTurns.regex(text, dialogue: true);
+    expect(turns.map((turn) => turn.role), [
+      SpeechRole.narrator,
+      SpeechRole.female,
+      SpeechRole.narrator,
+      SpeechRole.male,
+      SpeechRole.narrator,
+    ]);
+    expect(turns[1].text, '“你好😀。”');
+    expect(turns[3].text, '“我知道。”');
+    for (final turn in turns) {
+      expect(text.substring(turn.start, turn.end), turn.text);
+    }
+  });
   test(
     'cloud endpoint supports base/full URL and rejects credential redirects',
     () {

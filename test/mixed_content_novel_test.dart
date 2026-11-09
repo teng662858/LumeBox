@@ -473,6 +473,41 @@ void main() {
     await backend.controller.close();
   });
 
+  testWidgets('连听在本章朗读时预取下一章，换章复用已取正文', (tester) async {
+    final source = ShortNovelSource();
+    final backend = FakeNovelSpeech();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NovelReaderPage(
+          source: source,
+          library: library,
+          chapters: await source.chapters('novel'),
+          speechBackend: backend,
+          target: const ReadingTarget(
+            sourceId: 'fake.video',
+            itemId: 'novel',
+            title: '小说',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('朗读'));
+    await tester.pump();
+    backend.controller.add(
+      const SpeechEvent(SpeechEventKind.progress, charOffset: 2),
+    );
+    await tester.pumpAndSettle();
+    expect(source.reads, 2, reason: '下一章已预取');
+    expect(backend.spoken.length, 1, reason: '仍在读本章');
+    backend.controller.add(const SpeechEvent(SpeechEventKind.finished));
+    await tester.pumpAndSettle();
+    expect(source.reads, 2, reason: '自动换章不重复取正文');
+    expect(backend.spoken.length, 2);
+    await tester.pumpWidget(const SizedBox());
+    await backend.controller.close();
+  });
+
   testWidgets('连听换章失败后重试恢复，手动换章不会意外续播', (tester) async {
     final source = ShortNovelSource();
     final backend = FakeNovelSpeech();

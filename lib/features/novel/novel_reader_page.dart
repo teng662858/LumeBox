@@ -218,20 +218,66 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   late SpeechSession _speech;
   bool _continueSpeech = false;
   bool _autoNext = true;
+  int? _speechPrefetchIndex;
+  Future<TextContent?>? _speechPrefetch;
   void _speechChanged() {
     if (mounted) setState(() {});
   }
 
   void _speechPosition(int offset) {
-    if (!mounted || !_speechSettings.followAlong || _starts.isEmpty) return;
+    if (!mounted) return;
+    if (offset > 0 && offset < _text.length && _speech.isActive) {
+      _prefetchSpeechChapter();
+    }
+    if (!_speechSettings.followAlong || _starts.isEmpty) return;
     final page = _starts.lastIndexWhere((start) => start <= offset);
     if (page >= 0 && page != _page && (_controller?.hasClients ?? false)) {
       _controller!.jumpToPage(page);
     }
   }
 
+  Future<ChapterContent?> _readChapter(int index) async {
+    final id = _orderedChapters[index].id;
+    return await ReadingOffline.read(widget.source, widget.target.itemId, id) ??
+        await SourceContentRead.read(
+          widget.source,
+          itemId: widget.target.itemId,
+          chapterId: id,
+        );
+  }
+
+  void _prefetchSpeechChapter() {
+    final next = _chapter + 1;
+    if (!_autoNext ||
+        next >= _orderedChapters.length ||
+        _speechPrefetchIndex == next ||
+        ContentCenter.instance.enabled('autoReadDownloads')) {
+      return;
+    }
+    _speechPrefetchIndex = next;
+    _speechPrefetch = networkRequests
+        .run(
+          'speech-next',
+          () => _readChapter(next),
+          timeout: const Duration(seconds: 12),
+        )
+        .then<TextContent?>(
+          (content) => content is TextContent && content.text.trim().isNotEmpty
+              ? content
+              : null,
+          onError: (Object _) => null,
+        );
+  }
+
+  void _cancelSpeechPrefetch() {
+    _speechPrefetchIndex = null;
+    _speechPrefetch = null;
+    networkRequests.cancel('speech-next');
+  }
+
   Future<void> _startSpeech() async {
     if (_loading || _error != null || _text.isEmpty) return;
+    final revision = _revision;
     final backend = _speech.backend;
     if (backend is MethodChannelSpeechBackend) {
       backend.applySettings(_speechSettings);
@@ -245,6 +291,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       title: widget.target.title,
       subtitle: _orderedChapters[_chapter].title,
     );
+    if (!mounted || revision != _revision) return;
     final error = await _speech.start(segments);
     if (mounted && error != null) {
       ScaffoldMessenger.of(context)
@@ -298,6 +345,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
                   value: _autoNext,
                   onChanged: (value) {
                     setState(() => _autoNext = value);
+                    if (!value) _cancelSpeechPrefetch();
                     widget.library.setSetting(
                       'novel.speech.autoNext',
                       '$value',
@@ -399,8 +447,9 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     super.dispose();
   }
 
-  Future<void> _load() async {
-    networkRequests.cancelAll();
+  Future<void> _load({Future<TextContent?>? prefetched}) async {
+    networkRequests.cancel('chapter');
+    if (prefetched == null) _cancelSpeechPrefetch();
     final revision = ++_revision;
     _requestedLayout = null;
     setState(() {
@@ -408,20 +457,15 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       _error = null;
     });
     try {
-      final content = await networkRequests.run(
-        'chapter',
-        () async =>
-            await ReadingOffline.read(
-              widget.source,
-              widget.target.itemId,
-              _orderedChapters[_chapter].id,
-            ) ??
-            await SourceContentRead.read(
-              widget.source,
-              itemId: widget.target.itemId,
-              chapterId: _orderedChapters[_chapter].id,
-            ),
-      );
+      final chapter = _chapter;
+      final prepared = await prefetched;
+      if (!mounted || revision != _revision) return;
+      final content =
+          prepared ??
+          await networkRequests.run<ChapterContent?>(
+            'chapter',
+            () => _readChapter(chapter),
+          );
       if (!mounted || revision != _revision) return;
       if (content is! TextContent || content.text.trim().isEmpty) {
         throw StateError(
@@ -490,11 +534,16 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     _saveTimer?.cancel();
     _continueSpeech = continueSpeech;
     if (!continueSpeech) unawaited(_speech.stop());
+    final prefetched = continueSpeech && _speechPrefetchIndex == index
+        ? _speechPrefetch
+        : null;
+    _speechPrefetchIndex = null;
+    _speechPrefetch = null;
     _save();
     _chapter = index;
     _offset = 0;
     _savedTextLength = null;
-    _load();
+    _load(prefetched: prefetched);
   }
 
   Future<void> _directory() async {
@@ -633,6 +682,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
               IconButton(
                 onPressed: () {
                   _continueSpeech = false;
+                  _cancelSpeechPrefetch();
                   unawaited(_speech.stop());
                   setState(() {});
                 },

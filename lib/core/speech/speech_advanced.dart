@@ -16,6 +16,38 @@ abstract interface class ChapterSpeechBackend {
   Future<void> speakSegment(SpeechSegment segment);
 }
 
+/// Prime one chunk of the next turn. The iterator pauses the source until the
+/// turn is consumed, so lookahead cannot accumulate an entire audio response.
+class _SpeechAudioLookahead {
+  _SpeechAudioLookahead(Stream<List<int>> source)
+    : _iterator = StreamIterator(source) {
+    _first = _iterator
+        .moveNext()
+        .then<({bool ready, Object? error, StackTrace? stack})>(
+          (ready) => (ready: ready, error: null, stack: null),
+          onError: (Object error, StackTrace stack) =>
+              (ready: false, error: error, stack: stack),
+        );
+  }
+
+  final StreamIterator<List<int>> _iterator;
+  late final Future<({bool ready, Object? error, StackTrace? stack})> _first;
+
+  Stream<List<int>> read() async* {
+    final first = await _first;
+    if (first.error != null) {
+      Error.throwWithStackTrace(first.error!, first.stack!);
+    }
+    if (!first.ready) return;
+    do {
+      yield _iterator.current;
+    } while (await _iterator.moveNext());
+  }
+
+  Future<void> cancel() => _iterator.cancel();
+  Future<bool> get failedBeforeAudio async => (await _first).error != null;
+}
+
 /// Owns only sound production. Reader transport and saved reading progress keep
 /// their existing SpeechSession contract.
 class AdvancedSpeechSource {
@@ -34,6 +66,7 @@ class AdvancedSpeechSource {
   final MethodChannel methods;
   String _chapter = '';
   List<SpeechTurn>? _annotated;
+  List<SpeechTurn>? _heuristicTurns;
   String? _annotationKey;
   int _generation = 0;
   SpeechCloudClient? _client;
@@ -56,7 +89,8 @@ class AdvancedSpeechSource {
     var position = 0;
     for (final segment in segments) {
       if (segment.start > position) {
-        buffer.write(' ' * (segment.start - position));
+        buffer.write('\n');
+        buffer.write(' ' * (segment.start - position - 1));
       }
       buffer.write(segment.text);
       position = segment.end;
@@ -65,6 +99,7 @@ class AdvancedSpeechSource {
     if (chapter != _chapter) {
       _chapter = chapter;
       _annotated = null;
+      _heuristicTurns = null;
       _annotationKey = null;
     }
   }
@@ -83,13 +118,14 @@ class AdvancedSpeechSource {
     String focusOwner = 'tts',
     void Function(String)? onError,
   }) async {
-    await PlaybackFocus.acquire(focusOwner);
     cancel(
       keepCompletedLocal:
           settings.mode == SpeechMode.local ||
           settings.mode == SpeechMode.kokoro,
     );
     final generation = _generation;
+    await PlaybackFocus.acquire(focusOwner);
+    if (generation != _generation) return;
     final token = '$generation-${DateTime.now().microsecondsSinceEpoch}';
     final client = _client = clientFactory(config);
     Directory? localDirectory;
@@ -116,8 +152,16 @@ class AdvancedSpeechSource {
     // Start returns immediately so the existing transport remains responsive
     // while the provider is buffering or the LLM is preparing the chapter.
     unawaited(() async {
+      _SpeechAudioLookahead? nextAudio;
       try {
         var effective = settings;
+        List<SpeechTurn> heuristic() => _chapter.isEmpty
+            ? SpeechTurns.regex(segment.text, dialogue: true)
+            : SpeechTurns.slice(
+                _heuristicTurns ??= SpeechTurns.regex(_chapter, dialogue: true),
+                segment.start,
+                segment.end,
+              );
         List<SpeechTurn> turns;
         if (settings.mode == SpeechMode.cloudAi && settings.autoDialogue) {
           await config.load();
@@ -140,16 +184,16 @@ class AdvancedSpeechSource {
           }
           if (_annotated == null) {
             effective = settings.copyWith(mode: SpeechMode.cloud);
-            turns = SpeechTurns.regex(segment.text, dialogue: true);
+            turns = heuristic();
           } else {
             turns = SpeechTurns.slice(_annotated!, segment.start, segment.end);
           }
         } else {
-          turns = SpeechTurns.regex(
-            segment.text,
-            dialogue: settings.autoDialogue,
-          );
+          turns = settings.autoDialogue
+              ? heuristic()
+              : SpeechTurns.regex(segment.text, dialogue: false);
         }
+        turns = turns.where((turn) => turn.text.trim().isNotEmpty).toList();
         if (effective.mode != settings.mode) {
           // AI failed before any audio was queued: use the complete simple-mode
           // profile, including its native pitch/volume, without altering storage.
@@ -161,13 +205,18 @@ class AdvancedSpeechSource {
             'background': effective.backgroundPlayback,
           });
         }
-        for (final turn in turns) {
+        String voiceFor(SpeechTurn turn) => switch (turn.role) {
+          SpeechRole.narrator => effective.narratorVoice,
+          SpeechRole.male => effective.maleVoice,
+          SpeechRole.female => effective.femaleVoice,
+        };
+        _SpeechAudioLookahead prime(SpeechTurn turn) => _SpeechAudioLookahead(
+          client.audio(turn.text, voiceFor(turn), effective.rate / .5),
+        );
+        for (var index = 0; index < turns.length; index++) {
           if (generation != _generation) return;
-          final voice = switch (turn.role) {
-            SpeechRole.narrator => effective.narratorVoice,
-            SpeechRole.male => effective.maleVoice,
-            SpeechRole.female => effective.femaleVoice,
-          };
+          final turn = turns[index];
+          final voice = voiceFor(turn);
           if (effective.mode == SpeechMode.system) {
             await methods.invokeMethod<void>('streamSystem', {
               'token': token,
@@ -206,26 +255,39 @@ class AdvancedSpeechSource {
               }
             }
           } else {
-            var carry = <int>[];
-            await for (final bytes in client.audio(
-              turn.text,
-              voice,
-              effective.rate / .5,
-            )) {
+            final prefetched = nextAudio;
+            nextAudio = null;
+            var audio = prefetched ?? prime(turn);
+            if (prefetched != null && await prefetched.failedBeforeAudio) {
+              await prefetched.cancel();
               if (generation != _generation) return;
-              final joined = [...carry, ...bytes];
-              final count = joined.length - joined.length % 2;
-              carry = joined.sublist(count);
-              for (var offset = 0; offset < count; offset += 24000) {
-                final end = (offset + 24000).clamp(0, count);
-                await methods.invokeMethod<void>('streamPCM', {
-                  'token': token,
-                  'bytes': Uint8List.fromList(joined.sublist(offset, end)),
-                });
-                if (generation != _generation) return;
-              }
+              // Some services reject overlapping requests. Retry the turn
+              // once in sequence if its speculative request produced no audio.
+              audio = prime(turn);
             }
-            if (carry.isNotEmpty) throw const FormatException('PCM 数据不完整');
+            try {
+              var carry = <int>[];
+              await for (final bytes in audio.read()) {
+                if (generation != _generation) return;
+                if (bytes.isNotEmpty && index + 1 < turns.length) {
+                  nextAudio ??= prime(turns[index + 1]);
+                }
+                final joined = [...carry, ...bytes];
+                final count = joined.length - joined.length % 2;
+                carry = joined.sublist(count);
+                for (var offset = 0; offset < count; offset += 24000) {
+                  final end = (offset + 24000).clamp(0, count);
+                  await methods.invokeMethod<void>('streamPCM', {
+                    'token': token,
+                    'bytes': Uint8List.fromList(joined.sublist(offset, end)),
+                  });
+                  if (generation != _generation) return;
+                }
+              }
+              if (carry.isNotEmpty) throw const FormatException('PCM 数据不完整');
+            } finally {
+              await audio.cancel();
+            }
           }
           if (turn.pauseMs > 0) {
             await methods.invokeMethod<void>('streamPCM', {
@@ -233,10 +295,12 @@ class AdvancedSpeechSource {
               'bytes': Uint8List(sampleRate * turn.pauseMs ~/ 1000 * 2),
             });
           }
-          await methods.invokeMethod<void>('streamMark', {
-            'token': token,
-            'offset': turn.end,
-          });
+          if (effective.mode != SpeechMode.system) {
+            await methods.invokeMethod<void>('streamMark', {
+              'token': token,
+              'offset': turn.end,
+            });
+          }
         }
         if (generation == _generation) {
           await methods.invokeMethod<void>('streamFinish', {'token': token});
@@ -267,6 +331,7 @@ class AdvancedSpeechSource {
         }
       } finally {
         client.close();
+        await nextAudio?.cancel();
         if (identical(_client, client)) _client = null;
       }
     }());
