@@ -252,6 +252,7 @@ class _VideoPageState extends State<VideoPage> {
         await preparePlaybackRoute(
           media,
           library: _library,
+          target: target,
           stillActive: () => mounted,
         );
     if (!mounted) {

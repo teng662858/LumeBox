@@ -1,4 +1,4 @@
-// LumeSource: {"id":"stripchat_live_video","name":"Stripchat 中文直播","version":"1.1.0","category":"video","contentCategory":"adult","network":"proxy","mirrors":["https://zh.stripchat.com","https://stripchat.com"],"icon":"https://zh.stripchat.com/favicon.ico","settings":[{"key":"siteNote","type":"info","title":"站点说明","description":"18+ 成人直播。全部合并四个公开直播目录，筛选取自官网分类页；通过站方网页播放器打开。"}]}
+// LumeSource: {"id":"stripchat_live_video","name":"Stripchat 中文直播","version":"1.1.1","category":"video","contentCategory":"adult","network":"proxy","mirrors":["https://zh.stripchat.com","https://stripchat.com"],"icon":"https://zh.stripchat.com/favicon.ico","settings":[{"key":"siteNote","type":"info","title":"站点说明","description":"18+ 成人直播。全部合并四个公开直播目录，筛选取自官网分类页。直播封面随站方快照更新，通过站方网页播放器打开。"}]}
 
 const SC_HOME = 'https://zh.stripchat.com';
 const SC_PAGE_SIZE = 24;
@@ -21,7 +21,7 @@ function scHeaders() {
 async function scApi(path, params = {}) {
   const query = Object.keys(params).map(key => key + '=' + encodeURIComponent(params[key])).join('&');
   const response = await LumeSource.http.get(scHome() + '/api/front' + path + (query ? '?' + query : ''), {
-    headers: { ...scHeaders(), Accept: 'application/json, text/plain, */*' },
+    headers: { ...scHeaders(), Accept: 'application/json, text/plain, */*', 'Cache-Control': 'no-cache' },
   });
   if (response.status === 404) return null;
   if (response.status !== 200) throw new Error('Stripchat 目录暂不可用（HTTP ' + response.status + '）');
@@ -121,11 +121,17 @@ function scFilterTags(categoryId, filters) {
 }
 
 function scItem(model) {
+  const preview = model.previewUrlThumbSmall || '';
+  const snapshot = String(model.snapshotTimestamp || '');
+  const cover = preview && /^https?:\/\/[^?#]+$/.test(preview) && /^\d+$/.test(snapshot)
+    ? preview + '?v=' + snapshot
+    : preview || model.avatarUrl || '';
   return {
     id: model.id + ':' + model.username,
     title: model.username,
-    cover: model.previewUrlThumbSmall || model.avatarUrl || '',
+    cover,
     coverHeaders: scHeaders(),
+    mediaInfo: { liveCover: scPublic(model) },
     subtitle: scPublic(model) ? '公开直播' : '当前无公开直播',
   };
 }

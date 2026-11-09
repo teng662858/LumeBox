@@ -194,6 +194,45 @@ void main() {
   });
 
   group('小说 / 漫画首页列表（ExploreView）', () {
+    testWidgets('直播列表在前台更新快照，离开页面后停止', (tester) async {
+      final pipeline = (await tester.runAsync(
+        () => openPipeline(Section.video),
+      ))!;
+      addTearDown(pipeline.dispose);
+      final source = _PagedSource(
+        section: Section.video,
+        totalPages: 1,
+        live: true,
+      );
+      await pump(
+        tester,
+        ExploreView(
+          section: Section.video,
+          pipeline: pipeline,
+          manager: FakeSourceManager(
+            sources: const [
+              SourceDescriptor(
+                id: 'source-a',
+                name: '直播源',
+                version: '1',
+                enabled: true,
+              ),
+            ],
+            opened: {'source-a': source},
+          ),
+          layout: ExploreLayout.list,
+          onOpenItem: (_) {},
+        ),
+      );
+      expect(find.text('条目 source-a-1-1 · 1'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 20));
+      await tester.pumpAndSettle();
+      expect(find.text('条目 source-a-1-1 · 2'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 20));
+      expect(source.requests, [1, 1]);
+    });
+
     for (final section in <Section>[Section.video, Section.comic]) {
       testWidgets('${section.label}：触底加载多页 + 换图源重置分页', (tester) async {
         final pipeline = await openPipeline(section);
@@ -331,11 +370,7 @@ void main() {
         greaterThanOrEqualTo(2),
         reason: '三列网格刷新后会继续补满视口',
       );
-      expect(
-        find.text('条目 source-a-2-1'),
-        findsNothing,
-        reason: '刷新清空旧分页数据',
-      );
+      expect(find.text('条目 source-a-2-1'), findsNothing, reason: '刷新清空旧分页数据');
     });
   });
 }
@@ -348,6 +383,7 @@ class _PagedSource implements DataSource {
     this.id = 'source-a',
     this.name = '分页源',
     this.delay,
+    this.live = false,
   });
 
   @override
@@ -360,6 +396,7 @@ class _PagedSource implements DataSource {
   final String name;
 
   final int totalPages;
+  final bool live;
 
   /// 每页条数：固定值（用例只按「页」验证，不需要调它）。
   static const int perPage = 8;
@@ -393,7 +430,9 @@ class _PagedSource implements DataSource {
         for (var index = 0; index < perPage; index++)
           SourceItem(
             id: '$id-item-$page-$index',
-            title: '条目 $id-$page-${index + 1}',
+            title:
+                '条目 $id-$page-${index + 1}${live ? ' · ${requests.length}' : ''}',
+            mediaInfo: live ? const {'liveCover': true} : const {},
           ),
       ],
       hasMore: page < totalPages,

@@ -94,6 +94,7 @@ import 'player_control_glyph.dart';
 import 'playback_source_validator.dart';
 import 'playback_quality_preference.dart';
 import 'playback_preference_wiring.dart';
+import 'playback_entry_preparation.dart';
 import '../../core/player/player_experience_store.dart';
 import 'player_kernel_picker.dart';
 import 'next_episode_buffer.dart';
@@ -1888,6 +1889,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     );
     _startupWatch = player.snapshot.value.error == null ? loadWatch : null;
     setState(() => _loaded = player.snapshot.value.error == null);
+    _rememberVideoDirection(player.stats.value);
   }
 
   /// 设置变更：落库并立即生效；换内核走重建，其余项直接应用到当前内核。
@@ -4855,6 +4857,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       );
       _firstFrameWatch = null;
     }
+    if (_loaded && stats != null) _rememberVideoDirection(stats);
     final sizeKey = '${stats?.width}x${stats?.height}';
     if (sizeKey != _lastVideoSize) {
       setState(() => _lastVideoSize = sizeKey);
@@ -4866,6 +4869,27 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
   /// 最近一次用于取景的宽高（`宽x高`）；用来判断分辨率有没有变。
   String? _lastVideoSize;
+
+  String? _rememberedDirection;
+  void _rememberVideoDirection(PlayerStats stats) {
+    final target = _target;
+    final library = _library;
+    final width = stats.width ?? 0;
+    final height = stats.height ?? 0;
+    if (!_loaded ||
+        target == null ||
+        library == null ||
+        width <= 0 ||
+        height <= 0) {
+      return;
+    }
+    final key = playbackEntryDirectionKey(target);
+    final direction = width < height ? 'portrait' : 'landscape';
+    final fingerprint = '$key:$direction';
+    if (_rememberedDirection == fingerprint) return;
+    _rememberedDirection = fingerprint;
+    if (library.setting(key) != direction) library.setSetting(key, direction);
+  }
 
   /// 按当前全屏状态 + 方向锁定算出该下发的方向。
   List<DeviceOrientation> _preferredOrientations() {

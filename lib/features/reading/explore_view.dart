@@ -250,6 +250,72 @@ class _ExploreViewState extends State<ExploreView>
   bool _loadingFirst = false;
   bool _loadMoreFailed = false;
   bool _browseVisible = true;
+  Timer? _liveCoverTimer;
+  int _liveCoverPage = 1;
+  bool _refreshingLiveCovers = false;
+
+  void _scheduleLiveCovers() {
+    if (!_items.any((item) => item.mediaInfo['liveCover'] == true)) return;
+    _liveCoverTimer ??= Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => unawaited(_refreshLiveCovers()),
+    );
+  }
+
+  Future<void> _refreshLiveCovers() async {
+    final source = _source;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (source == null ||
+        !_browseVisible ||
+        ModalRoute.isCurrentOf(context) == false ||
+        (lifecycle != null && lifecycle != AppLifecycleState.resumed) ||
+        _pendingPage != 0 ||
+        _refreshingLiveCovers) {
+      return;
+    }
+    final seq = _requestSeq;
+    final page = _liveCoverPage;
+    _refreshingLiveCovers = true;
+    try {
+      final result = await networkRequests.run(
+        'live-covers',
+        () => source.list(
+          categoryId: _categoryId,
+          page: page,
+          filters: _facetFilters.isEmpty ? null : _facetFilters,
+        ),
+        timeout: const Duration(seconds: 10),
+      );
+      if (!mounted ||
+          seq != _requestSeq ||
+          !_browseVisible ||
+          ModalRoute.isCurrentOf(context) == false) {
+        return;
+      }
+      final updates = {for (final item in result.items) item.id: item};
+      setState(() {
+        if (page == 1 &&
+            _page == 1 &&
+            _pendingPage == 0 &&
+            updates.isNotEmpty) {
+          _items
+            ..clear()
+            ..addAll(result.items);
+          _hasMore = result.hasMore;
+        } else {
+          for (var i = 0; i < _items.length; i++) {
+            _items[i] = updates[_items[i].id] ?? _items[i];
+          }
+        }
+        _liveCoverPage = page < _page ? page + 1 : 1;
+      });
+    } catch (_) {
+      // Keep the last thumbnails during a transient live refresh failure.
+    } finally {
+      _refreshingLiveCovers = false;
+    }
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -357,6 +423,8 @@ class _ExploreViewState extends State<ExploreView>
     _requestSeq++;
     _suggestSeq++;
     _suggestDebounce?.cancel();
+    _liveCoverTimer?.cancel();
+    networkRequests.cancel('live-covers');
     networkRequests.cancel('suggestions');
     _search.dispose();
     // 图源管理器是**板块级共享**的（本页只是借用）：这里**不 close**。
@@ -493,7 +561,10 @@ class _ExploreViewState extends State<ExploreView>
             : SourceStateKind.ready;
         _failure = null;
       });
-      if (visit != null) return;
+      if (visit != null) {
+        _scheduleLiveCovers();
+        return;
+      }
       // Python calls share a native serial worker. Let real home content go
       // first; a slow site's category/filter discovery must not block it.
       final deferMetadata = current.runtimeKind == 'python';
@@ -973,6 +1044,10 @@ class _ExploreViewState extends State<ExploreView>
   /// 分页状态**（用户点名）：换源时必须清干净，否则会带着旧源的页码与
   /// hasMore 继续翻页。
   void _resetPagination() {
+    _liveCoverTimer?.cancel();
+    _liveCoverTimer = null;
+    _liveCoverPage = 1;
+    networkRequests.cancel('live-covers');
     _page = 1;
     _hasMore = false;
     _loadingMore = false;
@@ -1033,6 +1108,7 @@ class _ExploreViewState extends State<ExploreView>
           _items.addAll(warm.items);
         });
         _pendingPage = 0;
+        _scheduleLiveCovers();
         _preloadCovers(warm.items);
         return;
       }
@@ -1086,6 +1162,7 @@ class _ExploreViewState extends State<ExploreView>
         }
       });
       _preloadCovers(result.items, more: more);
+      _scheduleLiveCovers();
     } on NetworkCancelled {
       // Replaced requests belong to the previous source/filter/page lifetime.
       return;

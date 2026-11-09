@@ -2,6 +2,7 @@ import '../../shared/widgets/media_badges.dart';
 import '../../core/audio_book/audio_book_player.dart';
 import 'playback_entry_preparation.dart';
 import '../../core/source/source_content_type.dart';
+import '../../core/session/section.dart';
 import '../reading/content_detail_router.dart';
 import '../download/download_selection.dart';
 import '../comic/download_center_page.dart';
@@ -538,6 +539,10 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         widget.library.refresh();
         return;
       }
+      // Start the kernel while the source resolves the selected episode.
+      if (_source!.section == Section.video) {
+        prepared = widget.prelaunch?.call();
+      }
       final direct = SourcePlayback.itemAddress(widget.item.id);
       ChapterContent? content;
       {
@@ -573,7 +578,6 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         }
       }
       if (!mounted) return;
-      await MediaLibrary.instance.boot();
       final saved = MediaLibrary.instance.byId(
         MediaResource.sourceKey(_source!.section, _source!.id, widget.item.id),
       );
@@ -677,10 +681,20 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         title: '${widget.item.title} · ${VideoEpisodeCatalog.labelOf(chapter)}',
         headers: SourcePlayback.contentHeaders(content, source: _source!),
       );
+      final target = VideoPlayTarget(
+        sourceId: _source!.id,
+        itemId: widget.item.id,
+        title: widget.item.title,
+        cover: widget.item.cover,
+        chapterIndex: selected,
+        chapterId: chapter.id,
+        chapterTitle: VideoEpisodeCatalog.labelOf(chapter),
+      );
       prepared = await preparePlaybackRoute(
         media,
         library: widget.library,
-        prelaunch: widget.prelaunch?.call(),
+        prelaunch: prepared ?? widget.prelaunch?.call(),
+        target: target,
         stillActive: () => mounted,
       );
       if (!mounted) return;
@@ -688,15 +702,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       prepared = null;
       await widget.onPlay(
         media,
-        VideoPlayTarget(
-          sourceId: _source!.id,
-          itemId: widget.item.id,
-          title: widget.item.title,
-          cover: widget.item.cover,
-          chapterIndex: selected,
-          chapterId: chapter.id,
-          chapterTitle: VideoEpisodeCatalog.labelOf(chapter),
-        ),
+        target,
         SourcePlayback.contentQualities(content, source: _source!),
         transferred,
       );

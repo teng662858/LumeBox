@@ -187,6 +187,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
                 await preparePlaybackRoute(
                   media,
                   library: library,
+                  target: target,
                   stillActive: () => context.mounted,
                 );
             if (!context.mounted) {

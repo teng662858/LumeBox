@@ -5,6 +5,7 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:flutter/services.dart';
 import 'package:lume_box/features/video/playback_entry_preparation.dart';
+import 'package:lume_box/features/video/video_play_target.dart';
 import 'package:lume_box/core/player/playback_orientation.dart';
 
 import 'dart:async';
@@ -147,6 +148,45 @@ void main() {
     expect(prelaunch.hasPreparedMedia(media), true);
     expect(player.loads, 1);
     await player.dispose();
+    const target = VideoPlayTarget(
+      sourceId: 'source',
+      itemId: 'show',
+      title: 'show',
+      chapterIndex: 1,
+      chapterId: 'episode-2',
+      chapterTitle: 'episode 2',
+    );
+    library.setSetting(playbackEntryDirectionKey(target), 'landscape');
+    final second = _PreflightPlayer();
+    final secondEntry = PlayerPrelaunch.start(
+      PlayerKernel.avplayer,
+      factory: (_) => second,
+    );
+    final directions = <List<dynamic>>[];
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'SystemChrome.setPreferredOrientations') {
+        directions.add(call.arguments as List<dynamic>);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    expect(
+      await preparePlaybackRoute(
+        media,
+        library: library,
+        target: target,
+        prelaunch: secondEntry,
+      ),
+      same(secondEntry),
+    );
+    expect(directions.single, [
+      'DeviceOrientation.landscapeLeft',
+      'DeviceOrientation.landscapeRight',
+    ]);
+    expect(second.loads, 0);
+    await secondEntry.discard();
   });
 
   testWidgets(
