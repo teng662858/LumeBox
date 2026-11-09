@@ -14,13 +14,17 @@ class SpeechTurn {
 
 class SpeechTurns {
   static List<SpeechTurn> regex(String text, {required bool dialogue}) {
+    if (!dialogue) return _chunks(text, 0, SpeechRole.narrator);
     final result = <SpeechTurn>[];
     final speakers = <String, SpeechRole>{};
     final pattern = RegExp(r'[^\n]+\n?|\n');
     final prefix = RegExp(r'^\s*([^\s：:，。！？、]{1,12})\s*[：:]');
+    var start = 0;
+    var currentRole = SpeechRole.narrator;
     for (final line in pattern.allMatches(text)) {
       final content = line.group(0)!;
-      final match = dialogue ? prefix.firstMatch(content) : null;
+      if (content.trim().isEmpty) continue;
+      final match = prefix.firstMatch(content);
       var role = SpeechRole.narrator;
       if (match != null) {
         final name = match.group(1)!;
@@ -36,8 +40,15 @@ class SpeechTurns {
           });
         }
       }
-      result.addAll(_chunks(content, line.start, role));
+      if (role != currentRole) {
+        result.addAll(
+          _chunks(text.substring(start, line.start), start, currentRole),
+        );
+        start = line.start;
+        currentRole = role;
+      }
     }
+    result.addAll(_chunks(text.substring(start), start, currentRole));
     return result;
   }
 

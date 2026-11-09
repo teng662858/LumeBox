@@ -16,7 +16,7 @@ final class SpeechStream: NSObject, AVSpeechSynthesizerDelegate {
   private var offset = 0
   private var generation = 0
   private var heartbeat: Timer?
-  private var pending: [UUID: FlutterResult] = [:]
+  private var pending: [FlutterResult] = []
   private var utteranceResult: FlutterResult?
   private var utteranceOffset = 0
   private var attached = false
@@ -81,14 +81,20 @@ final class SpeechStream: NSObject, AVSpeechSynthesizerDelegate {
       }
       queued += frames
       let version = generation
-      let shouldWait = queued > Int(format.sampleRate * 2)
-      let id = UUID()
-      if shouldWait { pending[id] = result }
+      let highWatermark = Int(format.sampleRate * 2)
+      let shouldWait = queued > highWatermark
+      if shouldWait { pending.append(result) }
       player.scheduleBuffer(buffer,completionCallbackType:.dataPlayedBack) { [weak self] _ in
         DispatchQueue.main.async {
           guard let self, self.generation == version else { return }
           self.queued = max(0,self.queued - frames)
-          self.pending.removeValue(forKey:id)?(nil)
+          // Unblock the producer while audio is still queued. Waiting for
+          // the newly appended buffer itself drains the whole queue.
+          if self.queued <= highWatermark && !self.pending.isEmpty {
+            let waiting = self.pending
+            self.pending.removeAll()
+            waiting.forEach { $0(nil) }
+          }
         }
       }
       if !shouldWait { result(nil) }
@@ -148,7 +154,7 @@ final class SpeechStream: NSObject, AVSpeechSynthesizerDelegate {
     heartbeat?.invalidate(); heartbeat = nil
     if attached { player.stop(); engine.stop() }
     synth.stopSpeaking(at:.immediate)
-    let waiting = pending; pending.removeAll(); waiting.values.forEach { $0(nil) }
+    let waiting = pending; pending.removeAll(); waiting.forEach { $0(nil) }
     let completion = utteranceResult; utteranceResult = nil; completion?(nil)
     queued = 0; offset = 0
     if notify { emit?("stopped",nil,nil) }

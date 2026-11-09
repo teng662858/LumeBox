@@ -4,6 +4,7 @@ import '../../shared/widgets/network_owned_state.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/reading/reading.dart';
+import '../../core/reading/chapter_display_order.dart';
 import '../../core/source/source.dart';
 import 'novel_reader_page.dart';
 
@@ -40,6 +41,7 @@ class _NovelDetailPageState extends State<NovelDetailPage>
       : const {};
 
   List<SourceChapter> _chapters = [];
+  List<int> _chapterOrder = [];
   String? _error;
   bool _loading = true, _reversed = false;
   String get _title => _detail?.title ?? widget.target.title;
@@ -88,6 +90,7 @@ class _NovelDetailPageState extends State<NovelDetailPage>
       setState(() {
         _detail = detail;
         _chapters = chapters;
+        _chapterOrder = ChapterDisplayOrder.correctedIndexes(chapters);
         _loading = false;
       });
       widget.library.recordHistoryItem(
@@ -237,7 +240,9 @@ class _NovelDetailPageState extends State<NovelDetailPage>
                         FilledButton(
                           onPressed: _chapters.isEmpty
                               ? null
-                              : () => _read(resume < 0 ? 0 : resume),
+                              : () => _read(
+                                  resume < 0 ? _chapterOrder.first : resume,
+                                ),
                           child: Text(
                             resume < 0
                                 ? '开始阅读'
@@ -259,13 +264,14 @@ class _NovelDetailPageState extends State<NovelDetailPage>
                     ),
                   );
                 }
-                final index = _reversed
+                final displayIndex = _reversed
                     ? _chapters.length - position
                     : position - 1;
+                final index = _chapterOrder[displayIndex];
                 return ListTile(
                   title: Text(_chapters[index].title),
                   selected: index == resume,
-                  leading: Text('${index + 1}'),
+                  leading: Text('${displayIndex + 1}'),
                   onTap: () => _read(index),
                 );
               },

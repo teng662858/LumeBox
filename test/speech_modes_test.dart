@@ -62,6 +62,7 @@ void main() {
         ).every((t) => t.role == SpeechRole.narrator),
         true,
       );
+      expect(SpeechTurns.regex(text, dialogue: false).single.text, text);
     },
   );
   test('SSML validates entire original text, maps offsets and pauses', () {

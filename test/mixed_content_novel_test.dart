@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/media/media_library.dart';
 import 'package:lume_box/core/reading/reading.dart';
+import 'package:lume_box/core/reading/novel_text_cleanup.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
@@ -88,6 +89,15 @@ class ShortNovelSource extends MixedSource {
   }
 }
 
+class UnsortedNovelSource extends ShortNovelSource {
+  @override
+  Future<List<SourceChapter>> chapters(String itemId) async => const [
+    SourceChapter(id: 'ten', title: '第10章'),
+    SourceChapter(id: 'two', title: '第二章'),
+    SourceChapter(id: 'one', title: '第1章'),
+  ];
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory root;
@@ -107,6 +117,53 @@ void main() {
     ReadingStore.disposeAll();
     await SectionScope.closeAll();
     root.deleteSync(recursive: true);
+  });
+
+  test('清除已知发布页水印与转义引号，映射原阅读位置', () {
+    const raw =
+        '他醒了。发布\\页地址{www.ltxsfb.comlᴛ x S b a.cＯm…°ＣＯＭ\n'
+        '他说：\\"灵根？\\" 正常网址 https://example.com，路径 C:\\books。';
+    final cleaned = cleanNovelText(raw, offset: raw.indexOf('正常网址'));
+    expect(
+      cleaned.text,
+      '他醒了。\n他说："灵根？" 正常网址 https://example.com，路径 C:\\books。',
+    );
+    expect(cleaned.offset, cleaned.text.indexOf('正常网址'));
+    expect(cleanNovelText(cleaned.text).text, cleaned.text);
+    expect(
+      cleanNovelText('发布页地址 {www.ltxsfb.com} A normal English sentence.').text,
+      ' A normal English sentence.',
+    );
+  });
+
+  testWidgets('详情默认按章号，开始阅读和下一章沿用该顺序', (tester) async {
+    final source = UnsortedNovelSource();
+    const target = ReadingTarget(
+      sourceId: 'fake.video',
+      itemId: 'novel',
+      title: '小说',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NovelDetailPage(source: source, library: library, target: target),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.text('第1章')).dy,
+      lessThan(tester.getTopLeft(find.text('第二章')).dy),
+    );
+    await tester.tap(find.text('开始阅读'));
+    await tester.pumpAndSettle();
+    expect(find.text('第1章'), findsOneWidget);
+    await tester.tap(find.text('下一章'));
+    await tester.pumpAndSettle();
+    expect(find.text('第二章'), findsOneWidget);
+    final saved =
+        library.progress('novel', sourceId: 'fake.video') as NovelProgress;
+    expect(saved.chapterId, 'two');
+    expect(saved.chapterIndex, 1, reason: '保存原目录索引');
+    await tester.pumpWidget(const SizedBox());
   });
 
   test('pagination can stop after a bounded prefix and matches complete page offsets', () {

@@ -13,6 +13,8 @@ import '../../shared/widgets/native_glass_preview.dart';
 import '../../shared/widgets/native_glass_controls.dart';
 
 import '../../core/reading/reading.dart';
+import '../../core/reading/chapter_display_order.dart';
+import '../../core/reading/novel_text_cleanup.dart';
 import '../../core/speech/speech.dart';
 import '../reading/speech_modes_panel.dart';
 import '../../core/source/source.dart';
@@ -100,14 +102,16 @@ class NovelReaderPage extends StatefulWidget {
     required this.library,
     required this.target,
     required this.chapters,
-    this.initialChapterIndex = 0,
+    this.initialChapterIndex,
     this.speechBackend,
   });
   final DataSource source;
   final ReadingLibrary library;
   final ReadingTarget target;
   final List<SourceChapter> chapters;
-  final int initialChapterIndex;
+
+  /// An explicit source index preserves existing chapter IDs and resume data.
+  final int? initialChapterIndex;
   final SpeechBackend? speechBackend;
   @override
   State<NovelReaderPage> createState() => _NovelReaderPageState();
@@ -116,6 +120,9 @@ class NovelReaderPage extends StatefulWidget {
 class _NovelReaderPageState extends State<NovelReaderPage>
     with WidgetsBindingObserver, NetworkOwnedState<NovelReaderPage> {
   late int _chapter;
+  late final List<int> _chapterOrder;
+  late final List<SourceChapter> _orderedChapters;
+  int? _savedTextLength;
   int _revision = 0, _offset = 0, _page = 0;
   String _text = '';
   String? _error;
@@ -236,7 +243,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     );
     await _speech.setNowPlaying(
       title: widget.target.title,
-      subtitle: widget.chapters[_chapter].title,
+      subtitle: _orderedChapters[_chapter].title,
     );
     final error = await _speech.start(segments);
     if (mounted && error != null) {
@@ -339,13 +346,20 @@ class _NovelReaderPageState extends State<NovelReaderPage>
         }
       },
       onCompleted: () {
-        if (mounted && _autoNext && _chapter + 1 < widget.chapters.length) {
+        if (mounted && _autoNext && _chapter + 1 < _orderedChapters.length) {
           _changeChapter(_chapter + 1, continueSpeech: true);
         }
       },
     );
     _speech.state.addListener(_speechChanged);
-    _chapter = widget.initialChapterIndex.clamp(0, widget.chapters.length - 1);
+    _chapterOrder = ChapterDisplayOrder.correctedIndexes(widget.chapters);
+    _orderedChapters = _chapterOrder
+        .map((index) => widget.chapters[index])
+        .toList();
+    final initial = widget.initialChapterIndex;
+    _chapter = initial == null
+        ? 0
+        : _chapterOrder.indexOf(initial.clamp(0, widget.chapters.length - 1));
     _font =
         (double.tryParse(widget.library.setting('novel.fontSize') ?? '') ?? 20)
             .clamp(14, 32);
@@ -360,8 +374,9 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       sourceId: widget.target.sourceId,
     );
     if (saved is NovelProgress &&
-        saved.chapterId == widget.chapters[_chapter].id) {
+        saved.chapterId == _orderedChapters[_chapter].id) {
       _offset = saved.offset;
+      _savedTextLength = saved.textLength;
     }
     _load();
   }
@@ -399,12 +414,12 @@ class _NovelReaderPageState extends State<NovelReaderPage>
             await ReadingOffline.read(
               widget.source,
               widget.target.itemId,
-              widget.chapters[_chapter].id,
+              _orderedChapters[_chapter].id,
             ) ??
             await SourceContentRead.read(
               widget.source,
               itemId: widget.target.itemId,
-              chapterId: widget.chapters[_chapter].id,
+              chapterId: _orderedChapters[_chapter].id,
             ),
       );
       if (!mounted || revision != _revision) return;
@@ -413,9 +428,14 @@ class _NovelReaderPageState extends State<NovelReaderPage>
           content == null ? '本章暂无正文' : '本章返回的不是小说正文，请返回详情检查内容类型',
         );
       }
+      final cleaned = cleanNovelText(content.text, offset: _offset);
+      if (cleaned.text.trim().isEmpty) throw StateError('本章暂无正文');
       setState(() {
-        _text = content.text;
-        _offset = _offset.clamp(0, _text.length - 1);
+        _text = cleaned.text;
+        _offset =
+            (_savedTextLength == content.text.length ? cleaned.offset : _offset)
+                .clamp(0, _text.length - 1);
+        _savedTextLength = null;
         _loading = false;
         _layoutKey = null;
       });
@@ -425,7 +445,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
           source: widget.source,
           library: widget.library,
           target: widget.target,
-          chapters: widget.chapters,
+          chapters: _orderedChapters,
           current: _chapter,
           novel: true,
           cancelled: () => !mounted || revision != _revision,
@@ -447,13 +467,13 @@ class _NovelReaderPageState extends State<NovelReaderPage>
 
   void _save() {
     if (_loading || _error != null || _text.isEmpty) return;
-    final chapter = widget.chapters[_chapter];
+    final chapter = _orderedChapters[_chapter];
     widget.library.saveProgress(
       NovelProgress(
         section: widget.library.section,
         sourceId: widget.target.sourceId,
         itemId: widget.target.itemId,
-        chapterIndex: _chapter,
+        chapterIndex: _chapterOrder[_chapter],
         chapterId: chapter.id,
         chapterTitle: chapter.title,
         updatedAt: DateTime.now(),
@@ -464,7 +484,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
   }
 
   void _changeChapter(int index, {bool continueSpeech = false}) {
-    if (index < 0 || index >= widget.chapters.length || index == _chapter) {
+    if (index < 0 || index >= _orderedChapters.length || index == _chapter) {
       return;
     }
     _saveTimer?.cancel();
@@ -473,6 +493,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
     _save();
     _chapter = index;
     _offset = 0;
+    _savedTextLength = null;
     _load();
   }
 
@@ -481,9 +502,9 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       context: context,
       showDragHandle: true,
       builder: (context) => ListView.builder(
-        itemCount: widget.chapters.length,
+        itemCount: _orderedChapters.length,
         itemBuilder: (context, index) => ListTile(
-          title: Text(widget.chapters[index].title),
+          title: Text(_orderedChapters[index].title),
           selected: index == _chapter,
           onTap: () => Navigator.pop(context, index),
         ),
@@ -583,7 +604,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
                 )
               : null,
           title: Text(
-            widget.chapters[_chapter].title,
+            _orderedChapters[_chapter].title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -601,7 +622,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
                         widget.target.itemId,
                         widget.target.title,
                       ),
-                      chapter: _chapter,
+                      chapter: _chapterOrder[_chapter],
                       text: _text.substring(
                         _offset.clamp(0, _text.length),
                         (_offset + 300).clamp(0, _text.length),
@@ -748,7 +769,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
                   ),
                 ),
                 TextButton(
-                  onPressed: _chapter + 1 >= widget.chapters.length
+                  onPressed: _chapter + 1 >= _orderedChapters.length
                       ? null
                       : () => _changeChapter(_chapter + 1),
                   child: const Text('下一章'),
