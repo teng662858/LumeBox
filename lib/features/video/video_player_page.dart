@@ -441,6 +441,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   /// 进度条拖动预览的目标位置（拖动中显示，松手才真 seek）。
   Duration? _previewTarget;
   Duration? _committedSeekTarget;
+  Stopwatch? _seekDiagnosticWatch;
+  int? _seekPositionObservedMs;
   Timer? _seekDisplayTimeout;
   VoidCallback? _cancelSeekConfirmation;
   int _seekRevision = 0;
@@ -1120,22 +1122,41 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       ? const Duration(seconds: 2)
       : const Duration(seconds: 1);
 
+  void _recordSeekOutcome(String stage) {
+    final watch = _seekDiagnosticWatch;
+    if (watch == null) return;
+    _seekDiagnosticWatch = null;
+    PlaybackDiagnostics.record(
+      stage,
+      source: _target?.sourceId,
+      kernel: _settings.kernel.name,
+      uri: _media?.uri,
+      elapsedMs: watch.elapsedMilliseconds,
+      positionObservedMs: _seekPositionObservedMs,
+    );
+  }
+
   final _verifiedPlaybackSources = <String>{};
   void _onSnapshotChanged() {
     unawaited(_loadDanmakuAtPosition());
     _syncPipPlaybackState();
     final snapshot = _player?.snapshot.value;
     final seekTarget = _committedSeekTarget;
-    if (seekTarget != null &&
-        snapshot != null &&
-        (snapshot.error != null ||
-            (!snapshot.buffering &&
-                (snapshot.position - seekTarget).abs() <=
-                    _seekLandingTolerance))) {
-      _seekDisplayTimeout?.cancel();
-      _seekWatchdog?.cancel();
-      _seekWatchdogGeneration++;
-      _committedSeekTarget = null;
+    if (seekTarget != null && snapshot != null) {
+      final nearTarget =
+          (snapshot.position - seekTarget).abs() <= _seekLandingTolerance;
+      if (nearTarget && snapshot.error == null) {
+        _seekPositionObservedMs ??= _seekDiagnosticWatch?.elapsedMilliseconds;
+      }
+      if (snapshot.error != null || (nearTarget && !snapshot.buffering)) {
+        _recordSeekOutcome(
+          snapshot.error == null ? 'seek-settled' : 'seek-failed',
+        );
+        _seekDisplayTimeout?.cancel();
+        _seekWatchdog?.cancel();
+        _seekWatchdogGeneration++;
+        _committedSeekTarget = null;
+      }
     }
     final verifiedSource = _target?.sourceId;
     if (snapshot?.playing == true &&
@@ -3727,7 +3748,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final player = _player;
     final target = _gesture.seekTarget;
     if (player != null && target != null) {
-      unawaited(_seekGesture(player, target));
+      unawaited(_seekGesture(player, target, scrub: true));
     }
     _endBoost();
     _scheduleAutoHide();
@@ -3796,7 +3817,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   /// 内核的 seek 可能一直不返回（AVPlayer 的 seekToTime 完成回调在源端卡住时
   /// 就不来），所以这段必须自带超时——否则调用方一直挂在 await 上，
   /// 拖动预览文字和「缓冲中」就一起留着不动了。
-  Future<bool> _seekAndConfirm(AbstractPlayer player, Duration target) async {
+  Future<bool> _seekAndConfirm(
+    AbstractPlayer player,
+    Duration target, {
+    bool scrub = false,
+  }) async {
     // 新一轮跳转作废上一轮看门狗：不然上一个落点的超时会来复查这次跳转。
     _seekWatchdog?.cancel();
     _seekWatchdogGeneration++;
@@ -3823,7 +3848,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _cancelSeekConfirmation = cancel;
     try {
       final request = _media?.isNetwork == true
-          ? player.seekInteractive(target)
+          ? (scrub ? player.seekScrub(target) : player.seekInteractive(target))
           : player.seek(target);
       // 原生回调可能不返回；位置已经到位时直接完成，不额外等待回调。
       unawaited(
@@ -3879,6 +3904,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         '${retried ? '（重发过）' : ''}',
       );
       if (retried) {
+        _recordSeekOutcome('seek-reopening');
         unawaited(_restoreInlinePlayback(retry: true, position: target));
         return;
       }
@@ -3895,10 +3921,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     });
   }
 
-  Future<void> _seekGesture(AbstractPlayer player, Duration target) async {
+  Future<void> _seekGesture(
+    AbstractPlayer player,
+    Duration target, {
+    bool scrub = false,
+  }) async {
     final revision = ++_seekRevision;
     _pendingScrubSeek = null;
     _seekDisplayTimeout?.cancel();
+    _seekDiagnosticWatch = _media?.isNetwork == true
+        ? (Stopwatch()..start())
+        : null;
+    _seekPositionObservedMs = null;
     setState(() => _committedSeekTarget = target);
     // 超时明确提示失败，不把旧位置当成跳转成功；迟到回调不能覆盖新一轮。
     _seekDisplayTimeout = Timer(const Duration(seconds: 20), () {
@@ -3908,11 +3942,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         return;
       }
       _seekWatchdog?.cancel();
+      _recordSeekOutcome('seek-timeout');
       setState(() => _committedSeekTarget = null);
       _showToast('跳转超时，请重试或切换线路');
     });
     try {
-      final ok = await _seekAndConfirm(player, target);
+      final ok = await _seekAndConfirm(player, target, scrub: scrub);
       if (!mounted ||
           revision != _seekRevision ||
           !identical(player, _player)) {
@@ -3926,6 +3961,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         return;
       }
       _seekDisplayTimeout?.cancel();
+      _recordSeekOutcome('seek-failed');
       setState(() => _committedSeekTarget = null);
       _showToast('跳转失败，请重试');
     }
@@ -6446,7 +6482,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               _lastScrubSeek = null;
               _pendingScrubSeek = null;
               setState(() => _previewTarget = null);
-              if (player != null) await _seekGesture(player, target);
+              if (player != null) {
+                await _seekGesture(player, target, scrub: true);
+              }
               if (mounted) _scheduleAutoHide();
             },
     );

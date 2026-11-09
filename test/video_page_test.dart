@@ -13,6 +13,7 @@ import 'package:lume_box/features/video/danmaku/danmaku_overlay.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/brightness.dart';
 import 'package:lume_box/core/player/pip.dart';
+import 'package:lume_box/core/player/playback_diagnostics.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/player_stats.dart';
@@ -254,7 +255,9 @@ void main() {
 
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const ValueKey('player-category-advanced')));
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('player-category-advanced')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
@@ -311,7 +314,9 @@ void main() {
       // 切到 MPV：初始化抛错 → 回退 AVPlayer + 提示。
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const ValueKey('player-category-advanced')));
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('player-category-advanced')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
@@ -365,14 +370,17 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.text('AVPlayer'), findsNothing);
+      final kernelName = find.byKey(const Key('player-kernel-name'));
+      expect(tester.widget<Text>(kernelName).data, 'AVPlayer');
       expect(find.text('1280×720'), findsOneWidget);
       expect(find.text('缓冲 4s'), findsNothing);
 
       // 换成 MPV 内核：同一块 HUD 直接显示 MPV 的参数，页面代码零改动。
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byKey(const ValueKey('player-category-advanced')));
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('player-category-advanced')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('player-category-advanced')));
       await tester.pumpAndSettle();
@@ -397,7 +405,7 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.text('MPV'), findsNothing);
+      expect(tester.widget<Text>(kernelName).data, 'MPV');
       expect(find.text('HEVC'), findsOneWidget);
       expect(find.text('1920×1080'), findsOneWidget);
       expect(find.text('30FPS'), findsOneWidget);
@@ -530,12 +538,14 @@ void main() {
       expect(find.textContaining('亮度'), findsNothing, reason: '松手后提示浮层收起');
     });
 
-    testWidgets('手势：水平拖按节流快 seek，松手落到精确位置', (tester) async {
+    testWidgets('网络拖动松手才跳转，关键帧偏远时回退精确定位', (tester) async {
       final created = await pumpVideo(
         tester,
         available: <PlayerKernel>{PlayerKernel.avplayer},
       );
-      created.single.seeks.clear();
+      final player = created.single;
+      player.seeks.clear();
+      player.scrubLandingOffset = const Duration(seconds: 6);
 
       final layer = _gestureLayerRect(tester);
       final gesture = await tester.startGesture(layer.center);
@@ -546,25 +556,28 @@ void main() {
         await gesture.moveBy(Offset(layer.width / 8, 0));
         await tester.pump(const Duration(milliseconds: 16));
       }
-      // 拖动中按 150ms 节流发快 seek（松手前最多一两次），不是每步都发。
-      expect(
-        created.single.seeks.length,
-        lessThanOrEqualTo(2),
-        reason: '拖动中只按节流发 seek',
-      );
+      expect(player.seeks, isEmpty);
+      expect(player.scrubSeeks, isEmpty);
 
       await gesture.up();
-      await tester.pumpAndSettle();
-
-      expect(created.single.seeks, isNotEmpty, reason: '松手要落到精确位置');
-      // 整屏宽对应 90 秒窗口。
-      final expected = 90 * layer.width / 2 / layer.width;
-      // 台账末尾是松手时那次精确 seek。
+      await tester.pump();
+      final target = player.scrubSeeks.single;
+      expect(target.inSeconds, closeTo(45, 3));
+      expect(player.seeks, isEmpty);
       expect(
-        created.single.seeks.last.inSeconds.toDouble(),
-        closeTo(expected, 3.0),
-        reason: '滑半屏 ≈ 45 秒',
+        player.snapshot.value.position,
+        target - player.scrubLandingOffset,
       );
+
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+      expect(player.seeks, [target]);
+      expect(player.snapshot.value.position, target);
+      final diagnostic = PlaybackDiagnostics.snapshot.last;
+      expect(diagnostic['stage'], 'seek-settled');
+      expect(diagnostic['kernel'], 'avplayer');
+      expect(diagnostic['positionObservedMs'], isA<int>());
     });
 
     testWidgets('手势：调暗后画面上真的盖了遮罩（亮度要看得见）', (tester) async {
@@ -905,6 +918,8 @@ class _FakePlayer extends AbstractPlayer {
   int disposals = 0;
   final List<String> calls = <String>[];
   final List<Duration> seeks = <Duration>[];
+  final List<Duration> scrubSeeks = <Duration>[];
+  Duration scrubLandingOffset = Duration.zero;
   final List<double> volumes = <double>[];
 
   @override
@@ -950,6 +965,13 @@ class _FakePlayer extends AbstractPlayer {
       buffering: false,
       error: current.error,
     );
+  }
+
+  @override
+  Future<void> seekScrub(Duration position) async {
+    if (scrubLandingOffset == Duration.zero) return seek(position);
+    scrubSeeks.add(position);
+    setPosition(position - scrubLandingOffset);
   }
 
   @override

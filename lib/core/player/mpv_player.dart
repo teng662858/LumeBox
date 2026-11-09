@@ -130,6 +130,9 @@ class MpvPlayer extends AbstractPlayer implements PresentationEngine {
   }
 
   @override
+  Future<void> seekScrub(Duration position) => seekFast(position);
+
+  @override
   Future<void> seekFast(Duration position) async {
     if (_disposed) return;
     final engine = _engine;

@@ -6,12 +6,15 @@ abstract final class PlaybackDiagnostics {
   static List<Map<String, Object?>> get snapshot => [
     for (final e in _events) Map.unmodifiable(e),
   ];
+
+  /// [positionObservedMs] is the first near-target snapshot, not a render timestamp.
   static void record(
     String stage, {
     String? source,
     String? kernel,
     Uri? uri,
     int? elapsedMs,
+    int? positionObservedMs,
     String? error,
   }) {
     _events.add({
@@ -27,6 +30,7 @@ abstract final class PlaybackDiagnostics {
       if (uri != null)
         'loopback': uri.host == '127.0.0.1' || uri.host == 'localhost',
       'elapsedMs': ?elapsedMs,
+      'positionObservedMs': ?positionObservedMs,
       if (error != null)
         'error': SensitiveData.redact(error)
             .replaceAll(RegExp(r'https?://[^\s]+'), '[URL omitted]'),

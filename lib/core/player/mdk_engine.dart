@@ -526,18 +526,21 @@ class MdkEngine extends AbstractPlayer
   @override
   Future<void> seek(Duration position) async {
     if (!_live) return;
-    await _player.seek(
+    final result = await _player.seek(
       position: position.inMilliseconds,
       flags: mdk.SeekFlag(mdk.SeekFlag.fromStart | mdk.SeekFlag.inCache),
     );
-    _emit(position: position);
+    if (_live && result >= 0) _emitSeekPosition();
   }
 
-  /// 拖动预览：带上 MDK 的 `fast|keyFrame` 标志，直接跳关键帧。
+  @override
+  Future<void> seekScrub(Duration position) => seekFast(position);
+
+  /// 拖动预览和网络拖动松手可以直接定位到关键帧。
   @override
   Future<void> seekFast(Duration position) async {
     if (!_live) return;
-    await _player.seek(
+    final result = await _player.seek(
       position: position.inMilliseconds,
       flags: mdk.SeekFlag(
         mdk.SeekFlag.fromStart |
@@ -546,7 +549,12 @@ class MdkEngine extends AbstractPlayer
             mdk.SeekFlag.fast,
       ),
     );
-    _emit(position: position);
+    if (_live && result >= 0) _emitSeekPosition();
+  }
+
+  void _emitSeekPosition() {
+    final positionMs = _player.position;
+    if (positionMs >= 0) _emit(position: Duration(milliseconds: positionMs));
   }
 
   @override

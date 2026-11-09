@@ -13,11 +13,13 @@ import 'package:lume_box/core/player/player_settings.dart';
 /// 用替身引擎驱动 [MpvPlayer]——libmpv 通过 [MpvEngine] 端口挡在外面，
 /// 因此没有原生库的机器（含 CI）也能把这条链路验完。
 void main() {
-  test('交互跳转保留准确定位，拖动预览才走关键帧', () async {
+  test('拖动预览和网络拖动松手走关键帧，其他跳转保留准确定位', () async {
     final engine = _FastSeekFake();
     final player = MpvPlayer(engine: engine);
     await player.seekInteractive(const Duration(seconds: 42));
     expect(engine.calls, ['seek:42']);
+    await player.seekScrub(const Duration(seconds: 41));
+    expect(engine.calls.last, 'fast:41');
     await player.seekFast(const Duration(seconds: 44));
     expect(engine.calls.last, 'fast:44');
     await player.seek(const Duration(seconds: 43));
