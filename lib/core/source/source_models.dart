@@ -299,9 +299,12 @@ class SourceItem {
       mediaType:
           _text(json['mediaType'] ?? json['contentType'] ?? json['kind']) ?? '',
       subtitle: _text(json['subtitle']),
-      mediaInfo: json['mediaInfo'] is Map
-          ? Map<String, dynamic>.from(json['mediaInfo'])
-          : const {},
+      mediaInfo: {
+        if (json['width'] != null) 'width': json['width'],
+        if (json['height'] != null) 'height': json['height'],
+        if (json['mediaInfo'] is Map)
+          ...Map<String, dynamic>.from(json['mediaInfo']),
+      },
       duration: parseDuration(
         json['duration'] ?? json['时长'] ?? json['length'] ?? json['runtime'],
       ),
@@ -613,6 +616,8 @@ sealed class ChapterContent {
           audioOnly: kind != 'video',
           headers: _stringMap(json['headers']),
           qualities: qualities,
+          width: num.tryParse('${json['width'] ?? ''}'),
+          height: num.tryParse('${json['height'] ?? ''}'),
         );
       default:
         throw FormatException('未知的章节内容 kind: $kind');
@@ -663,10 +668,13 @@ final class VideoContent extends ChapterContent {
     this.audioOnly = false,
     this.headers = const <String, String>{},
     this.qualities = const <VideoQuality>[],
+    this.width,
+    this.height,
   });
 
   final Uri url;
   final bool audioOnly;
+  final num? width, height;
 
   /// 播放时附带的请求头（防盗链等）。
   final Map<String, String> headers;

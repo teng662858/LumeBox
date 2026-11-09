@@ -12,7 +12,9 @@ import '../../core/player/playback_orientation.dart';
 import 'dart:io';
 
 import '../../core/net/ios_verified_webview.dart';
+import '../../core/media/media_library.dart';
 import '../../core/player/abstract_player.dart';
+import '../../core/player/highest_hls.dart';
 import '../../core/player/player_experience_store.dart';
 import '../../core/player/player_kernel_launcher.dart';
 import '../../core/player/player_settings.dart';
@@ -22,12 +24,27 @@ import 'video_play_target.dart';
 String playbackEntryDirectionKey(VideoPlayTarget target) =>
     'video.entry.direction.${target.identity}';
 
+String? playbackDirectionFromDimensions(Object? width, Object? height) {
+  final w = num.tryParse('$width');
+  final h = num.tryParse('$height');
+  if (w == null ||
+      h == null ||
+      !w.isFinite ||
+      !h.isFinite ||
+      w <= 0 ||
+      h <= 0) {
+    return null;
+  }
+  return w < h ? 'portrait' : 'landscape';
+}
+
 /// Entry preflight uses the same UA and verified resource cookies as playback.
 Future<void> preparePlaybackEntry(
   PlayerPrelaunch prelaunch,
   PlayerMedia media,
   PlayerSettings? settings, {
   Duration sizeTimeout = const Duration(milliseconds: 250),
+  void Function(String)? onEarlyDirection,
 }) async {
   final request = PlaybackPreferenceWiring.applyUserAgent(
     media,
@@ -39,6 +56,26 @@ Future<void> preparePlaybackEntry(
           request.headers ?? const {},
         )
       : request.headers;
+  if (onEarlyDirection != null) {
+    unawaited(() async {
+      if (media.uri.scheme == 'file' && Platform.isIOS) {
+        final tracks = await const MediaTrackProbe().inspect(
+          media.uri,
+          includeDimensions: true,
+        );
+        final direction = playbackDirectionFromDimensions(
+          tracks.width,
+          tracks.height,
+        );
+        if (direction != null) onEarlyDirection(direction);
+      } else {
+        final portrait = await HighestHls.entryIsPortrait(media.uri, headers);
+        if (portrait != null) {
+          onEarlyDirection(portrait ? 'portrait' : 'landscape');
+        }
+      }
+    }());
+  }
   await prelaunch.prepareMedia(
     media,
     settings: settings,
@@ -51,11 +88,12 @@ Future<void> preparePlaybackEntry(
   );
 }
 
-/// Set the route's entry direction before pushing it. Unknown sizes keep the
-/// current lock; dimensions can still resolve later without blocking playback.
+/// Set the route's entry direction before pushing it. Actual player dimensions
+/// override provisional directions once they arrive.
 Future<void> applyPlaybackEntryOrientation(
   PlayerPrelaunch? prelaunch, {
-  String? previousDirection,
+  String? entryDirection,
+  String? fallbackDirection,
 }) async {
   final mode = PlaybackOrientationController.instance.orientation;
   List<DeviceOrientation> orientations;
@@ -68,10 +106,10 @@ Future<void> applyPlaybackEntryOrientation(
     ];
   } else {
     final stats = prelaunch?.preparedStats;
-    final hasSize = (stats?.width ?? 0) > 0 && (stats?.height ?? 0) > 0;
-    final direction = hasSize
-        ? (stats!.width! < stats.height! ? 'portrait' : 'landscape')
-        : previousDirection;
+    final direction =
+        playbackDirectionFromDimensions(stats?.width, stats?.height) ??
+        entryDirection ??
+        fallbackDirection;
     if (direction != 'portrait' && direction != 'landscape') return;
     orientations = direction == 'portrait'
         ? const [DeviceOrientation.portraitUp]
@@ -89,6 +127,8 @@ Future<PlayerPrelaunch?> preparePlaybackRoute(
   ReadingLibrary? library,
   PlayerPrelaunch? prelaunch,
   VideoPlayTarget? target,
+  String? sourceDirection,
+  String? fallbackDirection,
   bool Function()? stillActive,
 }) async {
   const catalog = PlatformPlayerKernelCatalog();
@@ -99,9 +139,14 @@ Future<PlayerPrelaunch?> preparePlaybackRoute(
       ReadingLibrary.find(Section.video) ??
       await ReadingLibrary.open(Section.video);
   final settings = VideoPlayerSettingsStore(store).load();
-  final previousDirection = target == null
+  final remembered = target == null
       ? null
       : store.setting(playbackEntryDirectionKey(target));
+  var direction =
+      sourceDirection ??
+      (remembered == 'portrait' || remembered == 'landscape'
+          ? remembered
+          : null);
   final entry =
       prelaunch ??
       PlayerPrelaunch.start(
@@ -112,14 +157,21 @@ Future<PlayerPrelaunch?> preparePlaybackRoute(
   try {
     if (PlaybackOrientationController.instance.orientation ==
             PlaybackOrientation.auto &&
-        previousDirection == null) {
+        direction == null) {
       // Keep the preparation owned by the prelaunch. The route may paint while
       // it loads; take() joins that same task rather than creating another player.
-      await preparePlaybackEntry(
+      final earlyDirection = Completer<void>();
+      final preparation = preparePlaybackEntry(
         entry,
         media,
         settings.copyWith(kernel: entry.kernel),
-      ).timeout(const Duration(milliseconds: 350), onTimeout: () {});
+        onEarlyDirection: (value) {
+          direction = value;
+          if (!earlyDirection.isCompleted) earlyDirection.complete();
+        },
+      );
+      await Future.any([preparation, earlyDirection.future])
+          .timeout(const Duration(milliseconds: 350), onTimeout: () {});
     }
     if (stillActive != null && !stillActive()) {
       await entry.discard();
@@ -127,7 +179,8 @@ Future<PlayerPrelaunch?> preparePlaybackRoute(
     }
     await applyPlaybackEntryOrientation(
       entry,
-      previousDirection: previousDirection,
+      entryDirection: direction,
+      fallbackDirection: fallbackDirection,
     );
     return entry;
   } catch (_) {

@@ -10,7 +10,9 @@ void main() {
     HttpOverrides.global = null;
     final remote = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final base = Uri.parse('http://127.0.0.1:${remote.port}');
+    var requests = 0;
     remote.listen((request) async {
+      requests++;
       if (request.uri.path == '/start.m3u8') {
         request.response.statusCode = 302;
         request.response.headers.set('Location', '/folder/master.m3u8');
@@ -26,9 +28,11 @@ void main() {
       await resolver.close();
       await remote.close(force: true);
     });
-    final selected = await resolver.resolve(base.resolve('/start.m3u8'), {
-      'Referer': 'https://site.example/',
-    });
+    final uri = base.resolve('/start.m3u8');
+    const headers = {'Referer': 'https://site.example/'};
+    expect(await HighestHls.entryIsPortrait(uri, headers), isFalse);
+    final selected = await resolver.resolve(uri, headers);
+    expect(requests, 2, reason: '画质选择复用方向探测的请求及其跳转');
     expect(selected.port, isNot(remote.port));
     final client = HttpClient();
     addTearDown(() => client.close(force: true));
@@ -41,6 +45,21 @@ void main() {
     await expectLater(
       client.getUrl(selected).then((request) => request.close()),
       throwsA(anyOf(isA<SocketException>(), isA<HttpException>())),
+    );
+  });
+  test('只采用方向一致且声明完整的 HLS 主清单', () {
+    const portrait =
+        '#EXT-X-STREAM-INF:BANDWIDTH=10,RESOLUTION=720x1280\na.m3u8';
+    const landscape =
+        '#EXT-X-STREAM-INF:BANDWIDTH=10,RESOLUTION=1280x720\nb.m3u8';
+    expect(HighestHls.manifestIsPortrait('#EXTM3U\n$portrait'), isTrue);
+    expect(
+      HighestHls.manifestIsPortrait('#EXTM3U\n$portrait\n$landscape'),
+      isNull,
+    );
+    expect(
+      HighestHls.manifestIsPortrait('#EXTM3U\n#EXTINF:4,\nsegment.ts'),
+      isNull,
     );
   });
   test('slow optional quality inspection yields to native playback within its budget', () async {

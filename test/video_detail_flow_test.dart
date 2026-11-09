@@ -1182,15 +1182,15 @@ void main() {
       reason: '不在详情页等待慢媒体加载，播放页接手同一项预备任务',
     );
     expect(loadGate.isCompleted, isFalse);
+    expect(entryDirections.first, [
+      'DeviceOrientation.landscapeLeft',
+      'DeviceOrientation.landscapeRight',
+    ]);
     loadGate.complete();
     await tester.runAsync(() async {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     });
     await tester.pumpAndSettle();
-    expect(entryDirections.first, [
-      'DeviceOrientation.landscapeLeft',
-      'DeviceOrientation.landscapeRight',
-    ]);
     expect(players.single.loads, 1, reason: '进入播放页只加载一次媒体');
     expect(source.parses, 1);
     expect(players.length, 1);

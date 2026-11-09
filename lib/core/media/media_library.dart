@@ -23,8 +23,11 @@ class MediaTrackInfo {
     this.known = false,
     this.audio = false,
     this.video = false,
+    this.width,
+    this.height,
   });
   final bool known, audio, video;
+  final double? width, height;
   ResourceKind? get kind => !known
       ? null
       : video
@@ -40,9 +43,12 @@ class MediaTrackProbe {
   Future<MediaTrackInfo> inspect(
     Uri uri, {
     Map<String, String> headers = const {},
+    bool includeDimensions = false,
   }) {
     final key = sha256
-        .convert(utf8.encode(jsonEncode([uri.toString(), headers])))
+        .convert(
+          utf8.encode(jsonEncode([uri.toString(), headers, includeDimensions])),
+        )
         .toString();
     final cached = _cache[key];
     if (cached != null &&
@@ -50,24 +56,33 @@ class MediaTrackProbe {
       return Future.value(cached.value);
     }
     if (_cache.length >= 64) _cache.remove(_cache.keys.first);
-    return _inspect(uri, headers).then((value) {
+    return _inspect(uri, headers, includeDimensions: includeDimensions).then((
+      value,
+    ) {
       _cache[key] = (time: DateTime.now(), value: value);
       return value;
     });
   }
 
-  Future<MediaTrackInfo> _inspect(Uri uri, Map<String, String> headers) async {
+  Future<MediaTrackInfo> _inspect(
+    Uri uri,
+    Map<String, String> headers, {
+    required bool includeDimensions,
+  }) async {
     try {
       final data = await const MethodChannel('lumebox/mediaTracks')
           .invokeMapMethod<String, dynamic>('inspect', {
             'url': uri.toString(),
             'headers': headers,
+            if (includeDimensions) 'includeDimensions': true,
           })
           .timeout(const Duration(seconds: 10));
       return MediaTrackInfo(
         known: data?['known'] == true,
         audio: data?['audio'] == true,
         video: data?['video'] == true,
+        width: (data?['width'] as num?)?.toDouble(),
+        height: (data?['height'] as num?)?.toDouble(),
       );
     } catch (_) {
       return const MediaTrackInfo();

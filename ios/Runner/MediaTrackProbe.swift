@@ -19,7 +19,7 @@ final class MediaTrackProbe {
         let headers = args["headers"] as? [String:String] ?? [:]
         let asset = AVURLAsset(url:url,options:["AVURLAssetHTTPHeaderFieldsKey":headers])
         var completed = false
-        func finish(_ data:[String:Bool]) {
+        func finish(_ data:[String:Any]) {
           guard !completed else { return };completed = true;result(data)
         }
         DispatchQueue.main.asyncAfter(deadline:.now()+9) {
@@ -31,8 +31,24 @@ final class MediaTrackProbe {
             guard asset.statusOfValue(forKey:"tracks",error:&error) == .loaded else {
               finish(["known":false]);return
             }
-            finish(["known":true,"audio":!asset.tracks(withMediaType:.audio).isEmpty,
-              "video":!asset.tracks(withMediaType:.video).isEmpty])
+            let videoTrack = asset.tracks(withMediaType: .video).first
+            let info: [String: Any] = [
+              "known": true, "audio": !asset.tracks(withMediaType: .audio).isEmpty,
+              "video": videoTrack != nil
+            ]
+            guard args["includeDimensions"] as? Bool == true,
+              url.isFileURL, let track = videoTrack else {
+              finish(info); return
+            }
+            Task { @MainActor in
+              var measured = info
+              if let (size, transform) = try? await track.load(.naturalSize, .preferredTransform) {
+                let display = CGRect(origin: .zero, size: size).applying(transform)
+                measured["width"] = display.width
+                measured["height"] = display.height
+              }
+              finish(measured)
+            }
           }
         }
       }

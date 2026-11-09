@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
+import 'package:lume_box/core/source/source_models.dart';
 import 'package:flutter/services.dart';
 import 'package:lume_box/features/video/playback_entry_preparation.dart';
 import 'package:lume_box/features/video/video_play_target.dart';
@@ -187,6 +188,32 @@ void main() {
     ]);
     expect(second.loads, 0);
     await secondEntry.discard();
+
+    final sourceContent = ChapterContent.parse({
+      'kind': 'video',
+      'url': media.uri.toString(),
+      'width': '720',
+      'height': 1280,
+    }) as VideoContent;
+    final third = _PreflightPlayer();
+    final thirdEntry = PlayerPrelaunch.start(
+      PlayerKernel.avplayer,
+      factory: (_) => third,
+    );
+    await preparePlaybackRoute(
+      media,
+      library: library,
+      target: target,
+      prelaunch: thirdEntry,
+      sourceDirection: playbackDirectionFromDimensions(
+        sourceContent.width,
+        sourceContent.height,
+      ),
+      fallbackDirection: 'landscape',
+    );
+    expect(directions.last, ['DeviceOrientation.portraitUp']);
+    expect(third.loads, 0);
+    await thirdEntry.discard();
   });
 
   testWidgets(

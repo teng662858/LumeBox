@@ -690,11 +690,27 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         chapterId: chapter.id,
         chapterTitle: VideoEpisodeCatalog.labelOf(chapter),
       );
+      final sourceDirection =
+          (content is VideoContent
+              ? playbackDirectionFromDimensions(content.width, content.height)
+              : null) ??
+          playbackDirectionFromDimensions(
+            widget.item.mediaInfo['width'],
+            widget.item.mediaInfo['height'],
+          );
+      const portraitTypes = {'portrait', 'vertical', '竖屏', '竖屏短剧'};
+      final portraitEntry = [
+        widget.item.mediaType,
+        detail?.mediaType ?? '',
+        ...?detail?.tags,
+      ].any((value) => portraitTypes.contains(value.trim().toLowerCase()));
       prepared = await preparePlaybackRoute(
         media,
         library: widget.library,
         prelaunch: prepared ?? widget.prelaunch?.call(),
         target: target,
+        sourceDirection: sourceDirection,
+        fallbackDirection: portraitEntry ? 'portrait' : 'landscape',
         stillActive: () => mounted,
       );
       if (!mounted) return;
