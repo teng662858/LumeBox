@@ -510,6 +510,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       _group('advanced', '内核与网络', Icons.settings_input_component_outlined, [
         _section('播放内核', '切换播放内核；倍速、画面与字幕设置分别保存'),
         PlayerKernelPicker(
+          settingsCard: widget.embedded,
           selected: settings.kernel,
           catalog: catalog,
           onChanged: (kernel) => _update(settings.copyWith(kernel: kernel)),

@@ -6,6 +6,7 @@ import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/video/danmaku/danmaku_sources_page.dart';
 import 'package:lume_box/features/video/player_settings_page.dart';
+import 'package:lume_box/shared/widgets/glass_card.dart';
 
 /// 播放器设置页的验证：内核选择（未接入项不可选并给出原因）、倍速档位、
 /// 字幕开关与字号。页面是受控组件，断言落在「回调收到了什么设置」上。
@@ -137,6 +138,18 @@ void main() {
     );
 
     expect(find.text('AVPlayer'), findsOneWidget);
+    final kernelCard = find.ancestor(
+      of: find.text('AVPlayer'),
+      matching: find.byType(GlassCard),
+    );
+    final decodingCard = find.ancestor(
+      of: find.text('硬件解码'),
+      matching: find.byType(GlassCard),
+    );
+    expect(
+      tester.widget<GlassCard>(kernelCard).radius,
+      tester.widget<GlassCard>(decodingCard).radius,
+    );
     expect(find.text('MPV 内核尚未接入'), findsOneWidget);
     expect(find.text('MDK 内核尚未接入'), findsOneWidget);
     // 只有当前内核打勾。

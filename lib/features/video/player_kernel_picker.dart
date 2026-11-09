@@ -6,6 +6,7 @@ import 'player_vertical_menu.dart';
 import '../../core/player/player_factory.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/theme/lume_theme.dart';
+import '../../shared/widgets/glass_card.dart';
 import '../../shared/widgets/video_glass_surface.dart';
 
 /// 与倍速入口相同的锚点小菜单，点击选项后立即收起。
@@ -82,6 +83,7 @@ class PlayerKernelPicker extends StatelessWidget {
     required this.onChanged,
     this.retryKernel,
     this.onRetry,
+    this.settingsCard = false,
   });
 
   /// 当前选中的内核。
@@ -99,29 +101,35 @@ class PlayerKernelPicker extends StatelessWidget {
   /// 重试动作：调用方负责解除熔断并刷新列表。
   final VoidCallback? onRetry;
 
+  final bool settingsCard;
+
   @override
   Widget build(BuildContext context) {
+    final options = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final kernel in PlayerKernel.values)
+          _KernelTile(
+            kernel: kernel,
+            available: catalog.isAvailable(kernel),
+            reason: catalog.unavailableReason(kernel),
+            selected: selected == kernel,
+            retryable: retryKernel == kernel && onRetry != null,
+            onRetry: onRetry,
+            onTap: () => onChanged(kernel),
+          ),
+      ],
+    );
+    if (settingsCard) {
+      return GlassCard(radius: 14, padding: EdgeInsets.zero, child: options);
+    }
     return Material(
       color: VideoGlassScope.active(context)
           ? Colors.white.withValues(alpha: .22)
           : Theme.of(context).colorScheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          for (final kernel in PlayerKernel.values)
-            _KernelTile(
-              kernel: kernel,
-              available: catalog.isAvailable(kernel),
-              reason: catalog.unavailableReason(kernel),
-              selected: selected == kernel,
-              retryable: retryKernel == kernel && onRetry != null,
-              onRetry: onRetry,
-              onTap: () => onChanged(kernel),
-            ),
-        ],
-      ),
+      child: options,
     );
   }
 }
