@@ -204,4 +204,17 @@ void main() {
       expect(SourceContentRating.isAdult('new_source', name), isTrue);
     }
   });
+  test('2026-11-09 三个新源按 18+ 归档', () {
+    for (final id in <String>[
+      'jifangge_video',
+      'xyunsou_video',
+      'book18_novel',
+    ]) {
+      expect(SourceContentRating.isAdult(id, ''), isTrue);
+    }
+    // 显示名也要认（导入的自定义 id 靠名字兜底）
+    expect(SourceContentRating.isAdult('custom', '集芳阁云搜'), isTrue);
+    expect(SourceContentRating.isAdult('custom', 'X云搜'), isTrue);
+    expect(SourceContentRating.isAdult('custom', '色文網'), isTrue);
+  });
 }

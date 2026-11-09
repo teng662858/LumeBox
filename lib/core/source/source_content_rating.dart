@@ -339,6 +339,12 @@ class SourceContentRating {
     // 第一版主（bz1111111.net / diyibanzhu.app 被 CF 挡，源里走同站镜像 01bzw.us）。
     'diyibanzhu_novel',
     'miaobo_video',
+    // 集芳阁云搜（punycode 主域）：国产/AV 成人视频聚合云搜，直链 m3u8。
+    'jifangge_video',
+    // X云搜：成人视频云搜；播放器锁站方会员（列表/详情可用）。
+    'xyunsou_video',
+    // 色文網（book18.org）：繁体成人小说站，正文走站方简体页。
+    'book18_novel',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
@@ -501,6 +507,10 @@ class SourceContentRating {
     "逆ACG",
     "TwittHub",
     "龙禁漫",
+    "集芳阁云搜",
+    // 匹配前会 toLowerCase()，所以这里也存小写。
+    "x云搜",
+    "色文網",
   };
   static bool isAdult(String id, String name) =>
       _declaredAdultIds.contains(id.toLowerCase()) ||

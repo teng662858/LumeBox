@@ -1,3 +1,21 @@
+## 2026-11-09 新增三站源：集芳阁云搜 / X云搜 / 色文網
+
+详见 [源记录](../docs/2026-11-09_新增源-集芳阁X云搜色文網.md)。`video/jifangge.js`（`jifangge_video`）：
+国产/AV 云搜，搜索词要按站方 AES-128-CBC（key/iv 前端常量）**零填充**加密才进得去，源里用 `tools.aes`
+现算；详情页给站方直链 m3u8（实测 206 + 分片 200 video/mp2t），原生可播；`/toplist.php?p=N` 被站方
+CDN 整页缓存，两个榜只做第 1 页，深逛走标签/关键词（路径分页实测 519 页）。
+`video/xyunsou.js`（`xyunsou_video`）：X云搜只做最新+搜索+详情——站方把播放器锁在会员里
+（`data-content-restricted=1`，`/api/video-user-state` 匿名回 `is_vip:false`，`/hot` 匿名 401），
+播放走网页播放器由用户自己的账号放行。`comic/book18.js`（`book18_novel`）：色文網繁体成人小说，
+目录只在繁体书页给（简体页 0 条卷链接），正文走 `/zh-hans/`，并清掉段尾 `span.d-none` 水印与广告位。
+
+## 2026-11-09 Stripchat 实时封面与封面国籍
+
+`sources/video/stripchat.js` 1.2.0：封面改用站方秒级快照 `img.doppiocdn.net/thumbs/<epoch>/<id>`，
+配合 `mediaInfo.liveCover` 每 20 秒换一帧；`coverLabel` 标国籍（App 新能力，画在封面角上）；
+播放仍是网页播放器——站方给分片名做了 PSCH v2 改名，第三方播放器只能拿到占位分片。见
+[源记录](../docs/2026-11-09_Stripchat实时封面与国籍.md)。
+
 ## 2026-11-06 G社漫画正文提示图修复
 
 `comic/gmh.js` / 私有仓库 `comic/G社漫画.js` 升级至 1.1.1，为正文返回正确的逐图 imageHeaders，修复 HTTP 200 的“请到本网站阅读”提示图。《元尊》第1话上 10 张实图已验证。见 [修复记录](../docs/2026-11-06_G社漫画正文提示图修复.md)。
