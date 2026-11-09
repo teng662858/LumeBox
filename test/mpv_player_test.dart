@@ -13,6 +13,20 @@ import 'package:lume_box/core/player/player_settings.dart';
 /// 用替身引擎驱动 [MpvPlayer]——libmpv 通过 [MpvEngine] 端口挡在外面，
 /// 因此没有原生库的机器（含 CI）也能把这条链路验完。
 void main() {
+  test('仅暂缓播放中的 TCP 读流日志，连接与解码错误仍可立即报告', () {
+    expect(
+      MediaKitMpvEngine.isTcpReadWarning('tcp: ffurl_read returned 0xffffffc4'),
+      isTrue,
+    );
+    expect(
+      MediaKitMpvEngine.isTcpReadWarning('tcp: Connection refused'),
+      isFalse,
+    );
+    expect(
+      MediaKitMpvEngine.isTcpReadWarning('Failed to decode frame'),
+      isFalse,
+    );
+  });
   test('拖动预览和网络拖动松手走关键帧，其他跳转保留准确定位', () async {
     final engine = _FastSeekFake();
     final player = MpvPlayer(engine: engine);

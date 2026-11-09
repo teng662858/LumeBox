@@ -1016,7 +1016,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           ),
           Text(
             settings.autoHideControls
-                ? '全屏 3 秒无操作自动收起，点屏幕唤回（默认开）'
+                ? '全屏 ${PlayerLayout.controlsAutoHideDelay.inSeconds} 秒无操作自动收起，点屏幕唤回（默认开）'
                 : '控制栏常显（关闭自动隐藏）',
             style: TextStyle(
               fontWeight: widget.embedded ? FontWeight.w600 : FontWeight.w400,

@@ -2759,7 +2759,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('全屏控制栏自动隐藏：播放中无操作 3 秒收起，点屏幕唤回', (tester) async {
+    testWidgets('全屏控制栏自动隐藏：播放中无操作 5 秒收起，点屏幕唤回', (tester) async {
       final players = await pump(tester);
       await tester.tap(find.byTooltip('全屏'));
       await tester.pumpAndSettle();
@@ -2771,9 +2771,11 @@ void main() {
         playing: true,
       );
       await tester.pump();
-      await tester.pump(const Duration(seconds: 5));
+      await tester.pump(const Duration(milliseconds: 4900));
+      expect(find.byType(Slider), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 100));
       await tester.pumpAndSettle();
-      expect(find.byType(Slider), findsNothing, reason: '无操作 3 秒后控制栏自动隐藏');
+      expect(find.byType(Slider), findsNothing, reason: '无操作 5 秒后控制栏自动隐藏');
 
       await tester.tap(find.byType(Scaffold).first);
       await tester.pumpAndSettle();

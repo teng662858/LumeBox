@@ -174,6 +174,8 @@ class MediaKitMpvEngine
   int? _width;
   int? _height;
   String? _error;
+  Timer? _tcpReadTimer;
+  String? _pendingTcpReadError;
   Timer? _speedTimer;
   final _highestHls = HighestHls();
   bool _networkMedia = false;
@@ -552,6 +554,7 @@ class MediaKitMpvEngine
   @override
   Future<void> pause() async {
     if (_disposed) return;
+    _clearTcpReadError();
     await _player.pause();
   }
 
@@ -613,6 +616,7 @@ class MediaKitMpvEngine
   @override
   Future<void> stop() async {
     if (_disposed) return;
+    _clearTcpReadError();
     await _player.pause();
     await _player.seek(Duration.zero);
   }
@@ -867,6 +871,7 @@ class MediaKitMpvEngine
     await _highestHls.close();
     if (_disposed) return;
     _disposed = true;
+    _clearTcpReadError();
     _presentationStatus.dispose();
     _speedTimer?.cancel();
     for (final subscription in _subscriptions) {
@@ -944,6 +949,13 @@ class MediaKitMpvEngine
     final streams = _player.stream;
     _subscriptions.addAll(<StreamSubscription<Object?>>[
       streams.position.listen((value) {
+        if (value > _position && _pendingTcpReadError != null) {
+          _tcpReadTimer?.cancel();
+          _tcpReadTimer = Timer(
+            const Duration(seconds: 8),
+            _reportTcpReadError,
+          );
+        }
         _position = value;
         _emit();
       }),
@@ -972,6 +984,7 @@ class MediaKitMpvEngine
         _emit();
       }),
       streams.buffer.listen((value) {
+        if (_buffered != null && value > _buffered!) _clearTcpReadError();
         _buffered = value;
         _emit();
       }),
@@ -983,7 +996,29 @@ class MediaKitMpvEngine
       streams.tracks.listen(_applyTracks),
       streams.track.listen((_) => _applyTracks(_player.state.tracks)),
       streams.error.listen((value) {
-        _fail(value);
+        if (_networkMedia &&
+            _position > Duration.zero &&
+            (_playing || _buffering || _pendingTcpReadError != null) &&
+            isTcpReadWarning(value)) {
+          // media_kit forwards FFmpeg log lines before mpv has exhausted its
+          // reconnect attempts. Keep decoding buffered packets in the meantime.
+          _pendingTcpReadError = value;
+          _tcpReadTimer ??= Timer(
+            const Duration(seconds: 8),
+            _reportTcpReadError,
+          );
+        } else {
+          _fail(value);
+        }
+      }),
+      streams.completed.listen((completed) {
+        if (!completed || _pendingTcpReadError == null) return;
+        if (_duration > Duration.zero &&
+            _duration - _position <= const Duration(seconds: 2)) {
+          _clearTcpReadError();
+        } else {
+          _reportTcpReadError();
+        }
       }),
     ]);
   }
@@ -1026,6 +1061,7 @@ class MediaKitMpvEngine
   }
 
   void _resetMediaState() {
+    _clearTcpReadError();
     _pendingSeek = null;
     _downloadBytesPerSecond = null;
     _position = Duration.zero;
@@ -1045,9 +1081,25 @@ class MediaKitMpvEngine
   }
 
   void _fail(String message) {
+    _clearTcpReadError();
     _error = message;
     LumeLog.warn('[mpv] $message');
     _emit();
+  }
+
+  @visibleForTesting
+  static bool isTcpReadWarning(String message) =>
+      message.trimLeft().toLowerCase().startsWith('tcp: ffurl_read returned ');
+
+  void _clearTcpReadError() {
+    _tcpReadTimer?.cancel();
+    _tcpReadTimer = null;
+    _pendingTcpReadError = null;
+  }
+
+  void _reportTcpReadError() {
+    final message = _pendingTcpReadError;
+    if (!_disposed && message != null) _fail(message);
   }
 
   void _emit() {

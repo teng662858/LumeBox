@@ -411,9 +411,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   Timer? _autoHideTimer;
   bool _accessibleNavigation = false;
 
-  /// 无操作多久收起控制栏（用户口径：3 秒；画面中间那组播放控件不受影响）。
-  static const Duration _autoHideDelay = Duration(seconds: 3);
-
   /// 设置 → 各模块独立设置 → 「控件尺寸」的倍率（真机反馈「显示模式全都没有
   /// 生效」：这套值原来只写库、没有界面读）。控制栏的按钮盒与图标都乘它。
   double? _initialControlScale;
@@ -4774,7 +4771,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     if (_player?.snapshot.value.error != null) {
       return;
     }
-    _autoHideTimer = Timer(_autoHideDelay, () {
+    _autoHideTimer = Timer(PlayerLayout.controlsAutoHideDelay, () {
       if (!mounted || !_fullscreen || _locked) return;
       if (_accessibleNavigation) return;
       if (_player?.snapshot.value.error != null) {
@@ -5113,7 +5110,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _unlockTimer?.cancel();
     setState(() => _unlockVisible = true);
     if (_accessibleNavigation) return;
-    _unlockTimer = Timer(_autoHideDelay, () {
+    _unlockTimer = Timer(const Duration(seconds: 3), () {
       if (mounted && _locked) setState(() => _unlockVisible = false);
     });
   }

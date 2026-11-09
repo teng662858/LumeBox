@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 /// Geometry uses the safe, available area rather than the physical screen.
 abstract final class PlayerLayout {
   static const tapSize = 44.0;
+  static const controlsAutoHideDelay = Duration(seconds: 5);
   static double panelWidth(double available) =>
       (available * .34).clamp(260.0, 320.0).clamp(0.0, available);
 
