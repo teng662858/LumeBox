@@ -108,6 +108,21 @@ void main() {
     expect(painter.entries.length, 1);
     expect(painter.entries.first.lane, 0);
   });
+  testWidgets('三排紧凑弹幕给末排完整文字和描边留出空间', (tester) async {
+    const settings = DanmakuSettings(rows: 3, lineSpacing: 1, strokeWidth: 3);
+    final track = DanmakuTrack.parse([
+      for (var i = 0; i < 3; i++)
+        {'time': 0, 'text': '第$i条🔥', 'mode': 'top', 'fontSize': 2},
+    ]);
+    await tester.pumpWidget(view(settings, track));
+    final dynamic painter = tester.widget<CustomPaint>(paintFinder).painter;
+    expect(painter.entries.length, 3);
+    final TextPainter text = painter.entries.last.fill;
+    expect(
+      text.height + settings.strokeWidth,
+      lessThanOrEqualTo(DanmakuLayout.rowHeight(settings)),
+    );
+  });
   testWidgets('每秒限流、重复合并和延迟作用于投放', (tester) async {
     final track = DanmakuTrack.parse([
       for (var i = 0; i < 5; i++) {'time': 0, 'text': '弹幕$i'},

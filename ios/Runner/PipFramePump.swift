@@ -298,12 +298,17 @@ final class PipDanmakuRenderer {
     clockFrame = now
     let position = clockPosition - value("delayMs", 0)
     let scale = Double(width) / 640
-    let fontSize = 16 * value("fontScale", 1) * scale
-    let rowHeight = max(16 * scale, fontSize * value("lineSpacing", 1.35))
+    // The system shrinks the composited frame to the PiP window.
+    let fontSize = 24 * value("fontScale", 1) * scale
+    let stroke = value("strokeWidth", 1.2)
+    let outline = stroke > 0 ? max(1.5, stroke * 1.5) * scale : 0
+    let rowPadding = outline + 2 * scale
+    let rowHeight = ceil(fontSize * max(1.35, value("lineSpacing", 1.35)) + rowPadding)
+    let topInset = ceil(6 * scale)
     let available = Double(height) * (bool("avoidSubtitles", true) ? 0.82 : 1)
     let rows = Int(value("rows", 3))
     let region = rows > 0 ? available : min(available, Double(height) * value("displayArea", 0.5))
-    let count = min(rows > 0 ? rows : 64, Int(region / rowHeight))
+    let count = min(rows > 0 ? rows : 64, Int(max(0, region - topInset) / rowHeight))
     guard count > 0, let context = CGContext(data: base, width: width, height: height, bitsPerComponent: 8, bytesPerRow: stride, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return }
     context.translateBy(x: 0, y: CGFloat(height)); context.scaleBy(x: 1, y: -1)
     context.clip(to: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
@@ -338,7 +343,11 @@ final class PipDanmakuRenderer {
       if sec != second { second = sec; admitted = 0 }
       if admitted >= Int(value("maxPerSecond", 8)) { continue }
       if bool("mergeDuplicates", true), let previous = recent[text], time - previous < 5000 { continue }
-      let size = fontSize * min(3, max(0.5, number(item["fontSize"]) == 0 ? 1 : number(item["fontSize"])))
+      let sourceScale = number(item["fontSize"])
+      let size = min(
+        fontSize * min(3, max(0.5, sourceScale == 0 ? 1 : sourceScale)),
+        (rowHeight - rowPadding) / 1.35
+      )
       let rawColor = bool("allowColored", true) ? Int(number(item["color"])) : 0xFFFFFF
       // Missing colors used to become zero (black); keep PiP text readable.
       let rgb = (rawColor & 0xFFFFFF) == 0 ? 0xFFFFFF : rawColor
@@ -346,7 +355,7 @@ final class PipDanmakuRenderer {
       var label = labels[key]
       if label == nil {
         let color = UIColor(red: CGFloat((rgb >> 16) & 255)/255, green: CGFloat((rgb >> 8) & 255)/255, blue: CGFloat(rgb & 255)/255, alpha: CGFloat(value("opacity", 0.9)))
-        label = NSAttributedString(string: text, attributes: [.font: UIFont.systemFont(ofSize: CGFloat(size), weight: bool("bold", true) ? .semibold : .regular), .foregroundColor: color, .strokeColor: UIColor.black.withAlphaComponent(CGFloat(value("opacity", 0.9))), .strokeWidth: -min(3, max(0, value("strokeWidth", 1.2)) * scale / size * 100)])
+        label = NSAttributedString(string: text, attributes: [.font: UIFont.systemFont(ofSize: CGFloat(size), weight: bool("bold", true) ? .bold : .regular), .foregroundColor: color, .strokeColor: UIColor.black, .strokeWidth: -min(15, outline / size * 100)])
         if labels.count >= 1000 { labels.removeAll() }
         labels[key] = label
       }
@@ -370,8 +379,10 @@ final class PipDanmakuRenderer {
       let age = position - time
       if age < 0 || age >= duration { continue }
       if active.count >= Int(value("maxOnScreen", 60)) { continue }
-      let y = mode == "bottom" ? available - Double(count - lane) * rowHeight : Double(lane) * rowHeight
-      if Double(measured.height) > rowHeight { continue }
+      let rowY = mode == "bottom"
+        ? available - Double(count - lane) * rowHeight
+        : topInset + Double(lane) * rowHeight
+      let y = rowY + max(0, (rowHeight - Double(measured.height)) / 2)
       active.append(Entry(label: label, width: Double(measured.width), start: time,
                           duration: duration, y: y, scrolling: mode == "scroll"))
     }

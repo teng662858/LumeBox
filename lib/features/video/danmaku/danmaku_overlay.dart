@@ -323,7 +323,7 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
     final settings = widget.settings;
     final text = _DanmakuPainter.textPainter(
       item.text,
-      DanmakuStyle.of(item, settings),
+      DanmakuLayout.styleForLane(item, settings),
     );
     final width = text.width;
     text.dispose();
@@ -345,7 +345,7 @@ class _DanmakuOverlayState extends State<DanmakuOverlay>
           available = false;
           break;
         }
-        entry.layout(DanmakuStyle.of(entry.item, settings));
+        entry.layout(DanmakuLayout.styleForLane(entry.item, settings));
         final oldWidth = entry.fill!.width;
         final oldSpeed = (_viewport.width + oldWidth) / span;
         final right =
@@ -408,9 +408,25 @@ class DanmakuLayout {
 
   /// 轨道数上限（防病态配置）。
   static const int maxLanes = 64;
-  static double rowHeight(DanmakuSettings settings) =>
-      (DanmakuStyle.baseFontSize * settings.fontScale * settings.lineSpacing)
-          .clamp(16, 128);
+  static const double _textHeight = 1.3;
+  static double rowHeight(DanmakuSettings settings) {
+    final fontSize = DanmakuStyle.baseFontSize * settings.fontScale + 1;
+    final spacing = settings.lineSpacing.clamp(_textHeight, 3.0);
+    return (fontSize * spacing + settings.strokeWidth + 2).ceilToDouble();
+  }
+
+  static DanmakuStyle styleForLane(DanmakuItem item, DanmakuSettings settings) {
+    final style = DanmakuStyle.of(item, settings);
+    final maxFontSize =
+        (rowHeight(settings) - settings.strokeWidth - 2) / _textHeight - 1;
+    return DanmakuStyle(
+      fontSize: style.fontSize.clamp(0, maxFontSize),
+      strokeWidth: style.strokeWidth,
+      color: style.color,
+      bold: style.bold,
+    );
+  }
+
   static int laneCount(Size size, DanmakuSettings settings) {
     final available = size.height * (settings.avoidSubtitles ? .82 : 1.0);
     final region = settings.rows > 0
@@ -517,7 +533,7 @@ class _DanmakuPainter extends CustomPainter {
     canvas.clipRect(Rect.fromLTWH(0, 0, size.width, laneCount * rowHeight));
     for (final entry in entries) {
       if (entry.lane >= laneCount) continue;
-      final style = DanmakuStyle.of(entry.item, settings);
+      final style = DanmakuLayout.styleForLane(entry.item, settings);
       entry.layout(style);
       final painter = entry.fill!;
 
@@ -538,6 +554,7 @@ class _DanmakuPainter extends CustomPainter {
       }
 
       // 越界（固定弹幕轨道超区）就不画。
+      dy += (rowHeight - painter.height) / 2;
       if (dy < 0 || dy + painter.height > size.height) continue;
       // 固定弹幕淡出：最后 25% 时间渐隐。
       final opacity = entry.item.mode == DanmakuMode.scroll
@@ -577,7 +594,8 @@ class _DanmakuPainter extends CustomPainter {
         text: text,
         style: TextStyle(
           fontSize: (style.fontSize) + 1,
-          fontWeight: style.bold ? FontWeight.w600 : FontWeight.w600,
+          height: DanmakuLayout._textHeight,
+          fontWeight: style.bold ? FontWeight.w600 : FontWeight.w400,
           color: stroke ? null : style.color,
           foreground: stroke
               ? (Paint()
