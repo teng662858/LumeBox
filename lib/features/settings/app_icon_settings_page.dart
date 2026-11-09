@@ -6,44 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme/lume_theme.dart';
-import '../../shared/widgets/glass_card.dart';
-import 'settings_ui.dart';
-
-/// App 主屏幕图标选择页。
-///
-/// 从「配置与体验」里拆出来，作为「个性与界面」下的独立入口：图标属于外观，
-/// 不该和备份/触感混在一页。
-class AppIconSettingsPage extends StatelessWidget {
-  const AppIconSettingsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final supported = Platform.isIOS || Platform.isAndroid;
-    return GlassScaffold(
-      effectModule: GlassModule.settings,
-      behindBar: true,
-      title: 'App 图标',
-      child: ListView(
-        padding: GlassScaffold.barInset(context)
-            .add(const EdgeInsets.fromLTRB(16, 12, 16, 24)),
-        children: <Widget>[
-          GlassCard(
-            radius: 14,
-            padding: const EdgeInsets.all(16),
-            child: AppIconGrid(previewOnly: !supported),
-          ),
-          const SizedBox(height: 4),
-          SettingsFooterNote(
-            supported
-                ? '切换只改变主屏幕图标，不影响 App 内数据。'
-                      '部分 Android 启动器不支持动态图标，会保持默认图标。'
-                : '当前平台不支持动态切换 App 图标，以上为预览。',
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 /// App 图标网格（设置页与开发预览共用）。
 class AppIconGrid extends StatefulWidget {

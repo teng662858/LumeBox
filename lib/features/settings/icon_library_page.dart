@@ -10,6 +10,8 @@ import 'package:flutter/services.dart';
 import '../../core/theme/icon_catalog.dart';
 import '../../core/theme/icon_customization.dart';
 import '../../shared/widgets/glass_card.dart';
+import 'app_icon_settings_page.dart';
+import 'settings_ui.dart';
 
 Future<void> editAppIcon(
   BuildContext context,
@@ -113,7 +115,7 @@ class _IconLibraryPageState extends State<IconLibraryPage> {
       return GlassScaffold(
         effectModule: GlassModule.settings,
         behindBar: true,
-        title: '应用图标库',
+        title: 'App 图标',
         actions: [
           PopupMenuButton<String>(
             enabled: !busy,
@@ -125,8 +127,8 @@ class _IconLibraryPageState extends State<IconLibraryPage> {
                 final yes = await showGlassDialog<bool>(
                   context: context,
                   builder: (context) => AlertDialog(
-                    title: const Text('恢复全部默认图标？'),
-                    content: const Text('保留已导入的图片，所有图标选择恢复默认。'),
+                    title: const Text('恢复 App 内默认图标？'),
+                    content: const Text('所有 App 内图标恢复默认，已导入的图片会保留。'),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(context, false),
@@ -145,21 +147,41 @@ class _IconLibraryPageState extends State<IconLibraryPage> {
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'import', child: Text('导入图标包')),
               PopupMenuItem(value: 'export', child: Text('导出当前图标包')),
-              PopupMenuItem(value: 'reset', child: Text('恢复全部默认图标')),
+              PopupMenuItem(value: 'reset', child: Text('恢复 App 内默认图标')),
             ],
           ),
         ],
         child: ListView.builder(
           padding: GlassScaffold.barInset(context)
               .add(const EdgeInsets.all(16)),
-          itemCount: slots.length + 1,
+          itemCount: slots.length + 2,
           itemBuilder: (context, index) {
             if (index == 0) {
+              final supported = Platform.isIOS || Platform.isAndroid;
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const SettingsGroupTitle('主屏幕图标', topPadding: 0),
+                  const GlassCard(
+                    radius: 14,
+                    padding: EdgeInsets.all(16),
+                    child: AppIconGrid(),
+                  ),
+                  SettingsFooterNote(
+                    supported
+                        ? '点击配色即可更换主屏幕图标。部分 Android 启动器会继续显示默认图标。'
+                        : '当前平台仅支持预览主屏幕图标。',
+                  ),
+                ],
+              );
+            }
+            if (index == 1) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SettingsGroupTitle('App 内图标'),
                   const Text(
-                    '选择下面的项目换图标，修改立即生效。也可开启长按编辑，到对应页面长按图标更换。只改外观，原按钮功能和尺寸保留。',
+                    '选择下方项目更换图标，也可以开启长按编辑，在对应页面直接更换。',
                   ),
                   SwitchListTile(
                     key: const Key('icons.edit-mode'),
@@ -212,7 +234,7 @@ class _IconLibraryPageState extends State<IconLibraryPage> {
                 ],
               );
             }
-            final slot = slots[index - 1];
+            final slot = slots[index - 2];
             return ListTile(
               key: ValueKey('icon-slot:${slot.id}'),
               leading: _ChoicePreview(

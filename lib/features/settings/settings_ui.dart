@@ -100,7 +100,6 @@ class SettingsIconScope extends InheritedWidget {
   '主题色' => (Icons.palette, Color(0xFF9B51A5)),
   '页面底色' => (Icons.format_color_fill, Color(0xFFB65B83)),
   'App 图标' => (Icons.apps, Color(0xFFAC5C9B)),
-  '应用图标库' => (Icons.interests, Color(0xFF8651A6)),
   '原生系统导航' => (Icons.navigation, Color(0xFF347D81)),
   '内容分类显示' => (Icons.visibility, Color(0xFF278A92)),
   '小说设置' => (Icons.menu_book, Color(0xFF7154B8)),

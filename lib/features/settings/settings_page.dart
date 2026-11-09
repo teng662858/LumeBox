@@ -39,7 +39,6 @@ import '../source/tvbox_import_page.dart';
 import '../source/source_subscription_page.dart';
 import '../cat/cat_subscription_page.dart';
 import '../../core/session/section.dart';
-import 'app_icon_settings_page.dart';
 import 'cache_settings_page.dart';
 import 'display_settings_group.dart';
 import 'navigation_settings_page.dart';
@@ -236,13 +235,7 @@ class SettingsPage extends StatelessWidget {
     SettingsEntryCard(
       icon: Icons.apps_outlined,
       title: 'App 图标',
-      subtitle: '更换主屏幕图标（7 种配色）',
-      onTap: () => _push(context, const AppIconSettingsPage()),
-    ),
-    SettingsEntryCard(
-      icon: Icons.interests_outlined,
-      title: '应用图标库',
-      subtitle: '逐项换图标 · 长按编辑 · 导入自己的图片和图标包',
+      subtitle: '主屏幕图标 · App 内图标 · 图标包',
       onTap: () => _push(context, const IconLibraryPage()),
     ),
     const SettingsGroupTitle('交互体验'),

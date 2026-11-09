@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/theme/icon_catalog.dart';
 import 'package:lume_box/core/theme/icon_customization.dart';
 import 'package:lume_box/features/settings/icon_library_page.dart';
+import 'package:lume_box/features/settings/settings_page.dart';
 import 'package:lume_box/features/video/player_control_glyph.dart';
 import 'package:lume_box/shared/widgets/lume_icon.dart';
 
@@ -101,17 +102,37 @@ void main() {
   });
 
   testWidgets(
-    'library searches and filters changed slots without building the whole catalog',
+    'one settings entry opens both icon sections and keeps the library searchable',
     (tester) async {
       await changeIcons(
         tester,
         () => store.set('dock.comic.normal', const IconChoice('ios.heart')),
       );
-      await tester.pumpWidget(const MaterialApp(home: IconLibraryPage()));
+      await tester.pumpWidget(
+        const MaterialApp(home: SettingsPage(runtimeAvailable: true)),
+      );
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('settings-category-个性与界面')));
+      await tester.pumpAndSettle();
+      final entry = find.text('App 图标');
+      await tester.scrollUntilVisible(entry.hitTestable(), 180);
+      expect(entry, findsOneWidget);
+      expect(find.text('应用图标库'), findsNothing);
+      await tester.tap(entry.hitTestable());
+      await tester.pumpAndSettle();
+      expect(find.byType(IconLibraryPage), findsOneWidget);
+      expect(find.text('主屏幕图标'), findsOneWidget);
+      expect(find.text('极光青'), findsOneWidget);
       expect(find.byType(ListTile).evaluate().length, lessThan(30));
+      final search = find.byKey(const Key('icons.search'));
+      await tester.scrollUntilVisible(
+        search.hitTestable(),
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('App 内图标'), findsOneWidget);
       await tester.enterText(
-        find.byKey(const Key('icons.search')),
+        search,
         'dock.comic',
       );
       await tester.pumpAndSettle();
@@ -123,13 +144,17 @@ void main() {
         find.byKey(const ValueKey('icon-slot:dock.comic.selected')),
         findsOneWidget,
       );
-      await tester.tap(find.byType(CheckboxListTile));
+      final changedOnly = find.byType(CheckboxListTile);
+      await tester.ensureVisible(changedOnly);
+      await tester.tap(changedOnly);
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('icon-slot:dock.comic.selected')),
         findsNothing,
       );
-      await tester.tap(find.byKey(const Key('icons.edit-mode')));
+      final editMode = find.byKey(const Key('icons.edit-mode'));
+      await tester.ensureVisible(editMode);
+      await tester.tap(editMode);
       await tester.pumpAndSettle();
       expect(store.editMode, isTrue);
     },
