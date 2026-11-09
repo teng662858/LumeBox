@@ -51,10 +51,10 @@ class SourcePlaybackProfiles {
   }
 
   int bufferSeconds(String? id, int defaults) {
-    final value = _read(id)?['bufferSeconds'];
-    return value is num && value.isFinite
-        ? value.toInt().clamp(0, SectionModuleSettings.maxBufferSeconds)
-        : defaults;
+    return SectionModuleSettings.normalizeBufferSeconds(
+      _read(id)?['bufferSeconds'],
+      defaults,
+    );
   }
 
   void save(String id, PlayerSettings settings, int bufferSeconds) {

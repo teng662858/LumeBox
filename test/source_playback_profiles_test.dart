@@ -63,7 +63,7 @@ void main() {
     final profiles = SourcePlaybackProfiles(library);
     profiles.save('a/b', const PlayerSettings(), 999999);
     expect(profiles.contains('a%2Fb'), isFalse);
-    expect(profiles.bufferSeconds('a/b', 0), lessThan(999999));
+    expect(profiles.bufferSeconds('a/b', 0), 999999);
     profiles.save('long-buffer', const PlayerSettings(), 180);
     expect(
       SourcePlaybackProfiles(library).bufferSeconds('long-buffer', 0),

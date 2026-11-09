@@ -2,6 +2,7 @@ import '../../shared/widgets/native_glass_controls.dart';
 
 import 'package:lume_box/shared/widgets/lume_icon.dart';
 
+import '../video/forward_buffer_control.dart';
 import '../video/player_settings_host.dart';
 import 'playback_settings_group.dart';
 
@@ -524,18 +525,13 @@ class _SectionModuleSettingsPageState extends State<SectionModuleSettingsPage> {
     final children = <Widget>[];
     if (widget.section == Section.video) {
       children.add(
-        _Slider(
+        _Row(
           label: '前向缓冲',
-          hint: '0 = 默认预读 60 秒；增大可减少播放中等待',
-          value: _module.bufferSeconds.toDouble(),
-          min: 0,
-          max: SectionModuleSettings.maxBufferSeconds.toDouble(),
-          divisions: SectionModuleSettings.maxBufferSeconds,
-          display: _module.bufferSeconds == 0
-              ? '自动'
-              : '${_module.bufferSeconds}s',
-          onChanged: (value) =>
-              _update(_module.copyWith(bufferSeconds: value.round())),
+          child: ForwardBufferControl(
+            seconds: _module.bufferSeconds,
+            onChanged: (seconds) =>
+                _update(_module.copyWith(bufferSeconds: seconds)),
+          ),
         ),
       );
     }

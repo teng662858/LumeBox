@@ -101,7 +101,8 @@ class BufferingConfig {
 
   /// MDK's documented packet queue API uses milliseconds, not avio properties.
   int get mdkMinBufferMs => readAhead.inMilliseconds.clamp(0, 750);
-  int get mdkMaxBufferMs => readAhead.inMilliseconds.clamp(1, 180000);
+  int get mdkMaxBufferMs =>
+      readAhead.inMilliseconds < 1 ? 1 : readAhead.inMilliseconds;
 
   /// MPV 属性写法：字符串值 + 单位已在属性名里约定。
   Map<String, String> get mpvProperties => <String, String>{

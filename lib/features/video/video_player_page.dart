@@ -1,3 +1,4 @@
+import 'forward_buffer_control.dart';
 import 'danmaku/danmaku_tools_page.dart';
 import 'danmaku/danmaku_stream.dart';
 import '../../core/player/playback_failure.dart';
@@ -317,16 +318,20 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   /// 调库失败或还没读到时就是默认值——与历史行为一致（默认值 = 起播最快那套）。
   BufferingConfig _buffering = BufferingConfig.defaults;
 
-  BufferingConfig _bufferingForDuration(Duration duration) =>
-      BufferingConfig.forForwardBuffer(
-        duration,
-        maxBufferBytes:
-            (_library == null
-                ? 150
-                : SectionModuleSettings.load(_library!).bufferMiB) *
-            1024 *
-            1024,
-      );
+  int _bufferSeconds = 0;
+
+  void _setForwardBufferSeconds(int seconds) {
+    _bufferSeconds = seconds;
+    _buffering = BufferingConfig.forForwardBuffer(
+      Duration(seconds: seconds),
+      maxBufferBytes:
+          (_library == null
+              ? 150
+              : SectionModuleSettings.load(_library!).bufferMiB) *
+          1024 *
+          1024,
+    );
+  }
 
   /// 浏览页预启动的内核实例：**只有第一次重建**能接手（见 [_rebuildPlayer]）。
   PlayerPrelaunch? _prelaunch;
@@ -1487,8 +1492,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         if (!_danmakuSettingsDirty) _danmakuSettings = loaded;
         // 「前向缓冲」在**模块设置**里（与设置页同一份数据），派生成内核参数；
         // 装载前经 setBuffering 交给内核（见 _rebuildPlayer）。
-        _buffering = _bufferingForDuration(
-          SectionModuleSettings.load(library).buffer,
+        _setForwardBufferSeconds(
+          SectionModuleSettings.load(library).bufferSeconds,
         );
       });
       if (pending != null) {
@@ -1509,13 +1514,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           _sourceProfiles?.load(_settingsSourceId, store.load()) ??
           store.load();
       if (_sourceProfiles != null && _library != null) {
-        _buffering = _bufferingForDuration(
-          Duration(
-            seconds: _sourceProfiles!.bufferSeconds(
-              _settingsSourceId,
-              SectionModuleSettings.load(_library!).buffer.inSeconds,
-            ),
-          ),
+        _setForwardBufferSeconds(
+          _sourceProfiles!.bufferSeconds(_settingsSourceId, _bufferSeconds),
         );
       }
       final work = widget.target;
@@ -1896,7 +1896,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final profiles = _sourceProfiles;
     final id = _settingsSourceId;
     if (profiles != null && id != null && profiles.contains(id)) {
-      profiles.save(id, next, _buffering.forwardBuffer.inSeconds);
+      profiles.save(id, next, _bufferSeconds);
       final global = _store?.load();
       if (global != null) {
         // Only these fields belong to the source profile; unrelated controls
@@ -1929,15 +1929,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     setState(() {
       _settings = next;
       _preferredSubtitleApplied = false;
-      _buffering = _bufferingForDuration(
-        Duration(
-          seconds:
-              _sourceProfiles?.bufferSeconds(
-                id,
-                SectionModuleSettings.load(library).buffer.inSeconds,
-              ) ??
-              SectionModuleSettings.load(library).buffer.inSeconds,
-        ),
+      final defaults = SectionModuleSettings.load(library).bufferSeconds;
+      _setForwardBufferSeconds(
+        _sourceProfiles?.bufferSeconds(id, defaults) ?? defaults,
       );
     });
     _settingsForSheet.value = _settings;
@@ -1954,7 +1948,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final profiles = _sourceProfiles;
     if (id == null || id.isEmpty || profiles == null) return;
     if (enabled) {
-      profiles.save(id, _settings, _buffering.forwardBuffer.inSeconds);
+      profiles.save(id, _settings, _bufferSeconds);
       setState(() {});
     } else {
       profiles.clear(id);
@@ -4050,7 +4044,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
   Widget _buildPlaybackSettings(String group) => StatefulBuilder(
     builder: (context, update) {
-      final buffer = _buffering.forwardBuffer.inSeconds;
       final supported = _player?.capabilities.bufferingParams ?? false;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4288,49 +4281,38 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 },
               ),
             ],
-            Text(
-              supported
-                  ? '前向缓冲 ${buffer == 0 ? '自动' : '$buffer 秒'}'
-                  : '当前内核未提供缓冲参数',
-            ),
-            NativeGlassSlider(
-              value: buffer.toDouble().clamp(
-                0,
-                SectionModuleSettings.maxBufferSeconds.toDouble(),
-              ),
-              min: 0,
-              max: SectionModuleSettings.maxBufferSeconds.toDouble(),
-              divisions: SectionModuleSettings.maxBufferSeconds,
-              onChanged: !supported
-                  ? null
-                  : (value) {
-                      final seconds = value.round();
-                      setState(
-                        () => _buffering = _bufferingForDuration(
-                          Duration(seconds: seconds),
-                        ),
+            if (supported)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('前向缓冲'),
+                trailing: ForwardBufferControl(
+                  seconds: _bufferSeconds,
+                  onChanged: (seconds) {
+                    setState(() => _setForwardBufferSeconds(seconds));
+                    update(() {});
+                    final library = _library;
+                    if (_usesSourceProfile) {
+                      _savePlayerSettings(_settings);
+                    } else if (library != null) {
+                      SectionModuleSettings.load(library)
+                          .copyWith(bufferSeconds: seconds)
+                          .save(library);
+                    }
+                    final player = _player;
+                    if (player != null) {
+                      unawaited(
+                        player.setBuffering(_buffering).catchError((
+                          Object error,
+                        ) {
+                          if (mounted) _showToast('本次缓冲调整未完成，将在下次播放时应用');
+                        }),
                       );
-                      update(() {});
-                      final library = _library;
-                      if (_usesSourceProfile) {
-                        _savePlayerSettings(_settings);
-                      } else if (library != null) {
-                        SectionModuleSettings.load(library)
-                            .copyWith(bufferSeconds: seconds)
-                            .save(library);
-                      }
-                    },
-              onChangeEnd: (_) {
-                final player = _player;
-                if (player != null) {
-                  unawaited(
-                    player.setBuffering(_buffering).catchError((Object error) {
-                      if (mounted) _showToast('本次缓冲调整未完成，将在下次播放时应用');
-                    }),
-                  );
-                }
-              },
-            ),
+                    }
+                  },
+                ),
+              )
+            else
+              const Text('当前内核未提供缓冲参数'),
           ],
           if (group == 'playback')
             SwitchListTile(

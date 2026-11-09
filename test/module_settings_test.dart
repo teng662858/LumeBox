@@ -142,7 +142,11 @@ void main() {
     expect(parsed.layoutPreset, ModuleLayoutPreset.roomy);
     expect(parsed.animationEnabled, isTrue, reason: '缺项回退默认');
     expect(parsed.bufferMiB, 150);
-    final capacity = parsed.copyWith(bufferMiB: 256);
+    final capacity = parsed.copyWith(bufferMiB: 256, bufferSeconds: 3600);
+    expect(
+      SectionModuleSettings.fromJson(capacity.toJson()).bufferSeconds,
+      3600,
+    );
     expect(SectionModuleSettings.fromJson(capacity.toJson()).bufferMiB, 256);
     expect(SectionModuleSettings.fromJson({'bufferMiB': 9999}).bufferMiB, 512);
   });

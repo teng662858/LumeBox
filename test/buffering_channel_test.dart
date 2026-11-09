@@ -160,13 +160,14 @@ void main() {
         BufferingConfig.defaults,
       );
       final config = BufferingConfig.forForwardBuffer(
-        const Duration(seconds: 180),
+        const Duration(seconds: 3600),
       );
-      expect(config.toChannelArguments()['forwardBufferSeconds'], 180.0);
+      expect(config.toChannelArguments()['forwardBufferSeconds'], 3600.0);
+      expect(config.mdkMaxBufferMs, 3600000);
       expect(config.minimizeStalling, isFalse);
       expect(config.mpvProperties['cache-pause-initial'], 'no');
-      expect(config.mpvProperties['cache-secs'], '180');
-      expect(config.mpvProperties['demuxer-readahead-secs'], '180');
+      expect(config.mpvProperties['cache-secs'], '3600');
+      expect(config.mpvProperties['demuxer-readahead-secs'], '3600');
       expect(config.maxBufferBytes, 150 * 1024 * 1024);
     });
 

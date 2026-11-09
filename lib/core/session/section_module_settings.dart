@@ -66,7 +66,8 @@ class SectionModuleSettings {
   static const int maxLongPressMs = 800;
 
   /// 前向缓冲秒数；0 使用默认预读策略，不等待缓存填满才起播。
-  static const int maxBufferSeconds = 180;
+  // Largest whole-second value representable by Duration in microseconds.
+  static const int maxBufferSeconds = 9223372036854;
 
   static const double minControlScale = 0.85;
   static const double maxControlScale = 1.15;
@@ -186,7 +187,7 @@ class SectionModuleSettings {
         maxLongPressMs,
         defaultLongPressMs,
       ),
-      bufferSeconds: _clampInt(json['bufferSeconds'], 0, maxBufferSeconds, 0),
+      bufferSeconds: normalizeBufferSeconds(json['bufferSeconds'], 0),
       bufferMiB: _clampInt(json['bufferMiB'], 32, 512, 150),
     );
   }
@@ -206,6 +207,11 @@ class SectionModuleSettings {
   /// 写回本板块的库。
   void save(ReadingLibrary library) =>
       library.setSetting(key, jsonEncode(toJson()));
+
+  static int normalizeBufferSeconds(Object? value, int fallback) =>
+      value is num && value.isFinite
+      ? value.clamp(0, maxBufferSeconds).round()
+      : fallback;
 
   static double _clampDouble(
     Object? value,
