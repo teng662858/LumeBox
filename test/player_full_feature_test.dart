@@ -2291,6 +2291,31 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('已到跳转目标且仍在收数据，缓存统计不变也继续等待', (tester) async {
+      final players = await pump(tester);
+      final player = players.single;
+      player.emit(
+        position: const Duration(minutes: 1),
+        duration: const Duration(minutes: 10),
+      );
+      await tester.pumpAndSettle();
+      final gate = Completer<void>();
+      player.seekGate = gate;
+      final slider = tester.widget<Slider>(find.byType(Slider).first);
+      slider.onChangeEnd!(.7);
+      await tester.pump();
+      final target = player.seeks.single;
+      player.emit(position: target, buffering: true);
+      player.pushStats(const PlayerStats(downloadBytesPerSecond: 64000));
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(seconds: 6));
+      expect(player.seeks, [target], reason: '继续使用当前取流请求');
+      player.seekGate = null;
+      player.emit(position: target, buffering: false);
+      gate.complete();
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('网络缓冲区内拖动也不发中间请求，旧进度上报不能拉回滑块', (tester) async {
       final players = await pump(tester);
       final player = players.single;

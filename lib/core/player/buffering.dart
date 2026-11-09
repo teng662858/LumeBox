@@ -112,8 +112,7 @@ class BufferingConfig {
     'cache-pause-initial': 'no',
     // Recover with a small reserve; never wait for the full read-ahead window.
     'cache-pause': 'yes',
-    'cache-pause-wait':
-        '${readAhead.inMilliseconds < 1000 ? readAhead.inMilliseconds / 1000 : 1}',
+    'cache-pause-wait': '${readAhead.inMilliseconds.clamp(0, 500) / 1000}',
     'demuxer-seekable-cache': 'yes',
     // 网络缓存开启时 cache-secs 才是有效的时长上限。
     'cache-secs': '${readAhead.inSeconds}',

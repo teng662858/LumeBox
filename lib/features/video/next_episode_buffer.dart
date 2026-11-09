@@ -284,6 +284,10 @@ class NextEpisodeBuffer {
     unawaited(clear());
   }
 
+  void cancelPendingPreparation() {
+    if (_preparing && _ready == null) discard();
+  }
+
   Future<void> clear() async {
     _revision++;
     _catalogRevision++;

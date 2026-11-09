@@ -1085,6 +1085,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         !media.isNetwork ||
         !snapshot.playing ||
         snapshot.buffering ||
+        _committedSeekTarget != null ||
         snapshot.error != null ||
         snapshot.position <= Duration.zero ||
         _lifecycle != AppLifecycleState.resumed ||
@@ -1141,7 +1142,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
   final _verifiedPlaybackSources = <String>{};
   void _onSnapshotChanged() {
-    unawaited(_loadDanmakuAtPosition());
     _syncPipPlaybackState();
     final snapshot = _player?.snapshot.value;
     final seekTarget = _committedSeekTarget;
@@ -1161,6 +1161,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         _committedSeekTarget = null;
       }
     }
+    if (_committedSeekTarget == null) unawaited(_loadDanmakuAtPosition());
     final verifiedSource = _target?.sourceId;
     if (snapshot?.playing == true &&
         _loaded &&
@@ -1277,6 +1278,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       // 片头片尾：每次快照变化判一次（判定本身是纯函数，跳过一次后不再重复）。
       _scheduleSourceValidation(snapshot);
       if (playing &&
+          _committedSeekTarget == null &&
           ContentCenter.instance.enabled('autoNextDownloads') &&
           _target != null &&
           _prefetchedEpisode != _target!.chapterId) {
@@ -1327,6 +1329,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         foreground:
             _lifecycle == AppLifecycleState.resumed &&
             _loaded &&
+            _committedSeekTarget == null &&
             !_advancing &&
             !_switchingQuality,
         hasNativeSpeed: stats?.downloadBytesPerSecond != null,
@@ -1356,6 +1359,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           playing &&
           !snapshot.buffering &&
           snapshot.error == null &&
+          _committedSeekTarget == null &&
           MediaPreload.instance.video &&
           snapshot.position >= const Duration(seconds: 10) &&
           _lifecycle == AppLifecycleState.resumed &&
@@ -1367,6 +1371,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           playing &&
           !snapshot.buffering &&
           snapshot.error == null &&
+          _committedSeekTarget == null &&
           !_advancing &&
           !_switchingQuality &&
           MediaPreload.instance.video &&
@@ -3810,43 +3815,76 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   /// 内核的 seek 可能一直不返回（AVPlayer 的 seekToTime 完成回调在源端卡住时
   /// 就不来），所以这段必须自带超时——否则调用方一直挂在 await 上，
   /// 拖动预览文字和「缓冲中」就一起留着不动了。
-  Future<bool> _seekAndConfirm(
+  Future<_SeekConfirmation> _seekAndConfirm(
     AbstractPlayer player,
     Duration target, {
     bool scrub = false,
+    bool exact = false,
   }) async {
     // 新一轮跳转作废上一轮看门狗：不然上一个落点的超时会来复查这次跳转。
     _seekWatchdog?.cancel();
     _seekWatchdogGeneration++;
-    final acknowledged = Completer<bool>();
+    final acknowledged = Completer<_SeekConfirmation>();
+    final origin = player.snapshot.value.position;
+    var previousPosition = origin;
+    var positionChangedAt = Duration.zero;
+    final clock = Stopwatch()..start();
+    final network = _media?.isNetwork == true;
+    final checkFastLanding = network && scrub;
+    var requestCompleted = false;
+    var sawPositionJump = false;
     void checkPosition() {
-      if (!acknowledged.isCompleted &&
-          !player.snapshot.value.buffering &&
-          (player.snapshot.value.position - target).abs() <=
-              _seekLandingTolerance) {
-        acknowledged.complete(true);
+      if (acknowledged.isCompleted) return;
+      final snapshot = player.snapshot.value;
+      final position = snapshot.position;
+      final distance = (position - target).abs();
+      if (checkFastLanding && position != previousPosition) {
+        final elapsed = clock.elapsed;
+        final normalAdvance =
+            (elapsed - positionChangedAt).inMilliseconds * _settings.speed;
+        // Ordinary clock ticks are not evidence of a completed fast seek.
+        if ((position - previousPosition).abs().inMilliseconds >
+                normalAdvance + _seekLandingTolerance.inMilliseconds &&
+            distance < (origin - target).abs()) {
+          sawPositionJump = true;
+        }
+        previousPosition = position;
+        positionChangedAt = elapsed;
+      }
+      if (snapshot.buffering || snapshot.error != null) return;
+      if (distance <= _seekLandingTolerance) {
+        acknowledged.complete(_SeekConfirmation.reached);
+      } else if (checkFastLanding && requestCompleted && sawPositionJump) {
+        acknowledged.complete(_SeekConfirmation.missed);
       }
     }
 
     _cancelSeekConfirmation?.call();
     player.snapshot.addListener(checkPosition);
     final timeout = Timer(const Duration(seconds: 2), () {
-      if (!acknowledged.isCompleted) acknowledged.complete(false);
+      if (!acknowledged.isCompleted) {
+        acknowledged.complete(_SeekConfirmation.pending);
+      }
     });
     void cancel() {
       timeout.cancel();
-      if (!acknowledged.isCompleted) acknowledged.complete(false);
+      if (!acknowledged.isCompleted) {
+        acknowledged.complete(_SeekConfirmation.pending);
+      }
     }
 
     _cancelSeekConfirmation = cancel;
     try {
-      final request = _media?.isNetwork == true
+      final request = network && !exact
           ? (scrub ? player.seekScrub(target) : player.seekInteractive(target))
           : player.seek(target);
       // 原生回调可能不返回；位置已经到位时直接完成，不额外等待回调。
       unawaited(
         request.then(
-          (_) => checkPosition(),
+          (_) {
+            requestCompleted = true;
+            checkPosition();
+          },
           onError: (Object error, StackTrace stack) {
             if (!acknowledged.isCompleted) {
               acknowledged.completeError(error, stack);
@@ -3864,8 +3902,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     }
   }
 
-  /// 跳转后停滞的看门狗：6 秒内位置没动就重发一次同一跳转，
-  /// 再 6 秒还不动就换地址重开并回到目标位置（三个内核都走这条路）。
+  /// 跳转后没有进展才重发，仍卡住才重开媒体。
   void _armSeekWatchdog(
     AbstractPlayer player,
     Duration target, {
@@ -3884,10 +3921,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         return;
       }
       final snapshot = player.snapshot.value;
-      final buffered = player.stats.value.buffered;
+      final stats = player.stats.value;
+      final buffered = stats.buffered;
+      final nearTarget =
+          (snapshot.position - target).abs() <= _seekLandingTolerance;
       if (snapshot.buffering &&
-          buffered != null &&
-          buffered > (bufferedAtStart ?? Duration.zero)) {
+          ((buffered != null &&
+                  buffered > (bufferedAtStart ?? Duration.zero)) ||
+              (nearTarget && (stats.downloadBytesPerSecond ?? 0) > 0))) {
         // Keep the active request when the target is still receiving data.
         _armSeekWatchdog(player, target, retried: retried);
         return;
@@ -3895,7 +3936,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       final stalled =
           snapshot.error == null &&
           _committedSeekTarget == target &&
-          ((snapshot.position - target).abs() > _seekLandingTolerance ||
+          (!nearTarget ||
               (snapshot.buffering &&
                   (snapshot.position - anchor).abs() <=
                       const Duration(seconds: 1)));
@@ -3911,14 +3952,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         return;
       }
       unawaited(
-        _seekAndConfirm(player, target).then((ok) {
-          if (!ok &&
-              mounted &&
-              revision == _seekRevision &&
-              identical(player, _player)) {
-            _armSeekWatchdog(player, target, retried: true);
-          }
-        }),
+        _seekAndConfirm(player, target, exact: true).then(
+          (result) {
+            if (result != _SeekConfirmation.reached &&
+                mounted &&
+                revision == _seekRevision &&
+                identical(player, _player)) {
+              _armSeekWatchdog(player, target, retried: true);
+            }
+          },
+          onError: (Object error, StackTrace stack) {
+            if (mounted &&
+                revision == _seekRevision &&
+                identical(player, _player)) {
+              LumeLog.error(error, stack);
+              _armSeekWatchdog(player, target, retried: true);
+            }
+          },
+        ),
       );
     });
   }
@@ -3936,6 +3987,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         : null;
     _seekPositionObservedMs = null;
     setState(() => _committedSeekTarget = target);
+    if (_media?.isNetwork == true) {
+      _networkSpeed.cancelBackground();
+      _sourceValidator.cancel();
+      _nextEpisodeBuffer.cancelPendingPreparation();
+    }
     // 超时明确提示失败，不把旧位置当成跳转成功；迟到回调不能覆盖新一轮。
     _seekDisplayTimeout = Timer(const Duration(seconds: 20), () {
       if (!mounted ||
@@ -3949,13 +4005,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _showToast('跳转超时，请重试或切换线路');
     });
     try {
-      final ok = await _seekAndConfirm(player, target, scrub: scrub);
+      var result = await _seekAndConfirm(player, target, scrub: scrub);
       if (!mounted ||
           revision != _seekRevision ||
           !identical(player, _player)) {
         return;
       }
-      if (!ok) _armSeekWatchdog(player, target);
+      final corrected = result == _SeekConfirmation.missed;
+      if (corrected) {
+        result = await _seekAndConfirm(player, target, exact: true);
+        if (!mounted ||
+            revision != _seekRevision ||
+            !identical(player, _player)) {
+          return;
+        }
+      }
+      if (result != _SeekConfirmation.reached) {
+        _armSeekWatchdog(player, target, retried: corrected);
+      }
     } catch (_) {
       if (!mounted ||
           revision != _seekRevision ||
@@ -6478,6 +6545,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               _pendingScrubSeek = null;
               _seekWatchdog?.cancel();
               _seekWatchdogGeneration++;
+              _cancelSeekConfirmation?.call();
               _cancelAutoHide();
               setState(
                 () => _previewTarget = _positionAt(value, snapshot.duration),
@@ -7059,6 +7127,8 @@ class _BatteryGlyph extends StatelessWidget {
     ],
   );
 }
+
+enum _SeekConfirmation { reached, missed, pending }
 
 class _ResumePoint {
   const _ResumePoint({required this.position, required this.playing});

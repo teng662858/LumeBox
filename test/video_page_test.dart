@@ -563,21 +563,14 @@ void main() {
       await tester.pump();
       final target = player.scrubSeeks.single;
       expect(target.inSeconds, closeTo(45, 3));
-      expect(player.seeks, isEmpty);
-      expect(
-        player.snapshot.value.position,
-        target - player.scrubLandingOffset,
-      );
-
-      await tester.pump(const Duration(seconds: 2));
-      await tester.pump(const Duration(seconds: 6));
-      await tester.pumpAndSettle();
-      expect(player.seeks, [target]);
+      expect(player.seeks, [target], reason: '确认偏远落点后立即补定位');
       expect(player.snapshot.value.position, target);
       final diagnostic = PlaybackDiagnostics.snapshot.last;
       expect(diagnostic['stage'], 'seek-settled');
       expect(diagnostic['kernel'], 'avplayer');
       expect(diagnostic['positionObservedMs'], isA<int>());
+      await tester.pump(const Duration(seconds: 9));
+      expect(player.seeks, [target], reason: '补定位成功后不再重发');
     });
 
     testWidgets('手势：调暗后画面上真的盖了遮罩（亮度要看得见）', (tester) async {
