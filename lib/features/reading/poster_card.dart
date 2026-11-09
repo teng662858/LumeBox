@@ -129,6 +129,7 @@ class PosterCard extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.badge,
+    this.coverLabel,
     this.footnote,
     this.footnoteBelow = false,
     this.footnoteGap = 6,
@@ -143,6 +144,12 @@ class PosterCard extends StatelessWidget {
 
   /// 右上角角标（漫画书架用它挂未读章节数）。
   final Widget? badge;
+
+  /// 封面左下角的来源角标文本（直播源用它标国籍 / 地区）。
+  ///
+  /// 与右上角 [badge] 分开：右上角留给「未读 / 徽章」这类结构化信息，
+  /// 左下角是源自己给的短标签，只做一层半透明底保证可读。
+  final String? coverLabel;
 
   /// 底部补充说明（进度文案等），为空时不占位。
   final Widget? footnote;
@@ -189,6 +196,12 @@ class PosterCard extends StatelessWidget {
                         ),
                         if (badge != null)
                           Positioned(top: 6, right: 6, child: badge!),
+                        if (coverLabel != null)
+                          Positioned(
+                            left: 6,
+                            bottom: 6,
+                            child: CoverLabelTag(coverLabel!),
+                          ),
                       ],
                     ),
                   ),
@@ -238,11 +251,57 @@ class PosterCard extends StatelessWidget {
                     ),
                   if (badge != null)
                     Positioned(top: 6, right: 6, child: badge!),
+                  // 「遮罩内置」布局的底部被标题遮罩占满，角标改放左上角；
+                  // 与右上角的徽章同排，互不重叠。
+                  if (coverLabel != null)
+                    Positioned(
+                      left: 6,
+                      top: 6,
+                      child: CoverLabelTag(coverLabel!),
+                    ),
                 ],
               ),
       ),
     );
   }
+}
+
+/// 封面上的来源角标（源给的短文本，直播源拿它标国籍 / 地区）。
+///
+/// 刻意做得比标题还轻：半透明黑底 + 白字 + 单行省略，浅色深色封面都能读；
+/// 只在 [SourceItem.coverLabel] 非空时由调用方插入，空串不占位。
+class CoverLabelTag extends StatelessWidget {
+  const CoverLabelTag(this.label, {super.key, this.maxWidth = 84});
+
+  final String label;
+
+  /// 三列网格里卡片只有 ~104 宽：角标最多占 84，超出省略。
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: BoxConstraints(maxWidth: maxWidth),
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: .55),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            height: 1.2,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 /// 未读章节角标：书架卡片右上角。
@@ -482,6 +541,7 @@ class PosterTile extends StatelessWidget {
         limit: 2,
       ),
       onTap: onTap,
+      coverLabel: item.coverLabel,
       // 标题风格：遮罩内置（白字压在封面上）/ 外置独立（黑字在封面下方）。
       // 外置时封面不画任何遮罩，文字落在卡片浅色底上，因此用主题主文字色。
       footnoteBelow: style == GridTitleStyle.below,
@@ -610,16 +670,32 @@ class CompactSourceItemTile extends StatelessWidget {
                 key: const ValueKey('source-tile-cover'),
                 width: coverWidth,
                 height: coverHeight,
-                child: ClipRRect(
-                  borderRadius: kPosterCoverRadius,
-                  child: CoverThumb(
-                    pipeline: pipeline,
-                    url: item.cover,
-                    title: item.title,
-                    headers: item.coverHeaders,
-                    // One decode bucket for list covers, shared with prefetch.
-                    width: 200,
-                  ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    ClipRRect(
+                      borderRadius: kPosterCoverRadius,
+                      child: CoverThumb(
+                        pipeline: pipeline,
+                        url: item.cover,
+                        title: item.title,
+                        headers: item.coverHeaders,
+                        // One decode bucket for list covers, shared with prefetch.
+                        width: 200,
+                      ),
+                    ),
+                    // 列表行封面很窄（60~80 宽），角标贴底居中排一行，超出省略。
+                    if (item.coverLabel != null)
+                      Positioned(
+                        left: 3,
+                        right: 3,
+                        bottom: 3,
+                        child: CoverLabelTag(
+                          item.coverLabel!,
+                          maxWidth: coverWidth,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(width: 10),

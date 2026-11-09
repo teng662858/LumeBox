@@ -675,6 +675,7 @@ class _HomeCard extends StatelessWidget {
         limit: 2,
       ),
       onTap: onTap,
+      coverLabel: item.coverLabel,
       footnoteBelow: style == GridTitleStyle.below,
       footnoteGap: ThreeColumnPosterLayout.titleGap,
       footnotePadding: const EdgeInsets.symmetric(horizontal: 2),

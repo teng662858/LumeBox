@@ -151,10 +151,19 @@ var LumeSource = {
 | 入口 | 入参 | 返回 |
 |---|---|---|
 | `categories()` | — | `[{id, title}]` |
-| `list({categoryId?, keyword?, page})` | `page` 从 1 开始 | `{items: [{id, title, cover?, subtitle?}], hasMore}` |
-| `detail({id})` | — | `{id, title, cover?, subtitle?, description?}`；找不到返回 `null` |
+| `list({categoryId?, keyword?, page})` | `page` 从 1 开始 | `{items: [{id, title, cover?, subtitle?, coverLabel?}], hasMore}` |
+| `detail({id})` | — | `{id, title, cover?, subtitle?, coverLabel?, description?}`；找不到返回 `null` |
 | `chapters({id})` | — | `[{id, title}]` |
 | `content({id, chapterId})` | — | 见下表（**按板块返回不同形态**） |
+
+`coverLabel`（可选）：封面角标，源自己给的短文本，App 原样画在封面上（三列网格在左下角、
+遮罩标题样式的卡片在左上角、列表行贴封面底部）。直播源拿它标国籍 / 地区，例如
+`mediaInfo: { liveCover: true, coverLabel: '🇹🇼 台湾' }`；顶层写 `coverLabel` 等价。
+空串、超过 12 个字符（或 24 个 UTF-16 单元）的文本会被丢弃——角标只是补充信息，
+长句会把封面压没。App 不做国旗推导，也不从标题里猜地区。
+
+直播用 `mediaInfo.liveCover: true` 声明「封面会变」：浏览页每 20 秒重取当前页并换图，
+封面地址带秒级时间戳（站方快照接口）就能一帧一帧地刷新。
 
 ### content 的三种形态（板块决定）
 

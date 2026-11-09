@@ -250,6 +250,7 @@ class SourceItem {
     this.cover,
     this.coverHeaders = const {},
     this.subtitle,
+    this.coverLabel,
     this.mediaInfo = const {},
     this.mediaType = '',
     this.duration,
@@ -261,6 +262,13 @@ class SourceItem {
   final String? cover;
   final Map<String, String> coverHeaders;
   final String? subtitle;
+
+  /// 封面角标（可选能力）：源自己给的短文本，出现在封面左下角。
+  ///
+  /// 直播源用它标国籍 / 地区（`🇨🇳 中国`）；App 只做原样渲染，不做国旗推导，
+  /// 也不把它当成标题或分类的一部分。空串与超长文本都会被丢弃。
+  final String? coverLabel;
+
   final Map<String, dynamic> mediaInfo;
 
   /// 时长（可选能力）：视频类图源常给（搜索结果里要显示「时长」）。
@@ -283,6 +291,12 @@ class SourceItem {
     if (id == null || title == null) return null;
     // Only use an explicit source-provided thumbnail; never invent CDN URLs.
     final thumbnail = _text(json['thumbnail']) ?? _text(json['thumb']);
+    final mediaInfo = <String, dynamic>{
+      if (json['width'] != null) 'width': json['width'],
+      if (json['height'] != null) 'height': json['height'],
+      if (json['mediaInfo'] is Map)
+        ...Map<String, dynamic>.from(json['mediaInfo']),
+    };
     return SourceItem(
       id: id,
       title: title,
@@ -299,12 +313,10 @@ class SourceItem {
       mediaType:
           _text(json['mediaType'] ?? json['contentType'] ?? json['kind']) ?? '',
       subtitle: _text(json['subtitle']),
-      mediaInfo: {
-        if (json['width'] != null) 'width': json['width'],
-        if (json['height'] != null) 'height': json['height'],
-        if (json['mediaInfo'] is Map)
-          ...Map<String, dynamic>.from(json['mediaInfo']),
-      },
+      // 角标既接受顶层 `coverLabel`，也接受 `mediaInfo.coverLabel`：
+      // 直播源本来就把「是否直播」写进 mediaInfo，角标跟着放同一处更顺手。
+      coverLabel: parseCoverLabel(json['coverLabel'] ?? mediaInfo['coverLabel']),
+      mediaInfo: mediaInfo,
       duration: parseDuration(
         json['duration'] ?? json['时长'] ?? json['length'] ?? json['runtime'],
       ),
@@ -316,6 +328,20 @@ class SourceItem {
             json['date'],
       ),
     );
+  }
+
+  /// 封面角标解析（宽容）：只接受源显式给出的短文本。
+  ///
+  /// - 换行 / 制表符压成空格，首尾空白去掉；
+  /// - 超过 12 个字符（按 rune 计）或 24 个 UTF-16 单元就当没写：
+  ///   角标只是补充信息，长句会把封面压没；
+  /// - 非字符串（数字、对象）一律当没写，不做 `toString()` 兜底。
+  static String? parseCoverLabel(Object? value) {
+    if (value is! String) return null;
+    final text = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (text.isEmpty) return null;
+    if (text.runes.length > 12 || text.length > 24) return null;
+    return text;
   }
 
   /// 时长解析（宽容）：秒数（int/double）、毫秒（>100000 视为毫秒）、

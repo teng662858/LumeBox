@@ -1,7 +1,8 @@
-// LumeSource: {"id":"stripchat_live_video","name":"Stripchat 中文直播","version":"1.1.1","category":"video","contentCategory":"adult","network":"proxy","mirrors":["https://zh.stripchat.com","https://stripchat.com"],"icon":"https://zh.stripchat.com/favicon.ico","settings":[{"key":"siteNote","type":"info","title":"站点说明","description":"18+ 成人直播。全部合并四个公开直播目录，筛选取自官网分类页。直播封面随站方快照更新，通过站方网页播放器打开。"}]}
+// LumeSource: {"id":"stripchat_live_video","name":"Stripchat 中文直播","version":"1.2.0","category":"video","contentCategory":"adult","network":"proxy","mirrors":["https://zh.stripchat.com","https://stripchat.com"],"icon":"https://zh.stripchat.com/favicon.ico","settings":[{"key":"siteNote","type":"info","title":"站点说明","description":"18+ 成人直播。合并四个公开直播目录，筛选取自官网分类页。封面用站方每秒快照（列表每 20 秒自动换一帧），角标标主播国籍；播放走站方网页播放器——站方对分片名做了 PSCH v2 改名，第三方播放器只能取到占位分片。"}]}
 
 const SC_HOME = 'https://zh.stripchat.com';
 const SC_PAGE_SIZE = 24;
+const SC_SNAP_HOST = 'https://img.doppiocdn.net';
 const SC_DIRECTORIES = [
   { id: 'girls', title: '女主播' },
   { id: 'couples', title: '情侣' },
@@ -9,6 +10,31 @@ const SC_DIRECTORIES = [
   { id: 'trans', title: '跨性别' },
 ];
 const SC_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
+
+/** 国籍代码 → 中文名。站方下发两字母 ISO 码（部分主播不填）。 */
+const SC_COUNTRIES = {
+  cn: '中国', tw: '台湾', hk: '香港', mo: '澳门', jp: '日本', kr: '韩国',
+  vn: '越南', th: '泰国', ph: '菲律宾', id: '印尼', my: '马来西亚', sg: '新加坡',
+  kh: '柬埔寨', la: '老挝', mm: '缅甸', bn: '文莱', mn: '蒙古', in: '印度',
+  pk: '巴基斯坦', bd: '孟加拉', lk: '斯里兰卡', np: '尼泊尔', kz: '哈萨克',
+  uz: '乌兹别克', kg: '吉尔吉斯', tj: '塔吉克', ge: '格鲁吉亚', am: '亚美尼亚',
+  az: '阿塞拜疆', ru: '俄罗斯', ua: '乌克兰', by: '白俄', md: '摩尔多瓦',
+  pl: '波兰', ro: '罗马尼亚', bg: '保加利亚', hu: '匈牙利', cz: '捷克',
+  sk: '斯洛伐克', rs: '塞尔维亚', hr: '克罗地亚', si: '斯洛文尼亚', ee: '爱沙尼亚',
+  lv: '拉脱维亚', lt: '立陶宛', de: '德国', at: '奥地利', ch: '瑞士',
+  fr: '法国', be: '比利时', nl: '荷兰', lu: '卢森堡', gb: '英国',
+  ie: '爱尔兰', es: '西班牙', pt: '葡萄牙', it: '意大利', gr: '希腊',
+  tr: '土耳其', il: '以色列', lb: '黎巴嫩', jo: '约旦', sa: '沙特',
+  ae: '阿联酋', qa: '卡塔尔', kw: '科威特', bh: '巴林', om: '阿曼',
+  iq: '伊拉克', ir: '伊朗', eg: '埃及', ma: '摩洛哥', dz: '阿尔及利亚',
+  tn: '突尼斯', ly: '利比亚', ng: '尼日利亚', gh: '加纳', ke: '肯尼亚',
+  et: '埃塞俄比亚', za: '南非', sn: '塞内加尔', ci: '科特迪瓦', cm: '喀麦隆',
+  us: '美国', ca: '加拿大', mx: '墨西哥', cu: '古巴', do: '多米尼加',
+  gt: '危地马拉', hn: '洪都拉斯', sv: '萨尔瓦多', ni: '尼加拉瓜', cr: '哥斯达黎加',
+  pa: '巴拿马', co: '哥伦比亚', ve: '委内瑞拉', ec: '厄瓜多尔', pe: '秘鲁',
+  bo: '玻利维亚', cl: '智利', ar: '阿根廷', uy: '乌拉圭', py: '巴拉圭',
+  br: '巴西', au: '澳洲', nz: '新西兰',
+};
 
 function scHome() {
   return String(LumeSource.config.domain || SC_HOME).replace(/\/+$/, '');
@@ -47,6 +73,33 @@ function scHtmlText(value) {
       : Number(key.slice(1));
     return code <= 0x10ffff ? String.fromCodePoint(code) : raw;
   }).trim();
+}
+
+/** 国籍角标：国旗 emoji + 中文名；站方没填国家就不加角标（不猜）。 */
+function scRegion(model) {
+  const code = String(model.country || '').trim().toLowerCase();
+  if (!/^[a-z]{2}$/.test(code)) return '';
+  const name = SC_COUNTRIES[code] || code.toUpperCase();
+  const flag = String.fromCodePoint(
+    0x1f1e6 + code.charCodeAt(0) - 97,
+    0x1f1e6 + code.charCodeAt(1) - 97,
+  );
+  return flag + ' ' + name;
+}
+
+/** 直播封面取站方快照：`/thumbs/<秒级时间戳>/<modelId>`，换一帧就是新地址。 */
+function scLiveCover(model) {
+  // 10 秒一档：App 每 20 秒刷新一次列表，每次都会落到新地址上，
+  // 于是封面是「刚刚那一帧」而不是站方缓存的静态 preview。
+  const bucket = Math.floor(Date.now() / 10000) * 10;
+  return SC_SNAP_HOST + '/thumbs/' + bucket + '/' + model.id;
+}
+
+function scViewers(model) {
+  const count = Number(model.viewersCount);
+  if (!Number.isFinite(count) || count <= 0) return '';
+  if (count >= 10000) return (count / 10000).toFixed(1) + ' 万人在看';
+  return Math.round(count) + ' 人在看';
 }
 
 async function scFilterGroups(directory) {
@@ -121,18 +174,21 @@ function scFilterTags(categoryId, filters) {
 }
 
 function scItem(model) {
-  const preview = model.previewUrlThumbSmall || '';
-  const snapshot = String(model.snapshotTimestamp || '');
-  const cover = preview && /^https?:\/\/[^?#]+$/.test(preview) && /^\d+$/.test(snapshot)
-    ? preview + '?v=' + snapshot
-    : preview || model.avatarUrl || '';
+  const live = scPublic(model);
+  const region = scRegion(model);
+  const viewers = live ? scViewers(model) : '';
+  const lines = [region, live ? '公开直播' : '当前无公开直播', viewers].filter(Boolean);
   return {
     id: model.id + ':' + model.username,
     title: model.username,
-    cover,
-    coverHeaders: scHeaders(),
-    mediaInfo: { liveCover: scPublic(model) },
-    subtitle: scPublic(model) ? '公开直播' : '当前无公开直播',
+    // 直播用站方秒级快照（每轮列表都是新地址）；非公开直播退回头像。
+    cover: live ? scLiveCover(model) : (model.avatarUrl || ''),
+    subtitle: lines.join(' · '),
+    mediaInfo: {
+      liveCover: live,
+      // 国籍角标由 App 画在封面左下角（见 docs/资料来源-c 契约的 coverLabel）。
+      coverLabel: region || undefined,
+    },
   };
 }
 
@@ -204,9 +260,15 @@ var LumeSource = {
 
   async detail({ id } = {}) {
     const model = await scModel(id);
-    return model && model.id && model.username && !model.isDeleted && !model.isBlocked
-      ? { ...scItem(model), description: 'Stripchat 网页直播间' }
-      : null;
+    if (!model || !model.id || !model.username || model.isDeleted || model.isBlocked) return null;
+    return {
+      ...scItem(model),
+      description: [
+        scRegion(model),
+        'Stripchat 网页直播间',
+        scPublic(model) ? scViewers(model) : '',
+      ].filter(Boolean).join(' · '),
+    };
   },
 
   async chapters({ id } = {}) {
@@ -218,6 +280,14 @@ var LumeSource = {
     if (chapterId !== 'live' || !scPublic(model) || !model.username) {
       throw new Error('该直播间当前没有公开直播');
     }
-    return { kind: 'webplayer', pageUrl: scHome() + '/' + encodeURIComponent(model.username) };
+    // 站方把直播分片名做了 PSCH v2 改名（播放列表里只有占位分片
+    // `media.mp4`，真实名由站方播放器现算），第三方播放器取不到分片，
+    // 所以这里走网页播放器，而不是返回一个播不出来的 m3u8。
+    // 不带自定义头：网页播放器用 App 自己的 UA / 会话池，塞桌面 UA 会把站点
+    // 推成桌面版布局。
+    return {
+      kind: 'webplayer',
+      pageUrl: scHome() + '/' + encodeURIComponent(model.username),
+    };
   },
 };
