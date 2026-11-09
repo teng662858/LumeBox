@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../shared/widgets/frosted_glass_widget.dart';
 import '../../shared/widgets/module_glass_scope.dart';
+import '../../shared/widgets/native_glass_preview.dart';
 
 /// Reader controls share the app material; comic artwork is never filtered.
 class ComicGlassBackdrop extends StatelessWidget {
@@ -29,6 +30,7 @@ class ComicGlassBackdrop extends StatelessWidget {
       blur: 18,
       neutralTint: true,
       translucentOverlay: true,
+      nativeGlass: NativeGlassPreview.enabledOf(context),
       child: child,
     ),
   );

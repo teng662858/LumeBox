@@ -3,6 +3,7 @@ import '../../core/cache/section_memory_cache.dart';
 import '../../core/net/lume_net.dart';
 import '../../core/net/network_cancellation.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
+import '../../shared/widgets/native_glass_preview.dart';
 
 import 'package:lume_box/shared/widgets/lume_icon.dart';
 
@@ -116,7 +117,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   bool get _usesSystemNavigation =>
       !(widget.desktopRail ?? _isDesktopPlatform) &&
       _systemNavigationAvailable &&
-      _shellSettings.settings.nativeNavigation.enabled;
+      (_shellSettings.settings.nativeNavigation.enabled ||
+          NativeGlassPreview.enabledOf(context));
 
   double get _navigationHeight => _usesSystemNavigation
       ? _shellSettings.settings.nativeNavigation.heightFor(

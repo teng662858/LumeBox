@@ -17,6 +17,8 @@ import '../../core/source/source.dart';
 import '../../core/theme/lume_theme.dart';
 import '../../core/util/lume_log.dart';
 import '../../shared/widgets/glass_card.dart';
+import '../../shared/widgets/frosted_glass_widget.dart';
+import '../../shared/widgets/native_glass_preview.dart';
 import '../../shared/widgets/state_view.dart';
 import 'explore_view.dart';
 import 'aggregate_search_results.dart';
@@ -577,104 +579,118 @@ class _SearchResultsPageState extends State<SearchResultsPage>
 
   /// 顶栏：返回 + 「搜索 · 关键词」+ 结果条数。
   Widget _buildHeader(BuildContext context) {
-    return ClipRect(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: LumeTheme.glass,
-          border: Border(bottom: BorderSide(color: LumeTheme.hairline)),
-        ),
-        child: Padding(
-          padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
-          child: SizedBox(
-            height:
-                (widget.mode == SearchMode.aggregate ? 52 : kToolbarHeight) *
-                MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0),
-            child: Row(
-              children: <Widget>[
-                IconButton(
-                  tooltip: '返回',
-                  icon: const LumeIcon(
-                    Icons.arrow_back,
-                    slot: 'search_results_page.1',
-                  ),
-                  onPressed: () => Navigator.of(context).maybePop(),
+    final preview = NativeGlassPreview.enabledOf(context);
+    final header = DecoratedBox(
+      decoration: BoxDecoration(
+        color: preview ? Colors.transparent : LumeTheme.glass,
+        border: Border(bottom: BorderSide(color: LumeTheme.hairline)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+        child: SizedBox(
+          height:
+              (widget.mode == SearchMode.aggregate ? 52 : kToolbarHeight) *
+              MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0),
+          child: Row(
+            children: <Widget>[
+              IconButton(
+                tooltip: '返回',
+                icon: const LumeIcon(
+                  Icons.arrow_back,
+                  slot: 'search_results_page.1',
                 ),
-                Expanded(
-                  child: Tooltip(
-                    message: '修改关键词',
-                    child: InkWell(
-                      onTap: _editKeyword,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '搜索 · $_keyword',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize:
-                                        widget.mode == SearchMode.aggregate
-                                        ? 16
-                                        : LumeTypography.sectionTitleSize,
-                                    fontWeight: FontWeight.w600,
-                                    color: LumeTheme.textPrimary,
-                                  ),
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+              Expanded(
+                child: Tooltip(
+                  message: '修改关键词',
+                  child: InkWell(
+                    onTap: _editKeyword,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '搜索 · $_keyword',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: widget.mode == SearchMode.aggregate
+                                      ? 16
+                                      : LumeTypography.sectionTitleSize,
+                                  fontWeight: FontWeight.w600,
+                                  color: LumeTheme.textPrimary,
                                 ),
                               ),
-                              const SizedBox(width: 4),
-                              const Icon(Icons.edit_outlined, size: 16),
-                            ],
-                          ),
-                          if (widget.mode != SearchMode.aggregate)
-                            Text(
-                              _loading
-                                  ? (widget.mode == SearchMode.aggregate
-                                        ? '正在搜索 $_aggregateCompleted/$_aggregateSiteCount 个站点 · $_count 条'
-                                        : '正在搜索…')
-                                  : '${widget.mode.label} · $_count 条',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: LumeTypography.descriptionSize,
-                                color: LumeTheme.descriptionColor,
-                              ),
                             ),
-                        ],
-                      ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.edit_outlined, size: 16),
+                          ],
+                        ),
+                        if (widget.mode != SearchMode.aggregate)
+                          Text(
+                            _loading
+                                ? (widget.mode == SearchMode.aggregate
+                                      ? '正在搜索 $_aggregateCompleted/$_aggregateSiteCount 个站点 · $_count 条'
+                                      : '正在搜索…')
+                                : '${widget.mode.label} · $_count 条',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: LumeTypography.descriptionSize,
+                              color: LumeTheme.descriptionColor,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
-                if (widget.mode == SearchMode.aggregate)
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      minimumSize: const Size(0, 36),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      textStyle: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    onPressed: _chooseSources,
-                    icon: const LumeIcon(
-                      Icons.checklist,
-                      slot: 'search_results_page.2',
-                      size: 18,
-                    ),
-                    label: Text(
-                      _sourceIds == null ? '站点' : '站点 ${_sourceIds!.length}',
+              ),
+              if (widget.mode == SearchMode.aggregate)
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                const SizedBox(width: 12),
-              ],
-            ),
+                  onPressed: _chooseSources,
+                  icon: const LumeIcon(
+                    Icons.checklist,
+                    slot: 'search_results_page.2',
+                    size: 18,
+                  ),
+                  label: Text(
+                    _sourceIds == null ? '站点' : '站点 ${_sourceIds!.length}',
+                  ),
+                ),
+              const SizedBox(width: 12),
+            ],
           ),
         ),
       ),
+    );
+    return ClipRect(
+      child: preview
+          ? Stack(
+              children: [
+                const Positioned.fill(
+                  child: FrostedGlassWidget(
+                    nativeGlass: true,
+                    radius: 0,
+                    child: SizedBox.expand(),
+                  ),
+                ),
+                header,
+              ],
+            )
+          : header,
     );
   }
 

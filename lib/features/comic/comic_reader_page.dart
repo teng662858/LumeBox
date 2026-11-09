@@ -5,6 +5,7 @@ import '../../core/net/network_queue.dart';
 import '../../core/source/source_content_type.dart';
 import 'reader_interaction_surface.dart';
 import '../../shared/widgets/native_glass_surfaces.dart';
+import '../../shared/widgets/native_glass_controls.dart';
 import '../source/source_login_page.dart';
 import '../../shared/widgets/network_owned_state.dart';
 

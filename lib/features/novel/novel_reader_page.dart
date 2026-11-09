@@ -8,6 +8,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../shared/widgets/frosted_glass_widget.dart';
+import '../../shared/widgets/native_glass_preview.dart';
+import '../../shared/widgets/native_glass_controls.dart';
+
 import '../../core/reading/reading.dart';
 import '../../core/speech/speech.dart';
 import '../reading/speech_modes_panel.dart';
@@ -253,7 +257,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('语速 ${(_speechSettings.rate / .5).toStringAsFixed(1)} 倍'),
-                Slider(
+                NativeGlassSlider(
                   value: _speechSettings.rate,
                   min: SpeechSettings.minRate,
                   max: SpeechSettings.maxRate,
@@ -263,7 +267,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
                   },
                 ),
                 Text('音量 ${(_speechSettings.volume * 100).round()}%'),
-                Slider(
+                NativeGlassSlider(
                   value: _speechSettings.volume,
                   min: 0,
                   max: 1,
@@ -500,7 +504,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('字号 ${_font.round()}'),
-                Slider(
+                NativeGlassSlider(
                   value: _font,
                   min: 14,
                   max: 32,
@@ -512,7 +516,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
                   },
                 ),
                 const Text('行距'),
-                Slider(
+                NativeGlassSlider(
                   value: _height,
                   min: 1.3,
                   max: 2.3,
@@ -546,6 +550,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
 
   @override
   Widget build(BuildContext context) {
+    final nativeGlass = NativeGlassPreview.enabledOf(context);
     final dark =
         _theme == 2 ||
         (_theme == 0 && Theme.of(context).brightness == Brightness.dark);
@@ -568,6 +573,15 @@ class _NovelReaderPageState extends State<NovelReaderPage>
       ),
       child: Scaffold(
         appBar: AppBar(
+          backgroundColor: nativeGlass ? Colors.transparent : null,
+          surfaceTintColor: nativeGlass ? Colors.transparent : null,
+          flexibleSpace: nativeGlass
+              ? const FrostedGlassWidget(
+                  nativeGlass: true,
+                  radius: 0,
+                  child: SizedBox.expand(),
+                )
+              : null,
           title: Text(
             widget.chapters[_chapter].title,
             maxLines: 1,
@@ -713,34 +727,41 @@ class _NovelReaderPageState extends State<NovelReaderPage>
                   ),
                 ),
               ),
-        bottomNavigationBar: SafeArea(
-          top: false,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              TextButton(
-                onPressed: _chapter == 0
-                    ? null
-                    : () => _changeChapter(_chapter - 1),
-                child: const Text('上一章'),
-              ),
-              ValueListenableBuilder<String>(
-                valueListenable: _pageLabel,
-                builder: (context, label, _) => Text(
-                  _loading ? '正在加载' : label,
-                  style: TextStyle(color: foreground),
+        bottomNavigationBar: _chapterBar(
+          nativeGlass,
+          SafeArea(
+            top: false,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: _chapter == 0
+                      ? null
+                      : () => _changeChapter(_chapter - 1),
+                  child: const Text('上一章'),
                 ),
-              ),
-              TextButton(
-                onPressed: _chapter + 1 >= widget.chapters.length
-                    ? null
-                    : () => _changeChapter(_chapter + 1),
-                child: const Text('下一章'),
-              ),
-            ],
+                ValueListenableBuilder<String>(
+                  valueListenable: _pageLabel,
+                  builder: (context, label, _) => Text(
+                    _loading ? '正在加载' : label,
+                    style: TextStyle(color: foreground),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _chapter + 1 >= widget.chapters.length
+                      ? null
+                      : () => _changeChapter(_chapter + 1),
+                  child: const Text('下一章'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  Widget _chapterBar(bool nativeGlass, Widget child) => nativeGlass
+      ? FrostedGlassWidget(nativeGlass: true, radius: 0, child: child)
+      : child;
 }

@@ -40,6 +40,7 @@ final class LumeGlassBackdropFactory: NSObject, FlutterPlatformViewFactory {
 private final class LumeNativeControl: NSObject, FlutterPlatformView {
   private let container: UIView
   private let control: UIControl
+  private let bufferedTrack = UIProgressView(progressViewStyle: .default)
   private let channel: FlutterMethodChannel
   init(frame: CGRect, viewId: Int64, control kind: String, params: [String: Any], messenger: FlutterBinaryMessenger) {
     let host = UIView(frame: frame)
@@ -50,7 +51,19 @@ private final class LumeNativeControl: NSObject, FlutterPlatformView {
     host.backgroundColor = .clear
     host.addSubview(widget); widget.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([widget.centerXAnchor.constraint(equalTo: host.centerXAnchor), widget.centerYAnchor.constraint(equalTo: host.centerYAnchor)])
-    if widget is UISlider { widget.widthAnchor.constraint(equalTo: host.widthAnchor, constant: -4).isActive = true }
+    if let slider = widget as? UISlider {
+      slider.widthAnchor.constraint(equalTo: host.widthAnchor, constant: -4).isActive = true
+      bufferedTrack.isHidden = true
+      bufferedTrack.isUserInteractionEnabled = false
+      bufferedTrack.isAccessibilityElement = false
+      bufferedTrack.translatesAutoresizingMaskIntoConstraints = false
+      host.insertSubview(bufferedTrack, belowSubview: slider)
+      NSLayoutConstraint.activate([
+        bufferedTrack.centerYAnchor.constraint(equalTo: slider.centerYAnchor),
+        bufferedTrack.leadingAnchor.constraint(equalTo: slider.leadingAnchor),
+        bufferedTrack.trailingAnchor.constraint(equalTo: slider.trailingAnchor),
+      ])
+    }
     widget.addTarget(self, action: #selector(changed), for: .valueChanged)
     widget.addTarget(self, action: #selector(began), for: .touchDown)
     widget.addTarget(self, action: #selector(ended), for: [.touchUpInside, .touchUpOutside, .touchCancel])
@@ -67,13 +80,18 @@ private final class LumeNativeControl: NSObject, FlutterPlatformView {
   @objc private func changed() { channel.invokeMethod("changed", arguments: value()) }
   @objc private func began() { channel.invokeMethod("began", arguments: value()) }
   @objc private func ended() { channel.invokeMethod("ended", arguments: value()) }
+  private func color(_ value: Any?) -> UIColor? {
+    guard let number = value as? NSNumber else { return nil }
+    let rgb = number.uint32Value
+    return UIColor(red: CGFloat((rgb >> 16) & 255) / 255,
+      green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255,
+      alpha: CGFloat((rgb >> 24) & 255) / 255)
+  }
+
   private func update(_ params: [String: Any]) {
     control.isEnabled = params["enabled"] as? Bool ?? true
     container.overrideUserInterfaceStyle = params["dark"] as? Bool == true ? .dark : .light
-    if let number = params["tintColor"] as? NSNumber {
-      let rgb = number.uint32Value
-      let tint = UIColor(red: CGFloat((rgb >> 16) & 255) / 255,
-        green: CGFloat((rgb >> 8) & 255) / 255, blue: CGFloat(rgb & 255) / 255, alpha: 1)
+    if let tint = color(params["tintColor"]) {
       control.tintColor = tint
       (control as? UISwitch)?.onTintColor = tint
       (control as? UISlider)?.minimumTrackTintColor = tint
@@ -82,7 +100,19 @@ private final class LumeNativeControl: NSObject, FlutterPlatformView {
     if let slider = control as? UISlider {
       slider.minimumValue = (params["min"] as? NSNumber)?.floatValue ?? 0
       slider.maximumValue = (params["max"] as? NSNumber)?.floatValue ?? 1
-      slider.value = (params["value"] as? NSNumber)?.floatValue ?? 0
+      if !slider.isTracking {
+        slider.value = (params["value"] as? NSNumber)?.floatValue ?? 0
+      }
+      let trackColor = color(params["trackColor"])
+      let buffered = (params["bufferedValue"] as? NSNumber)?.floatValue
+      bufferedTrack.isHidden = buffered == nil
+      slider.maximumTrackTintColor = buffered == nil ? trackColor : .clear
+      if let buffered, slider.maximumValue > slider.minimumValue {
+        bufferedTrack.trackTintColor = trackColor ?? .systemFill
+        bufferedTrack.progressTintColor = color(params["bufferedColor"]) ?? .secondaryLabel
+        bufferedTrack.progress = min(1, max(0,
+          (buffered - slider.minimumValue) / (slider.maximumValue - slider.minimumValue)))
+      }
     }
   }
 }

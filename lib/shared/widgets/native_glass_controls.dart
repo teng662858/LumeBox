@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../features/shell/dock_native_glass.dart';
 import '../../core/theme/lume_theme.dart';
+import 'native_glass_preview.dart';
 
 class NativeGlassControl extends StatefulWidget {
   const NativeGlassControl({
@@ -17,6 +18,10 @@ class NativeGlassControl extends StatefulWidget {
     this.divisions,
     this.onChangeStart,
     this.onChangeEnd,
+    this.activeColor,
+    this.inactiveColor,
+    this.secondaryTrackValue,
+    this.secondaryTrackColor,
   });
   final String kind;
   final Object value;
@@ -24,6 +29,8 @@ class NativeGlassControl extends StatefulWidget {
   final double min, max;
   final int? divisions;
   final ValueChanged<Object>? onChangeStart, onChangeEnd;
+  final Color? activeColor, inactiveColor, secondaryTrackColor;
+  final double? secondaryTrackValue;
   @override
   State<NativeGlassControl> createState() => _NativeGlassControlState();
 }
@@ -37,7 +44,12 @@ class _NativeGlassControlState extends State<NativeGlassControl> {
     'min': widget.min,
     'max': widget.max,
     'dark': Theme.of(context).brightness == Brightness.dark,
-    'tintColor': LumeTheme.accentFillOf(context).toARGB32(),
+    'tintColor': (widget.activeColor ?? LumeTheme.accentFillOf(context))
+        .toARGB32(),
+    if (widget.inactiveColor case final color?) 'trackColor': color.toARGB32(),
+    if (widget.secondaryTrackValue case final value?) 'bufferedValue': value,
+    if (widget.secondaryTrackColor case final color?)
+      'bufferedColor': color.toARGB32(),
   };
   Future<void> update() async {
     try {
@@ -141,7 +153,10 @@ class NativeSwitchListTile extends StatelessWidget {
   final ListTileControlAffinity controlAffinity;
   @override
   Widget build(BuildContext context) {
-    if (!useNative || !DockNativeGlass.supported) {
+    final native =
+        DockNativeGlass.supported &&
+        (useNative || NativeGlassPreview.enabledOf(context));
+    if (!native) {
       return SwitchListTile.adaptive(
         value: value,
         onChanged: onChanged,
@@ -160,6 +175,7 @@ class NativeSwitchListTile extends StatelessWidget {
     final control = NativeGlassControl(
       kind: 'switch',
       value: value,
+      activeColor: activeTrackColor ?? activeColor,
       onChanged: onChanged == null ? null : (v) => onChanged!(v as bool),
     );
     return ListTile(
@@ -206,13 +222,21 @@ class NativeGlassSlider extends StatelessWidget {
   final SemanticFormatterCallback? semanticFormatterCallback;
   final double? secondaryTrackValue;
   @override
-  Widget build(BuildContext context) => useNative && DockNativeGlass.supported
+  Widget build(BuildContext context) =>
+      DockNativeGlass.supported &&
+          (useNative || NativeGlassPreview.enabledOf(context))
       ? NativeGlassControl(
           kind: 'slider',
           value: value,
           min: min,
           max: max,
           divisions: divisions,
+          activeColor: activeColor ?? SliderTheme.of(context).activeTrackColor,
+          inactiveColor:
+              inactiveColor ?? SliderTheme.of(context).inactiveTrackColor,
+          secondaryTrackValue: secondaryTrackValue,
+          secondaryTrackColor: SliderTheme.of(context)
+              .secondaryActiveTrackColor,
           onChanged: onChanged == null ? null : (v) => onChanged!(v as double),
           onChangeStart: onChangeStart == null
               ? null

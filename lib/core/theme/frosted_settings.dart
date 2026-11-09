@@ -20,6 +20,15 @@ class FrostedSettings extends ChangeNotifier {
   bool get frostedEnabled => _frostedEnabled;
   final Map<String, LiquidGlassStyle> _styles = {};
   bool lightweight = false;
+  bool _nativePreview = false;
+  bool get nativePreview => _nativePreview;
+
+  Future<void> setNativePreview(bool value) {
+    _nativePreview = value;
+    notifyListeners();
+    return save();
+  }
+
   bool _reduceTransparency = false;
   bool get reduceTransparency => _reduceTransparency || lightweight;
   set reduceTransparency(bool value) => _reduceTransparency = value;
@@ -77,6 +86,7 @@ class FrostedSettings extends ChangeNotifier {
     _styles.clear();
     reduceTransparency = false;
     lightweight = false;
+    _nativePreview = false;
     native = const NativeGlassStyle();
     try {
       final base = directory ?? await getApplicationSupportDirectory();
@@ -89,6 +99,7 @@ class FrostedSettings extends ChangeNotifier {
           _frostedEnabled = data['frostedEnabled'] != false;
           reduceTransparency = data['reduceTransparency'] == true;
           lightweight = data['lightweight'] == true;
+          _nativePreview = data['nativePreview'] == true;
           if (data['native'] is Map) {
             native = NativeGlassStyle.fromJson(data['native'] as Map);
           }
@@ -128,6 +139,7 @@ class FrostedSettings extends ChangeNotifier {
       'frostedEnabled': _frostedEnabled,
       'reduceTransparency': _reduceTransparency,
       'lightweight': lightweight,
+      'nativePreview': _nativePreview,
       'native': native.toJson(),
       'styles': {for (final e in _styles.entries) e.key: e.value.toJson()},
     });

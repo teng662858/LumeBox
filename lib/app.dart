@@ -1,5 +1,6 @@
 import 'features/experience/tracking_service.dart';
 import 'shared/widgets/theme_refresh_boundary.dart';
+import 'shared/widgets/native_glass_preview.dart';
 
 import 'package:flutter/material.dart';
 
@@ -131,7 +132,9 @@ class _LumeBoxAppState extends State<LumeBoxApp> {
                 child: AppIconEditingScope(
                   onEdit: editAppIcon,
                   child: AppPrivacyGuard(
-                    child: child ?? const SizedBox.shrink(),
+                    child: NativeGlassPreview(
+                      child: child ?? const SizedBox.shrink(),
+                    ),
                   ),
                 ),
               ),

@@ -43,6 +43,7 @@ import 'app_icon_settings_page.dart';
 import 'cache_settings_page.dart';
 import 'display_settings_group.dart';
 import 'navigation_settings_page.dart';
+import 'liquid_glass_settings_page.dart';
 import 'experience_settings_card.dart';
 import 'novel_settings_page.dart';
 import 'debug_panel_page.dart';
@@ -256,6 +257,12 @@ class SettingsPage extends StatelessWidget {
       title: '原生系统导航',
       subtitle: '顶部与底部透明度、胶囊高度与图标样式',
       onTap: () => _push(context, const NavigationPreferencesPage()),
+    ),
+    SettingsEntryCard(
+      icon: Icons.blur_on_outlined,
+      title: '原生液态玻璃',
+      subtitle: '全局预览、材质风格与染色',
+      onTap: () => _push(context, const LiquidGlassSettingsPage()),
     ),
     SettingsEntryCard(
       icon: Icons.visibility_outlined,

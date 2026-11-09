@@ -6,6 +6,8 @@ import 'frosted_glass_widget.dart';
 
 import 'package:flutter/material.dart';
 
+import 'native_glass_preview.dart';
+
 import '../../core/theme/lume_theme.dart';
 import '../../core/theme/floating_modules.dart';
 import '../../features/shell/shell_dock.dart';
@@ -156,6 +158,10 @@ class GlassPanel extends StatelessWidget {
         offset: Offset.zero,
         child: FrostedGlassWidget(
           translucentOverlay: true,
+          nativeGlass:
+              (module == FloatingModule.navigation ||
+                  ModuleGlassScope.partOf(context) == GlassPart.navigation) &&
+              NativeGlassPreview.enabledOf(context),
           radius: radius,
           neutralTint: true,
           part: switch (module) {

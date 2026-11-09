@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../shared/widgets/video_glass_surface.dart';
 import '../../shared/widgets/frosted_glass_widget.dart';
 import '../../shared/widgets/module_glass_scope.dart';
+import '../../shared/widgets/native_glass_preview.dart';
 
 /// Legacy controls keep their saved switch; popup panels always share the
 /// surrounding video glass and never stack a second filter over it.
@@ -19,7 +20,8 @@ class PlaybackGlass extends StatelessWidget {
   final Widget child;
   @override
   Widget build(BuildContext context) =>
-      enabled && !VideoGlassScope.active(context)
+      (enabled || NativeGlassPreview.enabledOf(context)) &&
+          !VideoGlassScope.active(context)
       ? ModuleGlassScope(
           module: GlassModule.video,
           part: GlassPart.panels,

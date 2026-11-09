@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' as material;
 
 import '../../features/shell/dock_native_glass.dart';
 import 'frosted_glass_widget.dart';
+import 'native_glass_preview.dart';
 
 Widget nativeDialogSurface(BuildContext context, Widget child) {
   if (!DockNativeGlass.supported || child is! AlertDialog) return child;
@@ -67,7 +68,7 @@ Future<T?> showGlassDialog<T>({
   context: context,
   builder: (dialogContext) => (videoGlass ?? VideoGlassScope.active(context))
       ? videoGlassDialogSurface(dialogContext, builder(dialogContext))
-      : nativeGlass
+      : nativeGlass || NativeGlassPreview.enabledOf(dialogContext)
       ? nativeDialogSurface(dialogContext, builder(dialogContext))
       : builder(dialogContext),
   barrierDismissible: barrierDismissible,
@@ -107,38 +108,43 @@ Future<T?> showGlassModalBottomSheet<T>({
   Offset? anchorPoint,
   AnimationStyle? sheetAnimationStyle,
   bool? requestFocus,
-}) => material.showModalBottomSheet<T>(
-  context: context,
-  builder: (sheetContext) => (videoGlass ?? VideoGlassScope.active(context))
-      ? VideoGlassSurface(child: builder(sheetContext))
-      : nativeGlass && DockNativeGlass.supported
-      ? FrostedGlassWidget(
-          nativeGlass: true,
-          radius: 28,
-          child: builder(sheetContext),
-        )
-      : builder(sheetContext),
-  backgroundColor:
-      (videoGlass ?? VideoGlassScope.active(context)) ||
-          (nativeGlass && DockNativeGlass.supported)
-      ? Colors.transparent
-      : backgroundColor,
-  barrierLabel: barrierLabel,
-  elevation: elevation,
-  shape: shape,
-  clipBehavior: clipBehavior,
-  constraints: constraints,
-  barrierColor: barrierColor,
-  isScrollControlled: isScrollControlled,
-  scrollControlDisabledMaxHeightRatio: scrollControlDisabledMaxHeightRatio,
-  useRootNavigator: useRootNavigator,
-  isDismissible: isDismissible,
-  enableDrag: enableDrag,
-  showDragHandle: showDragHandle,
-  useSafeArea: useSafeArea,
-  routeSettings: routeSettings,
-  transitionAnimationController: transitionAnimationController,
-  anchorPoint: anchorPoint,
-  sheetAnimationStyle: sheetAnimationStyle,
-  requestFocus: requestFocus,
-);
+}) {
+  final useVideoGlass = videoGlass ?? VideoGlassScope.active(context);
+  final useNativeGlass =
+      DockNativeGlass.supported &&
+      (nativeGlass ||
+          (!isScrollControlled && NativeGlassPreview.enabledOf(context)));
+  return material.showModalBottomSheet<T>(
+    context: context,
+    builder: (sheetContext) => useVideoGlass
+        ? VideoGlassSurface(child: builder(sheetContext))
+        : useNativeGlass
+        ? FrostedGlassWidget(
+            nativeGlass: true,
+            radius: 28,
+            child: builder(sheetContext),
+          )
+        : builder(sheetContext),
+    backgroundColor: useVideoGlass || useNativeGlass
+        ? Colors.transparent
+        : backgroundColor,
+    barrierLabel: barrierLabel,
+    elevation: elevation,
+    shape: shape,
+    clipBehavior: clipBehavior,
+    constraints: constraints,
+    barrierColor: barrierColor,
+    isScrollControlled: isScrollControlled,
+    scrollControlDisabledMaxHeightRatio: scrollControlDisabledMaxHeightRatio,
+    useRootNavigator: useRootNavigator,
+    isDismissible: isDismissible,
+    enableDrag: enableDrag,
+    showDragHandle: showDragHandle,
+    useSafeArea: useSafeArea,
+    routeSettings: routeSettings,
+    transitionAnimationController: transitionAnimationController,
+    anchorPoint: anchorPoint,
+    sheetAnimationStyle: sheetAnimationStyle,
+    requestFocus: requestFocus,
+  );
+}

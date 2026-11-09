@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../core/theme/frosted_settings.dart';
+import 'frosted_glass_widget.dart';
+import 'native_glass_preview.dart';
 
 /// One neutral glass material for video capsules, menus and modal panels.
 /// Only the background is filtered; foreground widgets keep full opacity.
@@ -35,6 +37,7 @@ class VideoGlassSurface extends StatelessWidget {
         MediaQuery.highContrastOf(context) ||
         MediaQuery.of(context).accessibleNavigation ||
         FrostedSettings.instance.reduceTransparency;
+    final native = !reduced && NativeGlassPreview.enabledOf(context);
     final scheme = ColorScheme.fromSeed(
       seedColor: inherited.colorScheme.primary,
       brightness: dark ? Brightness.dark : Brightness.light,
@@ -97,7 +100,15 @@ class VideoGlassSurface extends StatelessWidget {
         alpha: reduced ? .97 : materialOpacity,
       ),
     );
-    if (!reduced) {
+    if (native) {
+      background = FrostedGlassWidget(
+        radius: radius,
+        nativeGlass: true,
+        neutralTint: true,
+        materialOpacity: materialOpacity,
+        child: const SizedBox.expand(),
+      );
+    } else if (!reduced) {
       background = BackdropFilter(
         filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: background,
@@ -109,27 +120,28 @@ class VideoGlassSurface extends StatelessWidget {
         fit: StackFit.passthrough,
         children: [
           Positioned.fill(child: background),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(radius),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: .45),
-                    width: .7,
-                  ),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white.withValues(alpha: .12),
-                      Colors.transparent,
-                    ],
+          if (!native)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(radius),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: .45),
+                      width: .7,
+                    ),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withValues(alpha: .12),
+                        Colors.transparent,
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
           VideoGlassScope(
             child: Theme(
               data: theme,

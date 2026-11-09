@@ -5180,60 +5180,64 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           horizontal: VideoPlayerPage.controlHorizontalPadding,
           vertical: 2,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _PlayerClock(showBattery: !_panelOpen),
-            const SizedBox(height: 2),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _topIcon(
-                  icon: Icons.arrow_back_ios_new,
-                  tooltip: '退出全屏',
-                  onPressed: () => _setFullscreen(false),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: LumeTypography.titleSize,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFFF8F8F8),
-                          shadows: _controlShadows,
-                        ),
-                      ),
-                      if (_player == null)
-                        caption(PlayerStats.empty)
-                      else
-                        ValueListenableBuilder<PlayerStats>(
-                          valueListenable: _player!.stats,
-                          builder: (context, stats, _) => caption(stats),
-                        ),
-                    ],
+        child: PlaybackGlass(
+          enabled: false,
+          dark: true,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _PlayerClock(showBattery: !_panelOpen),
+              const SizedBox(height: 2),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _topIcon(
+                    icon: Icons.arrow_back_ios_new,
+                    tooltip: '退出全屏',
+                    onPressed: () => _setFullscreen(false),
                   ),
-                ),
-                const SizedBox(width: 4),
-                if (!narrow) _buildPipButton(),
-                _kernelControl(
-                  (open) => _kernelNameButton(open, overlay: true),
-                ),
-                _topIcon(
-                  matchControlBox: true,
-                  icon: Icons.more_horiz,
-                  tooltip: '播放器设置',
-                  onPressed: _openSettings,
-                ),
-              ],
-            ),
-          ],
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: LumeTypography.titleSize,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFF8F8F8),
+                            shadows: _controlShadows,
+                          ),
+                        ),
+                        if (_player == null)
+                          caption(PlayerStats.empty)
+                        else
+                          ValueListenableBuilder<PlayerStats>(
+                            valueListenable: _player!.stats,
+                            builder: (context, stats, _) => caption(stats),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  if (!narrow) _buildPipButton(),
+                  _kernelControl(
+                    (open) => _kernelNameButton(open, overlay: true),
+                  ),
+                  _topIcon(
+                    matchControlBox: true,
+                    icon: Icons.more_horiz,
+                    tooltip: '播放器设置',
+                    onPressed: _openSettings,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       );
     },

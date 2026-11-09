@@ -53,6 +53,7 @@ void main() {
               min: 0,
               max: 100,
               divisions: 10,
+              secondaryTrackValue: 90,
               onChanged: changes.add,
               onChangeEnd: (_) => ends++,
             ),
@@ -63,6 +64,7 @@ void main() {
     await tester.pumpWidget(scene(20));
     await tester.pumpAndSettle();
     expect(creations.map((m) => m['control']), ['switch', 'slider']);
+    expect(creations.last['bufferedValue'], 90);
     expect(creations.map((m) => m['tintColor']), everyElement(0xFFFF2D55));
     Future<void> emit(Map control, String name, Object value) async {
       await messenger.handlePlatformMessage(

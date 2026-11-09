@@ -346,6 +346,7 @@ void main() {
     ('阅读与播放', '漫画设置'),
     ('阅读与播放', '播放器设置'),
     ('阅读与播放', '弹幕服务'),
+    ('导航与首页', '原生液态玻璃'),
     ('存储与安全', '预载与清理'),
     ('存储与安全', '缓存管理'),
     ('诊断与关于', '运行日志'),
@@ -387,6 +388,12 @@ void main() {
       await tester.tap(find.text(path.$2));
       await pumpIoAndSettle(tester);
       expect(observer.depth, 3);
+      if (path.$2 == '原生液态玻璃') {
+        expect(
+          find.byKey(const ValueKey('native-glass-preview')),
+          findsOneWidget,
+        );
+      }
       if (path.$2 == '漫画设置') {
         for (final tab in ['images', 'translation', 'reading']) {
           await tester.ensureVisible(find.byKey(ValueKey('settings-tab-$tab')));

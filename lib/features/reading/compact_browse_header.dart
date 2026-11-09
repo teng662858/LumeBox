@@ -9,6 +9,8 @@ import '../../core/reading/browse_layout.dart';
 import '../../core/shell/shell_settings.dart';
 import '../../core/theme/floating_modules.dart';
 import '../../shared/widgets/drawer_geometry.dart';
+import '../../shared/widgets/frosted_glass_widget.dart';
+import '../../shared/widgets/native_glass_preview.dart';
 import '../../shared/widgets/lume_icon.dart';
 import '../shell/shell_dock.dart';
 import 'browse_layout_button.dart';
@@ -28,33 +30,38 @@ class CompactBrowseHeader extends StatelessWidget {
   final ValueChanged<BrowseLayoutMode> onLayoutChanged;
 
   @override
-  Widget build(BuildContext context) => DrawerSearchAnchor(
-    child: Row(
-      children: [
-        Expanded(child: source),
-        const SizedBox(width: 4),
-        TextButtonTheme(
-          data: TextButtonThemeData(
-            style: TextButton.styleFrom(
-              fixedSize: const Size(56, 44),
-              minimumSize: const Size(56, 44),
-              maximumSize: const Size(56, 44),
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              foregroundColor: Theme.of(context).colorScheme.onSurface,
-              textStyle: Theme.of(context).textTheme.labelLarge
-                  ?.copyWith(fontWeight: FontWeight.w600, fontSize: 14),
+  Widget build(BuildContext context) {
+    final header = DrawerSearchAnchor(
+      child: Row(
+        children: [
+          Expanded(child: source),
+          const SizedBox(width: 4),
+          TextButtonTheme(
+            data: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                fixedSize: const Size(56, 44),
+                minimumSize: const Size(56, 44),
+                maximumSize: const Size(56, 44),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                foregroundColor: Theme.of(context).colorScheme.onSurface,
+                textStyle: Theme.of(context).textTheme.labelLarge
+                    ?.copyWith(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
             ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: actions),
           ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: actions),
-        ),
-        BrowseLayoutButton(
-          mode: mode,
-          onChanged: onLayoutChanged,
-          quickSwitch: true,
-        ),
-      ],
-    ),
-  );
+          BrowseLayoutButton(
+            mode: mode,
+            onChanged: onLayoutChanged,
+            quickSwitch: true,
+          ),
+        ],
+      ),
+    );
+    return NativeGlassPreview.enabledOf(context)
+        ? FrostedGlassWidget(nativeGlass: true, radius: 16, child: header)
+        : header;
+  }
 }
 
 class BrowseSearchButton extends StatefulWidget {

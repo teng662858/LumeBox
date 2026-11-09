@@ -504,7 +504,7 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                 thumbShape: const _ReaderSliderThumb(),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
               ),
-              child: Slider(
+              child: NativeGlassSlider(
                 key: const Key('comic.pageSlider'),
                 value: _images.isEmpty ? 0 : _page.toDouble(),
                 max: math.max(1, _images.length - 1).toDouble(),
@@ -1471,7 +1471,7 @@ extension _ComicReaderChrome on _ComicReaderPageState {
             ),
           ],
         ),
-        Slider(
+        NativeGlassSlider(
           activeColor: _readerAccent,
           value: value.clamp(min, max),
           min: min,

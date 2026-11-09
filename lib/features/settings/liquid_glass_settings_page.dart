@@ -29,6 +29,15 @@ class LiquidGlassSettingsPage extends StatelessWidget {
                     'iOS 26 及以上使用系统液态玻璃，旧版 iOS 使用系统磨砂材质。模糊、折射和高光由系统自动处理。',
               ),
               SwitchListTile.adaptive(
+                key: const ValueKey('native-glass-preview'),
+                title: const Text('全局原生液态玻璃预览'),
+                subtitle: const Text('预览导航、阅读器工具栏、弹层和播放控件。关闭即可恢复原外观。'),
+                value: settings.nativePreview,
+                onChanged: DockNativeGlass.supported
+                    ? settings.setNativePreview
+                    : null,
+              ),
+              SwitchListTile.adaptive(
                 title: const Text('轻量效果'),
                 subtitle: const Text('使用实色材质，减少实时模糊、折射和叠加效果；保留当前外观参数。'),
                 value: settings.lightweight,
