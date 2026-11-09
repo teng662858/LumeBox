@@ -790,7 +790,6 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
                   title: Text('分块信息'),
                   subtitle: Text('内容块 142 × 142，输入 156 × 156（每侧 7px 镜像边距）'),
                 ),
-                const Divider(height: 24),
                 const ListTile(
                   title: Text('自动超分的额外范围'),
                   subtitle: Text('以下开关只在「自动超分」开启时生效；阅读器正文始终处理'),
@@ -818,7 +817,6 @@ class _SettingsState extends State<ComicImageToolsSettingsPage> {
                   '开启后首次加载会更慢、更热；原图、下载文件与磁盘缓存不会被改写。',
                   padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
                 ),
-                const Divider(height: 24),
                 const ListTile(
                   title: Text('内置模型 · 自动准备'),
                   subtitle: Text(

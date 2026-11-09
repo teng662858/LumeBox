@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
+import 'package:lume_box/features/video/danmaku/danmaku_sources_page.dart';
 import 'package:lume_box/features/video/player_settings_page.dart';
 
 /// 播放器设置页的验证：内核选择（未接入项不可选并给出原因）、倍速档位、
@@ -88,6 +89,42 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  testWidgets('全局弹幕服务铺满页面并可返回弹幕设置', (tester) async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      DanmakuSourcesStore.channel,
+      (_) async => <String, String>{'profilesJson': '[]'},
+    );
+    addTearDown(
+      () =>
+          messenger.setMockMethodCallHandler(DanmakuSourcesStore.channel, null),
+    );
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(top: 59);
+    addTearDown(tester.view.reset);
+    await pumpPage(
+      tester,
+      settings: const PlayerSettings(),
+      catalog: _FakeCatalog({PlayerKernel.avplayer}),
+      onChanged: (_) {},
+      category: 'danmaku',
+    );
+
+    await tester.tap(find.text('弹幕服务'));
+    await tester.pumpAndSettle();
+
+    final header = find.widgetWithText(AppBar, '弹幕源');
+    expect(tester.getTopLeft(header).dy, 0);
+    expect(tester.getTopLeft(find.text('弹幕源')).dy, greaterThan(59));
+    expect(find.byTooltip('添加弹幕源'), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('弹幕服务'), findsOneWidget);
+  });
 
   testWidgets('内核：当前项打勾；未接入项不可选并显示原因', (tester) async {
     PlayerSettings? changed;

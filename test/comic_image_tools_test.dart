@@ -1016,6 +1016,7 @@ void main() {
     ]) {
       expect(find.text(text), findsOneWidget, reason: '缺少「$text」');
     }
+    expect(find.byType(Divider), findsNothing);
     final promptLabel = find.text('上色提示词');
     final promptField = find.ancestor(
       of: promptLabel,

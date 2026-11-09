@@ -129,7 +129,9 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
           title: const Text('弹幕服务'),
           subtitle: const Text('内置本机服务 · 弹弹play 开放平台 · 自定义服务器'),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => showSettingsDetail(context, const DanmakuSourcesPage()),
+          onTap: () => Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(builder: (_) => const DanmakuSourcesPage()),
+          ),
         ),
       ),
     ],
