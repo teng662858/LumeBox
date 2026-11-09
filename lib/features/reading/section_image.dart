@@ -61,6 +61,17 @@ class _SectionImageState extends State<SectionImage> {
   CoverViewportState? _viewport;
   CoverViewportEntry? _viewportEntry;
 
+  /// 换图期间继续显示的**上一帧**。
+  ///
+  /// 直播源的封面地址每轮都会换（地址里带快照时间戳），旧实现一换地址就先把
+  /// 位图还回管线，占位图立刻顶上来——列表每 20 秒集体闪一下，看着像卡了。
+  /// 这里把上一帧多钉一会儿：新图解码完成再归还引用（管线的引用计数会保护
+  /// 它不被 LRU 淘汰），于是换图是「就地替换」而不是「先白一下再出来」。
+  ui.Image? _stale;
+  String? _staleUrl;
+  int? _staleWidth;
+  SectionImagePipeline? _stalePipeline;
+
   /// 自动重试计数（弱网下封面一两次失败就永久占位，用户看到的就是
   /// 「很多封面加载不出来」——失败后自己再试几次，别让人去滑来滑去）。
   int _retries = 0;
@@ -143,11 +154,35 @@ class _SectionImageState extends State<SectionImage> {
       _retryTimer?.cancel();
       _retries = 0;
       _failed = false;
-      _release();
+      // 不立刻释放当前帧：先挂成「上一帧」，新图到了再还（见 [_releaseStale]）。
+      _releaseStale();
+      if (_image != null) {
+        _stale = _image;
+        _staleUrl = _heldUrl;
+        _staleWidth = _heldWidth;
+        _stalePipeline = _heldPipeline;
+        _image = null;
+        _heldUrl = null;
+        _heldWidth = null;
+        _heldPipeline = null;
+      }
       _resolveSeq++;
       _resolving = false;
       _registerViewport(_viewport);
     }
+  }
+
+  /// 归还「上一帧」那次引用（位图由管线决定什么时候真正释放）。
+  void _releaseStale() {
+    final pipeline = _stalePipeline;
+    final url = _staleUrl;
+    if (pipeline != null && url != null) {
+      pipeline.release(url, targetWidth: _staleWidth);
+    }
+    _stale = null;
+    _staleUrl = null;
+    _staleWidth = null;
+    _stalePipeline = null;
   }
 
   @override
@@ -157,6 +192,7 @@ class _SectionImageState extends State<SectionImage> {
     widget.pipeline.verificationRevision.removeListener(_onVerificationChanged);
     _retryTimer?.cancel();
     _retryTimer = null;
+    _releaseStale();
     _release();
     super.dispose();
   }
@@ -276,12 +312,15 @@ class _SectionImageState extends State<SectionImage> {
       _image = image;
       _failed = false;
     });
+    // 新帧已经在屏上，上一帧的引用这时才还。
+    _releaseStale();
     widget.onLoaded?.call();
   }
 
   @override
   Widget build(BuildContext context) {
-    final image = _image;
+    // 换图期间继续显示上一帧：宁可多看半秒旧画面，也别闪成占位图。
+    final image = _image ?? _stale;
     Widget child;
     if (image != null) {
       child = RawImage(
