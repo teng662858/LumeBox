@@ -1,4 +1,4 @@
-// LumeSource: {"id":"cool18_comic","name":"酷18","version":"1.0.2","category":"comic","contentCategory":"adult","contentTypes":["novel","photo","video"],"settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.cool18.com"],"network":"direct","icon":"https://www.cool18.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"酷18（cool18.com）综合成人论坛，本源收 9 个板块：禁忌书屋 / 情色趣闻 / 性趣论坛（文字小说）、性趣贴图 / 情色靓影 / 私房自拍 / 色色动漫 / 卡通漫画（图片）、成人影视（视频，需登录）。所有请求都带 Cookie isok=true 过年龄门。列表来自页面里的 const _PageData 数组（一页 150~260 帖）；排序走 act=hot（热门）/ act=gold（精华）；筛选走栏目搜索 act=threadsearch（keywords）。正文在 div#content-section 的 <pre> 里：文字帖按 <p></p>/<br> 折行，图片帖收集 img src（图床 img.xwbo.com 等，带 Referer）。 2026-11 起 色色动漫 / 成人影视 的帖子也要求登录：打开时用内嵌网页，登录一次即可看。文字板帖子本身没有配图，站方也不给缩略图，所以文字板没有封面；图片板封面由 App 按需读取帖子首图。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点首页","url":"https://www.cool18.com/index.php","description":"站点入口（年龄门点「进入」）"}]}
+// LumeSource: {"id":"cool18_comic","name":"酷18","version":"1.0.3","category":"comic","contentCategory":"adult","contentTypes":["novel","photo","video"],"settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.cool18.com"],"network":"direct","icon":"https://www.cool18.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"酷18（cool18.com）综合成人论坛，本源收 9 个板块：禁忌书屋 / 情色趣闻 / 性趣论坛（文字小说）、性趣贴图 / 情色靓影 / 私房自拍 / 色色动漫 / 卡通漫画（图片）、成人影视（视频，需登录）。年龄门用 ?isok=true 过，不写死 Cookie（否则会顶掉 App 的站点登录会话）。列表来自页面里的 const _PageData 数组（一页 150~260 帖）；排序走 act=hot（热门）/ act=gold（精华）；筛选走栏目搜索 act=threadsearch（keywords）。正文在 div#content-section 的 <pre> 里：文字帖按 <p></p>/<br> 折行，图片帖收集 img src（图床 img.xwbo.com 等，带 Referer）。2026-11 起 色色动漫 / 成人影视 要求账号：请在「站点账号」里登录一次（登录页带人机验证，脚本无法代登），会话会同步给本源；登录后这两个板块直接原生解析，未登录仍退回内嵌网页。文字板帖子本身没有配图，站方也不给缩略图，所以文字板没有封面；图片板封面由 App 按需读取帖子首图。"},{"key":"loginSite","type":"action","action":"openWebsite","title":"登录站点（色色动漫/成人影视）","url":"https://www.cool18.com/pub_page/index.php?action=login","description":"站点登录页带人机验证，请在这里用你自己的账号登录；登录态会按源保存，之后这两个板块能直接看。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点首页","url":"https://www.cool18.com/index.php","description":"站点入口（年龄门点「进入」）"}]}
 // LumeRuntime: javascript
 //
 // 站点：酷18（www.cool18.com），老式论坛 + 年龄门（Cookie isok=true）。
@@ -74,14 +74,22 @@ function headers() {
   return {
     'User-Agent': UA,
     Accept: 'text/html,application/xhtml+xml,*/*;q=0.8',
-    'Accept-Language': 'zh-CN,zh;q=0.9',
-    // 年龄门：不带这个 Cookie 只会拿到 1.3 KB 的提示页
-    Cookie: 'isok=true'
+    'Accept-Language': 'zh-CN,zh;q=0.9'
   };
 }
 
+// 年龄门：站点既认 Cookie isok=true，也认 URL 上的 ?isok=true。
+// 用 URL 参数而不是写死 Cookie，是因为固定 Cookie 会覆盖 App 的站点会话池——
+// 用户在 App 网页里登录酷18 之后，Cookie 会话（含账号登录态）本来就存在池里，
+// 我们再塞一个 `Cookie: isok=true` 就把登录态顶掉了（色色动漫/成人影视永远回登录框）。
+function withIsok(url) {
+  var text = String(url || '');
+  if (/[?&]isok=/i.test(text)) return text;
+  return text + (text.indexOf('?') >= 0 ? '&' : '?') + 'isok=true';
+}
+
 async function fetchHtml(path, referer) {
-  var url = /^https?:\/\//i.test(path) ? path : base() + path;
+  var url = withIsok(/^https?:\/\//i.test(path) ? path : base() + path);
   var h = headers();
   h.Referer = referer || base() + '/index.php';
   var reply = await LumeSource.http.get(url, { headers: h });
@@ -92,7 +100,7 @@ async function fetchHtml(path, referer) {
   if (status !== 200) throw new Error('页面打不开：HTTP ' + status + ' ' + path);
   var body = reply.body ? String(reply.body) : '';
   if (body.length < 2500 && /成人内容验证警示/.test(body)) {
-    throw new Error('酷18 的年龄门没过：Cookie isok=true 没生效');
+    throw new Error('酷18 的年龄门没过：?isok=true 没有生效');
   }
   return body;
 }
@@ -122,7 +130,7 @@ function lazyCover(item) {
   // bbs7 已改成登录可见，封面页拿到的是登录框，拉详情没有意义，不挂封面。
   var photo = /^(bbs|bbs2|bbs6|enter6)$/.test(match[1]);
   if (!photo) return item;
-  item.cover = base() + '/' + match[1] + '/index.php?app=forum&act=threadview&tid=' + match[2];
+  item.cover = withIsok(base() + '/' + match[1] + '/index.php?app=forum&act=threadview&tid=' + match[2]);
   item.coverHeaders = headers();
   item.coverHeaders['x-lume-image-page-selector'] = '#content-section img';
   return item;
@@ -182,6 +190,25 @@ function parseAnchors(html, board) {
     out.push({ id: board + ':' + tid, title: title, cover: '', subtitle: '酷18 · ' + boardOf(board).title, mediaType: mediaTypeOf(boardOf(board)) });
   }
   return out.map(lazyCover);
+}
+
+// 登录后的影视帖可能是 iframe、<video>/<source>、或脚本里内联 m3u8，按顺序取第一个可用地址。
+function videoUrlOf(section, html) {
+  var scope = String(section || '');
+  var iframeRe = /<iframe[^>]+src="([^"]+)"/gi;
+  var hit;
+  while ((hit = iframeRe.exec(scope)) !== null) {
+    var frame = absolute(decodeEntities(hit[1]));
+    if (/^https?:\/\//i.test(frame) && !/ad\.|adv|parkvv|dtscout|doubleclick/i.test(frame)) return frame;
+  }
+  var media = /<(?:video|source)[^>]+src="([^"]+)"/i.exec(scope);
+  if (media) {
+    var src = absolute(decodeEntities(media[1]));
+    if (/^https?:\/\//i.test(src)) return src;
+  }
+  var stream = /(https?:\/\/[^\s"']+\.(?:m3u8|mp4)[^\s"']*)/i.exec(scope) ||
+    /(https?:\/\/[^\s"']+\.m3u8[^\s"']*)/i.exec(String(html || ''));
+  return stream ? decodeEntities(stream[1]) : '';
 }
 
 function contentSection(html) {
@@ -292,7 +319,7 @@ function parseRank(html, board) {
 var LumeSource = {
   id: 'cool18_comic',
   name: '酷18',
-  version: '1.0.2',
+  version: '1.0.3',
   category: 'comic',
   contentCategory: 'adult',
   contentTypes: ['novel', 'photo', 'video'],
@@ -439,11 +466,23 @@ var LumeSource = {
     }
 
     if (board.type === 'video') {
-      var iframe = /<iframe[^>]+src="(https?:\/\/[^"]+)"/i.exec(section);
-      if (iframe && !/ad\.|adv|parkvv|dtscout/i.test(iframe[1])) {
-        return { kind: 'webplayer', url: absolute(iframe[1]), headers: { Referer: pagePath, 'User-Agent': UA } };
+      // 登录后站点才渲染播放器；播放器有 iframe、<video>、或脚本里的 m3u8 三种形态，
+      // 都试一遍，解析不到再退回网页（页面里登录后的播放器仍然可用）。
+      var play = videoUrlOf(section, html);
+      if (play) {
+        return {
+          kind: 'video',
+          url: play,
+          headers: { Referer: base() + pagePath, 'User-Agent': UA }
+        };
       }
-      throw new Error('成人影视板块的播放页要求登录（站点在正文里放的是登录框），登录后才能在 App 里播放');
+      var fallback = absolute(pagePath);
+      return {
+        kind: 'webplayer',
+        url: fallback,
+        pageUrl: fallback,
+        headers: { Referer: base() + '/index.php', 'User-Agent': UA }
+      };
     }
 
     if (board.type === 'photo') {
