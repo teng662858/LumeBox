@@ -207,6 +207,46 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets(
+    'switching back to single-source mode does not persist an empty aggregate scope',
+    (tester) async {
+      SearchScopeSelection? picked;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  picked = await showSearchModeMenu(
+                    context,
+                    current: SearchMode.aggregate,
+                    sources: sources,
+                  );
+                },
+                child: const Text('选源'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('选源'));
+      await tester.pumpAndSettle();
+      final adult = find.byKey(const ValueKey('search-content-adult'));
+      await tester.ensureVisible(adult);
+      await tester.pumpAndSettle();
+      await tester.tap(adult);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('当前源搜索'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('当前源搜索'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('应用'));
+      await tester.pumpAndSettle();
+      expect(picked!.mode, SearchMode.single);
+      expect(picked!.sourceIds, isNull);
+    },
+  );
+
   for (final size in [const Size(320, 568), const Size(844, 390)]) {
     testWidgets(
       'result facets filter locally without rerunning search at $size',

@@ -1,5 +1,4 @@
 import '../cache/source_response_cache.dart';
-import '../cache/media_preload.dart';
 
 import 'dart:convert';
 import 'dart:io';
@@ -49,10 +48,7 @@ class CatDataSource
   final CatService service;
   final CatSite site;
   final String? chapterFlag;
-  Map<String, dynamic>? _home;
-  DateTime? _homeAt;
   String? _homeCategoryId;
-  final _details = <String, Map<String, dynamic>>{};
   final _folders = <String>{};
   bool isFolder(String itemId) => _folders.contains(itemId);
   @override
@@ -64,21 +60,11 @@ class CatDataSource
     'comic' => Section.comic,
     _ => Section.video,
   };
-  Future<Map<String, dynamic>> homeData({bool force = false}) async {
-    if (force ||
-        !MediaPreload.instance.pages ||
-        SourceResponseCache.bypassed ||
-        _homeAt == null ||
-        DateTime.now().difference(_homeAt!).inSeconds >=
-            MediaPreload.instance.pageCacheSeconds) {
-      _home = null;
-    }
-    final cached = _home;
-    if (cached != null) return cached;
-    final result = _home = catPayload(await service.call(site, 'home'));
-    _homeAt = DateTime.now();
-    return result;
-  }
+  Future<Map<String, dynamic>> homeData({bool force = false}) => force
+      ? SourceResponseCache.fresh(
+          () async => catPayload(await service.call(site, 'home')),
+        )
+      : service.call(site, 'home').then(catPayload);
 
   @override
   Future<bool> supportsHome() async => true;
@@ -287,20 +273,13 @@ class CatDataSource
     return itemId;
   }
 
-  Future<Map<String, dynamic>> rawDetail(String itemId) async {
-    if (SourceResponseCache.bypassed) _details.remove(itemId);
-    final result = _details[itemId] ??=
-        catMaps(
-          catPayload(
-            await service.call(site, 'detail', {'id': rawItemId(itemId)}),
-          )['list'],
-        ).firstOrNull ??
-        {};
-    while (_details.length > 64) {
-      _details.remove(_details.keys.first);
-    }
-    return result;
-  }
+  Future<Map<String, dynamic>> rawDetail(String itemId) async =>
+      catMaps(
+        catPayload(
+          await service.call(site, 'detail', {'id': rawItemId(itemId)}),
+        )['list'],
+      ).firstOrNull ??
+      {};
 
   @override
   Future<SourceDetail?> detail(String itemId) async {

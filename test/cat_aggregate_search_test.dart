@@ -6,6 +6,7 @@ import 'package:lume_box/features/reading/section_toolbar.dart';
 class FakeCatService extends CatService {
   FakeCatService() : super.testing();
   final calls = <String>[];
+  String title = '测试作品';
 
   @override
   Future<Map<String, dynamic>> call(
@@ -17,13 +18,27 @@ class FakeCatService extends CatService {
     if (site.key == 'bad') throw StateError('failed');
     return {
       'list': [
-        {'vod_id': '1', 'vod_name': '测试作品'},
+        {'vod_id': '1', 'vod_name': title},
       ],
     };
   }
 }
 
 void main() {
+  test('Cat adapter does not retain a second stale copy of centrally cached metadata', () async {
+    final service = FakeCatService();
+    final source = CatDataSource(
+      service,
+      CatSite(subscriptionId: 's', key: 'site', name: 'site', api: '/site'),
+    );
+    expect((await source.homeData())['list'][0]['vod_name'], '测试作品');
+    expect((await source.rawDetail('1'))['vod_name'], '测试作品');
+    service.title = '刷新结果';
+    expect((await source.homeData())['list'][0]['vod_name'], '刷新结果');
+    expect((await source.rawDetail('1'))['vod_name'], '刷新结果');
+    service.dispose();
+  });
+
   test('猫源聚合跨启用订阅，过滤不可搜索站点并隔离失败', () async {
     final service = FakeCatService();
     CatSite site(String subscription, String key, {bool searchable = true}) =>

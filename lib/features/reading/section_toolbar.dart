@@ -841,8 +841,12 @@ class _SearchModeSheetState extends State<_SearchModeSheet> {
   SearchSourceFilter _filter = const SearchSourceFilter();
   List<SourceDescriptor> get _visible =>
       widget.sources.where(_filter.matches).toList();
-  Set<String> get _effective =>
-      _visible.where((s) => _selected.contains(s.id)).map((s) => s.id).toSet();
+  Set<String> get _effective => _picked == SearchMode.single
+      ? _selected
+      : _visible
+            .where((s) => _selected.contains(s.id))
+            .map((s) => s.id)
+            .toSet();
 
   late final Set<String> _selected = widget.sources
       .where(

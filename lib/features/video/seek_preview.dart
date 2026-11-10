@@ -11,14 +11,16 @@ import '../../core/player/video_preview.dart';
 
 /// A bounded gallery of frames already decoded during normal playback.
 class SeekPreviewFrames {
+  SeekPreviewFrames({DateTime Function()? now}) : _now = now ?? DateTime.now;
+  final DateTime Function() _now;
   final _frames = <int, ui.Image>{};
   Object? _identity;
   bool _busy = false, _disposed = false;
-  int _attempt = -30;
+  DateTime? _sampleAt;
   void reset(Object? identity) {
     if (_identity == identity) return;
     _identity = identity;
-    _attempt = -30;
+    _sampleAt = null;
     for (final frame in _frames.values) {
       frame.dispose();
     }
@@ -26,8 +28,14 @@ class SeekPreviewFrames {
   }
 
   Future<void> sample(VideoFrameCapture engine, int second) async {
-    if (_disposed || _busy || second < _attempt + 30) return;
-    _attempt = second;
+    final now = _now();
+    if (_disposed ||
+        _busy ||
+        (_sampleAt != null &&
+            now.difference(_sampleAt!) < const Duration(seconds: 30))) {
+      return;
+    }
+    _sampleAt = now;
     _busy = true;
     final identity = _identity;
     ui.ImmutableBuffer? buffer;

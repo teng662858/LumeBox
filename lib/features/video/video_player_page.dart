@@ -344,7 +344,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
   final _previews = SeekPreviewFrames();
   final _network = PlaybackNetwork();
-  bool _cellularNoticeShown = false;
+  bool _cellularNoticeShown = false, _preloadAllowed = false;
   int _bufferSeconds = 0;
 
   void _setForwardBufferSeconds(int seconds) {
@@ -1406,7 +1406,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       final allowPreload = _network.allowsPreload(
         MediaPreload.instance.wifiOnly,
       );
-      if (!allowPreload) _nextEpisodeBuffer.cancelPendingPreparation();
+      if (!allowPreload) {
+        if (_preloadAllowed) {
+          _nextEpisodeBuffer.discard();
+        } else {
+          _nextEpisodeBuffer.cancelPendingPreparation();
+        }
+      }
+      _preloadAllowed = allowPreload;
       if (_network.cellular == true && !_cellularNoticeShown) {
         _cellularNoticeShown = true;
         scheduleMicrotask(() {

@@ -97,12 +97,24 @@ class VideoDiskCache extends ChangeNotifier {
       this.capacityMb = capacityMb.clamp(minCapacityMb, maxCapacityMb);
     }
     final settings = _settings;
-    if (settings != null) {
-      await settings.writeAsString(
-        jsonEncode({'enabled': this.enabled, 'capacityMb': this.capacityMb}),
-      );
+    final encoded = jsonEncode({
+      'enabled': this.enabled,
+      'capacityMb': this.capacityMb,
+    });
+    try {
+      await _disk(() async {
+        if (settings != null) {
+          final temp = File('${settings.path}.tmp');
+          await temp.writeAsString(encoded);
+          await temp.rename(settings.path);
+        }
+        await _trim(0);
+      });
+    } on FileSystemException {
+      status = '缓冲设置保存或清理失败，本次参数仅用于当前运行';
+      notifyListeners();
+      return;
     }
-    await _disk(() => _trim(0));
     status = this.enabled ? '磁盘缓冲已启用，下次加载资源生效' : '使用内核内存缓冲';
     notifyListeners();
   }

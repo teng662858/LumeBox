@@ -237,13 +237,18 @@ void main() {
   testWidgets(
     'decoded previews are sampled sparingly, bounded and invalidated per media',
     (tester) async {
-      final frames = SeekPreviewFrames()..reset('one');
+      var now = DateTime(2026);
+      final frames = SeekPreviewFrames(now: () => now)..reset('one');
       final capture = _Capture();
       await tester.runAsync(() => frames.sample(capture, 10));
       await tester.runAsync(() => frames.sample(capture, 11));
       expect(capture.calls, 1);
       expect(frames.nearest(12)?.$1, 10);
       expect(frames.nearest(100), isNull);
+      now = now.add(const Duration(seconds: 31));
+      await tester.runAsync(() => frames.sample(capture, 1));
+      expect(capture.calls, 2, reason: '回拖后仍按真实时间继续采样，不能等到旧播放时间');
+      expect(frames.nearest(1)?.$1, 1);
       frames.reset('two');
       expect(frames.nearest(10), isNull);
       frames.dispose();

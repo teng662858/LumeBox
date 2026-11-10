@@ -139,6 +139,24 @@ void main() {
       expect(await read(), 2);
     }
   });
+  test('an already cancelled page never starts a cache-miss request', () async {
+    final owner = NetworkCancellation()..cancel();
+    var calls = 0;
+    await expectLater(
+      NetworkCancellation.runWith(
+        owner,
+        () => SourceResponseCache.read(
+          cache: cache,
+          section: Section.video,
+          sourceId: 'a',
+          method: 'home',
+          load: () async => ++calls,
+        ),
+      ),
+      throwsA(isA<NetworkCancelled>()),
+    );
+    expect(calls, 0);
+  });
   test('disabled cache does not reuse a previous result', () async {
     var calls = 0;
     Future<int> read() => SourceResponseCache.read(

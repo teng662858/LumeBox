@@ -106,6 +106,30 @@ void main() {
   }
 
   test(
+    'settings filesystem errors are reported without breaking UI actions',
+    () async {
+      await Directory('${root.path}/video_buffer.json.tmp').create();
+      await cache.configure(capacityMb: 777);
+      expect(cache.capacityMb, 777);
+      expect(cache.status, contains('保存或清理失败'));
+    },
+  );
+
+  test(
+    'concurrent settings writes persist the final complete snapshot',
+    () async {
+      await Future.wait([
+        for (var i = 0; i < 20; i++)
+          cache.configure(capacityMb: 700 + i, enabled: i.isEven),
+      ]);
+      final saved = jsonDecode(
+        await File('${root.path}/video_buffer.json').readAsString(),
+      );
+      expect(saved, {'enabled': false, 'capacityMb': 719});
+    },
+  );
+
+  test(
     'capped local ranges stream to EOF without a false end or quality change',
     () async {
       final wrapped = await cache.wrap(PlayerMedia(uri: upstream));

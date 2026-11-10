@@ -46,6 +46,7 @@ abstract final class SourceResponseCache {
     Object? settings,
     required Future<T> Function() load,
   }) async {
+    NetworkCancellation.current?.check();
     if (!MediaPreload.instance.pages || !methods.contains(method)) {
       return load();
     }
