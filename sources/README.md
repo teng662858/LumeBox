@@ -1,3 +1,14 @@
+## 2026-11-11 酷18 版块修复与封面
+
+详见 [源记录](../docs/2026-11-11_酷18版块修复与封面.md)。`comic/cool18.js`（`cool18_comic` v1.0.2）：
+2026-11 起 **色色动漫（bbs7）和成人影视（bbs3）改成登录可见**，正文区只剩 `div.login-container`，
+源里不再抛死错，改为返回 `kind:'webplayer'` 打开帖子页，用户在内嵌网页登录一次即可看；
+图片板遇到广告帖（没有图）退回正文，不再把广告帖当成整块坏掉。列表 `mediaType` 按板块声明
+（文字 novel / 图片 comic / 影视 video）；图片板封面改成懒解析帖子首图（`x-lume-image-page-selector:
+'#content-section img'`，图床 `img.xwbo.com` 200），文字板帖子里本来就没有图，保持占位图。
+同轮给 `comic/crazyhome.js` v1.0.2 补了封面：列表用 tag 页 + `img.wp-post-image` 懒解析，
+详情页直接取站方预览图。
+
 ## 2026-11-10 新增源：狂人之家书屋（crazyhome2000.com）
 
 详见 [源记录](../docs/2026-11-10_新增源-狂人之家书屋.md)。`comic/crazyhome.js`（`crazyhome_novel`）：

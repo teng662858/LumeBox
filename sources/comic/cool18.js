@@ -1,4 +1,4 @@
-// LumeSource: {"id":"cool18_comic","name":"酷18","version":"1.0.1","category":"comic","contentCategory":"adult","contentTypes":["novel","photo","video"],"settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.cool18.com"],"network":"direct","icon":"https://www.cool18.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"酷18（cool18.com）综合成人论坛，本源收 9 个板块：禁忌书屋 / 情色趣闻 / 性趣论坛（文字小说）、性趣贴图 / 情色靓影 / 私房自拍 / 色色动漫 / 卡通漫画（图片）、成人影视（视频，站点要求登录后才给播放页，源里会明确提示）。所有请求都带 Cookie isok=true 过年龄门。列表来自页面里的 const _PageData 数组（一页 150~260 帖）；排序走 act=hot（热门）/ act=gold（精华）；筛选走栏目搜索 act=threadsearch（keywords）。正文在 div#content-section 的 <pre> 里：文字帖按 <p></p>/<br> 折行，图片帖收集 img src（图床 img.xwbo.com 等，带 Referer）。 论坛文字帖可能没有配图；图片帖封面由新版 App 按需读取帖子首图，不阻塞列表。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点首页","url":"https://www.cool18.com/index.php","description":"站点入口（年龄门点「进入」）"}]}
+// LumeSource: {"id":"cool18_comic","name":"酷18","version":"1.0.2","category":"comic","contentCategory":"adult","contentTypes":["novel","photo","video"],"settingsApiVersion":2,"requiresSettings":["settingsActions"],"mirrors":["https://www.cool18.com"],"network":"direct","icon":"https://www.cool18.com/favicon.ico","settings":[{"key":"note","type":"info","title":"站点说明","description":"酷18（cool18.com）综合成人论坛，本源收 9 个板块：禁忌书屋 / 情色趣闻 / 性趣论坛（文字小说）、性趣贴图 / 情色靓影 / 私房自拍 / 色色动漫 / 卡通漫画（图片）、成人影视（视频，需登录）。所有请求都带 Cookie isok=true 过年龄门。列表来自页面里的 const _PageData 数组（一页 150~260 帖）；排序走 act=hot（热门）/ act=gold（精华）；筛选走栏目搜索 act=threadsearch（keywords）。正文在 div#content-section 的 <pre> 里：文字帖按 <p></p>/<br> 折行，图片帖收集 img src（图床 img.xwbo.com 等，带 Referer）。 2026-11 起 色色动漫 / 成人影视 的帖子也要求登录：打开时用内嵌网页，登录一次即可看。文字板帖子本身没有配图，站方也不给缩略图，所以文字板没有封面；图片板封面由 App 按需读取帖子首图。"},{"key":"publishPage","type":"action","action":"openWebsite","title":"打开站点首页","url":"https://www.cool18.com/index.php","description":"站点入口（年龄门点「进入」）"}]}
 // LumeRuntime: javascript
 //
 // 站点：酷18（www.cool18.com），老式论坛 + 年龄门（Cookie isok=true）。
@@ -14,8 +14,10 @@
 //   · 详情    /{板块}/index.php?app=forum&act=threadview&tid={tid}
 //   · 正文    <div class="post-content"><div class="content-section" id="content-section"><pre> … </pre>
 //             文字帖用 <p></p>/<br> 分段；图片帖是 <center><img src="https://img.xwbo.com/…"></center>
-//   · 视频    bbs3 的正文是「需要登录」的提示（.login-container），登录后才给播放器，所以视频板块
-//             源里直接说明需要登录，不假装能播。
+//   · 视频    bbs3 的正文是「需要登录」的提示（.login-container），登录后才给播放器。
+//   · 2026-11-11 复测：bbs7 色色动漫也改成必须登录（正文只剩 .login-container）。
+//             两个板块现在都返回 kind:'webplayer' 打开帖子页，用户在内嵌网页登录一次即可看，
+//             不再直接抛错；图片板里没图的广告帖退回正文，避免整块被判坏。
 
 var BASE_URL = 'https://www.cool18.com';
 var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36';
@@ -103,12 +105,23 @@ function boardOf(id) {
   return BOARDS[0];
 }
 
+// 列表条目按板块声明类型：图片板 → comic（图集阅读器），影视板 → video，
+// 文字板 → novel。以前一律写 novel，图片板的条目会被当成小说打开。
+function mediaTypeOf(board) {
+  if (board && board.type === 'photo') return 'comic';
+  if (board && board.type === 'video') return 'video';
+  return 'novel';
+}
+
 function lazyCover(item) {
   if (!item || item.cover) return item;
   var match = /^([a-z0-9]+):(\d+)$/.exec(item.id);
   if (!match) return item;
-  // Text-only forums have no cover. Never fetch hundreds of text posts for art.
-  if (/^(bbs4|bbs5|bj)$/.test(match[1])) return item;
+  // 文字板（禁忌书屋/情色趣闻/性趣论坛）的帖子没有配图，站方也不提供缩略图，
+  // 拉详情只会得到空封面；图片板用详情页首图做封面（App 按需解析，不拖慢列表）。
+  // bbs7 已改成登录可见，封面页拿到的是登录框，拉详情没有意义，不挂封面。
+  var photo = /^(bbs|bbs2|bbs6|enter6)$/.test(match[1]);
+  if (!photo) return item;
   item.cover = base() + '/' + match[1] + '/index.php?app=forum&act=threadview&tid=' + match[2];
   item.coverHeaders = headers();
   item.coverHeaders['x-lume-image-page-selector'] = '#content-section img';
@@ -141,7 +154,7 @@ function parsePageData(html) {
       title: title,
       cover: '',
       subtitle: meta,
-      mediaType: 'novel'
+      mediaType: mediaTypeOf(boardOf(board || 'bbs4'))
     });
   }
   return out.map(lazyCover);
@@ -166,7 +179,7 @@ function parseAnchors(html, board) {
       .trim();
     if (!title) title = raw;
     seen[tid] = true;
-    out.push({ id: board + ':' + tid, title: title, cover: '', subtitle: '酷18 · ' + board, mediaType: 'novel' });
+    out.push({ id: board + ':' + tid, title: title, cover: '', subtitle: '酷18 · ' + boardOf(board).title, mediaType: mediaTypeOf(boardOf(board)) });
   }
   return out.map(lazyCover);
 }
@@ -248,7 +261,7 @@ function parseSearch(html) {
       title: title,
       cover: '',
       subtitle: parts.length > 0 ? parts[0].replace(/^【|】$/g, '') : board,
-      mediaType: 'novel'
+      mediaType: mediaTypeOf(boardOf(board))
     });
   }
   return out.map(lazyCover);
@@ -271,7 +284,7 @@ function parseRank(html, board) {
     raw = raw.replace(/\s*\(\d+\s*bytes\)[\s\S]*$/i, '').replace(/\s*\(\d+\s*reads?\)\s*$/i, '').trim();
     if (!raw) continue;
     seen[tid] = true;
-    out.push({ id: board + ':' + tid, title: raw, cover: '', subtitle: '酷18 · 热门', mediaType: 'novel' });
+    out.push({ id: board + ':' + tid, title: raw, cover: '', subtitle: '酷18 · 热门', mediaType: mediaTypeOf(boardOf(board)) });
   }
   return out.map(lazyCover);
 }
@@ -279,7 +292,7 @@ function parseRank(html, board) {
 var LumeSource = {
   id: 'cool18_comic',
   name: '酷18',
-  version: '1.0.1',
+  version: '1.0.2',
   category: 'comic',
   contentCategory: 'adult',
   contentTypes: ['novel', 'photo', 'video'],
@@ -308,9 +321,11 @@ var LumeSource = {
   },
 
   async home() {
+    // 首页放两个文字板 + 一个图片板：文字帖没有配图，全是文字板的话首页会一片占位图。
+    var HOME_BOARDS = ['bbs4', 'bbs5', 'bbs2'];
     var boards = [];
-    for (var i = 0; i < 3 && boards.length < 3; i++) {
-      var board = BOARDS[i];
+    for (var i = 0; i < HOME_BOARDS.length && boards.length < 3; i++) {
+      var board = boardOf(HOME_BOARDS[i]);
       var items = parsePageData(await fetchHtml('/' + board.id + '/index.php')).slice(0, 12);
       if (items.length) boards.push({ title: board.title, moreUrl: board.id, items: items });
     }
@@ -346,7 +361,7 @@ var LumeSource = {
           cover: item.cover,
           coverHeaders: item.coverHeaders,
           subtitle: item.subtitle,
-          mediaType: 'novel'
+          mediaType: mediaTypeOf(board)
         };
       });
       if (!ranked.length) throw new Error('排行榜没解析出条目（' + board.title + ' / ' + sort + '）');
@@ -384,7 +399,7 @@ var LumeSource = {
       coverHeaders: headers(),
       subtitle: board.title,
       description: lines.join('\n'),
-      mediaType: board.type === 'photo' ? 'comic' : 'novel'
+      mediaType: mediaTypeOf(board)
     };
   },
 
@@ -409,6 +424,20 @@ var LumeSource = {
     var section = contentSection(html);
     if (!section) throw new Error('这个帖子没有正文区（' + pagePath + '）');
 
+    // 2026-11-11 实测：色色动漫（bbs7）和成人影视（bbs3）的帖子改成必须登录，
+    // 正文区只剩登录框（.login-container）。这里不假装能播，交给网页视图：
+    // 用户在内嵌网页登录一次（会话按源保留），之后帖子内容/播放器都能看。
+    var gated = /login-container/i.test(html) || /请登录社区账户/.test(html);
+    if (gated) {
+      var pageUrl = absolute(pagePath);
+      return {
+        kind: 'webplayer',
+        url: pageUrl,
+        pageUrl: pageUrl,
+        headers: { Referer: base() + '/index.php', 'User-Agent': UA }
+      };
+    }
+
     if (board.type === 'video') {
       var iframe = /<iframe[^>]+src="(https?:\/\/[^"]+)"/i.exec(section);
       if (iframe && !/ad\.|adv|parkvv|dtscout/i.test(iframe[1])) {
@@ -419,7 +448,12 @@ var LumeSource = {
 
     if (board.type === 'photo') {
       var images = imagesOf(section);
-      if (!images.length) throw new Error('这个帖子没解析到图片（' + pagePath + '）');
+      if (!images.length) {
+        // 广告帖/纯文字帖没有图：退回正文，别让整个板块看起来是坏的。
+        var photoText = textOf(section);
+        if (photoText && photoText.length >= 30) return { kind: 'text', text: photoText };
+        throw new Error('这个帖子没解析到图片（' + pagePath + '）');
+      }
       var imageHeaders = {};
       for (var i = 0; i < images.length; i++) {
         imageHeaders[images[i]] = { Referer: pagePath, 'User-Agent': UA };

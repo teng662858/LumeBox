@@ -1,4 +1,4 @@
-// LumeSource: {"id":"crazyhome_novel","name":"狂人之家书屋","version":"1.0.0","category":"comic","contentCategory":"adult","network":"direct","mirrors":["https://www.crazyhome2000.com"],"icon":"https://www.crazyhome2000.com/wp-content/uploads/2025/06/icon.jpg","settingsApiVersion":2,"settings":[{"key":"siteNote","type":"info","title":"站点说明","description":"18+ 成人小说站（狂人之家书屋，WordPress 站）。一本书 = 一个站点标签，一章 = 一篇文章（常见一篇含数章，标题写成 63.22-63.29）。免登录、直连可开；小说章节站方本身不给封面，只有「AI美图共享」图集带封面。正文走站方 REST 接口，段落干净、无广告插入。"}]}
+// LumeSource: {"id":"crazyhome_novel","name":"狂人之家书屋","version":"1.0.2","category":"novel","contentCategory":"adult","network":"direct","mirrors":["https://www.crazyhome2000.com"],"icon":"https://www.crazyhome2000.com/wp-content/uploads/2025/06/icon.jpg","settingsApiVersion":2,"settings":[{"key":"siteNote","type":"info","title":"站点说明","description":"18+ 成人小说站（狂人之家书屋，WordPress 站）。一本书 = 一个站点标签，一章 = 一篇文章（常见一篇含数章，标题写成 63.22-63.29）。免登录、直连可开；小说章节站方本身不给封面，只有「AI美图共享」图集带封面。正文走站方 REST 接口，段落干净、无广告插入。"}],"mediaType":"novel"}
 // LumeRuntime: javascript
 //
 // 站点：狂人之家书屋（www.crazyhome2000.com），WordPress + 阁楼主题的成人文学站。
@@ -122,12 +122,22 @@ function tagIdOf(raw) {
 
 function bookItem(tag) {
   var count = Number(tag.count) || 0;
-  return {
+  var item = {
     id: 't:' + tag.id,
     title: plain(tag.name) || ('书 ' + tag.id),
     subtitle: count ? '共 ' + count + ' 篇' : undefined,
     mediaType: 'novel',
   };
+  // 小说章没有 featured_media，但书的标签页每条都带站方预览图：
+  // 把标签页地址当「懒封面」，App 按需解析第一条 img.wp-post-image，列表不预取。
+  if (tag.link) {
+    item.cover = String(tag.link);
+    item.coverHeaders = {
+      'User-Agent': UA,
+      'x-lume-image-page-selector': 'img.wp-post-image',
+    };
+  }
+  return item;
 }
 
 // 分类/最新列表里一页文章可能来自十几本书，按 tag 去重后翻成书；
@@ -181,7 +191,7 @@ function stripChapterSuffix(title) {
 async function loadTags(ids) {
   var map = {};
   if (!ids.length) return map;
-  var res = await api('/tags?include=' + ids.join(',') + '&per_page=100&_fields=id,name,count');
+  var res = await api('/tags?include=' + ids.join(',') + '&per_page=100&_fields=id,name,count,link');
   var list = res.data && res.data.length ? res.data : [];
   for (var i = 0; i < list.length; i++) map[String(list[i].id)] = list[i];
   return map;
@@ -242,6 +252,30 @@ function contentText(html) {
   return lines.join('\n\n').trim();
 }
 
+// tag 页（书目录页）每条 item 都有站方给的预览图：优先 wp-post-image，其次 item-img-inner 里的 <img>。
+function tagCover(tag) {
+  var link = tag && tag.link ? String(tag.link) : '';
+  if (!link) return '';
+  return fetchHtmlPage(link).then(function (html) {
+    if (!html) return '';
+    var match = /<img[^>]*class="[^"]*wp-post-image[^"]*"[^>]*src="([^"]+)"/i.exec(html) ||
+      /<img[^>]*src="([^"]+)"[^>]*class="[^"]*wp-post-image[^"]*"/i.exec(html);
+    if (!match) {
+      var inner = /<a class="item-img-inner"[^>]*>\s*<img[^>]+src="([^"]+)"/i.exec(html);
+      match = inner;
+    }
+    return match ? decode(match[1]).trim() : '';
+  }).catch(function () { return ''; });
+}
+
+async function fetchHtmlPage(url) {
+  var res = await LumeSource.http.get(url, {
+    headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml', Referer: base() + '/' },
+  });
+  if (res.status !== 200) return '';
+  return String(res.body || '');
+}
+
 function authorOf(html) {
   var match = /作者[:：]\s*([^\s<]{1,40})/.exec(plain(html));
   return match ? match[1].trim() : '';
@@ -253,7 +287,7 @@ var LumeSource = {
   },
 
   async home() {
-    var hot = await api('/tags?orderby=count&order=desc&per_page=12&_fields=id,name,count');
+    var hot = await api('/tags?orderby=count&order=desc&per_page=12&_fields=id,name,count,link');
     var latest = await api('/posts?per_page=24&orderby=date&order=desc&_fields=id,title,tags,featured_media');
 
     var sections = [];
@@ -281,7 +315,7 @@ var LumeSource = {
     if (keyword) {
       var found = await api(
         '/tags?search=' + encodeURIComponent(keyword) +
-        '&orderby=count&order=desc&per_page=24&page=' + page + '&_fields=id,name,count'
+        '&orderby=count&order=desc&per_page=24&page=' + page + '&_fields=id,name,count,link'
       );
       var tagList = found.data && found.data.length ? found.data : [];
       var items = [];
@@ -291,7 +325,7 @@ var LumeSource = {
 
     if (!categoryId || categoryId === 'all') {
       var library = await api(
-        '/tags?orderby=count&order=desc&per_page=24&page=' + page + '&_fields=id,name,count'
+        '/tags?orderby=count&order=desc&per_page=24&page=' + page + '&_fields=id,name,count,link'
       );
       var books = library.data && library.data.length ? library.data : [];
       var libraryItems = [];
@@ -322,7 +356,7 @@ var LumeSource = {
     var tagId = tagIdOf(argument && argument.id);
     if (!tagId) return null;
 
-    var meta = await api('/tags/' + tagId + '?_fields=id,name,count,description');
+    var meta = await api('/tags/' + tagId + '?_fields=id,name,count,slug,link,description');
     if (meta.status === 404 || !meta.data || !meta.data.id) return null;
     var tag = meta.data;
     var count = Number(tag.count) || 0;
@@ -369,6 +403,10 @@ var LumeSource = {
       var mediaMap = await loadMedia([mediaId]);
       if (mediaMap[mediaId]) result.cover = mediaMap[mediaId];
     }
+    // 小说章节没有特色图，但站方模板会给每篇配一张站内预览图（tag 页的
+    // wp-post-image，如 uploads/2026/10/crazyhome2000.com_preview001-15.webp）。
+    // 详情页多取一次 tag 页就能拿到这本书的图，列表不取（一本书一次请求太贵）。
+    if (!result.cover) result.cover = await tagCover(tag);
     return result;
   },
 
