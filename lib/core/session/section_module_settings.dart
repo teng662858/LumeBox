@@ -45,7 +45,7 @@ class SectionModuleSettings {
     this.swipeTurnThresholdPx = defaultSwipeTurnThresholdPx,
     this.longPressMs = defaultLongPressMs,
     this.bufferSeconds = 0,
-    this.bufferMiB = 150,
+    this.bufferMiB = 256,
   });
 
   /// 呼出工具栏（含底部面板）的延后：**这是防误触的那个阈值**，越大越不容易误触。
@@ -188,7 +188,7 @@ class SectionModuleSettings {
         defaultLongPressMs,
       ),
       bufferSeconds: normalizeBufferSeconds(json['bufferSeconds'], 0),
-      bufferMiB: _clampInt(json['bufferMiB'], 32, 512, 150),
+      bufferMiB: _clampInt(json['bufferMiB'], 32, 512, 256),
     );
   }
 

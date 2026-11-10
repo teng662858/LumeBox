@@ -5,6 +5,7 @@ import 'core/session/startup_gate.dart';
 import 'core/media/media_library.dart';
 import 'core/tmdb/tmdb.dart';
 import 'core/cache/media_preload.dart';
+import 'core/player/video_disk_cache.dart';
 import 'core/session/app_preferences.dart';
 import 'core/session/configuration_backup.dart';
 import 'core/search/search_settings.dart';
@@ -82,6 +83,7 @@ void main() {
               StartupTask('搜索', () => SearchSettings.instance.boot()),
               StartupTask('影视资料', () => TmdbSettings.instance.boot()),
               StartupTask('预载缓存', () => MediaPreload.instance.boot()),
+              StartupTask('视频磁盘缓存', () => VideoDiskCache.instance.boot()),
               StartupTask('外观', () => AppearanceController.instance.boot()),
               StartupTask('悬浮模块', () => FloatingModules.instance.boot()),
               StartupTask('玻璃材质', () => FrostedSettings.instance.boot()),

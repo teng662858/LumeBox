@@ -93,8 +93,8 @@ void main() {
     final args = calls.last.arguments as Map<Object?, Object?>;
     expect(
       args['forwardBufferSeconds'],
-      120.0,
-      reason: '默认请求 AVFoundation 预读 120 秒',
+      300.0,
+      reason: '默认请求 AVFoundation 预读 300 秒',
     );
     expect(
       args['minimizeStalling'],
@@ -122,11 +122,11 @@ void main() {
   group('参数对象', () {
     test('默认值：以「尽快出画面」为准', () {
       const config = BufferingConfig.defaults;
-      expect(config.forwardBuffer, const Duration(seconds: 120));
+      expect(config.forwardBuffer, const Duration(seconds: 300));
       expect(config.minimizeStalling, isFalse);
-      expect(config.readAhead, const Duration(seconds: 120));
-      expect(config.maxBufferBytes, 150 * 1024 * 1024);
-      expect(config.maxBackBufferBytes, 16 * 1024 * 1024);
+      expect(config.readAhead, const Duration(seconds: 300));
+      expect(config.maxBufferBytes, 256 * 1024 * 1024);
+      expect(config.maxBackBufferBytes, 32 * 1024 * 1024);
     });
 
     test('MPV 属性映射：属性名与单位固定（libmpv 的公开属性）', () {
@@ -136,10 +136,10 @@ void main() {
         'cache-pause': 'yes',
         'cache-pause-wait': '0.5',
         'demuxer-seekable-cache': 'yes',
-        'cache-secs': '120',
-        'demuxer-readahead-secs': '120',
-        'demuxer-max-bytes': '${150 * 1024 * 1024}',
-        'demuxer-max-back-bytes': '${16 * 1024 * 1024}',
+        'cache-secs': '300',
+        'demuxer-readahead-secs': '300',
+        'demuxer-max-bytes': '${256 * 1024 * 1024}',
+        'demuxer-max-back-bytes': '${32 * 1024 * 1024}',
       });
     });
 
@@ -154,7 +154,7 @@ void main() {
       expect(config.mpvProperties['demuxer-max-back-bytes'], '567');
     });
 
-    test('自动使用120秒预读，长缓冲设置同步到原生与MPV且不增加起播等待', () {
+    test('自动使用300秒预读，长缓冲设置同步到原生与MPV且不增加起播等待', () {
       expect(
         BufferingConfig.forForwardBuffer(Duration.zero),
         BufferingConfig.defaults,
@@ -168,7 +168,7 @@ void main() {
       expect(config.mpvProperties['cache-pause-initial'], 'no');
       expect(config.mpvProperties['cache-secs'], '3600');
       expect(config.mpvProperties['demuxer-readahead-secs'], '3600');
-      expect(config.maxBufferBytes, 150 * 1024 * 1024);
+      expect(config.maxBufferBytes, 256 * 1024 * 1024);
     });
 
     test('相等性与文案：配置可比较（避免重复写属性）', () {

@@ -141,7 +141,7 @@ void main() {
     expect(parsed.controlScale, SectionModuleSettings.maxControlScale);
     expect(parsed.layoutPreset, ModuleLayoutPreset.roomy);
     expect(parsed.animationEnabled, isTrue, reason: '缺项回退默认');
-    expect(parsed.bufferMiB, 150);
+    expect(parsed.bufferMiB, 256);
     final capacity = parsed.copyWith(bufferMiB: 256, bufferSeconds: 3600);
     expect(
       SectionModuleSettings.fromJson(capacity.toJson()).bufferSeconds,

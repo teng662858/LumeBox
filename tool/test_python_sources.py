@@ -41,8 +41,15 @@ def invoke(raw):
         else: STORAGE.pop(key, None); value = True
         return json.dumps({"ok": True, "value": value})
     if request["method"] == "crypto":
-        # Forwarding is tested here; real algorithms use independent Dart KATs.
-        return json.dumps({"ok": False, "error": "crypto fixture intentionally unavailable"})
+        # Independent reference backend; production algorithms have Dart KATs.
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        key, data, iv = (base64.b64decode(payload.get(k, '')) for k in ('key', 'data', 'iv'))
+        mode = {1: lambda: modes.ECB(), 2: lambda: modes.CBC(iv), 6: lambda: modes.CTR(iv)}.get(payload['mode'])
+        if payload['algorithm'] != 'aes' or mode is None:
+            return json.dumps({'ok': False, 'error': 'reference crypto mode unavailable'})
+        cipher = Cipher(algorithms.AES(key), mode())
+        operation = cipher.encryptor() if payload.get('encrypt') else cipher.decryptor()
+        return json.dumps({'ok': True, 'value': base64.b64encode(operation.update(data) + operation.finalize()).decode()})
     if request["method"] == "proxy":
         return json.dumps({"ok": True, "value": "http://127.0.0.1:12345/token/proxy?do=py"})
     url = payload["url"]
@@ -105,6 +112,76 @@ def call(source, action="call", **kwargs):
 
 
 class HostTests(unittest.TestCase):
+    def test_plain_scripts_have_isolated_writable_files_and_cleanup(self):
+        for source_id in ('plain-one', 'plain-two'):
+            self.assertTrue(call(source_id, 'load', script=FIXTURE)['ok'])
+            state = host._contexts[source_id]
+            path = Path(state['entry_module'].__file__)
+            self.assertTrue(path.is_file())
+            self.assertEqual(path.read_text(encoding='utf-8'), FIXTURE)
+            (path.parent / 'device.json').write_text(source_id)
+        self.assertNotEqual(host._contexts['plain-one']['root'], host._contexts['plain-two']['root'])
+        path = Path(host._contexts['plain-one']['root'])
+        call('plain-one', 'dispose')
+        self.assertFalse(path.exists())
+
+    def test_playback_preserves_quality_size_parser_and_source_danmaku(self):
+        source = FIXTURE + '''
+    def playerContent(self, flag, id, vipFlags=None):
+        return {'parse':1, 'url':'https://fixture.invalid/watch', 'playUrl':'https://parser.invalid/?url=',
+            'header':{'Referer':'https://fixture.invalid/'}, 'width':1920, 'height':1080,
+            'qualities':[{'label':'1080p','url':'https://fixture.invalid/1080.mp4'}],
+            'danmaku':'<i><d p="1.25,5,25,16711680,0,0">原生弹幕</d></i>'}
+'''
+        self.assertTrue(call('py-media', 'load', script=source)['ok'])
+        argument = {'id':'py:one', 'chapterId':json.dumps({'flag':'高清','id':'token1'})}
+        value = call('py-media', method='content', argument=argument)['value']
+        self.assertEqual(value['qualities'][0]['label'], '1080p')
+        self.assertEqual((value['width'],value['height']), (1920,1080))
+        self.assertEqual(value['pageUrl'], 'https://parser.invalid/?url=https://fixture.invalid/watch')
+        comments = call('py-media', method='danmaku', argument=argument)['value']
+        self.assertEqual(comments[0], {'timeSeconds':1.25,'text':'原生弹幕','mode':'5','fontSize':25.,'color':16711680})
+        self.assertEqual(call('py-media', method='danmaku', argument=dict(argument, chapterId='other'))['value'], [])
+
+    def test_large_legacy_proxy_is_sliced_before_crossing_the_native_bridge(self):
+        source = FIXTURE + '''
+    def localProxy(self, params):
+        assert params.get('__range') == params['headers'].get('Range')
+        return [200, 'video/mp4', b'x' * (7 * 1024 * 1024)]
+'''
+        self.assertTrue(call('large-proxy', 'load', script=source)['ok'])
+        value = call('large-proxy', 'proxy', headers={'Range':'bytes=1048576-1048591'})['value']
+        self.assertEqual(value['status'], 206)
+        self.assertEqual(base64.b64decode(value['body']), b'x' * 16)
+        self.assertEqual(value['headers']['Content-Range'], 'bytes 1048576-1048591/7340032')
+        head = call('large-proxy', 'proxy', method='HEAD')['value']
+        self.assertEqual(head['headers']['Content-Length'], '7340032')
+        self.assertEqual(head['body'], '')
+
+    def test_spider_ctr_accepts_byte_counter_and_danmaku_json(self):
+        source = FIXTURE + '''
+from Crypto.Cipher import AES
+counter = bytes(range(16))
+cipher = AES.new(b'k'*16, AES.MODE_CTR, nonce=b'', initial_value=counter)
+assert cipher.iv == counter
+'''
+        self.assertTrue(call('byte-counter', 'load', script=source)['ok'])
+        value = host._danmaku({'comments':[{'p':'2.5,1,16777215,user','m':'JSON弹幕'}]})
+        self.assertEqual(value[0]['timeSeconds'], 2.5)
+        self.assertEqual(host._danmaku('http://127.0.0.1:9978/proxy?do=appdanmu'), [])
+
+    def test_unresolved_play_tokens_fail_before_loading_but_quality_only_is_valid(self):
+        argument = {'id':'py:one', 'chapterId':json.dumps({'flag':'line','id':'token'})}
+        for url in ('http://', 'encoded-play-token'):
+            script = FIXTURE + '\n    def playerContent(self, flag, id, vipFlags=None): return ' + repr({'url':url})
+            self.assertTrue(call('unresolved', 'load', script=script)['ok'])
+            value = call('unresolved', method='content', argument=argument)
+            self.assertFalse(value['ok'])
+            self.assertIn('未返回可播放地址', value['error']['message'])
+        script = FIXTURE + "\n    def playerContent(self, flag, id, vipFlags=None): return {'levels':[{'label':'4K','url':'https://fixture.invalid/4k.mp4'}]}"
+        self.assertTrue(call('quality-only', 'load', script=script)['ok'])
+        self.assertEqual(call('quality-only', method='content', argument=argument)['value']['url'], 'https://fixture.invalid/4k.mp4')
+
     def test_spider_can_call_parent_init(self):
         source = FIXTURE.replace('def init(self, extend): self.initialized = extend', 'def init(self, extend):\n        super().init(extend)\n        self.initialized = extend')
         self.assertTrue(call('parent-init', 'load', script=source)['ok'])

@@ -455,7 +455,7 @@ class SettingsPage extends StatelessWidget {
     SettingsEntryCard(
       icon: Icons.downloading_outlined,
       title: '预载与清理',
-      subtitle: '视频 / 图片 / 音频预载与自动清理策略',
+      subtitle: '视频磁盘缓冲、下一集预载与清理策略',
       onTap: () => _push(context, const PreloadSettingsPage()),
     ),
     SettingsEntryCard(

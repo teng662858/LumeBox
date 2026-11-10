@@ -8,6 +8,10 @@ final class NativeExperienceController {
     let channel = FlutterMethodChannel(name: "lumebox/experience", binaryMessenger: messenger)
     channel.setMethodCallHandler { call, result in
       switch call.method {
+      case "freeDiskBytes":
+        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        result(values?.volumeAvailableCapacityForImportantUsage)
       case "networkAndStorage":
         let monitor = NWPathMonitor()
         let queue = DispatchQueue(label: "lumebox.offline-policy")

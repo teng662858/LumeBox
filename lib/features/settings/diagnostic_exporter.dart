@@ -111,6 +111,8 @@ class DiagnosticExporter {
         'comic_image_tools.json',
         'speech_cloud.json',
         'tmdb_settings.json',
+        'media_preload.json',
+        'video_buffer.json',
         'network_settings.json',
         'floating_modules.json',
         'performance_last.json',

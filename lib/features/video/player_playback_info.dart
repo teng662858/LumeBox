@@ -1,4 +1,5 @@
 import '../../core/player/playback_health.dart';
+import '../../core/player/video_disk_cache.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,10 +22,12 @@ class PlayerPlaybackInfo extends StatelessWidget {
     required this.snapshot,
     this.onCopied,
     this.operation,
+    this.nextEpisodeStatus,
   });
 
   final Uri address;
   final String? operation;
+  final String Function()? nextEpisodeStatus;
   final String source, quality, kernel;
   final Future<String?> line;
   final ValueListenable<PlayerStats> stats;
@@ -35,7 +38,7 @@ class PlayerPlaybackInfo extends StatelessWidget {
   Widget build(BuildContext context) => FutureBuilder<String?>(
     future: line,
     builder: (context, route) => ListenableBuilder(
-      listenable: Listenable.merge([stats, snapshot]),
+      listenable: Listenable.merge([stats, snapshot, VideoDiskCache.instance]),
       builder: (context, _) {
         final value = stats.value;
         final state = snapshot.value;
@@ -47,6 +50,16 @@ class PlayerPlaybackInfo extends StatelessWidget {
               : route.data ?? '未提供',
           '画质': quality,
           '实际内核': kernel,
+          '播放缓存': VideoDiskCache.instance.status,
+          '磁盘占用':
+              '${(VideoDiskCache.instance.bytes / 1048576).toStringAsFixed(1)} / ${VideoDiskCache.instance.capacityMb} MiB',
+          '缓存命中': '${VideoDiskCache.instance.hits} 次',
+          '缓存层读取量':
+              '${(VideoDiskCache.instance.downloadedBytes / 1048576).toStringAsFixed(1)} MiB（本次运行，含预载）',
+          if (VideoDiskCache.instance.enabled) '速率口径': '缓存代理下的内核输入速率包含磁盘命中数据',
+          if (nextEpisodeStatus != null) '下一集预载': nextEpisodeStatus!(),
+          '媒体码率':
+              '${(value.videoBitrateKbps ?? 0) + (value.audioBitrateKbps ?? 0)} kbps',
           '分辨率': value.resolutionText ?? '未提供',
           '状态': state.error != null
               ? '播放错误'

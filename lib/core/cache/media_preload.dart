@@ -11,7 +11,7 @@ import 'package:path_provider/path_provider.dart';
 class MediaPreload extends ChangeNotifier {
   static final instance = MediaPreload();
   bool video = true, images = true, audio = true;
-  int triggerSeconds = 30, bufferSeconds = 5, capacityMb = 64;
+  int triggerSeconds = 30, bufferSeconds = 15, capacityMb = 128;
   int generation = 0;
   bool clearing = false;
   Directory? _root;
@@ -50,8 +50,8 @@ class MediaPreload extends ChangeNotifier {
         images = data['images'] != false;
         audio = data['audio'] != false;
         triggerSeconds = _integer(data['triggerSeconds'], 30, 10, 120);
-        bufferSeconds = _integer(data['bufferSeconds'], 5, 3, 60);
-        capacityMb = _integer(data['capacityMb'], 64, 16, 256);
+        bufferSeconds = _integer(data['bufferSeconds'], 15, 3, 60);
+        capacityMb = _integer(data['capacityMb'], 128, 16, 256);
       }
     } catch (_) {
       /* Invalid settings retain bounded defaults. */

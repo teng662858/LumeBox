@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show mapEquals;
 
 import '../util/lume_log.dart';
 import 'abstract_player.dart';
+import 'video_disk_cache.dart';
 import 'player_factory.dart';
 import 'player_settings.dart';
 import 'player_stats.dart';
@@ -244,7 +245,9 @@ class PlayerPrelaunch {
       try {
         await (() async {
           if (settings != null) await player.applySettings(settings);
-          await player.load(requestMedia ?? media);
+          await player.load(
+            await VideoDiskCache.instance.wrap(requestMedia ?? media),
+          );
           await player.pause();
         })().timeout(timeout);
         _preparedMedia = media;

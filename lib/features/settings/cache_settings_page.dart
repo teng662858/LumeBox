@@ -4,6 +4,8 @@ import 'package:lume_box/shared/widgets/lume_icon.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/cache/section_memory_cache.dart';
+import '../../core/player/video_disk_cache.dart';
+import 'preload_settings_page.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
@@ -164,7 +166,10 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
           onPressed: _reload,
         ),
       ],
-      child: _buildBody(),
+      child: ListenableBuilder(
+        listenable: VideoDiskCache.instance,
+        builder: (_, _) => _buildBody(),
+      ),
     );
   }
 
@@ -176,7 +181,10 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
     if (stats == null) {
       return const SourceStateView(state: SourceStateKind.loading);
     }
-    final totalCache = stats.fold<int>(0, (sum, item) => sum + item.cacheBytes);
+    final totalCache = stats.fold<int>(
+      VideoDiskCache.instance.bytes,
+      (sum, item) => sum + item.cacheBytes,
+    );
     final totalSaved = stats.fold<int>(0, (sum, item) => sum + item.savedBytes);
     return ListView(
       padding: GlassScaffold.barInset(context).add(const EdgeInsets.all(16)),
@@ -192,6 +200,19 @@ class _CacheSettingsPageState extends State<CacheSettingsPage> {
           ),
         ),
         const SizedBox(height: 12),
+        ListTile(
+          leading: const Icon(Icons.video_file_outlined),
+          title: const Text('视频磁盘缓冲'),
+          subtitle: Text(
+            '${_formatBytes(VideoDiskCache.instance.bytes)} · ${VideoDiskCache.instance.status}',
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const PreloadSettingsPage(),
+            ),
+          ),
+        ),
         for (final item in stats) ...<Widget>[
           _CacheTile(
             stats: item,

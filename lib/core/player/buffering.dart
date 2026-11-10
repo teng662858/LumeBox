@@ -24,15 +24,15 @@ import '../util/lume_log.dart';
 @immutable
 class BufferingConfig {
   const BufferingConfig({
-    this.forwardBuffer = const Duration(seconds: 120),
+    this.forwardBuffer = const Duration(seconds: 300),
     this.minimizeStalling = false,
-    this.readAhead = const Duration(seconds: 120),
-    this.maxBufferBytes = 150 * 1024 * 1024,
-    this.maxBackBufferBytes = 16 * 1024 * 1024,
+    this.readAhead = const Duration(seconds: 300),
+    this.maxBufferBytes = 256 * 1024 * 1024,
+    this.maxBackBufferBytes = 32 * 1024 * 1024,
     this.seekTolerance = Duration.zero,
   });
 
-  /// 默认预读 120 秒，前向缓存最多 150 MiB，回退缓存 16 MiB。
+  /// 默认预读 300 秒，前向缓存最多 256 MiB，回退缓存 32 MiB。
   /// 扩大播放中的预读空间，同时保持 minimizeStalling = false，
   /// 不为了填满前向缓存推迟起播。原生内核仍可按媒体与网络调整实际预读量。
   static const BufferingConfig defaults = BufferingConfig();
@@ -46,13 +46,13 @@ class BufferingConfig {
   /// - MPV：`cache-secs` 与 `demuxer-readahead-secs`（[readAhead]）；
   /// - MDK：`setBufferRange`；Aether：约 4 秒一段的前向分段队列。
   ///
-  /// [forwardBuffer] 为 0 / 负 = 使用默认的 120 秒预读策略。
+  /// [forwardBuffer] 为 0 / 负 = 使用默认的 300 秒预读策略。
   /// **[minimizeStalling] 永远保持 false**：它是「不为了填缓冲而推迟起播」的
   /// 底线（见 [defaults] 的说明），前向缓冲只决定播放中预读多少，不许变成
   /// 起播前的一次等待。
   factory BufferingConfig.forForwardBuffer(
     Duration forwardBuffer, {
-    int maxBufferBytes = 150 * 1024 * 1024,
+    int maxBufferBytes = 256 * 1024 * 1024,
   }) {
     if (forwardBuffer <= Duration.zero) forwardBuffer = defaults.forwardBuffer;
     return BufferingConfig(

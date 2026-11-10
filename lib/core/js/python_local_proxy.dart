@@ -78,7 +78,16 @@ class PythonLocalProxy {
       if (body.length > 6 * 1024 * 1024) {
         throw const FormatException('本地代理响应过大');
       }
-      request.response.contentLength = body.length;
+      final declaredLength = (value['headers'] as Map? ?? {}).entries
+          .where((e) => '${e.key}'.toLowerCase() == 'content-length')
+          .map((e) => int.tryParse('${e.value}'))
+          .firstOrNull;
+      request.response.contentLength =
+          request.method == 'HEAD' &&
+              declaredLength != null &&
+              declaredLength >= 0
+          ? declaredLength
+          : body.length;
       if (request.method != 'HEAD') request.response.add(body);
     } catch (_) {
       // Scripts can return URLs/tokens in exceptions; keep the HTTP error plain.

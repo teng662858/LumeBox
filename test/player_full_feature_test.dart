@@ -978,7 +978,7 @@ void main() {
       );
     });
 
-    testWidgets('两套按钮样式立即切换，不重建播放器，暂停后也在三秒淡出', (tester) async {
+    testWidgets('两套按钮样式立即切换，不重建播放器，暂停后也在五秒淡出', (tester) async {
       final players = await pump(tester);
       await tester.tap(find.byTooltip('全屏'));
       await tester.pumpAndSettle();
@@ -1012,7 +1012,7 @@ void main() {
       expect(players.length, 1);
       await tester.tap(find.byTooltip('暂停'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 2900));
+      await tester.pump(const Duration(milliseconds: 4900));
       expect(find.byTooltip('播放'), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 150));
       await tester.pumpAndSettle();

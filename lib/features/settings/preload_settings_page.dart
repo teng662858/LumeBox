@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/audio_book/audio_book_player.dart';
 import '../../core/cache/media_preload.dart';
+import '../../core/player/video_disk_cache.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source_favicon.dart';
@@ -88,15 +89,67 @@ class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
     effectModule: GlassModule.settings,
     title: '预载与清理',
     child: ListenableBuilder(
-      listenable: policy,
+      listenable: Listenable.merge([policy, VideoDiskCache.instance]),
       builder: (context, _) => ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
           SettingsGroupCard(
             children: [
               SwitchListTile(
+                title: const Text('视频磁盘缓冲'),
+                subtitle: const Text(
+                  '提前读取的视频写入手机存储；空间不足时回退内核内存缓冲。切换后重新加载视频生效。',
+                ),
+                value: VideoDiskCache.instance.enabled,
+                onChanged: busy
+                    ? null
+                    : (v) async {
+                        await VideoDiskCache.instance.configure(enabled: v);
+                      },
+              ),
+              ListTile(
+                title: const Text('视频磁盘容量上限'),
+                trailing: DropdownButton<int>(
+                  value: VideoDiskCache.instance.capacityMb,
+                  items: [
+                    for (final mb in VideoDiskCache.capacities)
+                      DropdownMenuItem(
+                        value: mb,
+                        child: Text(mb < 1024 ? '$mb MB' : '${mb ~/ 1024} GB'),
+                      ),
+                  ],
+                  onChanged: busy
+                      ? null
+                      : (v) async {
+                          await VideoDiskCache.instance.configure(
+                            capacityMb: v,
+                          );
+                        },
+                ),
+              ),
+              ListTile(
+                title: const Text('清理视频磁盘缓冲'),
+                subtitle: Text(
+                  '${(VideoDiskCache.instance.bytes / 1048576).toStringAsFixed(1)} MiB · ${VideoDiskCache.instance.status}',
+                ),
+                trailing: const Icon(Icons.cleaning_services_outlined),
+                onTap: busy
+                    ? null
+                    : () => clean('清理视频磁盘缓冲', '只清理临时播放数据；不会删除离线下载、收藏或进度。', () async {
+                        final bytes = await VideoDiskCache.instance.clear();
+                        return '已释放 ${(bytes / 1048576).toStringAsFixed(1)} MiB';
+                      }),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SettingsGroupCard(
+            children: [
+              SwitchListTile(
                 title: const Text('视频下一集预载'),
-                subtitle: const Text('当前播放稳定后准备下一集，临近片尾刷新较旧的预载'),
+                subtitle: const Text(
+                  '播放到 85% 或片尾前指定秒数时准备下一集；当前集保有 15 秒缓冲或片尾已全部缓冲才开始',
+                ),
                 value: policy.video,
                 onChanged: busy ? null : (v) => policy.update(video: v),
               ),

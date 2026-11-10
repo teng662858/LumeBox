@@ -3,6 +3,8 @@ import 'danmaku/danmaku_tools_page.dart';
 import 'danmaku/danmaku_stream.dart';
 import '../../core/player/playback_failure.dart';
 import '../../core/player/playback_health.dart';
+import '../../core/player/video_disk_cache.dart';
+import '../settings/preload_settings_page.dart';
 import 'line_performance.dart';
 import '../experience/clip_editor.dart';
 import '../experience/subtitle_center_page.dart';
@@ -327,7 +329,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       Duration(seconds: seconds),
       maxBufferBytes:
           (_library == null
-              ? 150
+              ? 256
               : SectionModuleSettings.load(_library!).bufferMiB) *
           1024 *
           1024,
@@ -500,6 +502,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final introSnapshot = _player?.snapshot.value;
     if (introSnapshot != null) _syncOriginalIntro(introSnapshot);
     if (state != AppLifecycleState.resumed) _nextEpisodeBuffer.discard();
+    if (state != AppLifecycleState.resumed) {
+      VideoDiskCache.instance.stopPrefetch();
+    }
     _framePump?.setBackground(state != AppLifecycleState.resumed);
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
@@ -607,7 +612,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         _playbackRequestHeaders = recoveryMedia.headers ?? const {};
         _networkSpeed.reset();
         _nextSpeedProbe = null;
-        await player.load(recoveryMedia);
+        await player.load(await VideoDiskCache.instance.wrap(recoveryMedia));
         if (!mounted ||
             !identical(player, _player) ||
             !identical(recoveryMedia, _media)) {
@@ -976,6 +981,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _episodeImages?.dispose();
     _intro?.dispose();
     _nextEpisodeBuffer.dispose();
+    VideoDiskCache.instance.stopPrefetch();
     _danmakuStream?.close();
     _unlockTimer?.cancel();
     _hintTimer?.cancel();
@@ -1355,6 +1361,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       final remaining = snapshot.duration - snapshot.position;
       final target = _target;
       final buffered = _player?.stats.value.buffered ?? Duration.zero;
+      final currentMedia = _media;
+      if (currentMedia != null) {
+        VideoDiskCache.instance.prefetch(
+          PlayerMedia(uri: currentMedia.uri, headers: _playbackRequestHeaders),
+          snapshot.duration,
+          ahead: _buffering.readAhead,
+          allowed:
+              playing &&
+              !snapshot.buffering &&
+              snapshot.error == null &&
+              buffered >= const Duration(seconds: 15) &&
+              _lifecycle == AppLifecycleState.resumed &&
+              !_advancing &&
+              !_switchingQuality,
+        );
+      }
       if (target != null &&
           playing &&
           !snapshot.buffering &&
@@ -1379,10 +1401,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           _session?.state != PipState.active &&
           snapshot.position >= const Duration(seconds: 10) &&
           remaining >= const Duration(seconds: 5) &&
-          remaining <=
-              Duration(seconds: MediaPreload.instance.triggerSeconds) &&
+          (remaining <=
+                  Duration(seconds: MediaPreload.instance.triggerSeconds) ||
+              snapshot.position.inMilliseconds >=
+                  snapshot.duration.inMilliseconds * .85) &&
           buffered >=
-              Duration(seconds: _settings.kernel == PlayerKernel.mdk ? 3 : 8)) {
+              (remaining < const Duration(seconds: 15)
+                  ? remaining
+                  : const Duration(seconds: 15))) {
         unawaited(
           _nextEpisodeBuffer.prepare(
             target,
@@ -1391,9 +1417,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             widget.playerFactory ??
                 ((kernel) => PlayerFactory.create(kernel: kernel)),
             currentQuality: _qualities.elementAtOrNull(_qualityIndex),
-            refreshNearEnd:
-                remaining <=
-                Duration(seconds: MediaPreload.instance.triggerSeconds),
           ),
         );
       }
@@ -1846,6 +1869,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     if (!mounted || !identical(player, _player)) return;
     _cancelSourceValidation();
     _media = media;
+    VideoDiskCache.instance.prefetch(media, Duration.zero, allowed: false);
     _networkSpeed.reset();
     _nextSpeedProbe = null;
     if (mounted) setState(() => _loaded = false);
@@ -1866,7 +1890,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       try {
         _firstFrameWatch = loadWatch;
         await player.load(
-          PlayerMedia(uri: media.uri, title: media.title, headers: headers),
+          await VideoDiskCache.instance.wrap(
+            PlayerMedia(uri: media.uri, title: media.title, headers: headers),
+          ),
         );
       } catch (error) {
         PlaybackDiagnostics.record(
@@ -4136,6 +4162,20 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (group == 'connection')
+            ListTile(
+              title: const Text('视频磁盘缓冲与下一集预载'),
+              subtitle: const Text('容量、实际占用与清理'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const PreloadSettingsPage(),
+                  ),
+                );
+              },
+            ),
           if (group == 'connection')
             ListenableBuilder(
               listenable: Listenable.merge([
@@ -6944,6 +6984,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         stats: player.stats,
         snapshot: player.snapshot,
         operation: _operation,
+        nextEpisodeStatus: () => _nextEpisodeBuffer.status,
         onCopied: _showToast,
         line: line(),
         source: _source?.name ?? target?.sourceId ?? '手动地址',

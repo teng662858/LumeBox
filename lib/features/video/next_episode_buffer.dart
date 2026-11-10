@@ -9,6 +9,7 @@ import '../../core/net/ios_verified_webview.dart';
 import 'dart:async';
 
 import '../../core/player/abstract_player.dart';
+import '../../core/player/video_disk_cache.dart';
 import '../../core/player/buffering.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/source/source.dart';
@@ -119,7 +120,15 @@ class NextEpisodeBuffer {
   AbstractPlayer? _loadingPlayer;
   final _releases = Expando<Future<void>>();
   bool _preparing = false;
-  String status = '尚未预加载';
+  String _status = '尚未预加载';
+  String get status {
+    final ready = _ready;
+    if (ready == null) return _status;
+    final actual = ready.player.stats.value.buffered;
+    return '已准备 · 目标 ${MediaPreload.instance.bufferSeconds} 秒 · 实际${actual == null ? '由内核决定' : ' ${actual.inSeconds} 秒'}';
+  }
+
+  set status(String value) => _status = value;
   Completer<void>? _finished;
   static const _maxAge = Duration(minutes: 5);
   static String _identity(VideoPlayTarget target, PlayerKernel kernel) =>
@@ -130,7 +139,6 @@ class NextEpisodeBuffer {
     PlayerSettings settings,
     Future<DataSource?> Function() openSource,
     AbstractPlayer? Function(PlayerKernel) create, {
-    bool refreshNearEnd = false,
     VideoQuality? currentQuality,
   }) async {
     if (!MediaPreload.instance.video || MediaPreload.instance.clearing) return;
@@ -218,7 +226,9 @@ class NextEpisodeBuffer {
             : (chosen?.headers ??
                   SourcePlayback.contentHeaders(content, source: source)),
       );
-      await instance.load(media).timeout(const Duration(seconds: 30));
+      await instance
+          .load(await VideoDiskCache.instance.wrap(media))
+          .timeout(const Duration(seconds: 30));
       if (stale()) return;
       await instance.pause();
       if (stale() || instance.snapshot.value.error != null) return;
@@ -266,6 +276,7 @@ class NextEpisodeBuffer {
     _ready = null;
     _key = null;
     _revision++;
+    status = '等待当前集稳定后预载';
     return ready;
   }
 

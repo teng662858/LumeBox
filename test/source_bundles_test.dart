@@ -166,6 +166,14 @@ void main() {
     final calls = <Map<String, Object?>>[];
     final proxy = PythonLocalProxy((request) async {
       calls.add(request);
+      if (request['method'] == 'HEAD') {
+        return {
+          'status': 200,
+          'mime': 'video/mp4',
+          'headers': {'Content-Length': '7340032'},
+          'body': '',
+        };
+      }
       return {
         'status': 206,
         'mime': 'video/mp2t',
@@ -184,7 +192,7 @@ void main() {
       expect((calls.single['headers'] as Map)['range'], 'bytes=2-4');
       expect((calls.single['params'] as Map)['url'], 'segment');
       final head = await (await client.headUrl(url)).close();
-      expect(head.contentLength, 3);
+      expect(head.contentLength, 7340032);
       expect(await head.expand((e) => e).toList(), isEmpty);
       final unauthorized = await (await client.getUrl(
         url.replace(path: '/wrong'),
