@@ -1390,6 +1390,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             _openSource,
             widget.playerFactory ??
                 ((kernel) => PlayerFactory.create(kernel: kernel)),
+            currentQuality: _qualities.elementAtOrNull(_qualityIndex),
             refreshNearEnd:
                 remaining <=
                 Duration(seconds: MediaPreload.instance.triggerSeconds),
@@ -2465,7 +2466,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         content,
         source: source,
       );
-      final chosen = PlaybackQualityPreference.select(qualities, _settings);
+      final chosen = PlaybackQualityPreference.select(
+        qualities,
+        _settings,
+        currentQuality: previousQualities.elementAtOrNull(previousQualityIndex),
+      );
       final address = chosen?.url ?? SourcePlayback.contentAddress(content);
       if (address == null || !mounted) return false;
 
@@ -2474,6 +2479,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         _qualities = qualities;
         _qualityIndex = 0;
       });
+      final preparedMedia = prepared?.media;
+      final reusePrepared =
+          prepared != null &&
+          preparedMedia?.uri == address &&
+          mapEquals(
+            preparedMedia?.headers,
+            chosen?.headers ??
+                SourcePlayback.contentHeaders(content, source: source),
+          ) &&
+          prepared.player.snapshot.value.error == null;
+      if (prepared != null && !reusePrepared) {
+        await prepared.player.dispose();
+      }
       await _startPlayback(
         PlayerMedia(
           uri: address,
@@ -2483,7 +2501,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               chosen?.headers ??
               SourcePlayback.contentHeaders(content, source: source),
         ),
-        preparedPlayer: prepared?.player,
+        preparedPlayer: reusePrepared ? prepared.player : null,
         target: VideoPlayTarget(
           sourceId: target.sourceId,
           itemId: target.itemId,
@@ -2514,8 +2532,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         _showToast('下一集需要网页播放，请手动选择');
       }
       return false;
-    } on SourceException {
-      // 连播失败不打扰：用户没主动要求跳集，安静停在当前状态即可。
+    } on SourceException catch (error) {
+      LumeLog.info('[player] 切集解析失败：$error');
+      if (mounted) _showToast(auto ? '自动续播失败，请重试下一集或切换线路' : '切集失败，请重试');
       return false;
     } catch (_) {
       if (mounted) {
@@ -2525,7 +2544,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           _qualities = previousQualities;
           _qualityIndex = previousQualityIndex;
         });
-        if (!auto) _showToast('切集失败，请重试');
+        _showToast(auto ? '自动续播失败，请重试下一集或切换线路' : '切集失败，请重试');
       }
       return false;
     } finally {

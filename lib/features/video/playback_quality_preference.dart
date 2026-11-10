@@ -7,8 +7,23 @@ class PlaybackQualityPreference {
       RegExp(r'原[画畫]|original|source', caseSensitive: false).hasMatch(label);
   static VideoQuality? select(
     List<VideoQuality> qualities,
-    PlayerSettings settings,
-  ) {
+    PlayerSettings settings, {
+    VideoQuality? currentQuality,
+  }) {
+    // A session's explicit selection survives episode changes even when the
+    // user has disabled remembering that choice across future sessions.
+    if (currentQuality != null) {
+      for (final quality in qualities) {
+        if (quality.label == currentQuality.label) return quality;
+      }
+      if (currentQuality.resolutionRank > 0) {
+        for (final quality in qualities) {
+          if (quality.resolutionRank == currentQuality.resolutionRank) {
+            return quality;
+          }
+        }
+      }
+    }
     if (settings.rememberManualQuality &&
         settings.manualQualityLabel.isNotEmpty) {
       for (final quality in qualities) {

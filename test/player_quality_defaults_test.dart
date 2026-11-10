@@ -10,6 +10,33 @@ void main() {
     url: Uri.parse('https://example.com/$label.mp4'),
   );
   final choices = ['高清', '超清', '4K', '原画', '480p'].map(quality).toList();
+  test('续播保留会话画质，不依赖跨会话记忆开关', () {
+    final next = [quality('720p'), quality('960p'), quality('1080p')];
+    expect(
+      PlaybackQualityPreference.select(
+        next,
+        const PlayerSettings(defaultQuality: DefaultQuality.hd),
+        currentQuality: quality('1080p'),
+      )?.label,
+      '1080p',
+    );
+    expect(
+      PlaybackQualityPreference.select(
+        next,
+        const PlayerSettings(),
+        currentQuality: quality('超清'),
+      )?.label,
+      '1080p',
+    );
+    expect(
+      PlaybackQualityPreference.select(
+        [quality('720p')],
+        const PlayerSettings(),
+        currentQuality: quality('1080p'),
+      )?.label,
+      '720p',
+    );
+  });
   test('记忆优先，其次全局预设，最后最高；关闭记忆不读取旧值', () {
     expect(
       PlaybackQualityPreference.select(

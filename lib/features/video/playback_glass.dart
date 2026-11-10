@@ -37,7 +37,6 @@ class PlaybackGlass extends StatelessWidget {
               part: GlassPart.panels,
               nativeGlass: true,
               translucentOverlay: true,
-              neutralTint: true,
               color: dark ? const Color(0xFF171721) : null,
               child: child,
             ),

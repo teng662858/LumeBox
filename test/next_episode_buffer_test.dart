@@ -88,6 +88,24 @@ void main() {
   const settings = PlayerSettings();
   setUp(() => MediaPreload.instance.video = true);
   test(
+    'prepared player exposes its actual media and rejects a late error',
+    () async {
+      final source = _Source(), player = _Player();
+      final buffer = NextEpisodeBuffer();
+      await buffer.prepare(target, settings, () async => source, (_) => player);
+      final ready = buffer.take(target, 1, settings.kernel)!;
+      expect(ready.media?.uri, Uri.parse('https://example.test/c2.mp4'));
+      await player.dispose();
+      final failed = _Player();
+      await buffer.prepare(target, settings, () async => source, (_) => failed);
+      failed.state.value = const PlayerSnapshot(error: 'expired address');
+      expect(buffer.take(target, 1, settings.kernel), isNull);
+      await buffer.clear();
+      expect(failed.disposals, 1);
+      buffer.dispose();
+    },
+  );
+  test(
     'catalog warmup performs no content fetch or player allocation',
     () async {
       final source = _Source(), player = _Player();

@@ -24,12 +24,14 @@ class PreparedEpisode {
     this.content,
     this.player, {
     DateTime? at,
+    this.media,
   }) : at = at ?? DateTime.now();
   final SourceChapter chapter;
   final int index;
   final ChapterContent content;
   final AbstractPlayer player;
   final DateTime at;
+  final PlayerMedia? media;
 }
 
 /// Holds at most one paused player; ownership transfers on a matching next-episode switch.
@@ -129,6 +131,7 @@ class NextEpisodeBuffer {
     Future<DataSource?> Function() openSource,
     AbstractPlayer? Function(PlayerKernel) create, {
     bool refreshNearEnd = false,
+    VideoQuality? currentQuality,
   }) async {
     if (!MediaPreload.instance.video || MediaPreload.instance.clearing) return;
     final key = _identity(target, settings.kernel);
@@ -184,6 +187,7 @@ class NextEpisodeBuffer {
       final chosen = PlaybackQualityPreference.select(
         SourcePlayback.contentQualities(content, source: source),
         settings,
+        currentQuality: currentQuality,
       );
       final uri = chosen?.url ?? SourcePlayback.contentAddress(content);
       if (content == null || uri == null || stale()) return;
@@ -202,30 +206,31 @@ class NextEpisodeBuffer {
       await instance.applySettings(settings);
       await instance.setVolume(0);
       if (stale()) return;
-      await instance
-          .load(
-            PlayerMedia(
-              uri: uri,
-              title: '${target.title} · ${chapter.title}',
-              headers: Platform.isIOS
-                  ? await IosVerifiedWebView.resourceHeaders(
-                      uri.toString(),
-                      (chosen?.headers ??
-                          SourcePlayback.contentHeaders(
-                            content,
-                            source: source,
-                          )),
-                    )
-                  : (chosen?.headers ??
-                        SourcePlayback.contentHeaders(content, source: source)),
-            ),
-          )
-          .timeout(const Duration(seconds: 30));
+      final media = PlayerMedia(
+        uri: uri,
+        title: '${target.title} · ${chapter.title}',
+        headers: Platform.isIOS
+            ? await IosVerifiedWebView.resourceHeaders(
+                uri.toString(),
+                (chosen?.headers ??
+                    SourcePlayback.contentHeaders(content, source: source)),
+              )
+            : (chosen?.headers ??
+                  SourcePlayback.contentHeaders(content, source: source)),
+      );
+      await instance.load(media).timeout(const Duration(seconds: 30));
       if (stale()) return;
       await instance.pause();
       if (stale() || instance.snapshot.value.error != null) return;
       status = '播放器已准备，实际缓冲量取决于内核';
-      _ready = PreparedEpisode(chapter, index, content, instance, at: _now());
+      _ready = PreparedEpisode(
+        chapter,
+        index,
+        content,
+        instance,
+        at: _now(),
+        media: media,
+      );
       _loadingPlayer = null;
       player = null; // owned by _ready
     } catch (error) {
@@ -250,7 +255,11 @@ class NextEpisodeBuffer {
   ) {
     final ready = _ready;
     if (_key != _identity(target, kernel) || ready?.index != index) return null;
-    if (_now().difference(ready!.at) > _maxAge) {
+    if (_now().difference(ready!.at) > _maxAge ||
+        ready.player.snapshot.value.error != null ||
+        (ready.player.snapshot.value.duration > Duration.zero &&
+            ready.player.snapshot.value.position >=
+                ready.player.snapshot.value.duration)) {
       discard();
       return null;
     }

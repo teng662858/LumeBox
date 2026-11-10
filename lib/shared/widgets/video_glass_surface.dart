@@ -104,8 +104,9 @@ class VideoGlassSurface extends StatelessWidget {
       background = FrostedGlassWidget(
         radius: radius,
         nativeGlass: true,
-        neutralTint: true,
-        materialOpacity: materialOpacity,
+        // Keep the system effect intact, as in the bottom navigation bar.
+        // Fading UIVisualEffectView also fades its refraction and highlights.
+        materialOpacity: 1,
         child: const SizedBox.expand(),
       );
     } else if (!reduced) {
