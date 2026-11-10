@@ -250,14 +250,23 @@ final class PipFramePump {
 final class PipDanmakuRenderer {
   private var settings: [String: Any] = [:]
   private var items: [[String: Any]] = []
-  private var labels: [String: NSAttributedString] = [:]
+  private struct Label {
+    let fill: NSAttributedString
+    let outline: NSAttributedString?
+    func size() -> CGSize { fill.size() }
+    func draw(at point: CGPoint) {
+      outline?.draw(at: point)
+      fill.draw(at: point)
+    }
+  }
+  private var labels: [String: Label] = [:]
   var playing = true
   private var lastPosition = -1
   private var anchor: CFTimeInterval = 0
   private var clockPosition: Double = 0
   private var clockFrame: CFTimeInterval = 0
   private struct Entry {
-    let label: NSAttributedString
+    let label: Label
     let width: Double, start: Double, duration: Double, y: Double
     let scrolling: Bool
   }
@@ -301,7 +310,7 @@ final class PipDanmakuRenderer {
     // The system shrinks the composited frame to the PiP window.
     let fontSize = 24 * value("fontScale", 1) * scale
     let stroke = value("strokeWidth", 1.2)
-    let outline = stroke > 0 ? max(1.5, stroke * 1.5) * scale : 0
+    let outline = min(max(0, stroke) * scale, fontSize * 0.04)
     let rowPadding = outline + 2 * scale
     let rowHeight = ceil(fontSize * max(1.35, value("lineSpacing", 1.35)) + rowPadding)
     let topInset = ceil(6 * scale)
@@ -355,7 +364,15 @@ final class PipDanmakuRenderer {
       var label = labels[key]
       if label == nil {
         let color = UIColor(red: CGFloat((rgb >> 16) & 255)/255, green: CGFloat((rgb >> 8) & 255)/255, blue: CGFloat(rgb & 255)/255, alpha: CGFloat(value("opacity", 0.9)))
-        label = NSAttributedString(string: text, attributes: [.font: UIFont.systemFont(ofSize: CGFloat(size), weight: bool("bold", true) ? .bold : .regular), .foregroundColor: color, .strokeColor: UIColor.black, .strokeWidth: -min(15, outline / size * 100)])
+        let font = UIFont.systemFont(ofSize: CGFloat(size), weight: bool("bold", true) ? .semibold : .regular)
+        let fill = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .strokeWidth: 0])
+        let border = outline > 0 ? NSAttributedString(string: text, attributes: [
+          .font: font, .strokeColor: UIColor.black.withAlphaComponent(CGFloat(value("opacity", 0.9) * 0.85)),
+          .strokeWidth: min(6, outline / size * 100)
+        ]) : nil
+        // Fill last: a combined fill/stroke pass can cover thin CJK stems with
+        // the black outline when the system downsizes the composited PiP frame.
+        label = Label(fill: fill, outline: border)
         if labels.count >= 1000 { labels.removeAll() }
         labels[key] = label
       }

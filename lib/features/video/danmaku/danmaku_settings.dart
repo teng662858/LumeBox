@@ -195,6 +195,20 @@ class DanmakuSettings {
     'pipEnabled': pipEnabled,
   };
 
+  /// PiP has far less display space; keep main-player preferences unchanged.
+  Map<String, Object?> toPipJson() {
+    final pipRows = rows == 0 ? 3 : rows.clamp(1, 3);
+    return {
+      ...toJson(),
+      'rows': pipRows,
+      'fontScale': (fontScale * .9).clamp(.5, 1.5),
+      'strokeWidth': strokeWidth.clamp(0, .8),
+      'lineSpacing': lineSpacing.clamp(1.5, 3),
+      'maxOnScreen': maxOnScreen.clamp(1, pipRows * 2),
+      'maxPerSecond': maxPerSecond.clamp(1, 4),
+    };
+  }
+
   static DanmakuSettings fromJson(Object? json) {
     if (json is! Map) return defaults;
     const base = DanmakuSettings();

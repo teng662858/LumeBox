@@ -749,7 +749,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final backend = _session?.backend;
     if (backend is! MethodChannelPipBackend) return;
     await backend.updateDanmaku(
-      {..._danmakuSettings.toJson(), 'playbackRate': _settings.speed},
+      {..._danmakuSettings.toPipJson(), 'playbackRate': _settings.speed},
       [
         for (final item in _danmaku.items)
           {

@@ -7,6 +7,39 @@ import 'package:lume_box/features/video/danmaku/danmaku_settings.dart';
 ///
 /// 弹幕是可选能力，因此「坏数据不炸」「缺失不报错」和功能本身一样重要。
 void main() {
+  test('画中画压缩密度、字号和描边，不覆盖主播放器偏好', () {
+    const main = DanmakuSettings(
+      rows: 8,
+      fontScale: 2,
+      strokeWidth: 3,
+      maxOnScreen: 100,
+      maxPerSecond: 20,
+    );
+    final pip = main.toPipJson();
+    expect(pip['rows'], 3);
+    expect(pip['maxOnScreen'], 6);
+    expect(pip['maxPerSecond'], 4);
+    expect(pip['fontScale'], 1.5);
+    expect(pip['strokeWidth'], .8);
+    expect(pip['lineSpacing'], 1.5);
+    expect(main.rows, 8);
+    expect(main.fontScale, 2);
+    expect(main.toJson()['strokeWidth'], 3);
+    final small = const DanmakuSettings(
+      rows: 1,
+      maxPerSecond: 2,
+      strokeWidth: 0,
+      opacity: .5,
+      pipEnabled: false,
+    ).toPipJson();
+    expect(small['maxOnScreen'], 2);
+    expect(small['maxPerSecond'], 2);
+    expect(small['strokeWidth'], 0);
+    expect(small['opacity'], .5);
+    expect(small['pipEnabled'], false);
+    expect(const DanmakuSettings(rows: 0).toPipJson()['rows'], 3);
+  });
+
   group('弹幕解析', () {
     test('基础形状：time + text', () {
       final track = DanmakuTrack.parse(<Object?>[
@@ -30,7 +63,12 @@ void main() {
       expect(track.items[1].time, const Duration(milliseconds: 1500));
       expect(track.items[2].time, const Duration(milliseconds: 2500));
       expect(track.items[3].time, const Duration(milliseconds: 5000));
-      expect(track.items.map((item) => item.text), <String>['t 简写', '字符串毫秒', '秒', '毫秒']);
+      expect(track.items.map((item) => item.text), <String>[
+        't 简写',
+        '字符串毫秒',
+        '秒',
+        '毫秒',
+      ]);
     });
 
     test('信封三种字段名：danmaku / items / comments', () {
@@ -183,10 +221,7 @@ void main() {
         fontScale: 1.5,
         maxOnScreen: 100,
       );
-      expect(
-        DanmakuSettings.fromJson(settings.toJson()),
-        settings,
-      );
+      expect(DanmakuSettings.fromJson(settings.toJson()), settings);
       expect(DanmakuSettings.fromJson(null), DanmakuSettings.defaults);
       expect(
         DanmakuSettings.fromJson(<String, Object?>{'opacity': 'abc'}).opacity,
@@ -206,7 +241,11 @@ void main() {
         color: 0xFF0000,
         fontSize: 1.5,
       );
-      const settings = DanmakuSettings(fontScale: 2.0, opacity: 0.5, strokeWidth: 2);
+      const settings = DanmakuSettings(
+        fontScale: 2.0,
+        opacity: 0.5,
+        strokeWidth: 2,
+      );
       final style = DanmakuStyle.of(item, settings);
       expect(style.fontSize, DanmakuStyle.baseFontSize * 3.0);
       expect(style.strokeWidth, 2);

@@ -562,7 +562,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
               (value) => _update(_settings.copyWith(avoidSubtitles: value)),
             ),
           _switch(
-            '画中画显示弹幕',
+            '画中画显示弹幕（自动精简字号与密度）',
             _settings.pipEnabled,
             (value) => _update(_settings.copyWith(pipEnabled: value)),
           ),

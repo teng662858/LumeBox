@@ -67,19 +67,23 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
         child: Builder(
           builder: (context) => Container(
             key: const Key('player-speed-menu'),
-            width: 184,
+            width:
+                144 +
+                24 *
+                    (MediaQuery.textScalerOf(context).scale(1) - 1).clamp(0, 1),
             height: math.max(
               160,
-              math.min(264, MediaQuery.sizeOf(context).height - 80),
+              math.min(246, MediaQuery.sizeOf(context).height - 64),
             ),
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: Column(
               children: [
                 Expanded(
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       SizedBox(
-                        width: 30,
+                        width: 24,
                         child: Column(
                           children: [
                             Text(
@@ -139,7 +143,7 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 4),
                       Expanded(
                         child: SingleChildScrollView(
                           primary: false,
@@ -155,60 +159,81 @@ class _PlayerSpeedButtonState extends State<PlayerSpeedButton> {
                                 .75,
                                 .5,
                               ])
-                                ChoiceChip(
-                                  label: SizedBox(
-                                    width: double.infinity,
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        if (_speed == speed) ...[
-                                          Icon(
-                                            Icons.check_rounded,
-                                            size: 15,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .primary,
+                                SizedBox(
+                                  height: 34,
+                                  child: ChoiceChip(
+                                    label: SizedBox(
+                                      width: double.infinity,
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.start,
+                                        children: [
+                                          SizedBox(
+                                            width: 18,
+                                            child: _speed == speed
+                                                ? Icon(
+                                                    Icons.check_rounded,
+                                                    size: 14,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary,
+                                                  )
+                                                : null,
                                           ),
-                                          const SizedBox(width: 4),
+                                          Text(PlayerSpeedButton.label(speed)),
+                                          if (speed == 1) ...[
+                                            const Spacer(),
+                                            const Text(
+                                              '常速',
+                                              style: TextStyle(fontSize: 10),
+                                            ),
+                                          ],
                                         ],
-                                        Text(PlayerSpeedButton.label(speed)),
-                                        if (speed == 1) Text(' 常速'),
-                                      ],
+                                      ),
                                     ),
+                                    labelPadding: const EdgeInsets.symmetric(
+                                      horizontal: 5,
+                                    ),
+                                    selected: _speed == speed,
+                                    showCheckmark: false,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 1,
+                                    ),
+                                    side: BorderSide.none,
+                                    color: WidgetStatePropertyAll(
+                                      _speed == speed
+                                          ? Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                                .withValues(alpha: .1)
+                                          : Colors.transparent,
+                                    ),
+                                    backgroundColor: Colors.transparent,
+                                    selectedColor: Colors.transparent,
+                                    disabledColor: Colors.transparent,
+                                    surfaceTintColor: Colors.transparent,
+                                    shadowColor: Colors.transparent,
+                                    elevation: 0,
+                                    pressElevation: 0,
+                                    labelStyle: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: _speed == speed
+                                          ? Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                          : Theme.of(context)
+                                                .colorScheme
+                                                .onSurface,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    onSelected: (_) => _select(speed),
                                   ),
-                                  selected: _speed == speed,
-                                  showCheckmark: false,
-                                  materialTapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  visualDensity: VisualDensity.compact,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 1,
-                                  ),
-                                  side: BorderSide.none,
-                                  color: const WidgetStatePropertyAll(
-                                    Colors.transparent,
-                                  ),
-                                  backgroundColor: Colors.transparent,
-                                  selectedColor: Colors.transparent,
-                                  disabledColor: Colors.transparent,
-                                  surfaceTintColor: Colors.transparent,
-                                  shadowColor: Colors.transparent,
-                                  elevation: 0,
-                                  pressElevation: 0,
-                                  labelStyle: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: _speed == speed
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Theme.of(context)
-                                              .colorScheme
-                                              .onSurface,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  onSelected: (_) => _select(speed),
                                 ),
                             ],
                           ),

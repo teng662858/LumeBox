@@ -38,9 +38,24 @@ void main() {
       final menuSize = tester.getSize(
         find.byKey(const Key('player-speed-menu')),
       );
-      expect(menuSize.width, 184);
-      expect(menuSize.height, lessThanOrEqualTo(264));
+      expect(menuSize.width, lessThanOrEqualTo(152));
+      expect(menuSize.height, lessThanOrEqualTo(246));
 
+      final menuRect = tester.getRect(
+        find.byKey(const Key('player-speed-menu')),
+      );
+      final first = tester.getRect(find.widgetWithText(ChoiceChip, '3×'));
+      final last = tester.getRect(find.widgetWithText(ChoiceChip, '0.5×'));
+      expect(
+        first.top - menuRect.top,
+        lessThan(12),
+        reason: '选项顶端紧贴面板，不再被 Row 垂直居中留下空白',
+      );
+      expect(last.bottom, lessThanOrEqualTo(menuRect.bottom));
+      expect(
+        tester.getRect(find.text('3×')).left,
+        closeTo(tester.getRect(find.text('2×')).left, .1),
+      );
       expect(find.byType(ChoiceChip), findsNWidgets(7));
       expect(find.byType(Divider), findsNothing);
       expect(find.text('1× 常速'), findsNothing);
