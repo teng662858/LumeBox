@@ -5949,6 +5949,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               if (mounted) _showToast('源已更新，请重试播放以获取新地址');
             },
             extraActions: [
+              TextButton(onPressed: _openSettings, child: const Text('更换播放内核')),
               if (_target != null &&
                   ((snapshot.error ?? '').contains('403') ||
                       shouldOfferWebView(snapshot.error)))

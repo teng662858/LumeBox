@@ -73,6 +73,10 @@ class PlayerErrorText {
   /// 常见原生错误的特征 → 中文短句（按顺序匹配，越具体越靠前）。
   static final List<_Rule> _rules = <_Rule>[
     _Rule(<String>[
+      'osstatus error -12848',
+      'this media may be damaged',
+    ], '当前内核无法打开该媒体，可能是封装、编码或数据不完整；请更换内核或线路'),
+    _Rule(<String>[
       'connection appears to be offline',
       'not connected to the internet',
       'network connection was lost',
@@ -100,7 +104,12 @@ class PlayerErrorText {
       'no content length',
       'server is not correctly configured',
     ], '服务器不支持分段请求（AVPlayer 播不了这种流）：换 MPV 内核通常可播'),
-    _Rule(<String>['cancelled', 'canceled', 'aborted', 'operation stopped'], '已取消加载'),
+    _Rule(<String>[
+      'cancelled',
+      'canceled',
+      'aborted',
+      'operation stopped',
+    ], '已取消加载'),
     _Rule(<String>['permission', 'denied'], '没有权限访问该地址'),
     _Rule(<String>['no such file', 'file not found', 'enoent'], '本地文件不存在'),
   ];

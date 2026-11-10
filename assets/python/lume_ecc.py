@@ -30,6 +30,22 @@ def _curve(name):
     raise ValueError('Unsupported ECC curve: ' + str(name))
 
 
+class _EcdhPoint:
+    def __init__(self, public_key):
+        self._key = public_key
+        numbers = public_key.public_numbers()
+        self.x, self.y = numbers.x, numbers.y
+
+    def __mul__(self, scalar):
+        from cryptography.hazmat.primitives.asymmetric import ec
+        private = ec.derive_private_key(int(scalar), self._key.curve)
+        # Spider handshakes consume only the shared X coordinate. Keep this
+        # operation in the bundled native backend, as with ordinary ECDH.
+        return types.SimpleNamespace(x=int.from_bytes(private.exchange(ec.ECDH(), self._key), 'big'))
+
+    __rmul__ = __mul__
+
+
 class EccKey:
     def __init__(self, key):
         self._key = key
@@ -51,8 +67,7 @@ class EccKey:
 
     @property
     def pointQ(self):
-        point = self.public_key()._key.public_numbers()
-        return types.SimpleNamespace(x=point.x, y=point.y)
+        return _EcdhPoint(self.public_key()._key)
 
     def export_key(self, *, format='PEM', compress=False, passphrase=None,
                    use_pkcs8=True, **kwargs):

@@ -1,0 +1,41 @@
+name: iOS Simulator playback check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  playback:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.5
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: python3 tool/prepare_python_runtime.py
+      - run: python3 tool/prepare_intro_models.py
+      - name: Create local video and HLS fixtures
+        run: |
+          brew install ffmpeg
+          mkdir -p "$RUNNER_TEMP/playback-fixtures" out/playback-smoke
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=320x240:rate=24 -f lavfi -i sine=frequency=440 -t 8 -c:v libx264 -pix_fmt yuv420p -g 24 -c:a aac -movflags +faststart "$RUNNER_TEMP/playback-fixtures/smoke.mp4"
+          ffmpeg -hide_banner -loglevel error -i "$RUNNER_TEMP/playback-fixtures/smoke.mp4" -c copy -hls_time 1 -hls_list_size 0 "$RUNNER_TEMP/playback-fixtures/smoke.m3u8"
+          python3 -m http.server 18765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/playback-fixtures" >out/playback-smoke/http.log 2>&1 &
+      - name: Run production player and cache on iOS Simulator
+        run: |
+          set -euo pipefail
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for v in d["devices"].values() for x in v if "iPhone" in x["name"]))')
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl io "$DEVICE" recordVideo out/playback-smoke/simulator.mp4 >/dev/null 2>&1 &
+          RECORD_PID=$!
+          trap 'kill -INT "$RECORD_PID" || true' EXIT
+          flutter test integration_test/playback_smoke_test.dart -d "$DEVICE" --timeout 15m 2>&1 | tee out/playback-smoke/test.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playback-simulator-results
+          path: out/playback-smoke/

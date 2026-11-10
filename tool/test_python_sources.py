@@ -44,6 +44,11 @@ def invoke(raw):
         # Independent reference backend; production algorithms have Dart KATs.
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
         key, data, iv = (base64.b64decode(payload.get(k, '')) for k in ('key', 'data', 'iv'))
+        if payload['algorithm'] == 'aes' and payload['mode'] == 11:
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            operation = AESGCM(key).encrypt if payload.get('encrypt') else AESGCM(key).decrypt
+            result = operation(base64.b64decode(payload['nonce']), data, base64.b64decode(payload.get('aad', '')))
+            return json.dumps({'ok': True, 'value': base64.b64encode(result).decode()})
         mode = {1: lambda: modes.ECB(), 2: lambda: modes.CBC(iv), 6: lambda: modes.CTR(iv)}.get(payload['mode'])
         if payload['algorithm'] != 'aes' or mode is None:
             return json.dumps({'ok': False, 'error': 'reference crypto mode unavailable'})
@@ -114,6 +119,30 @@ def call(source, action="call", **kwargs):
 
 
 class HostTests(unittest.TestCase):
+    def test_ecdh_spider_point_multiplication_matches_shared_secret(self):
+        from Crypto.PublicKey import ECC
+        from cryptography.hazmat.primitives.asymmetric import ec
+        for curve in ('P-256', 'P-384', 'P-521'):
+            with self.subTest(curve=curve):
+                alice, bob = ECC.construct(curve=curve, d=7), ECC.construct(curve=curve, d=11)
+                expected = int.from_bytes(alice._key.exchange(ec.ECDH(), bob._key.public_key()), 'big')
+                self.assertEqual((bob.pointQ * alice.d).x, expected)
+                self.assertEqual((bob.d * alice.pointQ).x, expected)
+                self.assertEqual((bob.pointQ * alice.d).x, ECC.construct(curve=curve, d=77).pointQ.x)
+
+    def test_empty_list_with_source_network_error_is_not_reported_as_empty_category(self):
+        source = FIXTURE + '''
+    def categoryContent(self, tid, pg, filter, extend):
+        return {'list':[], 'msg':'连接失败，服务器可能不可达'} if tid == 'failed' else {'list':[]}
+'''
+        self.assertTrue(call('list-error', 'load', script=source)['ok'])
+        result = call('list-error', method='list', argument={'categoryId':'failed'})
+        self.assertFalse(result['ok'])
+        self.assertIn('连接失败', result['error']['message'])
+        result = call('list-error', method='list', argument={'categoryId':'empty'})
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(result['value']['items'], [])
+
     def test_requests_network_failures_keep_requests_exception_contract(self):
         from unittest.mock import patch
         import requests

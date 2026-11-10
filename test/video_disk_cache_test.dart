@@ -38,6 +38,16 @@ void main() {
       player.info.dispose();
     });
   }
+  test('内核暂时隐藏错误进行重试时，等待终态后仍回退原地址', () async {
+    final player = _TransportPlayer(false, delayed: true);
+    final media = PlayerMedia(uri: upstream);
+    await cache.load(player, media);
+    expect(player.loads, hasLength(2));
+    expect(player.loads.last, same(media));
+    expect(player.state.value.error, isNull);
+    player.state.dispose();
+    player.info.dispose();
+  });
   Completer<void>? pause;
   setUp(() async {
     root = await Directory.systemTemp.createTemp('video-buffer-test-');
@@ -68,6 +78,12 @@ void main() {
         return;
       }
       if (request.uri.path.endsWith('/master.m3u8')) {
+        if (request.uri.path.startsWith('/no-range/') &&
+            request.headers.value('range') != null) {
+          request.response.statusCode = 502;
+          await request.response.close();
+          return;
+        }
         request.response.headers.contentType = ContentType(
           'application',
           'vnd.apple.mpegurl',
@@ -293,6 +309,15 @@ void main() {
     expect(cache.bytes, 0);
   });
 
+  test('HLS 清单按普通 GET 获取，兼容拒绝 Range 的服务器', () async {
+    final wrapped = await cache.wrap(
+      PlayerMedia(uri: upstream.resolve('/no-range/master.m3u8')),
+    );
+    final (response, body) = await get(wrapped.uri);
+    expect(response.statusCode, 200);
+    expect(utf8.decode(body), startsWith('#EXTM3U'));
+  });
+
   test('HLS rewrites keys and segments and never caches a playlist', () async {
     final wrapped = await cache.wrap(
       PlayerMedia(uri: upstream.resolve('master.m3u8')),
@@ -330,8 +355,9 @@ void main() {
 }
 
 class _TransportPlayer extends AbstractPlayer {
-  _TransportPlayer(this.throws);
+  _TransportPlayer(this.throws, {this.delayed = false});
   final bool throws;
+  final bool delayed;
   final loads = <PlayerMedia>[];
   final state = ValueNotifier(const PlayerSnapshot());
   final info = ValueNotifier(const PlayerStats());
@@ -344,6 +370,13 @@ class _TransportPlayer extends AbstractPlayer {
     loads.add(media);
     if (loads.length == 1) {
       if (throws) throw StateError('local connection failed');
+      if (delayed) {
+        state.value = const PlayerSnapshot(buffering: true);
+        Future<void>.delayed(const Duration(milliseconds: 20), () {
+          state.value = const PlayerSnapshot(error: 'HTTP 502');
+        });
+        return;
+      }
       state.value = const PlayerSnapshot(error: 'local connection failed');
     } else {
       state.value = const PlayerSnapshot();

@@ -22,7 +22,7 @@ void main() {
     );
   });
   group('条目地址判定', () {
-    test('网络与流媒体协议按原样收下（http 升 https，见 ATS 那条）', () {
+    test('网络与流媒体协议按原样传给内核', () {
       for (final url in <String>[
         'https://example.com/demo.mp4',
         'rtmp://example.com/live/stream',
@@ -30,11 +30,11 @@ void main() {
       ]) {
         expect(SourcePlayback.directAddress(url)?.toString(), url);
       }
-      // iOS 的 ATS 拦明文加载：域名地址统一升到 https；IP / localhost 不动。
+      // 签名媒体地址的协议、端口和查询串不能由 App 擅自修改。
       expect(
         SourcePlayback.directAddress('http://example.com/live.m3u8')
             ?.toString(),
-        'https://example.com/live.m3u8',
+        'http://example.com/live.m3u8',
       );
       expect(
         SourcePlayback.directAddress('http://192.168.1.9/live.m3u8')
@@ -100,7 +100,19 @@ void main() {
     });
   });
 
-  group('章节内容地址判定', () {});
+  group('章节内容地址判定', () {
+    test('签名 HTTP 内容与清晰度地址不被升级或重写', () {
+      final address = Uri.parse(
+        'http://cdn.example:8080/video.m3u8?token=abc%2Fdef',
+      );
+      final content = VideoContent(
+        url: address,
+        qualities: [VideoQuality(label: '1080p', url: address)],
+      );
+      expect(SourcePlayback.contentAddress(content), address);
+      expect(SourcePlayback.contentQualities(content).single.url, address);
+    });
+  });
 
   group('站内路径不能被当成本地文件（真机 -17913 的根因）', () {
     test('图源条目 id 的形状：/watch?v=、/9434719.html、/album/1、/book/1248', () {

@@ -980,6 +980,10 @@ def _dispatch(state, method, arg):
             raw = _invoke(spider, "homeVideoContent") if _method(spider, "homeVideoContent") else _invoke(spider, "homeContent", (False,)) if _method(spider, "homeContent") else {"list": []}
         value = _decoded(raw)
         items = _items(value)
+        if not items and isinstance(value, dict):
+            message = str(value.get('error') or value.get('msg') or value.get('message') or '')
+            if value.get('error') or re.search(r'fail|error|timeout|HTTP\s*[45]\d\d|TLS|失败|错误|超时|连接|缺少依赖', message, re.I):
+                raise ValueError('源请求未完成：' + re.sub(r'https?://\S+', '[URL omitted]', message)[:300])
         more = False
         if isinstance(value, dict):
             try:

@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'abstract_player.dart';
+import 'playback_diagnostics.dart';
 import '../net/lume_net.dart';
 
 /// Bounded, session-only HTTP cache shared by all native playback kernels.
@@ -162,19 +163,49 @@ class VideoDiskCache extends ChangeNotifier {
   Future<void> load(AbstractPlayer player, PlayerMedia media) async {
     final wrapped = await wrap(media);
     try {
-      await player.load(wrapped);
+      await _loadAndWait(player, wrapped);
       if (wrapped.uri == media.uri || player.snapshot.value.error == null) {
         return;
       }
     } catch (_) {
       if (wrapped.uri == media.uri) rethrow;
     }
-    await player.load(media);
+    PlaybackDiagnostics.record('cache-fallback-start', uri: media.uri);
+    await _loadAndWait(player, media);
+    PlaybackDiagnostics.record(
+      'cache-fallback-complete',
+      uri: media.uri,
+      error: player.snapshot.value.error,
+    );
     if (player.snapshot.value.error == null) {
       if (_bypassed.length >= 128) _bypassed.remove(_bypassed.first);
       _bypassed.add(_key(media, -1));
       status = '本地缓存连接失败，当前资源已改用内核缓冲';
       notifyListeners();
+    }
+  }
+
+  static Future<void> _loadAndWait(
+    AbstractPlayer player,
+    PlayerMedia media,
+  ) async {
+    await player.load(media);
+    final ready = Completer<void>();
+    void changed() {
+      final snapshot = player.snapshot.value;
+      if ((!snapshot.buffering || snapshot.error != null) &&
+          !ready.isCompleted) {
+        ready.complete();
+      }
+    }
+
+    player.snapshot.addListener(changed);
+    try {
+      changed();
+      // AVPlayer can return from load while its network retry is still pending.
+      await ready.future.timeout(const Duration(seconds: 30));
+    } finally {
+      player.snapshot.removeListener(changed);
     }
   }
 
@@ -363,7 +394,9 @@ class VideoDiskCache extends ChangeNotifier {
     for (var attempt = 0; attempt < 2; attempt++) {
       final response = await _request(
         media,
-        'bytes=$start-${start + blockBytes - 1}',
+        media.uri.path.toLowerCase().endsWith('.m3u8')
+            ? null
+            : 'bytes=$start-${start + blockBytes - 1}',
       );
       if ([502, 503, 504].contains(response.statusCode) && attempt == 0) {
         await response.drain<void>();
@@ -371,6 +404,13 @@ class VideoDiskCache extends ChangeNotifier {
       }
       final range = RegExp(r'^bytes (\d+)-(\d+)/(\d+)$')
           .firstMatch(response.headers.value('content-range') ?? '');
+      if (response.statusCode >= 400) {
+        PlaybackDiagnostics.record(
+          'cache-upstream-failed',
+          uri: media.uri,
+          error: 'HTTP ${response.statusCode}',
+        );
+      }
       if (response.statusCode == 416) {
         final total = RegExp(r'^bytes \*/(\d+)$')
             .firstMatch(response.headers.value('content-range') ?? '');

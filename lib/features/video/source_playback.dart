@@ -37,8 +37,7 @@ class SourcePlayback {
     final uri = Uri.tryParse(text);
     if (uri == null || !uri.hasScheme) return null;
     if (!schemes.contains(uri.scheme.toLowerCase())) return null;
-    // 条目本身就是一条 http 媒体地址时同样升级（与章节内容同一条纪律）。
-    return _secure(uri);
+    return uri;
   }
 
   /// A catalogue entry can be an absolute webpage URL. It must still go through
@@ -71,27 +70,10 @@ class SourcePlayback {
 
   /// 章节内容 → 可播放地址（只有视频载荷可播，文本 / 图片返回 null）。
   ///
-  /// 返回前统一走 [_secure]：**明文 http 的媒体地址一律升到 https**（理由见那里）。
+  /// Preserve the source's scheme, port and signature; HTTPS is not interchangeable.
   static Uri? contentAddress(ChapterContent? content) => content is VideoContent
-      ? _secure(highestQuality(content)?.url ?? content.url)
+      ? highestQuality(content)?.url ?? content.url
       : null;
-
-  /// 媒体地址的协议归一：`http://` 升到 `https://`（图片管线同一套口径）。
-  ///
-  /// 为什么视频也要升：iOS 的 ATS 默认**拦掉 App 自己发出的明文加载**（只有网页
-  /// 视图内容放行，见 Info.plist 的注释），图源给的地址若写的是 http，播放器会
-  /// 直接失败——真机报「播放链接中断」而地址本身是能播的，有一类就是这么来的。
-  /// 站点几乎都同时支持 TLS（图片管线早就这么升了）；IP 与 localhost 不动。
-  static Uri _secure(Uri uri) {
-    if (uri.scheme != 'http') return uri;
-    final host = uri.host;
-    if (host.isEmpty) return uri;
-    if (RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(host) ||
-        host == 'localhost') {
-      return uri;
-    }
-    return uri.replace(scheme: 'https');
-  }
 
   static VideoQuality? highestQuality(VideoContent content) {
     VideoQuality? best;
@@ -188,7 +170,7 @@ class SourcePlayback {
       for (final quality in content.qualities)
         VideoQuality(
           label: quality.label,
-          url: _secure(quality.url),
+          url: quality.url,
           height: quality.height,
           headers: _verifiedHeaders(
             quality.headers.isEmpty ? base : quality.headers,
