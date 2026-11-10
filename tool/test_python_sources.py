@@ -55,7 +55,9 @@ def invoke(raw):
     url = payload["url"]
     headers, status = {"Content-Type": "application/json; charset=utf-8"}, 200
     video = {"vod_id": "v1", "vod_name": "测试影片", "vod_pic": "https://fixture.invalid/cover.jpg", "vod_remarks": "更新中"}
-    if "searchByWord" in url:
+    if "/home/hotSearch" in url:
+        body = {"data": [{"vodId": "v1", "vodName": "测试影片", "vodPic": "", "typeId1": 1, "vodVersion": "高清"}]}
+    elif "searchByWord" in url:
         body = {"data": {"result": {"list": [{"vodId": "v1", "vodName": "测试影片", "vodPic": "", "typeId1": 1, "vodVersion": "高清"}]}}}
     elif "/anonymous/video/detail" in url:
         body = {"data": {"typeName": "电影", "vodName": "测试影片", "vodRemarks": "高清", "vodYear": "2026", "vodArea": "", "vodActor": "", "vodDirector": "", "vodContent": "说明", "episodeList": [{"name": "第一集", "nid": "ep1"}]}}
@@ -112,6 +114,29 @@ def call(source, action="call", **kwargs):
 
 
 class HostTests(unittest.TestCase):
+    def test_requests_network_failures_keep_requests_exception_contract(self):
+        from unittest.mock import patch
+        import requests
+        source = FIXTURE + '''
+    def playerContent(self, flag, id, vipFlags):
+        import requests
+        try:
+            self.fetch('https://fixture.invalid/failing')
+        except requests.exceptions.Timeout:
+            return {'url':'https://fixture.invalid/timeout.mp4'}
+        except requests.RequestException:
+            return {'url':'https://fixture.invalid/fallback.mp4'}
+'''
+        self.assertTrue(call('request-errors', 'load', script=source)['ok'])
+        argument = {'chapterId':json.dumps({'id':'one'})}
+        for error, suffix in [(RuntimeError('系统网络请求失败'), 'fallback'),
+                              (RuntimeError('系统网络请求超时'), 'timeout'),
+                              (TimeoutError('Python 源执行超时'), 'timeout')]:
+            with self.subTest(error=error), patch.object(host, '_host', side_effect=error):
+                result = call('request-errors', method='content', argument=argument)
+                self.assertTrue(result['ok'], result)
+                self.assertEqual(result['value']['url'], 'https://fixture.invalid/' + suffix + '.mp4')
+
     def test_plain_scripts_have_isolated_writable_files_and_cleanup(self):
         for source_id in ('plain-one', 'plain-two'):
             self.assertTrue(call(source_id, 'load', script=FIXTURE)['ok'])

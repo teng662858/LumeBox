@@ -4,6 +4,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:lume_box/core/player/player_settings.dart';
+import 'package:lume_box/core/player/player_stats.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/video_disk_cache.dart';
 
@@ -17,6 +20,24 @@ void main() {
   var calls = 0;
   final paths = <String>[];
   var failures = 0;
+
+  for (final throws in [false, true]) {
+    test('缓存装载失败回退原始地址并保留请求头：throws=$throws', () async {
+      final player = _TransportPlayer(throws);
+      final media = PlayerMedia(
+        uri: upstream,
+        headers: {'Referer': 'https://example.test/'},
+      );
+      await cache.load(player, media);
+      expect(player.loads, hasLength(2));
+      expect(player.loads.last, same(media));
+      expect(player.state.value.error, isNull);
+      expect(await cache.wrap(media), same(media));
+      expect(cache.status, contains('内核缓冲'));
+      player.state.dispose();
+      player.info.dispose();
+    });
+  }
   Completer<void>? pause;
   setUp(() async {
     root = await Directory.systemTemp.createTemp('video-buffer-test-');
@@ -306,4 +327,43 @@ void main() {
       expect(await cache.wrap(remote), same(remote));
     },
   );
+}
+
+class _TransportPlayer extends AbstractPlayer {
+  _TransportPlayer(this.throws);
+  final bool throws;
+  final loads = <PlayerMedia>[];
+  final state = ValueNotifier(const PlayerSnapshot());
+  final info = ValueNotifier(const PlayerStats());
+  @override
+  ValueNotifier<PlayerSnapshot> get snapshot => state;
+  @override
+  ValueNotifier<PlayerStats> get stats => info;
+  @override
+  Future<void> load(PlayerMedia media) async {
+    loads.add(media);
+    if (loads.length == 1) {
+      if (throws) throw StateError('local connection failed');
+      state.value = const PlayerSnapshot(error: 'local connection failed');
+    } else {
+      state.value = const PlayerSnapshot();
+    }
+  }
+
+  @override
+  Future<void> play() async {}
+  @override
+  Future<void> pause() async {}
+  @override
+  Future<void> stop() async {}
+  @override
+  Future<void> seek(Duration position) async {}
+  @override
+  Future<void> setVolume(double volume) async {}
+  @override
+  Future<void> applySettings(PlayerSettings settings) async {}
+  @override
+  Widget buildView() => const SizedBox();
+  @override
+  Future<void> dispose() async {}
 }

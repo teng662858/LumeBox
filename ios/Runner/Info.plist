@@ -16,6 +16,18 @@
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
+			<!-- Source-owned Python servers and the shared media cache bind only
+			     to loopback; URLSession also needs this exception on iOS 18+. -->
+			<key>127.0.0.1</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
 			<!-- iOS 17+ applies ATS to direct IP connections; allow this legacy
 			     HTTP source host without relaxing transport security globally. -->
 			<key>103.45.132.22</key>

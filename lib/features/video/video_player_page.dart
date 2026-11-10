@@ -636,7 +636,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         _playbackRequestHeaders = recoveryMedia.headers ?? const {};
         _networkSpeed.reset();
         _nextSpeedProbe = null;
-        await player.load(await VideoDiskCache.instance.wrap(recoveryMedia));
+        await VideoDiskCache.instance.load(player, recoveryMedia);
         if (!mounted ||
             !identical(player, _player) ||
             !identical(recoveryMedia, _media)) {
@@ -1963,10 +1963,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _playbackRequestHeaders = headers ?? const {};
       try {
         _firstFrameWatch = loadWatch;
-        await player.load(
-          await VideoDiskCache.instance.wrap(
-            PlayerMedia(uri: media.uri, title: media.title, headers: headers),
-          ),
+        await VideoDiskCache.instance.load(
+          player,
+          PlayerMedia(uri: media.uri, title: media.title, headers: headers),
         );
       } catch (error) {
         PlaybackDiagnostics.record(
@@ -5613,9 +5612,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
 
               // 两行（进度条行 / 按钮行）固定行距（用户口径）。
               const SizedBox(height: VideoPlayerPage.controlRowGap),
-              PlayerSnapshotSelector<(bool, String?, String)>(
+              PlayerSnapshotSelector<(bool, String?, String, bool?)>(
                 snapshot: _player?.snapshot ?? _idleSnapshot,
-                select: (s) => (s.playing, s.error, _nextEpisodeBuffer.status),
+                select: (s) => (
+                  s.playing,
+                  s.error,
+                  _nextEpisodeBuffer.status,
+                  _target == null ? null : _nextEpisodeBuffer.hasNext(_target!),
+                ),
                 builder: (context, snapshot) =>
                     _buildFloatingSplitControls(snapshot),
               ),
@@ -5671,24 +5675,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                       ),
                     ),
                   )
-                : label == '下集' && target != null
-                ? Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      PlayerControlGlyph(icon, size: 22, color: Colors.white),
-                      Text(
-                        _nextEpisodeBuffer.status.startsWith('已准备')
-                            ? '已准备'
-                            : _nextEpisodeBuffer.status.startsWith('正在')
-                            ? '解析中'
-                            : '下集',
-                        style: const TextStyle(
-                          fontSize: 9,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  )
                 : PlayerControlGlyph(
                     icon,
                     size: _iconSize,
@@ -5709,15 +5695,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               ? null
               : () => unawaited(playing ? _player!.pause() : _player!.play()),
         ),
-        action(
-          '下集',
-          '下一集 · ${_nextEpisodeBuffer.status}（长按查看）',
-          Icons.skip_next,
-          target == null || _advancing
-              ? null
-              : () => _playEpisodeAt(target.chapterIndex + 1),
-          onLongPress: _showNextEpisodeStatus,
-        ),
+        if (target != null && _nextEpisodeBuffer.hasNext(target) != false)
+          action(
+            '下集',
+            '下一集 · ${_nextEpisodeBuffer.status}（长按查看）',
+            Icons.skip_next,
+            _advancing ? null : () => _playEpisodeAt(target.chapterIndex + 1),
+            onLongPress: _showNextEpisodeStatus,
+          ),
         SizedBox(
           width: 82,
           height: _box,

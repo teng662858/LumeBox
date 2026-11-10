@@ -28,6 +28,37 @@ void main() {
   setUp(() => PlayerFactory.clearMpvInitFailure());
   tearDown(() => PlayerFactory.clearMpvInitFailure());
 
+  test('预启动装载返回错误快照时丢弃实例，不标记媒体已准备', () async {
+    final player = _FailedMediaPlayer();
+    final prelaunch = PlayerPrelaunch.start(
+      PlayerKernel.avplayer,
+      factory: (_) => player,
+    );
+    final media = PlayerMedia(uri: Uri.parse('https://example.test/video.mp4'));
+    await prelaunch.prepareMedia(media);
+    expect(prelaunch.hasPreparedMedia(media), isFalse);
+    expect(prelaunch.preparedStats, isNull);
+    expect(await prelaunch.take(), isNull);
+    await Future<void>.delayed(Duration.zero);
+    expect(player.disposals, 1);
+  });
+
+  test('接手前才失效的预启动实例也必须释放', () async {
+    final player = _PreflightPlayer();
+    final prelaunch = PlayerPrelaunch.start(
+      PlayerKernel.avplayer,
+      factory: (_) => player,
+    );
+    final media = PlayerMedia(uri: Uri.parse('https://example.test/video.mp4'));
+    await prelaunch.prepareMedia(media);
+    player._snapshot.value = const PlayerSnapshot(error: 'late failure');
+    expect(await prelaunch.take(), isNull);
+    expect(prelaunch.hasPreparedMedia(media), isFalse);
+    expect(prelaunch.preparedStats, isNull);
+    await Future<void>.delayed(Duration.zero);
+    expect(player.disposals, 1);
+  });
+
   for (final portrait in [false, true]) {
     test('显式方向预算可等待迟到1.2秒的真实尺寸：portrait=$portrait', () async {
       PlaybackOrientationController.instance.resetForTesting();
@@ -372,6 +403,16 @@ void main() {
     expect(await launcher.launch(PlayerKernel.mpv), isNull);
     expect(PlayerFactory.mpvInitFailed, isTrue, reason: 'MPV 已判定失败');
   });
+}
+
+class _FailedMediaPlayer extends _FakePlayer {
+  _FailedMediaPlayer() : super(PlayerKernel.avplayer);
+  @override
+  Future<void> load(PlayerMedia media) async {
+    _snapshot.value = const PlayerSnapshot(
+      error: 'Could not connect to the server.',
+    );
+  }
 }
 
 class _PreflightPlayer extends _FakePlayer {

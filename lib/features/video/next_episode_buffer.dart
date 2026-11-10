@@ -47,6 +47,14 @@ class NextEpisodeBuffer {
   DateTime? _retryAfter, _catalogRetryAfter;
   NetworkCancellation? _catalogToken, _preparationToken;
   Future<({DataSource source, List<SourceChapter> chapters})?>? _catalog;
+  int? _catalogLength;
+
+  bool? hasNext(VideoPlayTarget target) =>
+      _catalogKey ==
+              '${target.sourceId}|${target.itemId}|${target.chapterId}' &&
+          _catalogLength != null
+      ? target.chapterIndex + 1 < _catalogLength!
+      : null;
 
   Future<void> warmCatalog(
     VideoPlayTarget target,
@@ -66,6 +74,7 @@ class NextEpisodeBuffer {
       _catalogToken?.cancel();
       _catalogKey = key;
       _catalog = null;
+      _catalogLength = null;
       _catalogAttempts = 0;
       _catalogRetryAfter = null;
     }
@@ -103,6 +112,7 @@ class NextEpisodeBuffer {
         })
         .then((value) {
           if (revision != _catalogRevision) return null;
+          _catalogLength = value?.chapters.length;
           if (value == null) {
             _catalog = null;
             _catalogRetryAfter = _now().add(const Duration(seconds: 10));
@@ -238,8 +248,8 @@ class NextEpisodeBuffer {
             : (chosen?.headers ??
                   SourcePlayback.contentHeaders(content, source: source)),
       );
-      await instance
-          .load(await VideoDiskCache.instance.wrap(media))
+      await VideoDiskCache.instance
+          .load(instance, media)
           .timeout(const Duration(seconds: 30));
       if (stale()) return;
       await instance.pause();
@@ -327,6 +337,7 @@ class NextEpisodeBuffer {
     _preparationToken?.cancel();
     _catalog = null;
     _catalogKey = null;
+    _catalogLength = null;
     _attemptKey = null;
     _attempts = 0;
     _catalogAttempts = 0;

@@ -142,10 +142,15 @@ class _HttpAdapter(BaseAdapter):
                 if isinstance(body, str): body = body.encode("utf-8")
                 if not isinstance(body, bytes): raise ValueError("签名钩子必须返回文本或字节正文")
                 request.headers.pop("Content-Length", None)
-        value = _host("http", {
-            "url": request.url, "method": request.method,
-            "headers": dict(request.headers), "body": base64.b64encode(body).decode(),
-        }, timeout=_http_timeout(timeout))
+        try:
+            value = _host("http", {
+                "url": request.url, "method": request.method,
+                "headers": dict(request.headers), "body": base64.b64encode(body).decode(),
+            }, timeout=_http_timeout(timeout))
+        except (RuntimeError, TimeoutError) as error:
+            message = str(error)
+            kind = requests.exceptions.Timeout if isinstance(error, TimeoutError) or re.search(r'time.?out|超时', message, re.I) else requests.exceptions.ConnectionError
+            raise kind(message, request=request) from error
         response = requests.Response()
         response.status_code = value["status"]
         response.headers = CaseInsensitiveDict(value["headers"])

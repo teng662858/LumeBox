@@ -87,6 +87,26 @@ void main() {
   );
   const settings = PlayerSettings();
   setUp(() => MediaPreload.instance.video = true);
+  test('目录预热后区分末集，清理后不复用旧目录数量', () async {
+    final source = _Source(), buffer = NextEpisodeBuffer();
+    addTearDown(buffer.dispose);
+    expect(buffer.hasNext(target), isNull);
+    await buffer.warmCatalog(target, () async => source);
+    expect(buffer.hasNext(target), isTrue);
+    const last = VideoPlayTarget(
+      sourceId: 'source',
+      itemId: 'book',
+      title: '书',
+      chapterIndex: 1,
+      chapterId: 'c2',
+      chapterTitle: '2',
+    );
+    expect(buffer.hasNext(last), isNull);
+    await buffer.warmCatalog(last, () async => source);
+    expect(buffer.hasNext(last), isFalse);
+    await buffer.clear();
+    expect(buffer.hasNext(last), isNull);
+  });
   test(
     'prepared player exposes its actual media and rejects a late error',
     () async {

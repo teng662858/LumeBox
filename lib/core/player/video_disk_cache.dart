@@ -32,6 +32,7 @@ class VideoDiskCache extends ChangeNotifier {
   final _client = HttpClient()..autoUncompress = false;
   final _tickets = <String, PlayerMedia>{};
   final _ticketKeys = <String, String>{};
+  final _bypassed = <String>{};
   Timer? _progressNotice;
   final _files =
       <String, ({File file, int bytes, DateTime used, _Block block})>{};
@@ -125,6 +126,7 @@ class VideoDiskCache extends ChangeNotifier {
   Future<PlayerMedia> wrap(PlayerMedia media, {bool force = false}) async {
     if (!_ready ||
         !media.isNetwork ||
+        _bypassed.contains(_key(media, -1)) ||
         (!force && !enabled && !_loopback(media.uri))) {
       return media;
     }
@@ -153,6 +155,26 @@ class VideoDiskCache extends ChangeNotifier {
       status = '缓存服务不可用，使用内核缓冲';
       notifyListeners();
       return media;
+    }
+  }
+
+  /// A failed local cache transport must not make a reachable origin unplayable.
+  Future<void> load(AbstractPlayer player, PlayerMedia media) async {
+    final wrapped = await wrap(media);
+    try {
+      await player.load(wrapped);
+      if (wrapped.uri == media.uri || player.snapshot.value.error == null) {
+        return;
+      }
+    } catch (_) {
+      if (wrapped.uri == media.uri) rethrow;
+    }
+    await player.load(media);
+    if (player.snapshot.value.error == null) {
+      if (_bypassed.length >= 128) _bypassed.remove(_bypassed.first);
+      _bypassed.add(_key(media, -1));
+      status = '本地缓存连接失败，当前资源已改用内核缓冲';
+      notifyListeners();
     }
   }
 
@@ -710,6 +732,7 @@ class VideoDiskCache extends ChangeNotifier {
   }
 
   Future<void> close() async {
+    _bypassed.clear();
     _progressNotice?.cancel();
     _ticketKeys.clear();
     _ready = false;

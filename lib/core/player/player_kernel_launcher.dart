@@ -245,9 +245,10 @@ class PlayerPrelaunch {
       try {
         await (() async {
           if (settings != null) await player.applySettings(settings);
-          await player.load(
-            await VideoDiskCache.instance.wrap(requestMedia ?? media),
-          );
+          await VideoDiskCache.instance.load(player, requestMedia ?? media);
+          if (player.snapshot.value.error != null) {
+            throw StateError('预启动媒体装载失败');
+          }
           await player.pause();
         })().timeout(timeout);
         _preparedMedia = media;
@@ -275,9 +276,13 @@ class PlayerPrelaunch {
           }
         }
         if (hasSize()) _preparedStats = player.stats.value;
+        if (player.snapshot.value.error != null) {
+          throw StateError('预启动媒体已失效');
+        }
         return launch;
       } catch (error) {
         _preparedMedia = null;
+        _preparedStats = null;
         unawaited(_discardPrepared(player));
         LumeLog.info('[player] 入场方向预检未完成：$error');
         return null;
@@ -300,7 +305,14 @@ class PlayerPrelaunch {
   Future<PlayerLaunch?> take() async {
     if (_consumed) return null;
     _consumed = true;
-    return _launch;
+    final launch = await _launch;
+    if (launch != null && launch.player.snapshot.value.error != null) {
+      _preparedMedia = null;
+      _preparedStats = null;
+      unawaited(_discardPrepared(launch.player));
+      return null;
+    }
+    return launch;
   }
 
   /// 放弃这次预启动：等创建结束再释放实例（释放失败只记日志）。
