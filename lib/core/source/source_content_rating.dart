@@ -347,6 +347,8 @@ class SourceContentRating {
     'book18_novel',
     // 黄视频（huang.video）：国产成人视频站（AI 短剧/糖心Vlog/网红/探花/PMV/ASMR）。
     'huangvideo_video',
+    // 集书阁（jishuge.com，已升级为 X小说 / x文学 前端）：成人长/短篇小说。
+    'jishuge_novel',
   };
   // Exact, explicitly classified repository names cover imported/custom IDs.
   static const adultNames = <String>{
@@ -514,6 +516,7 @@ class SourceContentRating {
     "x云搜",
     "色文網",
     "黄视频",
+    "集书阁",
   };
   static bool isAdult(String id, String name) =>
       _declaredAdultIds.contains(id.toLowerCase()) ||

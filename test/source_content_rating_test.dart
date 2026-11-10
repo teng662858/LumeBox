@@ -221,4 +221,8 @@ void main() {
     expect(SourceContentRating.isAdult('huangvideo_video', '黄视频'), isTrue);
     expect(SourceContentRating.isAdult('custom', '黄视频'), isTrue);
   });
+  test('2026-11-10 集书阁按 18+ 归档', () {
+    expect(SourceContentRating.isAdult('jishuge_novel', '集书阁'), isTrue);
+    expect(SourceContentRating.isAdult('custom', '集书阁'), isTrue);
+  });
 }

@@ -1,3 +1,13 @@
+## 2026-11-10 新增源：集书阁（集书阁.com）
+
+详见 [源记录](../docs/2026-11-10_新增源-集书阁.md)。`comic/jishuge.js`（`jishuge_novel`）：用户给的
+`集书阁.com` 仍在，但站点已换成**新前端**——旧域只留旧模板列表，阅读页 301 到新站（X小说 / x文学），
+旧站 canonical 指向 `www.集书阁成人小说.com`。源直接按新站写：`/books` 10603 部、53 个分类
+（短篇 10400 部 520 页 / 长篇 203 部 / 50 个题材）、`/search?q=` 搜索、`/book/<hash>` 目录、
+`/read/<hash>/<章页id>` 正文；正文里偶有的 `span.brand-mark`「x文学.com」水印整段丢掉。
+站点无封面、无排序/筛选，全部免登录，镜像用站方「收藏回家」公布的 x成人小说.com / x文学.com /
+xchengren.com。
+
 ## 2026-11-10 新增源：黄视频（huang.video）
 
 详见 [源记录](../docs/2026-11-10_新增源-黄视频.md)。`video/huangvideo.js`（`huangvideo_video`）：
