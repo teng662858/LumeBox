@@ -217,4 +217,8 @@ void main() {
     expect(SourceContentRating.isAdult('custom', 'X云搜'), isTrue);
     expect(SourceContentRating.isAdult('custom', '色文網'), isTrue);
   });
+  test('2026-11-10 黄视频按 18+ 归档', () {
+    expect(SourceContentRating.isAdult('huangvideo_video', '黄视频'), isTrue);
+    expect(SourceContentRating.isAdult('custom', '黄视频'), isTrue);
+  });
 }

@@ -1,3 +1,13 @@
+## 2026-11-10 新增源：黄视频（huang.video）
+
+详见 [源记录](../docs/2026-11-10_新增源-黄视频.md)。`video/huangvideo.js`（`huangvideo_video`）：
+Rails 服务端渲染的国产成人视频站，免登录直连。7 个分类（最新 / AI短剧 / 糖心Vlog / 网红福利姬 /
+探花大神 / PMV / ASMR）都有真实分页与四档排序，`/videos` 页内联 93 个博主可做筛选；搜索一页分
+「短剧」与「视频」两段（`series_page` / `page` 各翻各的），源里合并去重。详情页内联 HLS `master.m3u8`
+（单条 720p 变体），**CDN 只认站点 Referer**（无 Referer 或外站 Referer 都 403），源里在 `content()`
+带 `Referer` 头，实测 206 + `#EXTM3U`、分片 200 `video/mp2t`；封面与缩略图不需要 Referer。单集页自带
+整部剧的播放列表，`chapters(v:…)` 直接给全剧选集。
+
 ## 2026-11-09 新增三站源：集芳阁云搜 / X云搜 / 色文網
 
 详见 [源记录](../docs/2026-11-09_新增源-集芳阁X云搜色文網.md)。`video/jifangge.js`（`jifangge_video`）：
