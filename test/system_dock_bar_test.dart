@@ -129,6 +129,7 @@ void main() {
 
   testWidgets('原生实心图标选中时跟随主题色', (tester) async {
     final harness = NativeHarness(tester)..install();
+    var badge = 7;
     Widget scene(Brightness brightness) => MaterialApp(
       theme: LumeTheme.build(
         brightness: brightness,
@@ -138,7 +139,16 @@ void main() {
       home: Align(
         alignment: Alignment.bottomCenter,
         child: SystemDockBar(
-          entries: entries,
+          entries: [
+            ...entries.take(2),
+            ShellDockEntry(
+              id: 'settings',
+              label: '设置',
+              icon: Icons.settings,
+              selectedIcon: Icons.settings,
+              badgeCount: badge,
+            ),
+          ],
           activeId: 'comic',
           onSelect: (_) {},
           settings: const NativeNavigationSettings(solidIcons: true),
@@ -152,9 +162,17 @@ void main() {
     await tester.pumpWidget(scene(Brightness.light));
     await tester.pumpAndSettle();
     expect(harness.updates.last['tintColor'], LumeTheme.accent.toARGB32());
+    expect(((harness.updates.last['entries'] as List).last as Map)['badge'], 7);
+    badge = 0;
     await tester.pumpWidget(scene(Brightness.dark));
     await tester.pumpAndSettle();
     expect(harness.updates.last['tintColor'], LumeTheme.accent.toARGB32());
+    expect(
+      ((harness.updates.last['entries'] as List).last as Map).containsKey(
+        'badge',
+      ),
+      isFalse,
+    );
     await tester.pumpWidget(const SizedBox());
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 

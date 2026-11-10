@@ -127,6 +127,11 @@ class SourceSubscriptionSync {
     if (changes.isEmpty) return;
     final entries = _changes.putIfAbsent(section, () => {});
     for (final change in changes) {
+      if (change['url'] != null) {
+        entries.removeWhere(
+          (id, old) => id != change['id'] && old['url'] == change['url'],
+        );
+      }
       entries[change['id']!] = change;
     }
     final count = changeCount(section);
@@ -532,6 +537,14 @@ class SourceSubscriptionSync {
                   !record.autoInstallNew &&
                   !installNewFor.contains(record.url) &&
                   !record.approvedUrls.contains(ref.url)) {
+                if (!record.pending.containsKey(ref.url)) {
+                  changes.add({
+                    'id': declaredId ?? ref.url,
+                    'name': declaredName,
+                    'status': '新源待安装',
+                    'url': ref.url,
+                  });
+                }
                 record.pending[ref.url] = declaredName;
                 result.pending++;
                 continue;
@@ -562,6 +575,7 @@ class SourceSubscriptionSync {
                 changes.add({
                   'id': descriptor.id,
                   'name': descriptor.name,
+                  'url': ref.url,
                   'status':
                       '已更新 ${sourceVersionChange(before[descriptor.id]!.version, descriptor.version)}',
                 });
@@ -570,6 +584,7 @@ class SourceSubscriptionSync {
                 changes.add({
                   'id': descriptor.id,
                   'name': descriptor.name,
+                  'url': ref.url,
                   'status': '已新增',
                 });
               }

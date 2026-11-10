@@ -40,6 +40,7 @@ final class LumeSystemTabBarFactory: NSObject, FlutterPlatformViewFactory {
 private struct LumeSystemTabSpec: Equatable {
   let id: String
   let label: String
+  let badge: Int
 }
 
 private final class LumeContentTabBar: UITabBar {
@@ -135,7 +136,8 @@ private final class LumeSystemTabBarView: NSObject, FlutterPlatformView, UITabBa
       guard let id = entry["id"] as? String, ["comic", "video", "settings", "search"].contains(id),
             let label = entry["label"] as? String, !label.isEmpty,
             !next.contains(where: { $0.id == id }) else { return false }
-      next.append(LumeSystemTabSpec(id: id, label: label))
+      next.append(LumeSystemTabSpec(id: id, label: label,
+        badge: max(0, (entry["badge"] as? NSNumber)?.intValue ?? 0)))
     }
     let labels = values["showLabels"] as? Bool ?? true
     let rawHeight = (values["barHeight"] as? NSNumber)?.doubleValue ?? 0
@@ -165,6 +167,7 @@ private final class LumeSystemTabBarView: NSObject, FlutterPlatformView, UITabBa
           selectedImage: UIImage(systemName: filled, withConfiguration: configuration)
         )
         item.accessibilityLabel = spec.label
+        item.badgeValue = spec.badge > 0 ? (spec.badge > 99 ? "99+" : String(spec.badge)) : nil
         item.accessibilityIdentifier = "shell.tab.\(spec.id)"
         return item
       }

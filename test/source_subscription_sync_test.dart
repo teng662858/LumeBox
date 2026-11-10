@@ -59,20 +59,42 @@ void main() {
       'var LumeSource = {id:"$id", name:"$id", version:"$version"};';
 
   test('新源默认待选择，批准后才安装并保持后续更新', () async {
+    SourceSubscriptionSync.attachNoticeFile(
+      Section.video,
+      File('${root.path}/notice.txt'),
+    );
+    SourceSubscriptionSync.acknowledge(Section.video);
     final record = service.subscriptions.single;
     record.autoInstallNew = false;
     remote[manifest] = 'https://repo.example/new.js';
     remote['https://repo.example/new.js'] = script('new', 1);
     final pending = await service.sync(force: true);
     expect(pending.pending, 1);
+    expect(SourceSubscriptionSync.changeCount(Section.video).value, 1);
+    expect(
+      SourceSubscriptionSync.notices(Section.video).single['status'],
+      '新源待安装',
+    );
     expect(manager.sources, isEmpty);
     expect(record.pending.keys, contains('https://repo.example/new.js'));
+    SourceSubscriptionSync.acknowledge(Section.video);
+    await service.sync(force: true);
+    expect(
+      SourceSubscriptionSync.changeCount(Section.video).value,
+      0,
+      reason: '同一个待安装源已读后不反复亮角标',
+    );
     await service.save();
     await service.load();
     final saved = service.subscriptions.single;
     expect(saved.pending, isNotEmpty);
     saved.approvedUrls.add('https://repo.example/new.js');
     expect((await service.sync(force: true)).added, 1);
+    expect(SourceSubscriptionSync.changeCount(Section.video).value, 1);
+    expect(
+      SourceSubscriptionSync.notices(Section.video).single['status'],
+      '已新增',
+    );
     expect(saved.pending, isEmpty);
     remote['https://repo.example/new.js'] = script('new', 2);
     expect((await service.sync(force: true)).updated, 1);
@@ -557,6 +579,15 @@ void main() {
       stored!.subscriptions.map((record) => record.url),
       contains(official),
     );
+    await tester.scrollUntilVisible(
+      find.textContaining('个新源待选择安装'),
+      250,
+      scrollable: find
+          .byWidgetPredicate(
+            (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+          )
+          .first,
+    );
     expect(find.textContaining('个新源待选择安装'), findsOneWidget);
   });
 
@@ -631,15 +662,15 @@ void main() {
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
       isEmpty,
     );
-    expect(find.text('一键更新全部订阅'), findsOneWidget);
+    expect(find.text('检查更新与增减'), findsOneWidget);
     expect(find.text('更新已保存的订阅'), findsNothing);
     expect(find.byTooltip('同步订阅'), findsNothing);
     remote['https://repo.example/a.js'] = script('a', 2);
-    await tester.tap(find.text('一键更新全部订阅'));
+    await tester.tap(find.text('检查更新与增减'));
     await settle();
     expect(manager.sources.single.version, '2');
     remote.remove('https://repo.example/a.js');
-    await tester.tap(find.text('一键更新全部订阅'));
+    await tester.tap(find.text('检查更新与增减'));
     await settle();
     expect(find.byType(SelectableText), findsWidgets);
     expect(find.textContaining('HTTP 503'), findsWidgets);

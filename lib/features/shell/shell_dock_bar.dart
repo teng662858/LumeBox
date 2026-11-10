@@ -37,6 +37,7 @@ class ShellDockEntry {
     required this.label,
     required this.icon,
     required this.selectedIcon,
+    this.badgeCount = 0,
   });
 
   /// 稳定标识（与 [ShellTab.id] 同源）。
@@ -47,6 +48,7 @@ class ShellDockEntry {
   /// 未选中 / 选中图标。
   final IconData icon;
   final IconData selectedIcon;
+  final int badgeCount;
 }
 
 /// 底部悬浮 Dock：真实毛玻璃胶囊 + 可拖拽、会拉伸、松手弹簧吸附的水滴。
@@ -1791,52 +1793,59 @@ class _DockItem extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.max,
           children: <Widget>[
-            SizedBox(
-              height: _iconSlot,
-              child: Stack(
-                alignment: Alignment.center,
-                children: <Widget>[
-                  // 图标保持实心；选中时轻微放大，
-                  // 给滑动水滴一个落点反馈（水滴负责位移，图标只负责「弹」）。
-                  TweenAnimationBuilder<Color?>(
-                    tween: ColorTween(end: color),
-                    duration: _selectionDuration,
-                    curve: Curves.easeInOut,
-                    builder: (context, animatedColor, _) => AnimatedScale(
-                      scale: selected ? 1.06 : 1,
+            Badge(
+              isLabelVisible: entry.badgeCount > 0,
+              label: Text(
+                entry.badgeCount > 99 ? '99+' : '${entry.badgeCount}',
+              ),
+              child: SizedBox(
+                height: _iconSlot,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    // 图标保持实心；选中时轻微放大，
+                    // 给滑动水滴一个落点反馈（水滴负责位移，图标只负责「弹」）。
+                    TweenAnimationBuilder<Color?>(
+                      tween: ColorTween(end: color),
                       duration: _selectionDuration,
-                      curve: selected ? Curves.easeOutBack : Curves.easeIn,
-                      child: AnimatedSwitcher(
+                      curve: Curves.easeInOut,
+                      builder: (context, animatedColor, _) => AnimatedScale(
+                        scale: selected ? 1.06 : 1,
                         duration: _selectionDuration,
-                        switchInCurve: Curves.easeOutBack,
-                        switchOutCurve: Curves.easeIn,
-                        transitionBuilder: (child, animation) =>
-                            ScaleTransition(
-                              scale: Tween<double>(
-                                begin: .8,
-                                end: 1,
-                              ).animate(animation),
-                              child: FadeTransition(
-                                opacity: animation,
-                                child: child,
+                        curve: selected ? Curves.easeOutBack : Curves.easeIn,
+                        child: AnimatedSwitcher(
+                          duration: _selectionDuration,
+                          switchInCurve: Curves.easeOutBack,
+                          switchOutCurve: Curves.easeIn,
+                          transitionBuilder: (child, animation) =>
+                              ScaleTransition(
+                                scale: Tween<double>(
+                                  begin: .8,
+                                  end: 1,
+                                ).animate(animation),
+                                child: FadeTransition(
+                                  opacity: animation,
+                                  child: child,
+                                ),
                               ),
-                            ),
-                        child: LumeIcon(
-                          selected || solidIcons
-                              ? entry.selectedIcon
-                              : entry.icon,
-                          slot:
-                              'dock.${entry.id}.${selected ? 'selected' : 'normal'}',
-                          label: '${entry.label} · ${selected ? '选中' : '未选中'}',
-                          group: '底部导航',
-                          key: ValueKey<bool>(selected),
-                          size: 20,
-                          color: animatedColor,
+                          child: LumeIcon(
+                            selected || solidIcons
+                                ? entry.selectedIcon
+                                : entry.icon,
+                            slot:
+                                'dock.${entry.id}.${selected ? 'selected' : 'normal'}',
+                            label:
+                                '${entry.label} · ${selected ? '选中' : '未选中'}',
+                            group: '底部导航',
+                            key: ValueKey<bool>(selected),
+                            size: 20,
+                            color: animatedColor,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 4),

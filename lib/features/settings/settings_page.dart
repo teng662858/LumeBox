@@ -15,6 +15,7 @@ import 'configuration_settings_page.dart';
 import 'privacy_settings_page.dart';
 import 'total_subscription_page.dart';
 import 'subscription_sync_page.dart';
+import '../../core/source/source_subscription_sync.dart';
 import 'tmdb_settings_page.dart';
 import 'preload_settings_page.dart';
 import 'search_settings_page.dart';
@@ -365,11 +366,19 @@ class SettingsPage extends StatelessWidget {
     const SettingsGroupTitle('源与订阅'),
     const TotalSubscriptionImportEntry(),
     for (final section in [Section.comic, Section.video])
-      SettingsEntryCard(
-        icon: Icons.subscriptions_outlined,
-        title: '${section.label}订阅',
-        subtitle: '添加、选择安装及更新订阅源',
-        onTap: () => _push(context, SourceSubscriptionPage(section: section)),
+      ValueListenableBuilder<int>(
+        valueListenable: SourceSubscriptionSync.changeCount(section),
+        builder: (context, count, _) => SettingsEntryCard(
+          icon: Icons.subscriptions_outlined,
+          title: '${section.label}订阅',
+          subtitle: count == 0 ? '添加、选择安装及更新订阅源' : '$count 项新增、更新或移除，点击查看处理',
+          trailing: Badge(
+            isLabelVisible: count > 0,
+            label: Text(count > 99 ? '99+' : '$count'),
+            child: const Icon(Icons.chevron_right),
+          ),
+          onTap: () => _push(context, SourceSubscriptionPage(section: section)),
+        ),
       ),
     SettingsEntryCard(
       icon: Icons.pets_outlined,

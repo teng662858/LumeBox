@@ -58,6 +58,47 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
     }
   }
 
+  void _showChanges() {
+    final changes = SourceSubscriptionSync.notices(widget.section);
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('源仓库变更'),
+        content: SizedBox(
+          width: 360,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 360),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final change in changes)
+                    ListTile(
+                      title: Text(change['name'] ?? ''),
+                      subtitle: Text(change['status'] ?? ''),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+          TextButton(
+            onPressed: () {
+              SourceSubscriptionSync.acknowledge(widget.section);
+              Navigator.pop(context);
+            },
+            child: const Text('标为已读'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _add() async {
     final service = _service;
     if (service == null || _url.text.trim().isEmpty) return;
@@ -255,19 +296,11 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
                       slot: 'source_subscription_page.1',
                     ),
                     title: Text('订阅源已变动 $count 条'),
-                    subtitle: Text(
-                      SourceSubscriptionSync.notices(widget.section)
-                          .map(
-                            (entry) => '${entry['name']} · ${entry['status']}',
-                          )
-                          .join('\n'),
-                    ),
+                    subtitle: const Text('查看新增、更新和移除明细'),
+                    onTap: _showChanges,
                     trailing: TextButton(
-                      onPressed: () =>
-                          SourceSubscriptionSync.changeCount(widget.section)
-                                  .value =
-                              0,
-                      child: const Text('知道了'),
+                      onPressed: _showChanges,
+                      child: const Text('查看'),
                     ),
                   ),
           ),
@@ -287,7 +320,7 @@ class _SourceSubscriptionPageState extends State<SourceSubscriptionPage> {
               Icons.system_update_alt,
               slot: 'source_subscription_page.2',
             ),
-            label: const Text('一键更新全部订阅'),
+            label: const Text('检查更新与增减'),
           ),
           const Text(
             '订阅自动检查已安装源的更新和移除。新发现的源进入待安装列表，勾选后才安装。正常间隔 6 小时，失败后 30 分钟可重试。保留手动导入的源。',

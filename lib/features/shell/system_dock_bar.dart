@@ -131,7 +131,12 @@ class _SystemTabBarViewState extends State<_SystemTabBarView> {
     final bar = widget.bar;
     return {
       'entries': [
-        for (final entry in bar.entries) {'id': entry.id, 'label': entry.label},
+        for (final entry in bar.entries)
+          {
+            'id': entry.id,
+            'label': entry.label,
+            if (entry.badgeCount > 0) 'badge': entry.badgeCount,
+          },
       ],
       'activeId': bar.activeId,
       'brightness': Theme.of(context).brightness.name,

@@ -373,9 +373,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
     final difference = total - _seenSubscriptionChanges;
     _seenSubscriptionChanges = total;
-    if (difference <= 0) return;
-    // Update badges and source-row notices provide persistent feedback.
+    if (difference != 0 && mounted) setState(() {});
   }
+
+  int _subscriptionBadge(String tab) => tab == 'settings'
+      ? _seenSubscriptionChanges
+      : SourceSubscriptionSync.changeCount(
+          tab == 'video' ? Section.video : Section.comic,
+        ).value;
 
   @override
   void didHaveMemoryPressure() {
@@ -785,6 +790,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                         label: tab.label,
                         icon: tab.icon,
                         selectedIcon: tab.selectedIcon,
+                        badgeCount: _subscriptionBadge(tab.id),
                       ),
                     ShellDockEntry.search,
                   ],
@@ -808,6 +814,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                         label: tab.label,
                         icon: tab.icon,
                         selectedIcon: tab.selectedIcon,
+                        badgeCount: _subscriptionBadge(tab.id),
                       ),
                     ShellDockEntry.search,
                   ],
