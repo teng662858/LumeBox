@@ -1,3 +1,5 @@
+import '../../core/search/search_source_filter.dart';
+import 'search_source_filters.dart';
 import 'aggregate_work_groups.dart';
 
 import 'package:flutter/material.dart';
@@ -45,7 +47,7 @@ class AggregateSearchResults extends StatefulWidget {
 
 class _AggregateSearchResultsState extends State<AggregateSearchResults> {
   void _showFailures() {
-    final failedSites = widget.sites
+    final failedSites = _sites
         .where((site) => widget.failed.contains(site.id))
         .toList();
     showDialog<void>(
@@ -96,6 +98,13 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
   static const _layoutKey = 'search.results.siteLayout';
   static const _cardsKey = 'search.results.cards';
   static const _referenceVersionKey = 'search.results.threeColumnVersion';
+  SearchSourceFilter _filter = const SearchSourceFilter();
+  List<SourceDescriptor> _sites = const [];
+  List<SearchHit> _hits = const [];
+  List<SourceDescriptor>? _groupedSites;
+  SearchSourceFilter? _groupedFilter;
+  Set<String> get _failed =>
+      widget.failed.intersection(_sites.map((s) => s.id).toSet());
   _SiteLayout _layout = _SiteLayout.left;
   bool _cards = true;
   String _sort = 'relevance';
@@ -105,18 +114,27 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
   final _mergedCache = <String, List<List<SearchHit>>>{};
 
   void _prepareGroups() {
-    if (identical(_groupedHits, widget.hits)) return;
+    if (identical(_groupedHits, widget.hits) &&
+        identical(_groupedSites, widget.sites) &&
+        identical(_groupedFilter, _filter)) {
+      return;
+    }
     _groupedHits = widget.hits;
+    _groupedSites = widget.sites;
+    _groupedFilter = _filter;
+    _sites = widget.sites.where(_filter.matches).toList();
+    final ids = _sites.map((s) => s.id).toSet();
+    _hits = widget.hits.where((hit) => ids.contains(hit.sourceId)).toList();
     _siteGroups.clear();
     _mergedCache.clear();
-    for (final hit in widget.hits) {
+    for (final hit in _hits) {
       (_siteGroups[hit.sourceId] ??= []).add(hit);
     }
   }
 
   List<SourceDescriptor> get _visibleSites {
-    final matching = widget.hits.map((hit) => hit.sourceId).toSet();
-    return widget.sites
+    final matching = _hits.map((hit) => hit.sourceId).toSet();
+    return _sites
         .where(
           (site) =>
               matching.contains(site.id) ||
@@ -148,6 +166,7 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
   @override
   void didUpdateWidget(covariant AggregateSearchResults oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _prepareGroups();
     if (_selected != null &&
         !_visibleSites.any((site) => site.id == _selected)) {
       _selected = null;
@@ -261,7 +280,7 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
     required bool vertical,
   }) {
     final entries = <({String? id, String name, String detail})>[
-      (id: null, name: '全部', detail: '${widget.hits.length} 条'),
+      (id: null, name: '全部', detail: '${_hits.length} 条'),
       for (final site in _visibleSites)
         (
           id: site.id,
@@ -608,10 +627,19 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
     _prepareGroups();
     final groups = _siteGroups;
     final filtered = _selected == null
-        ? widget.hits
+        ? _hits
         : groups[_selected] ?? const <SearchHit>[];
     return Column(
       children: [
+        SearchSourceFilters(
+          sources: widget.sites,
+          value: _filter,
+          onChanged: (v) => setState(() {
+            _filter = v;
+            _selected = null;
+            _groupedHits = null;
+          }),
+        ),
         Padding(
           padding: const EdgeInsets.only(left: 16, right: 4),
           child: Row(
@@ -619,9 +647,9 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
               Expanded(
                 child: Text(
                   widget.loading
-                      ? '${widget.completed.length}/${widget.sites.length} 站点 · ${widget.hits.length} 条'
+                      ? '${widget.completed.length}/${widget.sites.length} 站点 · ${_hits.length} 条'
                       : _selected == null
-                      ? '${widget.hits.length} 条结果 · ${_visibleSites.length} 个来源'
+                      ? '${_hits.length} 条结果 · ${_visibleSites.length} 个来源'
                       : '${widget.sites.where((s) => s.id == _selected).firstOrNull?.name ?? '所选站点'} · ${filtered.length} 条',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -631,12 +659,12 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
                   ),
                 ),
               ),
-              if (widget.failed.isNotEmpty)
+              if (_failed.isNotEmpty)
                 Tooltip(
-                  message: '${widget.failed.length} 个源未取得结果，其他来源正常显示',
+                  message: '${_failed.length} 个源未取得结果，其他来源正常显示',
                   child: TextButton(
                     onPressed: widget.loading ? null : () => _showFailures(),
-                    child: Text('失败 ${widget.failed.length}'),
+                    child: Text('失败 ${_failed.length}'),
                   ),
                 ),
               IconButton(
@@ -693,7 +721,7 @@ class _AggregateSearchResultsState extends State<AggregateSearchResults> {
               ? _grouped(groups)
               : _flat(filtered),
         ),
-        if (!widget.loading && widget.hits.isEmpty && widget.failed.isEmpty)
+        if (!widget.loading && _hits.isEmpty && _failed.isEmpty)
           const Padding(
             padding: EdgeInsets.all(16),
             child: Text('未搜索到相关内容，可修改关键词或搜索站点'),

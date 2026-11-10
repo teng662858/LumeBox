@@ -1,3 +1,6 @@
+import '../../core/search/search_source_filter.dart';
+import 'search_source_filters.dart';
+
 import 'package:lume_box/shared/widgets/lume_icon.dart';
 
 import '../../shared/widgets/drawer_geometry.dart';
@@ -835,6 +838,12 @@ class _SearchModeSheet extends StatefulWidget {
 
 class _SearchModeSheetState extends State<_SearchModeSheet> {
   late SearchMode _picked = widget.current;
+  SearchSourceFilter _filter = const SearchSourceFilter();
+  List<SourceDescriptor> get _visible =>
+      widget.sources.where(_filter.matches).toList();
+  Set<String> get _effective =>
+      _visible.where((s) => _selected.contains(s.id)).map((s) => s.id).toSet();
+
   late final Set<String> _selected = widget.sources
       .where(
         (source) =>
@@ -916,25 +925,34 @@ class _SearchModeSheetState extends State<_SearchModeSheet> {
                               onTap: () => setState(() => _picked = mode),
                             ),
                         if (_picked == SearchMode.aggregate) ...[
+                          SearchSourceFilters(
+                            sources: widget.sources,
+                            value: _filter,
+                            onChanged: (v) => setState(() => _filter = v),
+                          ),
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: Row(
                               children: [
                                 Expanded(
                                   child: Text(
-                                    '已选 ${_selected.length}/${widget.sources.length} 个站点',
+                                    '已选 ${_effective.length}/${_visible.length} 个站点',
                                   ),
                                 ),
                                 TextButton(
                                   onPressed: () => setState(
                                     () => _selected.addAll(
-                                      widget.sources.map((source) => source.id),
+                                      _visible.map((source) => source.id),
                                     ),
                                   ),
                                   child: const Text('全选'),
                                 ),
                                 TextButton(
-                                  onPressed: () => setState(_selected.clear),
+                                  onPressed: () => setState(
+                                    () => _selected.removeAll(
+                                      _visible.map((s) => s.id),
+                                    ),
+                                  ),
                                   child: const Text('清空'),
                                 ),
                               ],
@@ -945,7 +963,12 @@ class _SearchModeSheetState extends State<_SearchModeSheet> {
                               padding: EdgeInsets.all(16),
                               child: Text('暂无已启用站点，请先在源管理中启用站点'),
                             ),
-                          for (final source in widget.sources)
+                          if (widget.sources.isNotEmpty && _visible.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Text('当前分类没有可用站点，请切换内容或源类型'),
+                            ),
+                          for (final source in _visible)
                             CheckboxListTile(
                               key: ValueKey('search-site-${source.id}'),
                               dense: true,
@@ -970,14 +993,15 @@ class _SearchModeSheetState extends State<_SearchModeSheet> {
                       width: double.infinity,
                       child: FilledButton(
                         onPressed:
-                            _picked == SearchMode.aggregate && _selected.isEmpty
+                            _picked == SearchMode.aggregate &&
+                                _effective.isEmpty
                             ? null
                             : () => Navigator.of(context).pop(
                                 SearchScopeSelection(
                                   _picked,
-                                  _selected.length == widget.sources.length
+                                  _effective.length == widget.sources.length
                                       ? null
-                                      : Set<String>.of(_selected),
+                                      : Set<String>.of(_effective),
                                 ),
                               ),
                         child: const Text('应用'),

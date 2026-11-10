@@ -500,6 +500,9 @@ class CatAggregateSourceManager implements SourceManager {
         name: site.name,
         version: 'Node',
         enabled: true,
+        runtimeKind: 'cat',
+        section: site.kind == 'comic' ? Section.comic : Section.video,
+        mediaKind: site.kind,
       ),
   ];
   @override
@@ -533,6 +536,9 @@ class CatSourceManager implements SourceManager {
       name: site.name,
       version: 'Node',
       enabled: true,
+      runtimeKind: 'cat',
+      section: site.kind == 'comic' ? Section.comic : Section.video,
+      mediaKind: site.kind,
     ),
   ];
   @override
