@@ -113,6 +113,31 @@ void main() {
     expect(result.removed, 0);
   });
 
+  test('仓库撤回待安装源后，提示移除而不是继续提示安装', () async {
+    SourceSubscriptionSync.attachNoticeFile(
+      Section.video,
+      File('${root.path}/notice.txt'),
+    );
+    SourceSubscriptionSync.acknowledge(Section.video);
+    remote[manifest] = 'https://repo.example/stay.js';
+    remote['https://repo.example/stay.js'] = script('stay', 1);
+    await service.sync(force: true);
+    SourceSubscriptionSync.acknowledge(Section.video);
+    service.subscriptions.single.autoInstallNew = false;
+    remote[manifest] =
+        'https://repo.example/stay.js\nhttps://repo.example/new.js';
+    remote['https://repo.example/new.js'] = script('new', 1);
+    await service.sync(force: true);
+    remote[manifest] = 'https://repo.example/stay.js';
+    await service.sync(force: true);
+    expect(service.subscriptions.single.pending, isEmpty);
+    expect(
+      SourceSubscriptionSync.notices(Section.video).single['status'],
+      '仓库已移除（未安装）',
+    );
+    expect(manager.sources.single.id, 'stay');
+  });
+
   test('旧 CDN 快照订阅迁移并合并成员与用户排除项', () async {
     const stable = '${SubscriptionCatalog.cdnBase}subscriptions/cdn/video.txt';
     service.subscriptions.clear();

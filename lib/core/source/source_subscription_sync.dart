@@ -595,6 +595,16 @@ class SourceSubscriptionSync {
           }
           if (complete) {
             final available = refs.map((ref) => ref.url).toSet();
+            for (final pending in record.pending.entries) {
+              if (!available.contains(pending.key)) {
+                changes.add({
+                  'id': pending.key,
+                  'name': pending.value,
+                  'url': pending.key,
+                  'status': '仓库已移除（未安装）',
+                });
+              }
+            }
             record.pending.removeWhere((url, _) => !available.contains(url));
             record.approvedUrls.removeWhere((url) => !available.contains(url));
             for (final old in record.members.entries) {
