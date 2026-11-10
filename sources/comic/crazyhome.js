@@ -1,4 +1,4 @@
-// LumeSource: {"id":"crazyhome_novel","name":"狂人之家书屋","version":"1.0.2","category":"novel","contentCategory":"adult","network":"direct","mirrors":["https://www.crazyhome2000.com"],"icon":"https://www.crazyhome2000.com/wp-content/uploads/2025/06/icon.jpg","settingsApiVersion":2,"settings":[{"key":"siteNote","type":"info","title":"站点说明","description":"18+ 成人小说站（狂人之家书屋，WordPress 站）。一本书 = 一个站点标签，一章 = 一篇文章（常见一篇含数章，标题写成 63.22-63.29）。免登录、直连可开；小说章节站方本身不给封面，只有「AI美图共享」图集带封面。正文走站方 REST 接口，段落干净、无广告插入。"}],"mediaType":"novel"}
+// LumeSource: {"id":"crazyhome_novel","name":"狂人之家书屋","version":"1.0.2","category":"comic","contentCategory":"adult","network":"direct","mirrors":["https://www.crazyhome2000.com"],"icon":"https://www.crazyhome2000.com/wp-content/uploads/2025/06/icon.jpg","settingsApiVersion":2,"settings":[{"key":"siteNote","type":"info","title":"站点说明","description":"18+ 成人小说站（狂人之家书屋，WordPress 站）。一本书 = 一个站点标签，一章 = 一篇文章（常见一篇含数章，标题写成 63.22-63.29）。免登录、直连可开；小说章节站方本身不给封面，只有「AI美图共享」图集带封面。正文走站方 REST 接口，段落干净、无广告插入。"}],"mediaType":"novel"}
 // LumeRuntime: javascript
 //
 // 站点：狂人之家书屋（www.crazyhome2000.com），WordPress + 阁楼主题的成人文学站。
