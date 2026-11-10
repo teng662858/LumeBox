@@ -1,3 +1,13 @@
+## 2026-11-10 新增源：狂人之家书屋（crazyhome2000.com）
+
+详见 [源记录](../docs/2026-11-10_新增源-狂人之家书屋.md)。`comic/crazyhome.js`（`crazyhome_novel`）：
+WordPress 成人文学站，**书 = post_tag、章 = post**（一篇常含数章，标题如「赘婿的荣耀 63.22-63.29」）。
+站方 `/wp-json/wp/v2/{posts,tags,categories,media}` 全开，源统一走 REST：标签 8890 本书（`/tags` 89 页，
+篇数前列 系统帮我睡女人 171 / 赘婿的荣耀 165）、10 个小说分类 + 「AI美图共享」图集、
+`/posts?search=` 按书名搜、`/posts?tags=<id>&per_page=100` 一次 100 章、正文 `content.rendered`
+段落干净（只丢书签登录文案与站尾版权）。小说章节无 `featured_media`，所以不带封面；图集帖有特色图，
+用 `/media?include=` 批量换真地址（cool18.cc 图床，无 Referer 也 200）。
+
 ## 2026-11-10 新增源：集书阁（集书阁.com）
 
 详见 [源记录](../docs/2026-11-10_新增源-集书阁.md)。`comic/jishuge.js`（`jishuge_novel`）：用户给的

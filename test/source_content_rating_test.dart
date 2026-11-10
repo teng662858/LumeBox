@@ -225,4 +225,9 @@ void main() {
     expect(SourceContentRating.isAdult('jishuge_novel', '集书阁'), isTrue);
     expect(SourceContentRating.isAdult('custom', '集书阁'), isTrue);
   });
+  test('2026-11-10 狂人之家书屋按 18+ 归档', () {
+    expect(SourceContentRating.isAdult('crazyhome_novel', '狂人之家书屋'), isTrue);
+    expect(SourceContentRating.isAdult('crazyhome_novel', ''), isTrue);
+    expect(SourceContentRating.isAdult('custom', '狂人之家书屋'), isTrue);
+  });
 }
