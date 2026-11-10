@@ -538,6 +538,7 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
       if (_disposed || id != nativePlayerId) return;
       if (result != null) _nativeStatus = result.whereType<String>().toList();
       _presentationStatus.value = [
+        '实际解码：系统管理，AVPlayer 未提供硬软解状态',
         ..._nativeStatus,
         _settings.presentation.wantsHdr
             ? '显示：原生 AVPlayerLayer；HDR 实际输出需设备验证'

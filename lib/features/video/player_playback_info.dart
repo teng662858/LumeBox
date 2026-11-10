@@ -23,8 +23,12 @@ class PlayerPlaybackInfo extends StatelessWidget {
     this.onCopied,
     this.operation,
     this.nextEpisodeStatus,
+    this.onRecover,
+    this.decoderStatus,
   });
 
+  final VoidCallback? onRecover;
+  final ValueListenable<List<String>>? decoderStatus;
   final Uri address;
   final String? operation;
   final String Function()? nextEpisodeStatus;
@@ -38,7 +42,12 @@ class PlayerPlaybackInfo extends StatelessWidget {
   Widget build(BuildContext context) => FutureBuilder<String?>(
     future: line,
     builder: (context, route) => ListenableBuilder(
-      listenable: Listenable.merge([stats, snapshot, VideoDiskCache.instance]),
+      listenable: Listenable.merge([
+        stats,
+        snapshot,
+        VideoDiskCache.instance,
+        ?decoderStatus,
+      ]),
       builder: (context, _) {
         final value = stats.value;
         final state = snapshot.value;
@@ -50,6 +59,7 @@ class PlayerPlaybackInfo extends StatelessWidget {
               : route.data ?? '未提供',
           '画质': quality,
           '实际内核': kernel,
+          '解码与输出': decoderStatus?.value.join('\n') ?? '当前内核未提供',
           '播放缓存': VideoDiskCache.instance.status,
           '磁盘占用':
               '${(VideoDiskCache.instance.bytes / 1048576).toStringAsFixed(1)} / ${VideoDiskCache.instance.capacityMb} MiB',
@@ -98,6 +108,14 @@ class PlayerPlaybackInfo extends StatelessWidget {
             ),
           ),
           actions: [
+            if (onRecover != null)
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  onRecover!();
+                },
+                child: const Text('保留进度恢复'),
+              ),
             TextButton(
               onPressed: () async {
                 await Clipboard.setData(

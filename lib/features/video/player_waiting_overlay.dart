@@ -130,7 +130,7 @@ class _PlayerWaitingOverlayState extends State<PlayerWaitingOverlay> {
                 if (_longWait && !widget.locked) ...[
                   const SizedBox(height: 8),
                   const Text(
-                    '等待时间较长，可以重试或换线',
+                    '重试会保留当前进度，也可换线恢复',
                     style: TextStyle(color: Colors.white70, fontSize: 12),
                   ),
                   Wrap(

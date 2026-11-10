@@ -107,6 +107,11 @@ class VideoPlayerSettingsStore {
       // 旧库没有这一项时（键缺失）按「开」处理——与历史行为一致。
       subtitlesEnabled: _library.setting(keySubtitles) != 'false',
       hardwareDecoding: _library.setting(keyHardwareDecoding) != 'false',
+      decodingPreset: _library.setting('video.player.decodingPreset') == null
+          ? null
+          : DecodingPreset.parse(
+              _library.setting('video.player.decodingPreset'),
+            ),
       // 缺键按「开」处理（默认开启自动隐藏）。
       controlStyle: _library.setting(keyControlStyle) == 'text'
           ? PlayerControlStyle.text
@@ -149,6 +154,10 @@ class VideoPlayerSettingsStore {
   /// 之后一直在用 AVPlayer」的情况下，MPV 那一格要等下次选中它才被写到，
   /// 中间重启就丢了。
   void save(PlayerSettings settings) {
+    _library.setSetting(
+      'video.player.decodingPreset',
+      settings.decodingPreset.name,
+    );
     _library.setSetting(
       'video.player.presentation',
       jsonEncode(settings.presentation.toJson()),

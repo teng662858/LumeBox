@@ -9,6 +9,8 @@
 /// [FormatException]，由适配器转成数据源层异常。
 library;
 
+import '../player/video_preview.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:html/parser.dart' as html;
 
@@ -315,7 +317,9 @@ class SourceItem {
       subtitle: _text(json['subtitle']),
       // 角标既接受顶层 `coverLabel`，也接受 `mediaInfo.coverLabel`：
       // 直播源本来就把「是否直播」写进 mediaInfo，角标跟着放同一处更顺手。
-      coverLabel: parseCoverLabel(json['coverLabel'] ?? mediaInfo['coverLabel']),
+      coverLabel: parseCoverLabel(
+        json['coverLabel'] ?? mediaInfo['coverLabel'],
+      ),
       mediaInfo: mediaInfo,
       duration: parseDuration(
         json['duration'] ?? json['时长'] ?? json['length'] ?? json['runtime'],
@@ -642,6 +646,7 @@ sealed class ChapterContent {
           audioOnly: kind != 'video',
           headers: _stringMap(json['headers']),
           qualities: qualities,
+          previews: VideoPreview.parse(json['thumbnails']),
           width: num.tryParse('${json['width'] ?? ''}'),
           height: num.tryParse('${json['height'] ?? ''}'),
         );
@@ -692,12 +697,14 @@ final class VideoContent extends ChapterContent {
   const VideoContent({
     required this.url,
     this.audioOnly = false,
+    this.previews = const [],
     this.headers = const <String, String>{},
     this.qualities = const <VideoQuality>[],
     this.width,
     this.height,
   });
 
+  final List<VideoPreview> previews;
   final Uri url;
   final bool audioOnly;
   final num? width, height;

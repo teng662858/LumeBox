@@ -678,6 +678,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       if (!mounted) return;
       final media = PlayerMedia(
         uri: address,
+        previews: content is VideoContent ? content.previews : const [],
         title: '${widget.item.title} · ${VideoEpisodeCatalog.labelOf(chapter)}',
         headers: SourcePlayback.contentHeaders(content, source: _source!),
       );

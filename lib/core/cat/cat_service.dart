@@ -1,3 +1,5 @@
+import '../cache/source_response_cache.dart';
+import '../cache/section_memory_cache.dart';
 import 'builtin_danmaku_bundle.dart';
 import 'cat_local_bundle.dart';
 
@@ -1104,7 +1106,15 @@ class CatService extends ChangeNotifier {
           }
         }
       }
-      return request(base, endpoint(operation), body: body);
+      return SourceResponseCache.read<Map<String, dynamic>>(
+        cache: SectionMemoryCache.instance,
+        section: site.kind == 'comic' ? Section.comic : Section.video,
+        sourceId: site.id,
+        method: operation,
+        arguments: body,
+        settings: [record.hash, record.configHash, site.toJson()],
+        load: () => request(base, endpoint(operation), body: body),
+      );
     });
   }
 

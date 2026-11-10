@@ -1,3 +1,6 @@
+import '../../shared/widgets/number_setting_tile.dart';
+import 'seek_preview.dart';
+import '../../core/player/playback_network.dart';
 import 'forward_buffer_control.dart';
 import 'danmaku/danmaku_tools_page.dart';
 import 'danmaku/danmaku_stream.dart';
@@ -321,6 +324,27 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   /// 调库失败或还没读到时就是默认值——与历史行为一致（默认值 = 起播最快那套）。
   BufferingConfig _buffering = BufferingConfig.defaults;
 
+  SectionImagePipeline? _previewImages;
+  SectionImagePipeline? _previewPipeline() {
+    final library = _library;
+    if (library == null) return null;
+    final images = _previewImages ??= SectionImagePipeline(
+      cacheDir: library.imageCacheDir,
+      memoryBudgetBytes: 4 * 1024 * 1024,
+      maxConcurrent: 1,
+      maxRetries: 0,
+      timeout: const Duration(seconds: 5),
+    );
+    final source = _source;
+    if (source != null) images.bindSource(source);
+    final target = _target;
+    if (target != null) images.bindSession(Section.video, target.sourceId);
+    return images;
+  }
+
+  final _previews = SeekPreviewFrames();
+  final _network = PlaybackNetwork();
+  bool _cellularNoticeShown = false;
   int _bufferSeconds = 0;
 
   void _setForwardBufferSeconds(int seconds) {
@@ -659,6 +683,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _qualityIndex = selected == null ? 0 : qualities.indexOf(selected);
     return PlayerMedia(
       uri: address,
+      previews: content is VideoContent ? content.previews : const [],
       title: previous.title,
       headers: selected != null && selected.headers.isNotEmpty
           ? selected.headers
@@ -980,6 +1005,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _introGeneration++;
     _episodeImages?.dispose();
     _intro?.dispose();
+    _network.dispose();
+    _previewImages?.dispose();
+    _previews.dispose();
     _nextEpisodeBuffer.dispose();
     VideoDiskCache.instance.stopPrefetch();
     _danmakuStream?.close();
@@ -1358,6 +1386,39 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           );
         }
       }
+      _previews.reset((_media?.uri, _target?.chapterId, _qualityIndex));
+      final capture = _frameEngineOf(_player);
+      if (capture != null &&
+          (_media?.previews.isEmpty ?? true) &&
+          playing &&
+          !snapshot.buffering &&
+          snapshot.error == null &&
+          _previewTarget == null &&
+          !_gesture.active &&
+          _committedSeekTarget == null &&
+          _session?.state != PipState.active &&
+          _lifecycle == AppLifecycleState.resumed &&
+          (_player?.stats.value.height ?? 9999) <= 1080 &&
+          snapshot.position.inSeconds > 5) {
+        unawaited(_previews.sample(capture, snapshot.position.inSeconds));
+      }
+      _network.refresh();
+      final allowPreload = _network.allowsPreload(
+        MediaPreload.instance.wifiOnly,
+      );
+      if (!allowPreload) _nextEpisodeBuffer.cancelPendingPreparation();
+      if (_network.cellular == true && !_cellularNoticeShown) {
+        _cellularNoticeShown = true;
+        scheduleMicrotask(() {
+          if (mounted) {
+            _showToast(
+              MediaPreload.instance.wifiOnly
+                  ? '正在使用蜂窝网络，已暂停额外磁盘预读和下一集预载'
+                  : '正在使用蜂窝网络，播放和额外预载会消耗流量',
+            );
+          }
+        });
+      }
       final remaining = snapshot.duration - snapshot.position;
       final target = _target;
       final buffered = _player?.stats.value.buffered ?? Duration.zero;
@@ -1368,6 +1429,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           snapshot.duration,
           ahead: _buffering.readAhead,
           allowed:
+              allowPreload &&
               playing &&
               !snapshot.buffering &&
               snapshot.error == null &&
@@ -1382,6 +1444,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           !snapshot.buffering &&
           snapshot.error == null &&
           _committedSeekTarget == null &&
+          allowPreload &&
           MediaPreload.instance.video &&
           snapshot.position >= const Duration(seconds: 10) &&
           _lifecycle == AppLifecycleState.resumed &&
@@ -1396,6 +1459,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           _committedSeekTarget == null &&
           !_advancing &&
           !_switchingQuality &&
+          allowPreload &&
           MediaPreload.instance.video &&
           _lifecycle == AppLifecycleState.resumed &&
           _session?.state != PipState.active &&
@@ -1404,7 +1468,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           (remaining <=
                   Duration(seconds: MediaPreload.instance.triggerSeconds) ||
               snapshot.position.inMilliseconds >=
-                  snapshot.duration.inMilliseconds * .85) &&
+                  snapshot.duration.inMilliseconds *
+                      MediaPreload.instance.triggerPercent /
+                      100) &&
           buffered >=
               (remaining < const Duration(seconds: 15)
                   ? remaining
@@ -1417,6 +1483,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             widget.playerFactory ??
                 ((kernel) => PlayerFactory.create(kernel: kernel)),
             currentQuality: _qualities.elementAtOrNull(_qualityIndex),
+            currentHeight: _player?.stats.value.height,
           ),
         );
       }
@@ -1942,6 +2009,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             presentation: global.presentation,
             subtitlesEnabled: global.subtitlesEnabled,
             hardwareDecoding: global.hardwareDecoding,
+            decodingPreset: global.decodingPreset,
           ),
         );
       }
@@ -2521,6 +2589,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       await _startPlayback(
         PlayerMedia(
           uri: address,
+          previews: content is VideoContent ? content.previews : const [],
           title: '${target.title} · ${next.title}',
           // Reuse the existing verified headers for the selected address.
           headers:
@@ -4167,13 +4236,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               title: const Text('视频磁盘缓冲与下一集预载'),
               subtitle: const Text('容量、实际占用与清理'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
+              onTap: () async {
+                final navigator = Navigator.of(context);
+                navigator.pop();
+                await navigator.push(
                   MaterialPageRoute<void>(
                     builder: (_) => const PreloadSettingsPage(),
                   ),
                 );
+                final library = _library;
+                if (!mounted || library == null) return;
+                final module = SectionModuleSettings.load(library);
+                setState(() => _setForwardBufferSeconds(module.bufferSeconds));
+                if (_usesSourceProfile) _savePlayerSettings(_settings);
+                try {
+                  await _player?.setBuffering(_buffering);
+                } catch (_) {
+                  if (mounted) _showToast('本次缓冲调整未完成，下次加载时应用');
+                }
               },
             ),
           if (group == 'connection')
@@ -4368,47 +4448,38 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   );
                 },
               ),
-            if (_effectiveKernel == PlayerKernel.mpv ||
-                _effectiveKernel == PlayerKernel.aether) ...[
-              Text('缓存容量上限：${_buffering.maxBufferBytes ~/ (1024 * 1024)} MiB'),
-              const Text('视频板块共用；时长与容量先达到任一上限即停止预读。'),
-              NativeGlassSlider(
-                value: (_buffering.maxBufferBytes / (1024 * 1024))
-                    .clamp(32, 512)
-                    .toDouble(),
-                min: 32,
-                max: 512,
-                divisions: 30,
-                onChanged: _library == null
-                    ? null
-                    : (value) {
-                        final mib = value.round();
-                        final library = _library!;
-                        SectionModuleSettings.load(library)
-                            .copyWith(bufferMiB: mib)
-                            .save(library);
-                        setState(
-                          () => _buffering = _buffering.withMaxBufferBytes(
-                            mib * 1024 * 1024,
-                          ),
+            NumberSettingTile(
+              title: '播放内存预算',
+              value: _buffering.maxBufferBytes ~/ (1024 * 1024),
+              min: 32,
+              max: 1024,
+              unit: 'MiB',
+              onChanged: _library == null
+                  ? null
+                  : (mib) {
+                      final library = _library!;
+                      SectionModuleSettings.load(library)
+                          .copyWith(bufferMiB: mib)
+                          .save(library);
+                      setState(
+                        () => _buffering = _buffering.withMaxBufferBytes(
+                          mib * 1024 * 1024,
+                        ),
+                      );
+                      update(() {});
+                      final player = _player;
+                      if (player != null) {
+                        unawaited(
+                          player.setBuffering(_buffering).catchError((
+                            Object error,
+                          ) {
+                            if (mounted) _showToast('本次调整未完成，下次加载时应用');
+                          }),
                         );
-                        update(() {});
-                      },
-                onChangeEnd: (_) {
-                  final player = _player;
-                  if (player != null) {
-                    unawaited(
-                      player
-                          .setBuffering(_buffering)
-                          .catchError(
-                            (Object error, StackTrace stack) =>
-                                LumeLog.error(error, stack),
-                          ),
-                    );
-                  }
-                },
-              ),
-            ],
+                      }
+                    },
+            ),
+            const Text('MPV/Aether 按预算限制预读；AVPlayer/MDK 使用时长策略，不提供严格内存上限。'),
             if (supported)
               ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -4910,7 +4981,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final snapshot = player.snapshot.value;
     final total = snapshot.duration;
     if (total <= Duration.zero) return;
-    const delta = Duration(seconds: 10);
+    final delta = Duration(
+      seconds: direction < 0
+          ? _settings.gestures.backwardSeconds
+          : _settings.gestures.forwardSeconds,
+    );
     final start = _committedSeekTarget ?? snapshot.position;
     var target = direction < 0 ? start - delta : start + delta;
     if (target < Duration.zero) target = Duration.zero;
@@ -5528,6 +5603,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                   ),
                 ),
               _liveProgress(),
+
               // 两行（进度条行 / 按钮行）固定行距（用户口径）。
               const SizedBox(height: VideoPlayerPage.controlRowGap),
               PlayerSnapshotSelector<(bool, String?, String)>(
@@ -5588,6 +5664,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                       ),
                     ),
                   )
+                : label == '下集' && target != null
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      PlayerControlGlyph(icon, size: 22, color: Colors.white),
+                      Text(
+                        _nextEpisodeBuffer.status.startsWith('已准备')
+                            ? '已准备'
+                            : _nextEpisodeBuffer.status.startsWith('正在')
+                            ? '解析中'
+                            : '下集',
+                        style: const TextStyle(
+                          fontSize: 9,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  )
                 : PlayerControlGlyph(
                     icon,
                     size: _iconSize,
@@ -5610,11 +5704,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         ),
         action(
           '下集',
-          '下一集 · ${_nextEpisodeBuffer.status}',
+          '下一集 · ${_nextEpisodeBuffer.status}（长按查看）',
           Icons.skip_next,
           target == null || _advancing
               ? null
               : () => _playEpisodeAt(target.chapterIndex + 1),
+          onLongPress: _showNextEpisodeStatus,
         ),
         SizedBox(
           width: 82,
@@ -6287,6 +6382,35 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   /// 两处按用户要求改过（见 [VideoPlayerPage.controlTopGap] 的说明）：
   /// - 地址行收进播放源弹窗（右下角那颗小信息图标），控制栏不再铺长链接；
   /// - 常用功能固定排列，控制区与画面之间只留一小段间距。
+  void _showNextEpisodeStatus() {
+    if (_target == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('下一集续播'),
+        content: ValueListenableBuilder<PlayerSnapshot>(
+          valueListenable: _player?.snapshot ?? _idleSnapshot,
+          builder: (context, _, _) => Text(
+            '${_network.allowsPreload(MediaPreload.instance.wifiOnly) ? _nextEpisodeBuffer.status : '等待 Wi-Fi，额外预载已暂停'}\n衔接失败可重新解析下一集，或在选集/线路中选择。',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              unawaited(_playEpisodeAt(_target!.chapterIndex + 1));
+            },
+            child: const Text('播放下一集'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildControlPanel(AbstractPlayer? player) {
     return Padding(
       key: VideoPlayerPage.controlPanelKey,
@@ -6301,6 +6425,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         child: Column(
           children: <Widget>[
             _liveProgress(),
+
             PlayerSnapshotSelector<(bool, String?)>(
               snapshot: player?.snapshot ?? _idleSnapshot,
               select: (s) => (s.playing, s.error),
@@ -6431,6 +6556,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       await _startPlayback(
         PlayerMedia(
           uri: address,
+          previews: content is VideoContent ? content.previews : const [],
           title: '${target.title} · ${chapter.title}',
           headers:
               chosen?.headers ??
@@ -6615,7 +6741,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           : (value) {
               final target = _positionAt(value, snapshot.duration);
               setState(() => _previewTarget = target);
-              _scrubSeekThrottled(target);
+              // Preview locally; commit one seek when the user releases.
             },
       onChangeEnd: total == 0
           ? null
@@ -6630,6 +6756,33 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               }
               if (mounted) _scheduleAutoHide();
             },
+    );
+    final previewSlider = Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.center,
+      children: [
+        slider,
+        if (preview != null)
+          Positioned(
+            bottom: 44,
+            child: IgnorePointer(
+              child: Material(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(8),
+                textStyle: const TextStyle(color: Colors.white),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: SeekPreview(
+                    target: preview,
+                    frames: _previews,
+                    previews: _media?.previews ?? const [],
+                    pipeline: _previewPipeline(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
     if (_fullscreen) {
       final theme = SliderTheme.of(context).copyWith(
@@ -6676,7 +6829,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 child: SizedBox(
                   // 行距收窄：滑条行高从 44 收到 34，进度行整体下沉贴近按钮行。
                   height: 34,
-                  child: SliderTheme(data: theme, child: slider),
+                  child: SliderTheme(data: theme, child: previewSlider),
                 ),
               ),
               Text(
@@ -6697,7 +6850,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     }
     return Column(
       children: <Widget>[
-        slider,
+        previewSlider,
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Row(
@@ -6788,7 +6941,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         color: _fullscreen
             ? Colors.white
             : Theme.of(context).colorScheme.onSurface,
-        tooltip: '后退 10 秒',
+        tooltip: '后退 ${_settings.gestures.backwardSeconds} 秒',
         icon: LumeIcon(
           Icons.replay_10,
           slot: 'video_player_page.8',
@@ -6796,7 +6949,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         ),
         onPressed: player == null
             ? null
-            : () => _seekBy(const Duration(seconds: -10)),
+            : () => _seekBy(
+                Duration(seconds: -_settings.gestures.backwardSeconds),
+              ),
       ),
       IconButton(
         // 播放/暂停仍是这一组的主按钮，比旁边大一档，但不再夸张。
@@ -6828,7 +6983,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         color: _fullscreen
             ? Colors.white
             : Theme.of(context).colorScheme.onSurface,
-        tooltip: '前进 10 秒',
+        tooltip: '前进 ${_settings.gestures.forwardSeconds} 秒',
         icon: LumeIcon(
           Icons.forward_10,
           slot: 'video_player_page.12',
@@ -6836,7 +6991,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         ),
         onPressed: player == null
             ? null
-            : () => _seekBy(const Duration(seconds: 10)),
+            : () =>
+                  _seekBy(Duration(seconds: _settings.gestures.forwardSeconds)),
       ),
       _speedControl(
         (open) => IconButton(
@@ -6985,6 +7141,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         snapshot: player.snapshot,
         operation: _operation,
         nextEpisodeStatus: () => _nextEpisodeBuffer.status,
+        onRecover: () => unawaited(_restoreInlinePlayback(retry: true)),
+        decoderStatus: player is PresentationEngine
+            ? (player as PresentationEngine).presentationStatus
+            : null,
         onCopied: _showToast,
         line: line(),
         source: _source?.name ?? target?.sourceId ?? '手动地址',

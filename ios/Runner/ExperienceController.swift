@@ -16,15 +16,15 @@ final class NativeExperienceController {
         let monitor = NWPathMonitor()
         let queue = DispatchQueue(label: "lumebox.offline-policy")
         var finished = false
-        let finish: (Bool) -> Void = { wifi in
+        let finish: (Bool, Bool) -> Void = { wifi, cellular in
           guard !finished else { return }; finished = true; monitor.cancel()
           let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
           let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-          DispatchQueue.main.async { result(["wifi": wifi, "freeBytes": values?.volumeAvailableCapacityForImportantUsage ?? 0]) }
+          DispatchQueue.main.async { result(["wifi": wifi, "cellular": cellular, "freeBytes": values?.volumeAvailableCapacityForImportantUsage ?? 0]) }
         }
-        monitor.pathUpdateHandler = { path in finish(path.status == .satisfied && path.usesInterfaceType(.wifi) && !path.isExpensive) }
+        monitor.pathUpdateHandler = { path in finish(path.status == .satisfied && path.usesInterfaceType(.wifi) && !path.isExpensive, path.status == .satisfied && (path.usesInterfaceType(.cellular) || path.isExpensive)) }
         monitor.start(queue: queue)
-        queue.asyncAfter(deadline: .now() + 3) { finish(false) }
+        queue.asyncAfter(deadline: .now() + 3) { finish(false, false) }
       default: result(FlutterMethodNotImplemented)
       }
     }

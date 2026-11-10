@@ -224,6 +224,7 @@ private final class AetherSession: NSObject, FlutterStreamHandler {
     surface?.updateSubtitles()
     let audio = engine.audioTracks.first { $0.id == engine.activeAudioTrackIndex }
     var presentation = [
+      "实际解码：原生管线，硬软解状态未由接口提供",
       "片源动态范围：\(engine.sourceVideoFormat)",
       "内核报告动态范围：\(engine.videoFormat)",
       "显示路径：\(engine.videoRoute.rawValue) / \(engine.playbackBackend.rawValue)（原生显示层）",

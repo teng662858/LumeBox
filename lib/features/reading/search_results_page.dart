@@ -1,3 +1,4 @@
+import '../../core/cache/source_response_cache.dart';
 import '../../shared/widgets/network_owned_state.dart';
 import '../../core/net/network_cancellation.dart';
 
@@ -123,7 +124,8 @@ class _SearchResultsPageState extends State<SearchResultsPage>
   SourceManager get _manager =>
       widget.manager ?? LumeSources.manager(widget.section);
 
-  Future<void> _run() async {
+  Future<void> _run({bool fresh = false}) async {
+    if (fresh) SourceResponseCache.invalidate(widget.section);
     try {
       networkRequests.cancelAll();
       await networkRequests.run('search', _runOwned);
@@ -650,6 +652,11 @@ class _SearchResultsPageState extends State<SearchResultsPage>
                   ),
                 ),
               ),
+              IconButton(
+                tooltip: '刷新搜索结果',
+                onPressed: _loading ? null : () => unawaited(_run(fresh: true)),
+                icon: const Icon(Icons.refresh, size: 20),
+              ),
               if (widget.mode == SearchMode.aggregate)
                 TextButton.icon(
                   style: TextButton.styleFrom(
@@ -736,7 +743,7 @@ class _SearchResultsPageState extends State<SearchResultsPage>
         loading: _loading,
         pipeline: widget.pipeline,
         onOpen: (hit) => _open(hit.item, hit.sourceId),
-        onRetry: () => unawaited(_run()),
+        onRetry: () => unawaited(_run(fresh: true)),
         onRetryFailed: (ids) => unawaited(_retryFailed(ids)),
       );
     }

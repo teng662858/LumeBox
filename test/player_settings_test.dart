@@ -100,6 +100,30 @@ void main() {
       expect(loaded.subtitleSize, SubtitleSize.large);
     });
 
+    test('解码预设和独立跳转步长保存后可恢复', () async {
+      final store = await VideoPlayerSettingsStore.open();
+      store.save(
+        store.load().copyWith(
+          decodingPreset: DecodingPreset.software,
+          gestures: const PlayerGestureOptions(
+            forwardSeconds: 90,
+            backwardSeconds: 5,
+          ),
+        ),
+      );
+      final next = (await VideoPlayerSettingsStore.open()).load();
+      expect(next.decodingPreset, DecodingPreset.software);
+      expect(next.hardwareDecoding, false);
+      expect(next.gestures.forwardSeconds, 90);
+      expect(next.gestures.backwardSeconds, 5);
+      expect(
+        next
+            .copyWith(decodingPreset: DecodingPreset.automatic)
+            .hardwareDecoding,
+        true,
+      );
+    });
+
     test('presentation switches and subtitle appearance persist in the video database', () async {
       final store = await VideoPlayerSettingsStore.open();
       final next = store.load().copyWith(

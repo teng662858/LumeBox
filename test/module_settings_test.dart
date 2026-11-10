@@ -148,7 +148,7 @@ void main() {
       3600,
     );
     expect(SectionModuleSettings.fromJson(capacity.toJson()).bufferMiB, 256);
-    expect(SectionModuleSettings.fromJson({'bufferMiB': 9999}).bufferMiB, 512);
+    expect(SectionModuleSettings.fromJson({'bufferMiB': 9999}).bufferMiB, 1024);
   });
 
   test('预制方案：选一套就带上尺寸与间距（不开放自定义坐标）', () {

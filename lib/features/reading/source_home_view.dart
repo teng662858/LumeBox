@@ -1,3 +1,5 @@
+import '../../core/cache/media_preload.dart';
+import '../../core/cache/source_response_cache.dart';
 import '../../shared/widgets/media_badges.dart';
 import 'source_loading_surface.dart';
 import '../../core/util/source_load_profile.dart';
@@ -209,11 +211,15 @@ class _SourceHomeViewState extends State<SourceHomeView>
     final seq = ++_seq;
     _loadingSourceId = source.id;
     networkRequests.cancel('home');
-    final cached = !force ? _visits[source] : null;
+    final cached = !force && MediaPreload.instance.pages
+        ? _visits[source]
+        : null;
     if (cached != null) {
       _home = cached.home;
       _invalidatePresentation();
-      if (DateTime.now().difference(cached.at) < widget.cacheTtl) {
+      if (DateTime.now().difference(cached.at) < widget.cacheTtl &&
+          DateTime.now().difference(cached.at).inSeconds <
+              MediaPreload.instance.pageCacheSeconds) {
         _loadingSourceId = null;
         _error = null;
         _preloadFirstScreen(cached.home);
@@ -240,7 +246,10 @@ class _SourceHomeViewState extends State<SourceHomeView>
       return;
     }
     try {
-      if (force) SectionPreloader.discard(source.section);
+      if (force) {
+        SourceResponseCache.invalidate(source.section);
+        SectionPreloader.discard(source.section);
+      }
       await SectionPreloader.waitForWarm(
         source.section,
         sourceId: source.id,
@@ -253,9 +262,15 @@ class _SourceHomeViewState extends State<SourceHomeView>
             'home',
             () => SourceLoadProfile.measure(
               '${source.section.label} · 首页请求',
-              () => (source as HomeCapable).home().timeout(
-                const Duration(seconds: 20),
-              ),
+              () => force
+                  ? SourceResponseCache.fresh(
+                      () => (source as HomeCapable).home().timeout(
+                        const Duration(seconds: 20),
+                      ),
+                    )
+                  : (source as HomeCapable).home().timeout(
+                      const Duration(seconds: 20),
+                    ),
             ),
             timeout: const Duration(seconds: 20),
             timeoutError: () => const SourceException(

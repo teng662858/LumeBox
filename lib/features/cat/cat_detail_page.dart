@@ -224,6 +224,7 @@ class _CatDetailPageState extends State<CatDetailPage>
       final settings = VideoPlayerSettingsStore(widget.library).load();
       final quality = PlaybackQualityPreference.select(qualities, settings);
       final media = PlayerMedia(
+        previews: content.previews,
         uri: quality?.url ?? SourcePlayback.contentAddress(content)!,
         headers: quality != null && quality.headers.isNotEmpty
             ? quality.headers

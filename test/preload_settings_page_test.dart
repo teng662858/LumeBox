@@ -41,7 +41,13 @@ void main() {
       library!.recordHistoryItem(sourceId: 's', itemId: 'keep', title: '保留历史');
       await tester.pumpWidget(const MaterialApp(home: PreloadSettingsPage()));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(SwitchListTile, '视频下一集预载'));
+      await tester.scrollUntilVisible(find.text('视频下一集预载'), 150);
+      await Scrollable.ensureVisible(
+        tester.element(find.text('视频下一集预载')),
+        alignment: .3,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('视频下一集预载'));
       await tester.pump();
       expect(MediaPreload.instance.video, false);
       await tester.scrollUntilVisible(find.text('清空观看与阅读历史'), 200);

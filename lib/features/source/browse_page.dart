@@ -1,3 +1,4 @@
+import '../../core/cache/source_response_cache.dart';
 import '../../shared/widgets/source_translation.dart';
 import '../../core/source/source_labels.dart';
 
@@ -205,6 +206,7 @@ class _BrowseViewState extends State<BrowseView> {
   /// 三件事都做齐（用户点名）：**页码回 1、清掉 hasMore、清空列表缓存**——
   /// 否则刷新之后要么看到旧内容混着新内容，要么明明还有下一页却停在「没有更多了」。
   Future<void> _refresh() async {
+    SourceResponseCache.invalidate(widget.dataSource.section);
     SectionPreloader.discard(widget.dataSource.section);
     try {
       final categories = await widget.dataSource.categories();

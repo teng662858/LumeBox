@@ -80,6 +80,7 @@ class MdkEngine extends AbstractPlayer
         .where((t) => _player.activeAudioTracks.contains(t.index))
         .firstOrNull;
     _presentationStatus.value = [
+      '解码偏好：${_hardwareDecoding ? '硬解优先，允许软件回退' : '软件兼容'}；实际解码器未由接口提供',
       '显示：MDK 纹理；HDR 输出暂无法确认',
       if (selected != null)
         '音轨：${selected.codec.codec} · ${selected.codec.channels} 声道（不代表 Atmos 已输出）',

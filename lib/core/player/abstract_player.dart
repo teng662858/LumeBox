@@ -1,3 +1,6 @@
+import 'video_preview.dart';
+export 'video_preview.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
@@ -8,7 +11,12 @@ import 'player_stats.dart';
 
 /// 播放器要打开的媒体。
 class PlayerMedia {
-  const PlayerMedia({required this.uri, this.headers, this.title});
+  const PlayerMedia({
+    required this.uri,
+    this.headers,
+    this.title,
+    this.previews = const [],
+  });
 
   /// 本地文件与网络地址统一用 URI 表达。
   final Uri uri;
@@ -16,6 +24,7 @@ class PlayerMedia {
   final Map<String, String>? headers;
 
   final String? title;
+  final List<VideoPreview> previews;
 
   bool get isNetwork => uri.scheme == 'http' || uri.scheme == 'https';
 }

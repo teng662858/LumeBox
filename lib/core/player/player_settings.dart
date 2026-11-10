@@ -405,12 +405,24 @@ enum DefaultQuality {
 enum PlayerControlStyle { text, icons }
 
 /// 播放器设置：内核 + 全局开关 + **每个内核各一份**的偏好。
+enum DecodingPreset {
+  automatic('自动'),
+  hardware('硬解优先'),
+  software('软件兼容');
+
+  const DecodingPreset(this.label);
+  final String label;
+  static DecodingPreset parse(String? value) =>
+      values.where((v) => v.name == value).firstOrNull ?? automatic;
+}
+
 class PlayerSettings {
   const PlayerSettings({
     this.kernel = PlayerKernel.avplayer,
     this.presentation = const PlaybackPresentation(),
     this.subtitlesEnabled = true,
-    this.hardwareDecoding = true,
+    bool hardwareDecoding = true,
+    DecodingPreset? decodingPreset,
     this.autoHideControls = true,
     this.swipeUpNext = false,
     this.fastSeekSnap = false,
@@ -424,7 +436,11 @@ class PlayerSettings {
     this.gestureSensitivity = defaultGestureSensitivity,
     this.gestures = const PlayerGestureOptions(),
     this.prefs = const <PlayerKernel, KernelPrefs>{},
-  });
+  }) : decodingPreset =
+           decodingPreset ??
+           (hardwareDecoding
+               ? DecodingPreset.automatic
+               : DecodingPreset.software);
 
   /// 自动连播：一集播完自动进下一集（时长未知时不跳）。
   ///
@@ -503,7 +519,8 @@ class PlayerSettings {
   ///
   /// 默认开启（硬解是常态，省电且流畅）；关掉即走软解——当某台设备硬解
   /// HEVC 花屏 / 黑屏时，用户有一个不用换播放器的出口。
-  final bool hardwareDecoding;
+  final DecodingPreset decodingPreset;
+  bool get hardwareDecoding => decodingPreset != DecodingPreset.software;
 
   /// 全屏控制栏自动隐藏（用户要求；默认开）。
   ///
@@ -610,6 +627,7 @@ class PlayerSettings {
     RotationMode? rotation,
     bool? mirrored,
     bool? hardwareDecoding,
+    DecodingPreset? decodingPreset,
     Map<PlayerKernel, KernelPrefs>? prefs,
   }) {
     final target = kernel ?? this.kernel;
@@ -655,6 +673,13 @@ class PlayerSettings {
       presentation: presentation ?? this.presentation,
       subtitlesEnabled: subtitlesEnabled ?? this.subtitlesEnabled,
       hardwareDecoding: hardwareDecoding ?? this.hardwareDecoding,
+      decodingPreset:
+          decodingPreset ??
+          (hardwareDecoding == null
+              ? this.decodingPreset
+              : hardwareDecoding
+              ? DecodingPreset.hardware
+              : DecodingPreset.software),
       autoHideControls: autoHideControls ?? this.autoHideControls,
       swipeUpNext: swipeUpNext ?? this.swipeUpNext,
       fastSeekSnap: fastSeekSnap ?? this.fastSeekSnap,
@@ -713,6 +738,7 @@ class PlayerSettings {
         other.kernel != kernel ||
         other.subtitlesEnabled != subtitlesEnabled ||
         other.hardwareDecoding != hardwareDecoding ||
+        other.decodingPreset != decodingPreset ||
         other.autoHideControls != autoHideControls ||
         other.swipeUpNext != swipeUpNext ||
         other.fastSeekSnap != fastSeekSnap ||
@@ -743,6 +769,7 @@ class PlayerSettings {
     kernel,
     subtitlesEnabled,
     hardwareDecoding,
+    decodingPreset,
     autoHideControls,
     swipeUpNext,
     fastSeekSnap,

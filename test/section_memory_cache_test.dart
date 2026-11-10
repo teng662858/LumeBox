@@ -1,3 +1,4 @@
+import 'package:lume_box/core/source/source_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/cache/section_memory_cache.dart';
@@ -34,6 +35,20 @@ void main() {
     now = now.add(const Duration(minutes: 2));
     expect(bounded.read(Section.video, 'a', '1'), isNull);
     expect(bounded.read(Section.comic, 'a', '1'), isNull);
+  });
+
+  test('large typed metadata respects the byte budget too', () {
+    final bounded = SectionMemoryCache(maxBytesPerSection: 1024);
+    bounded.write(
+      Section.video,
+      's',
+      'detail',
+      SourceDetail(id: '1', title: 'large', description: 'x' * 2000),
+    );
+    bounded.write(Section.video, 's', 'chapters', [
+      SourceChapter(id: 'id' * 2000, title: 'chapter'),
+    ]);
+    expect(bounded.usageOf(Section.video).entries, 0);
   });
 
   test('四板块各成一格：同一图源 id 在不同板块互不可见', () {

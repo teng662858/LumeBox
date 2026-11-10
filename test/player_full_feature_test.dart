@@ -2159,53 +2159,28 @@ void main() {
       expect(find.textContaining('拖动到'), findsNothing);
     });
 
-    testWidgets('本地拖动中快 seek 串行且只留最新落点', (tester) async {
+    testWidgets('本地进度条拖动只预览，松手只提交最终位置', (tester) async {
       final players = await pump(tester, mediaUri: Uri.file('D:/test.mp4'));
-      players.single.emit(
+      final player = players.single;
+      player.emit(
         position: const Duration(minutes: 1),
         duration: const Duration(minutes: 10),
       );
-      players.single.pushStats(
-        const PlayerStats(buffered: Duration(minutes: 10)),
-      );
       await tester.pumpAndSettle();
-
-      // 快 seek 挂在闸门上：模拟内核还在处理上一次跳转。
-      final gate = Completer<void>();
-      players.single.seekGate = gate;
-
-      final slider = find.byType(Slider).first;
-      final box = tester.getRect(slider);
+      final box = tester.getRect(find.byType(Slider).first);
       final gesture = await tester.startGesture(
-        Offset(box.left + box.width * 0.5, box.center.dy),
+        Offset(box.left + box.width * .4, box.center.dy),
       );
       for (var i = 0; i < 8; i++) {
-        await gesture.moveBy(const Offset(24, 0));
+        await gesture.moveBy(const Offset(12, 0));
         await tester.pump(const Duration(milliseconds: 40));
       }
-      expect(
-        players.single.fastSeeks.length,
-        1,
-        reason: '上一次快 seek 没回来之前不并发下发',
-      );
-
-      // 放行之后只补一次「最新落点」，中间那些落点不补发。
-      gate.complete();
-      players.single.seekGate = null;
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(players.single.fastSeeks.length, 2, reason: '排队的多个落点合并成最新一个');
-      expect(
-        players.single.fastSeeks.last,
-        isNot(players.single.fastSeeks.first),
-        reason: '补发的是最新落点，不是被打断的那个',
-      );
+      expect(player.fastSeeks, isEmpty);
+      expect(player.seeks, isEmpty);
       await gesture.up();
       await tester.pump();
-      // 让内核把位置落到松手的目标上：确认成功就不会再挂看门狗。
-      players.single.emit(
-        position: players.single.seeks.last,
-        duration: const Duration(minutes: 10),
-      );
+      expect(player.seeks, hasLength(1));
+      player.emit(position: player.seeks.single);
       await tester.pumpAndSettle();
     });
 

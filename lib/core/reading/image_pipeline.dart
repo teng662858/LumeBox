@@ -1,3 +1,4 @@
+import '../media/playback_focus.dart';
 import '../js/source_registry.dart';
 import '../net/network_cancellation.dart';
 import '../cache/media_preload.dart';
@@ -524,7 +525,7 @@ class SectionImagePipeline {
       return;
     }
     // Background work reserves room for images that just became visible.
-    final limit = (maxConcurrent - 1).clamp(1, 2);
+    final limit = PlaybackFocus.isPlaying ? 1 : (maxConcurrent - 1).clamp(1, 2);
     while (!_disposed && _activePreloads < limit && _preloadQueue.isNotEmpty) {
       final next = _preloadQueue.removeFirst();
       _activePreloads++;

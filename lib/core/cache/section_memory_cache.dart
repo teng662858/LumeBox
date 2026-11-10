@@ -1,3 +1,5 @@
+import '../source/source_models.dart';
+
 import 'dart:collection';
 
 import '../session/section.dart';
@@ -61,6 +63,7 @@ class SectionMemoryCache implements SourceReadCache {
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
   final int maxEntriesPerSection, maxBytesPerSection;
+  int generation = 0;
   final Duration ttl;
   final DateTime Function() _now;
 
@@ -112,6 +115,7 @@ class SectionMemoryCache implements SourceReadCache {
 
   /// 清空一个板块，返回清掉的条目数；其他板块一条不动。
   int clear(Section section) {
+    generation++;
     final store = _stores.remove(section);
     return store?.length ?? 0;
   }
@@ -119,6 +123,7 @@ class SectionMemoryCache implements SourceReadCache {
   /// 清空一个图源的全部条目（脚本被覆盖导入、图源删除或运行时被释放时调用：
   /// 缓存的读结果必须跟着运行时一起作废，否则会读到上一个脚本的输出）。
   int removeSource(Section section, String sourceId) {
+    generation++;
     final store = _stores[section];
     if (store == null) return 0;
     final prefix = '${sourceId.length}:$sourceId|';
@@ -131,7 +136,10 @@ class SectionMemoryCache implements SourceReadCache {
   }
 
   /// 清空四个板块（测试隔离用；界面上的入口是分板块清空）。
-  void clearAll() => _stores.clear();
+  void clearAll() {
+    generation++;
+    _stores.clear();
+  }
 
   static String _cacheKey(String sourceId, String key) =>
       '${sourceId.length}:$sourceId|$key';
@@ -144,6 +152,52 @@ class SectionMemoryCache implements SourceReadCache {
     if (value == null) return 0;
     if (value is String) return value.length * 2;
     if (value is num || value is bool) return 8;
+    if (value is SourceDetail) {
+      return 128 +
+          estimateBytes([
+            value.id,
+            value.title,
+            value.cover,
+            value.backdrop,
+            value.coverHeaders,
+            value.description,
+            value.subtitle,
+            value.author,
+            value.status,
+            value.tags,
+            value.cast,
+            value.chapters,
+            value.related,
+            value.year,
+            value.mediaType,
+          ]);
+    }
+    if (value is SourceChapter) {
+      return 128 +
+          estimateBytes([
+            value.id,
+            value.title,
+            value.line,
+            value.cover,
+            value.coverHeaders,
+          ]);
+    }
+    if (value is SourceCategory) {
+      return 64 + estimateBytes([value.id, value.title]);
+    }
+    if (value is SourceItem) {
+      return 128 +
+          estimateBytes([
+            value.id,
+            value.title,
+            value.cover,
+            value.coverHeaders,
+            value.subtitle,
+            value.coverLabel,
+            value.mediaInfo,
+            value.mediaType,
+          ]);
+    }
     if (value is List) {
       var bytes = 8;
       for (final item in value) {

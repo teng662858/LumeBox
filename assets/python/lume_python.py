@@ -1044,7 +1044,7 @@ def _dispatch(state, method, arg):
         while len(playback) > 8: playback.pop(next(iter(playback)))
         parser = str(raw.get('playUrl') or '')
         return {"kind": raw.get("kind") if raw.get("kind") in ("audio", "audiobook", "video") else "audio" if (source_audio or re.search(r"\.(?:mp3|m4a|aac|flac|wav|ogg|opus)(?:$|[?#])", url, re.I)) and raw.get("kind") != "webplayer" else "video", "url": url, "headers": headers,
-                'qualities': qualities,
+                'qualities': qualities, 'thumbnails': raw.get('thumbnails', []),
                 'width': raw.get('width'), 'height': raw.get('height'),
                 "webPlayer": raw.get("webPlayer") is True or raw.get("kind") == "webplayer",
                 "pageUrl": str(raw.get("pageUrl") or (parser + url if parser else url)),

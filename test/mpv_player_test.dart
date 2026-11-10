@@ -240,10 +240,10 @@ void main() {
           'cache-pause': 'yes',
           'cache-pause-wait': '0.5',
           'demuxer-seekable-cache': 'yes',
-          'cache-secs': '120',
-          'demuxer-readahead-secs': '120',
-          'demuxer-max-bytes': '${150 * 1024 * 1024}',
-          'demuxer-max-back-bytes': '${16 * 1024 * 1024}',
+          'cache-secs': '300',
+          'demuxer-readahead-secs': '300',
+          'demuxer-max-bytes': '${256 * 1024 * 1024}',
+          'demuxer-max-back-bytes': '${32 * 1024 * 1024}',
         },
       );
       // 硬解

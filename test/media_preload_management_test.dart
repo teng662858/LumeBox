@@ -82,6 +82,7 @@ void main() {
       bufferSeconds: 30,
       capacityMb: 16,
     );
+    await policy.flush();
     final reopened = MediaPreload();
     await reopened.boot(directory: root);
     expect(reopened.video, false);

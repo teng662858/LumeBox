@@ -121,11 +121,19 @@ class NextEpisodeBuffer {
   final _releases = Expando<Future<void>>();
   bool _preparing = false;
   String _status = '尚未预加载';
+  String _quality = '';
+  int _qualityFloor = 0;
   String get status {
     final ready = _ready;
     if (ready == null) return _status;
     final actual = ready.player.stats.value.buffered;
-    return '已准备 · 目标 ${MediaPreload.instance.bufferSeconds} 秒 · 实际${actual == null ? '由内核决定' : ' ${actual.inSeconds} 秒'}';
+    final height = ready.player.stats.value.height ?? 0;
+    final quality = height == 0 || _qualityFloor == 0
+        ? '画质待核实'
+        : height >= _qualityFloor
+        ? '保持原画质'
+        : '实际画质低于当前';
+    return '已准备$_quality · $quality · 实际分辨率 ${ready.player.stats.value.resolutionText ?? '未知'} · 目标 ${MediaPreload.instance.bufferSeconds} 秒 · 实际${actual == null ? '由内核决定' : ' ${actual.inSeconds} 秒'}';
   }
 
   set status(String value) => _status = value;
@@ -140,6 +148,7 @@ class NextEpisodeBuffer {
     Future<DataSource?> Function() openSource,
     AbstractPlayer? Function(PlayerKernel) create, {
     VideoQuality? currentQuality,
+    int? currentHeight,
   }) async {
     if (!MediaPreload.instance.video || MediaPreload.instance.clearing) return;
     final key = _identity(target, settings.kernel);
@@ -199,7 +208,9 @@ class NextEpisodeBuffer {
       );
       final uri = chosen?.url ?? SourcePlayback.contentAddress(content);
       if (content == null || uri == null || stale()) return;
-      status = '地址已解析，正在准备播放器';
+      _qualityFloor = currentHeight ?? currentQuality?.resolutionRank ?? 0;
+      _quality = chosen == null ? ' · 源未提供画质标签' : ' · ${chosen.label}';
+      status = '地址已解析$_quality，正在准备播放器';
       player = _loadingPlayer = create(settings.kernel);
       if (player == null) return;
       final instance = player;
@@ -216,6 +227,7 @@ class NextEpisodeBuffer {
       if (stale()) return;
       final media = PlayerMedia(
         uri: uri,
+        previews: content is VideoContent ? content.previews : const [],
         title: '${target.title} · ${chapter.title}',
         headers: Platform.isIOS
             ? await IosVerifiedWebView.resourceHeaders(

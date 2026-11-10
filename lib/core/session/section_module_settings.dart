@@ -188,7 +188,7 @@ class SectionModuleSettings {
         defaultLongPressMs,
       ),
       bufferSeconds: normalizeBufferSeconds(json['bufferSeconds'], 0),
-      bufferMiB: _clampInt(json['bufferMiB'], 32, 512, 256),
+      bufferMiB: _clampInt(json['bufferMiB'], 32, 1024, 256),
     );
   }
 

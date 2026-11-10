@@ -1,3 +1,4 @@
+import '../../core/cache/source_response_cache.dart';
 import 'source_loading_surface.dart';
 import '../../core/util/source_load_profile.dart';
 
@@ -279,10 +280,12 @@ class _ExploreViewState extends State<ExploreView>
     try {
       final result = await networkRequests.run(
         'live-covers',
-        () => source.list(
-          categoryId: _categoryId,
-          page: page,
-          filters: _facetFilters.isEmpty ? null : _facetFilters,
+        () => SourceResponseCache.fresh(
+          () => source.list(
+            categoryId: _categoryId,
+            page: page,
+            filters: _facetFilters.isEmpty ? null : _facetFilters,
+          ),
         ),
         timeout: const Duration(seconds: 10),
       );
@@ -1198,6 +1201,7 @@ class _ExploreViewState extends State<ExploreView>
       _failure = null;
     });
     // 预热缓存作废：用户明确要求要新的。
+    SourceResponseCache.invalidate(widget.section);
     SectionPreloader.discard(widget.section);
     // Python sources share a serial worker: prioritize visible results for
     // the unfiltered list, then refresh metadata after the first page arrives.

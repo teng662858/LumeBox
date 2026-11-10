@@ -12,6 +12,10 @@ class MediaPreload extends ChangeNotifier {
   static final instance = MediaPreload();
   bool video = true, images = true, audio = true;
   int triggerSeconds = 30, bufferSeconds = 15, capacityMb = 128;
+  bool pages = true;
+  int pageCacheSeconds = 120;
+  int triggerPercent = 85;
+  bool wifiOnly = true;
   int generation = 0;
   bool clearing = false;
   Directory? _root;
@@ -46,12 +50,16 @@ class MediaPreload extends ChangeNotifier {
     try {
       if (await _settings!.exists()) {
         final data = jsonDecode(await _settings!.readAsString()) as Map;
+        pages = data['pages'] != false;
+        pageCacheSeconds = _integer(data['pageCacheSeconds'], 120, 15, 900);
         video = data['video'] != false;
         images = data['images'] != false;
         audio = data['audio'] != false;
-        triggerSeconds = _integer(data['triggerSeconds'], 30, 10, 120);
-        bufferSeconds = _integer(data['bufferSeconds'], 15, 3, 60);
-        capacityMb = _integer(data['capacityMb'], 128, 16, 256);
+        triggerSeconds = _integer(data['triggerSeconds'], 30, 5, 1800);
+        triggerPercent = _integer(data['triggerPercent'], 85, 50, 99);
+        wifiOnly = data['wifiOnly'] != false;
+        bufferSeconds = _integer(data['bufferSeconds'], 15, 3, 300);
+        capacityMb = _integer(data['capacityMb'], 128, 16, 2048);
       }
     } catch (_) {
       /* Invalid settings retain bounded defaults. */
@@ -63,38 +71,56 @@ class MediaPreload extends ChangeNotifier {
       value is num && value.isFinite ? value.toInt().clamp(min, max) : fallback;
 
   void update({
+    bool? pages,
+    int? pageCacheSeconds,
     bool? video,
     bool? images,
     bool? audio,
     int? triggerSeconds,
+    int? triggerPercent,
+    bool? wifiOnly,
     int? bufferSeconds,
     int? capacityMb,
   }) {
+    this.pages = pages ?? this.pages;
+    this.pageCacheSeconds = (pageCacheSeconds ?? this.pageCacheSeconds).clamp(
+      15,
+      900,
+    );
     this.video = video ?? this.video;
     this.images = images ?? this.images;
     this.audio = audio ?? this.audio;
     this.triggerSeconds = (triggerSeconds ?? this.triggerSeconds).clamp(
-      10,
-      120,
+      5,
+      1800,
     );
-    this.bufferSeconds = (bufferSeconds ?? this.bufferSeconds).clamp(3, 60);
-    this.capacityMb = (capacityMb ?? this.capacityMb).clamp(16, 256);
+    this.bufferSeconds = (bufferSeconds ?? this.bufferSeconds).clamp(3, 300);
+    this.capacityMb = (capacityMb ?? this.capacityMb).clamp(16, 2048);
+    this.triggerPercent = (triggerPercent ?? this.triggerPercent).clamp(50, 99);
+    this.wifiOnly = wifiOnly ?? this.wifiOnly;
     generation++;
     final file = _settings;
     if (file != null) {
-      file.parent.createSync(recursive: true);
-      final temp = File('${file.path}.tmp');
-      temp.writeAsStringSync(
-        jsonEncode({
-          'video': this.video,
-          'images': this.images,
-          'audio': this.audio,
-          'triggerSeconds': this.triggerSeconds,
-          'bufferSeconds': this.bufferSeconds,
-          'capacityMb': this.capacityMb,
-        }),
+      final encoded = jsonEncode({
+        'pages': this.pages,
+        'pageCacheSeconds': this.pageCacheSeconds,
+        'video': this.video,
+        'images': this.images,
+        'audio': this.audio,
+        'triggerSeconds': this.triggerSeconds,
+        'triggerPercent': this.triggerPercent,
+        'wifiOnly': this.wifiOnly,
+        'bufferSeconds': this.bufferSeconds,
+        'capacityMb': this.capacityMb,
+      });
+      unawaited(
+        _diskWork(() async {
+          await file.parent.create(recursive: true);
+          final temp = File('${file.path}.tmp');
+          await temp.writeAsString(encoded);
+          await temp.rename(file.path);
+        }).catchError((Object _) {}),
       );
-      temp.renameSync(file.path);
     }
     if (_root != null) unawaited(_diskWork(_prune).catchError((Object _) {}));
     notifyListeners();

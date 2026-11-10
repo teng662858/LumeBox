@@ -1,3 +1,5 @@
+import '../media/playback_focus.dart';
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
@@ -556,7 +558,11 @@ class NetworkQueue {
       final hostOk = (_activePerHost[host] ?? 0) < settings.perHostConcurrency;
       // Keep two slots for page requests and playback while covers are loading.
       final imageOk =
-          !image || _activeImages < max(1, settings.globalConcurrency - 2);
+          !image ||
+          _activeImages <
+              (PlaybackFocus.isPlaying
+                  ? (isForeground?.call() == false ? 1 : 2)
+                  : max(1, settings.globalConcurrency - 2));
       if (globalOk && hostOk && imageOk) {
         _activeGlobal++;
         if (image) _activeImages++;

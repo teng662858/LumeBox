@@ -131,12 +131,14 @@ class HostTests(unittest.TestCase):
         return {'parse':1, 'url':'https://fixture.invalid/watch', 'playUrl':'https://parser.invalid/?url=',
             'header':{'Referer':'https://fixture.invalid/'}, 'width':1920, 'height':1080,
             'qualities':[{'label':'1080p','url':'https://fixture.invalid/1080.mp4'}],
+            'thumbnails':[{'time':30,'url':'https://fixture.invalid/30.jpg'}],
             'danmaku':'<i><d p="1.25,5,25,16711680,0,0">原生弹幕</d></i>'}
 '''
         self.assertTrue(call('py-media', 'load', script=source)['ok'])
         argument = {'id':'py:one', 'chapterId':json.dumps({'flag':'高清','id':'token1'})}
         value = call('py-media', method='content', argument=argument)['value']
         self.assertEqual(value['qualities'][0]['label'], '1080p')
+        self.assertEqual(value['thumbnails'][0]['time'], 30)
         self.assertEqual((value['width'],value['height']), (1920,1080))
         self.assertEqual(value['pageUrl'], 'https://parser.invalid/?url=https://fixture.invalid/watch')
         comments = call('py-media', method='danmaku', argument=argument)['value']

@@ -32,7 +32,12 @@ class PlaybackPreferenceWiring {
     if (media.headers == null && preferences.browserUA.isEmpty) return media;
     final headers = withUserAgent(media.headers, preferences);
     if (identical(headers, media.headers)) return media;
-    return PlayerMedia(uri: media.uri, headers: headers, title: media.title);
+    return PlayerMedia(
+      uri: media.uri,
+      headers: headers,
+      title: media.title,
+      previews: media.previews,
+    );
   }
 
   /// Picks the first subtitle track matching [preference]. `source` keeps the

@@ -28,9 +28,11 @@ class VideoDiskCache extends ChangeNotifier {
   }
   static final instance = VideoDiskCache();
   static const blockBytes = 1024 * 1024;
-  static const capacities = [500, 1024, 2048, 5120];
+  static const minCapacityMb = 100, maxCapacityMb = 20480;
   final _client = HttpClient()..autoUncompress = false;
   final _tickets = <String, PlayerMedia>{};
+  final _ticketKeys = <String, String>{};
+  Timer? _progressNotice;
   final _files =
       <String, ({File file, int bytes, DateTime used, _Block block})>{};
   final _pending = <String, Future<_Block>>{};
@@ -66,8 +68,9 @@ class VideoDiskCache extends ChangeNotifier {
       try {
         final p = jsonDecode(await _settings!.readAsString()) as Map;
         enabled = p['enabled'] != false;
-        if (capacities.contains(p['capacityMb'])) {
-          capacityMb = p['capacityMb'] as int;
+        final capacity = p['capacityMb'];
+        if (capacity is num && capacity.isFinite) {
+          capacityMb = capacity.toInt().clamp(minCapacityMb, maxCapacityMb);
         }
       } catch (_) {
         /* Keep bounded defaults for damaged settings. */
@@ -90,7 +93,9 @@ class VideoDiskCache extends ChangeNotifier {
 
   Future<void> configure({bool? enabled, int? capacityMb}) async {
     this.enabled = enabled ?? this.enabled;
-    if (capacities.contains(capacityMb)) this.capacityMb = capacityMb!;
+    if (capacityMb != null) {
+      this.capacityMb = capacityMb.clamp(minCapacityMb, maxCapacityMb);
+    }
     final settings = _settings;
     if (settings != null) {
       await settings.writeAsString(
@@ -113,22 +118,19 @@ class VideoDiskCache extends ChangeNotifier {
     }
     try {
       await (_starting ??= _start());
-      final existing = _tickets.entries
-          .where(
-            (e) =>
-                e.value.uri == media.uri &&
-                mapEquals(e.value.headers, media.headers),
-          )
-          .firstOrNull;
+      final key = _key(media, -1);
+      final existing = _ticketKeys[key];
       final ticket =
-          existing?.key ??
+          existing ??
           base64UrlEncode(
             List.generate(24, (_) => Random.secure().nextInt(256)),
           );
       _tickets[ticket] = media;
+      _ticketKeys[key] = ticket;
       // Bounded registry also covers large HLS playlists without retaining URLs forever.
       while (_tickets.length > 12000) {
-        _tickets.remove(_tickets.keys.first);
+        final removed = _tickets.remove(_tickets.keys.first)!;
+        _ticketKeys.remove(_key(removed, -1));
       }
       return PlayerMedia(
         uri: Uri.parse('http://127.0.0.1:${_server!.port}/$ticket'),
@@ -287,12 +289,15 @@ class VideoDiskCache extends ChangeNotifier {
       try {
         final data = await cached.file.readAsBytes();
         if (data.length == cached.bytes) {
-          _files[key] = (
-            file: cached.file,
-            bytes: cached.bytes,
-            used: DateTime.now(),
-            block: cached.block,
-          );
+          if (_files[key] == cached && !_clearing) {
+            _files.remove(key);
+            _files[key] = (
+              file: cached.file,
+              bytes: cached.bytes,
+              used: DateTime.now(),
+              block: cached.block,
+            );
+          }
           hits++;
           return cached.block.withData(data);
         }
@@ -482,14 +487,17 @@ class VideoDiskCache extends ChangeNotifier {
       _diskAvailable = false;
       status = '空间检查不可用，使用内核内存缓冲';
     }
-    notifyListeners();
+    // Large buffers can write many blocks per second; the settings/HUD need only
+    // two progress updates per second, not one rebuild per megabyte.
+    _progressNotice ??= Timer(const Duration(milliseconds: 500), () {
+      _progressNotice = null;
+      notifyListeners();
+    });
   }
 
   Future<void> _trim(int incoming) async {
     while (bytes + incoming > capacityMb * blockBytes && _files.isNotEmpty) {
-      final key = _files.keys.reduce(
-        (a, b) => _files[a]!.used.isBefore(_files[b]!.used) ? a : b,
-      );
+      final key = _files.keys.first;
       final row = _files.remove(key)!;
       bytes -= row.bytes;
       if (await row.file.exists()) await row.file.delete();
@@ -690,10 +698,14 @@ class VideoDiskCache extends ChangeNotifier {
   }
 
   Future<void> close() async {
+    _progressNotice?.cancel();
+    _ticketKeys.clear();
     _ready = false;
     _client.close(force: true);
     await _server?.close(force: true);
     await clear();
+    _progressNotice?.cancel();
+    _progressNotice = null;
     _tickets.clear();
     _positions.clear();
   }

@@ -1,3 +1,4 @@
+import '../../shared/widgets/number_setting_tile.dart';
 import 'intro_settings_page.dart';
 import 'player_layout.dart';
 import 'presentation_settings_card.dart';
@@ -471,6 +472,30 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                   !(settings.gestures.brightness || settings.gestures.volume)
               ? null
               : (v) => _update(settings.copyWith(gestureSensitivity: v)),
+        ),
+        NumberSettingTile(
+          title: '快进步长',
+          value: settings.gestures.forwardSeconds,
+          min: 1,
+          max: 300,
+          unit: '秒',
+          onChanged: (v) => _update(
+            settings.copyWith(
+              gestures: settings.gestures.copyWith(forwardSeconds: v),
+            ),
+          ),
+        ),
+        NumberSettingTile(
+          title: '快退步长',
+          value: settings.gestures.backwardSeconds,
+          min: 1,
+          max: 300,
+          unit: '秒',
+          onChanged: (v) => _update(
+            settings.copyWith(
+              gestures: settings.gestures.copyWith(backwardSeconds: v),
+            ),
+          ),
         ),
         _label('横滑一屏跨度 ${settings.gestures.seekSeconds} 秒'),
         NativeGlassSlider(
@@ -1384,10 +1409,20 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 ),
               ),
               if (capabilities.hardwareDecoding)
-                Switch(
-                  value: enabled,
-                  onChanged: (value) =>
-                      _update(settings.copyWith(hardwareDecoding: value)),
+                DropdownButton<DecodingPreset>(
+                  value: settings.decodingPreset,
+                  items: [
+                    for (final preset in DecodingPreset.values)
+                      DropdownMenuItem(
+                        value: preset,
+                        child: Text(preset.label),
+                      ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      _update(settings.copyWith(decodingPreset: v));
+                    }
+                  },
                 )
               else
                 TextButton(
@@ -1420,7 +1455,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           Text(
             capabilities.hardwareDecoding
                 ? (enabled
-                      ? '开启（默认）：优先硬解，不兼容时允许回落软解；当前播放需要时会重载并保留位置'
+                      ? '自动和硬解优先均允许内核兼容回退；不强制使用不兼容的硬解。调整后保留位置，实际方式请查看内核信息'
                       : '关闭：使用软件解码；可能短暂重载，播放位置保留')
                 : '当前内核没有切换解码链的通道（点击看提示与可换的内核）',
             style: TextStyle(

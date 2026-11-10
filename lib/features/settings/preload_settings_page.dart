@@ -1,3 +1,6 @@
+import '../../shared/widgets/number_setting_tile.dart';
+import '../../core/session/section_module_settings.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../core/audio_book/audio_book_player.dart';
@@ -19,6 +22,26 @@ class PreloadSettingsPage extends StatefulWidget {
 class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
   final policy = MediaPreload.instance;
   bool busy = false;
+  ReadingLibrary? library;
+  SectionModuleSettings module = const SectionModuleSettings();
+  @override
+  void initState() {
+    super.initState();
+    ReadingLibrary.open(Section.video).then((value) {
+      if (!mounted) return;
+      setState(() {
+        library = value;
+        module = SectionModuleSettings.load(value);
+      });
+    });
+  }
+
+  void saveModule(SectionModuleSettings value) {
+    final db = library;
+    if (db == null) return;
+    value.save(db);
+    setState(() => module = value);
+  }
 
   Future<void> clean(
     String title,
@@ -60,30 +83,6 @@ class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
     }
   }
 
-  Widget slider(
-    String label,
-    int value,
-    int min,
-    int max,
-    ValueChanged<int> update,
-  ) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-        child: Text('$label · $value 秒'),
-      ),
-      Slider(
-        value: value.toDouble(),
-        min: min.toDouble(),
-        max: max.toDouble(),
-        divisions: max - min,
-        label: '$value 秒',
-        onChanged: busy ? null : (value) => update(value.round()),
-      ),
-    ],
-  );
-
   @override
   Widget build(BuildContext context) => GlassScaffold(
     effectModule: GlassModule.settings,
@@ -93,6 +92,29 @@ class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
       builder: (context, _) => ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
+          SettingsGroupCard(
+            children: [
+              SwitchListTile(
+                title: const Text('首页与列表短时缓存'),
+                subtitle: const Text(
+                  '复用首页、分类、搜索和资料结果；分页、关键词、筛选和源设置分别缓存。下拉刷新强制取新，播放地址不缓存。',
+                ),
+                value: policy.pages,
+                onChanged: busy ? null : (v) => policy.update(pages: v),
+              ),
+              NumberSettingTile(
+                title: '页面缓存保留时长',
+                value: policy.pageCacheSeconds,
+                min: 15,
+                max: 900,
+                unit: '秒',
+                onChanged: busy
+                    ? null
+                    : (v) => policy.update(pageCacheSeconds: v),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           SettingsGroupCard(
             children: [
               SwitchListTile(
@@ -107,24 +129,40 @@ class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
                         await VideoDiskCache.instance.configure(enabled: v);
                       },
               ),
-              ListTile(
-                title: const Text('视频磁盘容量上限'),
-                trailing: DropdownButton<int>(
-                  value: VideoDiskCache.instance.capacityMb,
-                  items: [
-                    for (final mb in VideoDiskCache.capacities)
-                      DropdownMenuItem(
-                        value: mb,
-                        child: Text(mb < 1024 ? '$mb MB' : '${mb ~/ 1024} GB'),
-                      ),
-                  ],
-                  onChanged: busy
-                      ? null
-                      : (v) async {
-                          await VideoDiskCache.instance.configure(
-                            capacityMb: v,
-                          );
-                        },
+              NumberSettingTile(
+                title: '视频磁盘容量上限',
+                value: VideoDiskCache.instance.capacityMb,
+                min: 100,
+                max: 20480,
+                unit: 'MB',
+                onChanged: busy
+                    ? null
+                    : (v) => VideoDiskCache.instance.configure(capacityMb: v),
+              ),
+              NumberSettingTile(
+                title: '当前视频预读时长',
+                value: module.bufferSeconds == 0 ? 300 : module.bufferSeconds,
+                min: 5,
+                max: 3600,
+                unit: '秒',
+                onChanged: busy || library == null
+                    ? null
+                    : (v) => saveModule(module.copyWith(bufferSeconds: v)),
+              ),
+              NumberSettingTile(
+                title: '播放内存预算',
+                value: module.bufferMiB,
+                min: 32,
+                max: 1024,
+                unit: 'MiB',
+                onChanged: busy || library == null
+                    ? null
+                    : (v) => saveModule(module.copyWith(bufferMiB: v)),
+              ),
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  '这些是预读上限，不会等待填满才起播。内核对时长、内存上限的支持不同；AVPlayer 不提供严格内存限额。参数在重新加载时生效。',
                 ),
               ),
               ListTile(
@@ -147,8 +185,8 @@ class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
             children: [
               SwitchListTile(
                 title: const Text('视频下一集预载'),
-                subtitle: const Text(
-                  '播放到 85% 或片尾前指定秒数时准备下一集；当前集保有 15 秒缓冲或片尾已全部缓冲才开始',
+                subtitle: Text(
+                  '播放到 ${policy.triggerPercent}% 或片尾前指定秒数时准备下一集；当前集优先，至少保有 15 秒缓冲或片尾已全部缓冲才开始',
                 ),
                 value: policy.video,
                 onChanged: busy ? null : (v) => policy.update(video: v),
@@ -170,44 +208,53 @@ class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
           const SizedBox(height: 12),
           SettingsGroupCard(
             children: [
-              slider(
-                '片尾前刷新预载',
-                policy.triggerSeconds,
-                10,
-                120,
-                (v) => policy.update(triggerSeconds: v),
+              NumberSettingTile(
+                title: '片尾前刷新预载',
+                value: policy.triggerSeconds,
+                min: 5,
+                max: 1800,
+                unit: '秒',
+                onChanged: busy
+                    ? null
+                    : (v) => policy.update(triggerSeconds: v),
               ),
-              slider(
-                '音视频目标预缓冲',
-                policy.bufferSeconds,
-                3,
-                60,
-                (v) => policy.update(bufferSeconds: v),
+              NumberSettingTile(
+                title: '预载触发进度',
+                value: policy.triggerPercent,
+                min: 50,
+                max: 99,
+                unit: '%',
+                onChanged: busy
+                    ? null
+                    : (v) => policy.update(triggerPercent: v),
               ),
-              ListTile(
-                title: const Text('预载容量预算'),
-                subtitle: const Text(
-                  '图片磁盘缓存占一半，音视频各分配四分之一预算；内核不保证严格字节上限。音频参数在重新加载资源时生效。',
+              NumberSettingTile(
+                title: '音视频目标预缓冲',
+                value: policy.bufferSeconds,
+                min: 3,
+                max: 300,
+                unit: '秒',
+                onChanged: busy ? null : (v) => policy.update(bufferSeconds: v),
+              ),
+              NumberSettingTile(
+                title: '预载容量预算',
+                value: policy.capacityMb,
+                min: 16,
+                max: 2048,
+                unit: 'MiB',
+                onChanged: busy ? null : (v) => policy.update(capacityMb: v),
+              ),
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  '预载预算：图片占一半，音视频各占四分之一。预缓冲时长与容量先达到一项即受限，内核不保证严格字节上限。',
                 ),
-                trailing: DropdownButton<int>(
-                  value: policy.capacityMb,
-                  items: [
-                    for (final mb in {
-                      16,
-                      32,
-                      64,
-                      128,
-                      256,
-                      policy.capacityMb,
-                    }.toList()..sort())
-                      DropdownMenuItem(value: mb, child: Text('$mb MB')),
-                  ],
-                  onChanged: busy
-                      ? null
-                      : (v) {
-                          if (v != null) policy.update(capacityMb: v);
-                        },
-                ),
+              ),
+              SwitchListTile(
+                title: const Text('仅在 Wi-Fi 下额外预读'),
+                subtitle: const Text('蜂窝或无法确认网络时暂停视频磁盘预读与下一集预载；正常播放继续。'),
+                value: policy.wifiOnly,
+                onChanged: busy ? null : (v) => policy.update(wifiOnly: v),
               ),
             ],
           ),

@@ -744,6 +744,7 @@ class MediaKitMpvEngine
         }
       }
 
+      final decoder = await read('hwdec-current');
       final gamma = await read('video-params/gamma');
       final primaries = await read('video-params/primaries');
       final audio = await read('audio-codec-name');
@@ -757,6 +758,11 @@ class MediaKitMpvEngine
           ? '待识别'
           : 'SDR';
       _presentationStatus.value = [
+        '实际解码：${decoder == null || decoder.isEmpty
+            ? '未提供'
+            : decoder == 'no'
+            ? '软件解码'
+            : decoder}',
         '片源：$range${primaries == null ? '' : ' · $primaries'}',
         '显示：SDR 纹理；HDR 内容使用色调映射',
         if (audio != null && audio.isNotEmpty)

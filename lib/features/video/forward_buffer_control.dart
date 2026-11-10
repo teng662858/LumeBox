@@ -38,7 +38,7 @@ class ForwardBufferControl extends StatelessWidget {
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: const InputDecoration(
                 labelText: '秒数',
-                helperText: '0 使用默认预读 120 秒',
+                helperText: '0 使用默认预读 300 秒',
               ),
               onChanged: (value) => input = value,
               onFieldSubmitted: (_) => submit(),
@@ -70,6 +70,6 @@ class ForwardBufferControl extends StatelessWidget {
   @override
   Widget build(BuildContext context) => TextButton(
     onPressed: () => _edit(context),
-    child: Text(seconds == 0 ? '默认（120 秒）' : '$seconds 秒'),
+    child: Text(seconds == 0 ? '默认（300 秒）' : '$seconds 秒'),
   );
 }

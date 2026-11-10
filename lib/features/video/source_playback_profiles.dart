@@ -44,6 +44,11 @@ class SourcePlaybackProfiles {
       hardwareDecoding: data['hardwareDecoding'] is bool
           ? data['hardwareDecoding'] as bool
           : defaults.hardwareDecoding,
+      decodingPreset: data['decodingPreset'] is String
+          ? DecodingPreset.parse(data['decodingPreset'] as String)
+          : data['hardwareDecoding'] == false
+          ? DecodingPreset.software
+          : defaults.decodingPreset,
       presentation: data['presentation'] is Map
           ? PlaybackPresentation.fromJson(data['presentation'])
           : defaults.presentation,
@@ -70,6 +75,7 @@ class SourcePlaybackProfiles {
         },
         'subtitlesEnabled': settings.subtitlesEnabled,
         'hardwareDecoding': settings.hardwareDecoding,
+        'decodingPreset': settings.decodingPreset.name,
         'presentation': settings.presentation.toJson(),
         'bufferSeconds': bufferSeconds.clamp(
           0,

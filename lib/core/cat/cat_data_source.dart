@@ -1,3 +1,6 @@
+import '../cache/source_response_cache.dart';
+import '../cache/media_preload.dart';
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -47,6 +50,7 @@ class CatDataSource
   final CatSite site;
   final String? chapterFlag;
   Map<String, dynamic>? _home;
+  DateTime? _homeAt;
   String? _homeCategoryId;
   final _details = <String, Map<String, dynamic>>{};
   final _folders = <String>{};
@@ -61,8 +65,19 @@ class CatDataSource
     _ => Section.video,
   };
   Future<Map<String, dynamic>> homeData({bool force = false}) async {
-    if (force) _home = null;
-    return _home ??= catPayload(await service.call(site, 'home'));
+    if (force ||
+        !MediaPreload.instance.pages ||
+        SourceResponseCache.bypassed ||
+        _homeAt == null ||
+        DateTime.now().difference(_homeAt!).inSeconds >=
+            MediaPreload.instance.pageCacheSeconds) {
+      _home = null;
+    }
+    final cached = _home;
+    if (cached != null) return cached;
+    final result = _home = catPayload(await service.call(site, 'home'));
+    _homeAt = DateTime.now();
+    return result;
   }
 
   @override
@@ -272,14 +287,21 @@ class CatDataSource
     return itemId;
   }
 
-  Future<Map<String, dynamic>> rawDetail(String itemId) async =>
-      _details[itemId] ??=
-          catMaps(
-            catPayload(
-              await service.call(site, 'detail', {'id': rawItemId(itemId)}),
-            )['list'],
-          ).firstOrNull ??
-          {};
+  Future<Map<String, dynamic>> rawDetail(String itemId) async {
+    if (SourceResponseCache.bypassed) _details.remove(itemId);
+    final result = _details[itemId] ??=
+        catMaps(
+          catPayload(
+            await service.call(site, 'detail', {'id': rawItemId(itemId)}),
+          )['list'],
+        ).firstOrNull ??
+        {};
+    while (_details.length > 64) {
+      _details.remove(_details.keys.first);
+    }
+    return result;
+  }
+
   @override
   Future<SourceDetail?> detail(String itemId) async {
     final raw = await rawDetail(itemId);
@@ -445,6 +467,9 @@ class CatDataSource
       'url': uri.toString(),
       'headers': requestHeaders,
       'qualities': data['qualities'] ?? data['levels'],
+      'thumbnails': data['thumbnails'],
+      'width': data['width'],
+      'height': data['height'],
     })!;
   }
 }

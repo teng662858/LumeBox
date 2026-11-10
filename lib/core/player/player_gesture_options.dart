@@ -6,10 +6,12 @@ class PlayerGestureOptions {
     this.seek = true,
     this.boost = true,
     this.seekSeconds = 90,
+    this.forwardSeconds = 10,
+    this.backwardSeconds = 10,
     this.boostMultiplier = 2,
   });
   final bool enabled, brightness, volume, seek, boost;
-  final int seekSeconds;
+  final int seekSeconds, forwardSeconds, backwardSeconds;
   final double boostMultiplier;
   PlayerGestureOptions copyWith({
     bool? enabled,
@@ -18,6 +20,8 @@ class PlayerGestureOptions {
     bool? seek,
     bool? boost,
     int? seekSeconds,
+    int? forwardSeconds,
+    int? backwardSeconds,
     double? boostMultiplier,
   }) => PlayerGestureOptions(
     enabled: enabled ?? this.enabled,
@@ -26,6 +30,8 @@ class PlayerGestureOptions {
     seek: seek ?? this.seek,
     boost: boost ?? this.boost,
     seekSeconds: (seekSeconds ?? this.seekSeconds).clamp(30, 180),
+    forwardSeconds: (forwardSeconds ?? this.forwardSeconds).clamp(1, 300),
+    backwardSeconds: (backwardSeconds ?? this.backwardSeconds).clamp(1, 300),
     boostMultiplier: (boostMultiplier ?? this.boostMultiplier).clamp(1.5, 4),
   );
   Map<String, Object> toJson() => {
@@ -35,6 +41,8 @@ class PlayerGestureOptions {
     'seek': seek,
     'boost': boost,
     'seekSeconds': seekSeconds,
+    'forwardSeconds': forwardSeconds,
+    'backwardSeconds': backwardSeconds,
     'boostMultiplier': boostMultiplier,
   };
   factory PlayerGestureOptions.fromJson(Object? raw) {
@@ -50,11 +58,15 @@ class PlayerGestureOptions {
       seekSeconds: seconds is num && seconds.isFinite
           ? seconds.toInt().clamp(30, 180)
           : 90,
+      forwardSeconds: step(m['forwardSeconds']),
+      backwardSeconds: step(m['backwardSeconds']),
       boostMultiplier: multiplier is num && multiplier.isFinite
           ? multiplier.toDouble().clamp(1.5, 4)
           : 2,
     );
   }
+  static int step(Object? n) =>
+      n is num && n.isFinite ? n.toInt().clamp(1, 300) : 10;
   @override
   bool operator ==(Object other) =>
       other is PlayerGestureOptions &&
@@ -64,6 +76,8 @@ class PlayerGestureOptions {
       other.seek == seek &&
       other.boost == boost &&
       other.seekSeconds == seekSeconds &&
+      other.forwardSeconds == forwardSeconds &&
+      other.backwardSeconds == backwardSeconds &&
       other.boostMultiplier == boostMultiplier;
   @override
   int get hashCode => Object.hash(
@@ -73,6 +87,8 @@ class PlayerGestureOptions {
     seek,
     boost,
     seekSeconds,
+    forwardSeconds,
+    backwardSeconds,
     boostMultiplier,
   );
 }
