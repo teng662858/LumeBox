@@ -317,6 +317,16 @@ void main() {
           ),
         ),
       );
+      // Prelaunch can have completed in runAsync. Join its real-zone Future
+      // before asking the fake frame clock to settle the route animation.
+      if (prelaunch != null) {
+        for (var i = 0; i < 4; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 30)),
+          );
+        }
+      }
       await tester.pumpAndSettle();
       return created;
     }

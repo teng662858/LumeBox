@@ -328,8 +328,14 @@ void main() {
     expect(await first.bytes('http://img.test/cover.png'), _png);
     first.dispose();
     final second = open('a');
-    expect(await second.bytes('https://img.test/cover.png'), _png);
+    expect(await second.bytes('http://img.test/cover.png'), _png);
     expect(sends, 1);
+    expect(await second.bytes('https://img.test/cover.png'), _png);
+    expect(
+      sends,
+      2,
+      reason: 'HTTP bytes must not stand in for an HTTPS response',
+    );
     final small = await second.image(
       'https://img.test/cover.png',
       targetWidth: 200,
@@ -340,9 +346,9 @@ void main() {
     );
     expect(small, isNotNull);
     expect(large, isNotNull);
-    second.release('http://img.test/cover.png', targetWidth: 200);
+    second.release('https://img.test/cover.png', targetWidth: 200);
     second.release('https://img.test/cover.png', targetWidth: 300);
-    expect(sends, 1, reason: 'different decode buckets reuse original bytes');
+    expect(sends, 2, reason: 'different decode buckets reuse original bytes');
     await open('b').bytes('https://img.test/cover.png');
     await open(
       'a',
@@ -352,11 +358,11 @@ void main() {
       'https://img.test/cover.png': {'Referer': 'https://new.test/'},
     });
     await second.bytes('https://img.test/cover.png');
-    expect(sends, 4);
+    expect(sends, 5);
     expect(root.listSync(recursive: true).whereType<File>(), isEmpty);
     await MediaPreload.instance.clear();
     await second.bytes('https://img.test/cover.png');
-    expect(sends, 5, reason: 'clear also releases the transient byte cache');
+    expect(sends, 6, reason: 'clear also releases the transient byte cache');
   });
 
   test(

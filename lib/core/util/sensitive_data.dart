@@ -1,5 +1,16 @@
 /// Redaction at log ingestion, before console output, buffering or export.
 class SensitiveData {
+  /// Also consume the existing placeholder, so repeated exports stay readable.
+  static String redactUrlPaths(String text) => text.replaceAllMapped(
+    RegExp(r'https?://[^\s<>"\x27]+(?:\s+omitted\])*', caseSensitive: false),
+    (match) {
+      final uri = Uri.tryParse(match[0]!);
+      return uri?.host.isNotEmpty == true
+          ? '${uri!.scheme}://${uri.host}/[path omitted]'
+          : '[URL omitted]';
+    },
+  );
+
   static bool isSecretKey(String key) => RegExp(
     r'cookie|authorization|token|password|passwd|username|account|secret|credential|session|signature|(?:^|[-_])sign(?:$|[-_])|api[-_]?key|x-gaze-|账号|密码|密钥',
     caseSensitive: false,

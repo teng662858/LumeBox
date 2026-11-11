@@ -145,11 +145,10 @@ extension _RouteTools on _VideoPlayerPageState {
           PlaybackFailureKind.membership,
           PlaybackFailureKind.forbidden,
         ].contains(PlaybackFailure.from(error).kind) ||
-        error.contains('-12939') ||
-        error.contains('-12847') ||
-        error.contains('byte range') ||
-        error.contains('this media format is not supported') ||
-        error.contains('该视频的格式或编码不被当前内核支持')) {
+        (_settings.kernel == PlayerKernel.avplayer &&
+            !_rangeFallbackAttempted &&
+            _catalog.isAvailable(PlayerKernel.mpv) &&
+            PlayerErrorText.needsAlternativeKernel(error))) {
       return;
     }
     _autoRecovering = true;
@@ -202,7 +201,7 @@ extension _RouteTools on _VideoPlayerPageState {
     final eligible =
         target != null &&
         _loaded &&
-        snapshot.playing &&
+        (snapshot.playing || snapshot.buffering) &&
         snapshot.error == null &&
         _lifecycle == AppLifecycleState.resumed &&
         !_switchingQuality &&

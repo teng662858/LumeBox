@@ -18,3 +18,28 @@ PY
 xcrun swiftc -typecheck -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
   -target arm64-apple-ios18.0-simulator -F "$FRAMEWORKS" "$CHECK_DIR/PlayerPresentation.swift"
 echo "AVFoundation presentation channel typecheck passed"
+
+# Compile the actual inline layer registry and check its Swift/PiP integration.
+# The full simulator App has optional NodeMobile dependencies; these checks do
+# not require those unrelated runtimes or create an installable App package.
+NATIVE_ROOT="$PWD/third_party/video_player_avfoundation/darwin/video_player_avfoundation/Sources"
+HEADER="$NATIVE_ROOT/video_player_avfoundation_objc/include/video_player_avfoundation_objc/FVPNativeVideoView.h"
+SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
+xcrun clang -fobjc-arc -fmodules -isysroot "$SDK" \
+  -target arm64-apple-ios18.0-simulator -F "$FRAMEWORKS" \
+  -c "$NATIVE_ROOT/video_player_avfoundation_ios/FVPNativeVideoView.m" \
+  -o "$CHECK_DIR/InlineVideoView.o"
+cat > "$CHECK_DIR/InlineLayer.swift" <<'SWIFT'
+import AVFoundation
+import Flutter
+func prepareInlinePip(_ player: AVPlayer) {
+  let layer = FVPNativeVideoView.layer(for: player)
+  NotificationCenter.default.post(name: Notification.Name("LumeBox.avplayer.pip"),
+                                  object: player,
+                                  userInfo: layer.map { ["playerLayer": $0] })
+}
+SWIFT
+xcrun swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios18.0-simulator \
+  -F "$FRAMEWORKS" -import-objc-header "$HEADER" \
+  "$CHECK_DIR/InlineLayer.swift" ios/Runner/PipController.swift ios/Runner/PipFramePump.swift
+echo "AVPlayer inline layer Objective-C and PiP Swift checks passed (iOS 18)"

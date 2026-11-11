@@ -54,21 +54,16 @@ class LumeLog {
   static Future<void> _writing = Future.value();
   static List<LogEntry> previousSession = [];
   static final List<LogEntry> _persistent = [];
-  static String _diskText(String text) => SensitiveData.redact(text)
-      .replaceAllMapped(RegExp(r'https?://[^\s<>"\x27]+'), (m) {
-        final uri = Uri.tryParse(m[0]!);
-        return uri == null
-            ? '[URL omitted]'
-            : '${uri.scheme}://${uri.host}/[path omitted]';
-      })
-      .replaceAll(
-        RegExp(r'\b[A-Za-z]:[\\/][^\r\n"<>]+'),
-        '[local path omitted]',
-      )
-      .replaceAll(
-        RegExp(r'/(Users|home|private|var|data|storage)/[^\s"<>]+'),
-        '[local path omitted]',
-      );
+  static String _diskText(String text) =>
+      SensitiveData.redactUrlPaths(SensitiveData.redact(text))
+          .replaceAll(
+            RegExp(r'\b[A-Za-z]:[\\/][^\r\n"<>]+'),
+            '[local path omitted]',
+          )
+          .replaceAll(
+            RegExp(r'/(Users|home|private|var|data|storage)/[^\s"<>]+'),
+            '[local path omitted]',
+          );
 
   static Future<void> startPersistence({Directory? directory}) async {
     final base = directory ?? await getApplicationSupportDirectory();
@@ -84,7 +79,11 @@ class LumeLog {
               if (row is Map)
                 LogEntry(
                   time: DateTime.tryParse('${row['time']}') ?? DateTime.now(),
-                  level: LogLevel.error,
+                  level:
+                      LogLevel.values
+                          .where((level) => level.id == row['level'])
+                          .firstOrNull ??
+                      LogLevel.error,
                   message: _diskText('${row['message']}'),
                   detail: row['detail'] == null
                       ? null
@@ -117,6 +116,7 @@ class LumeLog {
       for (final e in _persistent)
         {
           'time': e.time.toIso8601String(),
+          'level': e.level.id,
           'message': _diskText(e.message)
               .substring(0, _diskText(e.message).length.clamp(0, 2000)),
           'detail': e.detail == null

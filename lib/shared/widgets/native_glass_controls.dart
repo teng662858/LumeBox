@@ -47,7 +47,7 @@ class _NativeGlassControlState extends State<NativeGlassControl> {
     'tintColor': (widget.activeColor ?? LumeTheme.accentFillOf(context))
         .toARGB32(),
     if (widget.inactiveColor case final color?) 'trackColor': color.toARGB32(),
-    if (widget.secondaryTrackValue case final value?) 'bufferedValue': value,
+    'bufferedValue': ?widget.secondaryTrackValue,
     if (widget.secondaryTrackColor case final color?)
       'bufferedColor': color.toARGB32(),
   };

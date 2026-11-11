@@ -29,7 +29,8 @@ final class PipController: NSObject {
   private var controller: AVPictureInPictureController?
   private var frameLayer: AVSampleBufferDisplayLayer?
   private var frameHost: UIView?
-  private var avLayer: AVPlayerLayer?
+  // Owned by the video plugin. Never reparent it or clear its player.
+  private weak var inlineAvLayer: AVPlayerLayer?
   private var avObserver: NSObjectProtocol?
   private var paused = false
   private var starting = false
@@ -61,7 +62,7 @@ final class PipController: NSObject {
       forName: Notification.Name("LumeBox.avplayer.pip"), object: nil, queue: .main
     ) { [weak self] note in
       guard let player = note.object as? AVPlayer else { return }
-      self?.attach(player: player)
+      self?.attach(player: player, inlineLayer: note.userInfo?["playerLayer"] as? AVPlayerLayer)
     }
     let credentials = FlutterMethodChannel(name: "lumebox/danmaku_credentials", binaryMessenger: messenger)
     credentials.setMethodCallHandler { call, result in
@@ -128,6 +129,7 @@ final class PipController: NSObject {
         self.clearExternalSource()
         self.stopAvFrames()
         self.avPlayer = nil
+        self.inlineAvLayer = nil
         self.avUsesFrames = false
         self.controller?.delegate = nil
         self.controller?.canStartPictureInPictureAutomaticallyFromInline = false
@@ -136,8 +138,6 @@ final class PipController: NSObject {
         self.frameHost?.removeFromSuperview()
         self.frameHost = nil
         self.frameLayer = nil
-        self.avLayer?.player = nil
-        self.avLayer = nil
         self.controller = nil
         result(nil)
       case "stats":
@@ -164,9 +164,8 @@ final class PipController: NSObject {
     controller = nil
     stopAvFrames()
     avPlayer = nil
+    inlineAvLayer = nil
     avUsesFrames = false
-    avLayer?.player = nil
-    avLayer = nil
     frameHost?.removeFromSuperview()
     frameHost = nil
     frameLayer = nil
@@ -196,7 +195,7 @@ final class PipController: NSObject {
   }
 
   private func handleFrame(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-    if avPlayer != nil { stopAvFrames(); avPlayer = nil; avUsesFrames = false }
+    if avPlayer != nil { stopAvFrames(); avPlayer = nil; inlineAvLayer = nil; avUsesFrames = false }
 
     guard let args = call.arguments as? [String: Any],
           let data = args["pixels"] as? FlutterStandardTypedData,
@@ -259,8 +258,6 @@ final class PipController: NSObject {
   /// 首帧到达时绑定内容源并挂入窗口视图。
   @available(iOS 15.0, *)
   func attach(frameLayer layer: AVSampleBufferDisplayLayer) {
-    avLayer?.player = nil
-    avLayer = nil
     frameHost?.removeFromSuperview()
     frameLayer = layer
     if let host = UIApplication.shared.connectedScenes
@@ -287,25 +284,36 @@ final class PipController: NSObject {
     self.controller = controller
   }
 
-  private func attach(player: AVPlayer) {
+  private func attach(player: AVPlayer, inlineLayer: AVPlayerLayer? = nil) {
     if #available(iOS 15.0, *) { player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible }
-    let needsFrames = framePump.danmaku.enabled
-    if avPlayer === player && avUsesFrames == needsFrames && controller != nil { return }
+    let visibleLayer = inlineLayer ?? (avPlayer === player ? inlineAvLayer : nil)
+    // A texture player has no inline AVPlayerLayer. Use its decoded frames,
+    // including when danmaku is off, instead of attaching a competing layer.
+    let needsFrames = framePump.danmaku.enabled || visibleLayer == nil
+    if avPlayer === player && inlineAvLayer === visibleLayer && avUsesFrames == needsFrames && controller != nil { return }
     if controller?.isPictureInPictureActive == true { return }
     stopAvFrames()
     avPlayer = player
+    inlineAvLayer = visibleLayer
     avUsesFrames = needsFrames
     if needsFrames, let item = player.currentItem {
       controller?.delegate = nil
       controller?.stopPictureInPicture()
       frameHost?.removeFromSuperview()
-      avLayer?.player = nil
-      avLayer = nil
       framePump.ensureDisplayLayer()
       if let layer = framePump.displayLayer { attach(frameLayer: layer) }
       let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
       // Resolve track metadata once, never synchronously on every frame.
-      avTransform = item.asset.tracks(withMediaType: .video).first?.preferredTransform ?? .identity
+      Task { @MainActor [weak self, weak item] in
+        guard let item else { return }
+        do {
+          let tracks = try await item.asset.loadTracks(withMediaType: .video)
+          guard let track = tracks.first else { return }
+          let transform = try await track.load(.preferredTransform)
+          guard let self, self.avOutputItem === item else { return }
+          self.avTransform = transform
+        } catch { /* PiP can use the untransformed priming frame. */ }
+      }
       item.add(output)
       avOutput = output
       avOutputItem = item
@@ -317,21 +325,9 @@ final class PipController: NSObject {
     controller?.stopPictureInPicture()
     frameHost?.removeFromSuperview()
     frameLayer = nil
-    avLayer?.player = nil
-    guard let root = UIApplication.shared.connectedScenes
-      .compactMap({ $0 as? UIWindowScene }).flatMap({ $0.windows })
-      .first(where: { $0.isKeyWindow })?.rootViewController?.view,
-      let parent = root.superview else { return }
-    let host = UIView(frame: root.frame)
-    host.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    host.isUserInteractionEnabled = false
-    let layer = AVPlayerLayer(player: player)
-    layer.frame = host.bounds
-    host.layer.addSublayer(layer)
-    parent.insertSubview(host, belowSubview: root)
-    frameHost = host
-    avLayer = layer
-    controller = AVPictureInPictureController(playerLayer: layer)
+    frameHost = nil
+    guard let visibleLayer else { return }
+    controller = AVPictureInPictureController(playerLayer: visibleLayer)
     controller?.delegate = self
     controller?.canStartPictureInPictureAutomaticallyFromInline = true
   }
@@ -392,10 +388,10 @@ final class PipController: NSObject {
       starting = true
       startAvFrames()
       paused = false
-      let currentRate = (avPlayer ?? avLayer?.player)?.rate ?? 0
+      let currentRate = avPlayer?.rate ?? 0
       if currentRate > 0 { playbackRate = currentRate }
       framePump.setPlaybackState(playing: true, rate: Double(playbackRate))
-      (avPlayer ?? avLayer?.player)?.playImmediately(atRate: playbackRate)
+      avPlayer?.playImmediately(atRate: playbackRate)
       candidate.invalidatePlaybackState()
       candidate.startPictureInPicture()
       result(nil)
@@ -442,7 +438,7 @@ extension PipController: AVPictureInPictureControllerDelegate {
     externalActive?(true)
     starting = true
     startAvFrames()
-    if let rate = (avPlayer ?? avLayer?.player)?.rate, rate > 0 { playbackRate = rate }
+    if let rate = avPlayer?.rate, rate > 0 { playbackRate = rate }
     paused = false
   }
   func pictureInPictureController(
@@ -458,7 +454,7 @@ extension PipController: AVPictureInPictureControllerDelegate {
     framePump.danmaku.playing = true
     framePump.setPlaybackState(playing: true, rate: Double(playbackRate))
     startAvFrames()
-    (avPlayer ?? avLayer?.player)?.playImmediately(atRate: playbackRate)
+    avPlayer?.playImmediately(atRate: playbackRate)
     controller.invalidatePlaybackState()
     emit(kind: "play", message: nil)
     emit(kind: "entered", message: nil)
@@ -518,8 +514,8 @@ extension PipController: AVPictureInPictureSampleBufferPlaybackDelegate {
     paused = !playing
     framePump.danmaku.playing = playing
     framePump.setPlaybackState(playing: playing, rate: Double(playbackRate))
-    if playing { (avPlayer ?? avLayer?.player)?.playImmediately(atRate: playbackRate) }
-    else { (avPlayer ?? avLayer?.player)?.pause() }
+    if playing { avPlayer?.playImmediately(atRate: playbackRate) }
+    else { avPlayer?.pause() }
     emit(kind: playing ? "play" : "pause", message: nil)
   }
 

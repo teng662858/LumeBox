@@ -5,6 +5,15 @@
 #import "../video_player_avfoundation_objc/include/video_player_avfoundation_objc/FVPNativeVideoView.h"
 
 #import <AVFoundation/AVFoundation.h>
+#import <objc/runtime.h>
+
+@interface FVPWeakPlayerLayer : NSObject
+@property(nonatomic, weak) AVPlayerLayer *layer;
+@end
+@implementation FVPWeakPlayerLayer
+@end
+
+static char inlineLayerKey;
 
 @interface FVPPlayerView : UIView
 @end
@@ -28,8 +37,16 @@
   if (self = [super init]) {
     _playerView = [[FVPPlayerView alloc] init];
     [_playerView setPlayer:player];
+    FVPWeakPlayerLayer *reference = [[FVPWeakPlayerLayer alloc] init];
+    reference.layer = (AVPlayerLayer *)_playerView.layer;
+    objc_setAssociatedObject(player, &inlineLayerKey, reference, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
   }
   return self;
+}
+
++ (AVPlayerLayer *)layerForPlayer:(AVPlayer *)player {
+  FVPWeakPlayerLayer *reference = objc_getAssociatedObject(player, &inlineLayerKey);
+  return reference.layer;
 }
 
 - (FVPPlayerView *)view {

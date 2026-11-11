@@ -2,54 +2,56 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/reading/reading.dart';
+import 'package:lume_box/core/net/network_queue.dart';
 
-/// 封面加载不全的根因之一：图源返回的图片地址里混着 `http://` 明文地址，
-/// iOS 的 ATS 默认禁止明文请求 → 这部分图整批裂掉（真机表现正是「只能加载
-/// 一部分封面」）。
-///
-/// 修法：请求前把明文地址升级成 https。但**只升级域名**——本地回环与纯 IP
-/// 站点通常没有证书，升级只会把本来能用的链接弄坏。
+/// Preserve source schemes: forcing an HTTP-only image host to HTTPS can
+/// produce TLS errors. ATS already has a separate HTTP transport fallback.
 void main() {
-  test('http 域名地址升级为 https', () {
+  test('HTTP 图片域名与自定义端口保持源提供的协议', () {
     expect(
-      SectionImagePipeline.upgradeToHttps('http://img.example.com/a.jpg'),
-      'https://img.example.com/a.jpg',
+      SectionImagePipeline.canonicalUrl('http://img.example.com/a.jpg'),
+      'http://img.example.com/a.jpg',
     );
     expect(
-      SectionImagePipeline.upgradeToHttps('http://cdn.site.cn:8080/p.png?x=1'),
-      'https://cdn.site.cn:8080/p.png?x=1',
+      SectionImagePipeline.canonicalUrl('http://cdn.site.cn:8080/p.png?x=1'),
+      'http://cdn.site.cn:8080/p.png?x=1',
     );
   });
 
   test('已经是 https 的原样返回', () {
     expect(
-      SectionImagePipeline.upgradeToHttps('https://img.example.com/a.jpg'),
+      SectionImagePipeline.canonicalUrl('https://img.example.com/a.jpg'),
       'https://img.example.com/a.jpg',
     );
   });
 
   test('纯 IP 与 localhost 不升级（没有证书，升了就废）', () {
     expect(
-      SectionImagePipeline.upgradeToHttps('http://192.168.1.10:9988/a.jpg'),
+      SectionImagePipeline.canonicalUrl('http://192.168.1.10:9988/a.jpg'),
       'http://192.168.1.10:9988/a.jpg',
     );
     expect(
-      SectionImagePipeline.upgradeToHttps('http://127.0.0.1/a.jpg'),
+      SectionImagePipeline.canonicalUrl('http://127.0.0.1/a.jpg'),
       'http://127.0.0.1/a.jpg',
     );
     expect(
-      SectionImagePipeline.upgradeToHttps('http://localhost/a.jpg'),
+      SectionImagePipeline.canonicalUrl('http://localhost/a.jpg'),
       'http://localhost/a.jpg',
     );
   });
 
   test('非 http（相对路径 / data / 空串）原样返回', () {
-    for (final url in <String>['', 'a.jpg', '/a.jpg', 'data:image/png;base64,AA']) {
-      expect(SectionImagePipeline.upgradeToHttps(url), url);
+    for (final url in <String>[
+      '',
+      'a.jpg',
+      '/a.jpg',
+      'data:image/png;base64,AA',
+    ]) {
+      expect(SectionImagePipeline.canonicalUrl(url), url);
     }
   });
 
-  test('端到端：bytes() 走的是升级后的地址（真机封面救回来）', () async {
+  test('HTTP 与 HTTPS 缓存隔离，不混用失效或认证响应', () async {
     final root = Directory.systemTemp.createTempSync('lume_box_https_up');
     addTearDown(() {
       if (root.existsSync()) root.deleteSync(recursive: true);
@@ -60,12 +62,45 @@ void main() {
     );
     addTearDown(pipeline.dispose);
 
-    // 磁盘缓存文件名与内存缓存键都按升级后的地址算：同一张图不会存两份。
+    // A declared HTTPS resource must never reuse an HTTP response.
     expect(
       pipeline.cachePathFor('http://img.example.com/a.jpg'),
-      pipeline.cachePathFor('https://img.example.com/a.jpg'),
+      isNot(pipeline.cachePathFor('https://img.example.com/a.jpg')),
     );
   });
+  for (final scheme in ['http', 'https']) {
+    test('封面下载保留 $scheme 地址与源请求头', () async {
+      const path = 'www.lyyytv.cn/upload/cover.jpg';
+      final urls = <String>[];
+      final pipeline = SectionImagePipeline(
+        cacheDir: '',
+        diskCache: false,
+        maxRetries: 0,
+        requestSender: (request) async {
+          urls.add(request.url);
+          expect(request.headers['Referer'], 'http://cms.lyyytv.cn/');
+          if (scheme == 'https') {
+            throw const HandshakeException('CERTIFICATE_VERIFY_FAILED');
+          }
+          return const NetworkResponse(
+            statusCode: 200,
+            body: [1, 2, 3],
+            headers: {},
+          );
+        },
+      );
+      addTearDown(pipeline.dispose);
+      final url = '$scheme://$path';
+      pipeline.configureImageHeaders({
+        url: {'Referer': 'http://cms.lyyytv.cn/'},
+      });
+      expect(await pipeline.bytes(url), scheme == 'http' ? [1, 2, 3] : isNull);
+      expect(urls, [
+        url,
+      ], reason: 'Do not invent HTTPS or downgrade declared HTTPS');
+    });
+  }
+
   test('变换型地址退回真实路径（CF Image Resizing 那类）', () {
     expect(
       SectionImagePipeline.normalizeTransform(
@@ -81,7 +116,7 @@ void main() {
     expect(SectionImagePipeline.normalizeTransform(''), '');
   });
 
-  test('规整 + 升 https 是同一套顺序（缓存键一致，不会存两份）', () {
+  test('同协议的变换地址与原图缓存键一致', () {
     final pipeline = SectionImagePipeline(
       cacheDir: Directory.systemTemp.createTempSync('lume_box_tf').path,
       memoryBudgetBytes: 1024 * 1024,
@@ -91,9 +126,8 @@ void main() {
       pipeline.cachePathFor(
         'http://img.a.com/cdn-cgi/image/height=260/upload/x.webp',
       ),
-      pipeline.cachePathFor('https://img.a.com/upload/x.webp'),
+      pipeline.cachePathFor('http://img.a.com/upload/x.webp'),
       reason: '两种写法要落到同一个缓存文件',
     );
   });
-
 }

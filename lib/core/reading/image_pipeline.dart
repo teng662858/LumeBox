@@ -110,7 +110,7 @@ class SectionImagePipeline {
   final processingRevision = ValueNotifier<int>(0);
   final _processingReports = <String, ImageUpscaleReport>{};
   ImageUpscaleReport? processingReport(String url) =>
-      _processingReports[upgradeToHttps(normalizeTransform(url))];
+      _processingReports[canonicalUrl(url)];
   static final _coverBytes = _createCoverByteCache();
   static CoverByteCache _createCoverByteCache() {
     final cache = CoverByteCache();
@@ -119,8 +119,7 @@ class SectionImagePipeline {
   }
 
   final Map<String, String> _failures = {};
-  String? failureFor(String url) =>
-      _failures[upgradeToHttps(normalizeTransform(url))];
+  String? failureFor(String url) => _failures[canonicalUrl(url)];
   bool canRetry(String url) =>
       !{'证书异常', '链接失效', '非图片响应', '图片需要网页验证'}.contains(failureFor(url));
   DataSource? get boundSource => _boundSource;
@@ -131,7 +130,7 @@ class SectionImagePipeline {
 
   final Map<String, String> _verificationTargets = {};
   String? verificationTargetFor(String url) =>
-      _verificationTargets[upgradeToHttps(normalizeTransform(url))];
+      _verificationTargets[canonicalUrl(url)];
   final Map<String, Map<String, String>> _imageHeaders = {};
   Future<String?> Function(String, String)? _refreshImage;
   DataSource? _boundSource;
@@ -147,9 +146,7 @@ class SectionImagePipeline {
   /// 图片请求头只能绑定到该源明确给出的 URL，不向其他域名或图片扩散。
   void configureImageHeaders(Map<String, Map<String, String>> headers) {
     for (final entry in headers.entries) {
-      _imageHeaders[upgradeToHttps(normalizeTransform(entry.key))] = Map.of(
-        entry.value,
-      );
+      _imageHeaders[canonicalUrl(entry.key)] = Map.of(entry.value);
     }
   }
 
@@ -298,8 +295,7 @@ class SectionImagePipeline {
       ? canonicalUrl(url)
       : '${canonicalUrl(url)}@$targetWidth';
 
-  static String canonicalUrl(String url) =>
-      upgradeToHttps(normalizeTransform(url.trim()));
+  static String canonicalUrl(String url) => normalizeTransform(url.trim());
 
   // ------------------------------------------------------------------ 取图
 
@@ -456,7 +452,7 @@ class SectionImagePipeline {
   Future<Uint8List?> fetch(String url) {
     final trimmed = url.trim();
     if (trimmed.isEmpty || _disposed) return Future<Uint8List?>.value();
-    return _download(upgradeToHttps(normalizeTransform(trimmed)));
+    return _download(canonicalUrl(trimmed));
   }
 
   final _preloadQueue = Queue<({String url, int? width, String cacheKey})>();
@@ -666,17 +662,15 @@ class SectionImagePipeline {
         }
         if (attempt == 1 && diskCache) {
           try {
-            final file = File(
-              _diskPath(upgradeToHttps(normalizeTransform(url))),
-            );
+            final file = File(_diskPath(canonicalUrl(url)));
             await file.parent.create(recursive: true);
             await file.writeAsBytes(data);
           } catch (_) {}
         }
-        _failures.remove(upgradeToHttps(normalizeTransform(url)));
+        _failures.remove(canonicalUrl(url));
         _memory.put(cacheKey, image);
         if (processingReport != null) {
-          final normalized = upgradeToHttps(normalizeTransform(url));
+          final normalized = canonicalUrl(url);
           _processingReports.remove(normalized);
           _processingReports[normalized] = processingReport!;
           while (_processingReports.length > 128) {
@@ -686,7 +680,7 @@ class SectionImagePipeline {
         }
         return image;
       } catch (error) {
-        final normalized = upgradeToHttps(normalizeTransform(url));
+        final normalized = canonicalUrl(url);
         if (cacheOriginalBytes) _coverBytes.remove(_coverByteKey(normalized));
         _failures[normalized] = '图片解码失败';
         LumeLog.warn('[$sourceLabel] 图片解码失败: $url ($error)');
@@ -714,11 +708,6 @@ class SectionImagePipeline {
   /// 系统调用（微秒级），而一屏封面也就几十次。**不用异步版**是踩过坑的：
   /// `flutter_test` 的测试体跑在假时钟里，真实文件 IO 的完成回调等不到，
   /// 读缓存这条路径会把整个用例挂死（comic_reader 全套由绿变红）。
-  /// 明文 http 的图片地址升级为 https（iOS ATS 默认禁止明文请求，明文图会整批裂掉，
-  /// 真机表现就是「只有一部分封面能显示」——凡站点同时提供 https 的都能救回来）。
-  ///
-  /// 只升级 `http://` 且主机名不是 IP / localhost 的：本地回环与纯 IP 站点通常没有
-  /// 证书，升级只会把能用的链接弄坏。
   /// 规整「图片变换型」地址：Cloudflare Image Resizing 那类
   /// `https://host/cdn-cgi/image/<变换参数>/<真实路径>` 在个别边缘/并发下会取不到图
   /// （真机反馈「首页封面很多是空白占位」）。这里统一退回**真实路径**——
@@ -735,15 +724,6 @@ class SectionImagePipeline {
     final slash = rest.indexOf('/');
     if (slash <= 0) return text;
     return text.substring(0, at) + rest.substring(slash);
-  }
-
-  static String upgradeToHttps(String url) {
-    if (!url.startsWith('http://')) return url;
-    final host = Uri.tryParse(url)?.host ?? '';
-    if (host.isEmpty) return url;
-    final isIp = RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(host);
-    if (isIp || host == 'localhost') return url;
-    return 'https://${url.substring('http://'.length)}';
   }
 
   /// `lume-enc://aes-ecb/<base64url(key)>/<原始地址>` → 下载密文 → 原生 AES 解密。
@@ -773,7 +753,7 @@ class SectionImagePipeline {
     }
     if (key.isEmpty || (isCbc && (iv == null || iv.isEmpty))) return null;
     final target = parts.sublist(isCbc ? 2 : 1).join('/');
-    final raw = await _download(upgradeToHttps(normalizeTransform(target)));
+    final raw = await _download(canonicalUrl(target));
     if (raw == null || raw.isEmpty) return null;
     try {
       return await decodeLegacySourceImageInBackground(raw, key, iv: iv);
@@ -802,9 +782,9 @@ class SectionImagePipeline {
     // 有的源把封面加密后以内联形式给出（9sex 的 AES 密文等），源脚本解密后就是一条 data URI。
     final inline = decodeDataUri(rawUrl);
     if (inline != null) return inline;
-    // 明文地址在这里一次性升级：内存缓存键、磁盘文件名、实际请求三者保持一致，
-    // 不会同一张图存两份。
-    final url = upgradeToHttps(normalizeTransform(rawUrl));
+    // Preserve the source scheme. ATS failures already have a dart:io path;
+    // forcing HTTP-only image hosts to HTTPS can make working covers fail TLS.
+    final url = canonicalUrl(rawUrl);
     if (!diskCache) return _download(url, preload: preload);
     final file = File(_diskPath(url));
     try {
@@ -1315,11 +1295,9 @@ class SectionImagePipeline {
 
   /// 某张图的磁盘缓存文件路径（与 [_diskPath] 同一套规则，供测试与排障定位）。
   ///
-  /// 与 [_loadBytes] 一样先做明文升级：文件名按升级后的地址算，`http://…` 与
-  /// `https://…` 两种写法落到同一个文件，同一张图不会存两份。
+  /// Match the request scheme; HTTP and HTTPS responses have separate cache keys.
   @visibleForTesting
-  String cachePathFor(String url) =>
-      _diskPath(upgradeToHttps(normalizeTransform(url)));
+  String cachePathFor(String url) => _diskPath(canonicalUrl(url));
 }
 
 /// 解码图的内存缓存：按字节预算做 LRU，带引用计数与钉住集合。

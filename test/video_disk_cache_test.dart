@@ -64,6 +64,12 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path.startsWith('/status/')) {
+        request.response.statusCode = int.parse(request.uri.pathSegments.last);
+        request.response.write('private upstream error body');
+        await request.response.close();
+        return;
+      }
       if (pause != null) await pause!.future;
       if (failures > 0) {
         failures--;
@@ -140,6 +146,21 @@ void main() {
     if (range != null) request.headers.set('Range', range);
     final response = await request.close();
     return (response, await response.expand((b) => b).toList());
+  }
+
+  for (final status in [400, 401, 403, 404, 429, 500, 502, 503]) {
+    test(
+      'upstream HTTP $status is preserved without leaking its body',
+      () async {
+        final wrapped = await cache.wrap(
+          PlayerMedia(uri: upstream.resolve('/status/$status')),
+        );
+        final (response, body) = await get(wrapped.uri);
+        expect(response.statusCode, status);
+        expect(body, isEmpty);
+        expect(calls, [502, 503].contains(status) ? 2 : 1);
+      },
+    );
   }
 
   test(

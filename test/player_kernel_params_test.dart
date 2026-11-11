@@ -68,6 +68,27 @@ void main() {
       VideoPlayerPlatform.instance = platform;
     });
 
+    test(
+      'buffering follows playback intent and stops on an explicit pause',
+      () async {
+        final player = AvPlayer(buffering: _RecordingBufferingBackend());
+        addTearDown(player.dispose);
+        await player.load(
+          PlayerMedia(uri: Uri.parse('https://example.test/movie.mp4')),
+        );
+        await player.play();
+        platform._streams.values.single.add(
+          VideoEvent(eventType: VideoEventType.bufferingStart),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(player.snapshot.value.buffering, isTrue);
+        await player.pause();
+        expect(player.snapshot.value.buffering, isFalse);
+        await player.play();
+        expect(player.snapshot.value.buffering, isTrue);
+      },
+    );
+
     test('HDR display switches retain playback and position while subtitle changes do not reload video', () async {
       final player = AvPlayer(buffering: _RecordingBufferingBackend());
       await player.load(

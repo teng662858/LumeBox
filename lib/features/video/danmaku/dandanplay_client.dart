@@ -167,7 +167,7 @@ class DandanplayClient {
           ? 'builtin'
           : credentials.official
           ? 'official'
-          : 'compatible'} ${url.path} -> ${response.statusCode}',
+          : 'compatible'} ${path.startsWith('/api/v2/comment/') ? '/api/v2/comment/[episode]' : path} -> ${response.statusCode}',
     );
     if (response.statusCode == 401 || response.statusCode == 403) {
       final reason = switch (response.headers['x-error-message']) {
@@ -448,6 +448,8 @@ class DandanplayClient {
         'withRelated': 'true',
         if (!credentials.official && segments) 'segmentflag': 'true',
         if (videoUrl != null) 'url': videoUrl.toString(),
+        if (!credentials.official)
+          '_': '${DateTime.now().microsecondsSinceEpoch}',
       },
     );
   }
@@ -486,13 +488,14 @@ class DandanplayClient {
       // The local upstream caches comment results. If its first upstream fetch
       // failed and cached an empty list, retrying immediately would keep
       // returning 0. A changing cache key makes "重新加载本集" actually retry.
-      if (credentials.builtin) '_': '${DateTime.now().microsecondsSinceEpoch}',
+      if (!credentials.official)
+        '_': '${DateTime.now().microsecondsSinceEpoch}',
     });
     if (json['comments'] is! List) {
       throw const DandanplayException('服务未返回弹幕列表，请重试或检查弹幕服务地址');
     }
     final track = parseComments(json);
-    LumeLog.info('[danmaku] comments $id -> ${track.length}');
+    LumeLog.info('[danmaku] comments -> ${track.length}');
     return track;
   }
 

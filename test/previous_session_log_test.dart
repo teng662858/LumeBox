@@ -33,6 +33,13 @@ void main() {
       await LumeLog.startPersistence(directory: dir);
       expect(LumeLog.previousSession, hasLength(80));
       expect(LumeLog.previousSession.last.message, contains('failure 99'));
+      expect(
+        LumeLog.previousSession.every((e) => e.level == LogLevel.warn),
+        isTrue,
+      );
+      final message = LumeLog.previousSession.last.message;
+      expect(message, contains('https://video.example/[path omitted]'));
+      expect(message, isNot(contains('omitted] omitted]')));
       LumeLog.clear();
       await LumeLog.flushPersistence();
       expect(await file.exists(), false);

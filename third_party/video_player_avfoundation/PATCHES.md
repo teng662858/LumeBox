@@ -82,9 +82,15 @@ accessLog 时返回 null，不把播放码率伪装成下载速度。`applyBuffe
 外挂 SRT / VTT 在宿主的文字字幕层呈现；ASS 原样式由 MPV libass 提供。详细能力及验证方式见 [播放器展示说明](../../docs/player-presentation.md)。原生 helper 的 Swift 类型检查由 `tool/check_ios_player_presentation.sh` 完成；实际输出需真机验证。
 
 
-### iOS 最低目标统一为 16
+### iOS 最低目标统一为 18
 
-用户要求从 2026-10-29 起最低支持 iOS 16.0。App、自维护插件的 Pod / Swift Package 声明与原生检查脚本统一为 iOS 16；不再按 iOS 13 / 14 / 15 编译或维护兼容分支。HDR 内容标识、HDR 播放条件和空间音频查询在此最低版本直接可用。`check_ios_player_presentation.sh` 在 IPA 编译前按 iOS 16 检查，避免插件目标与 App 目标不一致。
+当前最低支持 iOS 18.0。App、自维护插件的 Pod / Swift Package 声明与原生检查脚本统一为 iOS 18；不再维护 iOS 13–17。`check_ios_player_presentation.sh` 在 IPA 编译前按 iOS 18 检查。
+
+### 2026-11-11：主画面与画中画共享视频层
+
+`FVPNativeVideoView` 以弱引用登记每个 AVPlayer 的可见 AVPlayerLayer。`lumebox/av_pip` 准备通知将该层交给宿主 PiP；宿主只借用，不移动该层，也不在清理画中画时清空其 player。纹理播放器没有可见 AVPlayerLayer，改用已有的 AVPlayerItemVideoOutput 解码帧路径，不再为画中画另建隐藏的 AVPlayerLayer。带弹幕的画中画仍使用解码帧。
+
+`lumebox/av_network.readVideoState` 返回可见原生层是否存在、已挂载和准备好显示，供 iOS 播放回归检查使用。原生检查脚本编译实际 Objective-C 登记实现，并检查 Swift 桥接和生产 PiP 代码；集成用例同时覆盖画中画准备、弹幕切换、清理与 SDR 纹理路径。实际 HDR 输出和真机画中画仍需设备验收。
 
 ## 补丁 2 · seek 容差（拖动快进不卡）
 

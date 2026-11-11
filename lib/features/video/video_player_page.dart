@@ -1288,26 +1288,23 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _cancelAutoHide();
       _logPlaybackFailure(snapshot!);
       final error = snapshot.error!.toLowerCase();
-      final kernelCompatibilityError =
-          error.contains('-12939') ||
-          error.contains('-12847') ||
-          error.contains('this media format is not supported') ||
-          error.contains('该视频的格式或编码不被当前内核支持') ||
-          error.contains('byte range and no content length') ||
-          error.contains('服务器不支持分段请求') ||
-          error.contains('server is not correctly configured');
-      if (!kernelCompatibilityError) {
-        scheduleMicrotask(() => _recoverAlternative());
-      }
-      if (!_rangeFallbackAttempted &&
+      final kernelCompatibilityError = PlayerErrorText.needsAlternativeKernel(
+        error,
+      );
+      final canFallback =
+          !_rangeFallbackAttempted &&
           _settings.kernel == PlayerKernel.avplayer &&
           _catalog.isAvailable(PlayerKernel.mpv) &&
-          kernelCompatibilityError) {
+          kernelCompatibilityError;
+      if (!canFallback) {
+        scheduleMicrotask(() => _recoverAlternative());
+      }
+      if (canFallback) {
         _rangeFallbackAttempted = true;
         // 快照通知期间不能同步释放发出通知的播放器。
         scheduleMicrotask(() async {
           if (!mounted || _settings.kernel != PlayerKernel.avplayer) return;
-          _showToast('当前媒体的分段响应与 AVPlayer 不兼容，正在切换 MPV');
+          _showToast('当前媒体与 AVPlayer 不兼容，正在切换 MPV');
           await _applySettings(
             _settings.copyWith(kernel: PlayerKernel.mpv),
             autoPlayAfterKernelSwitch: true,
@@ -1877,9 +1874,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             identical(player, _player)) {
           await player.play();
         }
-      } else if (autoPlayAfterLoad &&
-          mounted &&
-          identical(player, _player)) {
+      } else if (autoPlayAfterLoad && mounted && identical(player, _player)) {
         await player.play();
       }
     } catch (error, stackTrace) {
@@ -2425,6 +2420,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _healthyPosition = Duration.zero;
     _retainRuntime(target?.sourceId);
     _target = target;
+    _rangeFallbackAttempted = false;
     _syncQualityIndex(media);
     _suppressProgressSave = true;
     try {

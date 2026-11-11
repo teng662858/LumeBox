@@ -6,6 +6,23 @@ import 'package:lume_box/features/settings/diagnostic_exporter.dart';
 import 'package:lume_box/core/util/lume_log.dart';
 
 void main() {
+  test('redaction is stable across repeated persistence and exports', () {
+    var message =
+        'failed https://cdn.test/private?token=secret User-Agent,Referer';
+    for (var i = 0; i < 5; i++) {
+      message = DiagnosticExporter.redact(message);
+      expect(
+        message,
+        'failed https://cdn.test/[path omitted] User-Agent,Referer',
+      );
+    }
+    expect(
+      DiagnosticExporter.redact(
+        'https://cdn.test/[path omitted] omitted] omitted]',
+      ),
+      'https://cdn.test/[path omitted]',
+    );
+  });
   test(
     'diagnostic ZIP preserves useful context and excludes sensitive values',
     () {

@@ -6,8 +6,35 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:lume_box/features/video/danmaku/dandanplay_client.dart';
 import 'package:lume_box/features/video/danmaku/danmaku_models.dart';
+import 'package:lume_box/core/util/lume_log.dart';
 
 void main() {
+  test('compatible comment reload bypasses empty cached replies without logging service tokens', () async {
+    const token = 'private-route-token';
+    final urls = <Uri>[];
+    final client = DandanplayClient(
+      credentials: const DandanplayCredentials(
+        '',
+        '',
+        baseUrl: 'https://worker.example/$token',
+      ),
+      client: MockClient((request) async {
+        urls.add(request.url);
+        expect(request.url.queryParameters['_'], isNotEmpty);
+        return http.Response('{"comments":[]}', 200);
+      }),
+    );
+    addTearDown(client.close);
+    LumeLog.clear();
+    await client.comments('episode');
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    await client.commentPayload(id: 'episode');
+    expect(urls.map((url) => url.queryParameters['_']).toSet(), hasLength(2));
+    expect(
+      LumeLog.snapshot.map((e) => e.message).join('\n'),
+      isNot(contains(token)),
+    );
+  });
   test('Cloudflare 无状态集数编号可从搜索结果直接读取弹幕', () async {
     const id =
         'lb1.aHR0cHM6Ly93d3cuaXFpeWkuY29tL3ZfZXhhbXBsZS5odG1s.signature_123';

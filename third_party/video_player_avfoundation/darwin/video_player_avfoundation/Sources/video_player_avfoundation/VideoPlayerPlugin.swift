@@ -77,11 +77,18 @@ public final class VideoPlayerPlugin: NSObject, FlutterPlugin, AVFoundationVideo
     #if os(iOS)
       let network = FlutterMethodChannel(name: "lumebox/av_network", binaryMessenger: registrar.messenger())
       network.setMethodCallHandler { [weak instance] call, result in
-        guard call.method == "readBytes" || call.method == "applyBuffering" else { result(FlutterMethodNotImplemented); return }
+        guard ["readBytes", "applyBuffering", "readVideoState"].contains(call.method) else { result(FlutterMethodNotImplemented); return }
         guard let args = call.arguments as? [String: Any],
               let identifier = args["playerId"] as? NSNumber,
               let video = instance?.playersByIdentifier[identifier.int64Value], !video.disposed else {
           result(nil); return
+        }
+        if call.method == "readVideoState" {
+          let layer = FVPNativeVideoView.layer(for: video.player)
+          result(["inlineLayer": layer != nil,
+                  "attached": layer?.superlayer != nil,
+                  "readyForDisplay": layer?.isReadyForDisplay ?? false])
+          return
         }
         if call.method == "applyBuffering" {
           let seconds = (args["seconds"] as? NSNumber)?.doubleValue ?? 0
@@ -112,7 +119,10 @@ public final class VideoPlayerPlugin: NSObject, FlutterPlugin, AVFoundationVideo
               let video = instance?.playersByIdentifier[identifier.int64Value], !video.disposed else {
           result(false); return
         }
-        NotificationCenter.default.post(name: Notification.Name("LumeBox.avplayer.pip"), object: video.player)
+        let layer = FVPNativeVideoView.layer(for: video.player)
+        NotificationCenter.default.post(name: Notification.Name("LumeBox.avplayer.pip"),
+                                        object: video.player,
+                                        userInfo: layer.map { ["playerLayer": $0] })
         result(true)
       }
     #endif

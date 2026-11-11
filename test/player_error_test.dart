@@ -5,6 +5,26 @@ import 'package:lume_box/core/player/player_error.dart';
 /// 播放失败文案归一：界面上不能再出现 `PlatformException(VideoError, …)` 这种
 /// 英文载荷（用户截图里的原样）。
 void main() {
+  test('kernel recovery recognizes native and translated errors but excludes HTTP errors', () {
+    for (final error in [
+      'OSStatus error -12848',
+      'This media format is not supported (OSStatus error -12847)',
+      'byte range and no content length - error code is 200',
+    ]) {
+      expect(PlayerErrorText.needsAlternativeKernel(error), isTrue);
+      expect(
+        PlayerErrorText.needsAlternativeKernel(PlayerErrorText.describe(error)),
+        isTrue,
+      );
+    }
+    for (final error in [
+      'HTTP 403 byte range',
+      'HTTP 502',
+      'network timeout',
+    ]) {
+      expect(PlayerErrorText.needsAlternativeKernel(error), isFalse);
+    }
+  });
   group('PlayerErrorText.describe', () {
     test('媒体打开失败保留恢复建议，不把未确认的问题说成文件已损坏', () {
       expect(

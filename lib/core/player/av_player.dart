@@ -781,7 +781,9 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
         position: value.position,
         duration: value.duration,
         playing: value.isPlaying,
-        buffering: value.isBuffering || retrying,
+        buffering:
+            (value.isBuffering && (_wantsPlay || !value.isInitialized)) ||
+            retrying,
         error: value.hasError && !retrying
             ? PlayerErrorText.describe(value.errorDescription)
             : null,

@@ -30,15 +30,7 @@ class DiagnosticExporter {
       RegExp(r'data:[^\s]+', caseSensitive: false),
       '[image data omitted]',
     );
-    text = text.replaceAllMapped(
-      RegExp(r'https?://[^\s<>"\x27]+', caseSensitive: false),
-      (match) {
-        final uri = Uri.tryParse(match[0]!);
-        return uri?.host.isNotEmpty == true
-            ? '${uri!.scheme}://${uri.host}/[path omitted]'
-            : '[URL omitted]';
-      },
-    );
+    text = SensitiveData.redactUrlPaths(text);
     text = text.replaceAll(
       RegExp(
         r'(authorization|proxy-authorization|cookie|set-cookie|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|password|secret|credential|token|session|密钥|密码)\s*["\x27]?\s*[:=]\s*[^\r\n]+',

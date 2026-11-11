@@ -428,6 +428,13 @@ class VideoDiskCache extends ChangeNotifier {
         }
         throw const HttpException('媒体代理范围无效');
       }
+      if (response.statusCode >= 400) {
+        // Preserve upstream access errors. Turning HTTP 400/403/404 into 502
+        // makes native kernels retry a request that can never succeed.
+        final status = response.statusCode;
+        await response.listen(null).cancel();
+        throw _UpstreamStatus(status);
+      }
       final builder = BytesBuilder(copy: false);
       try {
         await for (final chunk in response.timeout(
@@ -737,6 +744,8 @@ class VideoDiskCache extends ChangeNotifier {
       } else {
         await upstream.drain<void>();
       }
+    } on _UpstreamStatus catch (error) {
+      response.statusCode = error.status;
     } catch (_) {
       // Never include source URLs, cookies or tokens in HTTP error bodies.
       try {
@@ -784,6 +793,11 @@ class VideoDiskCache extends ChangeNotifier {
     _tickets.clear();
     _positions.clear();
   }
+}
+
+class _UpstreamStatus implements Exception {
+  const _UpstreamStatus(this.status);
+  final int status;
 }
 
 class _Passthrough implements Exception {

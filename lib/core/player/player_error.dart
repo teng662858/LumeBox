@@ -12,6 +12,26 @@
 class PlayerErrorText {
   PlayerErrorText._();
 
+  /// Check both native errors and their UI translations at recovery boundaries.
+  static bool needsAlternativeKernel(Object? raw) {
+    final text = '${raw ?? ''}';
+    if (_httpStatus(text) case final status? when status >= 400) return false;
+    final lower = text.toLowerCase();
+    return [
+      '-12939',
+      '-12847',
+      '-12848',
+      'this media may be damaged',
+      'this media format is not supported',
+      '该视频的格式或编码不被当前内核支持',
+      '当前内核无法打开该媒体',
+      'byte range',
+      'no content length',
+      '服务器不支持分段请求',
+      'server is not correctly configured',
+    ].any(lower.contains);
+  }
+
   /// 归一为一句可读文案。输入为空时给一句兜底。
   static String describe(Object? raw) {
     final text = '${raw ?? ''}'.trim();

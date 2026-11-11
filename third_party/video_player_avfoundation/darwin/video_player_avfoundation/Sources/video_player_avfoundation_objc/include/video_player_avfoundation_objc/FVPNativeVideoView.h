@@ -22,6 +22,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// Initializes a new instance of a native view.
 /// It creates a video view instance and sets the provided AVPlayer instance to it.
 - (instancetype)initWithPlayer:(AVPlayer *)player;
+#if TARGET_OS_IOS
+/// The visible layer is shared with PiP; creating another layer can steal video output.
++ (nullable AVPlayerLayer *)layerForPlayer:(AVPlayer *)player NS_SWIFT_NAME(layer(for:));
+#endif
 @end
 
 NS_ASSUME_NONNULL_END
