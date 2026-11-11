@@ -1,5 +1,27 @@
 # 本地补丁说明（third_party/video_player_avfoundation）
 
+## 2026-11-12 · 有缓冲但系统播放器停止推进
+
+诊断包（App 1.0.317）中，同一 HLS 两次在约 21 秒出首帧后仍未推进，触发
+`buffered-startup-stalled`，MPV 接管后约一秒开始推进。日志能证明系统播放器停滞，
+但不能单独确定首次初始化较慢的原因，也不能断言哪一笔历史提交首次引入问题。
+
+原生恢复存在明确缺口：关闭 `automaticallyWaitsToMinimizeStalling` 后，AVPlayer
+缓冲耗尽会把 rate 归零并暂停。上游插件只在 `playbackLikelyToKeepUp` 改变时重发
+播放；少量可播数据到达时该值可能仍为 false，`loadedTimeRanges` 原先只通知 UI。
+依据：[Apple 自动等待说明](https://developer.apple.com/documentation/avfoundation/avplayer/automaticallywaitstominimizestalling)。
+
+现在缓冲更新后在主线程检查仍然有效的播放意图、初始化状态和未完成的 seek。
+仅当当前位置至少有 250ms 连续数据、rate 为零且系统自动等待关闭时，使用
+`playImmediatelyAtRate:` 恢复当前 AVPlayer，并保留倍速与原生速率能力限制。
+用户暂停、seek 未结束、已释放或失败的播放器、远处孤立缓冲均不自动恢复。
+保留原有内核回退机制作为最后保护，不扩大缓存、不缩短回退时间。
+
+验证：`tool/check_ios_player_presentation.sh` 编译真实播放器和 helper（iOS 18），
+并运行 `tool/avplayer_buffer_resume_smoke.m` 的 AVFoundation 替身行为检查。
+该检查验证真实恢复函数，不等同于设备上的网络 HLS 验收；同一媒体在用户设备上的
+启动速度、缓冲状态和系统画中画仍需新版真机复验。
+
 本目录是 **`video_player_avfoundation` 2.12.0 的本地 vendored 副本**（来自 pub
 镜像 `pub.flutter-io.cn`，上游仓库见 `pubspec.yaml` 的 `repository` 字段），
 项目 `pubspec.yaml` 以 `dependency_overrides` 的**路径覆盖**引用它。

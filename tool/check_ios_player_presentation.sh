@@ -25,6 +25,20 @@ echo "AVFoundation presentation channel typecheck passed"
 NATIVE_ROOT="$PWD/third_party/video_player_avfoundation/darwin/video_player_avfoundation/Sources"
 HEADER="$NATIVE_ROOT/video_player_avfoundation_objc/include/video_player_avfoundation_objc/FVPNativeVideoView.h"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
+# Compile the actual player wiring for the minimum supported iOS target, then
+# run the platform-independent AVFoundation policy checks on the macOS host.
+for source in FVPVideoPlayer FVPLumeBuffering; do
+  xcrun clang -fobjc-arc -fmodules -isysroot "$SDK" \
+    -target arm64-apple-ios18.0-simulator -F "$FRAMEWORKS" \
+    -c "$NATIVE_ROOT/video_player_avfoundation_objc/$source.m" \
+    -o "$CHECK_DIR/$source.o"
+done
+xcrun clang -fobjc-arc -fmodules -framework Foundation -framework AVFoundation \
+  -framework CoreMedia -I "$NATIVE_ROOT/video_player_avfoundation_objc" \
+  tool/avplayer_buffer_resume_smoke.m \
+  "$NATIVE_ROOT/video_player_avfoundation_objc/FVPLumeBuffering.m" \
+  -o "$CHECK_DIR/avplayer-buffer-resume"
+"$CHECK_DIR/avplayer-buffer-resume"
 xcrun clang -fobjc-arc -fmodules -isysroot "$SDK" \
   -target arm64-apple-ios18.0-simulator -F "$FRAMEWORKS" \
   -c "$NATIVE_ROOT/video_player_avfoundation_ios/FVPNativeVideoView.m" \

@@ -16,6 +16,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// 把当前缓冲参数应用到刚创建好的播放器。
 + (void)applyToPlayer:(AVPlayer *)player;
 
+/// With automatic waiting disabled, AVPlayer pauses on underrun. Resume only
+/// when playback is still requested and data covers the current playhead.
++ (BOOL)resumePlayerIfBuffered:(AVPlayer *)player wantsPlay:(BOOL)wantsPlay rate:(float)rate;
+
 @end
 
 NS_ASSUME_NONNULL_END

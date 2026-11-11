@@ -79,6 +79,7 @@ static NSDictionary<NSString *, NSValue *> *FVPGetPlayerItemObservations(void) {
 @implementation FVPVideoPlayer {
   // Whether or not player and player item listeners have ever been registered.
   BOOL _listenersRegistered;
+  NSUInteger _pendingSeekCount;
 }
 
 - (instancetype)initWithPlayerItem:(NSObject<FVPAVPlayerItem> *)item
@@ -316,6 +317,12 @@ NS_INLINE CGFloat radiansToDegrees(CGFloat radians) {
       ]];
     }
     [self.eventListener videoPlayerDidUpdateBufferRegions:values];
+    // automaticallyWaitsToMinimizeStalling=NO also disables automatic resume
+    // after an underrun. isPlaybackLikelyToKeepUp may stay NO while a short
+    // playable reserve arrives, so its KVO alone cannot restart playback.
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self resumePlaybackIfBuffered];
+    });
   } else if (context == statusContext) {
     AVPlayerItem *item = (AVPlayerItem *)object;
     [self reportStatusForPlayerItem:item];
@@ -332,6 +339,13 @@ NS_INLINE CGFloat radiansToDegrees(CGFloat radians) {
     AVPlayer *player = (AVPlayer *)object;
     [self.eventListener videoPlayerDidSetPlaying:(player.rate > 0)];
   }
+}
+
+- (void)resumePlaybackIfBuffered {
+  [FVPLumeBuffering resumePlayerIfBuffered:_player
+                               wantsPlay:!_disposed && _isInitialized && _isPlaying &&
+                                         _pendingSeekCount == 0
+                                    rate:_targetPlaybackSpeed ? _targetPlaybackSpeed.floatValue : 1];
 }
 
 - (void)reportStatusForPlayerItem:(AVPlayerItem *)item {
@@ -472,15 +486,18 @@ NS_INLINE CGFloat radiansToDegrees(CGFloat radians) {
       toleranceAfter = requested;
     }
   }
+  _pendingSeekCount++;
   [_player seekToTime:targetCMTime
         toleranceBefore:tolerance
          toleranceAfter:toleranceAfter
       completionHandler:^(BOOL completed) {
-        if (completion) {
-          dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
+          self->_pendingSeekCount--;
+          if (completed) [self resumePlaybackIfBuffered];
+          if (completion) {
             completion(nil);
-          });
-        }
+          }
+        });
       }];
 }
 
