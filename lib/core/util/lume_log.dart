@@ -167,6 +167,13 @@ class LumeLog {
     _record(LogLevel.info, message);
   }
 
+  /// Flush the last native playback stage before entering code that can
+  /// terminate the process without returning a Dart exception.
+  static Future<void> playbackCheckpoint(String message) async {
+    _record(LogLevel.info, SensitiveData.redact(message), persist: true);
+    await flushPersistence();
+  }
+
   static void warn(String message) {
     message = SensitiveData.redact(message);
     developer.log(message, name: tag, level: 900);
@@ -208,8 +215,13 @@ class LumeLog {
     _changes.add(null);
   }
 
-  static void _record(LogLevel level, String message, {String? detail}) {
-    if (_journal != null && level != LogLevel.info) {
+  static void _record(
+    LogLevel level,
+    String message, {
+    String? detail,
+    bool persist = false,
+  }) {
+    if (_journal != null && (persist || level != LogLevel.info)) {
       _persistent.add(
         LogEntry(
           time: DateTime.now(),

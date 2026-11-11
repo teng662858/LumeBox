@@ -165,6 +165,8 @@ class MdkEngine extends AbstractPlayer
 
   /// 纹理是否已经创建（[buildView] 用它决定贴不贴 `Texture`）。
   int? _textureId;
+  bool _creatingTexture = false;
+  (int, int)? _surfaceSize;
 
   /// 最近一次准备的媒体时长（毫秒）。fvp 的 `position` 是 int 毫秒。
   Duration _duration = Duration.zero;
@@ -407,7 +409,9 @@ class MdkEngine extends AbstractPlayer
     // fvp 要求显式 prepare 才会真正起播（内部会等首个媒体信息到达）。
     final result = await _player.prepare().timeout(const Duration(seconds: 20));
     if (!_live) return;
-    if (result < 0) {
+    if (result < 0 ||
+        ((_player.mediaInfo.video?.isEmpty ?? true) &&
+            (_player.mediaInfo.audio?.isEmpty ?? true))) {
       throw StateError('MDK 无法打开媒体（准备失败 $result）');
     }
     _preparedReadAhead = preparingReadAhead;
@@ -700,13 +704,24 @@ class MdkEngine extends AbstractPlayer
   /// 建纹理 / 跟随尺寸变化更新渲染面。
   Future<void> _ensureTexture(int width, int height) async {
     if (!_live || width <= 0 || height <= 0) return;
+    final requested = (width, height);
+    if (_textureId != null && _surfaceSize == requested) return;
+    _surfaceSize = requested;
+    if (_creatingTexture) return;
     try {
       if (_textureId == null) {
-        final id = await _player.updateTexture(width: width, height: height);
-        if (id >= 0) _textureId = id;
-        return;
+        _creatingTexture = true;
+        try {
+          final id = await _player.updateTexture(width: width, height: height);
+          if (!_live || id < 0) return;
+          _textureId = id;
+        } finally {
+          _creatingTexture = false;
+        }
+        if (_surfaceSize == requested) return;
       }
-      _player.setVideoSurfaceSize(width, height);
+      final size = _surfaceSize!;
+      _player.setVideoSurfaceSize(size.$1, size.$2);
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
       LumeLog.warn('[mdk] 创建/更新渲染纹理失败：$error');

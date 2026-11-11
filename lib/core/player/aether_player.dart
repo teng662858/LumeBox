@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../util/lume_log.dart';
 import 'abstract_player.dart';
 import 'buffering.dart';
 import 'highest_hls.dart';
@@ -32,6 +33,7 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
   Future<void> _pending = Future<void>.value();
 
   Future<int> _create() async {
+    await LumeLog.playbackCheckpoint('[aether] 开始创建原生播放器');
     final id = await channel.invokeMethod<int>('create');
     if (id == null) throw StateError('AetherEngine 初始化失败');
     _id = id;
@@ -129,12 +131,16 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
         await _hls.close();
         return;
       }
+      await LumeLog.playbackCheckpoint(
+        '[aether] 原生装载开始 · ${uri.path.endsWith('.m3u8') ? 'HLS' : '媒体文件'}',
+      );
       await _invoke<Object?>('load', {
         'generation': generation,
         'url': uri.toString(),
         'headers': media.headers ?? const <String, String>{},
         'options': _options,
       });
+      await LumeLog.playbackCheckpoint('[aether] 原生装载返回');
       await _refresh();
     } catch (error) {
       if (!_disposed && generation == _generation) {

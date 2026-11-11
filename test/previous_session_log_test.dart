@@ -40,6 +40,11 @@ void main() {
       final message = LumeLog.previousSession.last.message;
       expect(message, contains('https://video.example/[path omitted]'));
       expect(message, isNot(contains('omitted] omitted]')));
+      await LumeLog.playbackCheckpoint('[aether] 原生装载开始 · HLS');
+      // The checkpoint must already be on disk before entering the native call.
+      final rows = jsonDecode(await file.readAsString()) as List;
+      expect(rows.last['level'], 'info');
+      expect(rows.last['message'], contains('原生装载开始'));
       LumeLog.clear();
       await LumeLog.flushPersistence();
       expect(await file.exists(), false);
