@@ -6,7 +6,7 @@ permissions:
 jobs:
   playback:
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 55
     env:
       PUB_HOSTED_URL: https://pub.flutter-io.cn
     steps:

@@ -7,6 +7,8 @@ import 'package:integration_test/integration_test.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/av_player.dart';
 import 'package:lume_box/core/player/player_factory.dart';
+import 'package:lume_box/core/player/mpv_engine.dart';
+import 'package:lume_box/core/player/mpv_player.dart';
 import 'package:lume_box/core/player/buffering.dart';
 import 'package:lume_box/core/player/pip_channel.dart';
 import 'package:lume_box/core/player/player_settings.dart';
@@ -22,6 +24,9 @@ void stage(String message) {
 
 void main() {
   stage('main');
+  debugPrint(
+    'KERNEL_SMOKE_TRACE ${Directory.systemTemp.path}/lumebox-playback-stage.log',
+  );
   IntegrationTestWidgetsFlutterBinding.ensureInitialized()
     ..framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive
     ..defaultTestTimeout = const Timeout(Duration(minutes: 2));
@@ -52,6 +57,17 @@ void main() {
           await directory.delete(recursive: true);
         });
         await player.initialize().timeout(const Duration(seconds: 10));
+        if (player is MpvPlayer &&
+            const bool.fromEnvironment('KERNEL_SMOKE_HEADLESS_AUDIO')) {
+          expect(
+            await (player.engine as EnginePropertyCapable).setEngineProperty(
+              'ao',
+              'null',
+            ),
+            isTrue,
+          );
+          stage('${kernel.name} $file timed null audio sink');
+        }
         await player.setBuffering(BufferingConfig.defaults);
         await player.applySettings(PlayerSettings(kernel: kernel));
         stage('${kernel.name} $file load');
