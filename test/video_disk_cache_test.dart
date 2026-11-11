@@ -258,20 +258,24 @@ void main() {
     );
   }
 
-  test('optional Apple codec probe cannot hold a playlist behind a slow first segment', () async {
-    pause = Completer<void>();
-    final wrapped = await cache.wrap(
-      PlayerMedia(uri: upstream.resolve('/slow-probe.m3u8')),
-      appleHls: true,
-    );
-    try {
-      final result = await get(wrapped.uri).timeout(const Duration(seconds: 2));
-      expect(utf8.decode(result.$2), contains('#EXTM3U'));
-      expect(pause!.isCompleted, isFalse);
-    } finally {
-      pause!.complete();
-    }
-  });
+  test(
+    'Apple codec probe reads a prefix without waiting for the complete segment',
+    () async {
+      pause = Completer<void>();
+      final wrapped = await cache.wrap(
+        PlayerMedia(uri: upstream.resolve('/slow-probe.m3u8')),
+        appleHls: true,
+      );
+      try {
+        final result = await get(wrapped.uri)
+            .timeout(const Duration(seconds: 2));
+        expect(utf8.decode(result.$2), contains('#EXTM3U'));
+        expect(pause!.isCompleted, isFalse);
+      } finally {
+        pause!.complete();
+      }
+    },
+  );
 
   test('签名识别 MKV、DASH 和伪图片 HLS，普通数据不误判', () {
     expect(VideoDiskCache.detectFormat([0x1a, 0x45, 0xdf, 0xa3]), '.mkv');

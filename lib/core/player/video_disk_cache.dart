@@ -1047,11 +1047,7 @@ class VideoDiskCache extends ChangeNotifier {
           if (child != null) {
             try {
               fragment = transportStreamHasHevc(
-                await _segmentBytes(
-                  child,
-                  16384,
-                  prefix: true,
-                ).timeout(const Duration(milliseconds: 500)),
+                await _segmentBytes(child, 16384, prefix: true),
               );
             } catch (_) {
               /* An inconclusive probe keeps the original transport. */

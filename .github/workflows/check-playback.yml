@@ -21,6 +21,9 @@ jobs:
       - run: python3 tool/prepare_intro_models.py
       - name: Resolve native SDKs for CocoaPods-only plugins
         run: |
+          # Boot independently while SPM/CocoaPods resolve their native SDKs.
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for v in d["devices"].values() for x in v if "iPhone" in x["name"]))')
+          xcrun simctl boot "$DEVICE" || true
           # Flutter supplies the SPM integration state to its Pods helper.
           # A root-directory pod install can register SPM plugins a second time.
           flutter build ios --config-only --simulator --no-codesign --no-pub
@@ -30,6 +33,7 @@ jobs:
             > out/playback-smoke/node-build-settings.txt
           find third_party/lume_cat_node/ios/Frameworks -name NodeMobile.h \
             > out/playback-smoke/node-sdk-files.txt
+          python3 -c 'from pathlib import Path; settings = Path("out/playback-smoke/node-build-settings.txt").read_text(); assert "    ARCHS = arm64\n" in settings, "Node SDK simulator architecture must be arm64"'
       - name: Create local video and HLS fixtures
         run: |
           brew install ffmpeg
