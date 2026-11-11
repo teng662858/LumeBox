@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
@@ -12,6 +13,7 @@ import 'package:lume_box/core/player/buffering.dart';
 import 'package:lume_box/core/player/mdk_engine.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
+import 'package:lume_box/core/player/video_disk_cache.dart';
 
 /// 三套内核在「缓冲 / 请求头」两条通道上的行为（B 项收尾）。
 ///
@@ -66,6 +68,73 @@ void main() {
     setUp(() {
       platform = _FakeVideoPlayerPlatform();
       VideoPlayerPlatform.instance = platform;
+    });
+
+    test('AVPlayer 初始化卡住会超时退出，随后可加载新媒体', () async {
+      platform.holdFirst = true;
+      final player = AvPlayer(
+        buffering: _RecordingBufferingBackend(),
+        mediaLoadTimeout: const Duration(milliseconds: 60),
+      );
+      addTearDown(player.dispose);
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.test/stuck.mp4')),
+      );
+      expect(player.snapshot.value.error, contains('超时'));
+      expect(player.snapshot.value.buffering, false);
+      expect(player.mediaInitialized, false);
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.test/good.mp4')),
+      );
+      expect(player.mediaInitialized, true);
+      expect(player.snapshot.value.error, isNull);
+    });
+
+    test('换集加载期间清空上一集时长、79 秒缓冲和分辨率', () async {
+      final player = AvPlayer(buffering: _RecordingBufferingBackend());
+      addTearDown(player.dispose);
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.test/first.mp4')),
+      );
+      platform._streams[0]!.add(
+        VideoEvent(
+          eventType: VideoEventType.bufferingUpdate,
+          buffered: [DurationRange(Duration.zero, const Duration(seconds: 79))],
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(player.stats.value.buffered, const Duration(seconds: 79));
+      platform.holdIds.add(1);
+      final pending = player.load(
+        PlayerMedia(uri: Uri.parse('https://example.test/second.mp4')),
+      );
+      for (var i = 0; i < 20 && platform.created.length < 2; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(player.snapshot.value.duration, Duration.zero);
+      expect(player.snapshot.value.position, Duration.zero);
+      expect(player.snapshot.value.buffering, true);
+      expect(player.stats.value.buffered, isNull);
+      expect(player.stats.value.width, isNull);
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.test/third.mp4')),
+      );
+      await pending;
+      expect(player.mediaInitialized, true);
+    });
+
+    test('已初始化但仍显示缓冲的 AVPlayer 不阻塞页面接管起播', () async {
+      final player = _InitializedBufferingAvPlayer();
+      addTearDown(player.dispose);
+      final cache = VideoDiskCache();
+      addTearDown(cache.close);
+      await cache
+          .load(
+            player,
+            PlayerMedia(uri: Uri.parse('https://example.test/paused.m3u8')),
+          )
+          .timeout(const Duration(seconds: 1));
+      expect(player.snapshot.value.buffering, true);
     });
 
     test(
@@ -421,6 +490,21 @@ class _RecordingBufferingBackend implements BufferingBackend {
 
 /// 替身 video_player 平台：把「创建播放器」与「请求头」记下来，并推一个
 /// initialized 事件让 controller 走完初始化。
+class _InitializedBufferingAvPlayer extends AvPlayer {
+  final state = ValueNotifier(const PlayerSnapshot(buffering: true));
+  @override
+  ValueListenable<PlayerSnapshot> get snapshot => state;
+  @override
+  bool get mediaInitialized => true;
+  @override
+  Future<void> load(PlayerMedia media) async {}
+  @override
+  Future<void> dispose() async {
+    state.dispose();
+    await super.dispose();
+  }
+}
+
 class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   final List<VideoCreationOptions> created = <VideoCreationOptions>[];
   final Map<int, StreamController<VideoEvent>> _streams =
@@ -429,6 +513,7 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   final seekCalls = <Duration>[];
   int _nextId = 0;
   bool holdFirst = false;
+  final holdIds = <int>{};
   int failures = 0;
 
   /// 创建播放器时的钩子（用来断言「缓冲参数已经写过了」）。
@@ -449,7 +534,7 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
     _streams[id] = stream;
     // 事件必须在 controller 订阅之后再推，否则首帧状态会丢。
     scheduleMicrotask(() {
-      if (holdFirst && id == 0) return;
+      if (holdFirst && id == 0 || holdIds.contains(id)) return;
       if (id < failures) {
         stream.addError(
           PlatformException(

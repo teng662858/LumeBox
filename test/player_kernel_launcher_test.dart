@@ -140,7 +140,7 @@ void main() {
     await player.dispose();
   });
 
-  test('route enters before a pending media load and later takes the same instance', () async {
+  test('route takes the kernel without starting or waiting on native media preloading', () async {
     final root = await Directory.systemTemp.createTemp('lume-entry-budget-');
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -175,10 +175,13 @@ void main() {
     );
     expect(entry, same(prelaunch));
     expect(player.pending!.isCompleted, false);
-    player.pending!.complete();
     expect((await prelaunch.take())?.player, same(player));
-    expect(prelaunch.hasPreparedMedia(media), true);
-    expect(player.loads, 1);
+    expect(prelaunch.hasPreparedMedia(media), false);
+    expect(
+      player.loads,
+      0,
+      reason: 'media loads once in the visible player page',
+    );
     await player.dispose();
     const target = VideoPlayTarget(
       sourceId: 'source',

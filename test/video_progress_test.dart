@@ -285,6 +285,78 @@ void main() {
     },
   );
 
+  testWidgets('未知时长且已缓冲 79 秒仍停在零点时尝试同地址 MPV，暂停时不换', (tester) async {
+    AppPreferences.instance.experience['autoRecover'] = true;
+    addTearDown(() => AppPreferences.instance.experience.remove('autoRecover'));
+    var now = DateTime(2026);
+    final players = <_FakePlayer>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VideoPlayerPage(
+          healthClock: () => now,
+          media: PlayerMedia(
+            uri: Uri.parse('https://example.com/stalled.m3u8'),
+            headers: const {'Referer': 'https://site.example/'},
+          ),
+          target: const VideoPlayTarget(
+            sourceId: 'demo-video',
+            itemId: 'movie-1',
+            title: '影片',
+            chapterId: 'e1',
+            chapterIndex: 0,
+            chapterTitle: '第1集',
+          ),
+          source: source,
+          sourceManager: manager,
+          fullscreenOnly: false,
+          catalog: const _FakeCatalog({
+            PlayerKernel.avplayer,
+            PlayerKernel.mpv,
+          }),
+          library: ReadingLibrary.find(Section.video),
+          playerFactory: (kernel) {
+            final p = _FakePlayer(kernel);
+            players.add(p);
+            return p;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    final av = players.single;
+    av.pushStats(
+      const PlayerStats(
+        buffered: Duration(seconds: 79),
+        width: 1080,
+        height: 1920,
+      ),
+    );
+    av.emit(position: Duration.zero, duration: Duration.zero, playing: false);
+    for (var i = 0; i < 5; i++) {
+      now = now.add(const Duration(seconds: 5));
+      await tester.pump(const Duration(seconds: 5));
+    }
+    expect(players, hasLength(1));
+    av.emit(position: Duration.zero, duration: Duration.zero, playing: true);
+    for (var i = 0; i < 4; i++) {
+      now = now.add(const Duration(seconds: 5));
+      await tester.pump(const Duration(seconds: 5));
+    }
+    await tester.pumpAndSettle();
+    expect(players.map((p) => p.kernel), [
+      PlayerKernel.avplayer,
+      PlayerKernel.mpv,
+    ]);
+    expect(players.last.media!.uri, av.media!.uri);
+    expect(players.last.media!.headers, av.media!.headers);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('Aether Cannot Open 自动切换 MPV 并保留地址、请求头和断点', (tester) async {
     final library = ReadingLibrary.find(Section.video)!;
     VideoPlayerSettingsStore(library).save(

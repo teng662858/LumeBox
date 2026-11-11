@@ -287,6 +287,24 @@ extension _RouteTools on _VideoPlayerPageState {
       now,
       eligible: eligible,
     )) {
+      if (snapshot.position < const Duration(seconds: 1) &&
+          (stats?.buffered ?? Duration.zero) >= const Duration(seconds: 5) &&
+          [
+            PlayerKernel.avplayer,
+            PlayerKernel.aether,
+          ].contains(_settings.kernel) &&
+          !_rangeFallbackAttempted &&
+          _catalog.isAvailable(PlayerKernel.mpv) &&
+          ContentCenter.instance.enabled('autoRecover', fallback: true)) {
+        PlaybackDiagnostics.record(
+          'buffered-startup-stalled',
+          source: target?.sourceId,
+          kernel: _settings.kernel.name,
+          uri: _media?.uri,
+        );
+        _switchAvPlayerToMpv('已有缓冲但未开始播放，正在尝试 MPV');
+        return;
+      }
       unawaited(_recoverAlternative(stalled: true));
     }
   }

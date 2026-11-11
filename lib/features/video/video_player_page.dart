@@ -1157,6 +1157,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   }
 
   Stopwatch? _startupWatch;
+  int _mediaLoadRevision = 0;
+  int _playRequestRevision = 0;
   Stopwatch? _firstFrameWatch;
 
   // Interactive network seeks allow a 1s native tolerance plus snapshot delay.
@@ -1934,6 +1936,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     PlayerMedia media, {
     bool alreadyLoaded = false,
   }) async {
+    final revision = ++_mediaLoadRevision;
     PlaybackDiagnostics.record(
       'media-load',
       source: _target?.sourceId,
@@ -1943,6 +1946,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     _missingFrameSince = null;
     _missingFramePosition = null;
     final loadWatch = Stopwatch()..start();
+    _firstFrameWatch = loadWatch;
     _startupWatch = null;
     _nextEpisodeBuffer.discard();
     // 浏览器 UA：片源/会话自带的 User-Agent 优先，否则补上全局偏好。
@@ -1958,7 +1962,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       final backend = _session?.backend;
       if (backend is MethodChannelPipBackend) await backend.resetFrames();
     }
-    if (!mounted || !identical(player, _player)) return;
+    if (!mounted ||
+        revision != _mediaLoadRevision ||
+        !identical(player, _player)) {
+      return;
+    }
     _cancelSourceValidation();
     _media = media;
     VideoDiskCache.instance.prefetch(media, Duration.zero, allowed: false);
@@ -1974,18 +1982,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
             )
           : requestMedia.headers;
       if (!mounted ||
+          revision != _mediaLoadRevision ||
           !identical(player, _player) ||
           !identical(media, _media)) {
         return;
       }
       _playbackRequestHeaders = headers ?? const {};
       try {
-        _firstFrameWatch = loadWatch;
         await VideoDiskCache.instance.load(
           player,
           PlayerMedia(uri: media.uri, title: media.title, headers: headers),
         );
       } catch (error) {
+        if (!mounted ||
+            revision != _mediaLoadRevision ||
+            !identical(player, _player) ||
+            !identical(media, _media)) {
+          return;
+        }
         PlaybackDiagnostics.record(
           'media-failed',
           source: _target?.sourceId,
@@ -2007,13 +2021,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         rethrow;
       }
     }
-    if (!mounted || !identical(player, _player) || !identical(media, _media)) {
+    if (!mounted ||
+        revision != _mediaLoadRevision ||
+        !identical(player, _player) ||
+        !identical(media, _media)) {
       return;
     }
     // 起播那几秒里同一个 CDN 域名上多一条 256KB 探测，就是和首帧缓冲抢带宽。
     if (!mounted) return;
     PlaybackDiagnostics.record(
-      'media-ready',
+      alreadyLoaded ? 'media-adopted' : 'media-ready',
       source: _target?.sourceId,
       kernel: _settings.kernel.name,
       uri: media.uri,
@@ -2383,6 +2400,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     AbstractPlayer? preparedPlayer,
     Duration? resumePosition,
   }) async {
+    final revision = ++_playRequestRevision;
+    bool current() => mounted && revision == _playRequestRevision;
     if (_player == null) {
       _showToast(_anyKernelAvailable ? '播放器还在准备，请稍后再试' : '本平台不提供播放内核');
       return;
@@ -2393,7 +2412,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     if (requestedSource != _settingsSourceId) {
       if (_target != null) _saveProgress(force: true);
       await _activateSourceProfile(requestedSource);
-      if (!mounted || _player == null) return;
+      if (!current() || _player == null) return;
     }
 
     // 防盗链降级：图源给了**逐媒体请求头**，而当前内核带不了时改用能带的内核
@@ -2407,7 +2426,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           '已改用 ${fallback.label}',
         );
         await _applySettings(_settings.copyWith(kernel: fallback));
-        if (!mounted) return;
+        if (!current()) return;
       }
     }
 
@@ -2417,6 +2436,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     if (preparedPlayer != null && !await _adoptPreparedPlayer(preparedPlayer)) {
       return;
     }
+    if (!current()) return;
     _seekRevision++;
     _seekWatchdogGeneration++;
     _seekWatchdog?.cancel();
@@ -2449,7 +2469,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 preparedInitial.uri == media.uri &&
                 mapEquals(preparedInitial.headers, media.headers)),
       );
-      if (!mounted || !identical(media, _media)) return;
+      if (!current() || !identical(media, _media)) return;
+      if (!_loaded || _player?.snapshot.value.error != null) return;
       if (resumePosition != null && resumePosition > Duration.zero) {
         await _player?.seek(resumePosition);
       } else {
@@ -2458,13 +2479,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     } finally {
       _suppressProgressSave = false;
     }
+    if (!current() || !identical(media, _media)) return;
     _startProgressTicker();
     unawaited(_loadDanmaku(target));
     // 打开视频即自动播放（用户要求）：装载与续播定位都做完之后再发 play，
     // 免得播放器在 seek 之前就开跑、位置被拉回开头。
-    if (_player != null && mounted) {
-      await _player!.setVolume(_effectiveVolume);
-      await _player!.play();
+    final player = _player;
+    if (player != null && current()) {
+      await player.setVolume(_effectiveVolume);
+      if (!current() || !identical(player, _player)) return;
+      await player.play();
       unawaited(_applyPreferredSubtitle());
     }
   }
@@ -3253,7 +3277,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     if (saved.isFinished) return;
 
     await player.seek(saved.position);
-    if (!mounted) return;
+    if (!mounted ||
+        !identical(player, _player) ||
+        !identical(target, _target)) {
+      return;
+    }
     _lastSavedPosition = saved.position;
     _showToast('已从上次位置继续：${_format(saved.position)}');
   }

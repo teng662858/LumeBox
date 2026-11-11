@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 
 /// Addresses the same native player instance used by video_player and PiP.
@@ -10,10 +12,11 @@ class AvPresentationChannel {
   ]) async {
     if (playerId == null) return null;
     try {
-      return await channel.invokeMethod<T>(method, {
-        'playerId': playerId,
-        ...args,
-      });
+      return await channel
+          .invokeMethod<T>(method, {'playerId': playerId, ...args})
+          .timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      return null;
     } on MissingPluginException {
       return null;
     } on PlatformException {

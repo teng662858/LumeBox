@@ -297,8 +297,10 @@ class VideoDiskCache extends ChangeNotifier {
     final ready = Completer<void>();
     void changed() {
       final snapshot = player.snapshot.value;
-      if ((!snapshot.buffering || snapshot.error != null) &&
-          !ready.isCompleted) {
+      final initialized = player is AvPlayer
+          ? player.mediaInitialized
+          : !snapshot.buffering;
+      if ((initialized || snapshot.error != null) && !ready.isCompleted) {
         ready.complete();
       }
     }

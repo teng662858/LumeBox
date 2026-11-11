@@ -42,8 +42,19 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
   bool _externalSelected = false;
   bool _subtitleSuppressed = false;
   List<String> _nativeStatus = const [];
-  AvPlayer({BufferingBackend? buffering})
-    : _buffering = buffering ?? createPlatformBufferingBackend();
+  AvPlayer({
+    BufferingBackend? buffering,
+    this.mediaLoadTimeout = const Duration(seconds: 30),
+  }) : _buffering = buffering ?? createPlatformBufferingBackend();
+
+  @visibleForTesting
+  final Duration mediaLoadTimeout;
+
+  /// Native initialization is enough to hand the loaded item to the page.
+  /// A paused HLS item may remain buffering until the page calls play().
+  bool get mediaInitialized =>
+      _controller?.value.isInitialized == true &&
+      _controller?.value.hasError == false;
 
   /// 缓冲参数的原生写通道（测试可注入替身）。
   final BufferingBackend _buffering;
@@ -187,6 +198,7 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
     _networkRetries = 0;
     _retryMedia = media;
     _retryAllowed = true;
+    _wantsPlay = false;
     await _loadMedia(media);
   }
 
@@ -199,6 +211,13 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
     _loadCancelled = cancelled;
     final generation = ++_loadGeneration;
     _seekGeneration++;
+    _ticker?.cancel();
+    _ticker = null;
+    _controller?.removeListener(_sync);
+    _firstFrameReady = null;
+    _downloadBytesPerSecond = null;
+    _emit(const PlayerSnapshot(buffering: true));
+    _stats.value = const PlayerStats(engineLabel: 'AVPlayer');
     _externalSubtitles = null;
     _externalLabel = null;
     _externalSelected = false;
@@ -254,7 +273,8 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
       ..start();
     controller.addListener(_sync);
     try {
-      await Future.any<void>([controller.initialize(), cancelled.future]);
+      await Future.any<void>([controller.initialize(), cancelled.future])
+          .timeout(mediaLoadTimeout);
       if (_disposed ||
           generation != _loadGeneration ||
           !identical(controller, _controller)) {
@@ -287,6 +307,13 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
         return;
       }
       LumeLog.error(error, stackTrace);
+      if (error is TimeoutException) {
+        // Invalidate before disposal, so a late initialized event cannot turn
+        // this failed item into a successful playback after retry/switching.
+        _loadGeneration++;
+        if (!cancelled.isCompleted) cancelled.complete();
+        unawaited(_releaseController());
+      }
       if (_retryTimer == null && !_recoveringNetwork) {
         _emit(_snapshot.value, error: PlayerErrorText.describe(error));
       }
@@ -724,18 +751,31 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
       return;
     }
     _readingNetwork = true;
+    final generation = _loadGeneration;
     _lastNetworkPoll = _downloadClock.elapsed;
     try {
       // ignore: invalid_use_of_visible_for_testing_member
       final id = controller.playerId;
       final bytes = await AvNetworkStatistics.readBytes(id);
-      if (_disposed || !identical(controller, _controller)) return;
+      if (_disposed ||
+          generation != _loadGeneration ||
+          !identical(controller, _controller)) {
+        return;
+      }
       if (_firstFrameReady != true) {
         final ready = await AvNetworkStatistics.readFirstFrame(id);
-        if (_disposed || !identical(controller, _controller)) return;
+        if (_disposed ||
+            generation != _loadGeneration ||
+            !identical(controller, _controller)) {
+          return;
+        }
         _firstFrameReady = ready;
       }
-      if (_disposed || !identical(controller, _controller)) return;
+      if (_disposed ||
+          generation != _loadGeneration ||
+          !identical(controller, _controller)) {
+        return;
+      }
       _downloadBytesPerSecond = _downloadSampler.sample(
         bytes,
         _downloadClock.elapsed,
