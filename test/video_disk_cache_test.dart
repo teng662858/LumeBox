@@ -75,6 +75,23 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path == '/mislabelled.mp4') {
+        request.response.headers.contentType = ContentType('video', 'mp4');
+        request.response.write(
+          '#EXTM3U\n#EXTINF:4,\npart.ts\n#EXT-X-ENDLIST\n',
+        );
+        await request.response.close();
+        return;
+      }
+      if (request.uri.path == '/slow-cache.mp4') {
+        request.response.contentLength = data.length;
+        request.response.add(data.sublist(0, VideoDiskCache.blockBytes));
+        await request.response.flush();
+        await pause!.future;
+        request.response.add(data.sublist(VideoDiskCache.blockBytes));
+        await request.response.close();
+        return;
+      }
       if (request.uri.path == '/slow.ts' || request.uri.path == '/slow.mp4') {
         request.response.contentLength = data.length;
         request.response.add(data.sublist(0, 16384));
@@ -220,6 +237,23 @@ void main() {
     return (response, await response.expand((b) => b).toList());
   }
 
+  test(
+    'an MP4-labelled HLS manifest still rewrites relative children',
+    () async {
+      final wrapped = await cache.wrap(
+        PlayerMedia(uri: upstream.resolve('/mislabelled.mp4')),
+      );
+      final result = await get(wrapped.uri);
+      final manifest = utf8.decode(result.$2);
+      expect(
+        result.$1.headers.contentType?.mimeType,
+        'application/vnd.apple.mpegurl',
+      );
+      expect(manifest, contains('http://127.0.0.1:'));
+      expect(manifest, isNot(contains('\npart.ts\n')));
+    },
+  );
+
   for (final suffix in ['ts', 'mp4']) {
     test(
       'slow $suffix delivers first bytes before the upstream finishes',
@@ -257,6 +291,40 @@ void main() {
       },
     );
   }
+
+  test('streaming persists completed blocks before EOF and reuses later blocks', () async {
+    pause = Completer<void>();
+    final wrapped = await cache.wrap(
+      PlayerMedia(uri: upstream.resolve('/slow-cache.mp4')),
+    );
+    final request = await client.getUrl(wrapped.uri);
+    final response = await request.close();
+    var received = 0;
+    final completed = response.forEach((chunk) => received += chunk.length);
+    try {
+      final deadline = DateTime.now().add(const Duration(seconds: 2));
+      while (cache.bytes < VideoDiskCache.blockBytes &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(cache.bytes, VideoDiskCache.blockBytes);
+      expect(pause!.isCompleted, isFalse);
+    } finally {
+      pause!.complete();
+      await completed;
+    }
+    expect(received, data.length);
+    // A content-length reader can finish before the final optional disk write.
+    final persisted = DateTime.now().add(const Duration(seconds: 2));
+    while (cache.bytes < data.length && DateTime.now().isBefore(persisted)) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(cache.bytes, data.length);
+    final beforeSeek = calls;
+    final seek = await get(wrapped.uri, 'bytes=1500000-1500030');
+    expect(seek.$2, data.sublist(1500000, 1500031));
+    expect(calls, beforeSeek, reason: 'later streamed blocks remain cached');
+  });
 
   test(
     'Apple codec probe reads a prefix without waiting for the complete segment',
@@ -359,6 +427,7 @@ void main() {
     'remote ranged MP4 delivers first bytes without filling a cache block',
     () async {
       final gate = Completer<void>();
+      var nativeRequests = 0;
       Stream<List<int>> body() async* {
         yield data.sublist(0, 16384);
         await gate.future;
@@ -366,6 +435,7 @@ void main() {
       }
 
       final native = MockClient.streaming((request, outgoing) async {
+        nativeRequests++;
         expect(request.headers['range'], 'bytes=0-');
         return http.StreamedResponse(
           body(),
@@ -380,6 +450,7 @@ void main() {
       await cache.close();
       cache = VideoDiskCache(ipHttpsClient: native);
       await cache.boot(directory: root);
+      cache.capacityMb = 1;
       final wrapped = await cache.wrap(
         PlayerMedia(uri: Uri.parse('https://192.0.2.1/movie.mp4')),
       );
@@ -406,6 +477,19 @@ void main() {
         if (!gate.isCompleted) gate.complete();
         await chunks.cancel();
       }
+      final tailBytes = data.length % VideoDiskCache.blockBytes;
+      final deadline = DateTime.now().add(const Duration(seconds: 2));
+      while (cache.bytes != tailBytes && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(cache.bytes, tailBytes);
+      final tailSeek = await get(wrapped.uri, 'bytes=2200000-2200030');
+      expect(tailSeek.$2, data.sublist(2200000, 2200031));
+      expect(
+        nativeRequests,
+        1,
+        reason: 'seek hits cache after block zero was evicted',
+      );
     },
   );
 

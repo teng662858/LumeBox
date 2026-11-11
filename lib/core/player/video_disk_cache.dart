@@ -831,13 +831,70 @@ class VideoDiskCache extends ChangeNotifier {
     void capture(List<int> bytes) {
       received += bytes.length;
       downloadedBytes += bytes.length;
-      if (cached.length < blockBytes) {
-        cached.add(bytes.take(blockBytes - cached.length).toList());
+    }
+
+    var cachedStart = 0;
+    Future<void> storeCaptured() async {
+      if (cached.isEmpty) return;
+      final bytes = cached.takeBytes();
+      final offset = cachedStart;
+      cachedStart += bytes.length;
+      await _store(
+        _key(media, offset),
+        _Block(
+          bytes,
+          offset,
+          total ?? received,
+          upstream.header('content-type') ?? 'application/octet-stream',
+          upstream.header('etag') ?? upstream.header('last-modified'),
+          upstream.uri,
+          upstream.header('content-encoding'),
+        ),
+        generation,
+      ).catchError((Object _) {});
+    }
+
+    Future<void> persist(List<int> bytes) async {
+      if (start != 0 || generation != _generation || !enabled) return;
+      if (total == null && cached.length == blockBytes) return;
+      var offset = 0;
+      while (offset < bytes.length) {
+        final end = min(offset + blockBytes - cached.length, bytes.length);
+        cached.add(bytes.sublist(offset, end));
+        offset = end;
+        if (cached.length == blockBytes) {
+          // An unknown-length stream cannot advertise correct seek totals yet.
+          // Retain only its first block until EOF establishes that total.
+          if (total == null) return;
+          await storeCaptured();
+        }
       }
     }
 
     var skipped = 0;
     try {
+      if (!segment) {
+        // A resolver can return an HLS manifest from an MP4-labelled URL.
+        // Keep the established manifest rewrite instead of forwarding relative
+        // child URLs against the opaque local ticket address.
+        while (prefix.length < 16 && await chunks.moveNext()) {
+          capture(chunks.current);
+          prefix.add(chunks.current);
+        }
+        if (_playlist(
+          _Block(
+            prefix.toBytes(),
+            0,
+            total ?? received,
+            upstream.header('content-type') ?? '',
+            null,
+            upstream.uri,
+            null,
+          ),
+        )) {
+          return false;
+        }
+      }
       if (segment && upstream.header('content-encoding') == null) {
         // Normal TS/encrypted bytes pass after 8 bytes. A PNG wrapper needs
         // four aligned TS packets; inspect only the bounded prefix, not EOF.
@@ -873,32 +930,22 @@ class VideoDiskCache extends ChangeNotifier {
       if (length != null) response.contentLength = length - skipped;
       response.bufferOutput = false;
       if (prefix.isNotEmpty) {
-        response.add(Uint8List.sublistView(prefix.takeBytes(), skipped));
+        final bytes = prefix.takeBytes();
+        response.add(Uint8List.sublistView(bytes, skipped));
         await response.flush();
+        await persist(bytes);
       }
       while (await chunks.moveNext()) {
         capture(chunks.current);
         response.add(chunks.current);
         await response.flush();
+        await persist(chunks.current);
       }
       if (length != null && received != length) {
         throw const HttpException('媒体流长度不完整');
       }
       if (start == 0 && cached.isNotEmpty) {
-        // Persistence is optional and follows delivery; it cannot hold first bytes.
-        await _store(
-          _key(media, 0),
-          _Block(
-            cached.takeBytes(),
-            0,
-            total ?? received,
-            upstream.header('content-type') ?? 'application/octet-stream',
-            upstream.header('etag') ?? upstream.header('last-modified'),
-            upstream.uri,
-            upstream.header('content-encoding'),
-          ),
-          generation,
-        ).catchError((Object _) {});
+        await storeCaptured();
       }
       return true;
     } finally {
@@ -959,12 +1006,18 @@ class VideoDiskCache extends ChangeNotifier {
             '.mp3',
             '.m4a',
           ].any(path.endsWith);
+      final cached = _files[_key(media, start ~/ blockBytes * blockBytes)];
       if (request.method == 'GET' &&
           canStream &&
           (rawRange == null || !segment && !_loopback(media.uri)) &&
           !(enabled &&
-              (_files[_key(media, 0)]?.bytes ?? 0) >=
-                  min(65536, _files[_key(media, 0)]?.block.total ?? 65536))) {
+              (cached?.bytes ?? 0) >=
+                  min(
+                    65536,
+                    cached == null
+                        ? 65536
+                        : cached.block.total - cached.block.start,
+                  ))) {
         if (await _streamMedia(request, media, segment)) return;
       }
       var block = await _read(
