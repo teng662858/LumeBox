@@ -90,6 +90,24 @@ void main() {
       expect(player.snapshot.value.error, isNull);
     });
 
+    test('网络重连的初始化也会超时退出，不能停在缓冲态', () async {
+      platform.failures = 1;
+      platform.holdIds.add(1);
+      final player = AvPlayer(
+        buffering: _RecordingBufferingBackend(),
+        mediaLoadTimeout: const Duration(milliseconds: 60),
+      );
+      addTearDown(player.dispose);
+      await player.load(
+        PlayerMedia(uri: Uri.parse('https://example.test/retry.mp4')),
+      );
+      await player.play();
+      await Future<void>.delayed(const Duration(milliseconds: 1250));
+      expect(platform.created, hasLength(2));
+      expect(player.snapshot.value.buffering, false);
+      expect(player.snapshot.value.error, contains('超时'));
+    });
+
     test('换集加载期间清空上一集时长、79 秒缓冲和分辨率', () async {
       final player = AvPlayer(buffering: _RecordingBufferingBackend());
       addTearDown(player.dispose);

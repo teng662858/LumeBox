@@ -314,7 +314,8 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
         if (!cancelled.isCompleted) cancelled.complete();
         unawaited(_releaseController());
       }
-      if (_retryTimer == null && !_recoveringNetwork) {
+      if (error is TimeoutException ||
+          (_retryTimer == null && !_recoveringNetwork)) {
         _emit(_snapshot.value, error: PlayerErrorText.describe(error));
       }
     }
@@ -811,7 +812,11 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
         _recoveringNetwork = true;
         try {
           await _loadMedia(media);
-          if (_disposed || !identical(media, _retryMedia)) return;
+          if (_disposed ||
+              !identical(media, _retryMedia) ||
+              _snapshot.value.error != null) {
+            return;
+          }
           await seek(position);
           if (_wantsPlay && _retryAllowed) await play();
         } finally {
