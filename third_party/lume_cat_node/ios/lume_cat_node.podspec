@@ -34,5 +34,11 @@ Pod::Spec.new do |s|
   s.platform = :ios, '18.0'
   s.frameworks = 'Security'
   s.static_framework = true
-  s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
+  # Keep the pinned XCFramework's headers visible while CocoaPods prepares its
+  # intermediate slice. The SDK ships separate device and arm64 simulator slices.
+  s.pod_target_xcconfig = {
+    'DEFINES_MODULE' => 'YES',
+    'FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]' => '$(inherited) "$(PODS_TARGET_SRCROOT)/Frameworks/NodeMobile.xcframework/ios-arm64"',
+    'FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]' => '$(inherited) "$(PODS_TARGET_SRCROOT)/Frameworks/NodeMobile.xcframework/ios-arm64-simulator"',
+  }
 end

@@ -22,8 +22,14 @@ jobs:
       - name: Resolve native SDKs for CocoaPods-only plugins
         run: |
           # Flutter supplies the SPM integration state to its Pods helper.
-          # A separate pod install would register SPM plugins a second time.
+          # A root-directory pod install can register SPM plugins a second time.
           flutter build ios --config-only --simulator --no-codesign --no-pub
+          mkdir -p out/playback-smoke
+          xcodebuild -project ios/Pods/Pods.xcodeproj -target lume_cat_node \
+            -configuration Debug -sdk iphonesimulator -showBuildSettings \
+            > out/playback-smoke/node-build-settings.txt
+          find third_party/lume_cat_node/ios/Frameworks -name NodeMobile.h \
+            > out/playback-smoke/node-sdk-files.txt
       - name: Create local video and HLS fixtures
         run: |
           brew install ffmpeg
@@ -40,7 +46,7 @@ jobs:
           xcrun simctl io "$DEVICE" recordVideo out/playback-smoke/simulator.mp4 >/dev/null 2>&1 &
           RECORD_PID=$!
           trap 'kill -INT "$RECORD_PID" || true; wait "$RECORD_PID" || true' EXIT
-          flutter test --no-pub integration_test/playback_smoke_test.dart -d "$DEVICE" --timeout 15m 2>&1 | tee out/playback-smoke/test.log
+          flutter test --no-pub --verbose integration_test/playback_smoke_test.dart -d "$DEVICE" --timeout 15m 2>&1 | tee out/playback-smoke/test.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
