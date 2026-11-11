@@ -21,8 +21,9 @@ jobs:
       - run: python3 tool/prepare_intro_models.py
       - name: Resolve native SDKs for CocoaPods-only plugins
         run: |
-          flutter build ios --config-only --simulator --no-codesign
-          pod install --project-directory=ios
+          # Flutter supplies the SPM integration state to its Pods helper.
+          # A separate pod install would register SPM plugins a second time.
+          flutter build ios --config-only --simulator --no-codesign --no-pub
       - name: Create local video and HLS fixtures
         run: |
           brew install ffmpeg
@@ -39,7 +40,7 @@ jobs:
           xcrun simctl io "$DEVICE" recordVideo out/playback-smoke/simulator.mp4 >/dev/null 2>&1 &
           RECORD_PID=$!
           trap 'kill -INT "$RECORD_PID" || true; wait "$RECORD_PID" || true' EXIT
-          flutter test integration_test/playback_smoke_test.dart -d "$DEVICE" --timeout 15m 2>&1 | tee out/playback-smoke/test.log
+          flutter test --no-pub integration_test/playback_smoke_test.dart -d "$DEVICE" --timeout 15m 2>&1 | tee out/playback-smoke/test.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
