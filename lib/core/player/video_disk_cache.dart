@@ -10,6 +10,9 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'abstract_player.dart';
+import 'apple_hls_fragments.dart';
+import 'av_player.dart';
+import 'aether_player.dart';
 import 'playback_diagnostics.dart';
 import '../net/lume_net.dart';
 
@@ -39,6 +42,7 @@ class VideoDiskCache extends ChangeNotifier {
       <String, ({File file, int bytes, DateTime used, _Block block})>{};
   final _pending = <String, Future<_Block>>{};
   final _origins = Expando<Uri>();
+  final _fragments = AppleHlsFragments();
   final _positions = <Uri, ({int next, int total})>{};
   Uri? _active;
   bool _warming = false, _warmAllowed = false;
@@ -124,28 +128,73 @@ class VideoDiskCache extends ChangeNotifier {
   static bool _loopback(Uri uri) =>
       ['localhost', '127.0.0.1', '::1'].contains(uri.host);
 
-  Future<PlayerMedia> wrap(PlayerMedia media, {bool force = false}) async {
-    if (!_ready ||
-        !media.isNetwork ||
-        _bypassed.contains(_key(media, -1)) ||
-        (!force && !enabled && !_loopback(media.uri))) {
+  Future<PlayerMedia> wrap(
+    PlayerMedia media, {
+    bool force = false,
+    bool inspect = false,
+    bool appleHls = false,
+  }) async {
+    if (!_ready || !media.isNetwork || _bypassed.contains(_key(media, -1))) {
       return media;
     }
+    String suffix = _mediaSuffix(media.uri);
+    if (inspect && suffix.isEmpty && await _scriptIsPlaylist(media)) {
+      suffix = '.m3u8';
+    }
+    if (!force && !enabled && !_loopback(media.uri) && suffix != '.m3u8') {
+      return media;
+    }
+    return _ticket(
+      media,
+      appleHls && suffix == '.m3u8' ? '.apple.m3u8' : suffix,
+    );
+  }
+
+  // Some resolvers serve an HLS playlist from a PHP URL with an image MIME type.
+  // Only a positive content signature changes routing. Stop after the prefix,
+  // including when a progressive origin ignores Range.
+  Future<bool> _scriptIsPlaylist(PlayerMedia media) async {
+    try {
+      final response = await _request(media, 'bytes=0-15');
+      final prefix = BytesBuilder();
+      await for (final chunk in response.timeout(const Duration(seconds: 3))) {
+        prefix.add(chunk.take(16 - prefix.length).toList());
+        if (prefix.length >= 16) break;
+      }
+      return response.statusCode ~/ 100 == 2 &&
+          utf8
+              .decode(prefix.takeBytes(), allowMalformed: true)
+              .trimLeft()
+              .startsWith('#EXTM3U');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static String _mediaSuffix(Uri uri) =>
+      RegExp(r'\.(?:m3u8|ts|mp4|m4s|mkv|mov|m4a|aac|ac3|mp3|vtt|webvtt|key)$')
+          .stringMatch(uri.path.toLowerCase()) ??
+      '';
+
+  Future<PlayerMedia> _ticket(PlayerMedia media, String suffix) async {
     try {
       await (_starting ??= _start());
-      final key = _key(media, -1);
-      final existing = _ticketKeys[key];
+      final key = _key(media, -1) + suffix;
       final ticket =
-          existing ??
+          _ticketKeys[key] ??
           base64UrlEncode(
-            List.generate(24, (_) => Random.secure().nextInt(256)),
-          );
+                List.generate(24, (_) => Random.secure().nextInt(256)),
+              ) +
+              suffix;
       _tickets[ticket] = media;
       _ticketKeys[key] = ticket;
-      // Bounded registry also covers large HLS playlists without retaining URLs forever.
       while (_tickets.length > 12000) {
-        final removed = _tickets.remove(_tickets.keys.first)!;
-        _ticketKeys.remove(_key(removed, -1));
+        final name = _tickets.keys.first;
+        final removed = _tickets.remove(name)!;
+        final dot = name.indexOf('.');
+        _ticketKeys.remove(
+          _key(removed, -1) + (dot < 0 ? '' : name.substring(dot)),
+        );
       }
       return PlayerMedia(
         uri: Uri.parse('http://127.0.0.1:${_server!.port}/$ticket'),
@@ -161,7 +210,11 @@ class VideoDiskCache extends ChangeNotifier {
 
   /// A failed local cache transport must not make a reachable origin unplayable.
   Future<void> load(AbstractPlayer player, PlayerMedia media) async {
-    final wrapped = await wrap(media);
+    final wrapped = await wrap(
+      media,
+      inspect: true,
+      appleHls: player is AvPlayer || player is AetherPlayer,
+    );
     try {
       await _loadAndWait(player, wrapped);
       if (wrapped.uri == media.uri || player.snapshot.value.error == null) {
@@ -595,6 +648,33 @@ class VideoDiskCache extends ChangeNotifier {
           .trimLeft()
           .startsWith('#EXTM3U');
 
+  Future<Uint8List> _segmentBytes(
+    PlayerMedia media,
+    int limit, {
+    bool prefix = false,
+  }) async {
+    final upstream = await _request(
+      media,
+      prefix ? 'bytes=0-${limit - 1}' : null,
+    );
+    if (upstream.statusCode != 200 && upstream.statusCode != 206) {
+      await upstream.listen(null).cancel();
+      throw _UpstreamStatus(upstream.statusCode);
+    }
+    final body = BytesBuilder(copy: false);
+    await for (final chunk in upstream.timeout(const Duration(seconds: 20))) {
+      if (prefix && chunk.length >= limit - body.length) {
+        body.add(chunk.sublist(0, limit - body.length));
+        break;
+      }
+      if (chunk.length > limit - body.length) {
+        throw const FormatException('视频分片过大');
+      }
+      body.add(chunk);
+    }
+    return body.takeBytes();
+  }
+
   Future<void> _handle(HttpRequest request) async {
     final response = request.response;
     try {
@@ -605,6 +685,23 @@ class VideoDiskCache extends ChangeNotifier {
       }
       if (!['GET', 'HEAD'].contains(request.method)) {
         response.statusCode = 405;
+        return;
+      }
+      final path = request.uri.path;
+      if (path.endsWith('.init.mp4') || path.endsWith('.frag.m4s')) {
+        final sequence = int.tryParse(request.uri.queryParameters['n'] ?? '');
+        if (sequence == null || sequence < 1 || sequence > 0x7fffffff) {
+          response.statusCode = 400;
+          return;
+        }
+        final key = '${_key(media, -1)}/$sequence';
+        final bytes = await _fragments.get(
+          key,
+          sequence,
+          path.endsWith('.init.mp4'),
+          () => _segmentBytes(media, AppleHlsFragments.maxSegmentBytes),
+        );
+        AppleHlsFragments.serve(request, bytes);
         return;
       }
       final rawRange = request.headers.value('range');
@@ -619,19 +716,34 @@ class VideoDiskCache extends ChangeNotifier {
       if (_playlist(block)) {
         // Always refetch playlists. Relative segment, key, map and variant URLs
         // share the same cache while cross-origin credentials stay scoped.
-        Future<String> rewrite(String text) async {
+        PlayerMedia? childMedia(String text) {
           final uri = block.base.resolve(text);
-          if (!['http', 'https'].contains(uri.scheme)) return text;
+          if (!['http', 'https'].contains(uri.scheme)) return null;
           final headers = Map<String, String>.of(media.headers ?? {});
           if (uri.origin != media.uri.origin) {
             headers.removeWhere(
               (k, _) => ['authorization', 'cookie'].contains(k.toLowerCase()),
             );
           }
-          return (await wrap(
-            PlayerMedia(uri: uri, headers: headers),
-            force: true,
-          )).uri.toString();
+          return PlayerMedia(uri: uri, headers: headers);
+        }
+
+        final apple = path.endsWith('.apple.m3u8');
+        Future<String> rewrite(
+          String text,
+          String fallback, {
+          int? sequence,
+        }) async {
+          final child = childMedia(text);
+          if (child == null) return text;
+          var suffix = _mediaSuffix(child.uri);
+          if (sequence != null || suffix.isEmpty) suffix = fallback;
+          if (apple && suffix == '.m3u8') suffix = '.apple.m3u8';
+          var uri = (await _ticket(child, suffix)).uri;
+          if (sequence != null) {
+            uri = uri.replace(queryParameters: {'n': '$sequence'});
+          }
+          return uri.toString();
         }
 
         Stream<List<int>> manifest = Stream.value(block.data);
@@ -647,11 +759,66 @@ class VideoDiskCache extends ChangeNotifier {
           if (decoded.length > blockBytes) throw const HttpException('媒体清单过大');
         }
         final lines = <String>[];
-        for (final line in const LineSplitter().convert(
-          utf8.decode(decoded.takeBytes()),
-        )) {
-          if (line.trim().isNotEmpty && !line.startsWith('#')) {
-            lines.add(await rewrite(line.trim()));
+        final manifestText = utf8.decode(decoded.takeBytes());
+        final master = manifestText.contains('#EXT-X-STREAM-INF:');
+        final mapped = manifestText.contains('#EXT-X-MAP:');
+        final original = const LineSplitter().convert(manifestText);
+        bool isResource(String line) =>
+            line.trim().isNotEmpty && !line.trimLeft().startsWith('#');
+        final first = original.where(isResource).firstOrNull;
+        var fragment = false;
+        if (apple &&
+            !master &&
+            !mapped &&
+            first != null &&
+            original.contains('#EXT-X-ENDLIST') &&
+            !original.any(
+              (l) =>
+                  l.startsWith('#EXT-X-KEY:') ||
+                  l.startsWith('#EXT-X-BYTERANGE:') ||
+                  l.startsWith('#EXT-X-DISCONTINUITY') ||
+                  l.startsWith('#EXT-X-GAP'),
+            )) {
+          final child = childMedia(first.trim());
+          if (child != null) {
+            try {
+              fragment = transportStreamHasHevc(
+                await _segmentBytes(child, 16384, prefix: true),
+              );
+            } catch (_) {
+              /* An inconclusive probe keeps the original transport. */
+            }
+          }
+        }
+        var sequence = 0;
+        for (final line in original) {
+          if (fragment && line == '#EXTM3U') {
+            lines.addAll([line, '#EXT-X-VERSION:7']);
+          } else if (fragment && line.startsWith('#EXT-X-VERSION:')) {
+            continue;
+          } else if (isResource(line)) {
+            if (fragment) {
+              sequence++;
+              if (sequence == 1) {
+                lines.add(
+                  '#EXT-X-MAP:URI="${await rewrite(line.trim(), '.init.mp4', sequence: sequence)}"',
+                );
+              }
+              lines.add(
+                await rewrite(line.trim(), '.frag.m4s', sequence: sequence),
+              );
+            } else {
+              lines.add(
+                await rewrite(
+                  line.trim(),
+                  master
+                      ? '.m3u8'
+                      : mapped
+                      ? '.m4s'
+                      : '.ts',
+                ),
+              );
+            }
           } else {
             var result = line;
             for (final m in RegExp(
@@ -660,7 +827,11 @@ class VideoDiskCache extends ChangeNotifier {
               result = result.replaceRange(
                 m.start,
                 m.end,
-                'URI="${await rewrite(m[1]!)}"',
+                'URI="${await rewrite(m[1]!, line.startsWith('#EXT-X-KEY:')
+                    ? '.key'
+                    : line.startsWith('#EXT-X-MAP:')
+                    ? '.mp4'
+                    : '.m3u8')}"',
               );
             }
             lines.add(result);
@@ -688,7 +859,8 @@ class VideoDiskCache extends ChangeNotifier {
         return;
       }
       response.statusCode = match == null ? 200 : 206;
-      response.headers.set('Content-Type', block.mime);
+      final segment = request.uri.path.endsWith('.ts');
+      response.headers.set('Content-Type', segment ? 'video/mp2t' : block.mime);
       response.headers.set('Accept-Ranges', 'bytes');
       if (match != null) {
         response.headers.set(
@@ -736,6 +908,9 @@ class VideoDiskCache extends ChangeNotifier {
       ]) {
         final value = upstream.headers.value(name);
         if (value != null) response.headers.set(name, value);
+      }
+      if (request.uri.path.endsWith('.ts') && upstream.statusCode ~/ 100 == 2) {
+        response.headers.set('Content-Type', 'video/mp2t');
       }
       status = '该媒体使用内核缓冲';
       notifyListeners();

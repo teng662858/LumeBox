@@ -23,7 +23,13 @@ cat > "$CHECK_DIR/main.swift" <<'SWIFT'
 import Foundation
 let worker = OfflineVideoRemuxer()
 if CommandLine.arguments.contains("--cancel") { worker.cancel() }
-do { try worker.merge(directory: URL(fileURLWithPath: CommandLine.arguments[1])) }
+do {
+  let args = CommandLine.arguments
+  if args.count == 5, args[1] == "--fragment", let sequence = Int(args[2]) {
+    let output = try worker.fragment(input: Data(contentsOf: URL(fileURLWithPath: args[3])), sequence: sequence)
+    try output.write(to: URL(fileURLWithPath: args[4]))
+  } else { try worker.merge(directory: URL(fileURLWithPath: args[1])) }
+}
 catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 SWIFT
 xcrun swiftc ios/Runner/OfflineVideoRemuxer.swift "$CHECK_DIR/main.swift" \

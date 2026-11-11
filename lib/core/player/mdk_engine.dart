@@ -405,7 +405,11 @@ class MdkEngine extends AbstractPlayer
     final preparingReadAhead = _buffering.readAhead;
     _applyBuffering();
     // fvp 要求显式 prepare 才会真正起播（内部会等首个媒体信息到达）。
-    await _player.prepare();
+    final result = await _player.prepare().timeout(const Duration(seconds: 20));
+    if (!_live) return;
+    if (result < 0) {
+      throw StateError('MDK 无法打开媒体（准备失败 $result）');
+    }
     _preparedReadAhead = preparingReadAhead;
     _duration = Duration(milliseconds: _player.mediaInfo.duration);
     _emit(duration: _duration, position: Duration.zero);

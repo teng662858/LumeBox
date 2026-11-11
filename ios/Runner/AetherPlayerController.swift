@@ -179,9 +179,9 @@ private final class AetherSession: NSObject, FlutterStreamHandler {
     result.matchContentEnabled = options["wantsHdr"] as? Bool ?? true
     result.attemptsHDRMasterOnUnprovenPanel = result.matchContentEnabled
     result.dolbyVisionHandling = (options["dolbyVision"] as? Bool ?? true) ? .automatic : .baseLayerOnly
-    // Keep the remux path: audio switching/headers/HDR work for MKV and HLS alike.
+    // Route remote playlists through the HLS backend. The file demuxer has no HTTP protocol for nested segments.
     result.preferredDecodePath = (options["hardwareDecoding"] as? Bool ?? true) ? .automatic : .software
-    result.nativeRemoteHLS = false
+    result.nativeRemoteHLS = true
     result.preserveASSMarkup = false // Plain native caption overlay; libass stays available in MPV.
     result.confirmAtmos = true
     let language = options["subtitleLanguage"] as? String ?? "source"
@@ -207,7 +207,7 @@ private final class AetherSession: NSObject, FlutterStreamHandler {
     if let track = tracks.first(where: {
       let dolby = ["ac3", "eac3", "truehd"].contains($0.codec.lowercased()) || $0.isAtmos
       return dolby == preferDolby
-    }) { engine.selectAudioTrack(index: track.id) }
+    }), track.id != engine.activeAudioTrackIndex { engine.selectAudioTrack(index: track.id) }
   }
 
   func tracks(subtitle: Bool) -> [[String: Any]] {
@@ -245,7 +245,7 @@ private final class AetherSession: NSObject, FlutterStreamHandler {
       "position": engine.currentTime.isFinite ? engine.currentTime : 0,
       "duration": engine.duration.isFinite ? engine.duration : 0,
       "playing": engine.state == .playing,
-      "buffering": engine.isBuffering || engine.state == .loading || (loaded && engine.sourceVideoWidth > 0 && !engine.hasFirstFrameReadyForDisplay),
+      "buffering": engine.isBuffering || engine.state == .loading || (engine.state == .playing && engine.sourceVideoWidth > 0 && !engine.hasFirstFrameReadyForDisplay),
       "width": Int(engine.sourceVideoWidth), "height": Int(engine.sourceVideoHeight),
       "bitrate": Double(engine.sourceVideoBitrate) / 1000,
       "presentation": presentation,

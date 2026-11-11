@@ -177,7 +177,22 @@ final class OfflineVideoRemuxer: @unchecked Sendable {
     return destination
   }
 
-  private func copyPackets(input: URL, output: URL) throws {
+  // Stream-copy one VOD TS segment on demand. Preserve the original decode
+  // timestamps so fragments requested out of order still share one timeline.
+  func fragment(input: Data, sequence: Int) throws -> Data {
+    guard !input.isEmpty, input.count <= 32 * 1024 * 1024, (1...Int(Int32.max)).contains(sequence) else {
+      throw failure("无效视频分片")
+    }
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let source = dir.appendingPathComponent("input.ts"), output = dir.appendingPathComponent("fragment.mp4")
+    try input.write(to: source)
+    try copyPackets(input: source, output: output, fragmentSequence: sequence)
+    return try Data(contentsOf: output)
+  }
+
+  private func copyPackets(input: URL, output: URL, fragmentSequence: Int? = nil) throws {
     var source: UnsafeMutablePointer<AVFormatContext>?
     var destination: UnsafeMutablePointer<AVFormatContext>?
     var options: OpaquePointer?
@@ -185,7 +200,7 @@ final class OfflineVideoRemuxer: @unchecked Sendable {
     av_dict_set(&options, "allowed_extensions", "ALL", 0)
     av_dict_set(&options, "extension_picky", "0", 0)
     defer { av_dict_free(&options); avformat_close_input(&source) }
-    var code = avformat_open_input(&source, input.path, av_find_input_format("hls"), &options)
+    var code = avformat_open_input(&source, input.path, av_find_input_format(fragmentSequence == nil ? "hls" : "mpegts"), &options)
     guard code >= 0, let context = source else { throw failure("无法打开离线分片", code) }
     code = avformat_find_stream_info(context, nil)
     guard code >= 0 else { throw failure("无法读取视频轨道", code) }
@@ -193,6 +208,13 @@ final class OfflineVideoRemuxer: @unchecked Sendable {
     guard code >= 0, let target = destination else { throw failure("无法创建 MP4", code) }
     defer { avio_closep(&target.pointee.pb); avformat_free_context(target) }
     var mapping = [Int32: Int32](), counts = [Int32: Int]()
+    var aacFilters: [Int32: UnsafeMutablePointer<AVBSFContext>] = [:]
+    defer {
+      for filter in aacFilters.values {
+        var owned: UnsafeMutablePointer<AVBSFContext>? = filter
+        av_bsf_free(&owned)
+      }
+    }
     for index in 0..<Int(context.pointee.nb_streams) {
       guard let stream = context.pointee.streams[index], let parameters = stream.pointee.codecpar else { continue }
       let type = parameters.pointee.codec_type
@@ -201,6 +223,18 @@ final class OfflineVideoRemuxer: @unchecked Sendable {
       code = avcodec_parameters_copy(added.pointee.codecpar, parameters)
       guard code >= 0 else { throw failure("无法保留轨道信息", code) }
       added.pointee.codecpar.pointee.codec_tag = 0
+      if fragmentSequence != nil && parameters.pointee.codec_id == AV_CODEC_ID_HEVC {
+        added.pointee.codecpar.pointee.codec_tag = 0x31637668 // hvc1
+      }
+      if fragmentSequence != nil && parameters.pointee.codec_id == AV_CODEC_ID_AAC {
+        var filter: UnsafeMutablePointer<AVBSFContext>?
+        guard let definition = av_bsf_get_by_name("aac_adtstoasc"),
+              av_bsf_alloc(definition, &filter) >= 0, let bsf = filter else { throw failure("无法准备 AAC 音轨") }
+        aacFilters[Int32(index)] = bsf
+        bsf.pointee.time_base_in = stream.pointee.time_base
+        guard avcodec_parameters_copy(bsf.pointee.par_in, parameters) >= 0,
+              av_bsf_init(bsf) >= 0 else { throw failure("无法准备 AAC 分片") }
+      }
       added.pointee.time_base = stream.pointee.time_base
       added.pointee.disposition = stream.pointee.disposition
       av_dict_copy(&added.pointee.metadata, stream.pointee.metadata, 0)
@@ -212,8 +246,15 @@ final class OfflineVideoRemuxer: @unchecked Sendable {
     code = avio_open(&target.pointee.pb, output.path, AVIO_FLAG_WRITE)
     guard code >= 0 else { throw failure("无法写入 MP4，请检查剩余空间", code) }
     var muxOptions: OpaquePointer?
-    av_dict_set(&muxOptions, "movflags", "+faststart", 0)
-    av_dict_set(&muxOptions, "avoid_negative_ts", "make_zero", 0)
+    if let sequence = fragmentSequence {
+      av_dict_set(&muxOptions, "movflags", "+delay_moov+frag_custom+default_base_moof+frag_discont+skip_trailer", 0)
+      av_dict_set_int(&muxOptions, "fragment_index", Int64(sequence), 0)
+      av_dict_set(&muxOptions, "use_editlist", "0", 0)
+      av_dict_set(&muxOptions, "avoid_negative_ts", "disabled", 0)
+    } else {
+      av_dict_set(&muxOptions, "movflags", "+faststart", 0)
+      av_dict_set(&muxOptions, "avoid_negative_ts", "make_zero", 0)
+    }
     defer { av_dict_free(&muxOptions) }
     code = avformat_write_header(target, &muxOptions)
     guard code >= 0 else { throw failure("该编码无法无损封装为 MP4，分片已保留", code) }
@@ -229,6 +270,11 @@ final class OfflineVideoRemuxer: @unchecked Sendable {
       if let outputIndex = mapping[inputIndex],
          let from = context.pointee.streams[Int(inputIndex)],
          let to = target.pointee.streams[Int(outputIndex)] {
+        if let filter = aacFilters[inputIndex] {
+          // aac_adtstoasc is a one-in/one-out packet filter.
+          guard av_bsf_send_packet(filter, pkt) >= 0, av_bsf_receive_packet(filter, pkt) >= 0
+          else { throw failure("AAC 分片转换失败") }
+        }
         av_packet_rescale_ts(pkt, from.pointee.time_base, to.pointee.time_base)
         pkt.pointee.stream_index = outputIndex
         pkt.pointee.pos = -1
@@ -267,6 +313,22 @@ final class OfflineVideoMergeController {
     FlutterMethodChannel(name: "lumebox/video_remux", binaryMessenger: messenger)
       .setMethodCallHandler { [self] call, result in
         let args = call.arguments as? [String: Any] ?? [:]
+        if call.method == "fragment" {
+          guard let input = args["input"] as? FlutterStandardTypedData,
+                let sequence = args["sequence"] as? Int else {
+            result(FlutterError(code: "fragment", message: "无效视频分片", details: nil)); return
+          }
+          let data = input.data
+          Task { @MainActor in
+            do {
+              let output = try await Task.detached(priority: .userInitiated) {
+                try OfflineVideoRemuxer().fragment(input: data, sequence: sequence)
+              }.value
+              result(FlutterStandardTypedData(bytes: output))
+            } catch { result(FlutterError(code: "fragment", message: error.localizedDescription, details: nil)) }
+          }
+          return
+        }
         guard let id = args["id"] as? String else {
           result(FlutterError(code: "merge", message: "无效下载任务", details: nil)); return
         }

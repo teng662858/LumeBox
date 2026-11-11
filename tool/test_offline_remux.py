@@ -94,3 +94,37 @@ for name, contents, cancel in [
     assert not (folder / '.remux-work').exists(), name
     assert (folder / 'index.m3u8').read_text() == contents
 print('Native remux: TS, fMP4, separate audio, AES-128, missing input, path escape and cancellation passed')
+
+# Serve one init and independently requested HEVC fragments, including a seek
+# (conversion runs in reverse order). Compare every decoded video and audio frame.
+hevc = root / 'hevc-ts'
+hevc.mkdir()
+run(*base, *video, *audio, '-t', '4', '-c:v', 'libx265', '-g', '10',
+    '-x265-params', 'scenecut=0', '-c:a', 'aac', *hls, str(hevc / 'index.m3u8'))
+parts = sorted(hevc.glob('*.ts'))
+assert len(parts) >= 2
+playlist = (hevc / 'index.m3u8').read_text().replace('#EXT-X-VERSION:3',
+    '#EXT-X-VERSION:7\n#EXT-X-MAP:URI="init.mp4"')
+for i in reversed(range(len(parts))):
+    output = hevc / 'mux.mp4'
+    run(executable, '--fragment', str(i + 1), str(parts[i]), str(output))
+    data = output.read_bytes()
+    offset = 0
+    while data[offset + 4:offset + 8] != b'moof':
+        size = int.from_bytes(data[offset:offset + 4], 'big')
+        assert 8 <= size <= len(data) - offset, 'Malformed MP4 box'
+        offset += size
+    if not i:
+        (hevc / 'init.mp4').write_bytes(data[:offset])
+    fragment = parts[i].with_suffix('.m4s')
+    fragment.write_bytes(data[offset:])
+    playlist = playlist.replace(parts[i].name, fragment.name)
+converted = hevc / 'converted.m3u8'
+converted.write_text(playlist)
+assert hashes(converted) == hashes(hevc / 'index.m3u8'), 'HEVC playback frames changed'
+for path in [converted, hevc / 'index.m3u8']:
+    pcm = run('ffmpeg', '-v', 'error', '-i', str(path), '-map', '0:a:0', '-f', 's16le', '-').stdout
+    if path == converted:
+        decoded = pcm
+    else:
+        assert pcm == decoded, 'AAC playback samples changed'
