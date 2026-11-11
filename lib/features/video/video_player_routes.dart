@@ -146,7 +146,10 @@ extension _RouteTools on _VideoPlayerPageState {
           PlaybackFailureKind.forbidden,
         ].contains(PlaybackFailure.from(error).kind) ||
         error.contains('-12939') ||
-        error.contains('byte range')) {
+        error.contains('-12847') ||
+        error.contains('byte range') ||
+        error.contains('this media format is not supported') ||
+        error.contains('该视频的格式或编码不被当前内核支持')) {
       return;
     }
     _autoRecovering = true;

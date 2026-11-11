@@ -1288,24 +1288,30 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _cancelAutoHide();
       _logPlaybackFailure(snapshot!);
       final error = snapshot.error!.toLowerCase();
-      scheduleMicrotask(() => _recoverAlternative());
+      final kernelCompatibilityError =
+          error.contains('-12939') ||
+          error.contains('-12847') ||
+          error.contains('this media format is not supported') ||
+          error.contains('该视频的格式或编码不被当前内核支持') ||
+          error.contains('byte range and no content length') ||
+          error.contains('服务器不支持分段请求') ||
+          error.contains('server is not correctly configured');
+      if (!kernelCompatibilityError) {
+        scheduleMicrotask(() => _recoverAlternative());
+      }
       if (!_rangeFallbackAttempted &&
           _settings.kernel == PlayerKernel.avplayer &&
           _catalog.isAvailable(PlayerKernel.mpv) &&
-          (error.contains('-12939') ||
-              error.contains('-12847') ||
-              error.contains('this media format is not supported') ||
-              error.contains('该视频的格式或编码不被当前内核支持') ||
-              error.contains('byte range and no content length') ||
-              error.contains('服务器不支持分段请求') ||
-              error.contains('server is not correctly configured'))) {
+          kernelCompatibilityError) {
         _rangeFallbackAttempted = true;
         // 快照通知期间不能同步释放发出通知的播放器。
         scheduleMicrotask(() async {
           if (!mounted || _settings.kernel != PlayerKernel.avplayer) return;
           _showToast('当前媒体的分段响应与 AVPlayer 不兼容，正在切换 MPV');
-          await _applySettings(_settings.copyWith(kernel: PlayerKernel.mpv));
-          if (mounted) await _player?.play();
+          await _applySettings(
+            _settings.copyWith(kernel: PlayerKernel.mpv),
+            autoPlayAfterKernelSwitch: true,
+          );
         });
       }
     }
@@ -1718,7 +1724,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   ///    要么拿着一个播放器，要么拿着一条带出口的失败说明——不会停在「转圈」上；
   /// 2. **实例不泄漏**：任何路径下建出来但没被采用的播放器都要 dispose；
   /// 3. **落库失败不拖垮播放**：写设置库失败只记日志并提示。
-  Future<void> _rebuildPlayer({bool loadCurrentMedia = true}) async {
+  Future<void> _rebuildPlayer({
+    bool loadCurrentMedia = true,
+    bool autoPlayAfterLoad = false,
+  }) async {
     _nextEpisodeBuffer.discard();
     final seq = ++_rebuildSeq;
     if (_session?.state == PipState.active ||
@@ -1863,9 +1872,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       if (!mounted || !identical(player, _player)) return;
       if (resume != null && !resume.isAtStart) {
         await player.seek(resume.position);
-        if (resume.playing && mounted && identical(player, _player)) {
+        if ((resume.playing || autoPlayAfterLoad) &&
+            mounted &&
+            identical(player, _player)) {
           await player.play();
         }
+      } else if (autoPlayAfterLoad &&
+          mounted &&
+          identical(player, _player)) {
+        await player.play();
       }
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
@@ -2068,7 +2083,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     }
   }
 
-  Future<void> _applySettings(PlayerSettings next) async {
+  Future<void> _applySettings(
+    PlayerSettings next, {
+    bool autoPlayAfterKernelSwitch = false,
+  }) async {
     final subtitlePreferenceChanged =
         next.presentation.subtitleLanguage !=
             _settings.presentation.subtitleLanguage ||
@@ -2097,7 +2115,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       _cancelAutoHide();
     }
     if (kernelChanged) {
-      await _rebuildPlayer();
+      await _rebuildPlayer(autoPlayAfterLoad: autoPlayAfterKernelSwitch);
     } else {
       _savePlayerSettings(next);
       await _player?.applySettings(next);
