@@ -351,6 +351,60 @@ void main() {
     });
   }
 
+  test(
+    'remote ranged MP4 delivers first bytes without filling a cache block',
+    () async {
+      final gate = Completer<void>();
+      Stream<List<int>> body() async* {
+        yield data.sublist(0, 16384);
+        await gate.future;
+        yield data.sublist(16384);
+      }
+
+      final native = MockClient.streaming((request, outgoing) async {
+        expect(request.headers['range'], 'bytes=0-');
+        return http.StreamedResponse(
+          body(),
+          206,
+          contentLength: data.length,
+          headers: {
+            'content-length': '${data.length}',
+            'content-range': 'bytes 0-${data.length - 1}/${data.length}',
+          },
+        );
+      });
+      await cache.close();
+      cache = VideoDiskCache(ipHttpsClient: native);
+      await cache.boot(directory: root);
+      final wrapped = await cache.wrap(
+        PlayerMedia(uri: Uri.parse('https://192.0.2.1/movie.mp4')),
+      );
+      final request = await client.getUrl(wrapped.uri);
+      request.headers.set('Range', 'bytes=0-');
+      final response = await request.close().timeout(
+        const Duration(seconds: 2),
+      );
+      final chunks = StreamIterator(response);
+      try {
+        expect(
+          await chunks.moveNext().timeout(const Duration(seconds: 2)),
+          isTrue,
+        );
+        expect(response.statusCode, 206);
+        expect(gate.isCompleted, isFalse);
+        gate.complete();
+        var received = chunks.current.length;
+        while (await chunks.moveNext()) {
+          received += chunks.current.length;
+        }
+        expect(received, data.length);
+      } finally {
+        if (!gate.isCompleted) gate.complete();
+        await chunks.cancel();
+      }
+    },
+  );
+
   test('IP HTTPS playlists use native transport, retain scoped headers and rewrite segments', () async {
     final requests = <http.Request>[];
     final native = MockClient((request) async {

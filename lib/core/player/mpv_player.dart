@@ -74,6 +74,10 @@ class MpvPlayer extends AbstractPlayer implements PresentationEngine {
   PlayerSettings _settings = const PlayerSettings();
   double _volume = 1.0;
   bool _disposed = false;
+  bool _mediaInitialized = false;
+  @override
+  bool get mediaInitialized =>
+      !_disposed && _mediaInitialized && _snapshot.value.error == null;
 
   @override
   ValueListenable<PlayerSnapshot> get snapshot => _snapshot;
@@ -97,6 +101,7 @@ class MpvPlayer extends AbstractPlayer implements PresentationEngine {
   @override
   Future<void> load(PlayerMedia media) async {
     if (_disposed) return;
+    _mediaInitialized = false;
     // 与 AVPlayer 内核同口径：load 只装载，不自动播放。
     _emit(const PlayerSnapshot(), stats: _emptyStats());
     // 缓冲策略必须在打开媒体**之前**定下来：libmpv 的 cache / 预读时长是
@@ -109,6 +114,7 @@ class MpvPlayer extends AbstractPlayer implements PresentationEngine {
         speed: _settings.speed,
       ),
     );
+    _mediaInitialized = !_disposed && _snapshot.value.error == null;
   }
 
   @override

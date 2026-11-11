@@ -181,6 +181,9 @@ class MdkEngine extends AbstractPlayer
   double _speed = 1.0;
   bool _hardwareDecoding = true;
   PlayerMedia? _currentMedia;
+  @override
+  bool get mediaInitialized =>
+      _live && _currentMedia != null && _snapshot.value.error == null;
   String? _externalSubtitle;
 
   static List<String> decoderPriority(bool hardware, {String? platform}) {
@@ -389,6 +392,9 @@ class MdkEngine extends AbstractPlayer
   Future<void> load(PlayerMedia media) async {
     if (!_live) return;
     if (_currentMedia?.uri != media.uri) _externalSubtitle = null;
+    _currentMedia = null;
+    _snapshot.value = const PlayerSnapshot(buffering: true);
+    _stats.value = const PlayerStats(engineLabel: 'MDK');
     final uri = await _highestHls.resolve(
       media.uri,
       media.headers,

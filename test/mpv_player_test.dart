@@ -7,6 +7,7 @@ import 'package:lume_box/core/player/media_kit_mpv_engine.dart';
 import 'package:lume_box/core/player/mpv_engine.dart';
 import 'package:lume_box/core/player/mpv_player.dart';
 import 'package:lume_box/core/player/player_settings.dart';
+import 'package:lume_box/core/player/video_disk_cache.dart';
 
 /// MPV 内核的验证：AbstractPlayer 全量契约、命令映射、状态与 HUD 组装。
 ///
@@ -58,6 +59,26 @@ void main() {
   tearDown(() async {
     await player.dispose();
   });
+
+  test(
+    'initialized paused MPV does not wait for buffering to clear before play',
+    () async {
+      engine.afterOpen = const MpvEngineSnapshot(buffering: true);
+      final cache = VideoDiskCache();
+      addTearDown(cache.close);
+      await cache
+          .load(
+            player,
+            PlayerMedia(uri: Uri.parse('https://example.test/paused.mp4')),
+          )
+          .timeout(const Duration(seconds: 1));
+      expect(player.mediaInitialized, isTrue);
+      expect(player.snapshot.value.buffering, isTrue);
+      expect(engine.calls, isNot(contains('play')));
+      await player.play();
+      expect(engine.calls.last, 'play');
+    },
+  );
 
   test('load：媒体与请求头交给引擎，且不自动播放（与 AVPlayer 同口径）', () async {
     await player.load(
@@ -309,6 +330,7 @@ void main() {
 class _FakeMpvEngine implements MpvEngine {
   final List<String> calls = <String>[];
   MpvMediaRequest? opened;
+  MpvEngineSnapshot? afterOpen;
   double? speed;
   double? volume;
   bool? subtitleEnabled;
@@ -328,6 +350,7 @@ class _FakeMpvEngine implements MpvEngine {
   Future<void> open(MpvMediaRequest request) async {
     calls.add('open');
     opened = request;
+    if (afterOpen != null) emit(afterOpen!);
   }
 
   @override

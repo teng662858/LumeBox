@@ -73,6 +73,11 @@ abstract class AbstractPlayer {
   /// 当前状态。UI 通过 [snapshot] 订阅，无需自行轮询。
   ValueListenable<PlayerSnapshot> get snapshot;
 
+  /// A loaded, paused item can still report buffering until play() is called.
+  /// Native implementations expose load readiness separately from that flag.
+  bool get mediaInitialized =>
+      !snapshot.value.buffering && snapshot.value.error == null;
+
   /// HUD 参数（编码格式 / 码率 / 帧率 / 缓冲状态 / 分辨率）。
   ///
   /// **每个内核自己填**自己拿得到的字段，拿不到的留空；上层只渲染

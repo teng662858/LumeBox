@@ -177,6 +177,41 @@ void main() {
     },
   );
 
+  test('native load timeout releases the command queue and rejects late load events', () async {
+    loading = Completer<void>();
+    final blocked = loading!;
+    final player = AetherPlayer(
+      mediaLoadTimeout: const Duration(milliseconds: 50),
+    );
+    addTearDown(player.dispose);
+    await expectLater(
+      player.load(PlayerMedia(uri: Uri.file('/stuck.mkv'))),
+      throwsA(isA<TimeoutException>()),
+    );
+    expect(player.snapshot.value.buffering, isFalse);
+    expect(player.snapshot.value.error, contains('TimeoutException'));
+    await Future<void>.delayed(Duration.zero);
+    expect(calls.any((c) => c.method == 'stop'), isTrue);
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          'lumebox/aether/42/events',
+          const StandardMethodCodec().encodeSuccessEnvelope({
+            'generation': 1,
+            'playing': true,
+            'position': 99.0,
+          }),
+          (_) {},
+        );
+    await Future<void>.delayed(Duration.zero);
+    expect(player.snapshot.value.error, contains('TimeoutException'));
+    loading = null;
+    await player
+        .load(PlayerMedia(uri: Uri.file('/good.mkv')))
+        .timeout(const Duration(seconds: 1));
+    expect(player.snapshot.value.error, isNull);
+    blocked.complete();
+  });
+
   test('dispose bypasses a blocked load and stale completions cannot update notifiers', () async {
     loading = Completer<void>();
     final player = AetherPlayer();

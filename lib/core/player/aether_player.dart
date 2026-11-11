@@ -14,6 +14,9 @@ import 'player_stats.dart';
 
 /// Apple-native display surface: HDR pixels never pass through a Flutter texture.
 class AetherPlayer extends AbstractPlayer implements PresentationEngine {
+  AetherPlayer({this.mediaLoadTimeout = const Duration(seconds: 30)});
+  @visibleForTesting
+  final Duration mediaLoadTimeout;
   static const channel = MethodChannel('lumebox/aether');
   final _snapshot = ValueNotifier(const PlayerSnapshot());
   final _stats = ValueNotifier(const PlayerStats(engineLabel: 'AetherEngine'));
@@ -25,6 +28,10 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
   int? _id;
   int? get nativePlayerId => _id;
   bool _disposed = false, _polling = false;
+  bool _mediaInitialized = false;
+  @override
+  bool get mediaInitialized =>
+      !_disposed && _mediaInitialized && _snapshot.value.error == null;
   int _generation = 0;
   Timer? _timer;
   Timer? _bufferingTimer;
@@ -120,7 +127,9 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
   @override
   Future<void> load(PlayerMedia media) => _enqueue(() async {
     final generation = ++_generation;
+    _mediaInitialized = false;
     _snapshot.value = const PlayerSnapshot(buffering: true);
+    _stats.value = const PlayerStats(engineLabel: 'AetherEngine');
     try {
       final uri = await _hls.resolve(
         media.uri,
@@ -139,11 +148,19 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
         'url': uri.toString(),
         'headers': media.headers ?? const <String, String>{},
         'options': _options,
-      });
+      }).timeout(mediaLoadTimeout);
+      if (_disposed || generation != _generation) return;
+      _mediaInitialized = true;
       await LumeLog.playbackCheckpoint('[aether] 原生装载返回');
       await _refresh();
     } catch (error) {
       if (!_disposed && generation == _generation) {
+        if (error is TimeoutException) {
+          // Reject late events from the cancelled native load before allowing
+          // a retry/new episode to enter the transport queue.
+          _generation++;
+          unawaited(_invoke<Object?>('stop').catchError((Object _) => null));
+        }
         _snapshot.value = PlayerSnapshot(error: '$error');
       }
       rethrow;

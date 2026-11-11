@@ -637,7 +637,10 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         r'\.(m3u8|mpd|mp4|m4v|mkv|webm|mov|avi|flv|ts)$',
         caseSensitive: false,
       ).hasMatch(address.path);
-      final tracks = saved?.manual == true || audioHint || videoAddress
+      final declaredVideo =
+          _source!.section == Section.video && content is VideoContent;
+      final tracks =
+          saved?.manual == true || audioHint || videoAddress || declaredVideo
           ? const MediaTrackInfo()
           : await const MediaTrackProbe().inspect(
               address,

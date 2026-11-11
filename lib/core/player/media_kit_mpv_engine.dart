@@ -708,7 +708,9 @@ class MediaKitMpvEngine
       _pendingAudioPreference = true;
       await _preferAudio();
     }
-    await _readPresentationStatus();
+    // Optional HUD properties can each time out. They must never hold the
+    // paused media's open/applySettings path before the caller can play().
+    unawaited(_readPresentationStatus());
   }
 
   bool _pendingAudioPreference = true;

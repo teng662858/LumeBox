@@ -52,6 +52,7 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
 
   /// Native initialization is enough to hand the loaded item to the page.
   /// A paused HLS item may remain buffering until the page calls play().
+  @override
   bool get mediaInitialized =>
       _controller?.value.isInitialized == true &&
       _controller?.value.hasError == false;

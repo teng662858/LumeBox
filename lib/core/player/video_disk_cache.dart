@@ -291,15 +291,10 @@ class VideoDiskCache extends ChangeNotifier {
     PlayerMedia media,
   ) async {
     await player.load(media);
-    // Aether completes native load while paused. First-frame buffering can
-    // only clear once the caller attaches its surface and calls play().
-    if (player is AetherPlayer) return;
     final ready = Completer<void>();
     void changed() {
       final snapshot = player.snapshot.value;
-      final initialized = player is AvPlayer
-          ? player.mediaInitialized
-          : !snapshot.buffering;
+      final initialized = player.mediaInitialized;
       if ((initialized || snapshot.error != null) && !ready.isCompleted) {
         ready.complete();
       }
@@ -966,8 +961,10 @@ class VideoDiskCache extends ChangeNotifier {
           ].any(path.endsWith);
       if (request.method == 'GET' &&
           canStream &&
-          rawRange == null &&
-          !(enabled && _files.containsKey(_key(media, 0)))) {
+          (rawRange == null || !segment && !_loopback(media.uri)) &&
+          !(enabled &&
+              (_files[_key(media, 0)]?.bytes ?? 0) >=
+                  min(65536, _files[_key(media, 0)]?.block.total ?? 65536))) {
         if (await _streamMedia(request, media, segment)) return;
       }
       var block = await _read(

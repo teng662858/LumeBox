@@ -3,6 +3,7 @@ import 'package:lume_box/features/video/video_resume_match.dart';
 import 'package:lume_box/features/video/detail_poster_background.dart';
 import 'package:lume_box/core/intro/intro_store.dart';
 import 'package:lume_box/core/media/media_library.dart';
+import 'package:lume_box/core/session/app_preferences.dart';
 
 import 'dart:io';
 import 'dart:async';
@@ -140,6 +141,7 @@ class RoutePlayer extends AbstractPlayer {
   Future<void> load(PlayerMedia value) async {
     media = value;
     loads++;
+    state.value = const PlayerSnapshot();
     await loadGate?.future;
   }
 
@@ -265,7 +267,7 @@ void main() {
     });
   }
 
-  for (final extension in ['mp4', 'm3u8']) {
+  for (final extension in ['mp4', 'm3u8', 'php', '']) {
     testWidgets('$extension 起播不等待额外音轨探测', (tester) async {
       source.extension = extension;
       var probes = 0, opened = 0;
@@ -994,6 +996,16 @@ void main() {
   });
 
   testWidgets('播放器报错换线路仍播放同一集并恢复时间点', (tester) async {
+    final previousAutoRecover =
+        AppPreferences.instance.experience['autoRecover'];
+    AppPreferences.instance.experience['autoRecover'] = false;
+    addTearDown(() {
+      if (previousAutoRecover == null) {
+        AppPreferences.instance.experience.remove('autoRecover');
+      } else {
+        AppPreferences.instance.experience['autoRecover'] = previousAutoRecover;
+      }
+    });
     await tester.binding.setSurfaceSize(const Size(900, 500));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final source = MultiLineDetailSource();
