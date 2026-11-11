@@ -12,24 +12,40 @@ import 'package:lume_box/core/player/pip_channel.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/video_disk_cache.dart';
 
+void stage(String message) {
+  final line = 'KERNEL_SMOKE_STAGE $message';
+  // Keep a host-readable trace even if the VM test channel stops forwarding.
+  File('${Directory.systemTemp.path}/lumebox-playback-stage.log')
+      .writeAsStringSync('$line\n', mode: FileMode.append);
+  debugPrint(line);
+}
+
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  stage('main');
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized()
+    ..framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive
+    ..defaultTestTimeout = const Timeout(Duration(minutes: 2));
+  const onlyKernel = String.fromEnvironment('KERNEL_SMOKE');
   for (final kernel in [
     PlayerKernel.mpv,
     PlayerKernel.mdk,
     PlayerKernel.aether,
   ]) {
+    if (onlyKernel.isNotEmpty && onlyKernel != kernel.name) continue;
     for (final file in ['smoke.mp4', 'smoke.m3u8']) {
       testWidgets('real ${kernel.name} startup, pause and seek: $file', (
         tester,
       ) async {
+        stage('${kernel.name} $file begin');
         final watch = Stopwatch()..start();
         final cache = VideoDiskCache();
         final directory = await Directory.systemTemp.createTemp(
           'kernel-smoke-',
         );
         await cache.boot(directory: directory);
+        stage('${kernel.name} $file create');
         final player = PlayerFactory.create(kernel: kernel)!;
+        stage('${kernel.name} $file created');
         addTearDown(() async {
           await player.dispose();
           await cache.close();
@@ -38,6 +54,7 @@ void main() {
         await player.initialize().timeout(const Duration(seconds: 10));
         await player.setBuffering(BufferingConfig.defaults);
         await player.applySettings(PlayerSettings(kernel: kernel));
+        stage('${kernel.name} $file load');
         final load = Stopwatch()..start();
         await cache
             .load(
@@ -46,11 +63,13 @@ void main() {
             )
             .timeout(const Duration(seconds: 45));
         final readyMs = load.elapsedMilliseconds;
+        stage('${kernel.name} $file loaded');
         expect(player.snapshot.value.error, isNull);
         await tester.pumpWidget(
           MaterialApp(home: Scaffold(body: player.buildView())),
         );
         await player.play();
+        stage('${kernel.name} $file play');
         Future<void> waitFor(bool Function() condition) async {
           for (var i = 0; i < 150 && !condition(); i++) {
             await tester.pump(const Duration(milliseconds: 100));
@@ -97,16 +116,19 @@ void main() {
       });
     }
   }
+  if (onlyKernel.isNotEmpty && onlyKernel != 'avplayer') return;
   for (final file in ['smoke.mp4', 'smoke.m3u8']) {
     testWidgets('real AVPlayer plays and seeks through disk cache: $file', (
       tester,
     ) async {
+      stage('avplayer $file begin');
       expect(Platform.isIOS, isTrue, reason: 'Run this test on iOS Simulator');
       final directory = await Directory.systemTemp.createTemp(
         'playback-smoke-',
       );
       final cache = VideoDiskCache();
       await cache.boot(directory: directory);
+      stage('avplayer $file create');
       final player = AvPlayer();
       addTearDown(() async {
         await player.dispose();
@@ -117,7 +139,9 @@ void main() {
         MaterialApp(home: Scaffold(body: player.buildView())),
       );
       final media = PlayerMedia(uri: Uri.parse('http://127.0.0.1:18765/$file'));
+      stage('avplayer $file load');
       await cache.load(player, media).timeout(const Duration(seconds: 45));
+      stage('avplayer $file loaded');
       expect(player.snapshot.value.error, isNull);
       await tester.pumpWidget(
         MaterialApp(home: Scaffold(body: player.buildView())),
