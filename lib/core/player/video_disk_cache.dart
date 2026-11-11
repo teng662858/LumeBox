@@ -794,6 +794,123 @@ class VideoDiskCache extends ChangeNotifier {
     return Uint8List.sublistView(bytes, transportStreamImagePrefix(bytes));
   }
 
+  /// Forward playable bytes before filling a disk block. Keeping the native
+  /// HTTP reader behind a complete 1 MiB download delays every playback kernel.
+  Future<bool> _streamMedia(
+    HttpRequest request,
+    PlayerMedia media,
+    bool segment,
+  ) async {
+    final generation = _generation;
+    final rangeHeader = request.headers.value('range');
+    var upstream = await _request(media, rangeHeader);
+    if ([502, 503, 504].contains(upstream.statusCode)) {
+      await upstream.listen(null).cancel();
+      upstream = await _request(media, rangeHeader);
+    }
+    if (upstream.statusCode >= 400) {
+      await upstream.listen(null).cancel();
+      throw _UpstreamStatus(upstream.statusCode);
+    }
+    final range = RegExp(r'^bytes (\d+)-(\d+)/(\d+)$')
+        .firstMatch(upstream.header('content-range') ?? '');
+    final length = int.tryParse(upstream.header('content-length') ?? '');
+    final start = range == null ? 0 : int.parse(range[1]!);
+    final total = range == null ? length : int.parse(range[3]!);
+    if (![200, 206].contains(upstream.statusCode) ||
+        upstream.statusCode == 206 &&
+            (range == null ||
+                length != null && length != int.parse(range[2]!) - start + 1 ||
+                rangeHeader == null &&
+                    (start != 0 || int.parse(range[2]!) + 1 != total))) {
+      // Preserve the established repair path for capped/misdeclared local proxies.
+      await upstream.listen(null).cancel();
+      return false;
+    }
+    final chunks = StreamIterator(
+      upstream.timeout(const Duration(seconds: 30)),
+    );
+    final prefix = BytesBuilder(copy: false);
+    final cached = BytesBuilder(copy: false);
+    var received = 0;
+    void capture(List<int> bytes) {
+      received += bytes.length;
+      downloadedBytes += bytes.length;
+      if (cached.length < blockBytes) {
+        cached.add(bytes.take(blockBytes - cached.length).toList());
+      }
+    }
+
+    var skipped = 0;
+    try {
+      if (segment && upstream.header('content-encoding') == null) {
+        // Normal TS/encrypted bytes pass after 8 bytes. A PNG wrapper needs
+        // four aligned TS packets; inspect only the bounded prefix, not EOF.
+        const png = [137, 80, 78, 71, 13, 10, 26, 10];
+        while (await chunks.moveNext()) {
+          capture(chunks.current);
+          prefix.add(chunks.current);
+          if (prefix.length < 8) continue;
+          final bytes = prefix.toBytes();
+          if (!listEquals(bytes.take(8).toList(), png)) break;
+          skipped = transportStreamImagePrefix(bytes);
+          if (skipped > 0 || prefix.length >= 65536 + 188 * 3 + 4) break;
+        }
+      }
+      final response = request.response;
+      response.statusCode = rangeHeader == null ? 200 : upstream.statusCode;
+      response.headers.set(
+        'Content-Type',
+        segment
+            ? 'video/mp2t'
+            : upstream.header('content-type') ?? 'application/octet-stream',
+      );
+      for (final name in ['content-encoding', 'accept-ranges']) {
+        final value = upstream.header(name);
+        if (value != null) response.headers.set(name, value);
+      }
+      if (rangeHeader != null && range != null) {
+        response.headers.set(
+          'Content-Range',
+          upstream.header('content-range')!,
+        );
+      }
+      if (length != null) response.contentLength = length - skipped;
+      response.bufferOutput = false;
+      if (prefix.isNotEmpty) {
+        response.add(Uint8List.sublistView(prefix.takeBytes(), skipped));
+        await response.flush();
+      }
+      while (await chunks.moveNext()) {
+        capture(chunks.current);
+        response.add(chunks.current);
+        await response.flush();
+      }
+      if (length != null && received != length) {
+        throw const HttpException('媒体流长度不完整');
+      }
+      if (start == 0 && cached.isNotEmpty) {
+        // Persistence is optional and follows delivery; it cannot hold first bytes.
+        await _store(
+          _key(media, 0),
+          _Block(
+            cached.takeBytes(),
+            0,
+            total ?? received,
+            upstream.header('content-type') ?? 'application/octet-stream',
+            upstream.header('etag') ?? upstream.header('last-modified'),
+            upstream.uri,
+            upstream.header('content-encoding'),
+          ),
+          generation,
+        ).catchError((Object _) {});
+      }
+      return true;
+    } finally {
+      await chunks.cancel();
+    }
+  }
+
   Future<void> _handle(HttpRequest request) async {
     final response = request.response;
     var streaming = false;
@@ -833,6 +950,26 @@ class VideoDiskCache extends ChangeNotifier {
       }
       var start = match == null || match[1]!.isEmpty ? 0 : int.parse(match[1]!);
       final segment = path.endsWith('.ts');
+      final canStream =
+          segment ||
+          [
+            '.mp4',
+            '.mkv',
+            '.m4s',
+            '.key',
+            '.vtt',
+            '.webvtt',
+            '.webm',
+            '.mov',
+            '.mp3',
+            '.m4a',
+          ].any(path.endsWith);
+      if (request.method == 'GET' &&
+          canStream &&
+          rawRange == null &&
+          !(enabled && _files.containsKey(_key(media, 0)))) {
+        if (await _streamMedia(request, media, segment)) return;
+      }
       var block = await _read(
         media,
         path.endsWith('.m3u8') || segment ? 0 : start,
@@ -913,7 +1050,11 @@ class VideoDiskCache extends ChangeNotifier {
           if (child != null) {
             try {
               fragment = transportStreamHasHevc(
-                await _segmentBytes(child, 16384, prefix: true),
+                await _segmentBytes(
+                  child,
+                  16384,
+                  prefix: true,
+                ).timeout(const Duration(milliseconds: 500)),
               );
             } catch (_) {
               /* An inconclusive probe keeps the original transport. */

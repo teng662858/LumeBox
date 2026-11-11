@@ -75,6 +75,22 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path == '/slow.ts' || request.uri.path == '/slow.mp4') {
+        request.response.contentLength = data.length;
+        request.response.add(data.sublist(0, 16384));
+        await request.response.flush();
+        await pause!.future;
+        request.response.add(data.sublist(16384));
+        await request.response.close();
+        return;
+      }
+      if (request.uri.path == '/slow-probe.m3u8') {
+        request.response.write(
+          '#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nslow.ts\n#EXT-X-ENDLIST\n',
+        );
+        await request.response.close();
+        return;
+      }
       if (request.uri.path.startsWith('/status/')) {
         request.response.statusCode = int.parse(request.uri.pathSegments.last);
         request.response.write('private upstream error body');
@@ -204,6 +220,59 @@ void main() {
     return (response, await response.expand((b) => b).toList());
   }
 
+  for (final suffix in ['ts', 'mp4']) {
+    test(
+      'slow $suffix delivers first bytes before the upstream finishes',
+      () async {
+        pause = Completer<void>();
+        final wrapped = await cache.wrap(
+          PlayerMedia(uri: upstream.resolve('/slow.$suffix')),
+        );
+        final request = await client.getUrl(wrapped.uri);
+        final response = await request.close().timeout(
+          const Duration(seconds: 2),
+        );
+        final chunks = StreamIterator(response);
+        try {
+          expect(
+            await chunks.moveNext().timeout(const Duration(seconds: 2)),
+            isTrue,
+          );
+          expect(chunks.current, isNotEmpty);
+          expect(
+            pause!.isCompleted,
+            isFalse,
+            reason: 'first bytes must not wait for a complete block',
+          );
+          pause!.complete();
+          var bytes = chunks.current.length;
+          while (await chunks.moveNext()) {
+            bytes += chunks.current.length;
+          }
+          expect(bytes, data.length);
+        } finally {
+          if (!pause!.isCompleted) pause!.complete();
+          await chunks.cancel();
+        }
+      },
+    );
+  }
+
+  test('optional Apple codec probe cannot hold a playlist behind a slow first segment', () async {
+    pause = Completer<void>();
+    final wrapped = await cache.wrap(
+      PlayerMedia(uri: upstream.resolve('/slow-probe.m3u8')),
+      appleHls: true,
+    );
+    try {
+      final result = await get(wrapped.uri).timeout(const Duration(seconds: 2));
+      expect(utf8.decode(result.$2), contains('#EXTM3U'));
+      expect(pause!.isCompleted, isFalse);
+    } finally {
+      pause!.complete();
+    }
+  });
+
   test('签名识别 MKV、DASH 和伪图片 HLS，普通数据不误判', () {
     expect(VideoDiskCache.detectFormat([0x1a, 0x45, 0xdf, 0xa3]), '.mkv');
     expect(
@@ -261,6 +330,7 @@ void main() {
         PlayerMedia(uri: upstream.resolve(path)),
       );
       final request = await client.getUrl(wrapped.uri);
+      request.headers.set('Range', 'bytes=0-');
       final response = await request.close();
       var bytes = 0;
       try {
@@ -271,7 +341,7 @@ void main() {
         // A partial body must terminate instead of appending an error page.
       }
       expect(bytes, VideoDiskCache.blockBytes);
-      expect(response.statusCode, 200);
+      expect(response.statusCode, 206);
       if (path == '/changes.mp4') {
         expect(
           PlaybackDiagnostics.snapshot.last['stage'],
@@ -303,7 +373,11 @@ void main() {
         );
       }
       expect(request.url.path, '/hls/part.ts');
-      expect(request.headers['range'], startsWith('bytes=0-'));
+      expect(
+        request.headers['range'],
+        isNull,
+        reason: 'segments stream directly without a block-sized preload',
+      );
       return http.Response.bytes(
         [1, 2, 3],
         206,
@@ -387,8 +461,8 @@ void main() {
     'capped local ranges stream to EOF without a false end or quality change',
     () async {
       final wrapped = await cache.wrap(PlayerMedia(uri: upstream));
-      final (response, body) = await get(wrapped.uri);
-      expect(response.statusCode, 200);
+      final (response, body) = await get(wrapped.uri, 'bytes=0-');
+      expect(response.statusCode, 206);
       expect(response.contentLength, data.length);
       expect(body, data);
       expect(calls, 3);
@@ -410,6 +484,9 @@ void main() {
       cache.capacityMb = 1;
       final wrapped = await cache.wrap(PlayerMedia(uri: upstream));
       expect((await get(wrapped.uri)).$2, data);
+      for (var i = 0; i < 100 && cache.bytes == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
       expect(cache.bytes, lessThanOrEqualTo(1024 * 1024));
       expect(await cache.clear(), greaterThan(0));
       expect(cache.bytes, 0);
@@ -427,6 +504,9 @@ void main() {
       cache.freeSpace = () async => 1024;
       final wrapped = await cache.wrap(PlayerMedia(uri: upstream));
       expect((await get(wrapped.uri)).$2, data);
+      for (var i = 0; i < 100 && !cache.status.contains('空间不足'); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
       expect(cache.bytes, 0);
       expect(cache.status, contains('空间不足'));
     },

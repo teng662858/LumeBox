@@ -6,12 +6,97 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/av_player.dart';
+import 'package:lume_box/core/player/player_factory.dart';
+import 'package:lume_box/core/player/buffering.dart';
 import 'package:lume_box/core/player/pip_channel.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/video_disk_cache.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  for (final kernel in [
+    PlayerKernel.mpv,
+    PlayerKernel.mdk,
+    PlayerKernel.aether,
+  ]) {
+    for (final file in ['smoke.mp4', 'smoke.m3u8']) {
+      testWidgets('real ${kernel.name} startup, pause and seek: $file', (
+        tester,
+      ) async {
+        final watch = Stopwatch()..start();
+        final cache = VideoDiskCache();
+        final directory = await Directory.systemTemp.createTemp(
+          'kernel-smoke-',
+        );
+        await cache.boot(directory: directory);
+        final player = PlayerFactory.create(kernel: kernel)!;
+        addTearDown(() async {
+          await player.dispose();
+          await cache.close();
+          await directory.delete(recursive: true);
+        });
+        await player.initialize().timeout(const Duration(seconds: 10));
+        await player.setBuffering(BufferingConfig.defaults);
+        await player.applySettings(PlayerSettings(kernel: kernel));
+        final load = Stopwatch()..start();
+        await cache
+            .load(
+              player,
+              PlayerMedia(uri: Uri.parse('http://127.0.0.1:18765/$file')),
+            )
+            .timeout(const Duration(seconds: 45));
+        final readyMs = load.elapsedMilliseconds;
+        expect(player.snapshot.value.error, isNull);
+        await tester.pumpWidget(
+          MaterialApp(home: Scaffold(body: player.buildView())),
+        );
+        await player.play();
+        Future<void> waitFor(bool Function() condition) async {
+          for (var i = 0; i < 150 && !condition(); i++) {
+            await tester.pump(const Duration(milliseconds: 100));
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+          }
+          expect(player.snapshot.value.error, isNull);
+          expect(
+            condition(),
+            isTrue,
+            reason: '${kernel.name} $file must advance its real clock',
+          );
+        }
+
+        await waitFor(
+          () =>
+              player.snapshot.value.position >
+              const Duration(milliseconds: 500),
+        );
+        final firstProgressMs = watch.elapsedMilliseconds;
+        expect(player.stats.value.width, greaterThan(0));
+        await player.pause();
+        await tester.pump(const Duration(milliseconds: 300));
+        final paused = player.snapshot.value.position;
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(
+          (player.snapshot.value.position - paused).abs(),
+          lessThan(const Duration(milliseconds: 500)),
+          reason: 'buffer updates must respect explicit pause',
+        );
+        await player
+            .seek(const Duration(seconds: 3))
+            .timeout(const Duration(seconds: 10));
+        await player.play();
+        await waitFor(
+          () =>
+              player.snapshot.value.position >
+              const Duration(milliseconds: 3500),
+        );
+        debugPrint(
+          'KERNEL_SMOKE_OK ${kernel.name} $file loadMs=$readyMs firstProgressMs=$firstProgressMs',
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+      });
+    }
+  }
   for (final file in ['smoke.mp4', 'smoke.m3u8']) {
     testWidgets('real AVPlayer plays and seeks through disk cache: $file', (
       tester,
