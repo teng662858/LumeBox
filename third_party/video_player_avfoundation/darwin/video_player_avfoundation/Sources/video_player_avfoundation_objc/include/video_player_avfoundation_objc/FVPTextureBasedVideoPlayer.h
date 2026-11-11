@@ -17,6 +17,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// updates frames, and handles display link callbacks.
 /// If you need to display a video using platform view, use FVPVideoPlayer instead.
 @interface FVPTextureBasedVideoPlayer : FVPVideoPlayer <FlutterTexture>
+/// Flutter has sampled this texture, and whether it received a non-null video frame.
+@property(atomic, readonly) BOOL textureSampled;
+@property(atomic, readonly) BOOL textureFrameReady;
+
 /// Initializes a new instance of FVPTextureBasedVideoPlayer with the given player item,
 /// frame updater, display link, AV factory, and view provider.
 - (instancetype)initWithPlayerItem:(NSObject<FVPAVPlayerItem> *)item

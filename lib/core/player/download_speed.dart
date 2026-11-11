@@ -46,6 +46,21 @@ class AvNetworkStatistics {
     }
   }
 
+  static Future<bool?> readFirstFrame(int playerId) async {
+    try {
+      final state = await channel.invokeMapMethod<String, Object?>(
+        'readVideoState',
+        {'playerId': playerId},
+      );
+      if (state == null || state['attached'] != true) return null;
+      return state['readyForDisplay'] as bool?;
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    }
+  }
+
   static Future<int?> readBytes(int playerId) async {
     try {
       final value = await channel.invokeMethod<num>('readBytes', {

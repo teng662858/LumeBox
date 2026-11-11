@@ -513,6 +513,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   final Set<String> _recoveryLines = {};
   bool _autoRecovering = false;
   final _stallGuard = PlaybackStallGuard();
+  DateTime? _missingFrameSince;
+  Duration? _missingFramePosition;
   final _linePerformanceCache = <String, LinePerformance>{};
   PlaybackSpeedMeter? _benchmarkMeter;
   String? _prefetchedEpisode;
@@ -1301,24 +1303,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
         scheduleMicrotask(() => _recoverAlternative());
       }
       if (canFallback) {
-        _rangeFallbackAttempted = true;
-        _kernelFallbackInFlight = true;
-        // 快照通知期间不能同步释放发出通知的播放器。
-        scheduleMicrotask(() async {
-          try {
-            if (!mounted || _settings.kernel != PlayerKernel.avplayer) return;
-            _showToast('当前媒体与 AVPlayer 不兼容，正在切换 MPV');
-            await _applySettings(
-              _settings.copyWith(kernel: PlayerKernel.mpv),
-              autoPlayAfterKernelSwitch: true,
-            );
-          } finally {
-            _kernelFallbackInFlight = false;
-            if (mounted && _player?.snapshot.value.error != null) {
-              unawaited(_recoverAlternative());
-            }
-          }
-        });
+        _switchAvPlayerToMpv('当前媒体与 AVPlayer 不兼容，正在切换 MPV');
       }
     }
     _wasPlaying = playing;
@@ -1946,6 +1931,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       kernel: _settings.kernel.name,
       uri: media.uri,
     );
+    _missingFrameSince = null;
+    _missingFramePosition = null;
     final loadWatch = Stopwatch()..start();
     _startupWatch = null;
     _nextEpisodeBuffer.discard();

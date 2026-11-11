@@ -84,6 +84,11 @@ public final class VideoPlayerPlugin: NSObject, FlutterPlugin, AVFoundationVideo
           result(nil); return
         }
         if call.method == "readVideoState" {
+          if let texture = video as? FVPTextureBasedVideoPlayer {
+            result(["inlineLayer": false, "attached": texture.textureSampled,
+                    "readyForDisplay": texture.textureFrameReady])
+            return
+          }
           let layer = FVPNativeVideoView.layer(for: video.player)
           result(["inlineLayer": layer != nil,
                   "attached": layer?.superlayer != nil,

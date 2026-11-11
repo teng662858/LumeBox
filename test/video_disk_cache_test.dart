@@ -5,6 +5,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/player_stats.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
@@ -147,6 +149,53 @@ void main() {
     final response = await request.close();
     return (response, await response.expand((b) => b).toList());
   }
+
+  test('IP HTTPS playlists use native transport, retain scoped headers and rewrite segments', () async {
+    final requests = <http.Request>[];
+    final native = MockClient((request) async {
+      requests.add(request);
+      expect(request.followRedirects, isFalse);
+      expect(request.headers['user-agent'], 'media-agent');
+      if (request.url.path == '/resolve') {
+        expect(request.headers['authorization'], 'test-only');
+        return http.Response(
+          '',
+          302,
+          headers: {'location': 'https://192.0.2.2/hls/index'},
+        );
+      }
+      expect(request.headers.containsKey('authorization'), isFalse);
+      if (request.url.path == '/hls/index') {
+        return http.Response(
+          '#EXTM3U\n#EXTINF:4,\npart.ts\n#EXT-X-ENDLIST\n',
+          200,
+        );
+      }
+      expect(request.url.path, '/hls/part.ts');
+      expect(request.headers['range'], startsWith('bytes=0-'));
+      return http.Response.bytes(
+        [1, 2, 3],
+        206,
+        headers: {'content-range': 'bytes 0-2/3'},
+      );
+    });
+    await cache.close();
+    cache = VideoDiskCache(ipHttpsClient: native);
+    await cache.boot(directory: root);
+    final media = PlayerMedia(
+      uri: Uri.parse('https://192.0.2.1/resolve'),
+      headers: {'Authorization': 'test-only', 'User-Agent': 'media-agent'},
+    );
+    final local = await cache.wrap(media, inspect: true);
+    expect(local.uri.path, endsWith('.m3u8'));
+    final (_, body) = await get(local.uri);
+    final segment = LineSplitter.split(utf8.decode(body))
+        .firstWhere((line) => line.startsWith('http'));
+    final (response, bytes) = await get(Uri.parse(segment));
+    expect(response.statusCode, 200);
+    expect(bytes, [1, 2, 3]);
+    expect(requests.last.url.host, '192.0.2.2');
+  });
 
   for (final status in [400, 401, 403, 404, 429, 500, 502, 503]) {
     test(

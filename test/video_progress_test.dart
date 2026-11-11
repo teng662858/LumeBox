@@ -214,6 +214,76 @@ void main() {
     });
   }
 
+  testWidgets(
+    'AVPlayer only falls back after confirmed missing frames with advancing playback',
+    (tester) async {
+      AppPreferences.instance.experience['autoRecover'] = true;
+      addTearDown(
+        () => AppPreferences.instance.experience.remove('autoRecover'),
+      );
+      final players = <_FakePlayer>[];
+      var now = DateTime(2026);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: VideoPlayerPage(
+            healthClock: () => now,
+            media: PlayerMedia(uri: Uri.parse('https://example.com/a1.mp4')),
+            target: const VideoPlayTarget(
+              sourceId: 'demo-video',
+              itemId: 'movie-1',
+              title: '影片',
+              chapterId: 'a1',
+              chapterIndex: 0,
+              chapterTitle: '第1集',
+            ),
+            source: source,
+            sourceManager: manager,
+            fullscreenOnly: false,
+            catalog: const _FakeCatalog({
+              PlayerKernel.avplayer,
+              PlayerKernel.mpv,
+            }),
+            library: ReadingLibrary.find(Section.video),
+            playerFactory: (kernel) {
+              final player = _FakePlayer(kernel);
+              players.add(player);
+              return player;
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pumpAndSettle();
+      final av = players.single;
+      var pos = Duration.zero;
+      for (final firstFrame in [null, false]) {
+        av.pushStats(
+          PlayerStats(width: 1920, height: 1080, firstFrameReady: firstFrame),
+        );
+        for (var i = 0; i < 4; i++) {
+          now = now.add(const Duration(seconds: 5));
+          pos += const Duration(seconds: 5);
+          av.emit(position: pos, playing: true);
+          await tester.pump(const Duration(seconds: 5));
+        }
+        if (firstFrame == null) expect(players, hasLength(1));
+      }
+      await tester.pumpAndSettle();
+      expect(players.map((p) => p.kernel), [
+        PlayerKernel.avplayer,
+        PlayerKernel.mpv,
+      ]);
+      expect(players.last.media?.uri, av.media?.uri);
+      expect(players.last.seeks, contains(pos));
+      expect(players.last.snapshot.value.playing, isTrue);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
   for (final playing in [false, true]) {
     testWidgets('画质切换失败恢复原线路、进度与暂停状态：playing=$playing', (tester) async {
       final player = _FakePlayer(PlayerKernel.avplayer)

@@ -120,6 +120,7 @@ void main() {
         {'playerId': player.nativePlayerId},
       );
       expect(textureState?['inlineLayer'], isFalse);
+      await waitFor(() => player.stats.value.firstFrameReady == true);
       await pip.resetFrames();
       await tester.pumpWidget(const SizedBox.shrink());
     });

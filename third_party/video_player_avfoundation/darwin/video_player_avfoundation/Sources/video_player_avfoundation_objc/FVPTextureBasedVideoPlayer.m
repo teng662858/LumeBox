@@ -6,6 +6,8 @@
 #import "./include/video_player_avfoundation_objc/FVPTextureBasedVideoPlayer_Test.h"
 
 @interface FVPTextureBasedVideoPlayer ()
+@property(atomic, readwrite) BOOL textureSampled;
+@property(atomic, readwrite) BOOL textureFrameReady;
 // The updater that drives callbacks to the engine to indicate that a new frame is ready.
 @property(nonatomic) FVPFrameUpdater *frameUpdater;
 // The display link that drives frameUpdater.
@@ -151,6 +153,11 @@
       CVBufferRelease(self.latestPixelBuffer);
       self.latestPixelBuffer = buffer;
     }
+  }
+
+  if (!self.textureFrameReady) {
+    self.textureSampled = YES;
+    if (buffer) self.textureFrameReady = YES;
   }
 
   if (self.waitingForFrame && buffer) {

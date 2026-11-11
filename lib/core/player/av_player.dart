@@ -96,6 +96,7 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
   final _downloadClock = Stopwatch();
   double? _downloadBytesPerSecond;
   bool _readingNetwork = false;
+  bool? _firstFrameReady;
   bool _networkMedia = false;
   Duration _lastNetworkPoll = Duration.zero;
   bool _disposed = false;
@@ -702,6 +703,7 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
     _downloadSampler.reset();
     _downloadBytesPerSecond = null;
     _lastNetworkPoll = Duration.zero;
+    _firstFrameReady = null;
     if (controller == null) return;
     controller.removeListener(_sync);
     try {
@@ -725,7 +727,14 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
     _lastNetworkPoll = _downloadClock.elapsed;
     try {
       // ignore: invalid_use_of_visible_for_testing_member
-      final bytes = await AvNetworkStatistics.readBytes(controller.playerId);
+      final id = controller.playerId;
+      final bytes = await AvNetworkStatistics.readBytes(id);
+      if (_disposed || !identical(controller, _controller)) return;
+      if (_firstFrameReady != true) {
+        final ready = await AvNetworkStatistics.readFirstFrame(id);
+        if (_disposed || !identical(controller, _controller)) return;
+        _firstFrameReady = ready;
+      }
       if (_disposed || !identical(controller, _controller)) return;
       _downloadBytesPerSecond = _downloadSampler.sample(
         bytes,
@@ -791,6 +800,7 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
     );
     _stats.value = PlayerStats(
       engineLabel: 'AVPlayer',
+      firstFrameReady: _firstFrameReady,
       width: value.size.width > 0 ? value.size.width.round() : null,
       height: value.size.height > 0 ? value.size.height.round() : null,
       buffered: bufferedAhead(value),

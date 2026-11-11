@@ -5,6 +5,8 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:cupertino_http/cupertino_http.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -19,7 +21,7 @@ import '../net/lume_net.dart';
 /// Bounded, session-only HTTP cache shared by all native playback kernels.
 /// Credentials stay in memory; local URLs expose only an unguessable ticket.
 class VideoDiskCache extends ChangeNotifier {
-  VideoDiskCache() {
+  VideoDiskCache({@visibleForTesting this._ipHttpsClient}) {
     _client.findProxy = (uri) {
       if (_loopback(uri)) return 'DIRECT';
       final proxy = Uri.tryParse(LumeNet.settings.proxy);
@@ -41,7 +43,7 @@ class VideoDiskCache extends ChangeNotifier {
   final _files =
       <String, ({File file, int bytes, DateTime used, _Block block})>{};
   final _pending = <String, Future<_Block>>{};
-  final _origins = Expando<Uri>();
+  http.Client? _ipHttpsClient;
   final _fragments = AppleHlsFragments();
   final _positions = <Uri, ({int next, int total})>{};
   Uri? _active;
@@ -330,38 +332,83 @@ class VideoDiskCache extends ChangeNotifier {
     }());
   }
 
-  Future<HttpClientResponse> _request(PlayerMedia media, String? range) async {
+  Future<_MediaResponse> _request(PlayerMedia media, String? range) async {
     var uri = media.uri;
-    var headers = Map<String, String>.of(media.headers ?? {});
+    final headers =
+        <String, String>{
+          for (final entry
+              in (media.headers ?? const <String, String>{}).entries)
+            entry.key.toLowerCase(): entry.value,
+        }..removeWhere(
+          (key, _) => const {
+            'host',
+            'range',
+            'connection',
+            'content-length',
+            'accept-encoding',
+          }.contains(key),
+        );
+    headers['accept-encoding'] = 'identity';
+    if (LumeNet.settings.userAgent.isNotEmpty) {
+      headers.putIfAbsent('user-agent', () => LumeNet.settings.userAgent);
+    }
+    if (range != null) headers['range'] = range;
     for (var redirect = 0; redirect < 6; redirect++) {
-      final request = await _client
-          .getUrl(uri)
-          .timeout(const Duration(seconds: 15));
-      request.followRedirects = false;
-      for (final h in headers.entries) {
-        if (![
-          'host',
-          'range',
-          'connection',
-          'content-length',
-          'accept-encoding',
-        ].contains(h.key.toLowerCase())) {
-          request.headers.set(h.key, h.value);
+      final _MediaResponse response;
+      // Some CDNs terminate TLS if an IP literal is sent as the SNI name.
+      // URLSession verifies the IP against the certificate's IP subjectAltName.
+      if ((Platform.isIOS || Platform.isMacOS || _ipHttpsClient != null) &&
+          uri.scheme == 'https' &&
+          InternetAddress.tryParse(uri.host) != null &&
+          LumeNet.settings.proxy.trim().isEmpty) {
+        final client = _ipHttpsClient ??=
+            CupertinoClient.fromSessionConfiguration(
+              URLSessionConfiguration.ephemeralSessionConfiguration()
+                ..httpShouldSetCookies = false
+                ..cache = null,
+            );
+        final abort = Completer<void>();
+        final outgoing =
+            http.AbortableRequest('GET', uri, abortTrigger: abort.future)
+              ..followRedirects = false
+              ..headers.addAll(headers);
+        final native = await client
+            .send(outgoing)
+            .timeout(
+              const Duration(seconds: 30),
+              onTimeout: () {
+                abort.complete();
+                throw const HttpException('媒体请求超时');
+              },
+            );
+        // URLSession delivers decompressed bytes even if an origin ignores identity.
+        String? header(String name) {
+          final encoding = native.headers['content-encoding']?.toLowerCase();
+          if (const {'gzip', 'deflate', 'br'}.contains(encoding) &&
+              (name == 'content-encoding' || name == 'content-length')) {
+            return null;
+          }
+          return native.headers[name];
         }
+
+        response = _MediaResponse(
+          native.stream,
+          native.statusCode,
+          uri,
+          header,
+        );
+      } else {
+        final request = await _client
+            .getUrl(uri)
+            .timeout(const Duration(seconds: 15));
+        request.followRedirects = false;
+        headers.forEach(request.headers.set);
+        final io = await request.close().timeout(const Duration(seconds: 30));
+        response = _MediaResponse(io, io.statusCode, uri, io.headers.value);
       }
-      request.headers.set('Accept-Encoding', 'identity');
-      if (!headers.keys.any((h) => h.toLowerCase() == 'user-agent') &&
-          LumeNet.settings.userAgent.isNotEmpty) {
-        request.headers.set('User-Agent', LumeNet.settings.userAgent);
-      }
-      if (range != null) request.headers.set('Range', range);
-      final response = await request.close().timeout(
-        const Duration(seconds: 30),
-      );
-      final location = response.headers.value('location');
+      final location = response.header('location');
       if (![301, 302, 303, 307, 308].contains(response.statusCode) ||
           location == null) {
-        _origins[response] = uri;
         return response;
       }
       await response.drain<void>();
@@ -471,7 +518,7 @@ class VideoDiskCache extends ChangeNotifier {
         continue;
       }
       final range = RegExp(r'^bytes (\d+)-(\d+)/(\d+)$')
-          .firstMatch(response.headers.value('content-range') ?? '');
+          .firstMatch(response.header('content-range') ?? '');
       if (response.statusCode >= 400) {
         PlaybackDiagnostics.record(
           'cache-upstream-failed',
@@ -481,7 +528,7 @@ class VideoDiskCache extends ChangeNotifier {
       }
       if (response.statusCode == 416) {
         final total = RegExp(r'^bytes \*/(\d+)$')
-            .firstMatch(response.headers.value('content-range') ?? '');
+            .firstMatch(response.header('content-range') ?? '');
         await response.drain<void>();
         if (total != null) {
           return _Block(
@@ -522,7 +569,13 @@ class VideoDiskCache extends ChangeNotifier {
         throw HttpException('媒体代理 HTTP ${response.statusCode}');
       }
       final mime =
-          response.headers.contentType?.mimeType ?? 'application/octet-stream';
+          response
+              .header('content-type')
+              ?.split(';')
+              .first
+              .trim()
+              .toLowerCase() ??
+          'application/octet-stream';
       if (response.statusCode == 200 && start != 0) throw const _Passthrough();
       if (response.statusCode == 206 &&
           (range == null || int.parse(range[1]!) != start)) {
@@ -542,10 +595,9 @@ class VideoDiskCache extends ChangeNotifier {
         start,
         total,
         mime,
-        response.headers.value('etag') ??
-            response.headers.value('last-modified'),
-        _origins[response] ?? media.uri,
-        response.headers.value('content-encoding'),
+        response.header('etag') ?? response.header('last-modified'),
+        response.uri,
+        response.header('content-encoding'),
       );
     }
     throw const HttpException('媒体代理暂不可用');
@@ -934,7 +986,7 @@ class VideoDiskCache extends ChangeNotifier {
         'content-encoding',
         'accept-ranges',
       ]) {
-        final value = upstream.headers.value(name);
+        final value = upstream.header(name);
         if (value != null) response.headers.set(name, value);
       }
       if (request.uri.path.endsWith('.ts') && upstream.statusCode ~/ 100 == 2) {
@@ -989,6 +1041,7 @@ class VideoDiskCache extends ChangeNotifier {
     _ticketKeys.clear();
     _ready = false;
     _client.close(force: true);
+    _ipHttpsClient?.close();
     await _server?.close(force: true);
     await clear();
     _progressNotice?.cancel();
@@ -996,6 +1049,13 @@ class VideoDiskCache extends ChangeNotifier {
     _tickets.clear();
     _positions.clear();
   }
+}
+
+class _MediaResponse extends StreamView<List<int>> {
+  _MediaResponse(super.stream, this.statusCode, this.uri, this.header);
+  final int statusCode;
+  final Uri uri;
+  final String? Function(String name) header;
 }
 
 class _UpstreamStatus implements Exception {

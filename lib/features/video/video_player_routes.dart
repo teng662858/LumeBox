@@ -198,6 +198,33 @@ extension _RouteTools on _VideoPlayerPageState {
     }
   }
 
+  void _switchAvPlayerToMpv(String message) {
+    _rangeFallbackAttempted = true;
+    _kernelFallbackInFlight = true;
+    final player = _player;
+    final media = _media;
+    scheduleMicrotask(() async {
+      try {
+        if (!mounted ||
+            !identical(player, _player) ||
+            !identical(media, _media) ||
+            _settings.kernel != PlayerKernel.avplayer) {
+          return;
+        }
+        _showToast(message);
+        await _applySettings(
+          _settings.copyWith(kernel: PlayerKernel.mpv),
+          autoPlayAfterKernelSwitch: true,
+        );
+      } finally {
+        _kernelFallbackInFlight = false;
+        if (mounted && _player?.snapshot.value.error != null) {
+          unawaited(_recoverAlternative());
+        }
+      }
+    });
+  }
+
   void _checkPlaybackStall(PlayerSnapshot snapshot) {
     final target = _target;
     final eligible =
@@ -215,10 +242,43 @@ extension _RouteTools on _VideoPlayerPageState {
         !_scrubSeekInFlight &&
         (snapshot.duration <= Duration.zero ||
             snapshot.position < snapshot.duration - const Duration(seconds: 3));
+    final now = widget.healthClock?.call() ?? DateTime.now();
+    final stats = _player?.stats.value;
+    if (eligible &&
+        snapshot.playing &&
+        !snapshot.buffering &&
+        _settings.kernel == PlayerKernel.avplayer &&
+        stats?.firstFrameReady == false &&
+        (stats?.width ?? 0) > 0 &&
+        _session?.state != PipState.active &&
+        _session?.state != PipState.entering &&
+        !_rangeFallbackAttempted &&
+        _catalog.isAvailable(PlayerKernel.mpv) &&
+        ContentCenter.instance.enabled('autoRecover', fallback: true)) {
+      final previous = _missingFramePosition;
+      if (previous == null || snapshot.position <= previous) {
+        _missingFrameSince = now;
+      }
+      _missingFramePosition = snapshot.position;
+      if (_missingFrameSince != null &&
+          now.difference(_missingFrameSince!) >= const Duration(seconds: 15)) {
+        PlaybackDiagnostics.record(
+          'visible-first-frame-timeout',
+          source: target.sourceId,
+          kernel: _settings.kernel.name,
+          uri: _media?.uri,
+        );
+        _switchAvPlayerToMpv('AVPlayer 播放进度在走，但没有输出画面，正在切换 MPV');
+        return;
+      }
+    } else {
+      _missingFrameSince = null;
+      _missingFramePosition = null;
+    }
     if (_stallGuard.observe(
       '${target?.identity}:${target?.chapterId}',
       snapshot,
-      widget.healthClock?.call() ?? DateTime.now(),
+      now,
       eligible: eligible,
     )) {
       unawaited(_recoverAlternative(stalled: true));

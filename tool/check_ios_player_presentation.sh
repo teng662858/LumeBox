@@ -29,9 +29,20 @@ xcrun clang -fobjc-arc -fmodules -isysroot "$SDK" \
   -target arm64-apple-ios18.0-simulator -F "$FRAMEWORKS" \
   -c "$NATIVE_ROOT/video_player_avfoundation_ios/FVPNativeVideoView.m" \
   -o "$CHECK_DIR/InlineVideoView.o"
+xcrun clang -fobjc-arc -fmodules -isysroot "$SDK" \
+  -target arm64-apple-ios18.0-simulator -F "$FRAMEWORKS" \
+  -c "$NATIVE_ROOT/video_player_avfoundation_objc/FVPTextureBasedVideoPlayer.m" \
+  -o "$CHECK_DIR/TexturePlayer.o"
+cat > "$CHECK_DIR/PlayerViews.h" <<HEADERS
+#import "$HEADER"
+#import "$(dirname "$HEADER")/FVPTextureBasedVideoPlayer.h"
+HEADERS
 cat > "$CHECK_DIR/InlineLayer.swift" <<'SWIFT'
 import AVFoundation
 import Flutter
+func readTextureState(_ texture: FVPTextureBasedVideoPlayer) -> [String: Bool] {
+  ["attached": texture.textureSampled, "readyForDisplay": texture.textureFrameReady]
+}
 func prepareInlinePip(_ player: AVPlayer) {
   let layer = FVPNativeVideoView.layer(for: player)
   NotificationCenter.default.post(name: Notification.Name("LumeBox.avplayer.pip"),
@@ -40,6 +51,6 @@ func prepareInlinePip(_ player: AVPlayer) {
 }
 SWIFT
 xcrun swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios18.0-simulator \
-  -F "$FRAMEWORKS" -import-objc-header "$HEADER" \
+  -F "$FRAMEWORKS" -import-objc-header "$CHECK_DIR/PlayerViews.h" \
   "$CHECK_DIR/InlineLayer.swift" ios/Runner/PipController.swift ios/Runner/PipFramePump.swift
 echo "AVPlayer inline layer Objective-C and PiP Swift checks passed (iOS 18)"
