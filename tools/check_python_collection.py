@@ -1,6 +1,6 @@
 """Offline protocol load check for the published Python collection; no live availability claim.
 Dependencies use .cache/python-source-runtime/packages, as lume-python-source-check.py does.
-Each script runs in a bounded child process; network, native calls and file writes are disabled.
+Each script runs in a bounded child process; network/native calls and writes outside scratch are disabled.
 """
 import concurrent.futures
 import json
@@ -40,6 +40,8 @@ import json
 from pathlib import Path
 import sys
 import types
+import os
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
@@ -55,13 +57,34 @@ raw = Path(sys.argv[2]).read_bytes()
 import base64
 script = '# LumePythonBytes: '+base64.b64encode(raw).decode()
 
+# The production host creates a private writable directory even for a plain
+# script. Permit that scratch area while keeping user/project files read-only.
+scratch = tempfile.TemporaryDirectory(prefix='lume-offline-audit-')
+tempfile.tempdir = scratch.name
+scratch_root = Path(scratch.name).resolve()
+
+
+def scratch_path(value):
+    if not isinstance(value, (str, bytes, os.PathLike)):
+        return False
+    try:
+        return Path(os.fsdecode(value)).resolve().is_relative_to(scratch_root)
+    except (OSError, ValueError):
+        return False
+
 def guard(event, args):
-    if event.startswith(('socket.', 'subprocess.', 'os.system', 'os.exec', 'os.spawn', 'os.remove', 'os.rename', 'os.rmdir', 'os.mkdir', 'shutil.')):
+    if event.startswith(('socket.', 'subprocess.', 'os.system', 'os.exec', 'os.spawn')):
         raise RuntimeError('OFFLINE_CHECK: blocked '+event)
+    if event in ('os.remove', 'os.rmdir', 'os.mkdir') and not scratch_path(args[0]):
+        raise RuntimeError('OFFLINE_CHECK: writes outside scratch disabled')
+    if event == 'os.rename' and not all(scratch_path(value) for value in args[:2]):
+        raise RuntimeError('OFFLINE_CHECK: writes outside scratch disabled')
     if event == 'open':
         mode, flags = args[1], args[2]
         if (isinstance(mode, str) and any(x in mode for x in 'wax+')) or (isinstance(flags, int) and flags & (1 | 2 | 64 | 512 | 1024)):
-            raise RuntimeError('OFFLINE_CHECK: file writes disabled')
+            if not scratch_path(args[0]):
+                raise RuntimeError('OFFLINE_CHECK: file writes outside scratch disabled')
 sys.addaudithook(guard)
 result = json.loads(host.run(json.dumps({'sourceId':'audit','action':'load','script':script,'timeout':5})))
+host.run(json.dumps({'sourceId':'audit','action':'dispose'}))
 sys.stdout.buffer.write(json.dumps(result, ensure_ascii=True).encode('ascii'))

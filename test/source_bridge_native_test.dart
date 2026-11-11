@@ -6,6 +6,8 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as transport;
+import 'package:http/testing.dart';
 
 import 'package:lume_box/core/js/lume_js_engine.dart';
 import 'package:lume_box/core/js/qjs_bindings.dart';
@@ -52,10 +54,11 @@ void main() {
     Future<JsDataSource> boot(
       String script, {
       Section section = Section.video,
+      LumeHttp? network,
     }) async {
       http = _RecordingHttp();
       host = LumeSourceHost(
-        http,
+        network ?? http,
         timeout: const Duration(seconds: 3),
         section: section,
         sourceId: 'bridge-source',
@@ -79,6 +82,117 @@ void main() {
         runtime: _SandboxRuntime(sandbox),
       );
     }
+
+    test('二进制 POST 经 http.request、http.post 和 fetch 原样到达宿主', () async {
+      final requests = <transport.Request>[];
+      final network = LumeHttp(
+        client: MockClient((request) async {
+          requests.add(request);
+          return transport.Response('', 200);
+        }),
+      );
+      addTearDown(network.dispose);
+      final source = await boot(r'''
+        var LumeSource = {list: async function(args) {
+          if (args.categoryId === 'request') await LumeSource.http.request({url:'https://example.com/pb',method:'POST',bodyBase64:'AP+A',binary:true});
+          else if (args.categoryId === 'post') await LumeSource.http.post('https://example.com/pb',null,{bodyBase64:'AP+A',binary:true});
+          else await fetch('https://example.com/pb',{method:'POST',bodyBase64:'AP+A'});
+          return {items:[]};
+        }};
+      ''', network: network);
+      for (final mode in ['request', 'post', 'fetch']) {
+        await source.list(categoryId: mode);
+        expect(requests.last.bodyBytes, [0, 255, 128], reason: mode);
+      }
+      expect(requests, hasLength(3));
+    });
+
+    test('橘汁 JS 真 QuickJS 五入口通过原生 RSA/AES 与二进制 protobuf', () async {
+      final script = File('sources/video/juzhi4k.js').readAsStringSync();
+      final publicKey = RegExp("var JZ_PUBLIC = '([^']+)'")
+          .firstMatch(script)![1]!;
+      List<int> varint(int value) {
+        final out = <int>[];
+        do {
+          out.add((value & 127) | (value > 127 ? 128 : 0));
+          value >>= 7;
+        } while (value > 0);
+        return out;
+      }
+
+      List<int> field(int number, Object value) {
+        if (value is int) return [...varint(number * 8), ...varint(value)];
+        final bytes = value is String ? utf8.encode(value) : value as List<int>;
+        return [...varint(number * 8 + 2), ...varint(bytes.length), ...bytes];
+      }
+
+      final paths = <String>[];
+      final network = LumeHttp(
+        client: MockClient((request) async {
+          paths.add(request.url.path);
+          if (request.url.path.contains('getCategory')) {
+            return transport.Response(
+              jsonEncode({
+                'data': [
+                  {'id': 20, 'name': '电影'},
+                  {'id': 21, 'name': '剧集'},
+                ],
+              }),
+              200,
+              headers: {'content-type': 'application/json; charset=utf-8'},
+            );
+          }
+          expect(request.bodyBytes, isNotEmpty);
+          expect(request.headers['Content-Type'], 'application/x-protobuf');
+          late List<int> payload;
+          if (request.url.path.endsWith('/zone')) {
+            payload = field(1, publicKey);
+          } else if (request.url.path.endsWith('/category')) {
+            payload = field(1, [...field(3, 42), ...field(5, '测试电影')]);
+          } else if (request.url.path.endsWith('/getDetail')) {
+            payload = [
+              ...field(9, '测试电影'),
+              ...field(29, [
+                ...field(2, '正片'),
+                ...field(4, 'https://site.invalid/watch/42.html'),
+                ...field(9, 'mgtv'),
+                ...field(10, 'M蓝光'),
+              ]),
+            ];
+          } else {
+            expect(request.url.path, endsWith('/videoUsableUrl'));
+            payload = field(1, 'https://media.invalid/movie.m3u8');
+          }
+          return transport.Response.bytes([
+            ...field(1, 200),
+            ...field(3, payload),
+          ], 200);
+        }),
+      );
+      addTearDown(network.dispose);
+      final source = await boot(script, network: network);
+      expect(await source.categories(), hasLength(2));
+      final page = await source.list(categoryId: '20');
+      expect(page.items.single.title, '测试电影');
+      final detail = await source.detail(page.items.single.id);
+      expect(detail!.title, '测试电影');
+      final chapters = await source.chapters(page.items.single.id);
+      expect(chapters.single.line, 'M蓝光');
+      final content = await source.content(
+        itemId: page.items.single.id,
+        chapterId: chapters.single.id,
+      );
+      expect(
+        (content as VideoContent).url.toString(),
+        'https://media.invalid/movie.m3u8',
+      );
+      expect(paths.where((p) => p.endsWith('/getDetail')), hasLength(1));
+      expect(
+        paths.last,
+        endsWith('/videoUsableUrl'),
+        reason: 'HTTPS watch pages require resolution',
+      );
+    });
 
     test('所有源可直接调用通用工具与同步 pako，赋值不会覆盖宿主', () async {
       final source = await boot(r'''

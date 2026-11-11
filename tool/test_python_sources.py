@@ -228,7 +228,7 @@ assert cipher.iv == counter
 
     def test_unresolved_play_tokens_fail_before_loading_but_quality_only_is_valid(self):
         argument = {'id':'py:one', 'chapterId':json.dumps({'flag':'line','id':'token'})}
-        for url in ('http://', 'encoded-play-token'):
+        for url in ('http://', 'encoded-play-token', 'https://****/1.m3u8', 'https://bad host/movie.mp4'):
             script = FIXTURE + '\n    def playerContent(self, flag, id, vipFlags=None): return ' + repr({'url':url})
             self.assertTrue(call('unresolved', 'load', script=script)['ok'])
             value = call('unresolved', method='content', argument=argument)
@@ -237,6 +237,19 @@ assert cipher.iv == counter
         script = FIXTURE + "\n    def playerContent(self, flag, id, vipFlags=None): return {'levels':[{'label':'4K','url':'https://fixture.invalid/4k.mp4'}]}"
         self.assertTrue(call('quality-only', 'load', script=script)['ok'])
         self.assertEqual(call('quality-only', method='content', argument=argument)['value']['url'], 'https://fixture.invalid/4k.mp4')
+
+    def test_empty_playback_keeps_source_reason_without_secrets(self):
+        script = FIXTURE + '''
+    def playerContent(self, flag, id, vipFlags=None):
+        print('播放失败：上游未返回视频模型 https://private.invalid/token')
+        print('error token=private-value')
+        return {'url':''}
+'''
+        self.assertTrue(call('playback-reason', 'load', script=script)['ok'])
+        value = call('playback-reason', method='content', argument={'id':'one','chapterId':json.dumps({'flag':'line','id':'token'})})
+        self.assertFalse(value['ok'])
+        self.assertIn('上游未返回视频模型', value['error']['message'])
+        self.assertNotIn('private', value['error']['message'])
 
     def test_spider_can_call_parent_init(self):
         source = FIXTURE.replace('def init(self, extend): self.initialized = extend', 'def init(self, extend):\n        super().init(extend)\n        self.initialized = extend')

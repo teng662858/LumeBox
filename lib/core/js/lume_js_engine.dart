@@ -696,6 +696,7 @@ class _FetchPolyfill implements SandboxPolyfill {
       method: options.method || 'GET',
       headers: options.headers || {},
       body: options.body == null ? null : String(options.body),
+      bodyBase64: options.bodyBase64 == null ? null : String(options.bodyBase64),
       // 二进制响应：源里解密封面这类场景需要原始字节（文本 body 会把 0x80-0xFF 解坏），
       // 传 binary:true 才会额外拿到 bodyBase64。
       binary: options.binary === true

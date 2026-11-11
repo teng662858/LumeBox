@@ -125,7 +125,10 @@ def check(path, category_id=None):
             **content.get('headers', {}), 'Range': 'bytes=0-1023',
         })
         playable = status in (200, 206) and (
-            prefix.startswith((b'#EXTM3U', b'ID3', b'fLaC', b'OggS', b'RIFF')) or b'ftyp' in prefix[:32] or headers.get('content-type', '').startswith('audio/'))
+            prefix.startswith((b'#EXTM3U', b'ID3', b'fLaC', b'OggS', b'RIFF', b'\x1a\x45\xdf\xa3'))
+            or b'ftyp' in prefix[:32]
+            or bool(re.search(rb'<(?:[A-Za-z0-9_]+:)?MPD(?:\s|>)', prefix[:1024]))
+            or headers.get('content-type', '').startswith('audio/'))
         report['calls']['playable'] = {'ok': playable, 'probe': {
             'ok': playable, 'status': status, 'type': headers.get('content-type', ''),
         }}

@@ -3,6 +3,29 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+/// A PNG prefix is removed only after four aligned, plaintext MPEG-TS packets
+/// have been confirmed. Encrypted segments and real images stay unchanged.
+int transportStreamImagePrefix(List<int> bytes) {
+  const png = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (bytes.length < 8) return 0;
+  for (var i = 0; i < 8; i++) {
+    if (bytes[i] != png[i]) return 0;
+  }
+  final limit = (bytes.length - 188 * 3 - 4).clamp(0, 65536);
+  for (var offset = 8; offset <= limit; offset++) {
+    var valid = true;
+    for (var packet = 0; packet < 4; packet++) {
+      final at = offset + packet * 188;
+      if (bytes[at] != 0x47 || bytes[at + 3] & 0x30 == 0) {
+        valid = false;
+        break;
+      }
+    }
+    if (valid) return offset;
+  }
+  return 0;
+}
+
 /// MPEG-TS program map stream type 0x24 identifies HEVC without guessing from
 /// the URL or mistaking H.264, encrypted samples or fMP4 for transport streams.
 bool transportStreamHasHevc(Uint8List bytes) {

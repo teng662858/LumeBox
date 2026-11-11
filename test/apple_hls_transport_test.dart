@@ -46,6 +46,7 @@ void main() {
     ]);
   final init = [0, 0, 0, 8, ...ascii.encode('moov')];
   final body = [0, 0, 0, 8, ...ascii.encode('moof')];
+  late List<int> expectedInput;
 
   setUp(() async {
     HttpOverrides.global = null;
@@ -73,6 +74,13 @@ void main() {
             r.add(packet);
           case '/avc.jpg':
             r.add(Uint8List.fromList(packet)..[17] = 0x1b);
+          case '/png.jpg':
+            r.add(
+              Uint8List(4096)..setAll(0, [137, 80, 78, 71, 13, 10, 26, 10]),
+            );
+            for (var i = 0; i < 4; i++) {
+              r.add(packet);
+            }
           case '/master':
             r.write(
               '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\nplain.php\n',
@@ -80,21 +88,27 @@ void main() {
           default:
             final encrypted = request.uri.path == '/encrypted';
             final avc = request.uri.path == '/avc';
+            final png = request.uri.path == '/png';
             r.write(
               '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n'
               '${encrypted ? '#EXT-X-KEY:METHOD=AES-128,URI="secret"\n' : ''}'
-              '#EXTINF:4,\n${avc ? 'avc' : 'p'}.jpg\n#EXT-X-ENDLIST\n',
+              '#EXTINF:4,\n${png
+                  ? 'png'
+                  : avc
+                  ? 'avc'
+                  : 'p'}.jpg\n#EXT-X-ENDLIST\n',
             );
         }
       }
       await r.close();
     });
     calls.clear();
+    expectedInput = packet;
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
       expect(call.method, 'fragment');
       expect(call.arguments['sequence'], 1);
-      expect(call.arguments['input'], packet);
+      expect(call.arguments['input'], expectedInput);
       return Uint8List.fromList([...init, ...body]);
     });
   });
@@ -157,6 +171,17 @@ void main() {
       },
     );
   }
+  test('PNG 包装的 HEVC 分片先剥图片头再检测和重封装', () async {
+    expectedInput = [for (var i = 0; i < 4; i++) ...packet];
+    final text = await manifest('png');
+    expect(text, contains('#EXT-X-MAP'));
+    final fragment = Uri.parse(
+      text.split('\n').firstWhere((s) => s.startsWith('http')),
+    );
+    expect((await read(fragment)).$2, body);
+    expect(calls, hasLength(1));
+  });
+
   test(
     'MDK and MPV receive recognizable TS addresses and MPEG-TS MIME',
     () async {

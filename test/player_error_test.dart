@@ -8,6 +8,8 @@ void main() {
   test('kernel recovery recognizes native and translated errors but excludes HTTP errors', () {
     for (final error in [
       'OSStatus error -12848',
+      'AVErrorFileFormatNotRecognized (OSStatus error -11828)',
+      'Cannot Open',
       'This media format is not supported (OSStatus error -12847)',
       'byte range and no content length - error code is 200',
     ]) {

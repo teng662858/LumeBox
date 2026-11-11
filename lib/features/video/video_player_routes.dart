@@ -147,7 +147,10 @@ extension _RouteTools on _VideoPlayerPageState {
           PlaybackFailureKind.membership,
           PlaybackFailureKind.forbidden,
         ].contains(PlaybackFailure.from(error).kind) ||
-        (_settings.kernel == PlayerKernel.avplayer &&
+        ([
+              PlayerKernel.avplayer,
+              PlayerKernel.aether,
+            ].contains(_settings.kernel) &&
             !_rangeFallbackAttempted &&
             _catalog.isAvailable(PlayerKernel.mpv) &&
             PlayerErrorText.needsAlternativeKernel(error))) {
@@ -208,7 +211,10 @@ extension _RouteTools on _VideoPlayerPageState {
         if (!mounted ||
             !identical(player, _player) ||
             !identical(media, _media) ||
-            _settings.kernel != PlayerKernel.avplayer) {
+            ![
+              PlayerKernel.avplayer,
+              PlayerKernel.aether,
+            ].contains(_settings.kernel)) {
           return;
         }
         _showToast(message);

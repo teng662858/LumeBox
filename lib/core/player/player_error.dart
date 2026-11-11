@@ -21,6 +21,9 @@ class PlayerErrorText {
       '-12939',
       '-12847',
       '-12848',
+      '-11828',
+      'averrorfileformatnotrecognized',
+      'cannot open',
       'this media may be damaged',
       'this media format is not supported',
       '该视频的格式或编码不被当前内核支持',
@@ -92,6 +95,10 @@ class PlayerErrorText {
 
   /// 常见原生错误的特征 → 中文短句（按顺序匹配，越具体越靠前）。
   static final List<_Rule> _rules = <_Rule>[
+    _Rule(<String>[
+      '-11828',
+      'averrorfileformatnotrecognized',
+    ], '当前内核无法打开该媒体封装；请更换 MPV 或 MDK 内核'),
     _Rule(<String>[
       'osstatus error -12848',
       'this media may be damaged',

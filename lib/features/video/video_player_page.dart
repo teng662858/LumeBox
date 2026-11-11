@@ -1297,14 +1297,17 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       );
       final canFallback =
           !_rangeFallbackAttempted &&
-          _settings.kernel == PlayerKernel.avplayer &&
+          [
+            PlayerKernel.avplayer,
+            PlayerKernel.aether,
+          ].contains(_settings.kernel) &&
           _catalog.isAvailable(PlayerKernel.mpv) &&
           kernelCompatibilityError;
       if (!canFallback) {
         scheduleMicrotask(() => _recoverAlternative());
       }
       if (canFallback) {
-        _switchAvPlayerToMpv('当前媒体与 AVPlayer 不兼容，正在切换 MPV');
+        _switchAvPlayerToMpv('当前媒体与所选内核不兼容，正在切换 MPV');
       }
     }
     _wasPlaying = playing;
@@ -1991,6 +1994,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           elapsedMs: loadWatch.elapsedMilliseconds,
           error: '$error',
         );
+        if (PlayerErrorText.needsAlternativeKernel(error) &&
+            [
+              PlayerKernel.avplayer,
+              PlayerKernel.aether,
+            ].contains(_settings.kernel) &&
+            !_rangeFallbackAttempted &&
+            _catalog.isAvailable(PlayerKernel.mpv)) {
+          _switchAvPlayerToMpv('当前媒体封装不兼容，正在切换 MPV');
+          return;
+        }
         rethrow;
       }
     }

@@ -147,6 +147,7 @@ class LumeSourceBridgePolyfill implements SandboxPolyfill {
         method: options.method || 'GET',
         headers: options.headers || {},
         body: options.body == null ? null : String(options.body),
+        bodyBase64: options.bodyBase64 == null ? null : String(options.bodyBase64),
         // 透传二进制开关：脚本传 {binary:true} 时宿主会额外回 bodyBase64（见 fetch 垫片）。
         binary: options.binary === true
       });
@@ -156,7 +157,7 @@ class LumeSourceBridgePolyfill implements SandboxPolyfill {
     },
     post: function (url, body, options) {
       var settings = withTarget('POST', url, options);
-      if (settings.body == null) settings.body = body == null ? '' : String(body);
+      if (settings.body == null && settings.bodyBase64 == null) settings.body = body == null ? '' : String(body);
       return http.request(settings);
     }
   };

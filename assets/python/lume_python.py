@@ -567,6 +567,7 @@ def _budget(state, seconds):
     deadline_token = _deadline.set(state["deadline"])
     deadline = state["deadline"]
     previous = sys.gettrace()
+    state['diagnostic_lines'] = []
 
     def trace(frame, event, arg):
         if time.monotonic() > deadline:
@@ -577,6 +578,11 @@ def _budget(state, seconds):
     try:
         class Quiet:
             def write(self, value):
+                if _active.get(None) is state and len(state['diagnostic_lines']) < 16 and re.search(r'播放失败|解析失败|failed|error', str(value), re.I):
+                    # Source logs can embed signed URLs or account headers.
+                    safe = re.sub(r'https?://[^\s<>"\x27]+', '[地址]', str(value))
+                    if not re.search(r'token|cookie|authorization|password|secret|api.?key|账号|密码|密钥', safe, re.I):
+                        state['diagnostic_lines'].append(safe.strip()[:240])
                 return len(value)
             def flush(self):
                 pass
@@ -1043,9 +1049,10 @@ def _dispatch(state, method, arg):
         if not url and isinstance(qualities, list):
             url = next((str(row.get('url') or row.get('playUrl') or row.get('src')) for row in qualities if isinstance(row, dict) and (row.get('url') or row.get('playUrl') or row.get('src'))), '')
         if not url:
-            raise ValueError("源未返回播放地址；请检查站点、外部解析后端或 Android 专属依赖")
+            reason = next((line for line in reversed(state.get('diagnostic_lines', [])) if line), '')
+            raise ValueError(reason or "源未返回播放地址；请检查站点、外部解析后端或 Android 专属依赖")
         address = urlsplit(url)
-        if not address.scheme or (address.scheme in ('http', 'https') and not address.hostname):
+        if not address.scheme or (address.scheme in ('http', 'https') and (not address.hostname or re.search(r'[\s*<>\[\]]', address.hostname))):
             raise ValueError('源解析未完成，未返回可播放地址；请更换线路或重试')
         headers = _decoded(raw.get("header", raw.get("headers", {})))
         playback = state.setdefault('playback', {})

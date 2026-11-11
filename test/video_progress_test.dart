@@ -285,6 +285,59 @@ void main() {
     },
   );
 
+  testWidgets('Aether Cannot Open 自动切换 MPV 并保留地址、请求头和断点', (tester) async {
+    final library = ReadingLibrary.find(Section.video)!;
+    VideoPlayerSettingsStore(library).save(
+      const PlayerSettings(
+        kernel: PlayerKernel.aether,
+        backgroundSourceValidation: false,
+      ),
+    );
+    final players = <_FakePlayer>[];
+    final media = PlayerMedia(
+      uri: Uri.parse('https://example.com/cloud'),
+      headers: const {'Referer': 'https://site.example/'},
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VideoPlayerPage(
+          media: media,
+          catalog: const _FakeCatalog({PlayerKernel.aether, PlayerKernel.mpv}),
+          library: library,
+          playerFactory: (kernel) {
+            final p = _FakePlayer(kernel);
+            players.add(p);
+            return p;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    expect(players.single.kernel, PlayerKernel.aether);
+    players.single.emit(
+      position: const Duration(seconds: 42),
+      error: 'Cannot Open',
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    expect(players.map((p) => p.kernel), [
+      PlayerKernel.aether,
+      PlayerKernel.mpv,
+    ]);
+    expect(players.last.media!.uri, media.uri);
+    expect(players.last.media!.headers, media.headers);
+    expect(players.last.seeks, contains(const Duration(seconds: 42)));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
   for (final playing in [false, true]) {
     testWidgets('画质切换失败恢复原线路、进度与暂停状态：playing=$playing', (tester) async {
       final player = _FakePlayer(PlayerKernel.avplayer)

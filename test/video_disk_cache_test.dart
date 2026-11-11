@@ -10,6 +10,8 @@ import 'package:http/testing.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/player_stats.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/player/playback_diagnostics.dart';
+import 'package:lume_box/core/player/apple_hls_fragments.dart';
 import 'package:lume_box/core/player/video_disk_cache.dart';
 
 void main() {
@@ -19,6 +21,13 @@ void main() {
   late HttpClient client;
   late Uri upstream;
   final data = Uint8List.fromList(List.generate(2500000, (i) => i % 251));
+  final ts = Uint8List(188 * 7000);
+  for (var i = 0; i < ts.length; i += 188) {
+    ts.setAll(i, [0x47, 0x40, 0, 0x10]);
+  }
+  final pngPrefix = Uint8List(4096)
+    ..setAll(0, [137, 80, 78, 71, 13, 10, 26, 10]);
+  final pngTs = Uint8List.fromList([...pngPrefix, ...ts]);
   var calls = 0;
   final paths = <String>[];
   var failures = 0;
@@ -72,6 +81,31 @@ void main() {
         await request.response.close();
         return;
       }
+      if (request.uri.path == '/cloud-download') {
+        request.response.headers.set('Content-Type', 'video/mp4');
+        request.response.add([0x1a, 0x45, 0xdf, 0xa3, ...List.filled(1024, 0)]);
+        await request.response.close();
+        return;
+      }
+      if (request.uri.path == '/png-segment.ts') {
+        final range = RegExp(r'bytes=(\d+)-(\d*)')
+            .firstMatch(request.headers.value('range') ?? '');
+        final start = range == null ? 0 : int.parse(range[1]!);
+        final end =
+            (range == null || range[2]!.isEmpty
+                    ? pngTs.length - 1
+                    : int.parse(range[2]!))
+                .clamp(start, pngTs.length - 1);
+        request.response.statusCode = 206;
+        request.response.headers.set('Content-Type', 'image/png');
+        request.response.headers.set(
+          'Content-Range',
+          'bytes $start-$end/${pngTs.length}',
+        );
+        request.response.add(pngTs.sublist(start, end + 1));
+        await request.response.close();
+        return;
+      }
       if (pause != null) await pause!.future;
       if (request.uri.path == '/ads.m3u8') {
         request.response.write(
@@ -115,6 +149,19 @@ void main() {
         final match = RegExp(r'bytes=(\d+)-(\d*)')
             .firstMatch(request.headers.value('range') ?? '');
         final start = match == null ? 0 : int.parse(match[1]!);
+        if (request.uri.path == '/expires.mp4' &&
+            start >= VideoDiskCache.blockBytes) {
+          request.response.statusCode = 403;
+          await request.response.close();
+          return;
+        }
+        if (request.uri.path == '/changes.mp4' &&
+            start >= VideoDiskCache.blockBytes) {
+          request.response.statusCode = 200;
+          request.response.add(data);
+          await request.response.close();
+          return;
+        }
         final requestedEnd = match == null || match[2]!.isEmpty
             ? data.length - 1
             : int.parse(match[2]!);
@@ -155,6 +202,83 @@ void main() {
     if (range != null) request.headers.set('Range', range);
     final response = await request.close();
     return (response, await response.expand((b) => b).toList());
+  }
+
+  test('签名识别 MKV、DASH 和伪图片 HLS，普通数据不误判', () {
+    expect(VideoDiskCache.detectFormat([0x1a, 0x45, 0xdf, 0xa3]), '.mkv');
+    expect(
+      VideoDiskCache.detectFormat(utf8.encode('\uFEFF #EXTM3U\n')),
+      '.m3u8',
+    );
+    expect(
+      VideoDiskCache.detectFormat(
+        utf8.encode('<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash"/>'),
+      ),
+      '.mpd',
+    );
+    expect(
+      VideoDiskCache.detectFormat(utf8.encode('<html>unavailable</html>')),
+      '',
+    );
+  });
+
+  test('PNG 前缀只剥离确认的 TS，分段和后缀 Range 仍对应媒体字节', () async {
+    expect(transportStreamImagePrefix(pngTs), 4096);
+    expect(transportStreamImagePrefix(ts), 0);
+    expect(transportStreamImagePrefix([...pngPrefix, ...data.take(1000)]), 0);
+    final wrapped = await cache.wrap(
+      PlayerMedia(uri: upstream.resolve('/png-segment.ts')),
+    );
+    expect((await get(wrapped.uri)).$2, ts);
+    final first = await get(wrapped.uri, 'bytes=0-31');
+    expect(first.$1.headers.value('content-range'), 'bytes 0-31/${ts.length}');
+    expect(first.$1.headers.value('content-type'), 'video/mp2t');
+    expect(first.$2, ts.sublist(0, 32));
+    final tail = await get(wrapped.uri, 'bytes=-32');
+    expect(tail.$2, ts.sublist(ts.length - 32));
+    final cross = await get(wrapped.uri, 'bytes=1040000-1060000');
+    expect(cross.$2, ts.sublist(1040000, 1060001));
+  });
+
+  test('无后缀且 MIME 错报 MP4 的 MKV 在 Apple 内核前识别并可交 MPV', () async {
+    final media = PlayerMedia(uri: upstream.resolve('/cloud-download'));
+    await expectLater(
+      cache.wrap(media, inspect: true, appleHls: true),
+      throwsUnsupportedError,
+    );
+    final wrapped = await cache.wrap(media, inspect: true);
+    expect(wrapped.uri.path, endsWith('.mkv'));
+    expect(
+      calls,
+      1,
+      reason: 'confirmed format is reused across kernel switches',
+    );
+  });
+
+  for (final path in ['/expires.mp4', '/changes.mp4']) {
+    test('首块已发送后上游失败不再修改响应头：$path', () async {
+      final wrapped = await cache.wrap(
+        PlayerMedia(uri: upstream.resolve(path)),
+      );
+      final request = await client.getUrl(wrapped.uri);
+      final response = await request.close();
+      var bytes = 0;
+      try {
+        await for (final chunk in response) {
+          bytes += chunk.length;
+        }
+      } on HttpException {
+        // A partial body must terminate instead of appending an error page.
+      }
+      expect(bytes, VideoDiskCache.blockBytes);
+      expect(response.statusCode, 200);
+      if (path == '/changes.mp4') {
+        expect(
+          PlaybackDiagnostics.snapshot.last['stage'],
+          'cache-stream-interrupted',
+        );
+      }
+    });
   }
 
   test('IP HTTPS playlists use native transport, retain scoped headers and rewrite segments', () async {

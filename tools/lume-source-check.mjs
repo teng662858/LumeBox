@@ -132,10 +132,12 @@ function makeHttp(opts) {
     }
     const started = Date.now();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS - 500);
     let target = url;
     let verb = method;
-    let payload = options.body == null ? undefined : String(options.body);
+    if (options.bodyBase64 != null && options.body != null) throw new Error('binary body conflicts with text body');
+    let payload = options.bodyBase64 != null ? Buffer.from(String(options.bodyBase64), 'base64') : options.body == null ? undefined : String(options.body);
+    if (options.bodyBase64 != null && payload.length > 1024 * 1024) throw new Error('binary body exceeds 1MB');
+    const timer = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS - 500);
     let status = 0;
     let body = '';
     let bodyBase64 = null;
@@ -264,8 +266,10 @@ function makeTools(fsStore) {
       for (let i = 0; i < data.length; i++) out[i] = data[i] ^ mask[i % mask.length];
       return out.toString('base64');
     },
-    rsa: async () => {
-      throw new Error('harness: tools.rsa 未实现（App 侧为原生能力）');
+    rsa: async (o) => {
+      const input = Buffer.from(String(o.data || ''), 'base64');
+      if (o.encrypt === true) return crypto.publicEncrypt({ key: String(o.pem || ''), padding: crypto.constants.RSA_PKCS1_PADDING }, input).toString('base64');
+      return crypto.privateDecrypt({ key: String(o.pem || ''), padding: crypto.constants.RSA_PKCS1_PADDING }, input).toString('base64');
     },
     inflate: async (data, raw) => {
       const input = Buffer.from(String(data || ''), 'base64');
@@ -573,7 +577,7 @@ async function runSource(file, options) {
           };
         }
       }
-    } else {
+    } else if (want.includes('content')) {
       report.calls.chapters = report.calls.chapters ?? {
         ok: false,
         error: '条目 ' + itemId + ' 没有章节，无法验证播放',

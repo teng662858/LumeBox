@@ -40,6 +40,7 @@ class VideoDiskCache extends ChangeNotifier {
   final _tickets = <String, PlayerMedia>{};
   final _ticketKeys = <String, String>{};
   final _bypassed = <String>{};
+  final _detectedFormats = <String, String>{};
   Timer? _progressNotice;
   final _files =
       <String, ({File file, int bytes, DateTime used, _Block block})>{};
@@ -151,11 +152,16 @@ class VideoDiskCache extends ChangeNotifier {
       return media;
     }
     String suffix = _mediaSuffix(media.uri);
-    if (inspect &&
-        suffix.isEmpty &&
-        await _scriptIsPlaylist(media)
-            .timeout(const Duration(seconds: 3), onTimeout: () => false)) {
-      suffix = '.m3u8';
+    if (inspect && suffix.isEmpty) {
+      final detected = await _scriptFormat(media)
+          .timeout(const Duration(seconds: 3), onTimeout: () => '');
+      if (detected.isNotEmpty) suffix = detected;
+    }
+    if (appleHls &&
+        ['.mkv', '.webm', '.mpd', '.avi', '.flv', '.wmv'].contains(suffix)) {
+      throw UnsupportedError(
+        '当前内核无法打开该媒体：${suffix.substring(1).toUpperCase()} 封装需要 MPV 或 MDK',
+      );
     }
     if (!force && !enabled && !_loopback(media.uri) && suffix != '.m3u8') {
       return media;
@@ -169,27 +175,54 @@ class VideoDiskCache extends ChangeNotifier {
   // Some resolvers serve an HLS playlist from a PHP URL with an image MIME type.
   // Only a positive content signature changes routing. Stop after the prefix,
   // including when a progressive origin ignores Range.
-  Future<bool> _scriptIsPlaylist(PlayerMedia media) async {
+  Future<String> _scriptFormat(PlayerMedia media) async {
+    final key = _key(media, -1);
+    final cached = _detectedFormats[key];
+    if (cached != null) return cached;
     try {
       final response = await _request(media, null);
       final prefix = BytesBuilder();
       await for (final chunk in response.timeout(const Duration(seconds: 3))) {
-        prefix.add(chunk.take(16 - prefix.length).toList());
-        if (prefix.length >= 16) break;
+        prefix.add(chunk.take(1024 - prefix.length).toList());
+        if (prefix.length >= 1024) break;
       }
-      return response.statusCode ~/ 100 == 2 &&
-          utf8
-              .decode(prefix.takeBytes(), allowMalformed: true)
-              .trimLeft()
-              .startsWith('#EXTM3U');
+      if (response.statusCode ~/ 100 != 2) return '';
+      final format = detectFormat(prefix.takeBytes());
+      if (format.isNotEmpty) {
+        if (_detectedFormats.length >= 128) {
+          _detectedFormats.remove(_detectedFormats.keys.first);
+        }
+        _detectedFormats[key] = format;
+      }
+      return format;
     } catch (_) {
-      return false;
+      return '';
     }
+  }
+
+  @visibleForTesting
+  static String detectFormat(List<int> prefix) {
+    if (prefix.length >= 4 &&
+        prefix[0] == 0x1a &&
+        prefix[1] == 0x45 &&
+        prefix[2] == 0xdf &&
+        prefix[3] == 0xa3) {
+      return '.mkv';
+    }
+    final text = utf8
+        .decode(prefix, allowMalformed: true)
+        .replaceFirst('\uFEFF', '')
+        .trimLeft();
+    if (text.startsWith('#EXTM3U')) return '.m3u8';
+    if (RegExp(r'<(?:[A-Za-z0-9_]+:)?MPD(?:\s|>)').hasMatch(text)) {
+      return '.mpd';
+    }
+    return '';
   }
 
   static String _mediaSuffix(Uri uri) =>
       RegExp(
-        r'\.(?:m3u8|ts|mp4|m4s|mkv|mov|m4a|aac|ac3|mp3|vtt|webvtt|key|webm|flv|avi|wmv|m2ts)$',
+        r'\.(?:m3u8|mpd|ts|mp4|m4s|mkv|mov|m4a|aac|ac3|mp3|vtt|webvtt|key|webm|flv|avi|wmv|m2ts)$',
       ).stringMatch(uri.path.toLowerCase()) ??
       '';
 
@@ -282,7 +315,14 @@ class VideoDiskCache extends ChangeNotifier {
 
   Future<void> _start() async {
     _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    _server!.listen((request) => unawaited(_handle(request)));
+    _server!.listen(
+      (request) => unawaited(
+        _handle(request).catchError((Object _) {
+          // Client cancellation and origin failures must never escape the server task.
+          PlaybackDiagnostics.record('cache-request-interrupted');
+        }),
+      ),
+    );
   }
 
   /// Extra disk read-ahead is one serial task, only while current playback has
@@ -748,11 +788,13 @@ class VideoDiskCache extends ChangeNotifier {
       }
       body.add(chunk);
     }
-    return body.takeBytes();
+    final bytes = body.takeBytes();
+    return Uint8List.sublistView(bytes, transportStreamImagePrefix(bytes));
   }
 
   Future<void> _handle(HttpRequest request) async {
     final response = request.response;
+    var streaming = false;
     try {
       final media = _tickets[request.uri.path.substring(1)];
       if (media == null) {
@@ -788,9 +830,10 @@ class VideoDiskCache extends ChangeNotifier {
         return;
       }
       var start = match == null || match[1]!.isEmpty ? 0 : int.parse(match[1]!);
+      final segment = path.endsWith('.ts');
       var block = await _read(
         media,
-        path.endsWith('.m3u8') ? 0 : start,
+        path.endsWith('.m3u8') || segment ? 0 : start,
         playlist: path.endsWith('.m3u8'),
       );
       if (_playlist(block)) {
@@ -938,27 +981,24 @@ class VideoDiskCache extends ChangeNotifier {
         if (request.method != 'HEAD') response.add(body);
         return;
       }
+      final prefixBytes = segment ? transportStreamImagePrefix(block.data) : 0;
+      final mediaTotal = block.total - prefixBytes;
       if (match != null && match[1]!.isEmpty) {
-        start = max(0, block.total - int.parse(match[2]!));
-        block = await _read(media, start);
+        start = max(0, mediaTotal - int.parse(match[2]!));
       }
       final end = match == null || match[2]!.isEmpty || match[1]!.isEmpty
-          ? block.total - 1
-          : min(int.parse(match[2]!), block.total - 1);
-      if (start >= block.total || end < start) {
+          ? mediaTotal - 1
+          : min(int.parse(match[2]!), mediaTotal - 1);
+      if (start >= mediaTotal || end < start) {
         response.statusCode = 416;
-        response.headers.set('Content-Range', 'bytes */${block.total}');
+        response.headers.set('Content-Range', 'bytes */$mediaTotal');
         return;
       }
       response.statusCode = match == null ? 200 : 206;
-      final segment = request.uri.path.endsWith('.ts');
       response.headers.set('Content-Type', segment ? 'video/mp2t' : block.mime);
       response.headers.set('Accept-Ranges', 'bytes');
       if (match != null) {
-        response.headers.set(
-          'Content-Range',
-          'bytes $start-$end/${block.total}',
-        );
+        response.headers.set('Content-Range', 'bytes $start-$end/$mediaTotal');
       }
       if (block.encoding != null) {
         response.headers.set('Content-Encoding', block.encoding!);
@@ -967,7 +1007,12 @@ class VideoDiskCache extends ChangeNotifier {
       if (request.method == 'HEAD') return;
       final total = block.total;
       final validator = block.validator;
-      while (start <= end) {
+      start += prefixBytes;
+      final physicalEnd = end + prefixBytes;
+      if (start < block.start || start >= block.start + block.data.length) {
+        block = await _read(media, start);
+      }
+      while (start <= physicalEnd) {
         if (block.total != total ||
             (validator != null &&
                 block.validator != null &&
@@ -975,18 +1020,26 @@ class VideoDiskCache extends ChangeNotifier {
           throw const HttpException('媒体已变化，请重新加载');
         }
         final offset = start - block.start;
-        final length = min(block.data.length - offset, end - start + 1);
+        final length = min(block.data.length - offset, physicalEnd - start + 1);
         if (length <= 0) throw const HttpException('媒体代理没有返回后续数据');
         response.add(block.data.sublist(offset, offset + length));
+        streaming = true;
         await response.flush();
         start += length;
         _positions[media.uri] = (next: start, total: total);
         while (_positions.length > 128) {
           _positions.remove(_positions.keys.first);
         }
-        if (start <= end) block = await _read(media, start);
+        if (start <= physicalEnd) block = await _read(media, start);
       }
     } on _Passthrough {
+      if (streaming) {
+        PlaybackDiagnostics.record(
+          'cache-stream-interrupted',
+          error: '源在分段传输中改变了响应方式',
+        );
+        return;
+      }
       // Non-seekable/large responses remain playable without a disk promise.
       final media = _tickets[request.uri.path.substring(1)]!;
       final upstream = await _request(media, request.headers.value('range'));
@@ -1012,7 +1065,14 @@ class VideoDiskCache extends ChangeNotifier {
         await upstream.drain<void>();
       }
     } on _UpstreamStatus catch (error) {
-      response.statusCode = error.status;
+      // The first range may have been sent before the next range returned 403
+      // or 404. HTTP cannot replace an already-sent status; close the partial
+      // response and let the player re-resolve the source instead.
+      if (!streaming) {
+        try {
+          response.statusCode = error.status;
+        } catch (_) {}
+      }
     } catch (_) {
       // Never include source URLs, cookies or tokens in HTTP error bodies.
       try {
@@ -1049,6 +1109,7 @@ class VideoDiskCache extends ChangeNotifier {
 
   Future<void> close() async {
     _bypassed.clear();
+    _detectedFormats.clear();
     _progressNotice?.cancel();
     _ticketKeys.clear();
     _ready = false;
