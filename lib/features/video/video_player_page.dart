@@ -1293,6 +1293,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
           _settings.kernel == PlayerKernel.avplayer &&
           _catalog.isAvailable(PlayerKernel.mpv) &&
           (error.contains('-12939') ||
+              error.contains('-12847') ||
+              error.contains('this media format is not supported') ||
+              error.contains('该视频的格式或编码不被当前内核支持') ||
               error.contains('byte range and no content length') ||
               error.contains('服务器不支持分段请求') ||
               error.contains('server is not correctly configured'))) {

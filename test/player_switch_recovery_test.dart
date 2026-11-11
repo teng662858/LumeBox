@@ -197,6 +197,28 @@ void main() {
     expect(find.text('源站拒绝了访问'), findsOneWidget);
   });
 
+  testWidgets('AVPlayer 报媒体格式不支持时自动接续 MPV', (tester) async {
+    final created = <_FakePlayer>[];
+    await pumpVideo(
+      tester,
+      factory: (kernel) {
+        final player = _FakePlayer(kernel);
+        created.add(player);
+        return player;
+      },
+    );
+    created.first.emit(
+      error: 'Failed to load video: This media format is not supported (OSStatus error -12847.)',
+    );
+    await tester.pumpAndSettle();
+    expect(created.map((p) => p.kernel), [
+      PlayerKernel.avplayer,
+      PlayerKernel.mpv,
+    ]);
+    expect(created.first.disposals, 1);
+    expect(created.last.plays, greaterThan(0));
+  });
+
   group('控制栏在任何状态下都在', () {
     testWidgets('内核起不来：给出「重试 / 切回 AVPlayer」，齿轮与地址栏仍在', (tester) async {
       // 工厂对两个内核都返回 null（模拟底层完全起不来）。
