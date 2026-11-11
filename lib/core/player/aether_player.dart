@@ -267,9 +267,12 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
     try {
       final data = await _invoke<Map<Object?, Object?>>('snapshot');
       if (_disposed || data == null || generation != _generation) return;
+      if (data['generation'] is num && data['generation'] != generation) return;
       _applySnapshot(data);
     } catch (error) {
-      if (!_disposed) _snapshot.value = PlayerSnapshot(error: '$error');
+      if (!_disposed && generation == _generation) {
+        _snapshot.value = PlayerSnapshot(error: '$error');
+      }
     } finally {
       _polling = false;
     }

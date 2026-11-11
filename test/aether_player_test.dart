@@ -13,6 +13,7 @@ void main() {
   final calls = <MethodCall>[];
   Completer<void>? loading;
   Completer<int>? creating;
+  var nativeGeneration = 0;
   setUp(() {
     calls.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -22,6 +23,7 @@ void main() {
         );
     loading = null;
     creating = null;
+    nativeGeneration = 0;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(AetherPlayer.channel, (call) async {
           calls.add(call);
@@ -29,10 +31,12 @@ void main() {
             case 'create':
               return creating == null ? 42 : await creating!.future;
             case 'load':
+              nativeGeneration = (call.arguments as Map)['generation'] as int;
               await loading?.future;
               return null;
             case 'snapshot':
               return <String, Object?>{
+                'generation': nativeGeneration,
                 'position': 12.5,
                 'duration': 100.0,
                 'playing': true,
@@ -192,6 +196,11 @@ void main() {
     expect(player.snapshot.value.error, contains('TimeoutException'));
     await Future<void>.delayed(Duration.zero);
     expect(calls.any((c) => c.method == 'stop'), isTrue);
+    // Older/native event-less sessions still poll after a cancelled load.
+    // Their old ready snapshot must not erase the timeout error.
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    expect(calls.any((c) => c.method == 'snapshot'), isTrue);
+    expect(player.snapshot.value.error, contains('TimeoutException'));
     await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .handlePlatformMessage(
           'lumebox/aether/42/events',
