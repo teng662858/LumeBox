@@ -159,6 +159,8 @@ class NextEpisodeBuffer {
     AbstractPlayer? Function(PlayerKernel) create, {
     VideoQuality? currentQuality,
     int? currentHeight,
+    Future<void> Function(DataSource source, SourceChapter chapter, int index)?
+    preloadExtras,
   }) async {
     if (!MediaPreload.instance.video || MediaPreload.instance.clearing) return;
     final key = _identity(target, settings.kernel);
@@ -218,6 +220,13 @@ class NextEpisodeBuffer {
       );
       final uri = chosen?.url ?? SourcePlayback.contentAddress(content);
       if (content == null || uri == null || stale()) return;
+      if (preloadExtras != null) {
+        unawaited(
+          token
+              .run(() => preloadExtras(source, chapter, index))
+              .catchError((Object _) {}),
+        );
+      }
       _qualityFloor = currentHeight ?? currentQuality?.resolutionRank ?? 0;
       _quality = chosen == null ? ' · 源未提供画质标签' : ' · ${chosen.label}';
       status = '地址已解析$_quality，正在准备播放器';

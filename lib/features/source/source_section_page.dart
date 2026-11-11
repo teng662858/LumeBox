@@ -280,6 +280,22 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
     if (imported == true && mounted) await _reload();
   }
 
+  Future<void> _editScript(SourceDescriptor source) async {
+    final script = await _manager.exportScript(source.id);
+    if (!mounted || script == null) return;
+    final imported = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute<bool>(
+        builder: (_) => SourceEditorPage(
+          section: widget.section,
+          manager: _manager,
+          initialScript: script,
+        ),
+      ),
+    );
+    if (imported == true && mounted) await _reload();
+  }
+
   /// 空态里的「导入源」：与右上角「+」同一个弹窗、同一套导入编排。
   Future<void> _import() async {
     final imported = await runSourceImport(
@@ -1147,6 +1163,7 @@ class _SourceSectionPageState extends State<SourceSectionPage> {
                       onRecover: source.broken ? () => _recover(source) : null,
                       onNetwork: () => _editNetwork(source),
                       onExport: () => _export(source),
+                      onEdit: () => _editScript(source),
                       onDelete: () => _delete(source),
                     ),
             ),
@@ -1227,7 +1244,15 @@ Color get _accentColor => LumeTheme.info;
 Color get _okColor => LumeTheme.success;
 
 /// 单个图源行上的操作。
-enum _SourceAction { rename, group, recover, network, exportScript, delete }
+enum _SourceAction {
+  rename,
+  group,
+  recover,
+  network,
+  edit,
+  exportScript,
+  delete,
+}
 
 class _SourceTile extends StatelessWidget {
   const _SourceTile({
@@ -1242,6 +1267,7 @@ class _SourceTile extends StatelessWidget {
     required this.onGroup,
     required this.onNetwork,
     required this.onExport,
+    required this.onEdit,
     required this.onDelete,
     this.onRecover,
   });
@@ -1273,6 +1299,7 @@ class _SourceTile extends StatelessWidget {
   final VoidCallback onNetwork;
 
   final VoidCallback onExport;
+  final VoidCallback onEdit;
 
   final VoidCallback onDelete;
 
@@ -1290,6 +1317,8 @@ class _SourceTile extends StatelessWidget {
           onNetwork();
         case _SourceAction.exportScript:
           onExport();
+        case _SourceAction.edit:
+          onEdit();
         case _SourceAction.delete:
           onDelete();
       }
@@ -1316,6 +1345,10 @@ class _SourceTile extends StatelessWidget {
       const PopupMenuItem<_SourceAction>(
         value: _SourceAction.exportScript,
         child: Text('导出脚本'),
+      ),
+      const PopupMenuItem<_SourceAction>(
+        value: _SourceAction.edit,
+        child: Text('编辑 / AI 修复'),
       ),
       const PopupMenuItem<_SourceAction>(
         value: _SourceAction.delete,

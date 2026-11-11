@@ -13,6 +13,8 @@ import '../settings/settings_ui.dart';
 import '../video/offline_video_server.dart';
 import '../video/video_download_center.dart';
 import '../video/video_player_page.dart';
+import '../video/video_play_target.dart';
+import '../../core/session/section.dart';
 import 'comic_download_center.dart';
 import 'comic_reader_page.dart';
 import 'offline_comic_source.dart';
@@ -105,8 +107,19 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
         uri: uri,
         title: '${task.title} · ${task.chapterTitle}',
       );
+      final library = await ReadingLibrary.open(Section.video);
+      final target = VideoPlayTarget(
+        sourceId: task.sourceId,
+        itemId: task.itemId,
+        title: task.title,
+        chapterIndex: task.chapterIndex,
+        chapterId: task.chapterId,
+        chapterTitle: task.chapterTitle,
+      );
       final prepared = await preparePlaybackRoute(
         media,
+        library: library,
+        target: target,
         stillActive: () => mounted,
       );
       if (!mounted) {
@@ -116,7 +129,12 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
       await Navigator.push(
         context,
         MaterialPageRoute<void>(
-          builder: (_) => VideoPlayerPage(media: media, prelaunch: prepared),
+          builder: (_) => VideoPlayerPage(
+            media: media,
+            prelaunch: prepared,
+            library: library,
+            target: target,
+          ),
         ),
       );
     } finally {

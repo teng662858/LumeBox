@@ -11,6 +11,9 @@ import '../comic/comic_reader_page.dart';
 import '../novel/novel_reader_page.dart';
 import '../video/video_detail_page.dart';
 import '../video/video_player_page.dart';
+import '../video/video_download_center.dart';
+import '../video/video_play_target.dart';
+import '../../core/player/abstract_player.dart';
 import '../video/video_resume_match.dart';
 import '../video/playback_entry_preparation.dart';
 import '../media/media_resource_router.dart';
@@ -265,6 +268,43 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
         final item = row.item!, progress = row.progress!;
         final library = await ReadingLibrary.open(row.section);
         if (!mounted || activeGeneration != generation) return;
+        if (progress is VideoProgress) {
+          final file = await VideoDownloadCenter.instance.completedPlayback(
+            item.sourceId,
+            item.itemId,
+            progress.chapterId,
+          );
+          if (!mounted || activeGeneration != generation) {
+            await file?.close();
+            return;
+          }
+          if (file != null) {
+            try {
+              await Navigator.push<void>(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => VideoPlayerPage(
+                    media: PlayerMedia(uri: file.uri, title: item.title),
+                    library: library,
+                    target: VideoPlayTarget(
+                      sourceId: item.sourceId,
+                      itemId: item.itemId,
+                      title: item.title,
+                      cover: item.cover,
+                      chapterIndex: progress.chapterIndex,
+                      chapterId: progress.chapterId,
+                      chapterTitle: progress.chapterTitle,
+                    ),
+                    sourceManager: manager(row.section),
+                  ),
+                ),
+              );
+            } finally {
+              await file.close();
+            }
+            return;
+          }
+        }
         final source = await manager(row.section)
             .open(item.sourceId)
             .timeout(const Duration(seconds: 15));

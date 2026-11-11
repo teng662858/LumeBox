@@ -6,6 +6,7 @@ import 'package:lume_box/core/media/media_library.dart';
 import 'package:lume_box/features/video/video_detail_page.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
 import 'package:lume_box/features/video/player_settings_sheet.dart';
+import 'package:lume_box/features/video/danmaku/danmaku_overlay.dart';
 
 import 'dart:io';
 
@@ -530,6 +531,7 @@ void main() {
   }
 
   testWidgets('临近结尾预加载下一集，选集接手同一实例且不再次下载或解析', (tester) async {
+    source.withComments = true;
     source.chapterList = const [
       SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
       SourceChapter(id: 'movie-1-e2', title: '第 2 集'),
@@ -596,6 +598,11 @@ void main() {
       'https://example.com/movie-1-e2.mp4',
     );
     expect(prepared.snapshot.value.playing, isFalse);
+    expect(
+      source.commentCalls.where((id) => id == 'movie-1-e2'),
+      hasLength(1),
+      reason: '切集前已预载下一集源弹幕',
+    );
     await tapWithDetailPlay(tester, find.text('选集'));
     await tester.pump();
     await tester.runAsync(() async {
@@ -612,6 +619,20 @@ void main() {
     expect(prepared.loads, 1, reason: '接手已装载实例，不重新load');
     expect(prepared.snapshot.value.playing, isTrue);
     expect(current.disposals, 1);
+    expect(
+      source.commentCalls.where((id) => id == 'movie-1-e2'),
+      hasLength(1),
+      reason: '接手命中弹幕缓存，不重复请求',
+    );
+    expect(
+      tester
+          .widget<DanmakuOverlay>(find.byType(DanmakuOverlay))
+          .track
+          .items
+          .single
+          .text,
+      'movie-1-e2 弹幕',
+    );
     await tester.pumpWidget(const SizedBox());
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 30)),
@@ -1638,7 +1659,22 @@ void main() {
 }
 
 /// 视频图源替身。
-class _VideoSource implements DataSource {
+class _VideoSource implements DataSource, DanmakuCapable {
+  bool withComments = false;
+  final commentCalls = <String>[];
+  @override
+  Future<Object?> danmaku({
+    required String itemId,
+    required String chapterId,
+  }) async {
+    commentCalls.add(chapterId);
+    return withComments
+        ? [
+            {'time': 1000, 'text': '$chapterId 弹幕'},
+          ]
+        : [];
+  }
+
   List<VideoQuality> Function(String)? qualitiesFor;
   @override
   final Section section = Section.video;

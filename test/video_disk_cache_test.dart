@@ -73,6 +73,13 @@ void main() {
         return;
       }
       if (pause != null) await pause!.future;
+      if (request.uri.path == '/ads.m3u8') {
+        request.response.write(
+          '#EXTM3U\n#EXTINF:1,\nmain.ts\n#EXT-X-CUE-OUT:1\n#EXTINF:1,\nad.ts\n#EXT-X-CUE-IN\n#EXTINF:1,\nnext.ts\n#EXT-X-ENDLIST\n',
+        );
+        await request.response.close();
+        return;
+      }
       if (failures > 0) {
         failures--;
         request.response.statusCode = 502;
@@ -222,6 +229,22 @@ void main() {
     },
   );
 
+  test('播放缓存代理过滤 HLS 广告且支持关闭，开关重启可恢复', () async {
+    final media = await cache.wrap(
+      PlayerMedia(uri: upstream.resolve('ads.m3u8')),
+    );
+    var result = await get(media.uri);
+    expect(utf8.decode(result.$2), isNot(contains('ad.ts')));
+    expect(RegExp('#EXTINF:').allMatches(utf8.decode(result.$2)).length, 2);
+    await cache.configure(skipHlsAds: false);
+    result = await get(media.uri);
+    expect(RegExp('#EXTINF:').allMatches(utf8.decode(result.$2)).length, 3);
+    final reloaded = VideoDiskCache();
+    await reloaded.boot(directory: root);
+    expect(reloaded.skipHlsAds, false);
+    await reloaded.close();
+  });
+
   test(
     'concurrent settings writes persist the final complete snapshot',
     () async {
@@ -232,7 +255,7 @@ void main() {
       final saved = jsonDecode(
         await File('${root.path}/video_buffer.json').readAsString(),
       );
-      expect(saved, {'enabled': false, 'capacityMb': 719});
+      expect(saved, {'enabled': false, 'skipHlsAds': true, 'capacityMb': 719});
     },
   );
 

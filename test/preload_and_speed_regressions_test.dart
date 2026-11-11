@@ -205,6 +205,29 @@ void main() {
     expect(player.disposals, 1);
   });
 
+  test('预载解析后提前请求下一集弹幕，弹幕失败不阻塞播放器', () async {
+    final buffer = NextEpisodeBuffer();
+    addTearDown(buffer.dispose);
+    final source = _Source(), player = _Player();
+    final seen = <String>[];
+    await buffer.prepare(
+      target,
+      const PlayerSettings(),
+      () async => source,
+      (_) => player,
+      preloadExtras: (actualSource, chapter, index) async {
+        expect(actualSource, same(source));
+        expect(index, 1);
+        seen.add(chapter.id);
+        throw StateError('弹幕服务不可用');
+      },
+    );
+    expect(seen, ['e2']);
+    final ready = buffer.take(target, 1, PlayerKernel.avplayer);
+    expect(ready?.player, same(player));
+    await player.dispose();
+  });
+
   test('手动下一集等待正在进行的预加载并接手同一个播放器', () async {
     final buffer = NextEpisodeBuffer();
     addTearDown(buffer.dispose);

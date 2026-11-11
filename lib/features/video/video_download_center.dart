@@ -19,7 +19,19 @@ import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/util/sensitive_data.dart';
 import 'source_playback.dart';
+import '../../core/player/hls_ad_filter.dart';
+import '../../core/player/video_disk_cache.dart';
 import 'video_download_merger.dart';
+import 'offline_video_server.dart';
+
+class DownloadedVideoPlayback {
+  DownloadedVideoPlayback(this.uri, [this.server]);
+  final Uri uri;
+  final OfflineVideoServer? server;
+  Future<void> close() async {
+    await server?.close();
+  }
+}
 
 class VideoDownloadTask {
   VideoDownloadTask({
@@ -35,9 +47,11 @@ class VideoDownloadTask {
     this.completed = 0,
     this.total = 0,
     this.fileName = '',
+    this.chapterIndex = 0,
     this.error,
   });
   final String id, sourceId, itemId, chapterId, title, chapterTitle;
+  final int chapterIndex;
   String state, fileName;
   String? error;
   int bytes, totalBytes, completed, total;
@@ -56,6 +70,7 @@ class VideoDownloadTask {
     'chapterId': chapterId,
     'title': title,
     'chapterTitle': chapterTitle,
+    'chapterIndex': chapterIndex,
     'state': state,
     'bytes': bytes,
     'totalBytes': totalBytes,
@@ -137,7 +152,10 @@ class VideoDownloadCenter extends ChangeNotifier {
               chapterId: '${m['chapterId']}',
               title: '${m['title']}',
               chapterTitle: '${m['chapterTitle']}',
-              state: m['state'] == 'done' ? 'done' : 'paused',
+              chapterIndex: (m['chapterIndex'] as num?)?.toInt() ?? 0,
+              state: ['done', 'merge_failed'].contains(m['state'])
+                  ? '${m['state']}'
+                  : 'paused',
               bytes: (m['bytes'] as num?)?.toInt() ?? 0,
               totalBytes: (m['totalBytes'] as num?)?.toInt() ?? 0,
               completed: (m['completed'] as num?)?.toInt() ?? 0,
@@ -156,11 +174,52 @@ class VideoDownloadCenter extends ChangeNotifier {
   String folder(VideoDownloadTask task) => p.join(root.path, task.id);
   File localFile(VideoDownloadTask task) =>
       File(p.join(folder(task), task.fileName));
+  Future<File?> completedFile(
+    String sourceId,
+    String itemId,
+    String chapterId,
+  ) async {
+    await boot();
+    final id = identity(sourceId, itemId, chapterId);
+    final task = tasks
+        .where(
+          (t) =>
+              t.id == id &&
+              (t.state == 'done' || t.state == 'merge_failed') &&
+              t.fileName.isNotEmpty,
+        )
+        .firstOrNull;
+    if (task == null) return null;
+    final file = localFile(task);
+    return await file.exists() ? file : null;
+  }
+
+  Future<DownloadedVideoPlayback?> completedPlayback(
+    String sourceId,
+    String itemId,
+    String chapterId,
+  ) async {
+    final file = await completedFile(sourceId, itemId, chapterId);
+    if (file == null) return null;
+    if (!file.path.endsWith('.m3u8')) return DownloadedVideoPlayback(file.uri);
+    final server = await OfflineVideoServer.open(file.parent);
+    return DownloadedVideoPlayback(
+      server.uri.replace(
+        pathSegments: [
+          ...server.uri.pathSegments.take(1),
+          p.basename(file.path),
+        ],
+      ),
+      server,
+    );
+  }
+
   Future<void> enqueue({
     required String sourceId,
     required String itemId,
     required String title,
     required List<SourceChapter> chapters,
+    Map<String, int> chapterIndices = const {},
   }) async {
     await boot();
     for (final chapter in chapters) {
@@ -181,6 +240,7 @@ class VideoDownloadCenter extends ChangeNotifier {
           chapterId: chapter.id,
           title: title,
           chapterTitle: chapter.title,
+          chapterIndex: chapterIndices[chapter.id] ?? 0,
           state: 'queued',
         ),
       );
@@ -677,6 +737,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     if (depth > 3 || !body.trimLeft().startsWith('#EXTM3U')) {
       throw StateError('播放清单格式无效');
     }
+    if (VideoDiskCache.instance.skipHlsAds) body = HlsAdFilter.filter(body);
     final lines = const LineSplitter().convert(body);
     final variants = <({String tag, String url, int bandwidth})>[];
     for (var i = 0; i < lines.length; i++) {

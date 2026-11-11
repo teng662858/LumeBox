@@ -107,6 +107,75 @@ void main() {
     });
   }
 
+  test('历史离线查找按源、作品和集数匹配，HLS 可播放且合并失败可重开', () async {
+    final c = VideoDownloadCenter(directory: () async => root);
+    await c.boot();
+    final task = VideoDownloadTask(
+      id: VideoDownloadCenter.identity('s', 'i', 'e'),
+      sourceId: 's',
+      itemId: 'i',
+      chapterId: 'e',
+      title: '测试',
+      chapterTitle: '第3集',
+      chapterIndex: 2,
+      state: 'merge_failed',
+      fileName: 'index.m3u8',
+    );
+    c.tasks.add(task);
+    await Directory(c.folder(task)).create(recursive: true);
+    await c
+        .localFile(task)
+        .writeAsString('#EXTM3U\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n');
+    await File('${c.folder(task)}/part.ts').writeAsBytes([1, 2, 3]);
+    expect(await c.completedPlayback('other', 'i', 'e'), isNull);
+    final playback = (await c.completedPlayback('s', 'i', 'e'))!;
+    final client = HttpClient();
+    final response = await (await client.getUrl(playback.uri)).close();
+    expect(await response.transform(utf8.decoder).join(), contains('part.ts'));
+    final part = await (await client.getUrl(playback.uri.resolve('part.ts')))
+        .close();
+    expect(await part.fold<List<int>>([], (a, b) => a..addAll(b)), [1, 2, 3]);
+    client.close(force: true);
+    await playback.close();
+    await c.flush();
+    await File('${c.root.path}/tasks.json')
+        .writeAsString(jsonEncode(c.tasks.map((t) => t.toJson()).toList()));
+    final restored = VideoDownloadCenter(directory: () async => root);
+    await restored.boot();
+    expect(restored.tasks.single.chapterIndex, 2);
+    expect(await restored.completedFile('s', 'i', 'e'), isNotNull);
+    restored.dispose();
+    task.state = 'paused';
+    expect(await c.completedFile('s', 'i', 'e'), isNull);
+    task.state = 'done';
+    await c.localFile(task).delete();
+    expect(await c.completedFile('s', 'i', 'e'), isNull);
+    c.dispose();
+  });
+
+  test('下载 HLS 跳过明确标记的广告，不请求广告分片', () async {
+    final requested = <String>[];
+    server.listen((request) async {
+      requested.add(request.uri.path);
+      if (request.uri.path == '/ad.m3u8') {
+        request.response.write(
+          '#EXTM3U\n#EXTINF:1,\nmain.ts\n#EXT-X-CUE-OUT:1\n#EXTINF:1,\nad.ts\n#EXT-X-CUE-IN\n#EXTINF:1,\nnext.ts\n#EXT-X-ENDLIST\n',
+        );
+      } else {
+        request.response.add([1, 2, 3]);
+      }
+      await request.response.close();
+    });
+    final c = await center('ad.m3u8');
+    await enqueue(c);
+    await until(() => c.tasks.single.state == 'merge_failed');
+    expect(requested, containsAll(['/main.ts', '/next.ts']));
+    expect(requested, isNot(contains('/ad.ts')));
+    expect(c.tasks.single.completed, 2);
+    await c.flush();
+    c.dispose();
+  });
+
   test(
     'unsupported playlists are rejected before any segments are scheduled',
     () {

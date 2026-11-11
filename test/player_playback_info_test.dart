@@ -5,6 +5,7 @@ import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/player_stats.dart';
 import 'package:lume_box/features/video/player_playback_info.dart';
 import 'package:lume_box/features/video/player_hud.dart';
+import 'package:lume_box/features/settings/ai_assistant_page.dart';
 
 void main() {
   testWidgets('播放诊断实时更新缓冲，复制时不包含签名地址', (tester) async {
@@ -61,6 +62,17 @@ void main() {
     );
     await tester.pump();
     expect(find.text('已缓冲：12.0 秒'), findsOneWidget);
+    await tester.tap(find.text('AI 诊断'));
+    await tester.pumpAndSettle();
+    final input = tester
+        .widget<AiAssistantPage>(find.byType(AiAssistantPage))
+        .input;
+    expect(input, contains('已缓冲：12.0 秒'));
+    expect(input, isNot(contains('test.m3u8')));
+    expect(input, isNot(contains('private')));
+    expect(input, isNot(contains('auth_key')));
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     await tester.tap(find.text('复制诊断信息'));
     await tester.pumpAndSettle();
     expect(copied, contains('实际内核：AVPlayer'));

@@ -475,6 +475,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       itemId: widget.item.id,
       title: widget.item.title,
       chapters: [for (final i in indices) episodes[i]],
+      chapterIndices: {for (final i in indices) episodes[i].id: i},
     );
     if (mounted) {
       ScaffoldMessenger.of(

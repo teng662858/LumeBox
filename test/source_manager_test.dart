@@ -272,7 +272,7 @@ void main() {
     for (final label in ['置顶此源', '源设置', '浏览', '测试连通性', '更新订阅源']) {
       expect(find.text(label), findsNothing);
     }
-    for (final label in ['重命名', '设置分组', '网络配置', '导出脚本', '删除']) {
+    for (final label in ['重命名', '设置分组', '网络配置', '导出脚本', '编辑 / AI 修复', '删除']) {
       expect(find.text(label), findsOneWidget);
     }
   });

@@ -109,6 +109,20 @@ void main() {
       return created;
     }
 
+    testWidgets('详情小窗下拉进入全屏，保持同一播放器和进度', (tester) async {
+      final players = await pumpVideo(tester, available: {PlayerKernel.mpv});
+      final gesture = find.byWidgetPredicate(
+        (w) => w is GestureDetector && w.onPanUpdate != null,
+      );
+      expect(gesture, findsOneWidget);
+      await tester.drag(gesture, const Offset(0, 110));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('退出全屏'), findsOneWidget);
+      expect(players, hasLength(1));
+      expect(players.single.calls.where((c) => c == 'load').length, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
     testWidgets('首次起播只装载媒体一次，不重复重置视频画面', (tester) async {
       final players = await pumpVideo(tester, available: {PlayerKernel.mpv});
       expect(players.single.calls.where((c) => c == 'load').length, 1);

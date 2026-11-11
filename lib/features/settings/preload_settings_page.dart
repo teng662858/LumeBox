@@ -129,6 +129,16 @@ class _PreloadSettingsPageState extends State<PreloadSettingsPage> {
                         await VideoDiskCache.instance.configure(enabled: v);
                       },
               ),
+              SwitchListTile(
+                title: const Text('自动跳过 HLS 插播广告'),
+                subtitle: const Text(
+                  '跳过有明确 CUE-OUT / CUE-IN 标记的点播广告段；加密、直播及无标记广告保持原样。重新加载生效，也用于新下载。',
+                ),
+                value: VideoDiskCache.instance.skipHlsAds,
+                onChanged: busy
+                    ? null
+                    : (v) => VideoDiskCache.instance.configure(skipHlsAds: v),
+              ),
               NumberSettingTile(
                 title: '视频磁盘容量上限',
                 value: VideoDiskCache.instance.capacityMb,

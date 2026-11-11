@@ -29,6 +29,7 @@ import 'dart:convert';
 import '../../core/player/playback_diagnostics.dart';
 import 'video_episode_catalog.dart';
 import 'player_settings_panel.dart';
+import '../../core/net/network_cancellation.dart';
 import '../../shared/widgets/native_glass_controls.dart';
 import 'danmaku/danmaku_panel.dart';
 import 'danmaku/danmaku_match_sheet.dart';
@@ -1340,6 +1341,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
               sourceId: target.sourceId,
               itemId: target.itemId,
               title: target.title,
+              chapterIndices: {
+                for (var i = 0; i < line.length; i++) line[i].id: i,
+              },
               chapters: line
                   .skip(index + 1)
                   .take(
@@ -1491,6 +1495,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
                 ((kernel) => PlayerFactory.create(kernel: kernel)),
             currentQuality: _qualities.elementAtOrNull(_qualityIndex),
             currentHeight: _player?.stats.value.height,
+            preloadExtras: (source, chapter, index) =>
+                _preloadEpisodeDanmaku(source, target, chapter, index),
           ),
         );
       }
@@ -2696,8 +2702,72 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     }
   }
 
+  /// Prepare source and public comments without changing the visible episode.
+  Future<void> _preloadEpisodeDanmaku(
+    DataSource source,
+    VideoPlayTarget target,
+    SourceChapter chapter,
+    int index,
+  ) async {
+    final key = _danmakuKey(target);
+    final cancellation = NetworkCancellation.current;
+    bool active() =>
+        mounted &&
+        _target?.identity == target.identity &&
+        !(cancellation?.isCancelled ?? false);
+    await Future.wait<void>([
+      () async {
+        if (source is! DanmakuCapable ||
+            _sourceDanmakuCache.get(key, chapter.id) != null) {
+          return;
+        }
+        try {
+          final track = DanmakuTrack.parse(
+            await (source as DanmakuCapable).danmaku(
+              itemId: target.itemId,
+              chapterId: chapter.id,
+            ),
+          );
+          if (active()) _sourceDanmakuCache.put(key, chapter.id, track);
+        } catch (_) {
+          /* Optional source comments must not interrupt playback. */
+        }
+      }(),
+      () async {
+        DandanplayClient? client;
+        try {
+          final config = await DandanplayCredentials.load();
+          if (!active() || config.official && !config.configured) return;
+          final cacheKey = '${config.baseUrl}:$key';
+          if (_publicDanmakuCache.get(cacheKey, chapter.id) != null) return;
+          client = DandanplayClient(credentials: config);
+          _danmakuClients.add(client);
+          final number = DandanplayClient.episodeNumber(
+            chapter.title,
+            chapterIndex: index,
+          );
+          final matches = await client.search(target.title, episode: number);
+          final match = DandanplayClient.exactMatch(
+            matches,
+            target.title,
+            episode: number,
+          );
+          if (match == null || !active()) return;
+          final track = await client.comments(match.id);
+          if (active() && !track.isEmpty) {
+            _publicDanmakuCache.put(cacheKey, chapter.id, track);
+          }
+        } catch (_) {
+          /* Retry through normal episode loading on a miss. */
+        } finally {
+          _danmakuClients.remove(client);
+          client?.close();
+        }
+      }(),
+    ]);
+  }
+
   /// 加载本集弹幕：先查内存缓存，再问图源契约（`danmaku({id, chapterId})`）。
-  ///
   /// 弹幕是**可选能力**：图源没实现、网络失败、格式不符都只是「这集没弹幕」，
   /// 绝不能影响播放——因此全程静默降级，只记日志。
   Future<void> _loadDanmaku(
@@ -3767,6 +3837,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
     final start = _localPositionOf(origin, size);
     final totalDx = current.dx - start.dx;
     final totalDy = current.dy - start.dy;
+
+    if (!_fullscreen &&
+        _gestureStartFraction > .34 &&
+        _gestureStartFraction < .66 &&
+        totalDy > totalDx.abs()) {
+      if (totalDy > 72 && !_swipeNextFired) {
+        _swipeNextFired = true;
+        _endBoost();
+        _gesture = PlayerGestureState.idle;
+        _setFullscreen(true);
+      }
+      return;
+    }
 
     // 竖屏短剧：画面中间带的上滑切下一集（开关打开时才拦截；两侧仍是亮度/音量）。
     // 必须在意图判定之前吃掉竖直位移，否则第一次 update 就会被判成音量手势。

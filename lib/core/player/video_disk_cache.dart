@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'abstract_player.dart';
+import 'hls_ad_filter.dart';
 import 'apple_hls_fragments.dart';
 import 'av_player.dart';
 import 'aether_player.dart';
@@ -56,6 +57,7 @@ class VideoDiskCache extends ChangeNotifier {
   Future<void>? _starting;
   Future<void> _diskTail = Future.value();
   bool enabled = true, _ready = false, _clearing = false, _diskAvailable = true;
+  bool skipHlsAds = true;
   int capacityMb = 1024, bytes = 0, hits = 0, downloadedBytes = 0;
   int _generation = 0;
   DateTime? _spaceChecked;
@@ -76,6 +78,7 @@ class VideoDiskCache extends ChangeNotifier {
       try {
         final p = jsonDecode(await _settings!.readAsString()) as Map;
         enabled = p['enabled'] != false;
+        skipHlsAds = p['skipHlsAds'] != false;
         final capacity = p['capacityMb'];
         if (capacity is num && capacity.isFinite) {
           capacityMb = capacity.toInt().clamp(minCapacityMb, maxCapacityMb);
@@ -99,14 +102,20 @@ class VideoDiskCache extends ChangeNotifier {
     _ready = true;
   }
 
-  Future<void> configure({bool? enabled, int? capacityMb}) async {
+  Future<void> configure({
+    bool? enabled,
+    int? capacityMb,
+    bool? skipHlsAds,
+  }) async {
     this.enabled = enabled ?? this.enabled;
+    this.skipHlsAds = skipHlsAds ?? this.skipHlsAds;
     if (capacityMb != null) {
       this.capacityMb = capacityMb.clamp(minCapacityMb, maxCapacityMb);
     }
     final settings = _settings;
     final encoded = jsonEncode({
       'enabled': this.enabled,
+      'skipHlsAds': this.skipHlsAds,
       'capacityMb': this.capacityMb,
     });
     try {
@@ -832,7 +841,10 @@ class VideoDiskCache extends ChangeNotifier {
           if (decoded.length > blockBytes) throw const HttpException('媒体清单过大');
         }
         final lines = <String>[];
-        final manifestText = utf8.decode(decoded.takeBytes());
+        final rawManifest = utf8.decode(decoded.takeBytes());
+        final manifestText = skipHlsAds
+            ? HlsAdFilter.filter(rawManifest)
+            : rawManifest;
         final master = manifestText.contains('#EXT-X-STREAM-INF:');
         final mapped = manifestText.contains('#EXT-X-MAP:');
         final original = const LineSplitter().convert(manifestText);

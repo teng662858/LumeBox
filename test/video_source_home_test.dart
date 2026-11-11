@@ -22,6 +22,8 @@ import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/reading/section_image.dart';
 import 'package:lume_box/features/video/video_page.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
+import 'package:lume_box/features/video/video_download_center.dart';
+import 'package:lume_box/features/video/video_player_settings.dart';
 
 import 'support/fake_source_manager.dart';
 
@@ -59,7 +61,13 @@ void main() {
           const MethodChannel('lumebox/mediaTracks'),
           (_) async => {'known': true, 'audio': true, 'video': true},
         );
-    await ReadingLibrary.open(video);
+    final library = await ReadingLibrary.open(video);
+    // These routing fixtures use fake media, so they must not start real probes.
+    library.setSetting(
+      VideoPlayerSettingsStore.keyBackgroundSourceValidation,
+      'false',
+    );
+    library.setSetting(VideoPlayerSettingsStore.keyControlStyle, 'text');
     source = _VideoSource();
     manager = FakeSourceManager(
       sources: const <SourceDescriptor>[
@@ -107,6 +115,69 @@ void main() {
     await tester.pumpAndSettle();
     return created;
   }
+
+  testWidgets('历史记录优先打开已下载文件，不请求源详情和播放地址', (tester) async {
+    final library = ReadingLibrary.find(video)!;
+    library.recordHistoryItem(
+      sourceId: 'demo-video',
+      itemId: 'offline',
+      title: '离线影片',
+    );
+    final progress = VideoProgress(
+      section: video,
+      sourceId: 'demo-video',
+      itemId: 'offline',
+      chapterId: 'e3',
+      chapterIndex: 2,
+      chapterTitle: '第3集',
+      position: const Duration(seconds: 40),
+      duration: const Duration(minutes: 2),
+      updatedAt: DateTime.now(),
+    );
+    library.saveProgress(progress);
+    final downloads = VideoDownloadCenter.instance;
+    final task = VideoDownloadTask(
+      id: VideoDownloadCenter.identity('demo-video', 'offline', 'e3'),
+      sourceId: 'demo-video',
+      itemId: 'offline',
+      chapterId: 'e3',
+      title: '离线影片',
+      chapterTitle: '第3集',
+      chapterIndex: 2,
+      state: 'done',
+      fileName: 'movie.mp4',
+    );
+    await tester.runAsync(() async {
+      await downloads.boot();
+      downloads.tasks.add(task);
+      await Directory(downloads.folder(task)).create(recursive: true);
+      await downloads.localFile(task).writeAsBytes([1, 2, 3]);
+    });
+    addTearDown(() => downloads.tasks.remove(task));
+    final created = await pumpBoard(tester);
+    await tester.tap(find.text('历史'));
+    await tester.pumpAndSettle();
+    final history = tester.widget<ReadingHistorySheet>(
+      find.byType(ReadingHistorySheet),
+    );
+    history.onResume(library.history().single, progress);
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(VideoPlayerPage), findsOneWidget);
+    expect(created.single.media?.uri, downloads.localFile(task).uri);
+    expect(source.chapterCalls, isEmpty);
+    expect(source.contentCalls, isEmpty);
+    expect(
+      tester
+          .widget<VideoPlayerPage>(find.byType(VideoPlayerPage))
+          .target
+          ?.chapterId,
+      'e3',
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets('首页就是图源展示页：列表直接可见，播放器不占首页', (tester) async {
     source.items = const <SourceItem>[
@@ -258,7 +329,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('https://example.com/demo.mp4'), findsNothing);
-    await tester.tap(find.byTooltip('播放信息'));
+    await tester.tap(find.byTooltip('更多').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('播放信息'));
     await tester.pumpAndSettle();
     expect(find.text('复制地址'), findsOneWidget);
   });
@@ -299,7 +372,10 @@ void main() {
       created.single.media?.uri.toString(),
       'https://example.com/movie-1-e2.mp4',
     );
-    expect(source.contentCalls.single, ('movie-1', 'movie-1-e2'));
+    expect(source.contentCalls, [
+      ('movie-1', 'movie-1-e1'),
+      ('movie-1', 'movie-1-e2'),
+    ], reason: '先探测首集内容类型，再解析用户选择的第二集，各一次');
   });
 
   testWidgets('站内路径 id（/watch?v=…）不能当成本地文件：走剧集 + 内容取地址（真机 -17913 回归）', (
@@ -606,10 +682,13 @@ Future<void> tapWithDetailPlay(
       .evaluate()
       .isNotEmpty;
   await tester.tap(finder, warnIfMissed: warnIfMissed);
-  await tester.pump();
-  await tester.runAsync(() async {
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-  });
+  // Prelaunch waits for endOfFrame while source/settings I/O uses the real clock.
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 60)),
+    );
+  }
   await tester.pumpAndSettle();
   if (find.byType(VideoDetailPage).evaluate().isNotEmpty) {
     final chips = find.descendant(
@@ -622,10 +701,12 @@ Future<void> tapWithDetailPlay(
           tester.widget<FilledButton>(play).onPressed != null) {
         await tester.ensureVisible(play);
         await tester.tap(play);
-        await tester.pump();
-        await tester.runAsync(() async {
-          await Future<void>.delayed(const Duration(milliseconds: 30));
-        });
+        for (var i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 60)),
+          );
+        }
         await tester.pumpAndSettle();
       }
     }

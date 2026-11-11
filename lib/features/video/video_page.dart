@@ -25,6 +25,7 @@ import '../reading/explore_view.dart';
 import '../reading/history_sheet.dart';
 import '../reading/source_filter_page.dart';
 import 'video_play_target.dart';
+import 'video_download_center.dart';
 import 'video_player_page.dart';
 import 'video_player_settings.dart';
 
@@ -306,18 +307,50 @@ class _VideoPageState extends State<VideoPage> {
     );
   }
 
-  Future<void> _resumeFromProgress(LibraryItem item, VideoProgress progress) =>
-      _playFromSelection(
-        ExploreSelection(
-          sourceId: item.sourceId,
-          item: SourceItem(
-            id: item.itemId,
+  Future<void> _resumeFromProgress(
+    LibraryItem item,
+    VideoProgress progress,
+  ) async {
+    final file = await VideoDownloadCenter.instance.completedPlayback(
+      item.sourceId,
+      item.itemId,
+      progress.chapterId,
+    );
+    if (!mounted) {
+      await file?.close();
+      return;
+    }
+    if (file != null) {
+      try {
+        await _openPlayer(
+          PlayerMedia(uri: file.uri, title: item.title),
+          target: VideoPlayTarget(
+            sourceId: item.sourceId,
+            itemId: item.itemId,
             title: item.title,
             cover: item.cover,
-            subtitle: item.subtitle,
+            chapterIndex: progress.chapterIndex,
+            chapterId: progress.chapterId,
+            chapterTitle: progress.chapterTitle,
           ),
+        );
+      } finally {
+        await file.close();
+      }
+      return;
+    }
+    await _playFromSelection(
+      ExploreSelection(
+        sourceId: item.sourceId,
+        item: SourceItem(
+          id: item.itemId,
+          title: item.title,
+          cover: item.cover,
+          subtitle: item.subtitle,
         ),
-      );
+      ),
+    );
+  }
 
   // ------------------------------------------------------------------ 历史
 
