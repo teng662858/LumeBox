@@ -509,6 +509,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
   bool _returnedFromBackground = false;
   bool _recoveringPlayback = false;
   bool _rangeFallbackAttempted = false;
+  bool _kernelFallbackInFlight = false;
   final Set<String> _recoveryLines = {};
   bool _autoRecovering = false;
   final _stallGuard = PlaybackStallGuard();
@@ -1301,14 +1302,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage>
       }
       if (canFallback) {
         _rangeFallbackAttempted = true;
+        _kernelFallbackInFlight = true;
         // 快照通知期间不能同步释放发出通知的播放器。
         scheduleMicrotask(() async {
-          if (!mounted || _settings.kernel != PlayerKernel.avplayer) return;
-          _showToast('当前媒体与 AVPlayer 不兼容，正在切换 MPV');
-          await _applySettings(
-            _settings.copyWith(kernel: PlayerKernel.mpv),
-            autoPlayAfterKernelSwitch: true,
-          );
+          try {
+            if (!mounted || _settings.kernel != PlayerKernel.avplayer) return;
+            _showToast('当前媒体与 AVPlayer 不兼容，正在切换 MPV');
+            await _applySettings(
+              _settings.copyWith(kernel: PlayerKernel.mpv),
+              autoPlayAfterKernelSwitch: true,
+            );
+          } finally {
+            _kernelFallbackInFlight = false;
+            if (mounted && _player?.snapshot.value.error != null) {
+              unawaited(_recoverAlternative());
+            }
+          }
         });
       }
     }

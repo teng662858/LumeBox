@@ -131,6 +131,8 @@ extension _RouteTools on _VideoPlayerPageState {
 
   Future<void> _recoverAlternative({bool stalled = false}) async {
     if (_autoRecovering ||
+        _kernelFallbackInFlight ||
+        (!stalled && _player?.snapshot.value.error == null) ||
         _switchingQuality ||
         _advancing ||
         _recoveringPlayback ||
