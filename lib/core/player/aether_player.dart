@@ -38,6 +38,7 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
   Completer<void>? _bufferingPending;
   StreamSubscription<Object?>? _events;
   Future<void> _pending = Future<void>.value();
+  Completer<void>? _loadCancelled;
 
   Future<int> _create() async {
     await LumeLog.playbackCheckpoint('[aether] 开始创建原生播放器');
@@ -127,6 +128,8 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
   @override
   Future<void> load(PlayerMedia media) => _enqueue(() async {
     final generation = ++_generation;
+    final cancelled = Completer<void>();
+    _loadCancelled = cancelled;
     _mediaInitialized = false;
     _snapshot.value = const PlayerSnapshot(buffering: true);
     _stats.value = const PlayerStats(engineLabel: 'AetherEngine');
@@ -143,12 +146,15 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
       await LumeLog.playbackCheckpoint(
         '[aether] 原生装载开始 · ${uri.path.endsWith('.m3u8') ? 'HLS' : '媒体文件'}',
       );
-      await _invoke<Object?>('load', {
-        'generation': generation,
-        'url': uri.toString(),
-        'headers': media.headers ?? const <String, String>{},
-        'options': _options,
-      }).timeout(mediaLoadTimeout);
+      await Future.any<Object?>([
+        _invoke<Object?>('load', {
+          'generation': generation,
+          'url': uri.toString(),
+          'headers': media.headers ?? const <String, String>{},
+          'options': _options,
+        }),
+        cancelled.future,
+      ]).timeout(mediaLoadTimeout);
       if (_disposed || generation != _generation) return;
       _mediaInitialized = true;
       await LumeLog.playbackCheckpoint('[aether] 原生装载返回');
@@ -181,9 +187,17 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
     await _refresh();
   });
   @override
-  Future<void> stop() => _enqueue(() async {
+  Future<void> stop() async {
+    final generation = ++_generation;
+    _mediaInitialized = false;
+    if (_loadCancelled?.isCompleted == false) _loadCancelled!.complete();
+    // Stop is cancellation, so it cannot wait behind the load it must cancel.
     await _invoke<Object?>('stop');
-  });
+    if (!_disposed && generation == _generation) {
+      _snapshot.value = const PlayerSnapshot();
+    }
+  }
+
   @override
   Future<void> setVolume(double volume) => _enqueue(() async {
     await _invoke<Object?>('volume', {'value': volume.clamp(0.0, 1.0)});
@@ -314,11 +328,13 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
   Widget buildView() => FutureBuilder<int>(
     future: _created,
     builder: (context, state) => state.hasData && !_disposed
-        ? UiKitView(
-            key: ValueKey(state.data),
-            viewType: 'lumebox/aether_view',
-            creationParams: {'id': state.data},
-            creationParamsCodec: const StandardMessageCodec(),
+        ? IgnorePointer(
+            child: UiKitView(
+              key: ValueKey(state.data),
+              viewType: 'lumebox/aether_view',
+              creationParams: {'id': state.data},
+              creationParamsCodec: const StandardMessageCodec(),
+            ),
           )
         : const SizedBox.shrink(),
   );
@@ -328,6 +344,7 @@ class AetherPlayer extends AbstractPlayer implements PresentationEngine {
     if (_disposed) return;
     _disposed = true;
     _generation++;
+    if (_loadCancelled?.isCompleted == false) _loadCancelled!.complete();
     _timer?.cancel();
     _bufferingTimer?.cancel();
     _bufferingPending?.complete();

@@ -464,11 +464,10 @@ NS_INLINE CGFloat radiansToDegrees(CGFloat radians) {
 
 - (void)seekTo:(NSInteger)position completion:(void (^)(FlutterError *_Nullable))completion {
   CMTime targetCMTime = CMTimeMake(position, 1000);
-  CMTimeValue duration = _player.currentItem.asset.duration.value;
   // Without adding tolerance when seeking to duration,
   // seekToTime will never complete, and this call will hang.
   // see issue https://github.com/flutter/flutter/issues/124475.
-  CMTime tolerance = position == duration ? CMTimeMake(1, 1000) : kCMTimeZero;
+  CMTime tolerance = position == self.duration ? CMTimeMake(1, 1000) : kCMTimeZero;
   // Lume Box 本地补丁：宿主写入的 seek 容差（拖动预览用大容差跳关键帧）。
   // 未写入或为 0 时与上游完全一致（精确 seek）。
   NSNumber *toleranceMs = [[NSUserDefaults standardUserDefaults]
@@ -724,10 +723,10 @@ NS_INLINE CGFloat radiansToDegrees(CGFloat radians) {
 #pragma mark - Private
 
 - (int64_t)duration {
-  // Note: https://openradar.appspot.com/radar?id=4968600712511488
-  // `[AVPlayerItem duration]` can be `kCMTimeIndefinite`,
-  // use `[[AVPlayerItem asset] duration]` instead.
-  return FVPCMTimeToMillis([[[_player currentItem] asset] duration]);
+  // A ready HLS item need not have loaded asset.duration. Reading it here can
+  // synchronously fetch remote metadata on the platform thread, freezing every
+  // control (including switching kernels). Prefer the item's already known time.
+  return FVPCMTimeToMillis([FVPLumeBuffering knownDurationForItem:_player.currentItem]);
 }
 
 @end

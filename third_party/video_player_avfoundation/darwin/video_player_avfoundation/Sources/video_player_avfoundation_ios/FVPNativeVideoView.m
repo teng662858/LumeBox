@@ -36,6 +36,7 @@ static char inlineLayerKey;
 - (instancetype)initWithPlayer:(AVPlayer *)player {
   if (self = [super init]) {
     _playerView = [[FVPPlayerView alloc] init];
+    _playerView.userInteractionEnabled = NO;
     [_playerView setPlayer:player];
     FVPWeakPlayerLayer *reference = [[FVPWeakPlayerLayer alloc] init];
     reference.layer = (AVPlayerLayer *)_playerView.layer;

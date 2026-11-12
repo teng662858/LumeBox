@@ -17,6 +17,8 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get --enforce-lockfile
+      - name: Check native timing and presentation without blocking metadata reads
+        run: bash tool/check_ios_player_presentation.sh
       - run: python3 tool/prepare_python_runtime.py
       - run: python3 tool/prepare_intro_models.py
       - name: Resolve native SDKs for CocoaPods-only plugins

@@ -116,6 +116,17 @@ accessLog 时返回 null，不把播放码率伪装成下载速度。`applyBuffe
 
 ## 补丁 2 · seek 容差（拖动快进不卡）
 
+### 2026-11-12：时长与音轨读取不阻塞主线程
+
+初始化事件与 seek 的时长比较优先使用 `AVPlayerItem.duration`；仅在 asset 的
+`duration` 已加载时才读取 asset，未知或直播时长返回 0。修正原 seek 把毫秒目标
+与 asset 原始 time value 比较的问题。原生行为检查覆盖未知、加载中、失败、取消
+和已加载状态，禁止访问未加载时长。
+
+iOS 宿主的音轨列表/选择改走 `lumebox/av_presentation` 的异步 media selection
+接口，避免调用上游同步 getter；原生状态轮询按 item 限制为一个在途请求，防止
+Dart 超时后重复积压原生读取。视频 UIView 不接收触摸，操作由 Flutter 控制层负责。
+
 **改动**：`darwin/video_player_avfoundation/Sources/video_player_avfoundation_objc/FVPVideoPlayer.m` 的 `seekTo:completion:`
 
 ```objc

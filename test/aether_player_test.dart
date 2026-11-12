@@ -221,6 +221,34 @@ void main() {
     blocked.complete();
   });
 
+  test(
+    'stop cancels a blocked load immediately and permits reloading',
+    () async {
+      loading = Completer<void>();
+      final blocked = loading!;
+      final player = AetherPlayer();
+      addTearDown(player.dispose);
+      final pending = player.load(PlayerMedia(uri: Uri.file('/blocked.mkv')));
+      while (!calls.any((c) => c.method == 'load')) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      await player.stop().timeout(const Duration(seconds: 1));
+      await pending.timeout(const Duration(seconds: 1));
+      expect(player.mediaInitialized, isFalse);
+      expect(player.snapshot.value.buffering, isFalse);
+      loading = null;
+      await player.load(PlayerMedia(uri: Uri.file('/new.mkv')));
+      expect(player.mediaInitialized, isTrue);
+      blocked.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        player.snapshot.value.position,
+        const Duration(milliseconds: 12500),
+      );
+      expect(player.snapshot.value.error, isNull);
+    },
+  );
+
   test('dispose bypasses a blocked load and stale completions cannot update notifiers', () async {
     loading = Completer<void>();
     final player = AetherPlayer();

@@ -16,6 +16,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// 把当前缓冲参数应用到刚创建好的播放器。
 + (void)applyToPlayer:(AVPlayer *)player;
 
+/// Reads only item timing or asset timing already loaded; never fetches metadata.
++ (CMTime)knownDurationForItem:(nullable AVPlayerItem *)item;
+
 /// With automatic waiting disabled, AVPlayer pauses on underrun. Resume only
 /// when playback is still requested and data covers the current playhead.
 + (BOOL)resumePlayerIfBuffered:(AVPlayer *)player wantsPlay:(BOOL)wantsPlay rate:(float)rate;

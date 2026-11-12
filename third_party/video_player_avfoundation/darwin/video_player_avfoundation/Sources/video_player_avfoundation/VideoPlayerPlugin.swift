@@ -382,6 +382,7 @@ public final class VideoPlayerPlugin: NSObject, FlutterPlugin, AVFoundationVideo
 #if os(iOS)
 /// Operates on the existing player; it never opens a second playback session.
 private enum LumePresentation {
+  @MainActor private static var pendingStatus = Set<ObjectIdentifier>()
   static func fourCC(_ value: FourCharCode) -> String {
     String(bytes: [UInt8((value >> 24) & 255), UInt8((value >> 16) & 255), UInt8((value >> 8) & 255), UInt8(value & 255)], encoding: .ascii) ?? "unknown"
   }
@@ -396,15 +397,21 @@ private enum LumePresentation {
 
   @MainActor
   private static func handleAsync(_ method: String, args: [String: Any], player: AVPlayer, item: AVPlayerItem, result: FlutterResult) async {
+    // Dart's optional-info timeout does not cancel AVFoundation's metadata load.
+    // Keep at most one native status inspection per item, even on a slow origin.
+    let identity = ObjectIdentifier(item)
+    if method == "status", !pendingStatus.insert(identity).inserted { result(nil); return }
+    defer { if method == "status" { pendingStatus.remove(identity) } }
     // Asset inspection may fetch HLS metadata. Never synchronously load it on
     // the platform thread, and never inspect subtitle groups for status polls.
     var group: AVMediaSelectionGroup?
-    if ["subtitleTracks", "selectSubtitle", "configure"].contains(method) {
-      group = try? await item.asset.loadMediaSelectionGroup(for: .legible)
+    if ["subtitleTracks", "selectSubtitle", "configure", "audioTracks", "selectAudio"].contains(method) {
+      let characteristic: AVMediaCharacteristic = ["audioTracks", "selectAudio"].contains(method) ? .audible : .legible
+      group = try? await item.asset.loadMediaSelectionGroup(for: characteristic)
     }
     guard player.currentItem === item else { result(nil); return }
     switch method {
-    case "subtitleTracks":
+    case "subtitleTracks", "audioTracks":
       guard let group = group else { result([]); return }
       let selected = item.currentMediaSelection.selectedMediaOption(in: group)
       result(group.options.enumerated().map { index, option -> [String: Any] in
@@ -412,7 +419,7 @@ private enum LumePresentation {
          "language": option.extendedLanguageTag ?? option.locale?.identifier ?? "",
          "selected": selected == option]
       })
-    case "selectSubtitle":
+    case "selectSubtitle", "selectAudio":
       guard let group = group else { result(nil); return }
       let index = (args["id"] as? String).flatMap(Int.init)
       if let index = index, group.options.indices.contains(index) { item.select(group.options[index], in: group) }
@@ -467,6 +474,7 @@ private enum LumePresentation {
          let selected = item.currentMediaSelection.selectedMediaOption(in: audio) {
         status.append("音轨：\(selected.displayName) · \(audioCodecs(selected).joined(separator: "/"))")
       }
+      guard player.currentItem === item else { result(nil); return }
       let route = AVAudioSession.sharedInstance().currentRoute.outputs
       status.append("输出设备：\(route.map { $0.portName }.joined(separator: " / "))")
       status.append(route.contains { $0.isSpatialAudioEnabled } ? "系统空间音频：可用且用户已允许（不代表 Atmos 音轨）" : "系统空间音频：当前未启用")

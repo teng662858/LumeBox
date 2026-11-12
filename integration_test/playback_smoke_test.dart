@@ -22,6 +22,37 @@ void stage(String message) {
   debugPrint(line);
 }
 
+Widget controlsHarness(AbstractPlayer player, VoidCallback onPressed) =>
+    MaterialApp(
+      home: Scaffold(
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            Center(child: player.buildView()),
+            Align(
+              alignment: Alignment.topCenter,
+              child: TextButton(
+                key: const Key('native-playback-control'),
+                onPressed: onPressed,
+                child: const Text('Playback control'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+Future<void> checkControls(WidgetTester tester, int Function() presses) async {
+  final before = presses();
+  await tester.tap(find.byKey(const Key('native-playback-control')));
+  await tester.pump();
+  expect(
+    presses(),
+    before + 1,
+    reason: 'controls above the native picture must respond',
+  );
+}
+
 void main() {
   stage('main');
   debugPrint(
@@ -81,9 +112,9 @@ void main() {
         final readyMs = load.elapsedMilliseconds;
         stage('${kernel.name} $file loaded');
         expect(player.snapshot.value.error, isNull);
-        await tester.pumpWidget(
-          MaterialApp(home: Scaffold(body: player.buildView())),
-        );
+        var presses = 0;
+        await tester.pumpWidget(controlsHarness(player, () => presses++));
+        await checkControls(tester, () => presses);
         await player.play();
         stage('${kernel.name} $file play');
         Future<void> waitFor(bool Function() condition) async {
@@ -106,7 +137,9 @@ void main() {
         );
         final firstProgressMs = watch.elapsedMilliseconds;
         expect(player.stats.value.width, greaterThan(0));
+        await checkControls(tester, () => presses);
         await player.pause();
+        await checkControls(tester, () => presses);
         await tester.pump(const Duration(milliseconds: 300));
         final paused = player.snapshot.value.position;
         await Future<void>.delayed(const Duration(milliseconds: 600));
@@ -125,6 +158,7 @@ void main() {
               player.snapshot.value.position >
               const Duration(milliseconds: 3500),
         );
+        await checkControls(tester, () => presses);
         debugPrint(
           'KERNEL_SMOKE_OK ${kernel.name} $file loadMs=$readyMs firstProgressMs=$firstProgressMs',
         );
@@ -151,17 +185,15 @@ void main() {
         await cache.close();
         await directory.delete(recursive: true);
       });
-      await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: player.buildView())),
-      );
+      var presses = 0;
+      await tester.pumpWidget(controlsHarness(player, () => presses++));
       final media = PlayerMedia(uri: Uri.parse('http://127.0.0.1:18765/$file'));
       stage('avplayer $file load');
       await cache.load(player, media).timeout(const Duration(seconds: 45));
       stage('avplayer $file loaded');
       expect(player.snapshot.value.error, isNull);
-      await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: player.buildView())),
-      );
+      await tester.pumpWidget(controlsHarness(player, () => presses++));
+      await checkControls(tester, () => presses);
       await player.play();
       Future<void> waitFor(bool Function() condition) async {
         for (var i = 0; i < 100 && !condition(); i++) {
@@ -178,6 +210,7 @@ void main() {
       );
       expect(cache.downloadedBytes, greaterThan(0));
       expect(player.stats.value.width, greaterThan(0));
+      await checkControls(tester, () => presses);
       // A progressing clock alone missed the black-screen regression. Check the
       // visible native layer before and after automatic PiP preparation.
       const network = MethodChannel('lumebox/av_network');
@@ -222,6 +255,7 @@ void main() {
         () => player.snapshot.value.position >= const Duration(seconds: 3),
       );
       await player.pause();
+      await checkControls(tester, () => presses);
       expect(
         player.snapshot.value.duration,
         greaterThan(const Duration(seconds: 5)),
@@ -235,9 +269,7 @@ void main() {
           presentation: PlaybackPresentation(hdrEnabled: false),
         ),
       );
-      await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: player.buildView())),
-      );
+      await tester.pumpWidget(controlsHarness(player, () => presses++));
       await player.play();
       await pip.prepareAvPlayer(player.nativePlayerId!);
       final textureState = await network.invokeMapMethod<String, Object?>(
@@ -246,6 +278,7 @@ void main() {
       );
       expect(textureState?['inlineLayer'], isFalse);
       await waitFor(() => player.stats.value.firstFrameReady == true);
+      await checkControls(tester, () => presses);
       await pip.resetFrames();
       await tester.pumpWidget(const SizedBox.shrink());
     });

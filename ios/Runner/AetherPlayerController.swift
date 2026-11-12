@@ -49,6 +49,8 @@ final class AetherPlayerController: NSObject, FlutterPlatformViewFactory {
           result(FlutterError(code: "aether_url", message: "无效播放地址", details: nil)); return
         }
         session.generation = args["generation"] as? Int ?? session.generation + 1
+        let generation = session.generation
+        session.loaded = false
         session.options = args["options"] as? [String: Any] ?? [:]
         let options = session.loadOptions(headers: args["headers"] as? [String: String] ?? [:])
         session.loadTask?.cancel()
@@ -58,7 +60,8 @@ final class AetherPlayerController: NSObject, FlutterPlatformViewFactory {
         }
         session.loadTask = task
         _ = try await task.value
-        guard sessions[id] === session else { throw CancellationError() }
+        guard sessions[id] === session, session.generation == generation else { throw CancellationError() }
+        session.loadTask = nil
         session.loaded = true
         session.applyTransportOptions()
         session.chooseAudioPreference()
@@ -89,11 +92,17 @@ final class AetherPlayerController: NSObject, FlutterPlatformViewFactory {
         result(nil)
       case "play": session.engine.play(); result(nil)
       case "pause": session.engine.pause(); result(nil)
-      case "stop": session.loadTask?.cancel(); session.engine.stop(); session.loaded = false; result(nil)
+      case "stop":
+        session.generation += 1
+        session.loadTask?.cancel(); session.loadTask = nil
+        session.engine.stop(); session.loaded = false; result(nil)
       case "dispose":
         sessions.removeValue(forKey: id)
         session.events?.setStreamHandler(nil); session.cancelEvents()
-        session.loadTask?.cancel(); session.engine.stop(); session.loaded = false
+        session.generation += 1
+        session.loadTask?.cancel(); session.loadTask = nil
+        session.surface?.detach()
+        session.engine.stop(); session.loaded = false
         result(nil)
       case "seek": await session.engine.seek(to: (args["seconds"] as? Double ?? 0)); result(nil)
       case "volume": session.engine.volume = Float(args["value"] as? Double ?? 1); result(nil)
@@ -152,6 +161,7 @@ private final class AetherSession: NSObject, FlutterStreamHandler {
   }
 
   func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    cancelEvents()
     eventSink = events
     let signals = [
       engine.$state.map { _ in () }.eraseToAnyPublisher(),
@@ -160,10 +170,16 @@ private final class AetherSession: NSObject, FlutterStreamHandler {
       engine.clock.$currentTime.map { _ in () }.eraseToAnyPublisher(),
       engine.clock.$bufferedPosition.map { _ in () }.eraseToAnyPublisher(),
     ]
-    Publishers.MergeMany(signals).receive(on: DispatchQueue.main)
+    // The engine publishes several clocks per display frame. Coalesce before
+    // crossing the platform channel instead of queuing every full snapshot.
+    Publishers.MergeMany(signals)
+      .throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
+      .receive(on: DispatchQueue.main)
       .sink { [weak self] _ in guard let self = self else { return }; self.eventSink?(self.snapshot()) }
       .store(in: &observers)
-    engine.clock.$sourceTime.receive(on: DispatchQueue.main)
+    engine.clock.$sourceTime
+      .throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
+      .receive(on: DispatchQueue.main)
       .sink { [weak self] _ in self?.surface?.updateSubtitles() }.store(in: &observers)
     events(snapshot())
     return nil
@@ -221,7 +237,6 @@ private final class AetherSession: NSObject, FlutterStreamHandler {
   }
 
   func snapshot() -> [String: Any] {
-    surface?.updateSubtitles()
     let audio = engine.audioTracks.first { $0.id == engine.activeAudioTrackIndex }
     var presentation = [
       "实际解码：原生管线，硬软解状态未由接口提供",
@@ -271,6 +286,7 @@ private final class AetherSurface: NSObject, FlutterPlatformView {
     self.session = session
     super.init()
     container.frame = frame; container.backgroundColor = .black
+    container.isUserInteractionEnabled = false
     for view in [video, bitmap, caption] { view.translatesAutoresizingMaskIntoConstraints = false; container.addSubview(view) }
     caption.textColor = .white; caption.font = .systemFont(ofSize: 22, weight: .medium)
     caption.numberOfLines = 0; caption.textAlignment = .center
@@ -291,6 +307,12 @@ private final class AetherSurface: NSObject, FlutterPlatformView {
     session?.engine.bind(view: video)
   }
   func view() -> UIView { container }
+  func detach() {
+    session?.engine.unbind(view: video)
+    session?.surface = nil
+    session = nil
+    hideSubtitles()
+  }
   func hideSubtitles() { caption.text = nil; bitmap.image = nil }
   func updateSubtitles() {
     guard let session = session, session.options["subtitlesEnabled"] as? Bool != false else { hideSubtitles(); return }

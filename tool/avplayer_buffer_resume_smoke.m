@@ -3,11 +3,28 @@
 #import "FVPLumeBuffering.h"
 #include <math.h>
 
+@interface TimingAsset : AVMutableComposition
+@property(nonatomic) AVKeyValueStatus timingStatus;
+@property(nonatomic) NSUInteger durationReads;
+@end
+@implementation TimingAsset
+- (AVKeyValueStatus)statusOfValueForKey:(NSString *)key error:(NSError **)error {
+  return self.timingStatus;
+}
+- (CMTime)duration {
+  NSAssert(self.timingStatus == AVKeyValueStatusLoaded, @"unloaded duration must never be read");
+  self.durationReads++;
+  return CMTimeMake(42000, 1000);
+}
+@end
+
 @interface ResumeItem : AVPlayerItem
 @property(nonatomic) AVPlayerItemStatus testStatus;
 @property(nonatomic, copy) NSArray<NSValue *> *testRanges;
 @property(nonatomic) BOOL fastForward;
 @property(nonatomic) BOOL slowForward;
+@property(nonatomic) CMTime testDuration;
+@property(nonatomic, strong) TimingAsset *timingAsset;
 @end
 
 @implementation ResumeItem
@@ -15,6 +32,8 @@
 - (NSArray<NSValue *> *)loadedTimeRanges { return self.testRanges; }
 - (BOOL)canPlayFastForward { return self.fastForward; }
 - (BOOL)canPlaySlowForward { return self.slowForward; }
+- (CMTime)duration { return self.testDuration; }
+- (AVAsset *)asset { return self.timingAsset ?: [super asset]; }
 @end
 
 @interface ResumePlayer : AVPlayer
@@ -49,6 +68,25 @@ static void Check(BOOL condition, NSString *message) {
 int main(void) {
   @autoreleasepool {
     ResumeItem *item = [[ResumeItem alloc] initWithAsset:[AVMutableComposition composition]];
+    TimingAsset *timing = [[TimingAsset alloc] init];
+    item.timingAsset = timing;
+    item.testDuration = CMTimeMake(8000, 1000);
+    Check(CMTimeGetSeconds([FVPLumeBuffering knownDurationForItem:item]) == 8,
+          @"ready item timing never fetches asset metadata");
+    item.testDuration = kCMTimeIndefinite;
+    for (NSNumber *status in @[@(AVKeyValueStatusUnknown), @(AVKeyValueStatusLoading),
+                               @(AVKeyValueStatusFailed), @(AVKeyValueStatusCancelled)]) {
+      timing.timingStatus = status.integerValue;
+      Check(CMTimeGetSeconds([FVPLumeBuffering knownDurationForItem:item]) == 0,
+            @"unloaded or unavailable asset timing returns immediately");
+    }
+    Check(timing.durationReads == 0, @"no synchronous asset duration reads");
+    timing.timingStatus = AVKeyValueStatusLoaded;
+    Check(CMTimeGetSeconds([FVPLumeBuffering knownDurationForItem:item]) == 42,
+          @"indefinite item can use already loaded asset timing");
+    Check(CMTimeGetSeconds([FVPLumeBuffering knownDurationForItem:nil]) == 0,
+          @"released item has no duration");
+    item.timingAsset = nil;
     item.testStatus = AVPlayerItemStatusReadyToPlay;
     ResumePlayer *player = [[ResumePlayer alloc] init];
     player.testItem = item;

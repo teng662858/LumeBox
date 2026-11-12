@@ -147,6 +147,22 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
     if (controller == null || !controller.value.isInitialized) {
       return const <PlayerTrack>[];
     }
+    if (Platform.isIOS) {
+      final result = await AvPresentationChannel.invoke<List<Object?>>(
+        nativePlayerId,
+        'audioTracks',
+      );
+      return [
+        for (final value in result ?? const [])
+          if (value is Map)
+            PlayerTrack(
+              id: '${value['id']}',
+              label: '${value['label']}',
+              language: value['language'] as String?,
+              selected: value['selected'] == true,
+            ),
+      ];
+    }
     if (!controller.isAudioTrackSupportAvailable()) {
       return const <PlayerTrack>[];
     }
@@ -171,6 +187,14 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
   Future<void> selectAudioTrack(String id) async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
+    if (Platform.isIOS) {
+      await AvPresentationChannel.invoke<Object?>(
+        nativePlayerId,
+        'selectAudio',
+        {'id': id},
+      );
+      return;
+    }
     try {
       await controller.selectAudioTrack(id);
     } catch (error, stackTrace) {
@@ -642,7 +666,7 @@ class AvPlayer extends AbstractPlayer implements PresentationEngine {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          VideoPlayer(controller),
+          IgnorePointer(child: VideoPlayer(controller)),
           ValueListenableBuilder<VideoPlayerValue>(
             valueListenable: controller,
             builder: (context, value, _) {

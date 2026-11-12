@@ -5,6 +5,18 @@
 #include <math.h>
 
 @implementation FVPLumeBuffering
++ (CMTime)knownDurationForItem:(AVPlayerItem *)item {
+  if (!item) return kCMTimeZero;
+  CMTime duration = item.duration;
+  if (CMTIME_IS_NUMERIC(duration)) return duration;
+  AVAsset *asset = item.asset;
+  if ([asset statusOfValueForKey:@"duration" error:nil] == AVKeyValueStatusLoaded) {
+    duration = asset.duration;
+    if (CMTIME_IS_NUMERIC(duration)) return duration;
+  }
+  return kCMTimeZero;
+}
+
 
 + (void)applyToPlayer:(AVPlayer *)player {
   NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
