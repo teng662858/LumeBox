@@ -312,14 +312,11 @@ class SettingsPage extends StatelessWidget {
     SettingsEntryCard(
       icon: Icons.play_circle_outline,
       title: '播放器设置',
-      subtitle: '画面、字幕与播放行为',
+      subtitle: '内核、倍速、连播与缓冲',
       searchTargets: {
         for (final entry in const [
           ('playback', '播放与选集'),
-          ('intro', '片头片尾'),
-          ('picture', '画面与显示'),
           ('audio', '声音与字幕'),
-          ('controls', '手势与外观'),
           ('advanced', '内核与网络'),
           ('playback', '播放倍速'),
           ('playback', '后台播放'),

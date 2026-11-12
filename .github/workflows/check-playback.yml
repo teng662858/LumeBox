@@ -1,4 +1,7 @@
 name: iOS Simulator playback check
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 on:
   workflow_dispatch:
 permissions:
@@ -42,7 +45,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/playback-fixtures" out/playback-smoke
           ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=320x240:rate=24 -f lavfi -i sine=frequency=440 -t 8 -c:v libx264 -pix_fmt yuv420p -g 24 -c:a aac -movflags +faststart "$RUNNER_TEMP/playback-fixtures/smoke.mp4"
           ffmpeg -hide_banner -loglevel error -i "$RUNNER_TEMP/playback-fixtures/smoke.mp4" -c copy -hls_time 1 -hls_list_size 0 "$RUNNER_TEMP/playback-fixtures/smoke.m3u8"
-          python3 -m http.server 18765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/playback-fixtures" >out/playback-smoke/http.log 2>&1 &
+          python3 tool/native_video_fixture_server.py "$RUNNER_TEMP/playback-fixtures" >out/playback-smoke/http.log 2>&1 &
       - name: Run production player and cache on iOS Simulator
         run: |
           set -euo pipefail
@@ -52,7 +55,7 @@ jobs:
           xcrun simctl io "$DEVICE" recordVideo out/playback-smoke/simulator.mp4 >/dev/null 2>&1 &
           RECORD_PID=$!
           trap 'kill -INT "$RECORD_PID" || true; wait "$RECORD_PID" || true' EXIT
-          python3 -u tool/run_playback_smoke.py "$DEVICE" 2>&1 | tee out/playback-smoke/test.log
+          python3 -u tool/run_native_video_smoke.py "$DEVICE" 2>&1 | tee out/playback-smoke/test.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

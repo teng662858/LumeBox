@@ -3,7 +3,6 @@ import 'package:lume_box/features/video/video_resume_match.dart';
 import 'package:lume_box/features/video/detail_poster_background.dart';
 import 'package:lume_box/core/intro/intro_store.dart';
 import 'package:lume_box/core/media/media_library.dart';
-import 'package:lume_box/core/session/app_preferences.dart';
 
 import 'dart:io';
 import 'dart:async';
@@ -29,12 +28,10 @@ import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/video/video_detail_page.dart';
 import 'package:lume_box/features/video/direct_video_source.dart';
 import 'package:lume_box/features/video/video_play_target.dart';
-import 'package:lume_box/features/video/video_page.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
 import 'package:lume_box/features/video/video_player_settings.dart';
 
 import 'support/fake_reading_source.dart';
-import 'support/fake_source_manager.dart';
 
 class DetailSource extends FakeReadingDataSource {
   DetailSource() : super(section: Section.video);
@@ -995,80 +992,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('播放器报错换线路仍播放同一集并恢复时间点', (tester) async {
-    final previousAutoRecover =
-        AppPreferences.instance.experience['autoRecover'];
-    AppPreferences.instance.experience['autoRecover'] = false;
-    addTearDown(() {
-      if (previousAutoRecover == null) {
-        AppPreferences.instance.experience.remove('autoRecover');
-      } else {
-        AppPreferences.instance.experience['autoRecover'] = previousAutoRecover;
-      }
-    });
-    await tester.binding.setSurfaceSize(const Size(900, 500));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final source = MultiLineDetailSource();
-    final manager = FakeSourceManager(
-      sources: [
-        SourceDescriptor(
-          id: source.id,
-          name: source.name,
-          version: '1',
-          enabled: true,
-        ),
-      ],
-      opened: {source.id: source},
-    );
-    final player = RoutePlayer();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: VideoPlayerPage(
-          library: library,
-          sourceManager: manager,
-          playerFactory: (_) => player,
-          catalog: const RouteCatalog(),
-          media: PlayerMedia(uri: Uri.parse('https://example.test/a2.mp4')),
-          target: VideoPlayTarget(
-            sourceId: source.id,
-            itemId: 'movie',
-            title: '详情测试片',
-            chapterIndex: 1,
-            chapterId: 'a2',
-            chapterTitle: '第2集',
-          ),
-        ),
-      ),
-    );
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-    });
-    await tester.pumpAndSettle();
-    player.state.value = const PlayerSnapshot(
-      error: 'fixture连接失败',
-      position: Duration(seconds: 75),
-      duration: Duration(minutes: 40),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('更多恢复方式'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('换线路继续看'));
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    });
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('线路B'));
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-    });
-    await tester.pumpAndSettle();
-    expect(player.media!.uri.path, '/b2.mp4');
-    expect(player.seeks, contains(const Duration(seconds: 75)));
-    expect(source.parses, 1);
-    await tester.pumpWidget(const SizedBox());
-    await tester.pumpAndSettle();
-  });
-
   testWidgets('窄屏大字长剧集分页显示，选集弹层不一次构建全部按钮', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 850));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1124,120 +1047,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('方向预检等待受限，先进入播放页，尺寸返回后复用同一实例横屏播放', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(400, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final entryDirections = <List<dynamic>>[];
-    final messenger =
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-      if (call.method == 'SystemChrome.setPreferredOrientations') {
-        entryDirections.add(call.arguments as List<dynamic>);
-      }
-      return null;
-    });
-    addTearDown(
-      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
-    );
-    final players = <RoutePlayer>[];
-    final loadGate = Completer<void>();
-    addTearDown(() {
-      if (!loadGate.isCompleted) loadGate.complete();
-    });
-    final manager = FakeSourceManager(
-      sources: [
-        SourceDescriptor(
-          id: source.id,
-          name: source.name,
-          version: '1',
-          enabled: true,
-        ),
-      ],
-      opened: {source.id: source},
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: VideoPage(
-          library: library,
-          sourceManager: manager,
-          catalog: const RouteCatalog(),
-          playerFactory: (_) {
-            final player = RoutePlayer()..loadGate = loadGate;
-            players.add(player);
-            return player;
-          },
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('详情测试片'));
-    await tester.pumpAndSettle();
-    expect(find.byType(VideoDetailPage), findsOneWidget);
-    expect(find.text('源站原始简介'), findsOneWidget);
-    expect(players, isEmpty);
-    expect(source.parses, 0);
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('video-detail-episode-1')),
-    );
-    await tester.runAsync(() async {
-      await tester.tap(find.byKey(const ValueKey('video-detail-episode-1')));
-      await Future<void>.delayed(const Duration(milliseconds: 800));
-    });
-    await tester.pump(const Duration(seconds: 1));
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-    });
-    await tester.pump();
-    expect(
-      find.byType(VideoPlayerPage),
-      findsOneWidget,
-      reason: '不在详情页等待慢媒体加载，播放页接手同一项预备任务',
-    );
-    expect(loadGate.isCompleted, isFalse);
-    expect(entryDirections.first, [
-      'DeviceOrientation.landscapeLeft',
-      'DeviceOrientation.landscapeRight',
-    ]);
-    loadGate.complete();
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    });
-    await tester.pumpAndSettle();
-    expect(players.single.loads, 1, reason: '进入播放页只加载一次媒体');
-    expect(source.parses, 1);
-    expect(players.length, 1);
-    expect(players.single.media?.uri.path, '/e2.mp4');
-    expect(
-      players.single.media?.headers?['Referer'],
-      'https://source.test/watch',
-    );
-    expect(find.byKey(const Key('fullscreen-controls')), findsOneWidget);
-    expect(find.byKey(VideoPlayerPage.controlPanelKey), findsNothing);
-    final instance = tester.state(find.byType(VideoPlayerPage));
-    players.single.information.value = const PlayerStats(
-      width: 1920,
-      height: 1080,
-    );
-    await tester.binding.setSurfaceSize(const Size(900, 400));
-    await tester.pumpAndSettle();
-    expect(
-      identical(instance, tester.state(find.byType(VideoPlayerPage))),
-      isTrue,
-    );
-    expect(players.length, 1);
-    expect(source.parses, 1);
-    await tester.runAsync(() async {
-      await tester.tap(find.byTooltip('退出全屏'));
-      await Future<void>.delayed(const Duration(milliseconds: 800));
-    });
-    await tester.pump(const Duration(seconds: 1));
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-    });
-    await tester.pumpAndSettle();
-    expect(find.byType(VideoDetailPage), findsOneWidget);
-    expect(find.byType(VideoPlayerPage), findsNothing);
-  });
   testWidgets('当前剧集封面显示用户主题色边框，切集后边框跟随', (tester) async {
     const accent = Colors.tealAccent;
     await tester.pumpWidget(

@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import '../../shared/widgets/network_owned_state.dart';
 import '../../core/net/network_cancellation.dart';
 
@@ -174,7 +176,7 @@ class _CatDetailPageState extends State<CatDetailPage>
     PlayerPrelaunch? prelaunch;
     var openedPlayer = false;
     try {
-      if (PlayerFactory.isSupported) {
+      if (!Platform.isIOS && PlayerFactory.isSupported) {
         final preferred = VideoPlayerSettingsStore(widget.library)
             .load()
             .kernel;

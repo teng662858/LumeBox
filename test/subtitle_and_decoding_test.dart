@@ -1,5 +1,3 @@
-import 'package:lume_box/core/player/mdk_engine.dart';
-
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -25,18 +23,6 @@ import 'package:lume_box/features/video/video_player_settings.dart';
 /// `mpv_player_test` 与 `MpvEngine` 的接口说明）。其中「延迟与硬解当前只记录
 /// 不生效」这条是如实标注的边界，用例把它钉住，避免将来被误读成已实现。
 void main() {
-  test('MDK decoder preference uses the SDK decoder API names and keeps software decoding explicit', () {
-    expect(MdkEngine.decoderPriority(true, platform: 'ios'), [
-      'VT',
-      'FFmpeg',
-      'dav1d',
-    ]);
-    expect(MdkEngine.decoderPriority(false, platform: 'ios'), [
-      'FFmpeg',
-      'dav1d',
-    ]);
-  });
-
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory root;
@@ -293,7 +279,7 @@ void main() {
       );
       expect(find.text('解码'), findsOneWidget);
       expect(find.text('硬件解码'), findsOneWidget);
-      expect(find.textContaining('优先硬解'), findsOneWidget);
+      expect(find.byType(DropdownButton<DecodingPreset>), findsOneWidget);
 
       // AVPlayer（插件不暴露解码配置）→ 控件照旧在，但点了弹统一提示。
       await pumpPage(tester, category: 'advanced');
@@ -357,15 +343,12 @@ void main() {
         const Offset(0, -240),
       );
       await tester.pumpAndSettle();
-      final decodingSwitch = find.descendant(
-        of: find
-            .ancestor(of: find.text('硬件解码'), matching: find.byType(Row))
-            .first,
-        matching: find.byType(Switch),
-      );
-      await tester.ensureVisible(decodingSwitch);
+      final decodingPicker = find.byType(DropdownButton<DecodingPreset>);
+      await tester.ensureVisible(decodingPicker);
       await tester.pumpAndSettle();
-      await tester.tap(decodingSwitch);
+      await tester.tap(decodingPicker);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(DecodingPreset.software.label).last);
       await tester.pumpAndSettle();
       expect(changed?.hardwareDecoding, isFalse);
     });

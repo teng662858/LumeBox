@@ -1,7 +1,5 @@
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
-import 'package:lume_box/core/player/mpv_player.dart';
-import 'package:lume_box/core/player/media_kit_mpv_engine.dart';
 
 import 'dart:ffi';
 
@@ -92,13 +90,6 @@ class _PreviewState extends State<RexWorkflowPreview> {
                 library: widget.library,
                 sourceManager: manager,
                 catalog: const _PreviewMpvCatalog(),
-                playerFactory: (_) => MpvPlayer(
-                  engine: MediaKitMpvEngine.create(
-                    title: 'REX 实播验收',
-                    emulatorSurfacePreview: true,
-                  ),
-                  engineLabel: 'MPV',
-                ),
               ),
             ),
           ),

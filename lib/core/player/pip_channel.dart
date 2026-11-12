@@ -61,12 +61,6 @@ class MethodChannelPipBackend implements PipBackend {
     if (ready != true) throw const PipException('系统播放器画中画内容源未就绪');
   }
 
-  Future<void> prepareAetherPlayer(int playerId) async {
-    final ready = await const MethodChannel('lumebox/aether')
-        .invokeMethod<bool>('preparePip', {'id': playerId});
-    if (ready != true) throw const PipException('AetherEngine 画中画内容源未就绪');
-  }
-
   Future<void> updateDanmaku(
     Map<String, Object?> settings,
     List<Map<String, Object?>> items,

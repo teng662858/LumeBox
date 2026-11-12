@@ -32,6 +32,23 @@ void main() {
   final paths = <String>[];
   var failures = 0;
 
+  test(
+    'reopening a video session preserves already buffered disk blocks',
+    () async {
+      final wrapped = await cache.wrap(PlayerMedia(uri: upstream));
+      final response = await client.getUrl(wrapped.uri).then((r) => r.close());
+      await response.drain<void>();
+      final files = await Directory('${root.path}/video-buffer-v1')
+          .list()
+          .toList();
+      expect(files, isNotEmpty);
+      await cache.boot(directory: root);
+      for (final file in files) {
+        expect(await file.exists(), isTrue);
+      }
+    },
+  );
+
   for (final throws in [false, true]) {
     test('缓存装载失败回退原始地址并保留请求头：throws=$throws', () async {
       final player = _TransportPlayer(throws);

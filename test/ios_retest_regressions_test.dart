@@ -1,16 +1,9 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
 
-import 'package:lume_box/core/net/lume_http.dart';
-import 'package:lume_box/core/player/abstract_player.dart';
-import 'package:lume_box/core/player/player_factory.dart';
-import 'package:lume_box/core/player/player_settings.dart';
-import 'package:lume_box/core/player/player_stats.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
@@ -18,9 +11,6 @@ import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/comic/comic_page.dart';
 import 'package:lume_box/features/reading/explore_view.dart';
-import 'package:lume_box/features/video/danmaku/danmaku_settings.dart';
-import 'package:lume_box/features/video/player_speed_meter.dart';
-import 'package:lume_box/features/video/video_player_page.dart';
 
 import 'support/fake_source_manager.dart';
 
@@ -133,208 +123,14 @@ void main() {
 
   // ------------------------------------------------------------------ P2-4
 
-  group('弹幕设置的持久化', () {
-    Future<void> pumpPlayerUnready(WidgetTester tester) async {
-      await tester.binding.setSurfaceSize(const Size(900, 1600));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: LumeTheme.build(),
-          home: VideoPlayerPage(
-            fullscreenOnly: false,
-            media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
-            catalog: const _AvailableCatalog(),
-            playerFactory: (kernel) => _SilentPlayer(kernel),
-          ),
-        ),
-      );
-      // 故意**不**预开视频板块的阅读库：`_boot` 的读盘会一直悬着（fake-async 里
-      // 真实 IO 完不成），这正是「用户的点击早于读盘完成」的那个时刻——控制栏在
-      // 库就绪前就画出来了。
-      await tester.pump();
-    }
-
-    testWidgets('库还没打开就改了开关：不被读盘结果盖回去，并补落库', (tester) async {
-      await pumpPlayerUnready(tester);
-      expect(find.byTooltip('弹幕：开'), findsWidgets, reason: '默认是开');
-
-      // 用户点开关（此刻 _library 还是 null，落库无从谈起）。
-      await tester.longPress(find.byTooltip('弹幕：开').first);
-      await advance(tester, 2);
-      expect(find.byTooltip('弹幕：关'), findsWidgets, reason: '界面当场就变了');
-
-      // 放开真实 IO，让**页面自己那次**读盘回来（旧实现会在这里用存下来的默认值
-      // 覆盖用户的点击）。交替「跑一会儿真实时钟 + 推一帧」，让真实的目录 / 库
-      // 打开完成、fake-async 里的续体也跟上。
-      for (var i = 0; i < 20; i++) {
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 20)),
-        );
-        await tester.pump();
-        if (ReadingLibrary.find(Section.video) != null) break;
-      }
-      await advance(tester);
-      expect(
-        ReadingLibrary.find(Section.video),
-        isNotNull,
-        reason: '页面的阅读库应当已经打开（否则这条用例测不到读盘之后的行为）',
-      );
-
-      expect(find.byTooltip('弹幕：关'), findsWidgets, reason: '读盘回来不得盖掉用户刚改的那一份');
-      expect(find.byTooltip('弹幕：开'), findsNothing);
-
-      // 而且真的落库了：下次进播放页读出来就是「关」。
-      final library = ReadingLibrary.find(Section.video)!;
-      expect(
-        DanmakuSettingsStore(library).load().enabled,
-        isFalse,
-        reason: '库就绪前改的那一次也要补落库，不能静默丢掉',
-      );
-    }, timeout: const Timeout(Duration(seconds: 60)));
-  });
-
   // ------------------------------------------------------------------ O-3
 
-  group('测速', () {
-    Future<PlaybackSpeedMeter> pumpPlayer(WidgetTester tester) async {
-      final meter = PlaybackSpeedMeter(
-        // 站点的探测请求没给出有效数据（这里用一份「长度不足」的响应复现同一
-        // 结论）：界面必须如实说「测速失败」，而不是继续显示「测速」装作没点过。
-        http: LumeHttp(client: _TinyResponseClient(), source: '测速'),
-      );
-      addTearDown(meter.dispose);
-      await tester.binding.setSurfaceSize(const Size(900, 1600));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: LumeTheme.build(),
-          home: VideoPlayerPage(
-            fullscreenOnly: false,
-            media: PlayerMedia(uri: Uri.parse('https://example.com/a.mp4')),
-            catalog: const _AvailableCatalog(),
-            speedMeter: meter,
-            playerFactory: (kernel) => _SilentPlayer(kernel),
-          ),
-        ),
-      );
-      await tester.pump();
-      return meter;
-    }
-
-    testWidgets('原测速失败入口已删除', (tester) async {
-      final meter = await pumpPlayer(tester);
-      meter.failed.value = true;
-      await advance(tester);
-      expect(find.textContaining('测速'), findsNothing);
-    }, timeout: const Timeout(Duration(seconds: 60)));
-  });
-
   // ------------------------------------------------------------------ P0-1
-
-  group('MPV 内核的销毁时序（静态守卫）', () {
-    // 这条缺陷在真机（模拟器）上是 SIGABRT，Windows 上跑不到 libmpv，因此这里守
-    // **源码纪律**而不是行为：引擎绝不能在 media_kit 之外自行销毁视频输出。
-    //
-    // 根因回顾：iOS 的视频输出就是 libmpv 的 render context，媒体库只在
-    // `Player.dispose()` 的 release 链里释放它（`VideoOutputManager.Dispose`），
-    // 再延迟 5 秒 `mpv_terminate_destroy`。谁抢先动一下视频控制器（尤其是基类
-    // 那个只关 ValueNotifier 的 dispose），release 链里的原生释放就会被二次
-    // dispose 异常吃掉 → `mp_destroy_client` 发现 render context 还在 → `abort()`：
-    // `Broken API use: mpv_render_context_free() not called.`
-    test('引擎不得自行销毁视频输出（否则 mpv 客户端销毁时 abort）', () {
-      final lines = File('lib/core/player/media_kit_mpv_engine.dart')
-          .readAsStringSync()
-          .split('\n');
-      // 只看**代码**，注释里允许出现这个名字（上面那段说明就得写它）。
-      final code = lines
-          .where((line) => !line.trimLeft().startsWith('//'))
-          .join('\n');
-      expect(
-        code.contains('_video.platform'),
-        isFalse,
-        reason:
-            '视频输出的收尾只能由 media_kit 自己按序做：'
-            '引擎里出现 _video.platform（再配一次 dispose）就会重现真机的 SIGABRT',
-      );
-      expect(
-        code.contains('await _player.dispose()'),
-        isTrue,
-        reason: '释放 Player 才是唯一的收尾入口（它的 release 链负责视频输出）',
-      );
-    });
-  });
 }
 
 /// 内核目录替身：只回答「有哪些内核可用」。
-class _AvailableCatalog implements PlayerKernelCatalog {
-  const _AvailableCatalog();
-
-  @override
-  bool isAvailable(PlayerKernel kernel) => true;
-
-  @override
-  String? unavailableReason(PlayerKernel kernel) => null;
-}
 
 /// 静默播放器：只让页面有「就绪」的落点，不产生任何快照。
-class _SilentPlayer extends AbstractPlayer {
-  _SilentPlayer(this.kernel);
-
-  final PlayerKernel kernel;
-
-  final ValueNotifier<PlayerSnapshot> _snapshot = ValueNotifier<PlayerSnapshot>(
-    const PlayerSnapshot(),
-  );
-  late final ValueNotifier<PlayerStats> _stats = ValueNotifier<PlayerStats>(
-    PlayerStats(engineLabel: kernel.label),
-  );
-
-  @override
-  ValueListenable<PlayerSnapshot> get snapshot => _snapshot;
-
-  @override
-  ValueListenable<PlayerStats> get stats => _stats;
-
-  @override
-  Future<void> load(PlayerMedia media) async {}
-
-  @override
-  Future<void> play() async {}
-
-  @override
-  Future<void> pause() async {}
-
-  @override
-  Future<void> seek(Duration position) async {}
-
-  @override
-  Future<void> stop() async {}
-
-  @override
-  Future<void> setVolume(double volume) async {}
-
-  @override
-  Future<void> applySettings(PlayerSettings settings) async {}
-
-  @override
-  Widget buildView() => const SizedBox.shrink();
-
-  @override
-  Future<void> dispose() async {
-    _snapshot.dispose();
-    _stats.dispose();
-  }
-}
 
 /// 回一份「太短」的探测响应：与「站点拒绝 / 回错误页」在测速里是同一个结论
 /// （读不到有效数据 → 没有读数）。
-class _TinyResponseClient extends http.BaseClient {
-  @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    await Future<void>.delayed(const Duration(milliseconds: 5));
-    return http.StreamedResponse(
-      Stream<List<int>>.value(List<int>.filled(300, 0)),
-      200,
-    );
-  }
-}

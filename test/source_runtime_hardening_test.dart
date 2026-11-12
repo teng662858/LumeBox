@@ -11,7 +11,6 @@ import 'package:lume_box/core/net/lume_http.dart';
 import 'package:lume_box/core/net/network_queue.dart';
 import 'package:lume_box/core/net/network_settings.dart';
 import 'package:lume_box/core/player/source_media_runtime.dart';
-import 'package:lume_box/core/player/av_player.dart';
 import 'package:lume_box/core/js/source_tools.dart';
 
 Uint8List hex(String value) => Uint8List.fromList(
@@ -424,12 +423,5 @@ clear.ts
     });
     data[data.length - 1] = 13;
     expect(() => SourceMediaRuntime.inspectFlv(data), throwsFormatException);
-    expect(
-      AvPlayer.retryableNetworkError('Network connection lost -1005'),
-      true,
-    );
-    expect(AvPlayer.retryableNetworkError('HTTP 503'), true);
-    expect(AvPlayer.retryableNetworkError('HTTP 403 connection lost'), false);
-    expect(AvPlayer.retryableNetworkError('decrypt failed'), false);
   });
 }

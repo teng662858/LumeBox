@@ -5,6 +5,17 @@ flutter precache --ios
 FLUTTER_ROOT=$(dirname "$(dirname "$(command -v flutter)")")
 FRAMEWORKS="$FLUTTER_ROOT/bin/cache/artifacts/engine/ios/Flutter.xcframework/ios-arm64_x86_64-simulator"
 test -d "$FRAMEWORKS"
+NATIVE_SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
+if [ -f ios/Runner/NativeVideoPlayerController.swift ]; then
+  xcrun swiftc -typecheck -sdk "$NATIVE_SDK" -target arm64-apple-ios18.0-simulator \
+    -F "$FRAMEWORKS" -import-objc-header ios/Runner/NativeMPVBridge.h \
+    ios/Runner/NativeVideoEngine.swift ios/Runner/NativeVideoPlayerController.swift
+  NATIVE_OBJECT=$(mktemp -t native-mpv).o
+  xcrun clang -fobjc-arc -fmodules -Wno-deprecated-declarations -isysroot "$NATIVE_SDK" \
+    -target arm64-apple-ios18.0-simulator -c ios/Runner/NativeMPVBridge.m -o "$NATIVE_OBJECT"
+  rm -f "$NATIVE_OBJECT"
+  echo "Native UIKit video screen, AVPlayer and libmpv bridge compile checks passed"
+fi
 CHECK_DIR=$(mktemp -d)
 trap 'rm -rf "$CHECK_DIR"' EXIT
 python3 - "$CHECK_DIR/PlayerPresentation.swift" <<'PY'

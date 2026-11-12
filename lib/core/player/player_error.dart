@@ -98,7 +98,7 @@ class PlayerErrorText {
     _Rule(<String>[
       '-11828',
       'averrorfileformatnotrecognized',
-    ], '当前内核无法打开该媒体封装；请更换 MPV 或 MDK 内核'),
+    ], '当前内核无法打开该媒体封装；请更换 MPV 内核'),
     _Rule(<String>[
       'osstatus error -12848',
       'this media may be damaged',

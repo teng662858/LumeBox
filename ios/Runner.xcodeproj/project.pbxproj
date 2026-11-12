@@ -7,10 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AC202611120000000000A103 /* NativeMPVBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = AB202611120000000000A103 /* NativeMPVBridge.m */; };
+		AC202611120000000000A102 /* NativeVideoPlayerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB202611120000000000A102 /* NativeVideoPlayerController.swift */; };
+		AC202611120000000000A101 /* NativeVideoEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB202611120000000000A101 /* NativeVideoEngine.swift */; };
         AD2026110200000000000002 /* OfflineVideoRemuxer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD2026110200000000000001; };
-        AE1800000000000000000007 /* AetherEngine-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = AE1800000000000000000006; };
-        AE1800000000000000000002 /* AetherPlayerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE1800000000000000000001; };
-        AE1800000000000000000005 /* AetherEngine in Frameworks */ = {isa = PBXBuildFile; productRef = AE1800000000000000000004; };
+        AE1800000000000000000005 /* AetherFFmpegBuild in Frameworks */ = {isa = PBXBuildFile; productRef = AE1800000000000000000004; };
         AA2026102100000000000002 /* SourceWebController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2026102100000000000001 /* SourceWebController.swift */; };
         AA2026102100000000000005 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = AA2026102100000000000004 /* SwiftSoup */; };
 		E818B0010000000000000002 /* IntroRecognitionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E818B0010000000000000001 /* IntroRecognitionController.swift */; };
@@ -67,9 +68,11 @@ EA2026110700000000000010 = {isa = PBXBuildFile; fileRef = EA20261107000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		AB202611120000000000A104 /* NativeMPVBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NativeMPVBridge.h; sourceTree = "<group>"; };
+		AB202611120000000000A103 /* NativeMPVBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = NativeMPVBridge.m; sourceTree = "<group>"; };
+		AB202611120000000000A102 /* NativeVideoPlayerController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeVideoPlayerController.swift; sourceTree = "<group>"; };
+		AB202611120000000000A101 /* NativeVideoEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeVideoEngine.swift; sourceTree = "<group>"; };
         AD2026110200000000000001 /* OfflineVideoRemuxer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineVideoRemuxer.swift; sourceTree = "<group>"; };
-        AE1800000000000000000006 /* AetherEngine-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "AetherEngine-LICENSE.txt"; sourceTree = "<group>"; };
-        AE1800000000000000000001 /* AetherPlayerController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AetherPlayerController.swift; sourceTree = "<group>"; };
         AA2026102100000000000001 /* SourceWebController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceWebController.swift; sourceTree = "<group>"; };
 		E818B0010000000000000001 /* IntroRecognitionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntroRecognitionController.swift; sourceTree = "<group>"; };
 		E817B0030000000000000001 /* ICloudSyncController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudSyncController.swift; sourceTree = "<group>"; };
@@ -117,7 +120,7 @@ EA2026110700000000000011 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			files = (
 				78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */,
                 AA2026102100000000000005 /* SwiftSoup in Frameworks */,
-                AE1800000000000000000005 /* AetherEngine in Frameworks */,
+                AE1800000000000000000005 /* AetherFFmpegBuild in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -187,9 +190,11 @@ EA2026110700000000000011 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				A1B2C3D4000000000000000B /* PlaybackSessionController.swift */,
 				A1B2C3D4000000000000000D /* WafCookieController.swift */,
                 AA2026102100000000000001 /* SourceWebController.swift */,
-                AE1800000000000000000001 /* AetherPlayerController.swift */,
+                AB202611120000000000A104 /* NativeMPVBridge.h */,
+                AB202611120000000000A103 /* NativeMPVBridge.m */,
+                AB202611120000000000A102 /* NativeVideoPlayerController.swift */,
+                AB202611120000000000A101 /* NativeVideoEngine.swift */,
                 AD2026110200000000000001 /* OfflineVideoRemuxer.swift */,
-                AE1800000000000000000006 /* AetherEngine-LICENSE.txt */,
 				A1B2C3D4000000000000000F /* BatteryController.swift */,
 				AA2010200000000000000002 /* LumePythonController.m */,
 				AA2010200000000000000003 /* LumePythonController.h */,
@@ -243,7 +248,7 @@ EA2026110700000000000011 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			name = Runner;
 			packageProductDependencies = (
                 AA2026102100000000000004 /* SwiftSoup */,
-                AE1800000000000000000004 /* AetherEngine */,
+                AE1800000000000000000004 /* AetherFFmpegBuild */,
 				78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */,
 			);
 			productName = Runner;
@@ -281,7 +286,7 @@ EA2026110700000000000011 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			mainGroup = 97C146E51CF9000F007C117D;
 			packageReferences = (
                 AA2026102100000000000003 /* XCRemoteSwiftPackageReference SwiftSoup */,
-                AE1800000000000000000003 /* AetherEngine */,
+                AE1800000000000000000003 /* AetherFFmpegBuild */,
 				781AD8BC2B33823900A9FFBB /* XCLocalSwiftPackageReference "Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage" */,
 			);
 			productRefGroup = 97C146EF1CF9000F007C117D /* Products */;
@@ -307,7 +312,6 @@ EA2026110700000000000011 = {isa = PBXFileReference; lastKnownFileType = sourceco
 			buildActionMask = 2147483647;
 			files = (
 				97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */,
-                AE1800000000000000000007 /* AetherEngine-LICENSE.txt in Resources */,
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
@@ -402,7 +406,9 @@ EA2026110700000000000011 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				A1B2C3D4000000000000000C /* PlaybackSessionController.swift in Sources */,
 				A1B2C3D4000000000000000E /* WafCookieController.swift in Sources */,
                 AA2026102100000000000002 /* SourceWebController.swift in Sources */,
-                AE1800000000000000000002 /* AetherPlayerController.swift in Sources */,
+                AC202611120000000000A103 /* NativeMPVBridge.m in Sources */,
+                AC202611120000000000A102 /* NativeVideoPlayerController.swift in Sources */,
+                AC202611120000000000A101 /* NativeVideoEngine.swift in Sources */,
                 AD2026110200000000000002 /* OfflineVideoRemuxer.swift in Sources */,
 				A1B2C3D40000000000000010 /* BatteryController.swift in Sources */,
 				AA2010200000000000000001 /* LumePythonController.m in Sources */,
@@ -701,6 +707,7 @@ EA2026110700000000000011 = {isa = PBXFileReference; lastKnownFileType = sourceco
 				PRODUCT_BUNDLE_IDENTIFIER = com.lumebox.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -774,10 +781,10 @@ EA2026110700000000000011 = {isa = PBXFileReference; lastKnownFileType = sourceco
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-        AE1800000000000000000003 /* AetherEngine */ = {
+        AE1800000000000000000003 /* AetherFFmpegBuild */ = {
             isa = XCRemoteSwiftPackageReference;
-            repositoryURL = "https://github.com/superuser404notfound/AetherEngine.git";
-            requirement = {kind = exactVersion; version = 7.53.1; };
+            repositoryURL = "https://github.com/superuser404notfound/FFmpegBuild.git";
+            requirement = {kind = exactVersion; version = 3.11.1; };
         };
         AA2026102100000000000003 /* XCRemoteSwiftPackageReference SwiftSoup */ = {
             isa = XCRemoteSwiftPackageReference;
@@ -787,10 +794,10 @@ EA2026110700000000000011 = {isa = PBXFileReference; lastKnownFileType = sourceco
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-        AE1800000000000000000004 /* AetherEngine */ = {
+        AE1800000000000000000004 /* AetherFFmpegBuild */ = {
             isa = XCSwiftPackageProductDependency;
             package = AE1800000000000000000003;
-            productName = AetherEngine;
+            productName = AetherFFmpegBuild;
         };
         AA2026102100000000000004 /* SwiftSoup */ = {
             isa = XCSwiftPackageProductDependency;

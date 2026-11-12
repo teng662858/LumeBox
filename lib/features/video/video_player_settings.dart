@@ -70,6 +70,7 @@ class VideoPlayerSettingsStore {
       '$keyPrefsPrefix${kernel.id}';
 
   final ReadingLibrary _library;
+  ReadingLibrary get library => _library;
 
   /// 读取设置；缺项或值非法时回退默认值。
   PlayerSettings load() {

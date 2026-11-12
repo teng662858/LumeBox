@@ -9,6 +9,7 @@ import '../../core/session/section.dart';
 import 'danmaku/danmaku_settings.dart';
 import 'player_settings_page.dart';
 import 'video_player_settings.dart';
+import 'native_video_settings_page.dart';
 
 /// 播放器设置的独立入口（全局设置 → 播放器设置）。
 ///
@@ -121,6 +122,13 @@ class _PlayerSettingsHostState extends State<PlayerSettingsHost> {
     if (settings == null) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
+      );
+    }
+    if (widget.focusCategory != 'danmaku') {
+      return NativeVideoSettingsPage(
+        settings: settings,
+        library: _store!.library,
+        onChanged: _apply,
       );
     }
     return PlayerSettingsPage(

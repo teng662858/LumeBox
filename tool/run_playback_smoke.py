@@ -1,6 +1,5 @@
 """Run each iOS kernel independently, retaining evidence if a runner hangs."""
 
-import argparse
 import os
 from pathlib import Path
 import re
@@ -70,60 +69,9 @@ def run_attempt(command, seconds, device, output, label):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('device')
-    parser.add_argument('--output', type=Path, default=Path('out/playback-smoke'))
-    args = parser.parse_args()
-    args.output.mkdir(parents=True, exist_ok=True)
-    failed = []
-    # A blocked native constructor in one engine must not prevent the other
-    # kernels from executing. Reuse the same native build between app launches.
-    for index, kernel in enumerate(['avplayer', 'mdk', 'aether', 'mpv']):
-        command = [
-            'flutter', 'test', '--no-pub', '--verbose',
-            'integration_test/playback_smoke_test.dart', '-d', args.device,
-            f'--dart-define=KERNEL_SMOKE={kernel}', '--timeout', '2m',
-        ]
-        if kernel == 'mpv':
-            command.append('--dart-define=KERNEL_SMOKE_HEADLESS_AUDIO=true')
-            print('MPV simulator uses a timed null audio sink; speaker output is not tested.',
-                  flush=True)
-        print(f'Starting {kernel} simulator checks', flush=True)
-        code, lines = run_attempt(
-            command, 900 if index == 0 else 360, args.device, args.output, kernel,
-        )
-        # Retry only a launch that never entered Dart tests, retaining both logs.
-        # Actual assertion failures and playback errors are never retried away.
-        if (index == 0 and code != 0
-                and not any('KERNEL_SMOKE_STAGE' in line for line in lines)
-                and any('Waiting for VM Service port' in line for line in lines)):
-            print('Cold launch did not connect to the VM; retrying once with the warm build.',
-                  flush=True)
-            code, lines = run_attempt(
-                command, 360, args.device, args.output, f'{kernel}-retry',
-            )
-        marker_pattern = re.compile(
-            (r'PLAYBACK_SMOKE_OK' if kernel == 'avplayer'
-             else rf'KERNEL_SMOKE_OK {kernel}') + r' (smoke\.(?:mp4|m3u8))'
-        )
-        markers = {}
-        for line in lines:
-            match = marker_pattern.search(line)
-            if match:
-                markers[match[1]] = line
-        for line in markers.values():
-            print(line, flush=True)
-        if code != 0 or len(markers) != 2:
-            failed.append(kernel)
-            print('\n'.join(lines[-40:]), flush=True)
-            print(f'{kernel}: FAILED (exit={code}, completed={len(markers)}/2)',
-                  flush=True)
-        else:
-            print(f'{kernel}: PASSED (2/2)', flush=True)
-    if failed:
-        print(f'Failed kernels: {", ".join(failed)}', flush=True)
-        return 1
-    return 0
+    # Keep the old command name usable without resurrecting removed decoders.
+    from run_native_video_smoke import main as run_native
+    return run_native()
 
 
 if __name__ == '__main__':

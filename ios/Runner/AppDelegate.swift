@@ -6,6 +6,7 @@ import Security
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   /// 画中画控制器：生命周期跟随 App（方法通道由它注册）。
   private let pip = PipController()
+  private let nativeVideo = NativeVideoPlayerController()
 
   /// 语音朗读控制器（AVSpeechSynthesizer）：生命周期跟随 App。
   private let speech = SpeechController()
@@ -41,9 +42,10 @@ import Security
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "LumeBoxAether") {
-      AetherPlayerController.register(with: registrar)
+    if let messenger = engineBridge.pluginRegistry.registrar(forPlugin: "LumeBoxNativeVideo")?.messenger() {
+      nativeVideo.register(with: messenger)
     }
+
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "LumeBoxPython") {
       LumePythonController.register(with: registrar)
     }

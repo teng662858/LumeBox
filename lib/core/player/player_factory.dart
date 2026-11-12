@@ -1,23 +1,11 @@
 import 'dart:io';
 
-import 'aether_player.dart';
-
 import 'abstract_player.dart';
-import 'av_player.dart';
-import 'mdk_engine.dart';
-import 'media_kit_mpv_engine.dart';
-import 'mpv_player.dart';
 import 'player_settings.dart';
 
-/// 播放器工厂：四套内核（AVPlayer / MPV / MDK / AetherEngine）的唯一选择点。
-///
-/// 现状：iOS 上四套**都可用**——AVPlayer（video_player 驱动）、MPV（libmpv，
-/// media_kit 提供）、MDK（libmdk / fvp），以及 AetherEngine 的原生显示层。
-/// 三者各有自己的解码链（系统 / libmpv / libmdk），因此「某台设备上某个内核
-/// 放不动（例如硬解 HEVC 花屏）」时还有别的选择——这正是留三套的意义。
-///
-/// 平台边界：Android / Windows 仍只保留骨架（Phase1 优先 iOS），因此除 iOS
-/// 之外的平台统一报告「仅骨架」。
+/// Native video kernel catalog. Playback sessions are created by Swift through
+/// NativeVideoBridge; Dart never constructs a decoder or a Flutter video view.
+/// Legacy enum values are retained only to migrate saved preferences.
 class PlayerFactory {
   PlayerFactory._();
 
@@ -55,21 +43,14 @@ class PlayerFactory {
   static bool isAvailable(PlayerKernel kernel) => switch (kernel) {
     // iOS 是主力平台：AVPlayer 与 MPV 都已接入（MPV 的原生库随 iOS 打包）。
     PlayerKernel.avplayer => Platform.isIOS,
-    PlayerKernel.aether => Platform.isIOS,
+    PlayerKernel.aether => false,
     // MPV 初始化失败过：本次运行不再提供（逃生入口仍可切回 AVPlayer）。
     PlayerKernel.mpv => Platform.isIOS && !_mpvInitFailed,
-    // MDK：原生库（libmdk）随 fvp 打包进 iOS；初始化失败过则本次不再提供。
-    PlayerKernel.mdk => Platform.isIOS && !_mdkInitFailed,
+    // Removed kernel; its enum value remains for preference migration.
+    PlayerKernel.mdk => false,
   };
 
-  /// 该内核能不能携带**逐媒体的请求头**（防盗链用的 Referer / UA）。
-  ///
-  /// - AVPlayer：能（`video_player` 的 `httpHeaders`）；
-  /// - MPV：能（media_kit 的 `httpHeaders`）；
-  /// - MDK：能（libmdk 的 `avio.headers` 属性，格式按 fvp 自身用法，
-  ///   见 `MdkEngine.headersText`）——早期版本这里返回 false（当时以为 fvp
-  ///   没有写通道），现在三条通路都有，因此不再有「因为带不了请求头而换内核」
-  ///   的降级；保留这个查询是为了让降级逻辑在**将来某个内核又带不了**时仍然成立。
+  /// Both native engines accept per-media headers without changing the URL.
   static bool supportsMediaHeaders(PlayerKernel kernel) => switch (kernel) {
     PlayerKernel.avplayer => true,
     PlayerKernel.aether => true,
@@ -79,6 +60,9 @@ class PlayerFactory {
 
   /// 内核不可用的原因；可用时为 null（设置页直接展示这段文案）。
   static String? unavailableReason(PlayerKernel kernel) {
+    if (kernel == PlayerKernel.aether || kernel == PlayerKernel.mdk) {
+      return '旧内核已移除，请使用原生系统播放器或 MPV';
+    }
     if (isAvailable(kernel)) return null;
     if (kernel == PlayerKernel.mdk && _mdkInitFailed) {
       return 'MDK 初始化失败（本次运行已自动回退 AVPlayer）';
@@ -89,25 +73,11 @@ class PlayerFactory {
     return '${kernel.label} 内核当前仅在 iOS 提供（Android / Windows 仅骨架）';
   }
 
-  /// 按所选内核创建播放器；内核不可用时返回 null（调用方按现状降级为骨架）。
-  ///
-  /// **同步创建，必须经 [PlayerKernelLauncher] 调用**：那里负责把创建挪出
-  /// UI 同步路径、加 8 秒超时、超时/抛错时丢弃实例并回退 AVPlayer。
-  /// 直接在这里 new 播放器就等于把原生库装载放回主线程，会重现卡死。
-  static AbstractPlayer? create({PlayerKernel kernel = PlayerKernel.avplayer}) {
-    if (!isAvailable(kernel)) return null;
-    return switch (kernel) {
-      PlayerKernel.avplayer => AvPlayer(),
-      PlayerKernel.aether => AetherPlayer(),
-      // MPV：libmpv（media_kit）绑定挡在端口后面，上层只认 AbstractPlayer。
-      PlayerKernel.mpv => MpvPlayer(
-        engine: MediaKitMpvEngine.create(title: 'Lume Box'),
-        engineLabel: kernel.label,
-      ),
-      // MDK：libmdk 绑定（fvp）挡在 MdkEngine 后面，上层只认 AbstractPlayer。
-      PlayerKernel.mdk => MdkEngine.create(),
-    };
-  }
+  /// Compatibility hook for old launch ports and injected test doubles.
+  /// Production video routes open NativeVideoBridge instead.
+  static AbstractPlayer? create({
+    PlayerKernel kernel = PlayerKernel.avplayer,
+  }) => null;
 }
 
 /// 内核目录端口：设置页依赖的最小能力集。

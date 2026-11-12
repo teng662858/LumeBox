@@ -11,6 +11,8 @@ import 'package:lume_box/core/js/lume_js_engine.dart';
 import 'js_sandbox/support/js_sandbox_support.dart';
 
 import 'package:lume_box/core/reading/reading.dart';
+import 'package:lume_box/core/player/player_settings.dart';
+import 'package:lume_box/features/video/video_player_settings.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/session/configuration_backup.dart';
@@ -404,20 +406,12 @@ void main() {
         }
       }
       if (path.$2 == '播放器设置') {
-        expect(
-          find.byKey(const ValueKey('global-player-category-danmaku')),
-          findsNothing,
-        );
-        for (final tab in ['advanced', 'audio', 'playback']) {
-          final category = find.byKey(ValueKey('global-player-category-$tab'));
-          await tester.ensureVisible(category);
-          await tester.tap(category);
-          await tester.pumpAndSettle();
-          expect(observer.depth, 4);
-          await tester.pageBack();
-          await tester.pumpAndSettle();
-          expect(observer.depth, 3);
-        }
+        expect(find.text('默认播放内核'), findsOneWidget);
+        expect(find.text('自动下一集'), findsOneWidget);
+        await tester.tap(find.text('自动下一集'));
+        await tester.pumpAndSettle();
+        expect(observer.depth, 3);
+        expect(find.byType(AppBar), findsOneWidget);
       }
       if (path.$2 == '弹幕服务') {
         expect(find.text('内置本机服务').hitTestable(), findsOneWidget);
@@ -565,10 +559,16 @@ void main() {
     expect(find.text('播放器设置'), findsOneWidget);
     await tester.tap(find.text('播放器设置'));
     await pumpIoAndSettle(tester);
-    await tester.tap(find.text('播放与选集'));
-    await pumpIoAndSettle(tester);
     expect(find.text('后台播放'), findsOneWidget);
-    expect(find.text('播放倍速'), findsOneWidget);
+    expect(find.text('播放速度'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<PlayerKernel>));
+    await tester.pumpAndSettle();
+    expect(find.text('MDK'), findsNothing);
+    expect(find.text('AetherEngine'), findsNothing);
+    await tester.tap(find.text('MPV').last);
+    await tester.pumpAndSettle();
+    final library = ReadingLibrary.find(Section.video)!;
+    expect(VideoPlayerSettingsStore(library).load().kernel, PlayerKernel.mpv);
   });
 
   testWidgets('运行日志：查看、按级别筛选、清空', (tester) async {

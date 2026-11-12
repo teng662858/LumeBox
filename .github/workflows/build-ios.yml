@@ -99,6 +99,16 @@ jobs:
 
       - name: 检查播放器原生通道（匹配插件 iOS 18 最低目标）
         run: bash tool/check_ios_player_presentation.sh
+      - name: 原生播放页模拟器实播（不生成 IPA）
+        if: ${{ inputs.typecheck_only == true }}
+        run: |
+          brew install ffmpeg
+          bash tool/check_native_video.sh
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && inputs.typecheck_only == true }}
+        with:
+          name: native-video-check
+          path: out/native-video/
 
       - name: 准备并校验片头片尾本地模型
         if: ${{ inputs.typecheck_only != true }}

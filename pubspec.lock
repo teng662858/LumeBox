@@ -329,14 +329,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  fvp:
-    dependency: "direct main"
-    description:
-      name: fvp
-      sha256: "2addef2e6faf46a589c529de8a81b74cef927c3343eb75aeab5e6a4715c97e8d"
-      url: "https://pub.flutter-io.cn"
-    source: hosted
-    version: "0.39.0"
   glob:
     dependency: transitive
     description:
@@ -678,7 +670,7 @@ packages:
     source: hosted
     version: "2.2.2"
   path_provider_platform_interface:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: path_provider_platform_interface
       sha256: "484838772624c3a4b94f1e44a3e19897fee738f2d5c4ce448443b0417f7c9dda"

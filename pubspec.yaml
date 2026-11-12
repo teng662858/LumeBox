@@ -62,7 +62,6 @@ dependencies:
   media_kit_libs_ios_video: ^1.1.4
   media_kit_libs_android_video: ^1.3.8
   media_kit_libs_windows_video: ^1.0.11
-  fvp: ^0.39.0
   # Current source additions since the archived manifest (2026-10-08).
   archive: ^4.3.0
   audio_session: ^0.2.4
@@ -100,6 +99,7 @@ dev_dependencies:
   video_player_platform_interface: ^6.9.0
   # WebView 页面生命周期与退出停止播放的测试替身。
   webview_flutter_platform_interface: ^2.15.1
+  path_provider_platform_interface: ^2.1.3
 
 # 本地 vendored 副本（路径覆盖）：上游 2.12.0 + 一处补丁
 # （把宿主写入的播放缓冲参数应用到 AVPlayer，见

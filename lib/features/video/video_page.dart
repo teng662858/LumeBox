@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'playback_entry_preparation.dart';
 
 import 'package:lume_box/core/theme/lume_typography.dart';
@@ -169,6 +171,7 @@ class _VideoPageState extends State<VideoPage> {
   /// 不可用时按目录回退（与播放器页的「生效内核」同一口径），免得预启动的实例
   /// 与页面要的内核不匹配而白建。设置库拿不到就不预启动——正式链路自己会建。
   PlayerPrelaunch? _startPrelaunch() {
+    if (Platform.isIOS) return null;
     final library = _library;
     if (library == null) return null;
     final stored = VideoPlayerSettingsStore(library).load().kernel;

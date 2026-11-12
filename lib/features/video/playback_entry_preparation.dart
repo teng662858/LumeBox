@@ -131,6 +131,12 @@ Future<PlayerPrelaunch?> preparePlaybackRoute(
   String? fallbackDirection,
   bool Function()? stillActive,
 }) async {
+  // The native screen creates its own engine after presentation. No Dart-side
+  // prelaunch, metadata probe or orientation lock may create an old player.
+  if (Platform.isIOS) {
+    await prelaunch?.discard();
+    return null;
+  }
   const catalog = PlatformPlayerKernelCatalog();
   final available = PlayerKernel.values.where(catalog.isAvailable).toList();
   if (prelaunch == null && available.isEmpty) return null;

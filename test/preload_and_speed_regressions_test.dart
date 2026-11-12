@@ -10,7 +10,6 @@ import 'package:lume_box/core/player/buffering.dart';
 import 'package:lume_box/core/player/download_speed.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/player_stats.dart';
-import 'package:lume_box/core/player/media_kit_mpv_engine.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/video/next_episode_buffer.dart';
 import 'package:lume_box/features/video/player_hud.dart';
@@ -19,26 +18,6 @@ import 'package:lume_box/features/video/video_play_target.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  test('MPV缓存终点扣除播放位置，避免把已播放时间当成前向缓冲', () {
-    expect(
-      MediaKitMpvEngine.bufferedAhead(
-        const Duration(seconds: 11),
-        const Duration(seconds: 10),
-      ),
-      const Duration(seconds: 1),
-    );
-    expect(
-      MediaKitMpvEngine.bufferedAhead(
-        const Duration(seconds: 9),
-        const Duration(seconds: 10),
-      ),
-      Duration.zero,
-    );
-    expect(
-      MediaKitMpvEngine.bufferedAhead(null, const Duration(seconds: 10)),
-      isNull,
-    );
-  });
   test('下载计数按采样间隔计算，空闲为0，重置和不可用不产生假读数', () {
     final sampler = DownloadSpeedSampler();
     expect(sampler.sample(1000, Duration.zero), isNull);

@@ -14,8 +14,6 @@ import 'package:path_provider/path_provider.dart';
 import 'abstract_player.dart';
 import 'hls_ad_filter.dart';
 import 'apple_hls_fragments.dart';
-import 'av_player.dart';
-import 'aether_player.dart';
 import 'playback_diagnostics.dart';
 import '../net/lume_net.dart';
 
@@ -73,6 +71,7 @@ class VideoDiskCache extends ChangeNotifier {
   }
 
   Future<void> boot({Directory? directory}) async {
+    if (_ready) return;
     final base = directory ?? await getApplicationSupportDirectory();
     _settings = File('${base.path}/video_buffer.json');
     if (await _settings!.exists()) {
@@ -160,7 +159,7 @@ class VideoDiskCache extends ChangeNotifier {
     if (appleHls &&
         ['.mkv', '.webm', '.mpd', '.avi', '.flv', '.wmv'].contains(suffix)) {
       throw UnsupportedError(
-        '当前内核无法打开该媒体：${suffix.substring(1).toUpperCase()} 封装需要 MPV 或 MDK',
+        '当前内核无法打开该媒体：${suffix.substring(1).toUpperCase()} 封装需要 MPV',
       );
     }
     if (!force && !enabled && !_loopback(media.uri) && suffix != '.m3u8') {
@@ -261,7 +260,7 @@ class VideoDiskCache extends ChangeNotifier {
   /// A failed local cache transport must not make a reachable origin unplayable.
   Future<void> load(AbstractPlayer player, PlayerMedia media) async {
     final appleHls =
-        Platform.isIOS && (player is AvPlayer || player is AetherPlayer);
+        Platform.isIOS && player.stats.value.engineLabel == 'AVPlayer';
     final wrapped = await wrap(media, inspect: true, appleHls: appleHls);
     try {
       await _loadAndWait(player, wrapped);
