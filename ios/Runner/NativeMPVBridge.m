@@ -255,7 +255,10 @@ static void *NativeMPVProc(void *context, const char *name) { return dlsym(RTLD_
     if (result != kCVReturnSuccess || !texture) { CVPixelBufferRelease(buffer); [EAGLContext setCurrentContext:nil]; return; }
     GLuint fbo; glGenFramebuffers(1, &fbo); glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, CVOpenGLESTextureGetName(texture), 0);
-    mpv_opengl_fbo target = {.fbo = (int)fbo, .w = _width, .h = _height}; int flip = 1;
+    // This FBO writes directly into a top-row-first CVPixelBuffer, consumed by
+    // AVSampleBufferDisplayLayer. It is not an on-screen GL default framebuffer.
+    // Flipping here inverts only the device OpenGL path (simulator uses SW).
+    mpv_opengl_fbo target = {.fbo = (int)fbo, .w = _width, .h = _height}; int flip = 0;
     int blockForTargetTime = 0;
     mpv_render_param params[] = {{MPV_RENDER_PARAM_OPENGL_FBO, &target}, {MPV_RENDER_PARAM_FLIP_Y, &flip},
       {MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME, &blockForTargetTime}, {0}};

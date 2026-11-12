@@ -54,7 +54,6 @@ class NativeVideoSourceSession {
   int _resolution = 0;
   void Function()? _releasePin;
   late PlayerSettings _settings;
-  DateTime? _loadStarted;
 
   Future<void> get finished => _connection?.finished ?? Future.value();
   String? get connectionId => _connection?.id;
@@ -108,13 +107,6 @@ class NativeVideoSourceSession {
     }
     if (_closed) return;
     _connection = _bridge.connect(request: _request, event: _event);
-    _loadStarted = DateTime.now();
-    PlaybackDiagnostics.record(
-      'native-open',
-      source: target?.sourceId,
-      kernel: _settings.kernel.name,
-      uri: _media.uri,
-    );
     await _connection!.open(payload, {
       'kernel': _settings.kernel.name,
       'speed': _settings.speed,
@@ -348,7 +340,6 @@ class NativeVideoSourceSession {
     target = nextTarget;
     qualities = nextQualities;
     _media = nextMedia;
-    _loadStarted = DateTime.now();
     return {'media': payload};
   }
 
@@ -397,15 +388,19 @@ class NativeVideoSourceSession {
       }
     }
     PlaybackFocus.setPlaying('video', data['playing'] == true);
-    if (type == 'ready' || type == 'firstFrame' || type == 'error') {
+    if (type == 'load-start' ||
+        type == 'ready' ||
+        type == 'firstFrame' ||
+        type == 'error') {
+      final elapsed = data['elapsedMs'];
       PlaybackDiagnostics.record(
-        'native-$type',
+        type == 'load-start' ? 'native-open' : 'native-$type',
         source: target?.sourceId,
         kernel: data['kernel'] as String?,
         uri: _media.uri,
-        elapsedMs: _loadStarted == null
-            ? null
-            : DateTime.now().difference(_loadStarted!).inMilliseconds,
+        elapsedMs: elapsed is num && elapsed.isFinite && elapsed >= 0
+            ? elapsed.toInt()
+            : null,
         error: data['error'] as String?,
       );
     }

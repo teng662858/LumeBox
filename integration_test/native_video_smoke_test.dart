@@ -81,6 +81,9 @@ void main() {
                 s['firstFrame'] == true && (s['position'] as num? ?? 0) > 0.5,
           );
           expect(ready['viewAttached'], isTrue);
+          expect(ready['closeWidth'], 44);
+          expect(ready['closeLeadingInset'], closeTo(16, 1));
+          if (kernel == 'mpv') expect(ready['frameUpright'], isTrue);
           expect(ready['pipSupported'], kernel == 'avplayer');
           expect(
             ready['playHitTest'],

@@ -39,7 +39,7 @@ cat > "$CHECK/NativeVideoCheck.app/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign - --deep "$CHECK/NativeVideoCheck.app"
-ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=640x360:rate=24 -f lavfi -i sine=frequency=440 -t 12 -c:v libx264 -pix_fmt yuv420p -g 24 -c:a aac -movflags +faststart "$CHECK/fixtures/smoke.mp4"
+ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=640x360:rate=24 -f lavfi -i sine=frequency=440 -t 12 -vf 'drawbox=x=0:y=0:w=iw:h=48:color=red:t=fill,drawbox=x=0:y=ih-48:w=iw:h=48:color=blue:t=fill' -c:v libx264 -pix_fmt yuv420p -g 24 -c:a aac -movflags +faststart "$CHECK/fixtures/smoke.mp4"
 ffmpeg -hide_banner -loglevel error -i "$CHECK/fixtures/smoke.mp4" -c copy -hls_time 1 -hls_list_size 0 "$CHECK/fixtures/smoke.m3u8"
 python3 tool/native_video_fixture_server.py "$CHECK/fixtures" > out/native-video/http.log 2>&1 &
 HTTP_PID=$!

@@ -42,6 +42,18 @@
       check(state["playHitTest"] as? Bool == true, "UIKit play button hit test")
       check(state["closeHitTest"] as? Bool == true, "UIKit close button hit test")
       check(state["viewAttached"] as? Bool == true, "visible native picture")
+      if cases[caseIndex].0 == "mpv" {
+        check(state["frameUpright"] as? Bool == true, "decoded red-top/blue-bottom fixture is upright")
+      }
+      let original = screen.view.frame
+      for size in [CGSize(width: 320, height: 568), CGSize(width: 390, height: 844), CGSize(width: 844, height: 390)] {
+        screen.view.frame = CGRect(origin: .zero, size: size)
+        screen.view.setNeedsLayout(); screen.view.layoutIfNeeded()
+        let layout = screen.debugState
+        check((layout["closeWidth"] as? CGFloat ?? 0) == 44, "back button stays 44pt at \(size)")
+        check(abs((layout["closeLeadingInset"] as? CGFloat ?? 0) - 16) < 1, "back button stays at leading edge at \(size)")
+      }
+      screen.view.frame = original; screen.view.setNeedsLayout(); screen.view.layoutIfNeeded()
       screen.debugAction(["action": "tap", "control": "play"])
       pausedAt = Date(); pausedPosition = position; phase = 1
     } else if phase == 1 && Date().timeIntervalSince(pausedAt) > 0.9 {
@@ -53,7 +65,9 @@
       screen.debugAction(["action": "pip"])
       check(screen.debugState["viewAttached"] as? Bool == true, "PiP preparation keeps inline layer")
       if caseIndex == 0 {
-        screen.debugAction(["action": "kernel", "kernel": "mpv"]); phase = 3; swaps = 1
+        screen.debugAction(["action": "kernel", "kernel": "mpv"])
+        check((screen.debugState["loadElapsedMs"] as? Int ?? Int.max) < 1000, "kernel switch resets the load clock")
+        phase = 3; swaps = 1
       } else { complete() }
     } else if phase == 3 && state["firstFrame"] as? Bool == true && state["switching"] as? Bool == false {
       if swaps == 1 {

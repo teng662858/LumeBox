@@ -239,6 +239,11 @@ struct NativeVideoState {
   private var disposed = false, desiredPlay = false
   private var speed = 1.0
   private var pendingResume = 0.0
+  #if DEBUG
+  // The native smoke fixture has a red top stripe and a blue bottom stripe.
+  // Inspect decoded pixels, rather than treating an advancing clock as upright video.
+  private(set) var debugFrameUpright = false
+  #endif
   init(options: [String: Any]) {
     surface.backgroundColor = .black; surface.isUserInteractionEnabled = false
     bridge = NativeMPVBridge(options: options, state: { [weak self] data in
@@ -264,6 +269,21 @@ struct NativeVideoState {
       self.changed?(self.state)
     }, frame: { [weak self] sample in
       guard let self, !self.disposed else { return }
+      #if DEBUG
+      if let buffer = CMSampleBufferGetImageBuffer(sample) {
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        if let base = CVPixelBufferGetBaseAddress(buffer) {
+          let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
+          let stride = CVPixelBufferGetBytesPerRow(buffer)
+          let pixels = base.assumingMemoryBound(to: UInt8.self)
+          let top = (height / 16) * stride + (width / 2) * 4
+          let bottom = (height - 1 - height / 16) * stride + (width / 2) * 4
+          self.debugFrameUpright = pixels[top + 2] > 160 && pixels[top] < 80 &&
+            pixels[bottom] > 160 && pixels[bottom + 2] < 80
+        }
+        CVPixelBufferUnlockBaseAddress(buffer, .readOnly)
+      }
+      #endif
       if self.surface.videoLayer.status == .failed { self.surface.videoLayer.flush() }
       self.surface.videoLayer.enqueue(sample)
       self.state.firstFrame = true

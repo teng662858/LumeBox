@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/native_video_bridge.dart';
+import 'package:lume_box/core/player/playback_diagnostics.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
@@ -163,6 +164,29 @@ void main() {
     await session.close();
     expect(SourceRuntimePins.contains(Section.video, 'fixture'), isFalse);
   });
+  test(
+    'each native load reports its own clock across kernel and hardware changes',
+    () async {
+      await start();
+      for (final kernel in ['avplayer', 'mpv', 'mpv', 'avplayer']) {
+        for (final type in ['load-start', 'ready', 'firstFrame']) {
+          await native('event', {
+            'session': opened['session'],
+            'type': type,
+            'kernel': kernel,
+            'generation': 2,
+            'elapsedMs': type == 'load-start' ? 0 : 123,
+          });
+        }
+        final events = PlaybackDiagnostics.snapshot;
+        expect(events[events.length - 3]['stage'], 'native-open');
+        expect(events[events.length - 3]['elapsedMs'], 0);
+        expect(events.last['kernel'], kernel);
+        expect(events.last['elapsedMs'], 123);
+      }
+      await session.close();
+    },
+  );
   test('an inspected unsupported Apple container retries with MPV before presentation', () async {
     final modes = <bool>[];
     await start(

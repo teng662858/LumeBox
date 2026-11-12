@@ -85,6 +85,7 @@ import UniformTypeIdentifiers
   private var notifications: [NSObjectProtocol] = []
   private var remoteTargets: [(MPRemoteCommand, Any)] = []
   private var lastEvent = 0.0, scrubOrigin = 0.0, panVolume = 1.0, panBrightness = 0.5
+  private var loadStarted = CACurrentMediaTime()
   private var fatalMessage: String?
   private var subtitleCues: [(Double, Double, String)] = []
   private var subtitleText = ""
@@ -128,6 +129,7 @@ import UniformTypeIdentifiers
     bottom.axis = .vertical; bottom.spacing = 8; bottom.backgroundColor = UIColor.black.withAlphaComponent(0.55)
     top.backgroundColor = UIColor.black.withAlphaComponent(0.45)
     titleLabel.text = item.title; titleLabel.textColor = .white; titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+    titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
     titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let back = button("close", "chevron.backward", "返回") { [weak self] in self?.finish() }
     top.addArrangedSubview(back); top.addArrangedSubview(titleLabel)
@@ -211,7 +213,9 @@ import UniformTypeIdentifiers
     let button = UIButton(type: .system); button.tintColor = .white
     button.setImage(UIImage(systemName: image, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
     button.accessibilityIdentifier = "native-video-\(id)"; button.accessibilityLabel = label
-    button.widthAnchor.constraint(greaterThanOrEqualToConstant: 36).isActive = true
+    // The title absorbs spare width; a back button must never stretch across
+    // the navigation bar and move its centered symbol towards the middle.
+    button.widthAnchor.constraint(equalToConstant: ["close", "pip", "settings"].contains(id) ? 44 : 36).isActive = true
     button.heightAnchor.constraint(equalToConstant: 44).isActive = true
     button.addAction(UIAction { [weak self] _ in guard let self, !self.closing, !self.locked else { return }; action(); self.scheduleHide() }, for: .touchUpInside)
     controls[id] = button; return button
@@ -219,6 +223,9 @@ import UniformTypeIdentifiers
   private func emit(_ type: String, extra: [String: Any] = [:]) {
     var data = state.dictionary
     data.merge(["session": session, "type": type, "identity": item.identity, "kernel": kernel, "generation": generation]) { _, new in new }
+    if ["load-start", "ready", "firstFrame", "error"].contains(type) {
+      data["elapsedMs"] = Int(max(0, CACurrentMediaTime() - loadStarted) * 1000)
+    }
     data.merge(extra) { _, new in new }; event?(data)
   }
 
@@ -227,13 +234,15 @@ import UniformTypeIdentifiers
     generation += 1; let revision = generation
     switching = true; timeout?.invalidate(); resetPip()
     if emitProgress { emit("progress") }; readyRecorded = false; frameRecorded = false
+    kernel = selected == "mpv" ? "mpv" : "avplayer"
+    loadStarted = CACurrentMediaTime()
     let at = resume ?? state.position
     let previous = engine; engine = nil
     previous?.pause(); previous?.view.removeFromSuperview(); fatalMessage = nil
     state = NativeVideoState(); renderState()
+    emit("load-start")
     let create = { [weak self] in
       guard let self, !self.closing, self.generation == revision else { return }
-      self.kernel = selected == "mpv" ? "mpv" : "avplayer"
       var engineOptions = self.options; engineOptions["hardwareDecoding"] = self.hardware
       let next: NativeVideoEngine = self.kernel == "mpv" ? NativeMPVEngine(options: engineOptions) : NativeAVEngine(options: engineOptions)
       self.engine = next; self.picture.addSubview(next.view); next.view.frame = self.picture.bounds
@@ -718,6 +727,14 @@ import UniformTypeIdentifiers
     result["nativeControls"] = controls.count; result["wantsPlay"] = wantsPlay
     result["pipSupported"] = kernel == "avplayer"
     result["viewAttached"] = engine?.view.window != nil
+    if let back = controls["close"] {
+      let rect = back.convert(back.bounds, to: view)
+      result["closeWidth"] = rect.width
+      result["closeLeadingInset"] = rect.minX - view.safeAreaLayoutGuide.layoutFrame.minX
+    }
+    result["layoutLandscape"] = view.bounds.width > view.bounds.height
+    result["loadElapsedMs"] = Int(max(0, CACurrentMediaTime() - loadStarted) * 1000)
+    if let mpv = engine as? NativeMPVEngine { result["frameUpright"] = mpv.debugFrameUpright }
     if let window = view.window {
       for id in ["play", "close"] {
         if let button = controls[id] {

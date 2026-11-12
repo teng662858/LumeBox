@@ -43,7 +43,7 @@ jobs:
         run: |
           brew install ffmpeg
           mkdir -p "$RUNNER_TEMP/playback-fixtures" out/playback-smoke
-          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=320x240:rate=24 -f lavfi -i sine=frequency=440 -t 8 -c:v libx264 -pix_fmt yuv420p -g 24 -c:a aac -movflags +faststart "$RUNNER_TEMP/playback-fixtures/smoke.mp4"
+          ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=320x240:rate=24 -f lavfi -i sine=frequency=440 -t 8 -vf 'drawbox=x=0:y=0:w=iw:h=32:color=red:t=fill,drawbox=x=0:y=ih-32:w=iw:h=32:color=blue:t=fill' -c:v libx264 -pix_fmt yuv420p -g 24 -c:a aac -movflags +faststart "$RUNNER_TEMP/playback-fixtures/smoke.mp4"
           ffmpeg -hide_banner -loglevel error -i "$RUNNER_TEMP/playback-fixtures/smoke.mp4" -c copy -hls_time 1 -hls_list_size 0 "$RUNNER_TEMP/playback-fixtures/smoke.m3u8"
           python3 tool/native_video_fixture_server.py "$RUNNER_TEMP/playback-fixtures" >out/playback-smoke/http.log 2>&1 &
       - name: Run production player and cache on iOS Simulator
