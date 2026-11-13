@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/experience/content_center.dart';
+import 'package:lume_box/core/experience/offline_policy.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/video/video_download_center.dart';
 
@@ -35,13 +37,14 @@ void main() {
   Future<VideoDownloadTask> downloaded(
     VideoDownloadCenter center, {
     String state = 'done',
+    String chapter = 'one',
   }) async {
     await center.boot();
     final task = VideoDownloadTask(
-      id: VideoDownloadCenter.identity('source', 'movie', 'one'),
+      id: VideoDownloadCenter.identity('source', 'movie', chapter),
       sourceId: 'source',
       itemId: 'movie',
-      chapterId: 'one',
+      chapterId: chapter,
       title: 'Movie',
       chapterTitle: 'One',
       state: state,
@@ -247,6 +250,72 @@ void main() {
     await center.flush();
     await waitFor(() => !File('${center.folder(task)}/a.ts').existsSync());
     expect(task.fileName, 'merged.mp4');
+  });
+
+  test('local merge without Wi-Fi respects reserved disk space and never resolves the source', () async {
+    final settings = ContentCenter.instance.data;
+    final previous = Map.of(settings);
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    var freeBytes = 0, inspected = 0, resolutions = 0;
+    settings['wifiOnly'] = true;
+    settings['reserveMB'] = 1;
+    messenger.setMockMethodCallHandler(OfflinePolicy.channel, (_) async {
+      inspected++;
+      return {'wifi': false, 'freeBytes': freeBytes};
+    });
+    addTearDown(() {
+      settings..clear()..addAll(previous);
+      messenger.setMockMethodCallHandler(OfflinePolicy.channel, null);
+    });
+    final center = VideoDownloadCenter(
+      directory: () async => root,
+      resolve: (_) async {
+        resolutions++;
+        throw StateError('Source is offline');
+      },
+      merge: (_, output, _) async => output.writeAsBytes(mp4),
+    );
+    final task = await downloaded(center);
+    await center.resume(task);
+    await waitFor(() => task.state == 'paused');
+    expect(task.error, contains('空间'));
+    freeBytes = 2 * 1024 * 1024;
+    await center.resume(task);
+    await waitFor(() => ['done', 'paused', 'merge_failed'].contains(task.state));
+    await center.flush();
+    expect(task.state, 'done', reason: task.error);
+    final missing = await downloaded(center, chapter: 'missing');
+    await center.localFile(missing).delete();
+    await center.resume(missing);
+    await waitFor(() => ['paused', 'failed', 'merge_failed'].contains(missing.state));
+    await center.flush();
+    expect(missing.error, contains('Wi-Fi'));
+    expect(inspected, greaterThanOrEqualTo(3));
+    expect(resolutions, 0);
+  });
+
+  test('successful writes after a manifest write failure restore fragment cleanup', () async {
+    final center = VideoDownloadCenter(
+      directory: () async => root,
+      merge: (_, output, _) async => output.writeAsBytes(mp4),
+    );
+    final first = await downloaded(center);
+    final obstruction = await Directory('${center.root.path}/tasks.json.part').create();
+    await center.resume(first);
+    await waitFor(() => first.state == 'done');
+    await center.flush();
+    expect(center.storageError, isNotNull);
+    expect(await File('${center.folder(first)}/a.ts').exists(), true);
+    await obstruction.delete();
+    final next = await downloaded(center, chapter: 'two');
+    await center.resume(next);
+    await waitFor(() => next.state == 'done');
+    await center.flush();
+    expect(center.storageError, isNull);
+    expect(await File('${center.folder(next)}/a.ts').exists(), false);
+    final restored = VideoDownloadCenter(directory: () async => root);
+    await restored.boot();
+    expect(await restored.completedFile('source', 'movie', 'two'), isNotNull);
   });
 
   test('a truncated committed MP4 is rebuilt using the surviving local HLS', () async {

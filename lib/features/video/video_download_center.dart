@@ -341,7 +341,8 @@ class VideoDownloadCenter extends ChangeNotifier {
       while (true) {
         final task = tasks.where((t) => t.state == 'queued').firstOrNull;
         if (task == null) break;
-        final blocked = await OfflinePolicy.blocked();
+        final localMerge = task.hasLocalPlaylist && await localFile(task).exists();
+        final blocked = await OfflinePolicy.blocked(needsNetwork: !localMerge);
         if (task.state != 'queued') continue;
         if (blocked != null) {
           task.state = 'paused';
@@ -367,7 +368,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         );
         try {
           _check(task);
-          if (task.hasLocalPlaylist && await localFile(task).exists()) {
+          if (localMerge) {
             await _mergeDownloaded(task);
             continue;
           }
@@ -1175,6 +1176,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       final part = File(p.join(root.path, 'tasks.json.part'));
       await part.writeAsString(bytes, flush: true);
       await part.rename(p.join(root.path, 'tasks.json'));
+      storageError = null;
     });
     _writes = next.catchError((Object _) {
       storageError = '下载任务未能保存，请检查剩余空间';

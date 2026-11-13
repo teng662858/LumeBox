@@ -8,13 +8,15 @@ class OfflinePolicy {
   static Future<String?> blocked({
     Future<Map<Object?, Object?>> Function()? inspect,
     bool? playing,
+    bool needsNetwork = true,
   }) async {
     final settings = ContentCenter.instance;
     if (settings.enabled('pauseDuringPlayback') &&
         (playing ?? PlaybackFocus.isPlaying)) {
       return '播放时暂停下载';
     }
-    if (!settings.enabled('wifiOnly') && settings.number('reserveMB', 0) <= 0) {
+    final wifiRequired = needsNetwork && settings.enabled('wifiOnly');
+    if (!wifiRequired && settings.number('reserveMB', 0) <= 0) {
       return null;
     }
     Map<Object?, Object?> facts;
@@ -27,7 +29,7 @@ class OfflinePolicy {
     } catch (_) {
       return '无法确认网络或可用空间，请稍后重试或调整离线策略';
     }
-    if (settings.enabled('wifiOnly') && facts['wifi'] != true) {
+    if (wifiRequired && facts['wifi'] != true) {
       return '等待 Wi-Fi 网络';
     }
     final reserve = settings.number('reserveMB', 0) * 1024 * 1024;
