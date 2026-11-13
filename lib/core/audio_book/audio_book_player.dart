@@ -540,7 +540,11 @@ class AudioBookSession extends ChangeNotifier {
       await _player?.stop();
       if (generation != _generation) return;
       if (sources.isEmpty) throw const AudioBookFailure('资源没有可播放的章节');
-      await PlaybackFocus.acquire('audioBook');
+      await PlaybackFocus.acquire(
+        'audioBook',
+        stillWanted: () => generation == _generation,
+      );
+      if (generation != _generation) return;
       await settings.load();
       if (generation != _generation) return;
       final saved = settings.positions[entry.id];

@@ -158,6 +158,32 @@ void main() {
     expect(player.loads, 1);
   });
 
+  test('退出听书会取消排队中的焦点请求，视频继续持有焦点', () async {
+    final entered = Completer<void>(), finish = Completer<void>();
+    Future<void> releasePrevious() async {
+      entered.complete();
+      await finish.future;
+    }
+    var videoReleases = 0;
+    Future<void> releaseVideo() async { videoReleases++; }
+    addTearDown(() {
+      PlaybackFocus.unregister('previous', releasePrevious);
+      PlaybackFocus.unregister('video', releaseVideo);
+    });
+    await PlaybackFocus.acquire('previous', onRelease: releasePrevious);
+    final video = PlaybackFocus.acquire('video', onRelease: releaseVideo);
+    await entered.future;
+    final opening = openBookmark();
+    await Future<void>.delayed(Duration.zero);
+    await session.release();
+    finish.complete();
+    await video;
+    await opening;
+    expect(videoReleases, 0);
+    expect(PlaybackFocus.owner, 'video');
+    expect(player.loads, 0);
+  });
+
   test('opening a bookmark in the active chapter keeps a paused player paused', () async {
     await session.open(resource, tracks, index: 1);
     await session.pause();
