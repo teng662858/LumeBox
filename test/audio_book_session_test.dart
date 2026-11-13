@@ -732,7 +732,7 @@ class _AudioPlayer implements AudioBookPlayer {
   final d = StreamController<Duration?>.broadcast(sync: true);
   final b = StreamController<bool>.broadcast(sync: true);
   final i = StreamController<int?>.broadcast(sync: true);
-  final e = StreamController<String>.broadcast(sync: true);
+  final e = StreamController<AudioBookFailure>.broadcast(sync: true);
   List<AudioBookTrack> lastTracks = [];
   int current = 0, releases = 0, loads = 0, failLoads = 0;
   Future<void> Function()? beforeLoad;
@@ -757,7 +757,7 @@ class _AudioPlayer implements AudioBookPlayer {
   @override
   Stream<int?> get index => i.stream;
   @override
-  Stream<String> get errors => e.stream;
+  Stream<AudioBookFailure> get errors => e.stream;
   @override
   Future<void> load(
     List<AudioBookTrack> tracks, {

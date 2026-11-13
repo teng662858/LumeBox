@@ -6,6 +6,7 @@ import 'package:lume_box/core/audio_book/audio_book_player.dart';
 import 'package:lume_box/core/audio_book/audio_book_track.dart';
 import 'package:lume_box/core/cache/media_preload.dart';
 import 'package:lume_box/core/media/media_library.dart';
+import 'package:lume_box/core/session/section.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -32,6 +33,7 @@ void main() {
     await player.disposeNative();
     await native.states.close();
     await native.indices.close();
+    await native.errors.close();
     MediaPreload.instance.update(audio: true);
   });
 
@@ -104,6 +106,62 @@ void main() {
     expect(native.singles, hasLength(2));
     expect(observed.last, 1);
     expect(player.playhead.index, 1);
+  });
+
+  test('自动切章失败后显示原因，重新加载从失败章节开头播放', () async {
+    MediaPreload.instance.update(audio: false);
+    final settings = _MemorySettings();
+    final session = AudioBookSession(
+      factory: () => player,
+      settings: settings,
+      initialize: () async {},
+    );
+    addTearDown(() async {
+      await session.shutdown();
+      session.dispose();
+    });
+    final book = MediaResource(
+      id: 'book', title: '测试书', kind: ResourceKind.audioBook,
+      destination: Section.video, episodes: tracks.map((t) => t.episode).toList(),
+    );
+    await session.open(book, tracks);
+    final gate = native.pendingLoad = Completer<Duration?>();
+    native.completeChapter();
+    await Future<void>.delayed(Duration.zero);
+    expect(native.singles, hasLength(2));
+    native.pendingLoad = null;
+    gate.completeError(StateError('load failed'));
+    await Future<void>.delayed(Duration.zero);
+    expect(session.error, contains('第1集'));
+    expect(native.playing, isFalse);
+    expect(session.current, 1);
+    expect(settings.positions['book']?['position'], 0);
+    await session.retry();
+    expect(session.error, isNull);
+    expect(player.playhead.index, 1);
+    expect(native.position, Duration.zero);
+    expect(native.playing, isTrue);
+  });
+
+  test('自动切章缓冲时手动选集，旧章节失败不会打断新选择', () async {
+    MediaPreload.instance.update(audio: false);
+    final errors = <AudioBookFailure>[];
+    final subscription = player.errors.listen(errors.add);
+    addTearDown(subscription.cancel);
+    await player.load(tracks);
+    await player.play();
+    final gate = native.pendingLoad = Completer<Duration?>();
+    native.completeChapter();
+    await Future<void>.delayed(Duration.zero);
+    final selected = player.seek(const Duration(seconds: 23), index: 2);
+    native.errors.add(ja.PlayerException(1, 'old chapter unavailable', 0));
+    native.pendingLoad = null;
+    gate.completeError(StateError('old load failed'));
+    await selected;
+    expect(errors, isEmpty);
+    expect(player.playhead.index, 2);
+    expect(native.position, const Duration(seconds: 23));
+    expect(native.playing, isTrue);
   });
 
   test('切章缓冲期间的暂停优先于此前的续播请求', () async {
@@ -211,12 +269,20 @@ void main() {
   });
 }
 
+class _MemorySettings extends AudioBookSettings {
+  @override
+  Future<void> load() async {}
+  @override
+  Future<void> save() async {}
+}
+
 /// Implements the native engine boundary, so the real playlist/policy/proxy
 /// wiring is exercised without pretending to decode audio on Windows.
 class _NativeAudio implements ja.AudioPlayer {
   Completer<Duration?>? pendingLoad;
   final states = StreamController<ja.PlayerState>.broadcast();
   final indices = StreamController<int?>.broadcast();
+  final errors = StreamController<ja.PlayerException>.broadcast(sync: true);
   final singles = <ja.AudioSource>[];
   final batches = <List<ja.AudioSource>>[];
   @override
@@ -241,6 +307,8 @@ class _NativeAudio implements ja.AudioPlayer {
     processingState = ja.ProcessingState.ready;
   }
   @override
+  Future<void> setSpeed(double speed) async {}
+  @override
   ja.PlaybackEvent get playbackEvent => ja.PlaybackEvent(
     processingState: processingState,
     currentIndex: currentIndex,
@@ -251,6 +319,14 @@ class _NativeAudio implements ja.AudioPlayer {
   bool playing = false;
   @override
   Stream<ja.PlayerState> get playerStateStream => states.stream;
+  @override
+  Stream<bool> get playingStream => states.stream.map((state) => state.playing);
+  @override
+  Stream<Duration> get positionStream => const Stream.empty();
+  @override
+  Stream<Duration?> get durationStream => const Stream.empty();
+  @override
+  Stream<ja.PlayerException> get errorStream => errors.stream;
   @override
   Stream<int?> get currentIndexStream => indices.stream.distinct();
   @override

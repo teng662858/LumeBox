@@ -1,8 +1,9 @@
 import '../media/media_library.dart';
 
 class AudioBookFailure implements Exception {
-  const AudioBookFailure(this.message);
+  const AudioBookFailure(this.message, {this.retryChapter});
   final String message;
+  final int? retryChapter;
   @override
   String toString() => message;
 }

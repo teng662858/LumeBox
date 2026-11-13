@@ -122,7 +122,7 @@ abstract interface class AudioBookPlayer {
   Stream<Duration?> get duration;
   Stream<bool> get playing;
   Stream<int?> get index;
-  Stream<String> get errors;
+  Stream<AudioBookFailure> get errors;
   Future<void> load(
     List<AudioBookTrack> sources, {
     int index = 0,
@@ -181,6 +181,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   int _playRequest = 0;
   int _offset = 0;
   final _singleIndex = StreamController<int>.broadcast();
+  final _chapterErrors = StreamController<AudioBookFailure>.broadcast(sync: true);
   StreamSubscription<ja.PlayerState>? _completion;
   VoidCallback? _removePreloadClearer;
   static Future<void>? _background;
@@ -222,9 +223,19 @@ class JustAudioBookPlayer implements AudioBookPlayer {
     };
   }).distinct();
   @override
-  Stream<String> get errors => _player.errorStream.map((error) {
-    LumeLog.warn('[audioBook] 播放器错误: $error');
-    return _proxy.lastError ?? '音频播放失败，请检查源和网络';
+  Stream<AudioBookFailure> get errors => Stream<AudioBookFailure>.multi((events) {
+    final native = _player.errorStream.listen((error) {
+      LumeLog.warn('[audioBook] 播放器错误: $error');
+      // setAudioSource reports load failures to the operation that selected
+      // the chapter. It knows whether that selection is still current.
+      if (_singleLoad != null) return;
+      events.addSync(AudioBookFailure(_proxy.lastError ?? '音频播放失败，请检查源和网络'));
+    });
+    final chapters = _chapterErrors.stream.listen(events.addSync);
+    events.onCancel = () async {
+      await native.cancel();
+      await chapters.cancel();
+    };
   });
   @override
   Future<void> load(
@@ -233,6 +244,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
     Duration position = Duration.zero,
   }) async {
     _playRequest++;
+    _chapterRequest++;
     await _configureSession();
     final urls = await _proxy.prepare(sources);
     // Huge native queues serialize thousands of MediaItems on route entry.
@@ -255,11 +267,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
         return;
       }
       if (_singleMode && _offset + 1 < _playlist.length) {
-        unawaited(
-          _loadSingle(_offset + 1).catchError((Object error) {
-            LumeLog.warn('[audioBook] 自动切集失败：$error');
-          }),
-        );
+        unawaited(_loadSingle(_offset + 1, automatic: true));
       } else {
         unawaited(pause().catchError((Object error) {
           LumeLog.warn('[audioBook] 播放结束后暂停失败：$error');
@@ -315,6 +323,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   Future<void> _loadSingle(
     int index, {
     Duration position = Duration.zero,
+    bool automatic = false,
   }) async {
     if (index < 0 || index >= _playlist.length) return;
     final request = ++_chapterRequest;
@@ -325,14 +334,28 @@ class JustAudioBookPlayer implements AudioBookPlayer {
       await pending.catchError((_) {});
       if (request != _chapterRequest || !identical(playlist, _playlist)) return;
     }
-    final load = _player.setAudioSource(playlist[index], initialPosition: position)
-        .then<void>((_) {});
+    final load = Future<Duration?>.sync(
+      () => _player.setAudioSource(playlist[index], initialPosition: position),
+    );
     _singleLoad = load;
     try {
       await load;
       if (identical(playlist, _playlist)) {
         _offset = index;
         _singleIndex.add(index);
+      }
+    } catch (error) {
+      if (!automatic) rethrow;
+      if (request != _chapterRequest || !identical(playlist, _playlist)) return;
+      LumeLog.warn('[audioBook] 自动切集失败：$error');
+      _chapterErrors.add(AudioBookFailure(
+        _proxy.lastError ?? '加载失败，请检查源和网络',
+        retryChapter: index,
+      ));
+      try {
+        await pause();
+      } catch (error) {
+        LumeLog.warn('[audioBook] 自动切集失败后暂停失败：$error');
       }
     } finally {
       if (identical(_singleLoad, load)) _singleLoad = null;
@@ -342,6 +365,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   @override
   Future<void> stop() {
     _playRequest++;
+    _chapterRequest++;
     return _player.stop();
   }
   @override
@@ -372,6 +396,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   }
 
   Future<void> disposeNative() async {
+    await _chapterErrors.close();
     await _singleIndex.close();
     await _proxy.close();
     await _player.dispose();
@@ -623,9 +648,19 @@ class AudioBookSession extends ChangeNotifier {
             notifyListeners();
             if (!loading && !value) _remember();
           }),
-          _player!.errors.listen((message) {
+          _player!.errors.listen((failure) {
             if (!_acceptEvents) return;
-            error = message;
+            final chapter = failure.retryChapter;
+            error = failure.message;
+            if (chapter != null && chapter >= 0 && chapter < _tracks.length) {
+              error = '${_tracks[chapter].episode.title}：${failure.message}';
+              _acceptEvents = false;
+              playing = false;
+              current = chapter;
+              position = duration = Duration.zero;
+              _remember();
+              _ready = false;
+            }
             notifyListeners();
           }),
         ]);
