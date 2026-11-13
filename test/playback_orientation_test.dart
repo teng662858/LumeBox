@@ -111,12 +111,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('播放器设置'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('画面与显示'));
-      await tester.tap(find.text('画面与显示'));
-      await tester.pumpAndSettle();
     }
 
-    testWidgets('画面分类统一设置方向，强制横屏与自动写入同一偏好', (tester) async {
+    testWidgets('原生播放器设置可以保存和切换三个方向档位', (tester) async {
+      final store = await PlaybackOrientationStore.open();
+      PlaybackOrientationController.instance.useStoreForTesting(store);
       await pumpSettings(tester);
       expect(find.text('横屏播放'), findsNothing, reason: '避免重复的两档方向开关');
       await tester.tap(find.widgetWithText(ChoiceChip, '强制横屏'));
@@ -125,12 +124,17 @@ void main() {
         PlaybackOrientationController.instance.orientation,
         PlaybackOrientation.landscape,
       );
+      expect(store.load(), PlaybackOrientation.landscape);
+      await tester.tap(find.widgetWithText(ChoiceChip, '强制竖屏'));
+      await tester.pumpAndSettle();
+      expect(store.load(), PlaybackOrientation.portrait);
       await tester.tap(find.widgetWithText(ChoiceChip, '自动'));
       await tester.pumpAndSettle();
       expect(
         PlaybackOrientationController.instance.orientation,
         PlaybackOrientation.auto,
       );
+      expect(store.load(), PlaybackOrientation.auto);
     });
   });
 

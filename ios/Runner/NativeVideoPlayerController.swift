@@ -78,7 +78,9 @@ import UniformTypeIdentifiers
   private var wantsPlay = true, closing = false, switching = false, resolving = false
   private var speed = 1.0, volume = 1.0, fill = false, locked = false, scrubbing = false
   private var hardware = true, autoNext = true, interrupted = false, resumeAfterInterruption = false
-  private var landscape = false, chromeVisible = true, readyRecorded = false, frameRecorded = false
+  private var orientationLock: UIInterfaceOrientationMask?
+  private var mediaOrientation: UIInterfaceOrientationMask?
+  private var chromeVisible = true, readyRecorded = false, frameRecorded = false
   private var pip: AVPictureInPictureController?
   private var pipStarting = false
   private var timeout: Timer?, autoHide: Timer?, sleepTimer: Timer?
@@ -107,15 +109,19 @@ import UniformTypeIdentifiers
     speed = value.isFinite ? min(4, max(0.25, value)) : 1
     hardware = options["hardwareDecoding"] as? Bool ?? true
     autoNext = options["autoNext"] as? Bool ?? true
-    landscape = options["landscape"] as? Bool ?? false
+    switch options["orientation"] as? String {
+    case "landscape": orientationLock = .landscape
+    case "portrait": orientationLock = .portrait
+    default: orientationLock = options["landscape"] as? Bool == true ? .landscape : nil
+    }
     fill = options["fill"] as? Bool ?? false
   }
   required init?(coder: NSCoder) { fatalError("Use init(session:item:options:)") }
   override var prefersStatusBarHidden: Bool { true }
   override var prefersHomeIndicatorAutoHidden: Bool { !chromeVisible }
   override var shouldAutorotate: Bool { true }
-  override var supportedInterfaceOrientations: UIInterfaceOrientationMask { landscape ? .landscape : .allButUpsideDown }
-  override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { landscape ? .landscapeRight : .portrait }
+  override var supportedInterfaceOrientations: UIInterfaceOrientationMask { orientationLock ?? mediaOrientation ?? .allButUpsideDown }
+  override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { supportedInterfaceOrientations == .landscape ? .landscapeRight : .portrait }
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -204,6 +210,10 @@ import UniformTypeIdentifiers
     emit("opened"); scheduleHide()
   }
 
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    if let orientation = orientationLock ?? mediaOrientation { applyOrientation(orientation) }
+  }
   override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); engine?.view.frame = picture.bounds }
   override func viewDidDisappear(_ animated: Bool) {
     super.viewDidDisappear(animated)
@@ -280,6 +290,13 @@ import UniformTypeIdentifiers
   }
   private func renderState() {
     guard isViewLoaded, !closing else { return }
+    if orientationLock == nil && state.width > 0 && state.height > 0 {
+      let orientation: UIInterfaceOrientationMask = state.width < state.height ? .portrait : .landscape
+      if orientation != mediaOrientation {
+        mediaOrientation = orientation
+        applyOrientation(orientation)
+      }
+    }
     if state.ready && !readyRecorded { readyRecorded = true; emit("ready") }
     if state.firstFrame && !frameRecorded { frameRecorded = true; timeout?.invalidate(); emit("firstFrame") }
     if state.firstFrame && pip == nil { preparePip() }
@@ -604,8 +621,14 @@ import UniformTypeIdentifiers
     }
   }
   private func rotate() {
-    landscape.toggle(); setNeedsUpdateOfSupportedInterfaceOrientations()
-    view.window?.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: landscape ? .landscape : .portrait)) { [weak self] error in self?.toast(error.localizedDescription) }
+    let isLandscape = view.window?.windowScene?.interfaceOrientation.isLandscape ?? (supportedInterfaceOrientations == .landscape)
+    let next: UIInterfaceOrientationMask = isLandscape ? .portrait : .landscape
+    orientationLock = next
+    applyOrientation(next)
+  }
+  private func applyOrientation(_ orientation: UIInterfaceOrientationMask) {
+    setNeedsUpdateOfSupportedInterfaceOrientations()
+    view.window?.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations: orientation)) { [weak self] error in self?.toast(error.localizedDescription) }
   }
   @objc private func doubleTap(_ gesture: UITapGestureRecognizer) {
     guard !locked else { return }

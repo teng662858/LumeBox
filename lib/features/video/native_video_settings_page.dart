@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/player/playback_orientation.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section_module_settings.dart';
@@ -41,6 +42,23 @@ class NativeVideoSettingsPage extends StatelessWidget {
             onChanged: (value) {
               if (value != null) onChanged(settings.copyWith(kernel: value));
             },
+          ),
+          const SizedBox(height: 16),
+          ListenableBuilder(
+            listenable: PlaybackOrientationController.instance,
+            builder: (context, _) => Wrap(
+              spacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text('方向锁定'),
+                for (final mode in PlaybackOrientation.values)
+                  ChoiceChip(
+                    label: Text(mode.label),
+                    selected: PlaybackOrientationController.instance.orientation == mode,
+                    onSelected: (_) => PlaybackOrientationController.instance.apply(mode),
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<double>(

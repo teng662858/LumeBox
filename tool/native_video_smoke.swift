@@ -22,7 +22,10 @@
     let test = cases[caseIndex]; phase = 0; swaps = 0; started = Date()
     do {
       let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)"])
-      let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": false, "headlessAudio": true])
+      let orientation = ["auto", "portrait", "landscape", "auto"][caseIndex]
+      let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "orientation": orientation, "autoNext": false, "headlessAudio": true])
+      let entryMask: UIInterfaceOrientationMask = orientation == "auto" ? .allButUpsideDown : (orientation == "portrait" ? .portrait : .landscape)
+      check(view.supportedInterfaceOrientations == entryMask, "entry orientation \(orientation)")
       view.request = { _, _, completion in completion([:]) }
       screen = view
       window?.rootViewController?.present(view, animated: false) {
@@ -37,6 +40,8 @@
     check(Date().timeIntervalSince(started) < 40, "timeout phase=\(phase) state=\(state)")
     let position = (state["position"] as? NSNumber)?.doubleValue ?? 0
     if phase == 0 && state["firstFrame"] as? Bool == true && position > 0.5 {
+      let expectedMask: UIInterfaceOrientationMask = caseIndex == 1 ? .portrait : .landscape
+      check(screen.supportedInterfaceOrientations == expectedMask, "orientation for landscape fixture on \(cases[caseIndex])")
       screen.debugAction([:])
       let state = screen.debugState
       check(state["playHitTest"] as? Bool == true, "UIKit play button hit test")
