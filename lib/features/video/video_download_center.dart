@@ -1051,13 +1051,14 @@ class VideoDownloadCenter extends ChangeNotifier {
     if (VideoDiskCache.instance.skipHlsAds) body = HlsAdFilter.filter(body);
     final lines = const LineSplitter().convert(body);
     final variants =
-        <({Map<String, String> attributes, String url, int bandwidth})>[];
+        <({Map<String, String> attributes, String url, int bandwidth, bool? hasVideo})>[];
     for (final pair in hlsVariants(lines)) {
       final attributes = hlsRawAttributes(lines[pair.tag]);
       variants.add((
         attributes: attributes,
         url: lines[pair.uri].trim(),
         bandwidth: int.tryParse(attributes['BANDWIDTH'] ?? '') ?? 0,
+        hasVideo: hlsVariantHasVideo(attributes),
       ));
     }
     if (variants.isEmpty &&
@@ -1065,6 +1066,9 @@ class VideoDownloadCenter extends ChangeNotifier {
       throw StateError('播放清单缺少画质线路地址');
     }
     if (variants.isNotEmpty) {
+      if (variants.any((v) => v.hasVideo == true)) {
+        variants.removeWhere((v) => v.hasVideo == false);
+      }
       variants.sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
       final best = variants.first;
       final attributes = best.attributes..remove('SUBTITLES');

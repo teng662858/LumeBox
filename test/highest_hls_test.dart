@@ -140,4 +140,18 @@ medium.m3u8
     expect(selected, isNot(contains('low.m3u8')));
     expect(selected, isNot(contains('BANDWIDTH=10')));
   });
+
+  test('未标分辨率的 HLS 视频不会因纯音频码率较高而丢失画面', () {
+    final base = Uri.parse('https://example.test/master.m3u8');
+    const audio = '#EXT-X-STREAM-INF:BANDWIDTH=900000,CODECS="mp4a.40.2"\naudio.m3u8';
+    final master = HighestHls.singleRendition(
+      '#EXTM3U\n$audio\n#EXT-X-STREAM-INF:BANDWIDTH=500000,CODECS="avc1.42e01e,mp4a.40.2"\nvideo.m3u8', base,
+    );
+    expect(master, contains('/video.m3u8'));
+    expect(master, isNot(contains('/audio.m3u8')));
+    final music = HighestHls.singleRendition(
+      '#EXTM3U\n$audio\n#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS="mp4a.40.2"\nlow.m3u8', base,
+    );
+    expect(music, contains('/audio.m3u8'));
+  });
 }

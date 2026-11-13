@@ -1373,7 +1373,9 @@ void main() {
             '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="main",LANGUAGE="fr",NAME="French",URI="fr.m3u8"',
             '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="other",NAME="Other",URI="unused.m3u8"',
             '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="English",INSTREAM-ID="CC1"',
-            '#EXT-X-STREAM-INF:SUBTITLES="subs",BANDWIDTH=100,AUDIO="main",CLOSED-CAPTIONS="cc"',
+            '#EXT-X-STREAM-INF:BANDWIDTH=500,CODECS="flac"',
+            'audio-only.m3u8',
+            '#EXT-X-STREAM-INF:SUBTITLES="subs",BANDWIDTH=100,CODECS="avc1.64001f,mp4a.40.2",AUDIO="main",CLOSED-CAPTIONS="cc"',
             '# video rendition',
             '',
             'video.m3u8',
@@ -1402,6 +1404,7 @@ void main() {
     expect(master, contains('#EXT-X-STREAM-INF:BANDWIDTH=100,'));
     expect(requests, containsAll(['/en.m3u8', '/fr.m3u8', '/video.m3u8']));
     expect(requests, isNot(contains('/unused.m3u8')));
+    expect(requests, isNot(contains('/audio-only.m3u8')));
     for (final m in RegExp(r'URI="([^"]+)"').allMatches(master)) {
       expect(
         await File.fromUri(c.localFile(task).uri.resolve(m[1]!)).exists(),

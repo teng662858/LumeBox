@@ -1,5 +1,6 @@
 import 'playback_presentation.dart';
 import 'hls_variants.dart';
+import 'hls_attributes.dart';
 
 import 'dart:convert';
 import 'dart:io';
@@ -25,7 +26,7 @@ class HighestHls {
   }) {
     final lines = text.split('\n').map((line) => line.trim()).toList();
     final variants =
-        <({int index, int height, int bandwidth, bool hdr, bool dolby})>[];
+        <({int index, int height, int bandwidth, bool hdr, bool dolby, bool? hasVideo})>[];
     final pairs = hlsVariants(lines).toList();
     for (final pair in pairs) {
       final i = pair.tag;
@@ -59,9 +60,13 @@ class HighestHls {
         bandwidth: bandwidth,
         hdr: hdr,
         dolby: dolby,
+        hasVideo: hlsVariantHasVideo(hlsRawAttributes(lines[i])),
       ));
     }
     if (variants.length < 2) return null;
+    if (variants.any((v) => v.hasVideo == true)) {
+      variants.removeWhere((v) => v.hasVideo == false);
+    }
     final p = presentation;
     if (p != null) {
       // Prefer compatible alternatives, but retain single-format streams for tone mapping.
