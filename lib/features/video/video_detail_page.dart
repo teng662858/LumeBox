@@ -59,7 +59,9 @@ import 'package:flutter/services.dart';
 
 import '../reading/poster_card.dart';
 import 'bangumi_match_sheet.dart';
+import 'playback_quality_preference.dart';
 import 'source_playback.dart';
+import 'video_player_settings.dart';
 import 'source_web_player_page.dart';
 import 'video_play_target.dart';
 import '../../core/cat/cat_web_parse.dart';
@@ -603,11 +605,21 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         );
         return;
       }
+      final qualities = SourcePlayback.contentQualities(content, source: _source!);
+      final quality = qualities.isEmpty
+          ? null
+          : PlaybackQualityPreference.select(
+              qualities,
+              VideoPlayerSettingsStore(widget.library).load(),
+            );
       final address =
+          quality?.url ??
           SourcePlayback.contentAddress(content) ??
           direct ??
           MediaResourceService.address(content);
       if (address == null) throw StateError('源未返回有效的播放地址');
+      final headers = quality?.headers ??
+          SourcePlayback.contentHeaders(content, source: _source!);
       if (lineResume != null && widget.recordHistory) {
         final saved = lineResume!;
         widget.library.saveProgress(
@@ -644,7 +656,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           ? const MediaTrackInfo()
           : await const MediaTrackProbe().inspect(
               address,
-              headers: SourcePlayback.contentHeaders(content, source: _source!),
+              headers: headers,
             );
       if ((saved?.manual == true && saved!.kind != ResourceKind.video) ||
           (saved?.manual != true &&
@@ -671,7 +683,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           restartAudio: _restartAudio,
           initialMedia: ResolvedMedia(
             address,
-            headers: SourcePlayback.contentHeaders(content, source: _source!),
+            headers: headers,
           ),
         );
         _restartAudio = false;
@@ -684,7 +696,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         uri: address,
         previews: content is VideoContent ? content.previews : const [],
         title: '${widget.item.title} · ${VideoEpisodeCatalog.labelOf(chapter)}',
-        headers: SourcePlayback.contentHeaders(content, source: _source!),
+        headers: headers,
       );
       final target = VideoPlayTarget(
         sourceId: _source!.id,
@@ -724,7 +736,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       await widget.onPlay(
         media,
         target,
-        SourcePlayback.contentQualities(content, source: _source!),
+        qualities,
         transferred,
       );
       widget.library.refresh();

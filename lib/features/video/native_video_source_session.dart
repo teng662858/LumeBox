@@ -260,6 +260,10 @@ class NativeVideoSourceSession {
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
       _media = media;
       _manualQuality = choice;
+      if (_settings.rememberManualQuality) {
+        _settings = _settings.copyWith(manualQualityLabel: choice.label);
+        library.setSetting(VideoPlayerSettingsStore.keyManualQualityLabel, choice.label);
+      }
       return {'media': payload};
     }
     // A retry already has the chapter ID. An unavailable catalog must not
@@ -361,13 +365,11 @@ class NativeVideoSourceSession {
       content,
       source: dataSource,
     );
-    final choice = _manualQuality == null
-        ? null
-        : PlaybackQualityPreference.select(
-            nextQualities,
-            _settings,
-            currentQuality: _manualQuality,
-          );
+    final choice = PlaybackQualityPreference.select(
+      nextQualities,
+      _settings,
+      currentQuality: _manualQuality,
+    );
     final nextMedia = PlayerMedia(
       uri: choice?.url ?? SourcePlayback.contentAddress(content)!,
       headers:

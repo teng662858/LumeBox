@@ -38,6 +38,7 @@ class DetailSource extends FakeReadingDataSource {
   int parses = 0;
   bool failParse = false;
   String extension = 'mp4';
+  List<VideoQuality> qualities = [];
   bool failDetail = false;
   @override
   Future<SourceList> list({
@@ -79,6 +80,7 @@ class DetailSource extends FakeReadingDataSource {
     return VideoContent(
       url: Uri.parse('https://example.test/$chapterId.$extension'),
       headers: const {'Referer': 'https://source.test/watch'},
+      qualities: qualities,
     );
   }
 }
@@ -263,6 +265,35 @@ void main() {
       expect(source.parses, 0);
     });
   }
+
+  testWidgets('详情起播使用默认清晰度和对应线路的请求头', (tester) async {
+    VideoPlayerSettingsStore(library).save(
+      const PlayerSettings(defaultQuality: DefaultQuality.hd),
+    );
+    source.qualities = [
+      for (final height in [1080, 720])
+        VideoQuality(
+          label: '${height}p',
+          url: Uri.parse('https://cdn.example/$height.mp4'),
+          headers: {'X-Track': '$height'},
+        ),
+    ];
+    PlayerMedia? played;
+    await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
+      source: source,
+      item: const SourceItem(id: 'quality', title: '画质测试'),
+      library: library,
+      onPlay: (media, _, _, _) async { played = media; },
+    )));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('video-detail-play')));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+    expect(played?.uri, source.qualities.last.url);
+    expect(played?.headers, containsPair('X-Track', '720'));
+  });
 
   for (final extension in ['mp4', 'm3u8', 'php', '']) {
     testWidgets('$extension 起播不等待额外音轨探测', (tester) async {

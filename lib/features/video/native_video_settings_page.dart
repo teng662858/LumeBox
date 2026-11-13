@@ -97,6 +97,23 @@ class NativeVideoSettingsPage extends StatelessWidget {
           ),
           const BackgroundPlaybackSetting(),
           const SizedBox(height: 16),
+          DropdownButtonFormField<DefaultQuality>(
+            initialValue: settings.defaultQuality,
+            decoration: const InputDecoration(labelText: '默认清晰度'),
+            items: [
+              for (final quality in DefaultQuality.values)
+                DropdownMenuItem(value: quality, child: Text(quality.label)),
+            ],
+            onChanged: (value) {
+              if (value != null) onChanged(settings.copyWith(defaultQuality: value));
+            },
+          ),
+          SwitchListTile(
+            title: const Text('记住手动选择的清晰度'),
+            value: settings.rememberManualQuality,
+            onChanged: (value) =>
+                onChanged(settings.copyWith(rememberManualQuality: value)),
+          ),
           const Text('音轨、字幕文件、画面比例、线路和画质可在播放页调整。'),
           const SizedBox(height: 16),
           StatefulBuilder(

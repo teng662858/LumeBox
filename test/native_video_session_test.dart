@@ -541,6 +541,29 @@ void main() {
     expect(calls.where((c) => c.method == 'open'), isEmpty);
   });
 
+  test('next episode honors the preset and a manual choice survives reopening', () async {
+    final store = VideoPlayerSettingsStore(library);
+    store.save(const PlayerSettings(
+      defaultQuality: DefaultQuality.hd,
+      rememberManualQuality: true,
+    ));
+    final options = [
+      for (final height in [1080, 720])
+        VideoQuality(label: '${height}p', url: Uri.parse('https://cdn.example/$height.mp4')),
+    ];
+    for (final id in ['A1', 'A2']) {
+      source.blocked[id] = Completer<ChapterContent>()
+        ..complete(VideoContent(url: Uri.parse('https://cdn.example/base'), qualities: options));
+    }
+    await start();
+    expect(((await request('next'))['media'] as Map)['url'], options.last.url.toString());
+    await request('quality', {'id': 0});
+    expect(store.load().manualQualityLabel, options.first.label);
+    await session.close();
+    await start();
+    expect(((await request('retry'))['media'] as Map)['url'], options.first.url.toString());
+  });
+
   test(
     'direct video keeps its playhead across quality changes and retry',
     () async {
