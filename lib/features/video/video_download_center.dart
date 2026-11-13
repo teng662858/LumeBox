@@ -976,7 +976,12 @@ class VideoDownloadCenter extends ChangeNotifier {
     }
     final unsupported = unsupportedPlaylistReason(body);
     if (unsupported != null) throw StateError(unsupported);
-    final plan = sha256.convert(utf8.encode(body)).toString().substring(0, 16);
+    // Identical relative names can resolve to different keys and media after
+    // a resolver changes CDN or directory between attempts.
+    final plan = sha256
+        .convert(utf8.encode(jsonEncode([uri.toString(), body])))
+        .toString()
+        .substring(0, 16);
     final resourceDir = Directory(p.join(folder(task), '$name-$plan'));
     await resourceDir.create(recursive: true);
     final output = <String>[];

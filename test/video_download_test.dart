@@ -696,6 +696,43 @@ void main() {
     expect(c.tasks.single.fileName, 'index.m3u8');
   });
 
+  test('HLS retries do not mix segments or AES keys from a different playlist location', () async {
+    var generation = 'old';
+    server.listen((r) async {
+      final path = r.uri.path;
+      if (path == '/play') {
+        await r.response.redirect(origin.resolve('/$generation/index.m3u8'));
+        return;
+      }
+      if (path.endsWith('index.m3u8')) {
+        r.response.write('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key"\n#EXTINF:1,\na.ts\n#EXTINF:1,\nb.ts\n#EXT-X-ENDLIST\n');
+      } else if (path == '/old/b.ts') {
+        r.response.statusCode = 503;
+      } else {
+        r.response.add(List<int>.filled(path.endsWith('/key') ? 16 : 188, path.startsWith('/old/') ? 1 : 2));
+      }
+      await r.response.close();
+    });
+    final c = await center('play');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => task.state == 'failed');
+    generation = 'new';
+    await c.resume(task);
+    await until(() => ['failed', 'merge_failed'].contains(task.state));
+    await c.flush();
+    expect(task.fileName, 'index.m3u8', reason: task.error);
+    final local = await c.localFile(task).readAsLines();
+    final paths = [
+      RegExp(r'URI="([^"]+)"').firstMatch(local.join('\n'))![1]!,
+      ...local.where((line) => line.endsWith('.ts')),
+    ];
+    for (final path in paths) {
+      final bytes = await File.fromUri(c.localFile(task).uri.resolve(path)).readAsBytes();
+      expect(bytes, everyElement(2), reason: path);
+    }
+  });
+
   test('HLS master retains a selected separate audio rendition', () async {
     final paths = <String>[];
     server.listen((r) async {
