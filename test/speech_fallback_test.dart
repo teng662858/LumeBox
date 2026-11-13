@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:lume_box/core/media/playback_focus.dart';
 import 'package:lume_box/core/speech/speech_advanced.dart';
+import 'package:lume_box/core/speech/speech_channel.dart';
 import 'package:lume_box/core/speech/speech_cloud.dart';
 import 'package:lume_box/core/speech/speech_settings.dart';
 import 'package:lume_box/core/speech/speech_segments.dart';
@@ -24,6 +26,46 @@ class _ControlledAudio extends SpeechCloudClient {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  for (final dialogue in [false, true]) {
+    test('取消等待焦点的朗读后视频继续播放（分角色 $dialogue）', () async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      const speech = MethodChannel('lumebox/speech');
+      final calls = <String>[];
+      messenger.setMockMethodCallHandler(speech, (call) async {
+        calls.add(call.method);
+        return null;
+      });
+      final backend = MethodChannelSpeechBackend(
+        settings: SpeechSettings(autoDialogue: dialogue),
+      );
+      final gate = Completer<void>();
+      Future<void> releasePrevious() => gate.future;
+      var videoStops = 0;
+      Future<void> stopVideo() async {
+        videoStops++;
+      }
+
+      addTearDown(() {
+        PlaybackFocus.unregister('previous', releasePrevious);
+        PlaybackFocus.unregister('video', stopVideo);
+        PlaybackFocus.unregister('tts', backend.stop);
+        messenger.setMockMethodCallHandler(speech, null);
+      });
+      await PlaybackFocus.acquire('previous', onRelease: releasePrevious);
+      final video = PlaybackFocus.acquire('video', onRelease: stopVideo);
+      final reading = backend.speakSegment(
+        const SpeechSegment(text: '读一段', start: 0),
+      );
+      await backend.stop();
+      gate.complete();
+      await video;
+      await reading;
+      expect(videoStops, 0);
+      expect(PlaybackFocus.owner, 'video');
+      expect(calls, ['stop']);
+    });
+  }
   test('系统分角色朗读在跨片段后沿用同一角色，并由原生回报进度', () async {
     const methods = MethodChannel('lumebox/speech');
     final messenger =

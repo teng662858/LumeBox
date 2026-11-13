@@ -910,6 +910,12 @@ class _SpeechVoiceDialogState extends State<_SpeechVoiceDialog> {
   static const _methods = MethodChannel('lumebox/speech');
   final _preview = AdvancedSpeechSource(_methods);
   bool _busy = false;
+  int _previewRequest = 0;
+
+  Future<void> _releasePreview() {
+    _previewRequest++;
+    return _stopPreview();
+  }
 
   Future<void> _stopPreview() async {
     _preview.cancel();
@@ -925,11 +931,15 @@ class _SpeechVoiceDialogState extends State<_SpeechVoiceDialog> {
   Future<void> _tryVoice() async {
     if (_busy) return;
     setState(() => _busy = true);
+    final request = ++_previewRequest;
+    final route = ModalRoute.of(context);
+    bool stillWanted() =>
+        mounted && request == _previewRequest && route?.isCurrent != false;
     try {
-      await PlaybackFocus.acquire('speech_preview');
-      if (!mounted) return;
+      await PlaybackFocus.acquire('speech_preview', stillWanted: stillWanted);
+      if (!stillWanted()) return;
       await _stopPreview();
-      if (!mounted) return;
+      if (!stillWanted()) return;
       const text = '你好，这是一段语音试听，欢迎使用朗读功能。';
       final settings = widget.settings.copyWith(
         narratorVoice: controller.text.trim(),
@@ -971,7 +981,7 @@ class _SpeechVoiceDialogState extends State<_SpeechVoiceDialog> {
   @override
   void initState() {
     super.initState();
-    PlaybackFocus.register('speech_preview', _stopPreview);
+    PlaybackFocus.register('speech_preview', _releasePreview);
     if (widget.mode == SpeechMode.system) unawaited(_load());
     if ((widget.mode == SpeechMode.cloud ||
             widget.mode == SpeechMode.cloudAi) &&
@@ -1029,7 +1039,8 @@ class _SpeechVoiceDialogState extends State<_SpeechVoiceDialog> {
 
   @override
   void dispose() {
-    PlaybackFocus.unregister('speech_preview', _stopPreview);
+    _previewRequest++;
+    PlaybackFocus.unregister('speech_preview', _releasePreview);
     if (PlaybackFocus.owner == 'speech_preview') {
       unawaited(_stopPreview());
     } else {

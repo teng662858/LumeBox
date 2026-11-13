@@ -124,7 +124,10 @@ class AdvancedSpeechSource {
           settings.mode == SpeechMode.kokoro,
     );
     final generation = _generation;
-    await PlaybackFocus.acquire(focusOwner);
+    await PlaybackFocus.acquire(
+      focusOwner,
+      stillWanted: () => generation == _generation,
+    );
     if (generation != _generation) return;
     final token = '$generation-${DateTime.now().microsecondsSinceEpoch}';
     final client = _client = clientFactory(config);

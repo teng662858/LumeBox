@@ -4,6 +4,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/media/playback_focus.dart';
 import 'package:lume_box/core/speech/speech_settings.dart';
 import 'package:lume_box/core/speech/speech_local.dart';
 import 'package:lume_box/features/reading/speech_modes_panel.dart';
@@ -226,5 +227,56 @@ void main() {
     expect(settings.narratorVoice, 'voice-b');
     expect(find.text('爷爷 · 普通话'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('等待试听时关闭音色弹窗不会再打断视频', (tester) async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const media = MethodChannel('lumebox/mediaTracks');
+    messenger.setMockMethodCallHandler(media, (_) async => null);
+    const speech = MethodChannel('lumebox/speech');
+    final calls = <String>[];
+    messenger.setMockMethodCallHandler(speech, (call) async {
+      calls.add(call.method);
+      return null;
+    });
+    final gate = Completer<void>();
+    Future<void> releasePrevious() => gate.future;
+    var videoStops = 0;
+    Future<void> stopVideo() async {
+      videoStops++;
+    }
+
+    addTearDown(() {
+      PlaybackFocus.unregister('previous', releasePrevious);
+      PlaybackFocus.unregister('video', stopVideo);
+      messenger.setMockMethodCallHandler(media, null);
+      messenger.setMockMethodCallHandler(speech, null);
+    });
+    await PlaybackFocus.acquire('previous', onRelease: releasePrevious);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SpeechModesPanel(
+            settings: const SpeechSettings(),
+            optionsOnly: true,
+            singleSpeaker: true,
+            onChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('旁白音色'));
+    await tester.pumpAndSettle();
+    final video = PlaybackFocus.acquire('video', onRelease: stopVideo);
+    await tester.tap(find.text('试听'));
+    await tester.tap(find.text('取消'));
+    gate.complete();
+    await video;
+    await tester.pumpAndSettle();
+    expect(videoStops, 0);
+    expect(PlaybackFocus.owner, 'video');
+    expect(calls, isNot(contains('speak')));
+    expect(tester.takeException(), isNull);
   });
 }

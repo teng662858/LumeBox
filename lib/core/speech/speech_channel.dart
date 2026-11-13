@@ -45,14 +45,18 @@ class MethodChannelSpeechBackend
   final MethodChannel _methods;
   final EventChannel _events;
   late final _advanced = AdvancedSpeechSource(_methods);
+  int _systemRequest = 0;
   @override
   void prepareChapter(List<SpeechSegment> segments) =>
       _advanced.prepare(segments);
   @override
-  Future<void> speakSegment(SpeechSegment segment) =>
-      _settings.mode == SpeechMode.system && !_settings.autoDialogue
-      ? speak(segment.text)
-      : _advanced.speak(segment, _settings);
+  Future<void> speakSegment(SpeechSegment segment) {
+    if (_settings.mode == SpeechMode.system && !_settings.autoDialogue) {
+      return speak(segment.text);
+    }
+    _systemRequest++;
+    return _advanced.speak(segment, _settings);
+  }
 
   /// 朗读参数（语速 / 音调 / 音量）。页面改设置时用 [applySettings] 更新。
   SpeechSettings _settings;
@@ -75,8 +79,13 @@ class MethodChannelSpeechBackend
 
   @override
   Future<void> speak(String text) async {
-    await PlaybackFocus.acquire('tts');
+    final request = ++_systemRequest;
     _advanced.cancel();
+    await PlaybackFocus.acquire(
+      'tts',
+      stillWanted: () => request == _systemRequest,
+    );
+    if (request != _systemRequest) return;
     try {
       await _methods.invokeMethod<void>('speak', <String, Object?>{
         'text': text,
@@ -97,6 +106,7 @@ class MethodChannelSpeechBackend
 
   @override
   Future<void> stop() {
+    _systemRequest++;
     _advanced.cancel();
     return _invoke('stop');
   }
