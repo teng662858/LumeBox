@@ -254,6 +254,7 @@ void main() {
       title: '测试',
       chapterTitle: '第3集',
       chapterIndex: 2,
+      line: '备用线路',
       state: 'merge_failed',
       fileName: 'episode.m3u8',
     );
@@ -279,6 +280,7 @@ void main() {
     final restored = VideoDownloadCenter(directory: () async => root);
     await restored.boot();
     expect(restored.tasks.single.chapterIndex, 2);
+    expect(restored.tasks.single.line, '备用线路');
     expect(await restored.completedFile('s', 'i', 'e'), isNotNull);
     restored.dispose();
     task.state = 'paused';

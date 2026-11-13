@@ -9,6 +9,7 @@ import '../../core/player/playback_diagnostics.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/player/video_disk_cache.dart';
 import '../../core/reading/reading.dart';
+import '../../core/session/section.dart';
 import '../../core/session/section_module_settings.dart';
 import '../../core/session/app_preferences.dart';
 import '../../core/source/source.dart';
@@ -17,6 +18,7 @@ import 'source_playback.dart';
 import 'playback_quality_preference.dart';
 import 'source_playback_profiles.dart';
 import 'video_episode_catalog.dart';
+import 'video_download_center.dart';
 import 'video_play_target.dart';
 import 'video_player_settings.dart';
 import 'danmaku/danmaku_models.dart';
@@ -34,9 +36,11 @@ class NativeVideoSourceSession {
     this.qualities = const [],
     NativeVideoBridge? bridge,
     this.prepareMedia,
+    VideoDownloadCenter? downloads,
     // Public parameter name is part of the route API.
     // ignore: prefer_initializing_formals
   }) : _media = media,
+       _downloads = downloads ?? VideoDownloadCenter.instance,
        _bridge = bridge ?? NativeVideoBridge.shared;
 
   final ReadingLibrary library;
@@ -45,6 +49,8 @@ class NativeVideoSourceSession {
   final SourceManager? manager;
   final Future<PlayerMedia> Function(PlayerMedia, bool)? prepareMedia;
   final NativeVideoBridge _bridge;
+  final VideoDownloadCenter _downloads;
+  DownloadedVideoPlayback? _localPlayback;
   PlayerMedia _media;
   VideoPlayTarget? target;
   List<VideoQuality> qualities;
@@ -181,14 +187,51 @@ class NativeVideoSourceSession {
     return _openedSource ??= await manager?.open(target!.sourceId);
   }
 
-  Future<List<SourceChapter>> _catalog() async {
-    if (_chapters != null) return _chapters!;
-    final dataSource = await _source(), current = target;
-    if (dataSource == null || current == null) return [];
-    return _chapters = await VideoEpisodeCatalog.load(
-      dataSource,
-      current.itemId,
-    ).timeout(const Duration(seconds: 15));
+  Future<({List<SourceChapter> chapters, Map<String, int> indices})>
+  _catalog() async {
+    final current = target;
+    const noIndices = <String, int>{};
+    if (current == null) {
+      return (chapters: const <SourceChapter>[], indices: noIndices);
+    }
+    if (_chapters != null) return (chapters: _chapters!, indices: noIndices);
+    Object? failure;
+    try {
+      final chapters = await _source()
+          .then<List<SourceChapter>>(
+            (dataSource) => dataSource == null
+                ? const <SourceChapter>[]
+                : VideoEpisodeCatalog.load(dataSource, current.itemId),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (chapters.isNotEmpty) {
+        _chapters = chapters;
+        return (chapters: chapters, indices: noIndices);
+      }
+    } catch (error) {
+      failure = error;
+    }
+    if ((source?.section ?? library.section) != Section.video) {
+      if (failure != null) throw failure;
+      return (chapters: const <SourceChapter>[], indices: noIndices);
+    }
+    await _downloads.boot();
+    final local = [
+      for (final task in _downloads.tasks.toList())
+        if (task.sourceId == current.sourceId &&
+            task.itemId == current.itemId &&
+            task.canPlayOffline &&
+            await _downloads.localFile(task).exists())
+          task,
+    ]..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
+    if (local.isEmpty && failure != null) throw failure;
+    return (
+      chapters: [
+        for (final t in local)
+          SourceChapter(id: t.chapterId, title: t.chapterTitle, line: t.line),
+      ],
+      indices: {for (final t in local) t.chapterId: t.chapterIndex},
+    );
   }
 
   Future<Map<String, Object?>> _request(
@@ -262,15 +305,19 @@ class NativeVideoSourceSession {
       _manualQuality = choice;
       if (_settings.rememberManualQuality) {
         _settings = _settings.copyWith(manualQualityLabel: choice.label);
-        library.setSetting(VideoPlayerSettingsStore.keyManualQualityLabel, choice.label);
+        library.setSetting(
+          VideoPlayerSettingsStore.keyManualQualityLabel,
+          choice.label,
+        );
       }
       return {'media': payload};
     }
     // A retry already has the chapter ID. An unavailable catalog must not
     // prevent refreshing an expired media URL for the current episode.
-    final chapters = action == 'retry'
-        ? const <SourceChapter>[]
+    final catalog = action == 'retry'
+        ? (chapters: const <SourceChapter>[], indices: const <String, int>{})
         : await _catalog();
+    final chapters = catalog.chapters;
     if (_closed) return {'error': '播放会话已经关闭'};
     final current = target;
     if (action == 'episodes') {
@@ -282,7 +329,10 @@ class NativeVideoSourceSession {
           for (var i = 0; i < line.length; i++)
             {
               'id': line[i].id,
-              'title': VideoEpisodeCatalog.displayLabel(line[i], i),
+              'title': VideoEpisodeCatalog.displayLabel(
+                line[i],
+                catalog.indices[line[i].id] ?? i,
+              ),
               'line': VideoEpisodeCatalog.lineOf(line[i]),
               'selected': line[i].id == current?.chapterId,
             },
@@ -313,9 +363,6 @@ class NativeVideoSourceSession {
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
       return {'media': payload};
     }
-    final dataSource = await _source();
-    if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-    if (dataSource == null) return {'error': '源不可用，请返回更新订阅后重试'};
     SourceChapter? chosen;
     final selected = chapters
         .where((c) => c.id == current.chapterId)
@@ -332,7 +379,14 @@ class NativeVideoSourceSession {
       final line = VideoEpisodeCatalog.forChapter(chapters, current.chapterId);
       final index = line.indexWhere((c) => c.id == current.chapterId);
       final next = index + (action == 'next' ? 1 : -1);
-      if (index >= 0 && next >= 0 && next < line.length) chosen = line[next];
+      if (catalog.indices.isNotEmpty && selected != null) {
+        final desired = current.chapterIndex + (action == 'next' ? 1 : -1);
+        chosen = line
+            .where((c) => catalog.indices[c.id] == desired)
+            .singleOrNull;
+      } else if (index >= 0 && next >= 0 && next < line.length) {
+        chosen = line[next];
+      }
     }
     if (action == 'line' && selected != null) {
       final line = chapters
@@ -343,11 +397,6 @@ class NativeVideoSourceSession {
       if (chosen == null) return {'error': '这条线路没有匹配的当前集，请手动选集'};
     }
     if (chosen == null) return {'message': '没有可播放的下一项'};
-    final content = await dataSource
-        .content(itemId: current.itemId, chapterId: chosen.id)
-        .timeout(const Duration(seconds: 15));
-    if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-    if (content is! VideoContent) return {'error': '源没有返回可播放的媒体地址'};
     final same = chosen.id == current.chapterId || action == 'line';
     final line = VideoEpisodeCatalog.forChapter(chapters, chosen.id);
     final nextTarget = chosen.id == current.chapterId
@@ -356,40 +405,82 @@ class NativeVideoSourceSession {
             sourceId: current.sourceId,
             itemId: current.itemId,
             title: current.title,
-            chapterIndex: line.indexWhere((c) => c.id == chosen!.id),
+            chapterIndex:
+                catalog.indices[chosen.id] ??
+                line.indexWhere((c) => c.id == chosen!.id),
             chapterId: chosen.id,
             chapterTitle: VideoEpisodeCatalog.labelOf(chosen),
             cover: current.cover,
           );
-    final nextQualities = SourcePlayback.contentQualities(
-      content,
-      source: dataSource,
-    );
-    final choice = PlaybackQualityPreference.select(
-      nextQualities,
-      _settings,
-      currentQuality: _manualQuality,
-    );
-    final nextMedia = PlayerMedia(
-      uri: choice?.url ?? SourcePlayback.contentAddress(content)!,
-      headers:
-          choice?.headers ??
-          SourcePlayback.contentHeaders(content, source: dataSource),
-      title: nextTarget.mediaTitle,
-    );
-    final position = same ? _saved[_identity] ?? 0.0 : 0.0;
-    final payload = await _payload(
-      nextMedia,
-      targetOverride: nextTarget,
-      position: position,
-    );
-    if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-    target = nextTarget;
-    _targets[_identity] = nextTarget;
-    if (nextTarget.chapterId != current.chapterId) _saved[_identity] = position;
-    qualities = nextQualities;
-    _media = nextMedia;
-    return {'media': payload};
+    DownloadedVideoPlayback? local;
+    try {
+      try {
+        if ((source?.section ?? library.section) == Section.video) {
+          local = await _downloads.completedPlayback(
+            current.sourceId,
+            current.itemId,
+            chosen.id,
+          );
+        }
+      } catch (_) {
+        PlaybackDiagnostics.record(
+          'offline-lookup-failed',
+          source: current.sourceId,
+        );
+      }
+      if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
+      List<VideoQuality> nextQualities = const [];
+      final PlayerMedia nextMedia;
+      if (local != null) {
+        nextMedia = local.media(nextTarget.mediaTitle);
+      } else {
+        final dataSource = await _source();
+        if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
+        if (dataSource == null) return {'error': '源不可用，请返回更新订阅后重试'};
+        final content = await dataSource
+            .content(itemId: current.itemId, chapterId: chosen.id)
+            .timeout(const Duration(seconds: 15));
+        if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
+        if (content is! VideoContent) return {'error': '源没有返回可播放的媒体地址'};
+        nextQualities = SourcePlayback.contentQualities(
+          content,
+          source: dataSource,
+        );
+        final choice = PlaybackQualityPreference.select(
+          nextQualities,
+          _settings,
+          currentQuality: _manualQuality,
+        );
+        nextMedia = PlayerMedia(
+          uri: choice?.url ?? SourcePlayback.contentAddress(content)!,
+          headers:
+              choice?.headers ??
+              SourcePlayback.contentHeaders(content, source: dataSource),
+          title: nextTarget.mediaTitle,
+        );
+      }
+      final position = same ? _saved[_identity] ?? 0.0 : 0.0;
+      final payload = await _payload(
+        nextMedia,
+        targetOverride: nextTarget,
+        position: position,
+      );
+      if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
+      target = nextTarget;
+      _targets[_identity] = nextTarget;
+      if (nextTarget.chapterId != current.chapterId) {
+        _saved[_identity] = position;
+      }
+      qualities = nextQualities;
+      _media = nextMedia;
+      final previous = _localPlayback;
+      _localPlayback = local;
+      local = null;
+      if (previous != null) unawaited(previous.close());
+      return {'media': payload};
+    } finally {
+      await local?.close();
+    }
   }
 
   Future<Map<String, Object?>> _danmaku() async {
@@ -518,6 +609,8 @@ class NativeVideoSourceSession {
       PlaybackFocus.unregister('video', close);
       _releasePin?.call();
       _releasePin = null;
+      await _localPlayback?.close();
+      _localPlayback = null;
     }
   }
 }

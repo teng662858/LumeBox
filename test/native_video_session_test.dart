@@ -27,6 +27,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   late Directory directory;
   late ReadingLibrary library;
+  late VideoDownloadCenter downloads;
   late NativeVideoBridge bridge;
   late _Source source;
   late Map<String, Object?> opened;
@@ -102,6 +103,7 @@ void main() {
             },
           ),
       library: library,
+      downloads: downloads,
       source: source,
       bridge: bridge,
       qualities: qualities,
@@ -125,6 +127,8 @@ void main() {
     calls.clear();
     opened = {};
     directory = await Directory.systemTemp.createTemp('native-video-test-');
+    downloads = VideoDownloadCenter(directory: () async => directory);
+    await downloads.boot();
     messenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (call) async => directory.path,
@@ -487,6 +491,78 @@ void main() {
     expect(media?['url'], contains('/A1.'));
     expect(session.target?.chapterIndex, 0);
   });
+  test('offline catalog switches downloaded episodes with original positions and releases HLS', () async {
+    HttpOverrides.global = null;
+    Future<File> stored(
+      String id,
+      int index,
+      String line,
+      String filename,
+    ) async {
+      final task = VideoDownloadTask(
+        id: VideoDownloadCenter.identity('fixture', 'show', id),
+        sourceId: 'fixture',
+        itemId: 'show',
+        chapterId: id,
+        title: '测试作品',
+        chapterTitle: '第${index + 1}集',
+        chapterIndex: index,
+        line: line,
+        state: 'done',
+        fileName: filename,
+      );
+      downloads.tasks.add(task);
+      await Directory(downloads.folder(task)).create(recursive: true);
+      final file = downloads.localFile(task);
+      if (filename.endsWith('.m3u8')) {
+        await file.writeAsString(
+          '#EXTM3U\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n',
+        );
+        await File.fromUri(file.uri.resolve('part.ts')).writeAsBytes([1, 2, 3]);
+      } else {
+        await file.writeAsBytes([4, 5, 6]);
+      }
+      return file;
+    }
+
+    await stored('A4', 3, 'A', 'index.m3u8');
+    final third = await stored('A3', 2, 'A', 'merged.mp4');
+    await stored('B1', 0, 'B', 'merged.mp4');
+    final first = await stored('A1', 0, 'A', 'merged.mp4');
+    source.catalogOffline = true;
+    await start(initialMedia: DownloadedVideoPlayback(first.uri).media('下载'));
+    final list = await request('episodes');
+    expect((list['items'] as List?)?.map((e) => e['id']), ['A1', 'A3', 'A4']);
+    expect((await request('next'))['media'], isNull);
+    expect(
+      ((await request('episode', {'id': 'A3'}))['media'] as Map)['url'],
+      third.uri.toString(),
+    );
+    final next = (await request('next'))['media'] as Map;
+    expect(session.target?.chapterId, 'A4');
+    expect(session.target?.chapterIndex, 3);
+    final uri = Uri.parse(next['url'] as String);
+    final client = HttpClient();
+    addTearDown(() => client.close(force: true));
+    final bytes = await (await client.getUrl(uri.resolve('part.ts'))).close();
+    expect(await bytes.expand((b) => b).toList(), [1, 2, 3]);
+    await progress(22, identity: next['identity'] as String);
+    final saved = library.videoProgress('show', sourceId: 'fixture');
+    expect(saved?.chapterIndex, 3);
+    expect(saved?.position.inSeconds, 22);
+    final retried = (await request('retry'))['media'] as Map;
+    expect(retried['url'], next['url']);
+    expect(retried['position'], 22);
+    expect(
+      ((await request('previous'))['media'] as Map)['url'],
+      third.uri.toString(),
+    );
+    expect(source.resolved, isEmpty);
+    await expectLater(
+      client.getUrl(uri).then((r) => r.close()),
+      throwsA(isA<IOException>()),
+    );
+  });
   for (final uri in [
     Uri.parse('file:///downloads/movie.mp4'),
     Uri.parse('http://127.0.0.1:43002/session/index.m3u8'),
@@ -633,6 +709,7 @@ void main() {
   testWidgets(
     'a media preparation that finishes after the request timeout cannot change the episode',
     (tester) async {
+      downloads = _EmptyDownloads();
       final preparing = Completer<PlayerMedia>();
       await tester.runAsync(
         () => start(
@@ -718,6 +795,11 @@ void main() {
       ]);
     },
   );
+}
+
+class _EmptyDownloads extends VideoDownloadCenter {
+  @override
+  Future<DownloadedVideoPlayback?> completedPlayback(String sourceId, String itemId, String chapterId) async => null;
 }
 
 class _Source extends MockDataSource implements DanmakuCapable {

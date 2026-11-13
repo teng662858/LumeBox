@@ -55,10 +55,12 @@ class VideoDownloadTask {
     this.total = 0,
     this.fileName = '',
     this.chapterIndex = 0,
+    this.line = '',
     this.error,
   });
   final String id, sourceId, itemId, chapterId, title, chapterTitle;
   final int chapterIndex;
+  final String line;
   String state, fileName;
   String? error;
   int bytes, totalBytes, completed, total;
@@ -82,6 +84,7 @@ class VideoDownloadTask {
     'title': title,
     'chapterTitle': chapterTitle,
     'chapterIndex': chapterIndex,
+    if (line.isNotEmpty) 'line': line,
     'state': state,
     'bytes': bytes,
     'totalBytes': totalBytes,
@@ -165,6 +168,7 @@ class VideoDownloadCenter extends ChangeNotifier {
               title: '${m['title']}',
               chapterTitle: '${m['chapterTitle']}',
               chapterIndex: (m['chapterIndex'] as num?)?.toInt() ?? 0,
+              line: m['line'] as String? ?? '',
               state: ['done', 'merge_failed'].contains(m['state'])
                   ? '${m['state']}'
                   : 'paused',
@@ -248,6 +252,7 @@ class VideoDownloadCenter extends ChangeNotifier {
           title: title,
           chapterTitle: chapter.title,
           chapterIndex: chapterIndices[chapter.id] ?? 0,
+          line: chapter.line,
           state: 'queued',
         ),
       );
