@@ -578,6 +578,61 @@ void main() {
       await server.close(force: true);
     }
   });
+  test('only audio HLS asset URLs issued for the current chapter reach upstream', () async {
+    final requests = <http.Request>[];
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+      requests.add(r);
+      if (r.url.path.endsWith('.m3u8')) return http.Response('#EXTM3U\n#EXTINF:1,\nchunk.aac\n', 200);
+      return http.Response.bytes([10, 20], 200);
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final tracks = await proxy.prepare([
+      for (final name in ['one', 'two'])
+        AudioBookTrack(id: name, album: 'book', episode: ResourceEpisode(id: name, title: name,
+          url: Uri.parse('https://book.test/$name.m3u8'), headers: {'Authorization': name})),
+    ]);
+    final manifest = await client.get(tracks.first);
+    final asset = Uri.parse(LineSplitter.split(manifest.body).firstWhere((line) => line.startsWith('http')));
+    final other = base64Url.encode(utf8.encode('https://book.test/account'));
+    for (final changed in [
+      asset.replace(queryParameters: {...asset.queryParameters, 'asset': other}),
+      asset.replace(path: '${tracks.first.path}/public.aac'),
+      tracks.first.replace(queryParameters: {'asset': other}),
+      asset.replace(path: '${tracks.last.path}/${asset.pathSegments.last}'),
+    ]) {
+      expect((await client.get(changed)).statusCode, 404);
+    }
+    expect(requests, hasLength(1));
+    expect((await client.get(asset)).bodyBytes, [10, 20]);
+    expect(requests.last.headers['authorization'], 'one');
+  });
+
+  test('audio HLS redirected playlists cannot restore stripped credentials in a nested playlist', () async {
+    final seen = <http.Request>[];
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+      seen.add(r);
+      return switch (r.url.path) {
+        '/start.m3u8' => http.Response('', 302, headers: {'location':'https://cdn.test/master'}),
+        '/master' => http.Response('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=96000\nhttps://book.test/list\n', 200),
+        '/list' => http.Response('#EXTM3U\n#EXTINF:1,\npart.aac\n#EXT-X-ENDLIST\n', 200),
+        _ => http.Response.bytes([2, 4], 200),
+      };
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    var uri = (await proxy.prepare([AudioBookTrack(id:'a', album:'book', episode:ResourceEpisode(
+      id:'e', title:'e', url:Uri.parse('https://book.test/start.m3u8'),
+      headers: const {'Authorization':'fixture', 'Referer':'https://book.test/'}))])).single;
+    for (var i = 0; i < 2; i++) {
+      final playlist = await client.get(uri);
+      uri = Uri.parse(LineSplitter.split(playlist.body).firstWhere((line) => line.startsWith('http')));
+    }
+    expect((await client.get(uri)).bodyBytes, [2, 4]);
+    expect(seen.map((r) => r.headers['authorization']), ['fixture', null, null, null]);
+    expect(seen.map((r) => r.headers['referer']), everyElement('https://book.test/'));
+  });
+
   test('audio HLS keeps playlist handling after redirect to an extensionless binary endpoint', () async {
     final requests = <http.Request>[];
     final proxy = AudioBookProxy(clientFactory: () => MockClient((request) async {

@@ -28,6 +28,7 @@ class AudioBookProxy {
   final _clients = <http.Client>{};
   final _resolved = <String, ({DateTime time, ResolvedAudio audio})>{};
   final _resolving = <String, Future<ResolvedAudio>>{};
+  final _assetMac = Hmac(sha256, List.generate(32, (_) => Random.secure().nextInt(256)));
   final _token = base64Url
       .encode(List.generate(24, (_) => Random.secure().nextInt(256)))
       .replaceAll('=', '');
@@ -123,20 +124,27 @@ class AudioBookProxy {
     }
   }
 
-  Uri _asset(int port, String id, Uri uri, {bool playlist = false}) => Uri(
-    scheme: 'http',
-    host: '127.0.0.1',
-    port: port,
-    path: '/$_token/$id/asset${playlist ? '.m3u8' : _extension(uri)}',
-    queryParameters: {'asset': base64Url.encode(utf8.encode(uri.toString()))},
-  );
+  String _signature(String id, String name, String asset) =>
+      _assetMac.convert(utf8.encode('$id/$name/$asset')).toString();
+
+  Uri _asset(int port, String id, Uri uri, {required bool scoped, required bool playlist}) {
+    final name = '${scoped ? 'asset' : 'public'}${playlist ? '.m3u8' : _extension(uri)}';
+    final asset = base64Url.encode(utf8.encode(uri.toString()));
+    return Uri(
+      scheme: 'http', host: '127.0.0.1', port: port, path: '/$_token/$id/$name',
+      queryParameters: {'asset': asset, 'sig': _signature(id, name, asset)},
+    );
+  }
   Future<void> _serve(HttpRequest request, {bool canRefresh = true}) async {
     http.Client? client;
     try {
       final path = request.uri.pathSegments;
       final port = request.connectionInfo!.localPort;
       final raw = request.uri.queryParameters['asset'];
-      if (!(path.length == 2 || path.length == 3 && raw != null) ||
+      final validPath = raw == null
+          ? path.length == 2
+          : path.length == 3 && request.uri.queryParameters['sig'] == _signature(path[1], path[2], raw);
+      if (!validPath ||
           path[0] != _token ||
           !_tracks.containsKey(path[1]) ||
           !['GET', 'HEAD'].contains(request.method)) {
@@ -160,13 +168,14 @@ class AudioBookProxy {
         throw const FormatException('不支持的音频地址');
       }
       final headers = Map<String, String>.from(resolved.headers);
-      if (uri.scheme != resolved.url.scheme ||
-          uri.origin != resolved.url.origin) {
+      var scoped = (raw == null || !path.last.startsWith('public')) &&
+          uri.scheme == resolved.url.scheme && uri.origin == resolved.url.origin;
+      if (!scoped) {
         headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
       }
       headers['Accept-Encoding'] = 'identity';
       final range = request.headers.value(HttpHeaders.rangeHeader);
-      final playlistAsset = path.length == 3 && path.last == 'asset.m3u8';
+      final playlistAsset = raw != null && path.last.endsWith('.m3u8');
       client = _clientFactory();
       _clients.add(client);
       http.StreamedResponse? response;
@@ -195,6 +204,7 @@ class AudioBookProxy {
             throw const FormatException('不支持的重定向');
           }
           if (next.origin != uri.origin) {
+            scoped = false;
             headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
           }
           uri = next;
@@ -301,6 +311,12 @@ class AudioBookProxy {
         final master = lines.any(
           (line) => line.trimLeft().startsWith('#EXT-X-STREAM-INF:'),
         );
+        String childUrl(String value, {required bool playlist}) {
+          final child = uri.resolve(value);
+          final sameOrigin = child.scheme == uri.scheme && child.origin == uri.origin;
+          return _asset(port, path[1], child, scoped: scoped && sameOrigin,
+              playlist: playlist).toString();
+        }
         final rewritten = lines
             .map((line) {
               final value = line.trim();
@@ -315,15 +331,10 @@ class AudioBookProxy {
                 return line.replaceAllMapped(
                   RegExp(r'URI="([^"]+)"'),
                   (match) =>
-                      'URI="${_asset(port, path[1], uri.resolve(match.group(1)!), playlist: playlistUri)}"',
+                      'URI="${childUrl(match[1]!, playlist: playlistUri)}"',
                 );
               }
-              return _asset(
-                port,
-                path[1],
-                uri.resolve(value),
-                playlist: master,
-              ).toString();
+              return childUrl(value, playlist: master);
             })
             .join('\n');
         final output = utf8.encode(rewritten);
