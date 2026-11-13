@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show mapEquals;
+
 import '../../core/bangumi/bangumi_sync.dart';
 import '../../core/cat/cat_web_parse.dart';
 import '../../core/media/playback_focus.dart';
@@ -62,6 +64,7 @@ class NativeVideoSourceSession {
   VideoPlayTarget? target;
   List<VideoQuality> qualities;
   VideoQuality? _manualQuality;
+  VideoQuality? _activeQuality;
   NativeVideoConnection? _connection;
   DataSource? _openedSource;
   List<SourceChapter>? _chapters;
@@ -88,6 +91,10 @@ class NativeVideoSourceSession {
       target?.sourceId ?? source?.id,
       VideoPlayerSettingsStore(library).load(),
     );
+    final sameUrl = qualities.where((q) => q.url == _media.uri);
+    final headers = _media.headers ?? const <String, String>{};
+    final sameRequest = sameUrl.where((q) => mapEquals(q.headers, headers)).toList();
+    _activeQuality = PlaybackQualityPreference.select(sameRequest, _settings) ?? sameUrl.singleOrNull;
     if (_settings.kernel != PlayerKernel.avplayer &&
         _settings.kernel != PlayerKernel.mpv) {
       _settings = _settings.copyWith(kernel: PlayerKernel.mpv);
@@ -371,13 +378,14 @@ class NativeVideoSourceSession {
     }
     if (action == 'danmaku') return _danmaku();
     if (action == 'qualities') {
+      final selected = qualities.indexWhere((quality) => identical(quality, _activeQuality));
       return {
         'items': [
           for (var i = 0; i < qualities.length; i++)
             {
               'id': i,
               'title': qualities[i].label,
-              'selected': qualities[i].url == _media.uri,
+              'selected': i == selected,
             },
         ],
       };
@@ -397,6 +405,7 @@ class NativeVideoSourceSession {
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
       _media = media;
       _manualQuality = choice;
+      _activeQuality = choice;
       if (_settings.rememberManualQuality) {
         _settings = _settings.copyWith(manualQualityLabel: choice.label);
         library.setSetting(
@@ -527,6 +536,7 @@ class NativeVideoSourceSession {
       }
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
       List<VideoQuality> nextQualities = const [];
+      VideoQuality? choice;
       final PlayerMedia nextMedia;
       if (local != null) {
         nextMedia = local.media(nextTarget.mediaTitle);
@@ -557,7 +567,7 @@ class NativeVideoSourceSession {
           content,
           source: dataSource,
         );
-        final choice = PlaybackQualityPreference.select(
+        choice = PlaybackQualityPreference.select(
           nextQualities,
           _settings,
           currentQuality: _manualQuality,
@@ -582,6 +592,7 @@ class NativeVideoSourceSession {
         _saved[_identity] = payload['position'] as double;
       }
       qualities = nextQualities;
+      _activeQuality = choice;
       _media = nextMedia;
       final previous = _localPlayback;
       _localPlayback = local;

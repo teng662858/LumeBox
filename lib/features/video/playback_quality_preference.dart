@@ -13,9 +13,14 @@ class PlaybackQualityPreference {
     // A session's explicit selection survives episode changes even when the
     // user has disabled remembering that choice across future sessions.
     if (currentQuality != null) {
-      for (final quality in qualities) {
-        if (quality.label == currentQuality.label) return quality;
+      final named = qualities.where((q) => q.label == currentQuality.label);
+      for (final quality in named) {
+        if (quality == currentQuality) return quality;
       }
+      for (final quality in named) {
+        if (quality.resolutionRank == currentQuality.resolutionRank) return quality;
+      }
+      if (named.isNotEmpty) return named.first;
       if (currentQuality.resolutionRank > 0) {
         for (final quality in qualities) {
           if (quality.resolutionRank == currentQuality.resolutionRank) {

@@ -778,6 +778,30 @@ void main() {
     );
   }
 
+  test('shared quality URL selects one request and retains its height after token refresh', () async {
+    final url = Uri.parse('https://cdn.example/shared.m3u8');
+    List<VideoQuality> tracks(String token) => [
+      for (final height in [1080, 720])
+        VideoQuality(label: '高清', height: height, url: url,
+          headers: {'Authorization': '$height-$token'}),
+    ];
+    final initial = tracks('old');
+    await start(initialMedia: PlayerMedia(uri: url, headers: initial.last.headers), qualities: initial);
+    Future<List<Object?>> selectedIds() async {
+      final items = (await request('qualities'))['items'] as List;
+      return [for (final row in items) if (row['selected'] == true) row['id']];
+    }
+    expect(await selectedIds(), [1]);
+    await request('quality', {'id': 1});
+    await progress(12);
+    final fresh = tracks('new');
+    source.blocked['A1'] = Completer<ChapterContent>()
+      ..complete(VideoContent(url: url, qualities: fresh));
+    final retried = (await request('retry'))['media'] as Map;
+    expect(retried['headers'], fresh.last.headers);
+    expect(retried['position'], 12);
+    expect(await selectedIds(), [1]);
+  });
   test('switching to a headerless quality does not reuse the previous track credentials', () async {
     await start(
       qualities: [
