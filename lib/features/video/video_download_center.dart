@@ -638,6 +638,8 @@ class VideoDownloadCenter extends ChangeNotifier {
     HttpClientResponse response,
     int offset, {
     int? expectedLength,
+    String? expectedValidator,
+    void Function(String)? onValidator,
     void Function(int)? onLength,
   }) {
     final encoding = _encoding(response);
@@ -649,6 +651,8 @@ class VideoDownloadCenter extends ChangeNotifier {
       response,
       offset,
       expectedLength: expectedLength,
+      expectedValidator: expectedValidator,
+      onValidator: onValidator,
       onLength: encoding == 'identity' ? onLength : null,
     );
     if (encoding == 'identity') return wire;
@@ -686,6 +690,8 @@ class VideoDownloadCenter extends ChangeNotifier {
     HttpClientResponse response,
     int offset, {
     int? expectedLength,
+    String? expectedValidator,
+    void Function(String)? onValidator,
     void Function(int)? onLength,
   }) async* {
     if (response.statusCode == 200) {
@@ -693,7 +699,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       yield* response.timeout(const Duration(seconds: 45));
       return;
     }
-    final validator = _validator(response);
+    var validator = expectedValidator ?? _validator(response);
     final encoding = _encoding(response);
     var total = expectedLength;
     while (true) {
@@ -732,6 +738,10 @@ class VideoDownloadCenter extends ChangeNotifier {
           (response.contentLength >= 0 &&
               response.contentLength != end - offset + 1)) {
         throw StateError('服务器返回了无效的分段长度');
+      }
+      if (validator == null && nextValidator != null) {
+        validator = nextValidator;
+        onValidator?.call(nextValidator);
       }
       onLength?.call(total ?? 0);
       await for (final chunk in response.timeout(const Duration(seconds: 45))) {
@@ -859,7 +869,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       throw StateError('下载请求失败：HTTP ${response.statusCode}');
     }
     if (response.statusCode == 200) offset = 0;
-    final etag =
+    var etag =
         _validator(response) ??
         (offset > 0 ? old['validator'] as String? : null);
     final iterator = StreamIterator(
@@ -871,6 +881,8 @@ class VideoDownloadCenter extends ChangeNotifier {
         response,
         offset,
         expectedLength: offset > 0 ? previousLength : null,
+        expectedValidator: etag,
+        onValidator: (value) => etag = value,
         onLength: (length) => task.totalBytes = length,
       ),
     );
@@ -912,18 +924,16 @@ class VideoDownloadCenter extends ChangeNotifier {
         throw StateError('站点返回网页而非视频文件');
       }
       if (offset == 0 && await partial.exists()) await partial.delete();
-      await validator.writeAsString(
-        jsonEncode({
-          'signature': signature,
-          'requestHash': _addressHash(uri),
-          'responseHash': _addressHash(finalUri),
-          'headerHash': headerHash,
-          if (task.totalBytes > 0) 'length': task.totalBytes,
-          'validator': ?etag,
-          if (_encoding(response) != 'identity') 'encoded': true,
-        }),
-        flush: true,
-      );
+      final resumeInfo = <String, Object?>{
+        'signature': signature,
+        'requestHash': _addressHash(uri),
+        'responseHash': _addressHash(finalUri),
+        'headerHash': headerHash,
+        if (task.totalBytes > 0) 'length': task.totalBytes,
+        'validator': ?etag,
+        if (_encoding(response) != 'identity') 'encoded': true,
+      };
+      await validator.writeAsString(jsonEncode(resumeInfo), flush: true);
       task.bytes = offset;
       final sink = partial.openWrite(
         mode: offset > 0 ? FileMode.append : FileMode.write,
@@ -934,6 +944,14 @@ class VideoDownloadCenter extends ChangeNotifier {
       try {
         await for (final bytes in stream()) {
           _check(task);
+          // Some origins first disclose the validator or length on a later
+          // range. Persist it before appending bytes from that response.
+          if (resumeInfo['validator'] != etag ||
+              task.totalBytes > 0 && resumeInfo['length'] != task.totalBytes) {
+            if (etag != null) resumeInfo['validator'] = etag;
+            if (task.totalBytes > 0) resumeInfo['length'] = task.totalBytes;
+            await validator.writeAsString(jsonEncode(resumeInfo), flush: true);
+          }
           sink.add(bytes);
           task.bytes += bytes.length;
           interval += bytes.length;

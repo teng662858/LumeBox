@@ -612,6 +612,51 @@ void main() {
     expect(task.fileName, isEmpty);
   });
 
+  for (final restartApp in [false, true]) {
+    test('retains a video version first reported on a later range (restartApp=$restartApp)', () async {
+      var attempt = 0;
+      final conditions = <String?>[];
+      final replacement = List<int>.generate(96, (i) => i);
+      server.listen((r) async {
+        attempt++;
+        conditions.add(r.headers.value('if-range'));
+        if (restartApp && attempt == 3) {
+          r.response.statusCode = 503;
+        } else if (attempt > 2 && r.headers.value('range') == null) {
+          r.response.headers.set('ETag', '"replacement"');
+          r.response.add(replacement);
+        } else {
+          final start = switch (r.headers.value('range')) {
+            'bytes=32-' => 32,
+            'bytes=64-' => 64,
+            _ => 0,
+          };
+          r.response.statusCode = 206;
+          r.response.headers.set('Content-Range', 'bytes $start-${start + 31}/96');
+          if (attempt >= 2) {
+            r.response.headers.set('ETag', attempt == 2 ? '"original"' : '"replacement"');
+          }
+          r.response.add(attempt <= 2 ? List<int>.filled(32, 99) : replacement.sublist(start));
+        }
+        await r.response.close();
+      });
+      var c = await center('movie.mp4');
+      await enqueue(c);
+      await until(() => ['failed', 'done'].contains(c.tasks.single.state));
+      await c.flush();
+      expect(c.tasks.single.state, 'failed', reason: 'a mixed file must never be published');
+      expect(c.tasks.single.canPlayOffline, isFalse);
+      if (restartApp) c = await center('movie.mp4');
+      final task = c.tasks.single;
+      await c.resume(task);
+      await until(() => ['done', 'failed'].contains(task.state));
+      await c.flush();
+      expect(task.state, 'done', reason: task.error);
+      expect(await c.localFile(task).readAsBytes(), replacement);
+      expect(conditions, [null, null, '"original"', '"original"', null]);
+    });
+  }
+
   test('downloads compressed HLS manifests, keys and segments as playable bytes', () async {
     final paths = <String>[];
     final segment = List<int>.generate(188, (i) => i);
@@ -764,6 +809,46 @@ void main() {
   });
 
   for (final status in [206, 416]) {
+    test('a late total length survives an interrupted download (HTTP $status)', () async {
+      final ranges = <String?>[];
+      final replacement = List<int>.generate(status == 416 ? 64 : 96, (i) => i);
+      server.listen((r) async {
+        final range = r.headers.value('range');
+        ranges.add(range);
+        switch (ranges.length) {
+          case 1:
+          case 2:
+            final start = range == null ? 0 : 32;
+            r.response.statusCode = 206;
+            r.response.headers.set('Content-Range', 'bytes $start-${start + 31}/${range == null ? "*" : 128}');
+            r.response.add(List<int>.filled(32, 99));
+          case 3:
+            r.response.statusCode = 503;
+          case 4:
+            r.response.statusCode = status;
+            if (status == 416) {
+              r.response.headers.set('Content-Range', 'bytes */64');
+            } else {
+              r.response.headers.set('Content-Range', 'bytes 64-95/96');
+              r.response.add(replacement.sublist(64));
+            }
+          default:
+            r.response.add(replacement);
+        }
+        await r.response.close();
+      });
+      final c = await center('movie.mp4');
+      await enqueue(c);
+      final task = c.tasks.single;
+      await until(() => task.state == 'failed');
+      await c.resume(task);
+      await until(() => ['done', 'failed'].contains(task.state));
+      await c.flush();
+      expect(task.state, 'done', reason: task.error);
+      expect(await c.localFile(task).readAsBytes(), replacement);
+      expect(ranges, [null, 'bytes=32-', 'bytes=64-', 'bytes=64-', null]);
+    });
+
     test('a changed file length restarts a partial download (HTTP $status)', () async {
       final next = List.generate(status == 206 ? 80 : 32, (i) => i);
       var requests = 0;
