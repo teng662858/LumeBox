@@ -575,6 +575,75 @@ class VideoDownloadCenter extends ChangeNotifier {
     throw StateError('下载重定向过多');
   }
 
+  // Some CDNs cap each response even for an open-ended Range request.
+  Stream<List<int>> _downloadBody(
+    VideoDownloadTask task,
+    Uri uri,
+    Uri origin,
+    Map<String, String> headers,
+    HttpClientResponse response,
+    int offset, {
+    void Function(int)? onLength,
+  }) async* {
+    if (response.statusCode == 200) {
+      onLength?.call(response.contentLength < 0 ? 0 : response.contentLength);
+      yield* response.timeout(const Duration(seconds: 45));
+      return;
+    }
+    final validator =
+        response.headers.value('etag') ??
+        response.headers.value('last-modified');
+    int? total;
+    while (true) {
+      if (response.statusCode == 416 &&
+          response.headers.value('content-range') == 'bytes */$offset' &&
+          (total == null || total == offset)) {
+        await response.drain<void>();
+        onLength?.call(offset);
+        return;
+      }
+      if (response.statusCode != 206) throw StateError('服务器未继续返回分段内容，请重试');
+      final range = RegExp(
+        r'^bytes (\d+)-(\d+)/(\d+|\*)$',
+        caseSensitive: false,
+      ).firstMatch(response.headers.value('content-range') ?? '');
+      final start = int.tryParse(range?[1] ?? '');
+      final end = int.tryParse(range?[2] ?? '');
+      final length = int.tryParse(range?[3] ?? '');
+      if (start != offset ||
+          end == null ||
+          end < offset ||
+          (range?[3] != '*' && length == null) ||
+          (length != null && total != null && total != length)) {
+        throw StateError('服务器续传范围不匹配，请重试');
+      }
+      total ??= length;
+      if ((total != null && end >= total) ||
+          (response.contentLength >= 0 &&
+              response.contentLength != end - offset + 1)) {
+        throw StateError('服务器返回了无效的分段长度');
+      }
+      onLength?.call(total ?? 0);
+      await for (final chunk in response.timeout(const Duration(seconds: 45))) {
+        _check(task);
+        if (chunk.length > end - offset + 1) throw StateError('分段响应超过声明长度');
+        offset += chunk.length;
+        yield chunk;
+      }
+      if (offset - 1 != end) throw StateError('文件分段尚未下载完整');
+      if (offset == total) return;
+      await _policyCheckpoint(task);
+      final next = await _open(
+        task,
+        uri,
+        origin,
+        headers,
+        extra: {'Range': 'bytes=$offset-', 'If-Range': ?validator},
+      );
+      response = next.$1;
+    }
+  }
+
   Future<void> _download(
     VideoDownloadTask task,
     Uri uri,
@@ -601,116 +670,127 @@ class VideoDownloadCenter extends ChangeNotifier {
       if (offset > 0 && old['validator'] is String)
         'If-Range': old['validator'] as String,
     };
-    final (response, finalUri) = await _open(task, uri, uri, headers, extra: extra);
+    final (response, finalUri) = await _open(
+      task,
+      uri,
+      uri,
+      headers,
+      extra: extra,
+    );
     if (response.statusCode == 416 &&
         offset > 0 &&
         response.headers.value('content-range') == 'bytes */$offset') {
       await response.drain<void>();
+      _check(task);
       await partial.rename(p.join(folder(task), targetName));
+      task.bytes = task.totalBytes = offset;
       task.fileName = targetName;
       return;
     }
     if (response.statusCode != 200 && response.statusCode != 206) {
       throw StateError('下载请求失败：HTTP ${response.statusCode}');
     }
-    final iterator = StreamIterator(
-      response.timeout(const Duration(seconds: 45)),
-    );
-    if (!await iterator.moveNext()) throw StateError('视频响应为空');
-    final first = <int>[...iterator.current];
-    var ended = false;
-    while (first.length < 16) {
-      if (!await iterator.moveNext()) {
-        ended = true;
-        break;
-      }
-      first.addAll(iterator.current);
-    }
-    Stream<List<int>> stream() async* {
-      yield first;
-      while (!ended && await iterator.moveNext()) {
-        _check(task);
-        yield iterator.current;
-      }
-    }
-
-    final prefix = utf8
-        .decode(first.take(80).toList(), allowMalformed: true)
-        .trimLeft();
-    if (prefix.startsWith('#EXTM3U')) {
-      final playlist = await _text(stream());
-      task.bytes = 0;
-      task.totalBytes = 0;
-      await _playlist(task, finalUri, uri, headers, playlist, 'index', 0);
-      task.fileName = 'index.m3u8';
-      return;
-    }
-    final type = response.headers.contentType?.mimeType ?? '';
-    if (type == 'application/json' || type == 'text/html') {
-      throw StateError('站点返回的不是视频文件');
-    }
-    if (prefix.toLowerCase().startsWith('<!doctype') ||
-        prefix.toLowerCase().startsWith('<html')) {
-      throw StateError('站点返回网页而非视频文件');
-    }
-    if (response.statusCode == 206) {
-      if (!RegExp('^bytes $offset-')
-          .hasMatch(response.headers.value('content-range') ?? '')) {
-        throw StateError('服务器续传位置不匹配，请重试');
-      }
-    } else {
-      offset = 0;
-    }
+    if (response.statusCode == 200) offset = 0;
     final etag =
         response.headers.value('etag') ??
-        response.headers.value('last-modified');
-    await validator.writeAsString(
-      jsonEncode({'signature': signature, 'validator': ?etag}),
-      flush: true,
+        response.headers.value('last-modified') ??
+        (offset > 0 ? old['validator'] as String? : null);
+    final iterator = StreamIterator(
+      _downloadBody(
+        task,
+        uri,
+        uri,
+        headers,
+        response,
+        offset,
+        onLength: (length) => task.totalBytes = length,
+      ),
     );
-    task.bytes = offset;
-    task.totalBytes = response.contentLength < 0
-        ? 0
-        : offset + response.contentLength;
-    final sink = partial.openWrite(
-      mode: offset > 0 ? FileMode.append : FileMode.write,
-    );
-    final watch = Stopwatch()..start();
-    var interval = 0;
-    var policyBytes = 0;
     try {
-      await for (final bytes in stream()) {
-        _check(task);
-        sink.add(bytes);
-        task.bytes += bytes.length;
-        interval += bytes.length;
-        policyBytes += bytes.length;
-        if (policyBytes >= 8 * 1024 * 1024) {
-          await _policyCheckpoint(task);
-          policyBytes = 0;
+      if (!await iterator.moveNext()) throw StateError('视频响应为空');
+      final first = <int>[...iterator.current];
+      var ended = false;
+      while (first.length < 16) {
+        if (!await iterator.moveNext()) {
+          ended = true;
+          break;
         }
-        if (watch.elapsedMilliseconds >= 300) {
-          task.bytesPerSecond = interval * 1000 / watch.elapsedMilliseconds;
-          interval = 0;
-          watch.reset();
-          _notifyProgress();
-        }
-        if (_yieldToPlayback) {
-          await Future<void>.delayed(const Duration(milliseconds: 8));
+        first.addAll(iterator.current);
+      }
+      Stream<List<int>> stream() async* {
+        yield first;
+        while (!ended && await iterator.moveNext()) {
+          _check(task);
+          yield iterator.current;
         }
       }
-      await sink.flush();
+
+      final prefix = utf8
+          .decode(first.take(80).toList(), allowMalformed: true)
+          .trimLeft();
+      if (offset == 0 && prefix.startsWith('#EXTM3U')) {
+        final playlist = await _text(stream());
+        task.bytes = 0;
+        task.totalBytes = 0;
+        await _playlist(task, finalUri, uri, headers, playlist, 'index', 0);
+        task.fileName = 'index.m3u8';
+        return;
+      }
+      final type = response.headers.contentType?.mimeType ?? '';
+      if (type == 'application/json' || type == 'text/html') {
+        throw StateError('站点返回的不是视频文件');
+      }
+      if (offset == 0 &&
+          (prefix.toLowerCase().startsWith('<!doctype') ||
+              prefix.toLowerCase().startsWith('<html'))) {
+        throw StateError('站点返回网页而非视频文件');
+      }
+      await validator.writeAsString(
+        jsonEncode({'signature': signature, 'validator': ?etag}),
+        flush: true,
+      );
+      task.bytes = offset;
+      final sink = partial.openWrite(
+        mode: offset > 0 ? FileMode.append : FileMode.write,
+      );
+      final watch = Stopwatch()..start();
+      var interval = 0;
+      var policyBytes = 0;
+      try {
+        await for (final bytes in stream()) {
+          _check(task);
+          sink.add(bytes);
+          task.bytes += bytes.length;
+          interval += bytes.length;
+          policyBytes += bytes.length;
+          if (policyBytes >= 8 * 1024 * 1024) {
+            await _policyCheckpoint(task);
+            policyBytes = 0;
+          }
+          if (watch.elapsedMilliseconds >= 300) {
+            task.bytesPerSecond = interval * 1000 / watch.elapsedMilliseconds;
+            interval = 0;
+            watch.reset();
+            _notifyProgress();
+          }
+          if (_yieldToPlayback) {
+            await Future<void>.delayed(const Duration(milliseconds: 8));
+          }
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
+      if (task.bytes == 0 ||
+          task.totalBytes > 0 && task.bytes != task.totalBytes) {
+        throw StateError('文件尚未下载完整');
+      }
+      _check(task);
+      await partial.rename(p.join(folder(task), targetName));
+      task.fileName = targetName;
     } finally {
-      await sink.close();
       await iterator.cancel();
     }
-    if (task.bytes == 0 ||
-        task.totalBytes > 0 && task.bytes != task.totalBytes) {
-      throw StateError('文件尚未下载完整');
-    }
-    _check(task);
-    await partial.rename(p.join(folder(task), targetName));
-    task.fileName = targetName;
   }
 
   Future<String> _text(Stream<List<int>> stream) async {
@@ -730,8 +810,13 @@ class VideoDownloadCenter extends ChangeNotifier {
   ) async {
     await _policyCheckpoint(task);
     final (r, finalUri) = await _open(task, uri, origin, headers);
-    if (r.statusCode != 200) throw StateError('播放清单不可用：HTTP ${r.statusCode}');
-    return (await _text(r.timeout(const Duration(seconds: 45))), finalUri);
+    if (r.statusCode != 200 && r.statusCode != 206) {
+      throw StateError('播放清单不可用：HTTP ${r.statusCode}');
+    }
+    return (
+      await _text(_downloadBody(task, uri, origin, headers, r, 0)),
+      finalUri,
+    );
   }
 
   Future<void> _playlist(
@@ -944,7 +1029,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     final sink = temporary.openWrite();
     var size = 0;
     try {
-      await for (final b in r.timeout(const Duration(seconds: 45))) {
+      await for (final b in _downloadBody(task, uri, origin, headers, r, 0)) {
         _check(task);
         sink.add(b);
         size += b.length;
@@ -964,7 +1049,9 @@ class VideoDownloadCenter extends ChangeNotifier {
     }
     if (size == 0 ||
         key && size != 16 ||
-        r.contentLength >= 0 && size != r.contentLength) {
+        r.statusCode == 200 &&
+            r.contentLength >= 0 &&
+            size != r.contentLength) {
       throw StateError('分片或密钥不完整');
     }
     _check(task);

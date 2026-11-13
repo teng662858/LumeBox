@@ -366,6 +366,99 @@ void main() {
     expect(restored.tasks.single.state, 'done');
     expect(await restored.localFile(restored.tasks.single).readAsBytes(), data);
   });
+  for (final knownLength in [false, true]) {
+    test(
+      'partial HTTP responses finish every range before publishing the file (known length=$knownLength)',
+      () async {
+        final data = List.generate(103, (i) => i);
+        final offsets = <int>[];
+        server.listen((request) async {
+          final range = request.headers.value('range') ?? 'bytes=0-';
+          final start = int.parse(range.substring(6, range.length - 1));
+          offsets.add(start);
+          if (start == data.length) {
+            request.response.statusCode = 416;
+            request.response.headers.set(
+              'content-range',
+              'bytes */${data.length}',
+            );
+          } else {
+            final end = (start + 31).clamp(0, data.length - 1);
+            request.response.statusCode = 206;
+            request.response.headers.set(
+              'content-range',
+              'bytes $start-$end/${knownLength ? data.length : "*"}',
+            );
+            request.response.contentLength = end - start + 1;
+            request.response.add(data.sublist(start, end + 1));
+          }
+          await request.response.close();
+        });
+        final c = await center('capped.mp4');
+        await enqueue(c);
+        final task = c.tasks.single;
+        await until(() => ['done', 'failed'].contains(task.state));
+        await c.flush();
+        expect(task.state, 'done', reason: task.error);
+        expect(await c.localFile(task).readAsBytes(), data);
+        expect(task.totalBytes, data.length);
+        expect(offsets, [0, 32, 64, 96, if (!knownLength) 103]);
+      },
+    );
+  }
+
+  test('malformed partial response cannot become a completed video', () async {
+    server.listen((request) async {
+      request.response.statusCode = 206;
+      request.response.headers.set('content-range', 'bytes 0-999/32');
+      request.response.add(List.filled(32, 6));
+      await request.response.close();
+    });
+    final c = await center('bad.mp4');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['done', 'failed'].contains(task.state));
+    await c.flush();
+    expect(task.state, 'failed');
+    expect(task.fileName, isEmpty);
+  });
+
+  test(
+    'a capped HLS segment is stored in full before it becomes playable offline',
+    () async {
+      final data = List.generate(20, (i) => i);
+      server.listen((request) async {
+        if (request.uri.path.endsWith('.m3u8')) {
+          request.response.write(
+            '#EXTM3U\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n',
+          );
+        } else {
+          final start = request.headers.value('range') == 'bytes=10-' ? 10 : 0;
+          request.response.statusCode = 206;
+          request.response.headers.set(
+            'content-range',
+            'bytes $start-${start + 9}/20',
+          );
+          request.response.add(data.sublist(start, start + 10));
+        }
+        await request.response.close();
+      });
+      final c = await center('index.m3u8');
+      await enqueue(c);
+      final task = c.tasks.single;
+      await until(() => ['failed', 'merge_failed'].contains(task.state));
+      await c.flush();
+      final local = c.localFile(task);
+      final segment = (await local.readAsLines()).firstWhere(
+        (line) => line.endsWith('.ts'),
+      );
+      expect(
+        await File.fromUri(local.uri.resolve(segment)).readAsBytes(),
+        data,
+      );
+    },
+  );
+
   test('pause then resume uses Range and preserves exact file bytes', () async {
     final data = Uint8List.fromList(List.generate(256 * 1024, (i) => i % 251));
     final ranges = <String?>[];
