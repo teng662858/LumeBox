@@ -364,7 +364,7 @@ class NativeVideoSourceSession {
         kernelOverride: kernel,
       );
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-      return {'media': payload};
+      return {'media': payload, 'speed': _settings.copyWith(kernel: kernel).speed};
     }
     if (action == 'danmaku') return _danmaku();
     if (action == 'qualities') {
@@ -607,13 +607,17 @@ class NativeVideoSourceSession {
           ? PlayerKernel.mpv
           : PlayerKernel.avplayer;
       final speed = data['speed'];
+      // Reloading an engine echoes its current rate, which older screens may
+      // carry across engines. A speed selection sends a separate rate event.
+      final loadSnapshot =
+          data.containsKey('hardwareDecoding') && data.containsKey('autoNext');
       final changedAutoNext = data['autoNext'] is bool &&
           data['autoNext'] != _settings.autoNext;
       _settings = _settings.copyWith(
         kernel: kernel,
-        speed: speed is num && speed.isFinite
+        speed: !loadSnapshot && speed is num && speed.isFinite
             ? speed.toDouble().clamp(0.25, 4)
-            : _settings.speed,
+            : null,
         hardwareDecoding:
             data['hardwareDecoding'] as bool? ?? _settings.hardwareDecoding,
         autoNext: data['autoNext'] as bool? ?? _settings.autoNext,

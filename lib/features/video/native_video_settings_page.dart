@@ -20,9 +20,10 @@ class NativeVideoSettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final kernel = settings.kernel == PlayerKernel.avplayer
+    final kernel = this.settings.kernel == PlayerKernel.avplayer
         ? PlayerKernel.avplayer
         : PlayerKernel.mpv;
+    final settings = this.settings.copyWith(kernel: kernel);
     return Scaffold(
       appBar: AppBar(title: const Text('播放器设置')),
       body: ListView(
@@ -47,31 +48,10 @@ class NativeVideoSettingsPage extends StatelessWidget {
             key: ValueKey(
               'native-speed-${settings.kernel.id}-${settings.speed}',
             ),
-            initialValue:
-                const [
-                  0.5,
-                  0.75,
-                  1.0,
-                  1.25,
-                  1.5,
-                  2.0,
-                  3.0,
-                  4.0,
-                ].contains(settings.speed)
-                ? settings.speed
-                : 1,
+            initialValue: settings.speed,
             decoration: const InputDecoration(labelText: '播放速度'),
             items: [
-              for (final rate in const [
-                0.5,
-                0.75,
-                1.0,
-                1.25,
-                1.5,
-                2.0,
-                3.0,
-                4.0,
-              ])
+              for (final rate in PlayerSettings.speeds)
                 DropdownMenuItem(value: rate, child: Text('$rate×')),
             ],
             onChanged: (value) {

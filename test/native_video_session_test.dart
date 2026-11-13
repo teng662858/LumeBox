@@ -357,6 +357,42 @@ void main() {
       expect(options['maxBufferBytes'], 96 * 1024 * 1024);
     },
   );
+  for (final sourceOverride in [false, true]) {
+    test('kernel changes restore independent speeds (source override: $sourceOverride)', () async {
+      final store = VideoPlayerSettingsStore(library);
+      final profiles = SourcePlaybackProfiles(library);
+      final settings = const PlayerSettings()
+          .copyWith(kernel: PlayerKernel.mpv, speed: 2.5)
+          .copyWith(kernel: PlayerKernel.avplayer, speed: 1.75);
+      if (sourceOverride) {
+        profiles.save('fixture', settings, 30);
+      } else {
+        store.save(settings);
+      }
+      await start();
+      expect((opened['options'] as Map)['speed'], 1.75);
+      expect((await request('kernel', {'id': 'mpv'}))['speed'], 2.5);
+      await native('event', {
+        'session': opened['session'], 'type': 'settings', 'kernel': 'mpv',
+        'speed': 1.75, 'hardwareDecoding': true, 'autoNext': true,
+      });
+      Future<void> settingsEvent(String kernel, [double? speed]) async {
+        await native('event', {
+          'session': opened['session'], 'type': 'settings', 'kernel': kernel,
+          'speed': ?speed,
+        });
+      }
+      await settingsEvent('mpv');
+      PlayerSettings saved() => profiles.load('fixture', store.load());
+      expect(saved().speed, 2.5);
+      await settingsEvent('mpv', 2.75);
+      expect((await request('kernel', {'id': 'avplayer'}))['speed'], 1.75);
+      await settingsEvent('avplayer', 1.75);
+      expect(saved().copyWith(kernel: PlayerKernel.mpv).speed, 2.75);
+      if (sourceOverride) expect(store.load().speed, PlayerSettings.defaultSpeed);
+    });
+  }
+
   test(
     'kernel switch prepares the original media for the destination engine',
     () async {
@@ -913,9 +949,14 @@ void main() {
         'session': opened['session'],
         'type': 'settings',
         'kernel': 'mpv',
-        'speed': 99.0,
         'autoNext': false,
         'hardwareDecoding': false,
+      });
+      await native('event', {
+        'session': opened['session'],
+        'type': 'settings',
+        'kernel': 'mpv',
+        'speed': 99.0,
       });
       final saved = VideoPlayerSettingsStore(library).load();
       expect(saved.kernel.id, 'mpv');

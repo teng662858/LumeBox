@@ -74,7 +74,9 @@ void main() {
 
   testWidgets('从全局设置可以切回系统播放内核并写入视频库', (tester) async {
     final store = await VideoPlayerSettingsStore.open();
-    store.save(const PlayerSettings().copyWith(kernel: PlayerKernel.mpv));
+    store.save(const PlayerSettings()
+        .copyWith(speed: 1.75)
+        .copyWith(kernel: PlayerKernel.mpv, speed: 2.5));
     await tester.binding.setSurfaceSize(const Size(900, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -92,11 +94,19 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('播放器设置'));
     await tester.pumpAndSettle();
+    expect(find.text('2.5×').hitTestable(), findsOneWidget);
     await tester.tap(find.byType(DropdownButtonFormField<PlayerKernel>));
     await tester.pumpAndSettle();
     await tester.tap(find.text('系统 AVPlayer').hitTestable().last);
     await tester.pumpAndSettle();
     expect(store.load().kernel, PlayerKernel.avplayer);
+    expect(find.text('1.75×').hitTestable(), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<double>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2.25×').hitTestable().last);
+    await tester.pumpAndSettle();
+    expect(store.load().speed, 2.25);
+    expect(store.load().copyWith(kernel: PlayerKernel.mpv).speed, 2.5);
   });
 
   testWidgets('逃生切换：只改内核并写回视频板块的库；字幕不动，倍速按内核各记一份', (tester) async {
