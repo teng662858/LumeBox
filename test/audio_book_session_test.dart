@@ -386,6 +386,18 @@ void main() {
     expect(session.current, 2);
   });
 
+  for (final forward in [true, false]) {
+    test('released session can skip ${forward ? "forward" : "back"} while remaining paused', () async {
+      await session.open(resource, tracks, index: 1);
+      await session.release();
+      await (forward ? session.next() : session.previous());
+      expect(session.current, forward ? 2 : 0);
+      expect(player.lastTracks, hasLength(3));
+      expect(session.position, Duration.zero);
+      expect(session.playing, isFalse);
+    });
+  }
+
   test('a late seek failure belongs only to the previous chapter', () async {
     await session.open(resource, tracks, index: 0);
     final gate = Completer<void>();

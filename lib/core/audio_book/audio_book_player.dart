@@ -739,13 +739,9 @@ class AudioBookSession extends ChangeNotifier {
     }
   }
 
-  Future<void> next() async {
-    if (current + 1 < (resource?.episodes.length ?? 0)) await _player?.next();
-  }
+  Future<void> next() => seek(Duration.zero, index: current + 1);
 
-  Future<void> previous() async {
-    if (current > 0) await _player?.previous();
-  }
+  Future<void> previous() => seek(Duration.zero, index: current - 1);
 
   Future<void> setSpeed(double speed) async {
     settings.speed = speed.clamp(.5, 3);
