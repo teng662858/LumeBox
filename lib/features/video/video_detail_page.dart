@@ -486,6 +486,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
     );
     if (indices == null || !mounted) return;
     await (widget.downloadCenter ?? VideoDownloadCenter.instance).enqueue(
+      section: widget.library.section,
       sourceId: source.id,
       itemId: widget.item.id,
       title: widget.item.title,
@@ -561,15 +562,16 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       // Start the kernel while the source resolves the selected episode.
       if (_source!.section == Section.video) {
         prepared = widget.prelaunch?.call();
-        if (known?.manual != true || known?.kind == ResourceKind.video) {
-          try {
-            offline = await (widget.downloadCenter ?? VideoDownloadCenter.instance)
-                .completedPlayback(_source!.id, widget.item.id, chapter.id);
-          } catch (_) {
-            PlaybackDiagnostics.record('offline-lookup-failed', source: _source!.id);
-          }
-          if (!mounted || route?.isCurrent == false) return;
+      }
+      if (known?.manual != true || known?.kind == ResourceKind.video) {
+        try {
+          offline = await (widget.downloadCenter ?? VideoDownloadCenter.instance)
+              .completedPlayback(_source!.id, widget.item.id, chapter.id,
+                  section: widget.library.section);
+        } catch (_) {
+          PlaybackDiagnostics.record('offline-lookup-failed', source: _source!.id);
         }
+        if (!mounted || route?.isCurrent == false) return;
       }
       final direct = SourcePlayback.itemAddress(widget.item.id);
       ChapterContent? content;

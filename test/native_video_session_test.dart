@@ -660,10 +660,12 @@ void main() {
     String id,
     int index,
     String line,
-    String filename,
-  ) async {
+    String filename, {
+    Section section = Section.video,
+  }) async {
     final task = VideoDownloadTask(
-      id: VideoDownloadCenter.identity('fixture', 'show', id),
+      id: VideoDownloadCenter.identity('fixture', 'show', id, section: section),
+      section: section,
       sourceId: 'fixture',
       itemId: 'show',
       chapterId: id,
@@ -728,6 +730,30 @@ void main() {
       throwsA(isA<IOException>()),
     );
   });
+  test('猫源下载离线切集只列本板块文件，并把下一集进度写回猫源库', () async {
+    final videoLibrary = library;
+    library = await ReadingLibrary.open(Section.cat);
+    await stored('A2', 1, 'A', 'media.mp4');
+    await stored('A3', 2, 'A', 'media.mp4');
+    final first = await stored('A1', 0, 'A', 'media.mp4', section: Section.cat);
+    final second = await stored('A2', 1, 'A', 'media.mp4', section: Section.cat);
+    session = NativeVideoSourceSession(
+      library: library, downloads: downloads, bridge: bridge,
+      media: DownloadedVideoPlayback(first.uri).media('离线播放'),
+      target: const VideoPlayTarget(sourceId: 'fixture', itemId: 'show', title: '猫源视频',
+          chapterIndex: 0, chapterId: 'A1', chapterTitle: '第1集'),
+      prepareMedia: (media, _) async => media,
+    );
+    addTearDown(session.close);
+    await session.open();
+    expect(((await request('episodes'))['items'] as List).map((e) => e['id']), ['A1', 'A2']);
+    final media = (await request('next'))['media'] as Map;
+    expect(media['url'], second.uri.toString());
+    await progress(38, identity: media['identity'] as String);
+    expect(library.videoEpisodeProgress('show', 'A2', sourceId: 'fixture')?.position.inSeconds, 38);
+    expect(videoLibrary.videoProgress('show', sourceId: 'fixture'), isNull);
+  });
+
   test('downloaded episodes switch immediately while the source catalog is stalled', () async {
     final first = await stored('A1', 0, 'A', 'media.mp4');
     final second = await stored('A2', 1, 'A', 'media.mp4');
@@ -1102,7 +1128,8 @@ class _EmptyDownloads extends VideoDownloadCenter {
   @override
   Future<void> boot() async {}
   @override
-  Future<DownloadedVideoPlayback?> completedPlayback(String sourceId, String itemId, String chapterId) async => null;
+  Future<DownloadedVideoPlayback?> completedPlayback(String sourceId, String itemId, String chapterId,
+      {Section section = Section.video}) async => null;
 }
 
 class _Source extends MockDataSource implements DanmakuCapable {

@@ -291,6 +291,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
             item.sourceId,
             item.itemId,
             progress.chapterId,
+            section: row.section,
           );
           if (!mounted || activeGeneration != generation) {
             await file?.close();

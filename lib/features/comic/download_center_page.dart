@@ -12,7 +12,6 @@ import '../settings/settings_ui.dart';
 import '../video/video_download_center.dart';
 import '../video/video_player_page.dart';
 import '../video/video_play_target.dart';
-import '../../core/session/section.dart';
 import 'comic_download_center.dart';
 import 'comic_reader_page.dart';
 import 'offline_comic_source.dart';
@@ -95,12 +94,13 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
       task.sourceId,
       task.itemId,
       task.chapterId,
+      section: task.section,
     );
     if (playback == null) throw StateError('本地文件不存在，请重新下载');
     try {
       if (!mounted) return;
       final media = playback.media('${task.title} · ${task.chapterTitle}');
-      final library = await ReadingLibrary.open(Section.video);
+      final library = await ReadingLibrary.open(task.section);
       final target = VideoPlayTarget(
         sourceId: task.sourceId,
         itemId: task.itemId,
@@ -126,6 +126,7 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
             media: media,
             prelaunch: prepared,
             library: library,
+            sourceManager: task.sourceManager,
             target: target,
           ),
         ),

@@ -1,4 +1,6 @@
 import '../../core/experience/content_center.dart';
+import '../../core/cat/cat_data_source.dart';
+import '../../core/cat/cat_service.dart';
 import '../../core/reading/reading.dart';
 import '../../core/experience/offline_policy.dart';
 import '../../core/source/source_runtime_pins.dart';
@@ -48,6 +50,7 @@ class VideoDownloadTask {
     required this.chapterId,
     required this.title,
     required this.chapterTitle,
+    this.section = Section.video,
     this.state = 'paused',
     this.bytes = 0,
     this.totalBytes = 0,
@@ -59,6 +62,10 @@ class VideoDownloadTask {
     this.error,
   });
   final String id, sourceId, itemId, chapterId, title, chapterTitle;
+  final Section section;
+  SourceManager get sourceManager => section == Section.cat
+      ? CatAggregateSourceManager(CatService.instance)
+      : LumeSources.manager(section);
   int chapterIndex;
   final String line;
   String state, fileName;
@@ -78,6 +85,7 @@ class VideoDownloadTask {
       : null;
   Map<String, Object?> toJson() => {
     'id': id,
+    'section': section.id,
     'sourceId': sourceId,
     'itemId': itemId,
     'chapterId': chapterId,
@@ -131,8 +139,9 @@ class VideoDownloadCenter extends ChangeNotifier {
   final _speedWatch = Stopwatch();
   int _speedBytes = 0;
   late Directory root;
-  static String identity(String source, String item, String chapter) => sha256
-      .convert(utf8.encode(jsonEncode([source, item, chapter])))
+  static String identity(String source, String item, String chapter,
+      {Section section = Section.video}) => sha256
+      .convert(utf8.encode(jsonEncode([if (section != Section.video) section.id, source, item, chapter])))
       .toString();
   Future<void> boot() => _boot ??= _restore();
   Future<void> _restore() async {
@@ -154,8 +163,19 @@ class VideoDownloadCenter extends ChangeNotifier {
           if (source is! String || item is! String || chapter is! String) {
             continue;
           }
-          final id = identity(source, item, chapter);
-          if (m['id'] != id) continue;
+          // Older queues stored Cat site IDs but used the video folder hash.
+          final legacyCat = RegExp(r'^[^|]+\|(video|comic|novel|live)\|.+').hasMatch(source);
+          final section = m['section'] == null
+              ? (legacyCat ? Section.cat : Section.video)
+              : sectionFromId('${m['section']}');
+          if (section == null) continue;
+          final id = m['id'];
+          final legacyFolder = section == Section.cat && legacyCat &&
+              id == identity(source, item, chapter);
+          if (id is! String ||
+              (!legacyFolder && id != identity(source, item, chapter, section: section))) {
+            continue;
+          }
           final fileName = m['fileName'] is String ? m['fileName'] as String : '';
           if (fileName.isNotEmpty &&
               (fileName.contains('\u0000') ||
@@ -172,6 +192,7 @@ class VideoDownloadCenter extends ChangeNotifier {
 
           final task = VideoDownloadTask(
             id: id,
+            section: section,
             sourceId: source,
             itemId: item,
             chapterId: chapter,
@@ -207,17 +228,19 @@ class VideoDownloadCenter extends ChangeNotifier {
   String folder(VideoDownloadTask task) => p.join(root.path, task.id);
   File localFile(VideoDownloadTask task) =>
       File(p.join(folder(task), task.fileName));
+  VideoDownloadTask? _find(Section section, String source, String item, String chapter) =>
+      tasks.where((t) => t.section == section && t.sourceId == source &&
+          t.itemId == item && t.chapterId == chapter).firstOrNull;
+
   Future<File?> completedFile(
     String sourceId,
     String itemId,
-    String chapterId,
-  ) async {
+    String chapterId, {
+    Section section = Section.video,
+  }) async {
     await boot();
-    final id = identity(sourceId, itemId, chapterId);
-    final task = tasks
-        .where((t) => t.id == id && t.canPlayOffline)
-        .firstOrNull;
-    if (task == null) return null;
+    final task = _find(section, sourceId, itemId, chapterId);
+    if (task == null || !task.canPlayOffline) return null;
     final file = localFile(task);
     return await file.exists() ? file : null;
   }
@@ -225,9 +248,10 @@ class VideoDownloadCenter extends ChangeNotifier {
   Future<DownloadedVideoPlayback?> completedPlayback(
     String sourceId,
     String itemId,
-    String chapterId,
-  ) async {
-    final file = await completedFile(sourceId, itemId, chapterId);
+    String chapterId, {
+    Section section = Section.video,
+  }) async {
+    final file = await completedFile(sourceId, itemId, chapterId, section: section);
     if (file == null) return null;
     if (!file.path.endsWith('.m3u8')) return DownloadedVideoPlayback(file.uri);
     final server = await OfflineVideoServer.open(file.parent);
@@ -243,6 +267,7 @@ class VideoDownloadCenter extends ChangeNotifier {
   }
 
   Future<void> enqueue({
+    Section section = Section.video,
     required String sourceId,
     required String itemId,
     required String title,
@@ -251,8 +276,7 @@ class VideoDownloadCenter extends ChangeNotifier {
   }) async {
     await boot();
     for (final chapter in chapters) {
-      final id = identity(sourceId, itemId, chapter.id);
-      final existing = tasks.where((t) => t.id == id).firstOrNull;
+      final existing = _find(section, sourceId, itemId, chapter.id);
       if (existing != null) {
         existing.chapterIndex = chapterIndices[chapter.id] ?? existing.chapterIndex;
         if (!existing.running &&
@@ -263,7 +287,8 @@ class VideoDownloadCenter extends ChangeNotifier {
       }
       tasks.add(
         VideoDownloadTask(
-          id: id,
+          id: identity(sourceId, itemId, chapter.id, section: section),
+          section: section,
           sourceId: sourceId,
           itemId: itemId,
           chapterId: chapter.id,
@@ -327,10 +352,10 @@ class VideoDownloadCenter extends ChangeNotifier {
   Future<int> pruneWatched() async {
     await boot();
     if (!ContentCenter.instance.enabled('cleanupWatched')) return 0;
-    final library = await ReadingLibrary.open(Section.video);
     var removed = 0;
     for (final task in List<VideoDownloadTask>.of(tasks)) {
       if (task.state != 'done' || identical(_active, task)) continue;
+      final library = await ReadingLibrary.open(task.section);
       final progress = library.videoEpisodeProgress(
         task.itemId,
         task.chapterId,
@@ -386,7 +411,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         await _save();
         notifyListeners();
         final releaseRuntime = SourceRuntimePins.retain(
-          Section.video,
+          task.section,
           task.sourceId,
         );
         try {
@@ -478,11 +503,10 @@ class VideoDownloadCenter extends ChangeNotifier {
   }
 
   Future<VideoContent> _resolve(VideoDownloadTask task) async {
-    final source = await LumeSources.manager(Section.video).open(task.sourceId);
+    final manager = task.sourceManager;
+    final source = await manager.open(task.sourceId);
     if (source == null) throw StateError('源不可用，请恢复对应源后继续');
-    final descriptor = (await LumeSources.manager(
-      Section.video,
-    ).list()).where((d) => d.id == task.sourceId).firstOrNull;
+    final descriptor = (await manager.list()).where((d) => d.id == task.sourceId).firstOrNull;
     if (descriptor != null) {
       _proxy = descriptor.network.mergedWith(LumeNet.settings).proxy;
     }

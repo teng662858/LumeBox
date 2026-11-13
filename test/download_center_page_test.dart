@@ -1,12 +1,18 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/cat/cat_data_source.dart';
+import 'package:lume_box/core/reading/reading.dart';
+import 'package:lume_box/core/session/section.dart';
+import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/comic/comic_download_center.dart';
 import 'package:lume_box/features/comic/download_center_page.dart';
 import 'package:lume_box/features/download/download_selection.dart';
 import 'package:lume_box/features/video/video_download_center.dart';
+import 'package:lume_box/features/video/video_player_page.dart';
 
 void main() {
   testWidgets('manual selection returns only chosen episodes in order', (
@@ -48,6 +54,51 @@ void main() {
     await tester.tap(find.text('开始下载'));
     await tester.pumpAndSettle();
     expect(chosen, [0, 2]);
+  });
+
+  testWidgets('下载中心点猫源离线播放使用猫源进度库和站点管理器', (tester) async {
+    final root = Directory.systemTemp.createTempSync('cat-offline-page-');
+    final videos = VideoDownloadCenter(directory: () async => root);
+    final comics = ComicDownloadCenter(directory: () async => root);
+    const paths = MethodChannel('plugins.flutter.io/path_provider');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(paths, (_) async => root.path);
+    addTearDown(() async {
+      messenger.setMockMethodCallHandler(paths, null);
+      ReadingLibrary.disposeAll();
+      ReadingStore.disposeAll();
+      await SectionScope.closeAll();
+      videos.dispose();
+      comics.dispose();
+      root.deleteSync(recursive: true);
+    });
+    await tester.runAsync(() async {
+      await videos.boot();
+      await comics.boot();
+      await ReadingLibrary.open(Section.cat);
+    });
+    final task = VideoDownloadTask(
+      section: Section.cat,
+      id: VideoDownloadCenter.identity('sub|video|site', 'item', 'ep', section: Section.cat),
+      sourceId: 'sub|video|site', itemId: 'item', chapterId: 'ep', title: '猫源离线',
+      chapterTitle: '第2集', state: 'done', fileName: 'media.mp4',
+    );
+    videos.tasks.add(task);
+    Directory(videos.folder(task)).createSync(recursive: true);
+    videos.localFile(task).writeAsBytesSync([1, 2, 3]);
+    await tester.pumpWidget(MaterialApp(home: DownloadCenterPage(center: comics, videoCenter: videos)));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.text('离线播放'));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pumpAndSettle();
+    final page = tester.widget<VideoPlayerPage>(find.byType(VideoPlayerPage));
+    expect(page.media?.uri, videos.localFile(task).uri);
+    expect(page.library?.section, Section.cat);
+    expect(page.sourceManager, isA<CatAggregateSourceManager>());
+    expect(page.target?.sourceId, task.sourceId);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets(

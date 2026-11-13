@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/experience/content_center.dart';
 import 'package:lume_box/core/experience/offline_policy.dart';
 import 'package:lume_box/core/source/source.dart';
+import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/features/download/local_download_export.dart';
 import 'package:lume_box/features/video/offline_video_server.dart';
 import 'package:lume_box/features/video/video_download_center.dart';
@@ -291,6 +292,32 @@ void main() {
     await c.localFile(task).delete();
     expect(await c.completedFile('s', 'i', 'e'), isNull);
     c.dispose();
+  });
+
+  test('旧猫源下载原地恢复，再次加入队列保留原文件和任务', () async {
+    final old = await center('unused');
+    const source = 'subscription|video|site';
+    const item = 'movie', chapter = 'episode';
+    final legacy = VideoDownloadTask(
+      id: VideoDownloadCenter.identity(source, item, chapter), sourceId: source,
+      itemId: item, chapterId: chapter, title: '旧猫源', chapterTitle: '第1集',
+      state: 'done', fileName: 'media.mp4',
+    );
+    await Directory(old.folder(legacy)).create();
+    final file = old.localFile(legacy);
+    await file.writeAsBytes([4, 5, 6]);
+    final manifest = File('${old.root.path}/tasks.json');
+    await manifest.writeAsString(jsonEncode([legacy.toJson()..remove('section')]));
+    final restored = await center('unused');
+    expect(restored.tasks.single.section, Section.cat);
+    await restored.enqueue(section: Section.cat, sourceId: source, itemId: item, title: '旧猫源',
+        chapters: const [SourceChapter(id: chapter, title: '第1集')]);
+    expect(restored.tasks.single.id, legacy.id);
+    final reopened = await center('unused');
+    final playback = await reopened.completedFile(source, item, chapter, section: Section.cat);
+    expect(playback?.path, file.path);
+    expect(await playback!.readAsBytes(), [4, 5, 6]);
+    expect(await reopened.completedFile(source, item, chapter), isNull);
   });
 
   test('damaged manifest entries do not hide playable downloads after restart', () async {

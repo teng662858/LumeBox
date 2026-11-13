@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/cat/cat_service.dart';
 import 'package:lume_box/core/cat/cat_data_source.dart';
 import 'package:lume_box/features/cat/cat_preloader.dart';
+import 'package:lume_box/core/session/section.dart';
+import 'package:lume_box/features/video/video_download_center.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -126,6 +128,16 @@ void main() {
             },
           }),
         );
+      } else if (req.uri.path.endsWith('/play')) {
+        expect(body['id'], 'episode-2');
+        req.response.write(jsonEncode({
+          'url': '/fixture.mp4',
+          'headers': {'Referer': 'https://site.example/watch'},
+        }));
+      } else if (req.uri.path == '/fixture.mp4') {
+        expect(req.headers.value('referer'), 'https://site.example/watch');
+        req.response.headers.contentType = ContentType('video', 'mp4');
+        req.response.add([0, 0, 0, 8, 102, 116, 121, 112]);
       } else if (req.uri.path.endsWith('/category')) {
         expect(body['id'], 'movie');
         expect(body['page'], isA<int>());
@@ -223,6 +235,35 @@ void main() {
     await expectLater(service.importLocal('坏包', Uint8List.fromList(ZipEncoder().encode(archive))),
       throwsFormatException);
     expect(service.subscriptions, isEmpty);
+  });
+
+  test('视频下载队列从猫源订阅取址，重启后仍可按原板块离线播放', () async {
+    await service.closeForTesting();
+    service = CatService.instance;
+    final record = await service.add('下载测试', remoteBase.resolve('/source.js.md5').toString());
+    await service.refreshSites(record);
+    final site = record.sites.single;
+    final item = jsonEncode([site.id, 'show']);
+    final chapters = CatDataSource.parseChapters({
+      'vod_play_from': 'A', 'vod_play_url': r'第2集$episode-2',
+    });
+    final queue = VideoDownloadCenter(directory: () async => root);
+    await queue.enqueue(section: Section.cat, sourceId: site.id, itemId: item,
+        title: '猫源下载', chapters: chapters);
+    final task = queue.tasks.single;
+    final finished = Stopwatch()..start();
+    while ((task.state == 'queued' || task.running) && finished.elapsed < const Duration(seconds: 8)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(task.state, 'done', reason: task.error);
+    await queue.flush();
+    final restored = VideoDownloadCenter(directory: () async => root);
+    await restored.boot();
+    expect(restored.tasks.single.section, Section.cat);
+    final playback = await restored.completedPlayback(site.id, item, chapters.single.id, section: Section.cat);
+    expect(await File.fromUri(playback!.uri).readAsBytes(), [0, 0, 0, 8, 102, 116, 121, 112]);
+    expect(await restored.completedPlayback(site.id, item, chapters.single.id), isNull);
+    await playback.close();
   });
 
   test('内置服务安装校验、随机地址、重复启动复用，且不进入猫源订阅表', () async {

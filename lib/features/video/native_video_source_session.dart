@@ -13,7 +13,6 @@ import '../../core/player/playback_diagnostics.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/player/video_disk_cache.dart';
 import '../../core/reading/reading.dart';
-import '../../core/session/section.dart';
 import '../../core/session/section_module_settings.dart';
 import '../../core/session/app_preferences.dart';
 import '../../core/source/source.dart';
@@ -243,11 +242,11 @@ class NativeVideoSourceSession {
   }
 
   Future<List<VideoDownloadTask>> _downloadedChapters(VideoPlayTarget current) async {
-    if ((source?.section ?? library.section) != Section.video) return [];
     await _downloads.boot();
     return [
       for (final task in _downloads.tasks.toList())
-        if (task.sourceId == current.sourceId &&
+        if (task.section == library.section &&
+            task.sourceId == current.sourceId &&
             task.itemId == current.itemId &&
             task.canPlayOffline &&
             await _downloads.localFile(task).exists())
@@ -521,13 +520,12 @@ class NativeVideoSourceSession {
     DownloadedVideoPlayback? local;
     try {
       try {
-        if ((source?.section ?? library.section) == Section.video) {
-          local = await _downloads.completedPlayback(
-            current.sourceId,
-            current.itemId,
-            chosen.id,
-          );
-        }
+        local = await _downloads.completedPlayback(
+          current.sourceId,
+          current.itemId,
+          chosen.id,
+          section: library.section,
+        );
       } catch (_) {
         PlaybackDiagnostics.record(
           'offline-lookup-failed',
