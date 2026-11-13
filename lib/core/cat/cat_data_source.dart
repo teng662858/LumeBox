@@ -426,32 +426,29 @@ class CatDataSource
         );
       }
     }
-    final uri = address(catText(data['pageUrl'] ?? data['url']));
-    if (data['webPlayer'] == true) {
-      if (uri == null ||
-          !['http', 'https'].contains(uri.scheme) ||
-          uri.userInfo.isNotEmpty) {
+    final rawUrl = catText(data['pageUrl'] ?? data['url']);
+    final webPlayer = data['webPlayer'] == true;
+    if (webPlayer || data['parse'] == 1 || data['parse'] == '1') {
+      final page = address(rawUrl);
+      if (webPlayer && (page == null || !['http', 'https'].contains(page.scheme) || page.userInfo.isNotEmpty)) {
         throw StateError('站点返回了无效的网页播放地址');
       }
-      throw CatWebParseRequired(uri, requestHeaders, webPlayer: true);
+      if (page == null) throw StateError('站点返回了无效的网页解析地址');
+      throw CatWebParseRequired(page, requestHeaders, webPlayer: webPlayer);
     }
-    if (data['parse'] == 1 || data['parse'] == '1') {
-      if (uri == null) throw StateError('站点返回了无效的网页解析地址');
-      throw CatWebParseRequired(uri, requestHeaders);
+    Uri? playableAddress(String raw) {
+      final candidate = address(raw);
+      return candidate != null && candidate.host.isNotEmpty &&
+              const {'http', 'https', 'rtmp', 'rtsp'}.contains(candidate.scheme)
+          ? candidate
+          : null;
     }
-    if (uri == null ||
-        !['http', 'https', 'rtmp', 'rtsp'].contains(uri.scheme)) {
-      throw StateError('站点未返回可播放地址');
-    }
-    return ChapterContent.parse({
-      'kind': const {'audio', 'audiobook', 'audio-book'}.contains(kind) ? 'audio' : 'video',
-      'url': uri.toString(),
-      'headers': requestHeaders,
-      'qualities': data['qualities'] ?? data['levels'],
-      'thumbnails': data['thumbnails'],
-      'width': data['width'],
-      'height': data['height'],
-    })!;
+    return VideoContent.fromSource(
+          {...data, 'url': rawUrl, 'headers': requestHeaders},
+          audioOnly: const {'audio', 'audiobook', 'audio-book'}.contains(kind),
+          resolveAddress: playableAddress,
+        ) ??
+        (throw StateError('站点未返回可播放地址'));
   }
 }
 

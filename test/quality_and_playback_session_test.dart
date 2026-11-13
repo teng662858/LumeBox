@@ -75,12 +75,19 @@ void main() {
       final video = ChapterContent.parse(<String, Object?>{
         'kind': 'video',
         'qualities': <Object?>[
-          <String, Object?>{'label': '线路一', 'url': 'https://example.com/1.mp4'},
+          <String, Object?>{
+            'label': '线路一', 'url': 'https://example.com/1.mp4',
+            'headers': {'Authorization': 'first-only'},
+          },
           <String, Object?>{'label': '线路二', 'url': 'https://example.com/2.mp4'},
         ],
       })! as VideoContent;
 
       expect(video.url.toString(), 'https://example.com/1.mp4');
+      expect(SourcePlayback.contentHeaders(video), {'Authorization': 'first-only'});
+      final choices = SourcePlayback.contentQualities(video);
+      expect(choices.first.headers, {'Authorization': 'first-only'});
+      expect(choices.last.headers, isEmpty);
     });
 
     test('单条 / 没有 qualities：hasQualities 为假（按钮届时弹提示）', () {

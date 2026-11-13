@@ -28,6 +28,7 @@ void main() {
   var advertised = '';
   var failDownload = false;
   String? playKind;
+  Map<String, dynamic>? playResponse;
   Future<Map<String, dynamic>> bridge(
     String action,
     Map<String, dynamic> opt, {
@@ -59,6 +60,7 @@ void main() {
     runtime = null;
     failDownload = false;
     playKind = null;
+    playResponse = null;
     index = 'module.exports={start:async()=>{}}';
     advertised = md5.convert(utf8.encode(index)).toString();
     remote = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -135,7 +137,7 @@ void main() {
         );
       } else if (req.uri.path.endsWith('/play')) {
         expect(body['id'], 'episode-2');
-        req.response.write(jsonEncode({
+        req.response.write(jsonEncode(playResponse ?? {
           'kind': ?playKind,
           'url': '/fixture.mp4',
           'headers': {'Referer': 'https://site.example/watch'},
@@ -292,6 +294,42 @@ void main() {
     expect(await File.fromUri(playback!.uri).readAsBytes(), [0, 0, 0, 8, 102, 116, 121, 112]);
     expect(await restored.completedPlayback(site.id, item, chapters.single.id), isNull);
     await playback.close();
+  });
+
+  test('猫源仅返回清晰度列表时使用本地运行端口并保留线路请求头', () async {
+    final record = await service.add('多画质', remoteBase.resolve('/source.js.md5').toString());
+    await service.refreshSites(record);
+    final source = CatDataSource(service, record.sites.single);
+    const chapter = '{"flag":"A","id":"episode-2"}';
+    playResponse = {
+      'kind': 'audio',
+      'levels': [
+        {'url': 'file:///invalid', 'label': '无效'},
+        {'src': '/fixture.mp4', 'label': '720P', 'headers': {'Referer': 'https://site.example/watch'}},
+        {'playUrl': 'http://localhost:1/high.mp4', 'label': '1080P'},
+        {'address': 'https://cdn.test/original', 'label': '原画'},
+      ],
+    };
+    final content = await source.content(itemId: 'show', chapterId: chapter) as VideoContent;
+    expect(content.url, nodeBase.resolve('/fixture.mp4'));
+    expect(content.audioOnly, true);
+    expect(content.qualities.map((q) => q.url), [
+      content.url, nodeBase.resolve('/high.mp4'), Uri.parse('https://cdn.test/original'),
+    ]);
+    expect(content.qualities.first.label, '720P');
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(content.url);
+      MediaResourceService.headers(content).forEach(request.headers.set);
+      final response = await request.close();
+      expect(await response.expand((bytes) => bytes).toList(), [0, 0, 0, 8, 102, 116, 121, 112]);
+    } finally {
+      client.close(force: true);
+    }
+    playResponse!['url'] = '/default.mp4';
+    final direct = await source.content(itemId: 'show', chapterId: chapter) as VideoContent;
+    expect(direct.url, nodeBase.resolve('/default.mp4'));
+    expect(direct.qualities, content.qualities);
   });
 
   test('内置服务安装校验、随机地址、重复启动复用，且不进入猫源订阅表', () async {

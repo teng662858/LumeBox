@@ -64,7 +64,7 @@ class MediaResourceService {
     DataSource? source,
   }) {
     final result = content is VideoContent
-        ? Map<String, String>.of(content.headers)
+        ? Map<String, String>.of(content.defaultHeaders)
         : <String, String>{};
     if (source == null) return result;
     final ua =

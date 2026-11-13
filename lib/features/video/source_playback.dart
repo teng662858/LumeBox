@@ -102,7 +102,7 @@ class SourcePlayback {
     if (content is! VideoContent) return const {};
     final quality = highestQuality(content);
     return _verifiedHeaders(
-      quality == null ? content.headers : _qualityHeaders(content, quality),
+      quality == null ? content.defaultHeaders : _qualityHeaders(content, quality),
       quality?.url ?? content.url,
       source,
     );
