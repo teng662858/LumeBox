@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import '../../core/bangumi/bangumi_sync.dart';
 import '../../core/media/playback_focus.dart';
@@ -83,10 +84,13 @@ class NativeVideoSourceSession {
         _settings.kernel != PlayerKernel.mpv) {
       _settings = _settings.copyWith(kernel: PlayerKernel.mpv);
     }
-    if (RegExp(
+    final useMpv = RegExp(
       r'\.(mkv|webm|avi|flv|wmv|mpd)$',
       caseSensitive: false,
-    ).hasMatch(_media.uri.path)) {
+    ).hasMatch(_media.uri.path);
+    if (useMpv ||
+        (_settings.kernel == PlayerKernel.avplayer &&
+            await _legacyMatroskaDownload(_media))) {
       _settings = _settings.copyWith(kernel: PlayerKernel.mpv);
     }
     await PlaybackFocus.acquire(
@@ -145,6 +149,20 @@ class NativeVideoSourceSession {
       'subtitlesEnabled': _settings.subtitlesEnabled,
       'fill': _settings.zoom == ZoomMode.fill,
     });
+  }
+
+  // Earlier downloads used media.mp4 for extensionless URLs, including MKV.
+  Future<bool> _legacyMatroskaDownload(PlayerMedia media) async {
+    if (!media.isDownloaded ||
+        media.uri.scheme != 'file' ||
+        !media.uri.path.endsWith('/media.mp4')) {
+      return false;
+    }
+    try {
+      return await VideoDiskCache.isMatroskaFile(File.fromUri(media.uri));
+    } on FileSystemException {
+      return false;
+    }
   }
 
   Future<Map<String, Object?>> _payload(

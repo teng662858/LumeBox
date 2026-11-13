@@ -283,6 +283,14 @@ void main() {
       await session.close();
     },
   );
+  test('legacy Matroska saved as media.mp4 opens with MPV offline', () async {
+    final old = File('${directory.path}/media.mp4');
+    await old.writeAsBytes([0x1a, 0x45, 0xdf, 0xa3]);
+    await start(initialMedia: DownloadedVideoPlayback(old.uri).media('下载'));
+    expect((opened['options'] as Map)['kernel'], 'mpv');
+    expect((opened['media'] as Map)['url'], old.uri.toString());
+  });
+
   test('an inspected unsupported Apple container retries with MPV before presentation', () async {
     final modes = <bool>[];
     await start(

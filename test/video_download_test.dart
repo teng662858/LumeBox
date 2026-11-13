@@ -505,6 +505,47 @@ void main() {
     });
   }
 
+  for (final (address, resolved, suffix, resumed) in [
+    ('play?e=1', 'play?e=1', '.mkv', false),
+    ('play?e=1', 'signed.webm', '.webm', false),
+    ('movie.mp4', 'movie.mp4', '.mkv', true),
+  ]) {
+    test('offline container uses the file header and final URL ($resolved, resumed=$resumed)', () async {
+      final bytes = [0x1a, 0x45, 0xdf, 0xa3, ...List.filled(28, 0)];
+      var failed = false;
+      server.listen((r) async {
+        if (r.uri.toString() != '/$resolved') {
+          r.response.statusCode = 302;
+          r.response.headers.set('Location', resolved);
+        } else if (!resumed || r.headers.value('range') == null) {
+          if (resumed) {
+            r.response.statusCode = 206;
+            r.response.headers.set('Content-Range', 'bytes 0-31/*');
+          }
+          r.response.add(bytes);
+        } else if (!failed) {
+          failed = true;
+          r.response.statusCode = 503;
+        } else {
+          r.response.statusCode = 416;
+          r.response.headers.set('Content-Range', 'bytes */32');
+        }
+        await r.response.close();
+      });
+      final c = await center(address);
+      await enqueue(c);
+      final task = c.tasks.single;
+      if (resumed) {
+        await until(() => task.state == 'failed');
+        await c.resume(task);
+      }
+      await until(() => ['done', 'failed'].contains(task.state));
+      await c.flush();
+      expect(task.fileName, 'media$suffix', reason: task.error);
+      expect(await c.localFile(task).readAsBytes(), bytes);
+    });
+  }
+
   test('malformed partial response cannot become a completed video', () async {
     server.listen((request) async {
       request.response.statusCode = 206;

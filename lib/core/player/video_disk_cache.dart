@@ -218,15 +218,25 @@ class VideoDiskCache extends ChangeNotifier {
     return detectFormat(prefix.takeBytes());
   }
 
+  static Future<bool> isMatroskaFile(File file) async {
+    final input = await file.open();
+    try {
+      return _matroskaPrefix(await input.read(4));
+    } finally {
+      await input.close();
+    }
+  }
+
+  static bool _matroskaPrefix(List<int> prefix) =>
+      prefix.length >= 4 &&
+      prefix[0] == 0x1a &&
+      prefix[1] == 0x45 &&
+      prefix[2] == 0xdf &&
+      prefix[3] == 0xa3;
+
   @visibleForTesting
   static String detectFormat(List<int> prefix) {
-    if (prefix.length >= 4 &&
-        prefix[0] == 0x1a &&
-        prefix[1] == 0x45 &&
-        prefix[2] == 0xdf &&
-        prefix[3] == 0xa3) {
-      return '.mkv';
-    }
+    if (_matroskaPrefix(prefix)) return '.mkv';
     final text = utf8
         .decode(prefix, allowMalformed: true)
         .replaceFirst('\uFEFF', '')

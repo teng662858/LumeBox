@@ -752,14 +752,32 @@ class VideoDownloadCenter extends ChangeNotifier {
     }
   }
 
+  Future<void> _publishMedia(
+    VideoDownloadTask task,
+    File partial,
+    Uri uri,
+    Uri resolved,
+  ) async {
+    const known = {'.mp4', '.mkv', '.webm', '.m4v', '.mov', '.ts', '.avi', '.flv', '.wmv'};
+    final extension = [resolved, uri]
+        .map((u) => p.extension(u.path).toLowerCase())
+        .where(known.contains)
+        .firstOrNull;
+    var suffix = extension ?? '.mp4';
+    if (suffix != '.webm' && await VideoDiskCache.isMatroskaFile(partial)) {
+      suffix = '.mkv';
+    }
+    _check(task);
+    final name = 'media$suffix';
+    await partial.rename(p.join(folder(task), name));
+    task.fileName = name;
+  }
+
   Future<void> _download(
     VideoDownloadTask task,
     Uri uri,
     Map<String, String> headers,
   ) async {
-    final extension = p.extension(uri.path).toLowerCase();
-    final targetName =
-        'media${['.mp4', '.mkv', '.webm', '.m4v', '.mov', '.ts', '.avi', '.flv'].contains(extension) ? extension : '.mp4'}';
     final partial = File(p.join(folder(task), 'media.mp4.part'));
     final validator = File(p.join(folder(task), 'resume.json'));
     final signature = sha256
@@ -821,10 +839,8 @@ class VideoDownloadCenter extends ChangeNotifier {
         offset > 0 &&
         response.headers.value('content-range') == 'bytes */$offset') {
       await response.listen(null).cancel();
-      _check(task);
-      await partial.rename(p.join(folder(task), targetName));
+      await _publishMedia(task, partial, uri, finalUri);
       task.bytes = task.totalBytes = offset;
-      task.fileName = targetName;
       return;
     }
     if (response.statusCode != 200 && response.statusCode != 206) {
@@ -931,9 +947,7 @@ class VideoDownloadCenter extends ChangeNotifier {
           task.totalBytes > 0 && task.bytes != task.totalBytes) {
         throw StateError('文件尚未下载完整');
       }
-      _check(task);
-      await partial.rename(p.join(folder(task), targetName));
-      task.fileName = targetName;
+      await _publishMedia(task, partial, uri, finalUri);
     } finally {
       await iterator.cancel();
     }
