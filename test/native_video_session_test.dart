@@ -856,6 +856,36 @@ void main() {
     expect(retried['position'], 12);
     expect(await selectedIds(), [1]);
   });
+
+  test('首次起播的画质在重试换签后保持，下一集仍按默认画质选择', () async {
+    List<VideoQuality> tracks(String token) => [
+      for (final height in [1080, 720])
+        VideoQuality(
+          label: '${height}p',
+          height: height,
+          url: Uri.parse('https://cdn.example/stream?token=$token'),
+          headers: {'Authorization': '$height-$token'},
+        ),
+    ];
+    final initial = tracks('old');
+    await start(
+      initialMedia: PlayerMedia(uri: initial.last.url, headers: {'authorization': '720-old'}),
+      qualities: initial,
+    );
+    final options = (await request('qualities'))['items'] as List;
+    expect(options.where((option) => option['selected']).map((option) => option['id']), [1]);
+    final fresh = tracks('fresh');
+    for (final id in ['A1', 'A2']) {
+      source.blocked[id] = Completer<ChapterContent>()
+        ..complete(VideoContent(url: fresh.first.url, qualities: fresh));
+    }
+    await progress(37);
+    final retry = (await request('retry'))['media'] as Map;
+    expect(retry['headers'], fresh.last.headers);
+    expect(retry['position'], 37);
+    final next = (await request('next'))['media'] as Map;
+    expect(next['headers'], fresh.first.headers);
+  });
   test('switching to a headerless quality does not reuse the previous track credentials', () async {
     await start(
       qualities: [

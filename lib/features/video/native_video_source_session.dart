@@ -91,8 +91,14 @@ class NativeVideoSourceSession {
       VideoPlayerSettingsStore(library).load(),
     );
     final sameUrl = qualities.where((q) => q.url == _media.uri);
-    final headers = _media.headers ?? const <String, String>{};
-    final sameRequest = sameUrl.where((q) => mapEquals(q.headers, headers)).toList();
+    Map<String, String> headerNamesToLower(Map<String, String> headers) => {
+      for (final entry in headers.entries) entry.key.toLowerCase(): entry.value,
+    };
+    final headers = headerNamesToLower(_media.headers ?? const {});
+    final sameRequest = [
+      for (final quality in sameUrl)
+        if (mapEquals(headerNamesToLower(quality.headers), headers)) quality,
+    ];
     _activeQuality = PlaybackQualityPreference.select(sameRequest, _settings) ?? sameUrl.singleOrNull;
     if (_settings.kernel != PlayerKernel.avplayer &&
         _settings.kernel != PlayerKernel.mpv) {
@@ -561,7 +567,7 @@ class NativeVideoSourceSession {
         choice = PlaybackQualityPreference.select(
           nextQualities,
           _settings,
-          currentQuality: _manualQuality,
+          currentQuality: action == 'retry' ? _activeQuality ?? _manualQuality : _manualQuality,
         );
         nextMedia = PlayerMedia(
           uri: choice?.url ?? SourcePlayback.contentAddress(content)!,
