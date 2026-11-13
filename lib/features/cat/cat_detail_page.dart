@@ -175,7 +175,6 @@ class _CatDetailPageState extends State<CatDetailPage>
     setState(() => playing = true);
     final route = ModalRoute.of(context);
     PlayerPrelaunch? prelaunch;
-    var openedPlayer = false;
     try {
       if (!Platform.isIOS && PlayerFactory.isSupported) {
         final preferred = VideoPlayerSettingsStore(widget.library)
@@ -242,7 +241,7 @@ class _CatDetailPageState extends State<CatDetailPage>
       await applyPlaybackEntryOrientation(prelaunch);
       if (!mounted || route?.isCurrent == false) return;
       final transferred = prelaunch;
-      openedPlayer = true;
+      final before = widget.library.videoProgress(widget.item.id, sourceId: widget.source.id);
       final opening = Navigator.push(
         context,
         MaterialPageRoute<void>(
@@ -253,7 +252,6 @@ class _CatDetailPageState extends State<CatDetailPage>
             sourceManager: CatSourceManager(
               widget.source.service,
               widget.source.site,
-              chapterFlag: playbackLine,
             ),
             sourceId: widget.source.id,
             qualities: qualities,
@@ -273,6 +271,19 @@ class _CatDetailPageState extends State<CatDetailPage>
       );
       prelaunch = null;
       await opening;
+      if (!mounted) return;
+      final after = widget.library.videoProgress(widget.item.id, sourceId: widget.source.id);
+      if (after != null &&
+          (after.chapterId != before?.chapterId ||
+           after.position != before?.position ||
+           after.updatedAt != before?.updatedAt)) {
+        lastChapterId = after.chapterId;
+        final watched = chapters.where((chapter) => chapter.id == after.chapterId).firstOrNull;
+        if (watched != null) {
+          selectedChapterId = watched.id;
+          line = CatDataSource.flagOf(watched);
+        }
+      }
     } catch (failure) {
       if (mounted && route?.isCurrent != false) {
         ScaffoldMessenger.of(context)
@@ -283,17 +294,7 @@ class _CatDetailPageState extends State<CatDetailPage>
       if (mounted) {
         // 播放器返回：进度已落库，主动通知历史抽屉重新取数。
         widget.library.refresh();
-        setState(() {
-          playing = false;
-          lastChapterId =
-              widget.library
-                  .videoProgress(widget.item.id, sourceId: widget.source.id)
-                  ?.chapterId ??
-              lastChapterId;
-          if (openedPlayer && lastChapterId != null) {
-            selectedChapterId = lastChapterId;
-          }
-        });
+        setState(() => playing = false);
       }
     }
   }
