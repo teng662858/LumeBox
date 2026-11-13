@@ -883,6 +883,7 @@ class _CatPageState extends State<CatPage>
               item: item,
               library: lib,
               manager: manager,
+              searchManager: CatAggregateSourceManager(service, kind: selected.kind),
               onPlay: (origin, media, target, qualities, prelaunch) async {
                 service.playInfo = {
                   'name': target.title,

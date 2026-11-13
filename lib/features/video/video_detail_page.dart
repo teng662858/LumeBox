@@ -103,6 +103,7 @@ class VideoDetailPage extends StatefulWidget {
     this.loadSource,
     this.sourceId,
     this.manager,
+    this.searchManager,
     this.recordHistory = true,
     this.imagePipeline,
     required this.item,
@@ -120,6 +121,7 @@ class VideoDetailPage extends StatefulWidget {
   final Future<DataSource?> Function()? loadSource;
   final String? sourceId;
   final SourceManager? manager;
+  final SourceManager? searchManager;
   final bool recordHistory;
   final SectionImagePipeline? imagePipeline;
   final SourceItem item;
@@ -974,6 +976,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   Future<void> searchCurrentVideo([String? keyword]) async {
     final source = _source;
     if (source == null) return;
+    final manager = widget.searchManager ?? widget.manager;
     final chapter = chapters.isEmpty ? null : chapters[selected];
     final progress = chapters.isEmpty ? null : episodeProgress(selected);
     final resume = chapter == null
@@ -992,7 +995,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           section: widget.library.section,
           keyword: keyword ?? detail?.title ?? widget.item.title,
           mode: SearchMode.aggregate,
-          manager: widget.manager,
+          manager: manager,
           pipeline: pipeline,
           onOpenItem: (ExploreSelection selection) async {
             await Navigator.push(
@@ -1001,10 +1004,9 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                 builder: (_) => VideoDetailPage(
                   resumeRequest: resume,
                   sourceId: selection.sourceId,
-                  manager: widget.manager,
+                  manager: manager,
                   loadSource: () =>
-                      (widget.manager ??
-                              LumeSources.manager(widget.library.section))
+                      (manager ?? LumeSources.manager(widget.library.section))
                           .open(selection.sourceId),
                   item: selection.item,
                   library: widget.library,

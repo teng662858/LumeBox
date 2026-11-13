@@ -455,13 +455,14 @@ class CatDataSource
 
 /// Search across searchable sites from enabled Cat subscriptions.
 class CatAggregateSourceManager implements SourceManager {
-  CatAggregateSourceManager(this.service);
+  CatAggregateSourceManager(this.service, {this.kind});
   final CatService service;
+  final String? kind;
 
   Iterable<CatSite> get sites => service.subscriptions
       .where((record) => record.enabled)
       .expand((record) => record.sites)
-      .where((site) => site.searchable);
+      .where((site) => site.searchable && (kind == null || site.kind == kind));
 
   @override
   bool get runtimeAvailable => true;

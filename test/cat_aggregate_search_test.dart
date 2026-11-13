@@ -80,4 +80,29 @@ void main() {
     expect(await manager.open('c|video|disabled'), isNull);
     service.dispose();
   });
+
+  test('猫源详情换源只搜索启用订阅中可搜索的同类站点，并能打开目标站', () async {
+    final service = FakeCatService();
+    addTearDown(service.dispose);
+    const original = CatSite(
+      subscriptionId: 'a', key: 'old', name: '原站', api: '/old', searchable: false,
+    );
+    const other = CatSite(subscriptionId: 'b', key: 'new', name: '新站', api: '/new');
+    const comic = CatSite(
+      subscriptionId: 'b', key: 'new', name: '漫画', api: '/comic', kind: 'comic',
+    );
+    service.subscriptions.addAll([
+      CatSubscription(id: 'a', name: 'A', url: '', sites: [original]),
+      CatSubscription(id: 'b', name: 'B', url: '', sites: [other, comic]),
+    ]);
+    final manager = CatAggregateSourceManager(service, kind: original.kind);
+    final results = await AggregateSearch.run(
+      sources: await manager.list(), open: manager.open, keyword: '测试',
+    );
+    expect(results.hits.map((hit) => hit.sourceId), [other.id]);
+    expect((await manager.open(results.hits.single.sourceId))?.id, other.id);
+    expect(service.calls, [other.id]);
+    expect(await manager.open(comic.id), isNull);
+    expect(await CatSourceManager(service, original).open(original.id), isNotNull);
+  });
 }
