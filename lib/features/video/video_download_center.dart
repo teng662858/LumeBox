@@ -529,7 +529,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     }
   }
 
-  Future<HttpClientResponse> _open(
+  Future<(HttpClientResponse, Uri)> _open(
     VideoDownloadTask task,
     Uri uri,
     Uri origin,
@@ -549,6 +549,7 @@ class VideoDownloadCenter extends ChangeNotifier {
               'cookie',
               'authorization',
               'proxy-authorization',
+              'host',
             ].contains(e.key.toLowerCase())) {
           continue;
         }
@@ -574,7 +575,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         uri = uri.resolve(location);
         continue;
       }
-      return response;
+      return (response, uri);
     }
     throw StateError('下载重定向过多');
   }
@@ -605,7 +606,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       if (offset > 0 && old['validator'] is String)
         'If-Range': old['validator'] as String,
     };
-    final response = await _open(task, uri, uri, headers, extra: extra);
+    final (response, finalUri) = await _open(task, uri, uri, headers, extra: extra);
     if (response.statusCode == 416 &&
         offset > 0 &&
         response.headers.value('content-range') == 'bytes */$offset') {
@@ -645,7 +646,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       final playlist = await _text(stream());
       task.bytes = 0;
       task.totalBytes = 0;
-      await _playlist(task, uri, uri, headers, playlist, 'index', 0);
+      await _playlist(task, finalUri, uri, headers, playlist, 'index', 0);
       task.fileName = 'index.m3u8';
       return;
     }
@@ -726,16 +727,16 @@ class VideoDownloadCenter extends ChangeNotifier {
     return utf8.decode(bytes);
   }
 
-  Future<String> _fetchText(
+  Future<(String, Uri)> _fetchText(
     VideoDownloadTask task,
     Uri uri,
     Uri origin,
     Map<String, String> headers,
   ) async {
     await _policyCheckpoint(task);
-    final r = await _open(task, uri, origin, headers);
+    final (r, finalUri) = await _open(task, uri, origin, headers);
     if (r.statusCode != 200) throw StateError('播放清单不可用：HTTP ${r.statusCode}');
-    return _text(r.timeout(const Duration(seconds: 45)));
+    return (await _text(r.timeout(const Duration(seconds: 45))), finalUri);
   }
 
   Future<void> _playlist(
@@ -793,10 +794,10 @@ class VideoDownloadCenter extends ChangeNotifier {
           final url = uri.resolve(
             RegExp(r'URI="([^"]+)"').firstMatch(audio)!.group(1)!,
           );
-          final text = await _fetchText(task, url, origin, headers);
+          final (text, finalUri) = await _fetchText(task, url, origin, headers);
           await _playlist(
             task,
-            url,
+            finalUri,
             origin,
             headers,
             text,
@@ -814,10 +815,10 @@ class VideoDownloadCenter extends ChangeNotifier {
         }
       }
       final url = uri.resolve(best.url);
-      final text = await _fetchText(task, url, origin, headers);
+      final (text, finalUri) = await _fetchText(task, url, origin, headers);
       await _playlist(
         task,
-        url,
+        finalUri,
         origin,
         headers,
         text,
@@ -940,7 +941,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       task.bytes += await file.length();
       return;
     }
-    final r = await _open(task, uri, origin, headers);
+    final (r, _) = await _open(task, uri, origin, headers);
     if (r.statusCode != 200 && r.statusCode != 206) {
       throw StateError('分片下载失败：HTTP ${r.statusCode}');
     }

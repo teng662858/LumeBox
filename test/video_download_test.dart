@@ -461,6 +461,58 @@ void main() {
       await local.close();
     }
   });
+  test('redirected HLS playlists resolve media against each final URL', () async {
+    final cdn = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => cdn.close(force: true));
+    final paths = <String>[], hosts = <String?>[], auth = <String?>[];
+    final sourcePaths = <String>[];
+    server.listen((r) async {
+      sourcePaths.add(r.uri.path);
+      if (r.uri.path == '/play') {
+        await r.response.redirect(Uri.parse('http://127.0.0.1:${cdn.port}/show/master.m3u8'));
+      } else {
+        r.response.statusCode = 404;
+        await r.response.close();
+      }
+    });
+    cdn.listen((r) async {
+      paths.add(r.uri.path);
+      hosts.add(r.headers.value('host'));
+      auth.add(r.headers.value('authorization'));
+      switch (r.uri.path) {
+        case '/show/master.m3u8':
+          r.response.write('#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Main",URI="audio"\n#EXT-X-STREAM-INF:BANDWIDTH=123,AUDIO="a"\nvideo\n');
+        case '/show/audio':
+        case '/show/video':
+          r.response.statusCode = 302;
+          r.response.headers.set('location', '/media/${r.uri.pathSegments.last}/stream.m3u8');
+        case '/media/audio/stream.m3u8':
+          r.response.write('#EXTM3U\n#EXTINF:1,\nsound.aac\n#EXT-X-ENDLIST\n');
+        case '/media/video/stream.m3u8':
+          r.response.write('#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:1,\nfirst.m4s\n#EXT-X-ENDLIST\n');
+        case '/media/audio/sound.aac':
+        case '/media/video/init.mp4':
+        case '/media/video/first.m4s':
+          r.response.add([1, 2, 3]);
+        default:
+          r.response.statusCode = 404;
+      }
+      await r.response.close();
+    });
+    final c = await center('play', headers: {
+      'Authorization': 'source-only',
+      'Host': 'source.example',
+    });
+    await enqueue(c);
+    await until(() => ['failed', 'merge_failed'].contains(c.tasks.single.state));
+    await c.flush();
+    expect(sourcePaths, ['/play']);
+    expect(paths, containsAll(['/media/audio/sound.aac', '/media/video/init.mp4', '/media/video/first.m4s']));
+    expect(hosts, everyElement('127.0.0.1:${cdn.port}'));
+    expect(auth, everyElement(isNull));
+    expect(c.tasks.single.fileName, 'index.m3u8');
+  });
+
   test('HLS master retains a selected separate audio rendition', () async {
     final paths = <String>[];
     server.listen((r) async {
