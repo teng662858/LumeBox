@@ -41,6 +41,7 @@ class DetailSource extends FakeReadingDataSource {
   String extension = 'mp4';
   List<VideoQuality> qualities = [];
   bool failDetail = false;
+  String workTitle = '详情测试片';
   @override
   Future<SourceList> list({
     String? categoryId,
@@ -59,7 +60,7 @@ class DetailSource extends FakeReadingDataSource {
     return SourceDetail(
       mediaType: 'video',
       id: id,
-      title: '详情测试片',
+      title: workTitle,
       description: '源站原始简介',
     );
   }
@@ -457,6 +458,28 @@ void main() {
     expect(target?.resumePosition?.inSeconds, 75);
     expect(state.episodeProgress(1).position.inSeconds, 75);
     expect(library.videoEpisodeProgress('private-switch', 'b2', sourceId: multi.id)?.position.inSeconds, 9);
+  });
+  testWidgets('目标明确标注第二季时，未知季数的唯一同集候选也需确认', (tester) async {
+    source.workTitle = '详情测试片 第二季';
+    await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
+      source: source, item: const SourceItem(id: 'unknown-season', title: '详情测试片'),
+      library: library,
+      resumeRequest: const VideoResumeRequest(
+        title: '详情测试片', chapterTitle: '第2集', chapterIndex: 1,
+        position: Duration(minutes: 8), duration: Duration(minutes: 20),
+      ),
+      onPlay: (_, _, _, _) async => fail('确认前不能播放'),
+    )));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('确认续播剧集'), findsOneWidget);
+    expect(source.parses, 0);
+    expect(library.videoEpisodeProgress('unknown-season', 'e2', sourceId: source.id), isNull);
+    await tester.tap(find.widgetWithText(ListTile, '第2集'));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(VideoDetailPage));
+    expect(state.selected, 1);
+    expect(state.lineResume.position, const Duration(minutes: 8));
   });
   testWidgets('换源存在多个相同集号时先确认，未选择前不解析播放', (tester) async {
     await tester.binding.setSurfaceSize(const Size(440, 1000));

@@ -103,6 +103,23 @@ void main() {
     expect(request.candidates(chapters).map((c) => c.id), ['special']);
     expect(chapters.where(request.confident).map((c) => c.id), ['special']);
   });
+  test('跨源续播季数信息不全需要确认，特别篇同名不能覆盖季数冲突', () {
+    VideoResumeRequest saved(String work, String episode) => VideoResumeRequest(
+      title: work, chapterTitle: episode, chapterIndex: 0,
+      position: const Duration(minutes: 8), duration: const Duration(minutes: 20),
+    );
+    const third = SourceChapter(id: '3', title: '第3集');
+    const special = SourceChapter(id: 'sp', title: '特别篇');
+    final unknown = saved('演示', '第3集');
+    expect(unknown.candidates([third], workTitle: '演示 第二季'), [third]);
+    expect(unknown.confident(third, workTitle: '演示 第二季'), isFalse);
+    final second = saved('演示 第二季', '特别篇');
+    expect(second.candidates([special], workTitle: '演示 第一季'), isEmpty);
+    expect(second.confident(special, workTitle: '演示 第一季'), isFalse);
+    expect(second.candidates([special], workTitle: '演示'), [special]);
+    expect(second.confident(special, workTitle: '演示'), isFalse);
+    expect(second.confident(special, workTitle: '演示 Season 2'), isTrue);
+  });
   test('跨源续播上篇不会把进度转移给下篇、预告或完整集', () {
     const request = VideoResumeRequest(
       title: '演示',
