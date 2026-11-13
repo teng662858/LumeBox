@@ -165,6 +165,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   VideoProgress? lineResume;
   final _episodesKey = GlobalKey();
   final _scroll = ScrollController();
+  final _episodeStrip = ScrollController(keepScrollOffset: false);
 
   Widget? _typedDetail;
   bool loading = true, resolving = false;
@@ -201,6 +202,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   @override
   void dispose() {
     _scroll.dispose();
+    _episodeStrip.dispose();
     tmdb.dispose();
     tmdbImagePipeline.dispose();
     if (widget.imagePipeline == null) pipeline.dispose();
@@ -444,8 +446,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         currentLine = line;
         chapters = activeEpisodes;
         selected = index;
-        episodePage = index ~/ 50;
-        compactEpisodeStart = index ~/ 10 * 10;
+        _locateSelectedEpisode();
         loading = false;
       });
       if (resumeNotSelected && mounted) {
@@ -512,8 +513,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
     if (selectedIndex < 0) return;
     setState(() {
       selected = selectedIndex;
-      episodePage = selectedIndex ~/ 50;
-      compactEpisodeStart = selectedIndex ~/ 10 * 10;
+      _locateSelectedEpisode();
     });
   }
 
@@ -805,9 +805,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
               currentLine = entry.key;
               chapters = entry.value;
               selected = index;
-              episodePage = index ~/ 50;
-              compactEpisodeStart =
-                  (reversed ? chapters.length - 1 - index : index) ~/ 10 * 10;
+              _locateSelectedEpisode();
             });
             break;
           }
@@ -1037,7 +1035,10 @@ class _VideoDetailPageState extends State<VideoDetailPage>
 
   void setDetailStyle(bool original) {
     widget.library.setSetting(styleSetting, '$original');
-    setState(() => originalStyle = original);
+    setState(() {
+      originalStyle = original;
+      _locateSelectedEpisode();
+    });
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
@@ -1488,7 +1489,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                 tooltip: reversed ? '恢复正序' : '倒序排列',
                 onPressed: chapters.isEmpty
                     ? null
-                    : () => setState(() => reversed = !reversed),
+                    : _reverseEpisodeOrder,
                 icon: const Icon(Icons.swap_vert, size: 20),
               ),
               IconButton(
@@ -1564,7 +1565,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
 
   Widget episodeStrip(List<int> visible, {bool grid = false}) => LayoutBuilder(
     builder: (context, bounds) {
-      final width = (bounds.maxWidth - 20) / 3;
+      final width = _episodeCoverWidth(bounds.maxWidth);
       final height = width * 9 / 16;
       final labelSize = originalStyle ? 14.0 : 13.0;
       final extent =
@@ -1692,6 +1693,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       return SizedBox(
         height: extent,
         child: ListView.separated(
+          controller: _episodeStrip,
           scrollDirection: Axis.horizontal,
           itemCount: visible.length,
           separatorBuilder: (_, _) => const SizedBox(width: 10),
@@ -1904,9 +1906,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       currentLine = next;
       chapters = nextChapters;
       selected = matched >= 0 ? matched : 0;
-      episodePage = selected ~/ 50;
-      compactEpisodeStart =
-          (reversed ? chapters.length - 1 - selected : selected) ~/ 10 * 10;
+      _locateSelectedEpisode();
     });
     return true;
   }
@@ -1943,8 +1943,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       if (index != selected) lineResume = null;
       selected = index;
       _restartAudio = true;
-      compactEpisodeStart =
-          (reversed ? chapters.length - 1 - selected : selected) ~/ 10 * 10;
+      _locateSelectedEpisode();
     });
     if (PlayerExperienceStore.current.selectEpisodeOnly) {
       ScaffoldMessenger.of(context)
@@ -1954,12 +1953,48 @@ class _VideoDetailPageState extends State<VideoDetailPage>
     await play();
   }
 
-  void locateEpisodes() {
+  int _displayPosition(int index) => reversed ? chapters.length - 1 - index : index;
+
+  double _episodeCoverWidth(double viewport) => (viewport - 20) / 3;
+
+  String _episodeRange(List<int> order, int start, int count, String separator) {
+    final end = math.min(start + count, order.length) - 1;
+    return '${order[start] + 1}$separator${order[end] + 1} 集';
+  }
+
+  void _reverseEpisodeOrder() {
     setState(() {
-      final position = reversed ? chapters.length - 1 - selected : selected;
-      episodePage = position ~/ 50;
-      compactEpisodeStart = position ~/ 10 * 10;
+      reversed = !reversed;
+      episodePage = 0;
+      compactEpisodeStart = 0;
     });
+    if (_episodeStrip.hasClients) _episodeStrip.jumpTo(0);
+  }
+
+  void _locateSelectedEpisode() {
+    if (chapters.isEmpty) return;
+    final position = _displayPosition(selected);
+    episodePage = position ~/ 50;
+    compactEpisodeStart = position ~/ 10 * 10;
+    if (!originalStyle) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_episodeStrip.hasClients || !originalStyle ||
+          chapters.isEmpty || episodePage != position ~/ 50 ||
+          _displayPosition(selected) != position) {
+        return;
+      }
+      final strip = _episodeStrip.position;
+      final width = _episodeCoverWidth(strip.viewportDimension);
+      final start = (position % 50) * (width + 10);
+      final offset = strip.pixels.clamp(start + width - strip.viewportDimension, start);
+      if (offset != strip.pixels) {
+        _episodeStrip.jumpTo(offset.clamp(0.0, strip.maxScrollExtent));
+      }
+    });
+  }
+
+  void locateEpisodes() {
+    setState(_locateSelectedEpisode);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final context = _episodesKey.currentContext;
       if (context != null) {
@@ -2052,7 +2087,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
 
   Future<void> showEpisodes() async {
     if (chapters.isEmpty) return;
-    var page = (reversed ? chapters.length - 1 - selected : selected) ~/ 50;
+    var page = _displayPosition(selected) ~/ 50;
     final scroll = ScrollController();
     final activeKey = GlobalKey();
     var listMode = chapters.any(
@@ -2097,9 +2132,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                         tooltip: '定位当前集',
                         icon: const Icon(Icons.my_location),
                         onPressed: () {
-                          final position = reversed
-                              ? chapters.length - 1 - selected
-                              : selected;
+                          final position = _displayPosition(selected);
                           refresh(() => page = position ~/ 50);
                           WidgetsBinding.instance.addPostFrameCallback((
                             _,
@@ -2131,7 +2164,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                       IconButton(
                         tooltip: '倒序排列',
                         onPressed: () {
-                          setState(() => reversed = !reversed);
+                          _reverseEpisodeOrder();
                           refresh(() => page = 0);
                         },
                         icon: const Icon(Icons.swap_vert),
@@ -2166,7 +2199,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                                     : (_) {
                                         changeLine(line, allowMissing: true);
                                         refresh(() {
-                                          page = 0;
+                                          page = episodePage;
                                         });
                                       },
                               ),
@@ -2187,7 +2220,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                             DropdownMenuItem(
                               value: i,
                               child: Text(
-                                '${i * 50 + 1}—${((i + 1) * 50).clamp(0, filtered.length)} 集',
+                                _episodeRange(filtered, i * 50, 50, '—'),
                               ),
                             ),
                         ],
@@ -2290,12 +2323,14 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                   DropdownMenuItem(
                     value: i,
                     child: Text(
-                      '${i * 50 + 1}—${((i + 1) * 50).clamp(0, chapters.length)} 集',
+                      _episodeRange(order, i * 50, 50, '—'),
                     ),
                   ),
               ],
               onChanged: (v) {
-                if (v != null) setState(() => episodePage = v);
+                if (v == null) return;
+                setState(() => episodePage = v);
+                if (_episodeStrip.hasClients) _episodeStrip.jumpTo(0);
               },
             ),
           ),
@@ -2522,10 +2557,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                       tooltip: reversed ? '恢复正序' : '倒序排列',
                       onPressed: chapters.isEmpty
                           ? null
-                          : () => setState(() {
-                              reversed = !reversed;
-                              compactEpisodeStart = 0;
-                            }),
+                          : _reverseEpisodeOrder,
                       icon: const Icon(Icons.swap_vert, size: 20),
                     ),
                   ],
@@ -2571,7 +2603,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                       key: ValueKey('video-compact-range-$i'),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       label: Text(
-                        '${i + 1}–${(i + 10).clamp(0, chapters.length)} 集',
+                        _episodeRange(order, i, 10, '–'),
                       ),
                       selected: start == i,
                       showCheckmark: false,

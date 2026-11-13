@@ -452,6 +452,64 @@ void main() {
     });
   }
 
+  testWidgets('原版详情倒序播放返回后，选集页签和海报条显示实际观看的一集', (tester) async {
+    final long = LongDetailSource();
+    await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
+      source: long,
+      item: const SourceItem(id: 'reverse-return', title: '详情测试片'),
+      library: library,
+      onPlay: (_, _, _, _, _) async {
+        library.saveProgress(VideoProgress(
+          section: Section.video, sourceId: long.id, itemId: 'reverse-return',
+          chapterIndex: 202, chapterId: 'e203', chapterTitle: '第203集',
+          position: const Duration(seconds: 75), updatedAt: DateTime.now(),
+        ));
+      },
+    )));
+    await tester.pumpAndSettle();
+    final sort = find.byTooltip('倒序排列');
+    await Scrollable.ensureVisible(tester.element(sort), alignment: .5);
+    await tester.tap(sort);
+    await tester.pumpAndSettle();
+    final play = find.byKey(const Key('video-detail-play'));
+    await Scrollable.ensureVisible(tester.element(play), alignment: .5);
+    await tester.runAsync(() async {
+      await tester.tap(play);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await tester.pumpAndSettle();
+    expect(library.videoProgress('reverse-return', sourceId: long.id)?.chapterId, 'e203');
+    final range = find.byKey(const ValueKey('video-episode-range-0'));
+    expect(range, findsOneWidget);
+    await Scrollable.ensureVisible(tester.element(range), alignment: .25);
+    await tester.pumpAndSettle();
+    expect(find.text('230—181 集').hitTestable(), findsOneWidget);
+    expect(find.byKey(const ValueKey('video-detail-episode-202')).hitTestable(), findsOneWidget);
+  });
+
+  testWidgets('紧凑版与选集弹层倒序分组标出实际集数，包括不足五十集的分组', (tester) async {
+    library.setSetting('video.detail.originalStyle', 'false');
+    await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
+      source: LongDetailSource(), item: const SourceItem(id: 'reverse-labels', title: '长剧'),
+      library: library, onPlay: (_, _, _, _, _) async {},
+    )));
+    await tester.pumpAndSettle();
+    Future<void> tapVisible(Finder finder) async {
+      await Scrollable.ensureVisible(tester.element(finder), alignment: .5);
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+    await tapVisible(find.byTooltip('倒序排列'));
+    final firstGroup = find.byKey(const ValueKey('video-compact-range-0'));
+    expect(find.descendant(of: firstGroup, matching: find.text('230–221 集')), findsOneWidget);
+    expect(find.byKey(const ValueKey('video-detail-episode-229')), findsOneWidget);
+    await tapVisible(find.byKey(const Key('video-detail-select-episodes')));
+    // The picker opens on the selected first episode, at the end of the reversed catalog.
+    final lastGroup = find.byKey(const ValueKey('video-episode-picker-range-4'));
+    expect(find.descendant(of: lastGroup, matching: find.text('30—1 集')), findsOneWidget);
+    expect(find.byKey(const ValueKey('video-detail-picker-episode-0')), findsOneWidget);
+  });
+
   testWidgets('播放器换线并写入新进度后详情同步实际线路与集数', (tester) async {
     final multi = MultiLineDetailSource();
     await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
