@@ -86,6 +86,21 @@ void main() {
       Uri.parse('https://demo/a'),
     );
   });
+  test('清晰度高度为字符串或异常值时仍能选择可播放线路', () {
+    final video = ChapterContent.parse({
+      'kind': 'video', 'url': 'https://demo/default',
+      'qualities': [
+        {'url': 'https://demo/hd', 'label': 'HD', 'height': '1080',
+         'headers': {'Referer': 'https://demo/watch'}},
+        {'url': 'https://demo/sd', 'label': '480P', 'height': 'unknown'},
+        {'url': 'https://demo/other', 'height': double.infinity},
+      ],
+    }) as VideoContent;
+    expect(video.qualities.map((q) => q.resolutionRank), [1080, 480, 0]);
+    expect(SourcePlayback.contentAddress(video), Uri.parse('https://demo/hd'));
+    expect(SourcePlayback.contentHeaders(video), {'Referer': 'https://demo/watch'});
+  });
+
   test('热门最新使用源的排序值并保留分类，不误选热门题材', () {
     const groups = [
       SourceFilterGroup(

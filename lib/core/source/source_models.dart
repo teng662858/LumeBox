@@ -817,12 +817,13 @@ List<VideoQuality> _qualityList(Object? value) {
         _text(entry['title']) ??
         _text(entry['resolution']) ??
         '线路 ${qualities.length + 1}';
+    final height = num.tryParse('${entry['height'] ?? ''}');
     qualities.add(
       VideoQuality(
         label: label,
         url: uri,
         headers: _stringMap(entry['headers']),
-        height: (entry['height'] as num?)?.toInt() ?? 0,
+        height: height != null && height.isFinite && height > 0 ? height.toInt() : 0,
       ),
     );
   }
