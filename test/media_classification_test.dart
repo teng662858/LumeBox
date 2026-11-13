@@ -35,6 +35,36 @@ void main() {
     library.dispose();
     await root.delete(recursive: true);
   });
+  test('storage recovery loads old media before adding another item', () async {
+    const first = MediaResource(
+      id: 'first', title: '第一本', kind: ResourceKind.audioBook,
+      destination: Section.video, episodes: [],
+    );
+    const second = MediaResource(
+      id: 'second', title: '第二本', kind: ResourceKind.audioBook,
+      destination: Section.video, episodes: [],
+    );
+    await library.add(first);
+    final reopened = MediaLibrary();
+    addTearDown(reopened.dispose);
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const path = MethodChannel('plugins.flutter.io/path_provider');
+    var attempts = 0;
+    messenger.setMockMethodCallHandler(path, (_) async {
+      if (++attempts == 1) throw PlatformException(code: 'temporary');
+      return root.path;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(path, null));
+    await expectLater(reopened.add(second), throwsA(isA<PlatformException>()));
+    expect(reopened.byId('second'), isNull);
+    await reopened.add(second);
+    expect(reopened.byId('first')?.title, '第一本');
+    final persisted = MediaLibrary();
+    addTearDown(persisted.dispose);
+    await persisted.boot(directory: root);
+    expect(persisted.byId('first'), isNotNull);
+    expect(persisted.byId('second'), isNotNull);
+  });
   test(
     'real audio-only tracks override video origin and misleading filename',
     () async {

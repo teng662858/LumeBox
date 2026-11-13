@@ -45,7 +45,10 @@ class AudioBookSettings extends ChangeNotifier {
   Future<File> get _file async => File(
     '${(await getApplicationSupportDirectory()).path}/audio_book_settings.json',
   );
-  Future<void> load() => _loading ??= _load();
+  Future<void> load() => _loading ??= _load().onError((Object error, StackTrace stack) {
+    _loading = null;
+    Error.throwWithStackTrace(error, stack);
+  });
   Future<void> _load() async {
     final file = await _file;
     if (!await file.exists()) return;

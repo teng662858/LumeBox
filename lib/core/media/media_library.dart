@@ -200,8 +200,9 @@ class MediaLibrary extends ChangeNotifier {
       .toList();
   MediaResource? byId(String id) => _items[id];
   Future<void> boot({Directory? directory}) =>
-      _loading ??= _boot(directory).catchError((_) {
-        notifyListeners();
+      _loading ??= _boot(directory).onError((Object error, StackTrace stack) {
+        _loading = null;
+        Error.throwWithStackTrace(error, stack);
       });
   Future<void> _boot(Directory? directory) async {
     final base = directory ?? await getApplicationSupportDirectory();

@@ -57,7 +57,21 @@ class _MediaLibraryPageState extends State<MediaLibraryPage> {
   @override
   void initState() {
     super.initState();
-    unawaited(library.boot());
+    unawaited(_loadLibrary());
+  }
+
+  Future<void> _loadLibrary() async {
+    try {
+      await library.boot();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('媒体库读取失败，请重试'),
+          action: SnackBarAction(label: '重试', onPressed: _loadLibrary),
+        ),
+      );
+    }
   }
 
   Future<void> _files() async {

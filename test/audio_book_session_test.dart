@@ -167,6 +167,25 @@ void main() {
     expect(player.loads, 1);
   });
 
+  test('audio settings can retry a temporary storage failure and recover bookmarks', () async {
+    await session.load(resource, tracks, index: 1);
+    await session.seek(const Duration(seconds: 39));
+    await settings.save();
+    var reads = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (_) async {
+            if (++reads == 1) throw PlatformException(code: 'unavailable');
+            return root.path;
+          },
+        );
+    final reopened = AudioBookSettings();
+    await expectLater(reopened.load(), throwsA(isA<PlatformException>()));
+    await reopened.load();
+    expect(reopened.positions[resource.id]?['position'], 39000);
+  });
+
   test('failed loading can retry the same chapter and resume time', () async {
     settings.positions[resource.id] = {'index': 1, 'position': 47000};
     player.failLoads = 1;
