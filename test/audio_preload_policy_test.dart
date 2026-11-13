@@ -76,6 +76,44 @@ void main() {
     expect(native.playing, isFalse);
   });
 
+  test('单集模式缓冲期间再选一章，最终使用后选的章节与时间', () async {
+    MediaPreload.instance.update(audio: false);
+    await player.load(tracks);
+    final gate = native.pendingLoad = Completer<Duration?>();
+    final first = player.seek(Duration.zero, index: 1);
+    final second = player.seek(const Duration(seconds: 37), index: 2);
+    gate.complete(const Duration(minutes: 10));
+    await Future.wait([first, second]);
+    expect(native.singles, hasLength(3));
+    expect(native.position, const Duration(seconds: 37));
+  });
+
+  test('释放已开始时，等待中的选集不能再把章节装回引擎', () async {
+    MediaPreload.instance.update(audio: false);
+    await player.load(tracks);
+    final gate = native.pendingLoad = Completer<Duration?>();
+    final first = player.seek(Duration.zero, index: 1);
+    final second = player.seek(Duration.zero, index: 2);
+    final release = player.release();
+    gate.complete(const Duration(minutes: 10));
+    await Future.wait([first, second, release]);
+    expect(native.singles, hasLength(2));
+  });
+
+  test('先选的章节加载失败后，只执行等待中的最后一次选择', () async {
+    MediaPreload.instance.update(audio: false);
+    await player.load(tracks);
+    final gate = native.pendingLoad = Completer<Duration?>();
+    final first = expectLater(player.next(), throwsStateError);
+    final skipped = player.seek(Duration.zero, index: 0);
+    final latest = player.seek(const Duration(seconds: 27), index: 2);
+    native.pendingLoad = null;
+    gate.completeError(StateError('失效章节'));
+    await Future.wait([first, skipped, latest]);
+    expect(native.singles, hasLength(3));
+    expect(native.position, const Duration(seconds: 27));
+  });
+
   test('五千章目录只提交当前集，切集保持目录索引与恢复位置', () async {
     MediaPreload.instance.update(audio: true);
     final catalog = [

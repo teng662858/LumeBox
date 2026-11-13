@@ -169,7 +169,9 @@ class JustAudioBookPlayer implements AudioBookPlayer {
 
   final _proxy = AudioBookProxy();
   List<ja.AudioSource> _playlist = [];
-  bool _singleMode = false, _changing = false;
+  bool _singleMode = false;
+  Future<void>? _singleLoad;
+  int _chapterRequest = 0;
   int _offset = 0;
   StreamSubscription<ja.PlayerState>? _completion;
   VoidCallback? _removePreloadClearer;
@@ -206,7 +208,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
     // Keep the Dart catalog intact and load chapters on demand instead.
     _singleMode = !MediaPreload.instance.audio || sources.length > 200;
     _removePreloadClearer ??= MediaPreload.instance.onClear(() async {
-      if (_playlist.isEmpty || _changing || _singleMode) return;
+      if (_playlist.isEmpty || _singleLoad != null || _singleMode) return;
       final index = _player.currentIndex ?? 0;
       final position = _player.position;
       _singleMode = true;
@@ -214,7 +216,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
     });
     _completion ??= _player.playerStateStream.listen((state) {
       if (_singleMode &&
-          !_changing &&
+          _singleLoad == null &&
           state.playing &&
           _player.playing &&
           state.processingState == ja.ProcessingState.completed &&
@@ -266,13 +268,23 @@ class JustAudioBookPlayer implements AudioBookPlayer {
     int index, {
     Duration position = Duration.zero,
   }) async {
-    if (index < 0 || index >= _playlist.length || _changing) return;
-    _changing = true;
+    if (index < 0 || index >= _playlist.length) return;
+    final request = ++_chapterRequest;
+    final playlist = _playlist;
+    final pending = _singleLoad;
+    if (pending != null) {
+      // A failed chapter must not prevent the next selection from loading.
+      await pending.catchError((_) {});
+      if (request != _chapterRequest || !identical(playlist, _playlist)) return;
+    }
+    _offset = index;
+    final load = _player.setAudioSource(playlist[index], initialPosition: position)
+        .then<void>((_) {});
+    _singleLoad = load;
     try {
-      _offset = index;
-      await _player.setAudioSource(_playlist[index], initialPosition: position);
+      await load;
     } finally {
-      _changing = false;
+      if (identical(_singleLoad, load)) _singleLoad = null;
     }
   }
 
@@ -293,11 +305,12 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   Future<void> speed(double value) => _player.setSpeed(value);
   @override
   Future<void> release() async {
+    _chapterRequest++;
+    _playlist = [];
     _removePreloadClearer?.call();
     _removePreloadClearer = null;
     await _completion?.cancel();
     _completion = null;
-    _playlist = [];
     await _player.stop();
     await _player.clearAudioSources();
     _proxy.reset();
