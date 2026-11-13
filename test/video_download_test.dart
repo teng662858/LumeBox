@@ -657,6 +657,36 @@ void main() {
     expect(ranges.any((r) => r != null), true);
     expect(await c.localFile(c.tasks.single).readAsBytes(), data);
   });
+  test('a 200 login page in an HLS segment is retried before publishing the playlist', () async {
+    final attempts = <String, int>{};
+    server.listen((r) async {
+      final path = r.uri.path;
+      attempts[path] = (attempts[path] ?? 0) + 1;
+      if (path == '/index.m3u8') {
+        r.response.write('#EXTM3U\n#EXTINF:1,\ngood.ts\n#EXTINF:1,\nblocked.ts\n#EXT-X-ENDLIST\n');
+      } else if (path == '/blocked.ts' && attempts[path] == 1) {
+        r.response.headers.set('Content-Encoding', 'gzip');
+        r.response.add(gzip.encode(utf8.encode('<!doctype html><html>sign in</html>')));
+      } else {
+        r.response.add([0x47, 2, 3, 4]);
+      }
+      await r.response.close();
+    });
+    final c = await center('index.m3u8');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['failed', 'merge_failed'].contains(task.state));
+    expect(task.state, 'failed');
+    expect(task.canPlayOffline, false);
+    await c.resume(task);
+    await until(() => ['failed', 'merge_failed'].contains(task.state));
+    await c.flush();
+    expect(task.state, 'merge_failed', reason: 'fixture remux is disabled');
+    expect(attempts['/good.ts'], 1);
+    expect(attempts['/blocked.ts'], 2);
+    expect(task.completed, 2);
+  });
+
   test('HLS retries completed fragments, stores AES-128 keys, and plays through local HTTP without origin access', () async {
     var first = 0, second = 0;
     const playlist =

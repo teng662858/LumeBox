@@ -830,9 +830,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       if (type == 'application/json' || type == 'text/html') {
         throw StateError('站点返回的不是视频文件');
       }
-      if (offset == 0 &&
-          (prefix.toLowerCase().startsWith('<!doctype') ||
-              prefix.toLowerCase().startsWith('<html'))) {
+      if (offset == 0 && _isHtml(prefix)) {
         throw StateError('站点返回网页而非视频文件');
       }
       if (offset == 0 && await partial.exists()) await partial.delete();
@@ -1135,6 +1133,11 @@ class VideoDownloadCenter extends ChangeNotifier {
     return null;
   }
 
+  static bool _isHtml(String prefix) {
+    final text = prefix.trimLeft().toLowerCase();
+    return text.startsWith('<!doctype') || text.startsWith('<html');
+  }
+
   Future<void> _resource(
     VideoDownloadTask task,
     Uri uri,
@@ -1154,6 +1157,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     }
     final temporary = File('${file.path}.part');
     final sink = temporary.openWrite();
+    final prefix = <int>[];
     var size = 0, received = 0;
     try {
       final body = _downloadBody(task, uri, origin, headers, r, 0).map((chunk) {
@@ -1162,6 +1166,12 @@ class VideoDownloadCenter extends ChangeNotifier {
       });
       await for (final b in (unwrap ? unwrapTransportStream(body) : body)) {
         _check(task);
+        if (!key && prefix.length < 80) {
+          prefix.addAll(b.take(80 - prefix.length));
+          if (_isHtml(utf8.decode(prefix, allowMalformed: true))) {
+            throw StateError('分片下载返回网页，请重试');
+          }
+        }
         sink.add(b);
         size += b.length;
         task.bytes += b.length;
