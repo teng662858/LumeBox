@@ -255,6 +255,12 @@ class VideoDiskCache extends ChangeNotifier {
       ).stringMatch(uri.path.toLowerCase()) ??
       '';
 
+  static String _responseType(String path, String? original) {
+    if (path.endsWith('.ts')) return 'video/mp2t';
+    if (path.endsWith('.vtt') || path.endsWith('.webvtt')) return 'text/vtt';
+    return original ?? 'application/octet-stream';
+  }
+
   Future<PlayerMedia> _ticket(PlayerMedia media, String suffix) async {
     try {
       await (_starting ??= _start());
@@ -1128,9 +1134,7 @@ class VideoDiskCache extends ChangeNotifier {
       response.statusCode = rangeHeader == null ? 200 : upstream.statusCode;
       response.headers.set(
         'Content-Type',
-        segment
-            ? 'video/mp2t'
-            : upstream.header('content-type') ?? 'application/octet-stream',
+        _responseType(request.uri.path, upstream.header('content-type')),
       );
       for (final name in ['content-encoding', 'accept-ranges']) {
         final value = upstream.header(name);
@@ -1284,6 +1288,7 @@ class VideoDiskCache extends ChangeNotifier {
         }
 
         final apple = path.endsWith('.apple.m3u8');
+        final subtitles = path.endsWith('.subtitles.m3u8');
         Future<String> rewrite(
           String text,
           String fallback, {
@@ -1292,7 +1297,7 @@ class VideoDiskCache extends ChangeNotifier {
           final child = childMedia(text);
           if (child == null) return text;
           var suffix = _mediaSuffix(child.uri);
-          if (sequence != null || suffix.isEmpty || fallback == '.m3u8') {
+          if (sequence != null || suffix.isEmpty || fallback.endsWith('.m3u8')) {
             suffix = fallback;
           }
           if (apple && suffix == '.m3u8') suffix = '.apple.m3u8';
@@ -1371,6 +1376,8 @@ class VideoDiskCache extends ChangeNotifier {
                       ? '.m3u8'
                       : mapped
                       ? '.m4s'
+                      : subtitles
+                      ? '.vtt'
                       : '.ts',
                 ),
               );
@@ -1383,9 +1390,11 @@ class VideoDiskCache extends ChangeNotifier {
               final attributeSuffix = switch (line.split(':').first) {
                 '#EXT-X-KEY' || '#EXT-X-SESSION-KEY' => '.key',
                 '#EXT-X-MAP' => '.mp4',
-                '#EXT-X-MEDIA' ||
-                '#EXT-X-I-FRAME-STREAM-INF' ||
-                '#EXT-X-RENDITION-REPORT' => '.m3u8',
+                '#EXT-X-MEDIA' => hlsRawAttributes(line)['TYPE'] == 'SUBTITLES'
+                    ? '.subtitles.m3u8'
+                    : '.m3u8',
+                '#EXT-X-I-FRAME-STREAM-INF' => '.m3u8',
+                '#EXT-X-RENDITION-REPORT' => subtitles ? '.subtitles.m3u8' : '.m3u8',
                 '#EXT-X-PART' => '.m4s',
                 '#EXT-X-PRELOAD-HINT' => switch (hlsRawAttributes(line)['TYPE']) {
                   'PART' => '.m4s',
@@ -1420,7 +1429,7 @@ class VideoDiskCache extends ChangeNotifier {
       start = offsets?.start ?? 0;
       final end = offsets?.end ?? mediaTotal - 1;
       response.statusCode = offsets == null ? 200 : 206;
-      response.headers.set('Content-Type', segment ? 'video/mp2t' : block.mime);
+      response.headers.set('Content-Type', _responseType(path, block.mime));
       response.headers.set('Accept-Ranges', 'bytes');
       if (match != null) {
         response.headers.set('Content-Range', 'bytes $start-$end/$mediaTotal');
@@ -1481,8 +1490,8 @@ class VideoDiskCache extends ChangeNotifier {
         final value = upstream.header(name);
         if (value != null) response.headers.set(name, value);
       }
-      if (request.uri.path.endsWith('.ts') && upstream.statusCode ~/ 100 == 2) {
-        response.headers.set('Content-Type', 'video/mp2t');
+      if (upstream.statusCode ~/ 100 == 2) {
+        response.headers.set('Content-Type', _responseType(request.uri.path, upstream.header('content-type')));
       }
       status = '该媒体使用内核缓冲';
       notifyListeners();

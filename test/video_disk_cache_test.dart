@@ -95,6 +95,24 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path.startsWith('/subtitles/')) {
+        final type = request.uri.queryParameters['type'] ?? 'vtt';
+        if (request.uri.path.endsWith('/master.m3u8')) {
+          request.response.write('#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="中文",LANGUAGE="zh",URI="track?type=$type"\n'
+              '#EXT-X-STREAM-INF:BANDWIDTH=10000,SUBTITLES="subs"\nvideo.m3u8\n');
+        } else if (request.uri.path.endsWith('/track')) {
+          request.response.write('#EXTM3U\n#EXT-X-TARGETDURATION:1\n'
+              '${type == 'mp4' ? '#EXT-X-MAP:URI="init?sig=A"\n' : ''}'
+              '#EXTINF:1,\ncue?sig=B&type=$type\n#EXT-X-ENDLIST\n');
+        } else {
+          request.response.headers.contentType = ContentType.binary;
+          request.response.add(type == 'mp4'
+              ? [0, 0, 0, 8, ...ascii.encode('moof')]
+              : utf8.encode('WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n00:00:00.000 --> 00:00:01.000\n字幕\n'));
+        }
+        await request.response.close();
+        return;
+      }
       if (request.uri.path == '/live/master.m3u8') {
         request.response.write('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=50000\nvideo?sig=a%2Fb+z&tag=x&tag=y&_HLS_msn=7\n');
         await request.response.close();
@@ -405,6 +423,35 @@ void main() {
     return (response, await response.expand((b) => b).toList());
   }
 
+  for (final apple in [true, false]) {
+    test('signed WebVTT subtitle cues retain their media type during playback and seeking (apple=$apple)', () async {
+      final master = await cache.wrap(PlayerMedia(uri: upstream.resolve('/subtitles/master.m3u8')), appleHls: apple);
+      final manifest = utf8.decode((await get(master.uri)).$2);
+      final track = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(manifest)![1]!);
+      final playlist = utf8.decode((await get(track)).$2);
+      final cue = Uri.parse(const LineSplitter().convert(playlist).firstWhere((line) => !line.startsWith('#')));
+      expect(paths, isNot(contains('/subtitles/cue')), reason: 'listing subtitles should not probe cues for video codecs');
+      final full = await get(cue);
+      expect(full.$1.headers.contentType?.mimeType, 'text/vtt');
+      expect(utf8.decode(full.$2), contains('字幕'));
+      expect(cue.path, endsWith('.vtt'));
+      final slice = await get(cue, 'bytes=0-5');
+      expect(slice.$1.headers.contentType?.mimeType, 'text/vtt');
+      expect(utf8.decode(slice.$2), 'WEBVTT');
+    });
+  }
+  test('mapped fMP4 subtitles retain their initialization and fragment routes', () async {
+    final master = await cache.wrap(PlayerMedia(
+      uri: upstream.resolve('/subtitles/master.m3u8?type=mp4'),
+    ), appleHls: true);
+    final manifest = utf8.decode((await get(master.uri)).$2);
+    final track = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(manifest)![1]!);
+    final playlist = utf8.decode((await get(track)).$2);
+    expect(playlist, matches(RegExp(r'#EXT-X-MAP:URI="[^"]+\.mp4"')));
+    final cue = Uri.parse(const LineSplitter().convert(playlist).firstWhere((line) => !line.startsWith('#')));
+    expect(cue.path, endsWith('.m4s'));
+    expect((await get(cue)).$2, [0, 0, 0, 8, ...ascii.encode('moof')]);
+  });
   for (final apple in [true, false]) {
     test('low latency reloads forward the requested live part through a signed variant (apple=$apple)', () async {
       final master = await cache.wrap(PlayerMedia(
