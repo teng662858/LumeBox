@@ -563,12 +563,28 @@ class VideoDiskCache extends ChangeNotifier {
     var start = enabled && _diskAvailable
         ? position ~/ blockBytes * blockBytes
         : position;
-    var key = _key(media, start);
     // A local proxy may cap its reply below our block boundary.
-    if ((_files[key]?.bytes ?? blockBytes) <= position - start) {
+    if (position != start &&
+        (_files[_key(media, start)]?.bytes ?? blockBytes) <= position - start) {
       start = position;
-      key = _key(media, start);
     }
+    final block = await _readBlock(media, start, playlist: playlist);
+    if (position != start &&
+        position >= block.start + block.data.length &&
+        block.total > position) {
+      return _readBlock(media, position, playlist: playlist);
+    }
+    return block;
+  }
+
+  // Share only the block at this exact offset. Concurrent readers can need
+  // different tails when the origin caps the aligned block.
+  Future<_Block> _readBlock(
+    PlayerMedia media,
+    int start, {
+    required bool playlist,
+  }) async {
+    final key = _key(media, start);
     final cached = _files[key];
     if (enabled &&
         cached != null &&
@@ -600,12 +616,6 @@ class VideoDiskCache extends ChangeNotifier {
     try {
       final block = await task;
       await _store(key, block, generation);
-      if (position >= block.start + block.data.length &&
-          block.total > position) {
-        final tail = await _fetch(media, position);
-        await _store(_key(media, position), tail, generation);
-        return tail;
-      }
       return block;
     } finally {
       if (identical(_pending[key], task)) _pending.remove(key);

@@ -975,6 +975,43 @@ void main() {
     expect(tail.$1.headers.value('Content-Range'), 'bytes ${data.length - 16}-${data.length - 1}/${data.length}');
   });
 
+  test('concurrent seeks receive their own bytes from a capped origin', () async {
+    final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => source.close(force: true));
+    final firstRead = Completer<void>();
+    final release = Completer<void>();
+    source.listen((request) async {
+      final range = parseHttpByteRange(request.headers.value('range')!, data.length)!;
+      if (!firstRead.isCompleted) firstRead.complete();
+      await release.future;
+      final end = (range.start + 63).clamp(range.start, range.end);
+      request.response.statusCode = 206;
+      request.response.headers.set('Content-Range', 'bytes ${range.start}-$end/${data.length}');
+      request.response.add(data.sublist(range.start, end + 1));
+      await request.response.close();
+    });
+    final media = await cache.wrap(PlayerMedia(
+      uri: Uri.parse('http://127.0.0.1:${source.port}/movie.mp4'),
+    ));
+    final starts = [0, 384, 704, 960];
+    final requests = await Future.wait(starts.map((start) async {
+      final request = await client.getUrl(media.uri);
+      request.headers.set('Range', 'bytes=$start-${start + 31}');
+      return request;
+    }));
+    final results = Future.wait(requests.map((request) async {
+      final response = await request.close();
+      return (response.statusCode, await response.expand((b) => b).toList());
+    }));
+    await firstRead.future;
+    release.complete();
+    final replies = await results;
+    for (var i = 0; i < starts.length; i++) {
+      expect(replies[i].$1, 206);
+      expect(replies[i].$2, data.sublist(starts[i], starts[i] + 32));
+    }
+  });
+
   test('remote bounded seeks stream exact ranges without requiring a total or caching a false EOF', () async {
     final ranges = <String?>[];
     final native = MockClient((request) async {
