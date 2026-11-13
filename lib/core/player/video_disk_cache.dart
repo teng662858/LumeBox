@@ -663,10 +663,18 @@ class VideoDiskCache extends ChangeNotifier {
         throw _UpstreamStatus(status);
       }
       final builder = BytesBuilder(copy: false);
+      // Check the representation's first bytes before the large-body
+      // passthrough or any write to the block cache.
+      final prefix = <int>[];
+      final inspectPrefix = response.statusCode == 200 || range?[1] == '0';
       try {
         await for (final chunk in response.timeout(
           const Duration(seconds: 30),
         )) {
+          if (inspectPrefix && prefix.length < 80) {
+            prefix.addAll(chunk.take(80 - prefix.length));
+            _rejectHtml(prefix);
+          }
           builder.add(chunk);
           if (builder.length > 8 * blockBytes) throw const _Passthrough();
         }
@@ -846,6 +854,14 @@ class VideoDiskCache extends ChangeNotifier {
   static bool _playlist(_Block block) =>
       block.mime.contains('mpegurl') || _playlistSignature(block.data);
 
+  static void _rejectHtml(List<int> bytes) {
+    final text = utf8.decode(bytes.take(80).toList(), allowMalformed: true)
+        .trimLeft().toLowerCase();
+    if (text.startsWith('<!doctype html') || text.startsWith('<html')) {
+      throw const FormatException('媒体地址返回了网页');
+    }
+  }
+
   static bool _playlistSignature(List<int> bytes) =>
       utf8
           .decode(bytes.take(16).toList(), allowMalformed: true)
@@ -928,6 +944,7 @@ class VideoDiskCache extends ChangeNotifier {
       body.add(chunk);
     }
     final bytes = body.takeBytes();
+    _rejectHtml(bytes);
     return Uint8List.sublistView(bytes, transportStreamImagePrefix(bytes));
   }
 
@@ -1051,7 +1068,7 @@ class VideoDiskCache extends ChangeNotifier {
         // A resolver can return an HLS manifest from an MP4-labelled URL.
         // Keep the established manifest rewrite instead of forwarding relative
         // child URLs against the opaque local ticket address.
-        while (prefix.length < 16 && await chunks.moveNext()) {
+        while (prefix.length < 80 && await chunks.moveNext()) {
           capture(chunks.current);
           prefix.add(chunks.current);
         }
@@ -1070,19 +1087,20 @@ class VideoDiskCache extends ChangeNotifier {
         }
       }
       if (segment && upstream.header('content-encoding') == null) {
-        // Normal TS/encrypted bytes pass after 8 bytes. A PNG wrapper needs
+        // Normal TS/encrypted bytes pass after a short prefix. A PNG wrapper needs
         // four aligned TS packets; inspect only the bounded prefix, not EOF.
         const png = [137, 80, 78, 71, 13, 10, 26, 10];
         while (await chunks.moveNext()) {
           capture(chunks.current);
           prefix.add(chunks.current);
-          if (prefix.length < 8) continue;
+          if (prefix.length < 80) continue;
           final bytes = prefix.toBytes();
           if (!listEquals(bytes.take(8).toList(), png)) break;
           skipped = transportStreamImagePrefix(bytes);
           if (skipped > 0 || prefix.length >= transportStreamProbeLength) break;
         }
       }
+      if (start == 0) _rejectHtml(prefix.toBytes());
       final response = request.response;
       response.statusCode = rangeHeader == null ? 200 : upstream.statusCode;
       response.headers.set(

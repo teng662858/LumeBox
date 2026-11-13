@@ -95,6 +95,16 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path.startsWith('/challenge/')) {
+        request.response.headers.set('Content-Type', 'application/octet-stream');
+        final payload = calls == 1
+            ? utf8.encode('\uFEFF  <!DOCTYPE html><html>verify</html>')
+            : data.sublist(0, 128);
+        request.response.contentLength = payload.length;
+        request.response.add(payload);
+        await request.response.close();
+        return;
+      }
       if (request.uri.path.startsWith('/limited/')) {
         if (request.uri.path.endsWith('/start.m3u8')) {
           if (request.headers.value('range') != null) {
@@ -352,6 +362,24 @@ void main() {
     if (range != null) request.headers.set('Range', range);
     final response = await request.close();
     return (response, await response.expand((b) => b).toList());
+  }
+
+  for (final (path, range) in [
+    ('movie.mp4', null),
+    ('movie.mp4', 'bytes=0-15'),
+    ('part.ts', null),
+    ('play', null),
+  ]) {
+    test('a temporary HTML challenge cannot poison media retries ($path, $range)', () async {
+      final wrapped = await cache.wrap(PlayerMedia(uri: upstream.resolve('/challenge/$path')));
+      final first = await get(wrapped.uri, range);
+      final second = await get(wrapped.uri);
+      expect(second.$2, data.sublist(0, 128));
+      expect(first.$1.statusCode, 502);
+      expect(first.$2, isEmpty);
+      expect(second.$1.statusCode, 200);
+      expect(calls, 2);
+    });
   }
 
   for (final (path, encoding) in [
