@@ -72,6 +72,7 @@ class NativeVideoSourceSession {
   int _resolution = 0;
   void Function()? _releasePin;
   late PlayerSettings _settings;
+  PlayerKernel? _preferredBeforeFallback;
 
   Future<void> get finished => _connection?.finished ?? Future.value();
   String? get connectionId => _connection?.id;
@@ -94,9 +95,9 @@ class NativeVideoSourceSession {
       r'\.(mkv|webm|avi|flv|wmv|mpd)$',
       caseSensitive: false,
     ).hasMatch(_media.uri.path);
-    if (useMpv ||
-        (_settings.kernel == PlayerKernel.avplayer &&
-            await _legacyMatroskaDownload(_media))) {
+    if (_settings.kernel == PlayerKernel.avplayer &&
+        (useMpv || await _legacyMatroskaDownload(_media))) {
+      _preferredBeforeFallback = _settings.kernel;
       _settings = _settings.copyWith(kernel: PlayerKernel.mpv);
     }
     await PlaybackFocus.acquire(
@@ -133,6 +134,7 @@ class NativeVideoSourceSession {
     } on UnsupportedError {
       if (_settings.kernel != PlayerKernel.avplayer) rethrow;
       // Signed script URLs can hide an MKV/DASH container until cache inspection.
+      _preferredBeforeFallback = _settings.kernel;
       _settings = _settings.copyWith(kernel: PlayerKernel.mpv);
       payload = await _payload(_media, position: position);
     }
@@ -613,6 +615,7 @@ class NativeVideoSourceSession {
           data.containsKey('hardwareDecoding') && data.containsKey('autoNext');
       final changedAutoNext = data['autoNext'] is bool &&
           data['autoNext'] != _settings.autoNext;
+      if (kernel != _settings.kernel) _preferredBeforeFallback = null;
       _settings = _settings.copyWith(
         kernel: kernel,
         speed: !loadSnapshot && speed is num && speed.isFinite
@@ -624,15 +627,18 @@ class NativeVideoSourceSession {
       );
       final id = target?.sourceId ?? source?.id;
       final profiles = SourcePlaybackProfiles(library);
+      // File compatibility chooses the engine for this session only. Save
+      // speed edits in its own slot while keeping the user's default engine.
+      final saved = _settings.copyWith(kernel: _preferredBeforeFallback);
       if (id != null && profiles.contains(id)) {
-        profiles.save(id, _settings, profiles.bufferSeconds(id, 0));
+        profiles.save(id, saved, profiles.bufferSeconds(id, 0));
         // Auto-next is shared by all sources, including those with custom
         // kernel settings. Native also echoes it when opening an engine.
         if (changedAutoNext) {
           library.setSetting(VideoPlayerSettingsStore.keyAutoNext, _settings.autoNext.toString());
         }
       } else {
-        VideoPlayerSettingsStore(library).save(_settings);
+        VideoPlayerSettingsStore(library).save(saved);
       }
     }
     final sessionEvent = active || identity.isEmpty;

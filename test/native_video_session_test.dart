@@ -291,6 +291,38 @@ void main() {
     expect((opened['media'] as Map)['url'], old.uri.toString());
   });
 
+  for (final profiled in [false, true]) {
+    test('automatic MPV fallback keeps the default kernel on next open (profile: $profiled)', () async {
+      final store = VideoPlayerSettingsStore(library);
+      final profiles = SourcePlaybackProfiles(library);
+      final defaults = const PlayerSettings()
+          .copyWith(kernel: PlayerKernel.mpv, speed: 1.75)
+          .copyWith(kernel: PlayerKernel.avplayer, speed: 1.25);
+      if (profiled) {
+        profiles.save('fixture', defaults, 30);
+      } else {
+        store.save(defaults);
+      }
+      await start(initialMedia: PlayerMedia(uri: Uri.parse('file:///movie.mkv')));
+      expect((opened['options'] as Map)['kernel'], 'mpv');
+      expect((opened['options'] as Map)['speed'], 1.75);
+      await native('event', {
+        'session': opened['session'], 'type': 'settings', 'kernel': 'mpv',
+        'speed': 1.75, 'hardwareDecoding': true, 'autoNext': true,
+      });
+      await native('event', {
+        'session': opened['session'], 'type': 'settings', 'kernel': 'mpv', 'speed': 2.25,
+      });
+      final saved = profiles.load('fixture', store.load());
+      expect(saved.kernel, PlayerKernel.avplayer);
+      expect(saved.copyWith(kernel: PlayerKernel.mpv).speed, 2.25);
+      await session.close();
+      await start();
+      expect((opened['options'] as Map)['kernel'], 'avplayer');
+      expect((opened['options'] as Map)['speed'], 1.25);
+    });
+  }
+
   test('an inspected unsupported Apple container retries with MPV before presentation', () async {
     final modes = <bool>[];
     await start(
@@ -302,6 +334,11 @@ void main() {
     );
     expect(modes, [true, false]);
     expect((opened['options'] as Map)['kernel'], 'mpv');
+    await native('event', {
+      'session': opened['session'], 'type': 'settings', 'kernel': 'mpv',
+      'speed': 1.0, 'hardwareDecoding': true, 'autoNext': true,
+    });
+    expect(VideoPlayerSettingsStore(library).load().kernel, PlayerKernel.avplayer);
     expect(calls.where((call) => call.method == 'open'), hasLength(1));
   });
   test('source profile defaults and native changes stay isolated from global preferences', () async {
