@@ -251,15 +251,21 @@ class VideoDiskCache extends ChangeNotifier {
 
   static String _mediaSuffix(Uri uri) =>
       RegExp(
-        r'\.(?:m3u8|mpd|ts|mp4|m4s|mkv|mov|m4a|aac|ac3|mp3|vtt|webvtt|key|webm|flv|avi|wmv|m2ts)$',
+        r'\.(?:m3u8|mpd|ts|mp4|m4s|mkv|mov|m4a|aac|ac3|ec3|eac3|mp3|vtt|webvtt|key|webm|flv|avi|wmv|m2ts)$',
       ).stringMatch(uri.path.toLowerCase()) ??
       '';
 
   static String _responseType(String path, String? original) {
     if (path.endsWith('.ts')) return 'video/mp2t';
     if (path.endsWith('.vtt') || path.endsWith('.webvtt')) return 'text/vtt';
+    if (path.endsWith('.aac')) return 'audio/aac';
+    if (path.endsWith('.ac3')) return 'audio/ac3';
+    if (path.endsWith('.ec3') || path.endsWith('.eac3')) return 'audio/eac3';
     return original ?? 'application/octet-stream';
   }
+
+  static bool _packedAudio(String path) =>
+      const ['.aac', '.ac3', '.ec3', '.eac3'].any(path.endsWith);
 
   Future<PlayerMedia> _ticket(PlayerMedia media, String suffix) async {
     try {
@@ -649,12 +655,17 @@ class VideoDiskCache extends ChangeNotifier {
     bool playlist = false,
   }) async {
     for (var attempt = 0; attempt < 2; attempt++) {
-      final response = await _request(
+      var response = await _request(
         media,
         playlist || media.uri.path.toLowerCase().endsWith('.m3u8')
             ? null
             : 'bytes=$start-${start + blockBytes - 1}',
       );
+      if (_packedAudio(media.uri.path.toLowerCase()) &&
+          const [400, 403, 405, 416].contains(response.statusCode)) {
+        await response.listen(null).cancel();
+        response = await _request(media, null);
+      }
       if ([502, 503, 504].contains(response.statusCode) && attempt == 0) {
         await response.listen(null).cancel();
         continue;
@@ -745,6 +756,14 @@ class VideoDiskCache extends ChangeNotifier {
         return _Block(manifest, 0, manifest.length, mime,
             response.header('etag') ?? response.header('last-modified'),
             response.uri, response.header('content-encoding'));
+      }
+      if (response.statusCode == 200 && start > 0 && _packedAudio(media.uri.path.toLowerCase())) {
+        return _Block(
+          Uint8List.sublistView(data, min(start, data.length)),
+          start, data.length, mime,
+          response.header('etag') ?? response.header('last-modified'),
+          response.uri, response.header('content-encoding'),
+        );
       }
       if (response.statusCode == 200 && start != 0) throw const _Passthrough();
       if (response.statusCode == 206 &&
@@ -992,6 +1011,12 @@ class VideoDiskCache extends ChangeNotifier {
       upstream = await _request(media, rangeHeader);
     }
     if (upstream.statusCode >= 400) {
+      if (rangeHeader != null &&
+          _packedAudio(request.uri.path) &&
+          const [400, 403, 405, 416].contains(upstream.statusCode)) {
+        await upstream.listen(null).cancel();
+        return false;
+      }
       final contentRange = upstream.header('content-range');
       if (upstream.statusCode == 416 &&
           contentRange != null &&
@@ -1252,7 +1277,8 @@ class VideoDiskCache extends ChangeNotifier {
             '.mov',
             '.mp3',
             '.m4a',
-          ].any(path.endsWith);
+          ].any(path.endsWith) ||
+          _packedAudio(path);
       final cached = _files[_key(media, start ~/ blockBytes * blockBytes)];
       if (request.method == 'GET' &&
           canStream &&

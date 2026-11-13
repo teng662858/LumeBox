@@ -95,6 +95,19 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path.startsWith('/audio-track/')) {
+        if (request.uri.path.endsWith('.m3u8')) {
+          final suffix = request.uri.queryParameters['ext'];
+          request.response.write('#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\npart.$suffix?sig=A\n#EXT-X-ENDLIST\n');
+        } else if (request.headers.value('range') != null) {
+          request.response.statusCode = 403;
+        } else {
+          request.response.headers.contentType = ContentType.binary;
+          request.response.add(data.sublist(0, 128));
+        }
+        await request.response.close();
+        return;
+      }
       if (request.uri.path.startsWith('/subtitles/')) {
         final type = request.uri.queryParameters['type'] ?? 'vtt';
         if (request.uri.path.endsWith('/master.m3u8')) {
@@ -438,6 +451,20 @@ void main() {
       final slice = await get(cue, 'bytes=0-5');
       expect(slice.$1.headers.contentType?.mimeType, 'text/vtt');
       expect(utf8.decode(slice.$2), 'WEBVTT');
+    });
+  }
+  for (final (extension, type) in [('aac', 'audio/aac'), ('ac3', 'audio/ac3'), ('ec3', 'audio/eac3')]) {
+    test('HLS packed $extension audio can play from a server that rejects Range', () async {
+      final track = await cache.wrap(PlayerMedia(uri: upstream.resolve('/audio-track/main.m3u8?ext=$extension')));
+      final playlist = utf8.decode((await get(track.uri)).$2);
+      final uri = Uri.parse(const LineSplitter().convert(playlist).firstWhere((line) => !line.startsWith('#')));
+      final probe = await get(uri, 'bytes=4-15');
+      expect(probe.$1.statusCode, 206);
+      expect(probe.$2, data.sublist(4, 16));
+      final response = await get(uri);
+      expect(response.$1.statusCode, 200);
+      expect(response.$1.headers.contentType?.mimeType, type);
+      expect(response.$2, data.take(128));
     });
   }
   test('mapped fMP4 subtitles retain their initialization and fragment routes', () async {
