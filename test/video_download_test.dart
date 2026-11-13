@@ -411,6 +411,46 @@ void main() {
     );
   }
 
+  for (final resume in [false, true]) {
+    test('a terminal 416 completes the download before its error body ends (resume=$resume)', () async {
+      final data = List.generate(32, (i) => i);
+      final body = Completer<void>();
+      var requests = 0;
+      server.listen((r) async {
+        requests++;
+        if (requests == 1) {
+          r.response.statusCode = 206;
+          r.response.headers.set('Content-Range', 'bytes 0-31/*');
+          r.response.add(data);
+        } else if (resume && requests == 2) {
+          r.response.statusCode = 503;
+        } else {
+          r.response.statusCode = 416;
+          r.response.headers.set('Content-Range', 'bytes */32');
+          r.response.write('end of file');
+          await r.response.flush();
+          await body.future;
+        }
+        await r.response.close();
+      });
+      final c = await center('capped.mp4');
+      try {
+        await enqueue(c);
+        final task = c.tasks.single;
+        if (resume) {
+          await until(() => task.state == 'failed');
+          await c.resume(task);
+        }
+        await until(() => task.state == 'done').timeout(const Duration(seconds: 3));
+        expect(await c.localFile(task).readAsBytes(), data);
+        expect(task.totalBytes, data.length);
+      } finally {
+        body.complete();
+        await c.flush();
+      }
+    });
+  }
+
   test('malformed partial response cannot become a completed video', () async {
     server.listen((request) async {
       request.response.statusCode = 206;
@@ -419,6 +459,29 @@ void main() {
       await request.response.close();
     });
     final c = await center('bad.mp4');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['done', 'failed'].contains(task.state));
+    await c.flush();
+    expect(task.state, 'failed');
+    expect(task.fileName, isEmpty);
+  });
+
+  test('a changed validator on the terminal 416 keeps a partial download unpublished', () async {
+    server.listen((r) async {
+      if (r.headers.value('range') == null) {
+        r.response.statusCode = 206;
+        r.response.headers.set('ETag', '"old"');
+        r.response.headers.set('Content-Range', 'bytes 0-31/*');
+        r.response.add(List.filled(32, 1));
+      } else {
+        r.response.statusCode = 416;
+        r.response.headers.set('ETag', '"new"');
+        r.response.headers.set('Content-Range', 'bytes */32');
+      }
+      await r.response.close();
+    });
+    final c = await center('replaced.mp4');
     await enqueue(c);
     final task = c.tasks.single;
     await until(() => ['done', 'failed'].contains(task.state));

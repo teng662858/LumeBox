@@ -660,21 +660,22 @@ class VideoDownloadCenter extends ChangeNotifier {
     final encoding = _encoding(response);
     int? total;
     while (true) {
+      final nextValidator = _validator(response);
+      if (validator != null &&
+          nextValidator != null &&
+          nextValidator != validator) {
+        await response.listen(null).cancel();
+        throw StateError('下载中途文件已更换，请重试');
+      }
       if (response.statusCode == 416 &&
           response.headers.value('content-range') == 'bytes */$offset' &&
           (total == null || total == offset)) {
-        await response.drain<void>();
+        await response.listen(null).cancel();
         onLength?.call(offset);
         return;
       }
       if (response.statusCode != 206) throw StateError('服务器未继续返回分段内容，请重试');
       if (_encoding(response) != encoding) throw StateError('下载中途内容编码发生变化');
-      final nextValidator = _validator(response);
-      if (validator != null &&
-          nextValidator != null &&
-          nextValidator != validator) {
-        throw StateError('下载中途文件已更换，请重试');
-      }
       final range = RegExp(
         r'^bytes (\d+)-(\d+)/(\d+|\*)$',
         caseSensitive: false,
@@ -770,7 +771,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     if (response.statusCode == 416 &&
         offset > 0 &&
         response.headers.value('content-range') == 'bytes */$offset') {
-      await response.drain<void>();
+      await response.listen(null).cancel();
       _check(task);
       await partial.rename(p.join(folder(task), targetName));
       task.bytes = task.totalBytes = offset;
