@@ -228,9 +228,8 @@ class _CatDetailPageState extends State<CatDetailPage>
       final media = PlayerMedia(
         previews: content.previews,
         uri: quality?.url ?? SourcePlayback.contentAddress(content)!,
-        headers: quality != null && quality.headers.isNotEmpty
-            ? quality.headers
-            : SourcePlayback.contentHeaders(content, source: widget.source),
+        headers: quality?.headers ??
+            SourcePlayback.contentHeaders(content, source: widget.source),
         title: '${widget.item.title} · ${chapter.title}',
       );
       if (prelaunch != null &&

@@ -358,6 +358,50 @@ void main() {
     expect(session.target?.chapterIndex, 0);
   });
 
+  test('switching to a headerless quality does not reuse the previous track credentials', () async {
+    await start(
+      qualities: [
+        VideoQuality(
+          label: '1080p',
+          url: Uri.parse('https://cdn.example/full.m3u8'),
+          headers: const {'Authorization': 'track-specific'},
+        ),
+        VideoQuality(
+          label: '720p',
+          url: Uri.parse('https://cdn.example/low.m3u8'),
+        ),
+      ],
+    );
+    await request('quality', {'id': 0});
+    final media = (await request('quality', {'id': 1}))['media'] as Map;
+    expect(media['headers'], isEmpty);
+  });
+
+  test(
+    'manual quality uses fresh matching URLs and headers on retry and next',
+    () async {
+      VideoQuality quality(String chapter, int height) => VideoQuality(
+        label: '${height}p',
+        url: Uri.parse('https://cdn.example/$chapter/$height?fresh'),
+        headers: {'Authorization': '$chapter-$height'},
+      );
+      await start(qualities: [quality('initial', 720)]);
+      await request('quality', {'id': 0});
+      for (final (action, chapter) in [('retry', 'A1'), ('next', 'A2')]) {
+        source.blocked[chapter] = Completer<ChapterContent>()
+          ..complete(
+            VideoContent(
+              url: Uri.parse('https://cdn.example/default'),
+              qualities: [quality(chapter, 1080), quality(chapter, 720)],
+            ),
+          );
+        final media = (await request(action))['media'] as Map;
+        expect(media['url'], quality(chapter, 720).url.toString());
+        expect(media['headers'], quality(chapter, 720).headers);
+      }
+    },
+  );
+
   test('closing during focus acquisition never retains the source', () async {
     final pending = start();
     await session.close();

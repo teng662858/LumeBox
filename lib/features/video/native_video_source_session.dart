@@ -14,6 +14,7 @@ import '../../core/session/app_preferences.dart';
 import '../../core/source/source.dart';
 import '../../core/source/source_runtime_pins.dart';
 import 'source_playback.dart';
+import 'playback_quality_preference.dart';
 import 'source_playback_profiles.dart';
 import 'video_episode_catalog.dart';
 import 'video_play_target.dart';
@@ -45,6 +46,7 @@ class NativeVideoSourceSession {
   PlayerMedia _media;
   VideoPlayTarget? target;
   List<VideoQuality> qualities;
+  VideoQuality? _manualQuality;
   NativeVideoConnection? _connection;
   DataSource? _openedSource;
   List<SourceChapter>? _chapters;
@@ -230,12 +232,13 @@ class NativeVideoSourceSession {
       final choice = qualities[index];
       final media = PlayerMedia(
         uri: choice.url,
-        headers: choice.headers.isEmpty ? _media.headers : choice.headers,
+        headers: choice.headers,
         title: _media.title,
       );
       final payload = await _payload(media, position: _saved[_identity] ?? 0);
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
       _media = media;
+      _manualQuality = choice;
       return {'media': payload};
     }
     // A retry already has the chapter ID. An unavailable catalog must not
@@ -316,8 +319,7 @@ class NativeVideoSourceSession {
         .content(itemId: current.itemId, chapterId: chosen.id)
         .timeout(const Duration(seconds: 15));
     if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-    final uri = SourcePlayback.contentAddress(content);
-    if (uri == null) return {'error': '源没有返回可播放的媒体地址'};
+    if (content is! VideoContent) return {'error': '源没有返回可播放的媒体地址'};
     final same = chosen.id == current.chapterId || action == 'line';
     final line = VideoEpisodeCatalog.forChapter(chapters, chosen.id);
     final nextTarget = chosen.id == current.chapterId
@@ -335,9 +337,18 @@ class NativeVideoSourceSession {
       content,
       source: dataSource,
     );
+    final choice = _manualQuality == null
+        ? null
+        : PlaybackQualityPreference.select(
+            nextQualities,
+            _settings,
+            currentQuality: _manualQuality,
+          );
     final nextMedia = PlayerMedia(
-      uri: uri,
-      headers: SourcePlayback.contentHeaders(content, source: dataSource),
+      uri: choice?.url ?? SourcePlayback.contentAddress(content)!,
+      headers:
+          choice?.headers ??
+          SourcePlayback.contentHeaders(content, source: dataSource),
       title: nextTarget.mediaTitle,
     );
     final payload = await _payload(

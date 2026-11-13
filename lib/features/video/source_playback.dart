@@ -78,7 +78,7 @@ class SourcePlayback {
   static VideoQuality? highestQuality(VideoContent content) {
     VideoQuality? best;
     var rank = 0;
-    for (final quality in contentQualities(content)) {
+    for (final quality in content.qualities) {
       final score = quality.resolutionRank;
       if (score > rank) {
         best = quality;
@@ -99,16 +99,12 @@ class SourcePlayback {
     DataSource? source,
   }) {
     if (content is! VideoContent) return const {};
-    // **线路自己没写请求头时继承主 headers**：图源多数只在 `headers` 上写一次
-    // （Referer / UA），`qualities` 里只有 label+url。早先这里写的是
-    // `highestQuality()?.headers ?? content.headers`——空的 Map 不是 null，
-    // 于是「带 qualities 的源」请求头被整份丢掉（真机：Hanime1 / H動漫網 的播放
-    // 请求裸奔，AVPlayer 报 -12939「byte range and no content length」）。
     final quality = highestQuality(content);
-    final headers = quality == null || quality.headers.isEmpty
-        ? content.headers
-        : quality.headers;
-    return _verifiedHeaders(headers, contentAddress(content), source);
+    return _verifiedHeaders(
+      quality == null ? content.headers : _qualityHeaders(content, quality),
+      quality?.url ?? content.url,
+      source,
+    );
   }
 
   /// 带上该源「验证过的会话」：验证时的 UA，以及 **源站自己域名上的** Cookie。
@@ -165,7 +161,6 @@ class SourcePlayback {
     DataSource? source,
   }) {
     if (content is! VideoContent) return const <VideoQuality>[];
-    final base = content.headers;
     return <VideoQuality>[
       for (final quality in content.qualities)
         VideoQuality(
@@ -173,12 +168,36 @@ class SourcePlayback {
           url: quality.url,
           height: quality.height,
           headers: _verifiedHeaders(
-            quality.headers.isEmpty ? base : quality.headers,
+            _qualityHeaders(content, quality),
             quality.url,
             source,
           ),
         ),
     ];
+  }
+
+  static Map<String, String> _qualityHeaders(
+    VideoContent content,
+    VideoQuality quality,
+  ) {
+    if (quality.headers.isNotEmpty) return quality.headers;
+    final from = content.url, to = quality.url;
+    if (from.scheme == to.scheme &&
+        from.host == to.host &&
+        from.port == to.port) {
+      return content.headers;
+    }
+    const privateHeaders = {
+      'cookie',
+      'authorization',
+      'proxy-authorization',
+      'host',
+    };
+    return {
+      for (final entry in content.headers.entries)
+        if (!privateHeaders.contains(entry.key.toLowerCase()))
+          entry.key: entry.value,
+    };
   }
 
   /// 本地文件的绝对路径判定（POSIX 与 Windows 两种写法）。
