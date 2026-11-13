@@ -326,6 +326,7 @@ class VideoDownloadCenter extends ChangeNotifier {
   Future<void> _policyCheckpoint(VideoDownloadTask task) async {
     _check(task);
     final reason = await OfflinePolicy.blocked();
+    _check(task);
     if (reason != null) throw OfflinePolicyPaused(reason);
   }
 
@@ -338,6 +339,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         final task = tasks.where((t) => t.state == 'queued').firstOrNull;
         if (task == null) break;
         final blocked = await OfflinePolicy.blocked();
+        if (task.state != 'queued') continue;
         if (blocked != null) {
           task.state = 'paused';
           task.error = blocked;
@@ -361,10 +363,12 @@ class VideoDownloadCenter extends ChangeNotifier {
           task.sourceId,
         );
         try {
+          _check(task);
           if (task.hasLocalPlaylist && await localFile(task).exists()) {
             await _mergeDownloaded(task);
             continue;
           }
+          _check(task);
           _proxy = LumeNet.settings.proxy;
           final content = await (resolve?.call(task) ?? _resolve(task)).timeout(
             const Duration(seconds: 45),
@@ -411,8 +415,7 @@ class VideoDownloadCenter extends ChangeNotifier {
             ..reset()
             ..start();
           _speedBytes = 0;
-          final blockedNow = await OfflinePolicy.blocked();
-          if (blockedNow != null) throw OfflinePolicyPaused(blockedNow);
+          await _policyCheckpoint(task);
           await _download(task, uri, content.headers);
           _check(task);
           if (task.hasLocalPlaylist) {
@@ -472,6 +475,7 @@ class VideoDownloadCenter extends ChangeNotifier {
   }
 
   Future<void> _mergeDownloaded(VideoDownloadTask task) async {
+    _check(task);
     task.state = 'merging';
     task.bytesPerSecond = 0;
     await _save();
@@ -491,9 +495,10 @@ class VideoDownloadCenter extends ChangeNotifier {
       } else if (!await _isMp4(output)) {
         throw StateError('已有合并文件不完整，请删除该文件后重试');
       }
+      final length = await output.length();
       _check(task);
       task.fileName = 'merged.mp4';
-      task.bytes = task.totalBytes = await output.length();
+      task.bytes = task.totalBytes = length;
       task.completed = task.total = 0;
       task.state = 'done';
       await _save();
@@ -727,6 +732,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     Uri origin,
     Map<String, String> headers,
   ) async {
+    await _policyCheckpoint(task);
     final r = await _open(task, uri, origin, headers);
     if (r.statusCode != 200) throw StateError('播放清单不可用：HTTP ${r.statusCode}');
     return _text(r.timeout(const Duration(seconds: 45)));
@@ -831,11 +837,12 @@ class VideoDownloadCenter extends ChangeNotifier {
     final output = <String>[];
     var index = 0;
     task.total += lines.where((l) => l.isNotEmpty && !l.startsWith('#')).length;
-    final pending = <Future<void>>[];
+    final pending = <Future<void> Function()>[];
     Future<void> flushSegments() async {
-      final batch = List<Future<void>>.of(pending);
+      if (pending.isEmpty) return;
+      await _policyCheckpoint(task);
+      await Future.wait(pending.map((download) => download()));
       pending.clear();
-      await Future.wait(batch);
     }
 
     for (final line in lines) {
@@ -848,6 +855,7 @@ class VideoDownloadCenter extends ChangeNotifier {
           final key = line.startsWith('#EXT-X-KEY:');
           final relative =
               '$name-$plan/${key ? 'key' : 'map'}-${index++}.${key ? 'key' : 'mp4'}';
+          await _policyCheckpoint(task);
           await _resource(
             task,
             url,
@@ -883,10 +891,9 @@ class VideoDownloadCenter extends ChangeNotifier {
           );
           task.completed++;
           _notifyProgress();
-        }());
+        });
         output.add(relative);
         if (pending.length >= (_yieldToPlayback ? 1 : 3)) {
-          await _policyCheckpoint(task);
           await flushSegments();
         }
       } else {

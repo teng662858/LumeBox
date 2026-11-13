@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/experience/content_center.dart';
+import 'package:lume_box/core/experience/offline_policy.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/download/local_download_export.dart';
 import 'package:lume_box/features/video/offline_video_server.dart';
@@ -59,6 +62,113 @@ void main() {
     title: 'Movie',
     chapters: const [SourceChapter(id: 'episode', title: 'Episode')],
   );
+  for (final remove in [false, true]) {
+    test(
+      'queued cancellation during network inspection skips the task (remove=$remove)',
+      () async {
+        final settings = ContentCenter.instance.data;
+        final previous = settings['wifiOnly'];
+        settings['wifiOnly'] = true;
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        final inspection = Completer<Map<String, Object?>>();
+        final inspecting = Completer<void>();
+        messenger.setMockMethodCallHandler(OfflinePolicy.channel, (_) async {
+          if (inspecting.isCompleted) return {'wifi': true};
+          inspecting.complete();
+          return inspection.future;
+        });
+        addTearDown(() {
+          messenger.setMockMethodCallHandler(OfflinePolicy.channel, null);
+          if (previous == null) {
+            settings.remove('wifiOnly');
+          } else {
+            settings['wifiOnly'] = previous;
+          }
+        });
+        final resolved = <String>[];
+        final c = VideoDownloadCenter(
+          directory: () async => root,
+          resolve: (task) async {
+            resolved.add(task.chapterId);
+            throw StateError('fixture offline');
+          },
+        );
+        await c.enqueue(
+          sourceId: 's',
+          itemId: 'i',
+          title: 'Movie',
+          chapters: const [
+            SourceChapter(id: 'cancel', title: 'First'),
+            SourceChapter(id: 'keep', title: 'Second'),
+          ],
+        );
+        await inspecting.future;
+        final first = c.tasks.first;
+        if (remove) {
+          await c.remove(first, deleteFiles: true);
+        } else {
+          await c.pause(first);
+        }
+        inspection.complete({'wifi': true});
+        await until(() => c.tasks.last.state == 'failed');
+        await c.flush();
+        expect(resolved, ['keep']);
+        expect(first.state, 'paused');
+      },
+    );
+  }
+
+  test(
+    'HLS checks network policy before starting its segment requests',
+    () async {
+      final settings = ContentCenter.instance.data;
+      final previous = settings['wifiOnly'];
+      settings['wifiOnly'] = true;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      var checks = 0, segments = 0;
+      final inspecting = Completer<void>(), allow = Completer<bool>();
+      messenger.setMockMethodCallHandler(OfflinePolicy.channel, (_) async {
+        if (++checks < 3) return {'wifi': true};
+        if (!inspecting.isCompleted) inspecting.complete();
+        return {'wifi': await allow.future};
+      });
+      addTearDown(() {
+        messenger.setMockMethodCallHandler(OfflinePolicy.channel, null);
+        if (previous == null) {
+          settings.remove('wifiOnly');
+        } else {
+          settings['wifiOnly'] = previous;
+        }
+      });
+      final paths = <String>[];
+      server.listen((request) async {
+        paths.add(request.uri.path);
+        if (request.uri.path == '/vod.m3u8') {
+          request.response.write(
+            '#EXTM3U\n#EXTINF:1,\na.ts\n#EXTINF:1,\nb.ts\n#EXTINF:1,\nc.ts\n#EXT-X-ENDLIST\n',
+          );
+        } else {
+          segments++;
+          request.response.add([1, 2, 3]);
+        }
+        await request.response.close();
+      });
+      final c = await center('vod.m3u8');
+      await enqueue(c);
+      await inspecting.future;
+      // While the device checks Wi-Fi, give any prematurely started requests
+      // enough time to reach the loopback HTTP server.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      allow.complete(false);
+      await until(() => c.tasks.single.state == 'paused');
+      await c.flush();
+      expect(segments, 0, reason: paths.toString());
+      expect(c.tasks.single.error, contains('Wi-Fi'));
+    },
+  );
+
   test('offline media serves suffix ranges and reports invalid offsets', () async {
     await File('${root.path}/clip.mp4').writeAsBytes([10, 20, 30, 40]);
     final local = await OfflineVideoServer.open(root);
