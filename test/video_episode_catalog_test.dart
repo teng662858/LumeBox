@@ -143,10 +143,16 @@ void main() {
     final chapters = await source.chapters('capture');
     expect(chapters, hasLength(1));
     expect(chapters.single.title, '正片');
+    expect(chapters.single.id, 'web-episode-0');
+    final other = Uri.parse('https://fixture.test/movie.m3u8?token=secret');
+    final itemId = DirectVideoSource.captureItemId('', other);
+    expect(itemId, isNot(contains('secret')));
+    expect(itemId, isNot(DirectVideoSource.captureItemId('', source.uri)));
+    expect(DirectVideoSource.captureItemId('work-42', other), 'work-42');
     final content = await source.content(
       itemId: 'capture',
       chapterId: chapters.single.id,
-    ) as VideoContent;
+    );
     expect(content.headers['Referer'], 'https://fixture.test/page');
   });
 
@@ -172,23 +178,26 @@ void main() {
     final chapters = await source.chapters('drama');
     expect(chapters, hasLength(47));
     expect(VideoEpisodeCatalog.forChapter(chapters, 'e11'), hasLength(47));
+    await source.content(itemId: 'drama', chapterId: 'e0');
+    expect(resolved, [0]);
+    expect((await source.downloadContent('drama', 'e11')).url, source.uri);
     expect(
       (await source.content(
         itemId: 'drama',
         chapterId: 'e11',
-      ) as VideoContent).url.path,
+      )).url.path,
       '/12.m3u8',
     );
-    expect(resolved, isEmpty);
+    expect(resolved, [0]);
     expect(
       (await source.content(
         itemId: 'drama',
         chapterId: 'e12',
-      ) as VideoContent).url.path,
+      )).url.path,
       '/13.m3u8',
     );
     await source.content(itemId: 'drama', chapterId: 'e11');
-    expect(resolved, [12, 11]);
+    expect(resolved, [0, 12, 11]);
     await expectLater(
       source.content(itemId: 'drama', chapterId: 'missing'),
       throwsFormatException,

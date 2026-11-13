@@ -1593,12 +1593,15 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(source.parses, 1);
-    await tester.ensureVisible(find.byKey(const Key('video-detail-play')));
+    final retry = find.byKey(const Key('video-detail-play'));
+    await Scrollable.ensureVisible(tester.element(retry), alignment: 0.5);
+    await tester.pumpAndSettle();
     await tester.runAsync(() async {
-      await tester.tap(find.byKey(const Key('video-detail-play')));
+      await tester.tap(retry);
       await Future<void>.delayed(const Duration(milliseconds: 800));
     });
     await tester.pumpAndSettle();
+    expect(source.parses, 2);
     expect(opened, 0);
     expect(find.byType(VideoDetailPage), findsOneWidget);
     expect(find.textContaining('解析失败：'), findsOneWidget);

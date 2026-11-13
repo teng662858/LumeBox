@@ -292,7 +292,9 @@ class _WebHomePageState extends State<WebHomePage> {
           index,
           _controller.runJavaScript,
         );
-        if (resolved.shareLink) throw const FormatException('该剧集需要回到网页打开网盘解析');
+        if (resolved.shareLink && !CatMediaSniffer.isMediaUrl(resolved.uri.toString())) {
+          throw const FormatException('该剧集需要回到网页打开网盘解析');
+        }
         return VideoContent(url: resolved.uri, headers: resolved.headers);
       },
     );
@@ -301,7 +303,7 @@ class _WebHomePageState extends State<WebHomePage> {
         builder: (_) => VideoDetailPage(
           source: source,
           item: SourceItem(
-            id: request.itemId.isEmpty ? 'captured-video' : request.itemId,
+            id: DirectVideoSource.captureItemId(request.itemId, request.uri),
             title: request.title,
             cover: request.cover,
           ),

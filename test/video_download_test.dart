@@ -9,6 +9,7 @@ import 'package:lume_box/core/experience/content_center.dart';
 import 'package:lume_box/core/experience/offline_policy.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/session/section.dart';
+import 'package:lume_box/core/security/local_cipher.dart';
 import 'package:lume_box/features/download/local_download_export.dart';
 import 'package:lume_box/features/video/offline_video_server.dart';
 import 'package:lume_box/features/video/video_download_center.dart';
@@ -63,6 +64,74 @@ void main() {
     title: 'Movie',
     chapters: const [SourceChapter(id: 'episode', title: 'Episode')],
   );
+  test('网页下载重启后仍携带签名和请求头，任务清单只保存密文', () async {
+    LocalCipher.configurePreview(root.path, LocalCipher.random(32));
+    final c = VideoDownloadCenter(directory: () async => root);
+    var allow = false;
+    final calls = <String?>[];
+    server.listen((request) async {
+      calls.add(request.headers.value('cookie'));
+      if (!allow) {
+        request.response.statusCode = 403;
+      } else {
+        expect(request.uri.queryParameters['sign'], 'private-signature');
+        expect(request.headers.value('referer'), 'https://fixture.test/watch');
+        request.response.headers.contentType = ContentType('video', 'mp4');
+        request.response.add([0, 0, 0, 24, ...ascii.encode('ftypisom')]);
+      }
+      await request.response.close();
+    });
+    await c.enqueue(
+      sourceId: 'web-fixture',
+      itemId: 'work',
+      title: '影片',
+      chapters: const [SourceChapter(id: 'web-episode-0', title: '正片')],
+      captures: {
+        'web-episode-0': VideoContent(
+          url: origin.resolve('movie.mp4?sign=private-signature'),
+          headers: {'Cookie': 'sid=private-cookie', 'Referer': 'https://fixture.test/watch'},
+        ),
+      },
+    );
+    await until(() => c.tasks.single.state == 'failed');
+    await c.flush();
+    final manifest = await File('${c.root.path}/tasks.json').readAsString();
+    expect(manifest, contains(LocalCipher.prefix));
+    for (final secret in ['private-cookie', 'private-signature', 'fixture.test/watch', 'movie.mp4']) {
+      expect(manifest, isNot(contains(secret)));
+    }
+    allow = true;
+    final restored = VideoDownloadCenter(directory: () async => root);
+    await restored.boot();
+    await restored.resume(restored.tasks.single);
+    await until(() => restored.tasks.single.state == 'done');
+    await restored.flush();
+    expect(calls, everyElement('sid=private-cookie'));
+    expect(await restored.localFile(restored.tasks.single).length(), 12);
+  });
+  test('旧网页单集任务恢复后会移除清单里的明文签名', () async {
+    LocalCipher.configurePreview(root.path, LocalCipher.random(32));
+    final c = VideoDownloadCenter(directory: () async => root);
+    await c.boot();
+    final address = origin.resolve('legacy.mp4?token=private-token').toString();
+    final old = VideoDownloadTask(
+      id: VideoDownloadCenter.identity('web-fixture', 'captured-video', address),
+      sourceId: 'web-fixture',
+      itemId: 'captured-video',
+      chapterId: address,
+      title: '影片',
+      chapterTitle: '正片',
+    );
+    final manifest = File('${c.root.path}/tasks.json');
+    await manifest.writeAsString(jsonEncode([old.toJson()]));
+    final restored = VideoDownloadCenter(directory: () async => root);
+    await restored.boot();
+    final task = restored.tasks.single;
+    expect(task.chapterId, 'web-episode-0');
+    expect(task.state, 'paused');
+    expect(await manifest.readAsString(), isNot(contains('private-token')));
+    expect(task.encryptedCapture, startsWith(LocalCipher.prefix));
+  });
   for (final remove in [false, true]) {
     test(
       'queued cancellation during network inspection skips the task (remove=$remove)',

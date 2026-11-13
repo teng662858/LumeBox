@@ -387,6 +387,30 @@ void main() {
     expect(opened, isEmpty);
   });
 
+  test('网页代理媒体首播和切集都提取真实地址与代理请求头', () async {
+    final session = await start();
+    final resource = session.base.resolve('resource').replace(queryParameters: {
+      'url': 'https://media.invalid/movie.m3u8?sign=opaque',
+      'headers': jsonEncode({'Referer': 'https://site.invalid/', 'Cookie': 'sid=abc'}),
+    });
+    final args = {
+      'url': resource.toString(),
+      'options': {'headers': {'Authorization': 'loopback-only'}},
+    };
+    await session.dispatch('play', args);
+    final next = await session.resolveEpisode('p', 0, (_) async {
+      await session.dispatch('episode.result', {'job': 1, 'value': args});
+    });
+    for (final capture in [opened.single, next]) {
+      expect(capture.uri.toString(), 'https://media.invalid/movie.m3u8?sign=opaque');
+      expect(capture.headers, {'Referer': 'https://site.invalid/', 'Cookie': 'sid=abc'});
+    }
+    final foreign = resource.replace(host: 'external.invalid');
+    await session.dispatch('play', {...args, 'url': foreign.toString()});
+    expect(opened.last.uri, foreign);
+    expect(opened.last.headers, {'Authorization': 'loopback-only'});
+  });
+
   test('网页播放保留47集和选中位置，后续切集通过原网页解析', () async {
     final session = await start();
     await session.dispatch('play', {

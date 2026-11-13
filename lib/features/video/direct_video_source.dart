@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
 import '../../core/source/source.dart';
 import '../../core/session/section.dart';
 
@@ -26,6 +30,14 @@ class DirectVideoSource implements DataSource {
   final String description;
   final Future<VideoContent> Function(int)? resolveEpisode;
   bool _initialUsed = false;
+
+  static String captureItemId(String itemId, Uri originalUri) {
+    if (itemId.isNotEmpty && Uri.tryParse(itemId)?.hasAuthority != true) {
+      return itemId;
+    }
+    final identity = itemId.isEmpty ? originalUri.toString() : itemId;
+    return 'capture-${sha256.convert(utf8.encode(identity))}';
+  }
   @override
   Section get section => Section.video;
   @override
@@ -50,18 +62,26 @@ class DirectVideoSource implements DataSource {
   Future<List<SourceChapter>> chapters(String itemId) async =>
       episodes.isNotEmpty
       ? episodes
-      : [SourceChapter(id: uri.toString(), title: '正片')];
+      : const [SourceChapter(id: 'web-episode-0', title: '正片')];
+
+  Future<VideoContent> downloadContent(String itemId, String chapterId) async {
+    if (episodes.isEmpty ||
+        (!_initialUsed && episodes.indexWhere((e) => e.id == chapterId) == selected)) {
+      return VideoContent(url: uri, headers: headers);
+    }
+    return content(itemId: itemId, chapterId: chapterId);
+  }
   @override
-  Future<ChapterContent?> content({
+  Future<VideoContent> content({
     required String itemId,
     required String chapterId,
   }) async {
     if (episodes.isEmpty) return VideoContent(url: uri, headers: headers);
     final index = episodes.indexWhere((e) => e.id == chapterId);
     if (index < 0) throw const FormatException('网页剧集已失效');
-    if (!_initialUsed) {
+    if (index == selected && (!_initialUsed || resolveEpisode == null)) {
       _initialUsed = true;
-      if (index == selected) return VideoContent(url: uri, headers: headers);
+      return VideoContent(url: uri, headers: headers);
     }
     if (resolveEpisode == null) throw const FormatException('网页未提供切集解析器');
     return resolveEpisode!(index);

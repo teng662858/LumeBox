@@ -31,11 +31,11 @@ class HtmlHomePlayback {
   final int selected;
   final String? cover;
 
-  static HtmlHomePlayback parse(Map args) {
+  static HtmlHomePlayback parse(Map args, {Uri? resourceEndpoint}) {
     var url = '${args['url'] ?? ''}'.trim();
     final share = url.startsWith('push://');
     if (share) url = url.substring(7);
-    final uri = Uri.tryParse(url);
+    var uri = Uri.tryParse(url);
     if (uri == null ||
         !['http', 'https', 'magnet'].contains(uri.scheme) ||
         uri.userInfo.isNotEmpty ||
@@ -43,6 +43,22 @@ class HtmlHomePlayback {
       throw const FormatException('播放地址需为 HTTP(S)、网盘分享或磁力链接');
     }
     final options = args['options'];
+    var headers = htmlHomeHeaders(options is Map ? options['headers'] : null);
+    // fm.res URLs only work while this page is open. Use the same upstream
+    // request as its resource handler when handing media to the player.
+    if (resourceEndpoint != null &&
+        uri.scheme == resourceEndpoint.scheme &&
+        uri.authority == resourceEndpoint.authority &&
+        uri.path == resourceEndpoint.path) {
+      final upstream = Uri.tryParse(uri.queryParameters['url'] ?? '');
+      if (upstream == null ||
+          !['http', 'https'].contains(upstream.scheme) ||
+          upstream.host.isEmpty || upstream.userInfo.isNotEmpty) {
+        throw const FormatException('网页媒体代理地址无效');
+      }
+      headers = htmlHomeHeaders(jsonDecode(uri.queryParameters['headers'] ?? '{}'));
+      uri = upstream;
+    }
     final playlist = options is Map ? options['playlist'] : null;
     final episodes = <({String title, String line})>[];
     var selected = 0;
@@ -71,7 +87,7 @@ class HtmlHomePlayback {
     return HtmlHomePlayback(
       uri,
       '${args['title'] ?? ''}',
-      htmlHomeHeaders(options is Map ? options['headers'] : null),
+      headers,
       share,
       password: options is Map ? '${options['password'] ?? ''}' : '',
       playlistId: playlist is Map ? '${playlist['id']}' : '',
@@ -386,14 +402,15 @@ class HtmlHomeSession {
           pending.completeError(StateError('${args['error']}'));
         } else {
           try {
-            pending.complete(HtmlHomePlayback.parse(args['value'] as Map));
+            pending.complete(HtmlHomePlayback.parse(args['value'] as Map,
+                resourceEndpoint: base.resolve('resource')));
           } catch (error, stack) {
             pending.completeError(error, stack);
           }
         }
         return true;
       case 'play':
-        await onPlay(HtmlHomePlayback.parse(args));
+        await onPlay(HtmlHomePlayback.parse(args, resourceEndpoint: base.resolve('resource')));
         return {'opened': true};
       case 'chrome':
         viewport = await onChrome(args);

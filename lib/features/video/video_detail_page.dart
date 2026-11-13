@@ -7,6 +7,7 @@ import '../reading/content_detail_router.dart';
 import '../download/download_selection.dart';
 import '../comic/download_center_page.dart';
 import 'video_download_center.dart';
+import 'direct_video_source.dart';
 
 import 'dart:convert';
 import 'dart:math' as math;
@@ -169,6 +170,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
 
   Widget? _typedDetail;
   bool loading = true, resolving = false;
+  bool preparingDownloads = false;
   String? error;
   late final pipeline =
       widget.imagePipeline ??
@@ -475,7 +477,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   }
 
   Future<void> downloadVideo() async {
-    if (_source == null || chapters.isEmpty || resolving) return;
+    if (_source == null || chapters.isEmpty || resolving || preparingDownloads) return;
     final source = _source!;
     final episodes = List<SourceChapter>.of(chapters);
     final indices = await selectDownloadChapters(
@@ -485,18 +487,52 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       formatHint: '支持直链视频与普通点播 HLS；直播、字节范围 HLS、DRM 和仅网页播放的内容暂不支持下载。',
     );
     if (indices == null || !mounted) return;
-    await (widget.downloadCenter ?? VideoDownloadCenter.instance).enqueue(
-      section: widget.library.section,
-      sourceId: source.id,
-      itemId: widget.item.id,
-      title: widget.item.title,
-      chapters: [for (final i in indices) episodes[i]],
-      chapterIndices: {for (final i in indices) episodes[i].id: i},
-    );
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('已添加 ${indices.length} 集到下载中心')));
+    final center = widget.downloadCenter ?? VideoDownloadCenter.instance;
+    final item = widget.item;
+    final section = widget.library.section;
+    final captures = <String, VideoContent>{};
+    var failures = 0;
+    setState(() => preparingDownloads = true);
+    try {
+      if (source is DirectVideoSource) {
+        for (final i in indices) {
+          final chapter = episodes[i];
+          try {
+            captures[chapter.id] = await source.downloadContent(item.id, chapter.id);
+          } catch (_) {
+            failures++;
+          }
+        }
+      }
+      final ready = [
+        for (final i in indices)
+          if (source is! DirectVideoSource || captures.containsKey(episodes[i].id)) i,
+      ];
+      if (ready.isNotEmpty) {
+        await center.enqueue(
+          section: section,
+          sourceId: source.id,
+          itemId: item.id,
+          title: item.title,
+          chapters: [for (final i in ready) episodes[i]],
+          chapterIndices: {for (final i in ready) episodes[i].id: i},
+          captures: captures,
+        );
+      }
+      if (!mounted) return;
+      final message = [
+        if (ready.isNotEmpty) '已添加 ${ready.length} 集到下载中心',
+        if (failures > 0) '$failures 集未取得下载地址，请回到网页重新打开对应剧集',
+      ].join('；');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('无法保存下载任务，请稍后重试')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => preparingDownloads = false);
     }
   }
 
@@ -2359,8 +2395,10 @@ class _VideoDetailPageState extends State<VideoDetailPage>
     IconButton(
       key: const Key('video-detail-download'),
       tooltip: '下载视频 / 选集',
-      onPressed: resolving || chapters.isEmpty ? null : downloadVideo,
-      icon: const Icon(Icons.download_outlined, size: 20),
+      onPressed: resolving || preparingDownloads || chapters.isEmpty ? null : downloadVideo,
+      icon: preparingDownloads
+          ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+          : const Icon(Icons.download_outlined, size: 20),
     ),
   ];
 

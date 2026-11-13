@@ -19,9 +19,11 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/session/section.dart';
+import '../../core/security/local_cipher.dart';
 import '../../core/source/source.dart';
 import '../../core/util/sensitive_data.dart';
 import 'source_playback.dart';
+import 'direct_video_source.dart';
 import '../../core/player/abstract_player.dart';
 import '../../core/player/apple_hls_fragments.dart';
 import '../../core/player/hls_ad_filter.dart';
@@ -60,6 +62,7 @@ class VideoDownloadTask {
     this.chapterIndex = 0,
     this.line = '',
     this.error,
+    this.encryptedCapture,
   });
   final String id, sourceId, itemId, chapterId, title, chapterTitle;
   final Section section;
@@ -70,6 +73,7 @@ class VideoDownloadTask {
   final String line;
   String state, fileName;
   String? error;
+  String? encryptedCapture;
   int bytes, totalBytes, completed, total;
   double bytesPerSecond = 0;
   bool get running => state == 'running' || state == 'merging';
@@ -99,10 +103,11 @@ class VideoDownloadTask {
     'completed': completed,
     'total': total,
     'fileName': fileName,
+    if (encryptedCapture != null) 'capture': encryptedCapture,
   };
 }
 
-/// Persistent, page-independent VOD downloads. Credentials and resolved URLs are never serialized.
+/// Page-independent VOD downloads. Web captures use device-bound encryption.
 class VideoDownloadCenter extends ChangeNotifier {
   VideoDownloadCenter({
     this.directory,
@@ -155,11 +160,12 @@ class VideoDownloadCenter extends ChangeNotifier {
     final manifest = File(p.join(root.path, 'tasks.json'));
     try {
       if (await manifest.exists()) {
+        var migrated = false;
         final rows = jsonDecode(await manifest.readAsString()) as List;
         for (final m in rows.whereType<Map>()) {
           final source = m['sourceId'];
-          final item = m['itemId'];
-          final chapter = m['chapterId'];
+          var item = m['itemId'];
+          var chapter = m['chapterId'];
           if (source is! String || item is! String || chapter is! String) {
             continue;
           }
@@ -169,7 +175,7 @@ class VideoDownloadCenter extends ChangeNotifier {
               ? (legacyCat ? Section.cat : Section.video)
               : sectionFromId('${m['section']}');
           if (section == null) continue;
-          final id = m['id'];
+          var id = m['id'];
           final legacyFolder = section == Section.cat && legacyCat &&
               id == identity(source, item, chapter);
           if (id is! String ||
@@ -190,6 +196,29 @@ class VideoDownloadCenter extends ChangeNotifier {
                 : 0;
           }
 
+          var capture = m['capture'] is String ? m['capture'] as String : null;
+          if (section == Section.video && source.startsWith('web-') &&
+              item == 'captured-video' && fileName.isEmpty && capture == null) {
+            final uri = Uri.tryParse(chapter);
+            if (uri != null && ['http', 'https'].contains(uri.scheme) && uri.host.isNotEmpty) {
+              final newItem = DirectVideoSource.captureItemId('', uri);
+              const newChapter = 'web-episode-0';
+              final newId = identity(source, newItem, newChapter);
+              try {
+                final cipher = await LocalCipher.open();
+                capture = cipher.seal(
+                  jsonEncode({'url': chapter, 'headers': {}}),
+                  context: 'video-download:$newId',
+                );
+                item = newItem;
+                chapter = newChapter;
+                id = newId;
+                migrated = true;
+              } catch (_) {
+                // Keep the existing entry if the device key is unavailable.
+              }
+            }
+          }
           final task = VideoDownloadTask(
             id: id,
             section: section,
@@ -208,6 +237,7 @@ class VideoDownloadCenter extends ChangeNotifier {
             completed: counter('completed'),
             total: counter('total'),
             fileName: fileName,
+            encryptedCapture: capture,
           );
           if ((fileName.isNotEmpty || task.state != 'paused') &&
               (fileName.isEmpty || !await localFile(task).exists())) {
@@ -218,6 +248,7 @@ class VideoDownloadCenter extends ChangeNotifier {
           }
           tasks.add(task);
         }
+        if (migrated) await _save();
       }
     } catch (_) {
       storageError = '下载任务记录读取失败，已下载文件仍保留';
@@ -273,11 +304,20 @@ class VideoDownloadCenter extends ChangeNotifier {
     required String title,
     required List<SourceChapter> chapters,
     Map<String, int> chapterIndices = const {},
+    Map<String, VideoContent> captures = const {},
   }) async {
     await boot();
+    final cipher = captures.isEmpty ? null : await LocalCipher.open();
     for (final chapter in chapters) {
+      final id = identity(sourceId, itemId, chapter.id, section: section);
+      final capture = captures[chapter.id];
+      final encrypted = capture == null ? null : cipher!.seal(
+        jsonEncode({'url': capture.url.toString(), 'headers': capture.headers}),
+        context: 'video-download:$id',
+      );
       final existing = _find(section, sourceId, itemId, chapter.id);
       if (existing != null) {
+        if (encrypted != null) existing.encryptedCapture = encrypted;
         existing.chapterIndex = chapterIndices[chapter.id] ?? existing.chapterIndex;
         if (!existing.running &&
             (existing.state != 'done' || !await localFile(existing).exists())) {
@@ -287,7 +327,8 @@ class VideoDownloadCenter extends ChangeNotifier {
       }
       tasks.add(
         VideoDownloadTask(
-          id: identity(sourceId, itemId, chapter.id, section: section),
+          id: id,
+          encryptedCapture: encrypted,
           section: section,
           sourceId: sourceId,
           itemId: itemId,
@@ -503,6 +544,18 @@ class VideoDownloadCenter extends ChangeNotifier {
   }
 
   Future<VideoContent> _resolve(VideoDownloadTask task) async {
+    final capture = task.encryptedCapture;
+    if (capture != null) {
+      if (!capture.startsWith(LocalCipher.prefix)) {
+        throw const FormatException('网页下载信息损坏，请回到网页重新添加');
+      }
+      final cipher = await LocalCipher.open();
+      final data = jsonDecode(cipher.reveal(capture, context: 'video-download:${task.id}')) as Map;
+      return VideoContent(
+        url: Uri.parse(data['url'] as String),
+        headers: Map<String, String>.from(data['headers'] as Map),
+      );
+    }
     final manager = task.sourceManager;
     final source = await manager.open(task.sourceId);
     if (source == null) throw StateError('源不可用，请恢复对应源后继续');

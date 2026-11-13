@@ -119,7 +119,7 @@ String htmlHomeSdk(
         var value=await resolveEpisode(detail,episode,resolver);
         playlists[id]={detail:Object.assign({},detail),episodes:episodes,resolver:resolver};
         value.options.playlist={id:id,selected:index,
-          itemId:String(detail.vod_id||detail.id||detail.vod_name||detail.title||id),
+          itemId:String(detail.vod_id||detail.id||detail.vod_name||detail.title||''),
           cover:detail.pic||detail.vod_pic||detail.wallPic||'',
           description:detail.description||detail.vod_content||'',
           episodes:episodes.map(function(e,i){return {title:e.name||e.label||e.title||('第'+(i+1)+'集'),line:e.line||e.flag||''};})};
