@@ -309,6 +309,11 @@ void main() {
         final match = RegExp(r'bytes=(\d+)-(\d*)')
             .firstMatch(request.headers.value('range') ?? '');
         final start = match == null ? 0 : int.parse(match[1]!);
+        final oldVersion = request.uri.path == '/replaced.mp4' &&
+            paths.where((p) => p == '/replaced.mp4').length == 1;
+        if (request.uri.path == '/replaced.mp4') {
+          request.response.headers.set('ETag', oldVersion ? '"old"' : '"new"');
+        }
         if (request.uri.path == '/expires.mp4' &&
             start >= VideoDiskCache.blockBytes) {
           request.response.statusCode = 403;
@@ -345,7 +350,7 @@ void main() {
         request.response.headers.set('Content-Type', 'video/mp4');
         final body = data.sublist(start, end + 1);
         request.response.contentLength = body.length;
-        request.response.add(body);
+        request.response.add(oldVersion ? Uint8List(body.length) : body);
       }
       await request.response.close();
     });
@@ -624,6 +629,29 @@ void main() {
       }
     });
   }
+  test('retry after an ETag change drops the old prefix and plays the replacement', () async {
+    final other = await cache.wrap(PlayerMedia(uri: upstream));
+    await get(other.uri, 'bytes=0-15');
+    final wrapped = await cache.wrap(PlayerMedia(uri: upstream.resolve('/replaced.mp4')));
+    final first = await client.getUrl(wrapped.uri);
+    first.headers.set('Range', 'bytes=0-');
+    final interrupted = await first.close();
+    var received = 0;
+    try {
+      await for (final chunk in interrupted) {
+        received += chunk.length;
+      }
+    } on HttpException {
+      // A changed representation cannot complete the existing response.
+    }
+    expect(received, VideoDiskCache.blockBytes);
+    final retry = await get(wrapped.uri, 'bytes=0-');
+    expect(retry.$1.statusCode, 206);
+    expect(retry.$2, data);
+    final previousCalls = calls;
+    expect((await get(other.uri, 'bytes=0-15')).$2, data.take(16));
+    expect(calls, previousCalls, reason: 'another video keeps its buffered data');
+  });
 
   test(
     'remote ranged MP4 delivers first bytes without filling a cache block',

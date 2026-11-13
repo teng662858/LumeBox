@@ -502,7 +502,7 @@ class VideoDiskCache extends ChangeNotifier {
   String _key(PlayerMedia media, int start) {
     final headers = (media.headers ?? {}).entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
-    return sha256
+    final identity = sha256
         .convert(
           utf8.encode(
             jsonEncode([
@@ -510,11 +510,33 @@ class VideoDiskCache extends ChangeNotifier {
               [
                 for (final h in headers) [h.key, h.value],
               ],
-              start,
             ]),
           ),
         )
         .toString();
+    return start < 0 ? identity : '$identity-$start';
+  }
+
+  Future<void> _discardChangedMedia(PlayerMedia media) {
+    final identity = _key(media, -1);
+    final prefix = '$identity-';
+    _generation++;
+    _pending.removeWhere((key, _) => key.startsWith(prefix));
+    _detectedFormats.remove(identity);
+    _positions.remove(media.uri);
+    return _disk(() async {
+      final keys = _files.keys.where((key) => key.startsWith(prefix)).toList();
+      for (final key in keys) {
+        final row = _files.remove(key)!;
+        bytes -= row.bytes;
+        try {
+          await row.file.delete();
+        } on FileSystemException {
+          // An inaccessible stale block must still be removed from the index.
+        }
+      }
+      _spaceChecked = null;
+    });
   }
 
   Future<_Block> _read(
@@ -570,7 +592,7 @@ class VideoDiskCache extends ChangeNotifier {
       }
       return block;
     } finally {
-      _pending.remove(key);
+      if (identical(_pending[key], task)) _pending.remove(key);
     }
   }
 
@@ -1383,16 +1405,18 @@ class VideoDiskCache extends ChangeNotifier {
       if (request.method == 'HEAD') return;
       final total = block.total;
       final validator = block.validator;
+      final encoding = block.encoding;
       start += prefixBytes;
       final physicalEnd = end + prefixBytes;
       if (start < block.start || start >= block.start + block.data.length) {
         block = await _read(media, start);
       }
       while (start <= physicalEnd) {
-        if (block.total != total ||
+        if (block.total != total || block.encoding != encoding ||
             (validator != null &&
                 block.validator != null &&
                 validator != block.validator)) {
+          await _discardChangedMedia(media);
           throw const HttpException('媒体已变化，请重新加载');
         }
         final offset = start - block.start;
@@ -1466,16 +1490,18 @@ class VideoDiskCache extends ChangeNotifier {
     _clearing = true;
     stopPrefetch();
     try {
-      await _diskTail;
-      final freed = bytes;
-      for (final row in _files.values) {
-        if (await row.file.exists()) await row.file.delete();
-      }
-      _files.clear();
-      bytes = 0;
-      _spaceChecked = null;
-      _diskAvailable = _root != null;
-      status = '播放磁盘缓存已清理';
+      var freed = 0;
+      await _disk(() async {
+        freed = bytes;
+        for (final row in _files.values) {
+          if (await row.file.exists()) await row.file.delete();
+        }
+        _files.clear();
+        bytes = 0;
+        _spaceChecked = null;
+        _diskAvailable = _root != null;
+        status = '播放磁盘缓存已清理';
+      });
       return freed;
     } finally {
       _clearing = false;
