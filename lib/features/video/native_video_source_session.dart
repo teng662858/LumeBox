@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import '../../core/bangumi/bangumi_sync.dart';
+import '../../core/cat/cat_web_parse.dart';
 import '../../core/media/playback_focus.dart';
 import '../../core/net/ios_verified_webview.dart';
 import '../../core/player/abstract_player.dart';
@@ -452,9 +453,7 @@ class NativeVideoSourceSession {
     if (revision != _resolution) return {'error': '此次取址已经取消'};
     if (current == null || (action == 'retry' && _media.isDownloaded)) {
       if (action != 'retry') return {'message': '此资源没有选集'};
-      final payload = await _payload(_media, resumeIdentity: _identity);
-      if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-      return {'media': payload};
+      return _retryCurrentMedia(revision);
     }
     SourceChapter? chosen;
     final selected = chapters
@@ -532,13 +531,27 @@ class NativeVideoSourceSession {
       if (local != null) {
         nextMedia = local.media(nextTarget.mediaTitle);
       } else {
-        final dataSource = await _source();
+        // Detail pages can start a single direct item without a resolver.
+        // Retry still prefers a fresh signed URL when the source supplies one.
+        final directRetry = action == 'retry' && current.chapterId == current.itemId &&
+            SourcePlayback.itemAddress(current.itemId) == _media.uri;
+        final DataSource? dataSource;
+        final ChapterContent? content;
+        try {
+          dataSource = await _source();
+          if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
+          if (dataSource == null && !directRetry) return {'error': '源不可用，请返回更新订阅后重试'};
+          content = await dataSource
+              ?.content(itemId: current.itemId, chapterId: chosen.id)
+              .timeout(const Duration(seconds: 15));
+        } on CatWebParseRequired {
+          rethrow;
+        } catch (_) {
+          if (!directRetry) rethrow;
+          return await _retryCurrentMedia(revision);
+        }
         if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-        if (dataSource == null) return {'error': '源不可用，请返回更新订阅后重试'};
-        final content = await dataSource
-            .content(itemId: current.itemId, chapterId: chosen.id)
-            .timeout(const Duration(seconds: 15));
-        if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
+        if (content == null && directRetry) return await _retryCurrentMedia(revision);
         if (content is! VideoContent) return {'error': '源没有返回可播放的媒体地址'};
         nextQualities = SourcePlayback.contentQualities(
           content,
@@ -578,6 +591,13 @@ class NativeVideoSourceSession {
     } finally {
       await local?.close();
     }
+  }
+
+  Future<Map<String, Object?>> _retryCurrentMedia(int revision) async {
+    if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
+    final payload = await _payload(_media, resumeIdentity: _identity);
+    if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
+    return {'media': payload};
   }
 
   Future<Map<String, Object?>> _danmaku() async {

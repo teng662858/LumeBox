@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/cat/cat_web_parse.dart';
 import 'package:lume_box/core/media/playback_focus.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/player_settings.dart';
@@ -609,6 +610,38 @@ void main() {
     expect(media?['position'], 17);
     expect(media?['url'], contains('/A1.'));
     expect(session.target?.chapterIndex, 0);
+  });
+  test('a direct catalog item can retry its original URL while its resolver is unavailable', () async {
+    const url = 'https://cdn.example/direct.mp4?ticket=first';
+    const headers = {'Authorization': 'Bearer fixture'};
+    await start(
+      target: const VideoPlayTarget(sourceId: 'fixture', itemId: url,
+        title: '电影', chapterIndex: 0, chapterId: url, chapterTitle: '正片'),
+      initialMedia: PlayerMedia(uri: Uri.parse(url), headers: headers),
+    );
+    await progress(19);
+    final first = source.blocked[url] = Completer<ChapterContent>();
+    final retry = request('retry');
+    while (!source.resolved.contains(url)) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    first.completeError(const SourceException(SourceErrorKind.callFailed, '无解析接口'));
+    final original = (await retry)['media'] as Map?;
+    expect(original?['url'], url);
+    expect(original?['headers'], headers);
+    expect(original?['position'], 19);
+    final web = source.blocked[url] = Completer<ChapterContent>();
+    final needsWeb = request('retry');
+    while (source.resolved.length < 2) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    web.completeError(CatWebParseRequired(Uri.parse('https://example.test/watch'), {}));
+    expect((await needsWeb)['media'], isNull);
+    source.blocked.remove(url);
+    final fresh = (await request('retry'))['media'] as Map;
+    expect(fresh['url'], endsWith('token=fresh'));
+    expect(fresh['headers'], {'Referer': 'https://example/'});
+    expect(fresh['position'], 19);
   });
   Future<File> stored(
     String id,
