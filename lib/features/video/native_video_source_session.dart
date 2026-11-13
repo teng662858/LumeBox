@@ -24,6 +24,11 @@ import 'video_play_target.dart';
 import 'video_player_settings.dart';
 import 'danmaku/danmaku_models.dart';
 
+typedef _EpisodeCatalog = ({
+  List<SourceChapter> chapters,
+  Map<String, int> indices,
+});
+
 /// Resolves source payloads and stores progress. Contains no decoder, frame
 /// ticker, gesture state, seek watchdog, PiP or automatic kernel recovery.
 class NativeVideoSourceSession {
@@ -59,6 +64,7 @@ class NativeVideoSourceSession {
   NativeVideoConnection? _connection;
   DataSource? _openedSource;
   List<SourceChapter>? _chapters;
+  Future<List<SourceChapter>>? _loadingChapters;
   final _targets = <String, VideoPlayTarget>{};
   final _saved = <String, double>{};
   bool _closed = false;
@@ -210,15 +216,7 @@ class NativeVideoSourceSession {
     return _openedSource ??= await manager?.open(target!.sourceId);
   }
 
-  Future<({List<SourceChapter> chapters, Map<String, int> indices})>
-  _catalog() async {
-    final current = target;
-    const noIndices = <String, int>{};
-    if (current == null) {
-      return (chapters: const <SourceChapter>[], indices: noIndices);
-    }
-    if (_chapters != null) return (chapters: _chapters!, indices: noIndices);
-    Object? failure;
+  Future<List<SourceChapter>> _remoteChapters(VideoPlayTarget current) async {
     try {
       final chapters = await _source()
           .then<List<SourceChapter>>(
@@ -227,19 +225,17 @@ class NativeVideoSourceSession {
                 : VideoEpisodeCatalog.load(dataSource, current.itemId),
           )
           .timeout(const Duration(seconds: 15));
-      if (chapters.isNotEmpty) {
-        _chapters = chapters;
-        return (chapters: chapters, indices: noIndices);
-      }
-    } catch (error) {
-      failure = error;
+      if (chapters.isNotEmpty && !_closed) _chapters = chapters;
+      return chapters;
+    } finally {
+      _loadingChapters = null;
     }
-    if ((source?.section ?? library.section) != Section.video) {
-      if (failure != null) throw failure;
-      return (chapters: const <SourceChapter>[], indices: noIndices);
-    }
+  }
+
+  Future<List<VideoDownloadTask>> _downloadedChapters(VideoPlayTarget current) async {
+    if ((source?.section ?? library.section) != Section.video) return [];
     await _downloads.boot();
-    final local = [
+    return [
       for (final task in _downloads.tasks.toList())
         if (task.sourceId == current.sourceId &&
             task.itemId == current.itemId &&
@@ -247,14 +243,86 @@ class NativeVideoSourceSession {
             await _downloads.localFile(task).exists())
           task,
     ]..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
-    if (local.isEmpty && failure != null) throw failure;
-    return (
+  }
+
+  Future<_EpisodeCatalog> _catalog(String action, Object? id) async {
+    final current = target;
+    if (current == null) {
+      return (chapters: const <SourceChapter>[], indices: const <String, int>{});
+    }
+    List<VideoDownloadTask> local = [];
+    try {
+      local = await _downloadedChapters(current);
+    } on Exception {
+      PlaybackDiagnostics.record('offline-lookup-failed', source: current.sourceId);
+    }
+    final here = local.where((t) => t.chapterId == current.chapterId).firstOrNull;
+    final offline = (
       chapters: [
         for (final t in local)
           SourceChapter(id: t.chapterId, title: t.chapterTitle, line: t.line),
       ],
       indices: {for (final t in local) t.chapterId: t.chapterIndex},
     );
+    final remote = _chapters;
+    final online = remote != null
+        ? Future.value(remote)
+        : _loadingChapters ??= _remoteChapters(current);
+    var available = online;
+    if (remote == null && _media.isDownloaded && here != null) {
+      final line = VideoEpisodeCatalog.forChapter(offline.chapters, here.chapterId);
+      final adjacent = here.chapterIndex + (action == 'next' ? 1 : -1);
+      final localAction = switch (action) {
+        'episode' => offline.indices.containsKey(id),
+        'next' || 'previous' =>
+          line.where((c) => offline.indices[c.id] == adjacent).length == 1,
+        'line' => VideoEpisodeCatalog.matchingIndex(
+          line.firstWhere((c) => c.id == here.chapterId),
+          offline.chapters.where((c) => VideoEpisodeCatalog.lineOf(c) == id).toList(),
+        ) >= 0,
+        _ => false,
+      };
+      if (localAction) {
+        online.ignore();
+        return offline;
+      }
+      if (action == 'episodes' || action == 'lines') {
+        // Include online choices when ready, without holding a local menu
+        // until the source's full network timeout.
+        available = online.timeout(const Duration(milliseconds: 250), onTimeout: () => []);
+      }
+    }
+    final List<SourceChapter> chapters;
+    try {
+      chapters = await available;
+    } catch (_) {
+      if (local.isEmpty) rethrow;
+      return offline;
+    }
+    if (chapters.isEmpty) return offline;
+    final ids = chapters.map((c) => c.id).toSet();
+    final missing = offline.chapters.where((c) => !ids.contains(c.id)).toList();
+    if (missing.isEmpty) return (chapters: chapters, indices: const <String, int>{});
+    final lines = VideoEpisodeCatalog.group(chapters);
+    final indices = {
+      for (final line in lines.values)
+        for (var i = 0; i < line.length; i++) line[i].id: i,
+      for (final c in missing) c.id: offline.indices[c.id]!,
+    };
+    for (final c in missing) {
+      (lines[VideoEpisodeCatalog.lineOf(c)] ??= []).add(c);
+    }
+    for (final line in lines.values) {
+      line.sort((a, b) {
+        final byIndex = indices[a.id]!.compareTo(indices[b.id]!);
+        if (byIndex != 0) return byIndex;
+        if (ids.contains(a.id) != ids.contains(b.id)) {
+          return ids.contains(a.id) ? -1 : 1;
+        }
+        return a.id.compareTo(b.id);
+      });
+    }
+    return (chapters: lines.values.expand((line) => line).toList(), indices: indices);
   }
 
   Future<Map<String, Object?>> _request(
@@ -339,7 +407,7 @@ class NativeVideoSourceSession {
     // prevent refreshing an expired media URL for the current episode.
     final catalog = action == 'retry'
         ? (chapters: const <SourceChapter>[], indices: const <String, int>{})
-        : await _catalog();
+        : await _catalog(action, arguments['id']);
     final chapters = catalog.chapters;
     if (_closed) return {'error': '播放会话已经关闭'};
     final current = target;
@@ -403,10 +471,15 @@ class NativeVideoSourceSession {
       final index = line.indexWhere((c) => c.id == current.chapterId);
       final next = index + (action == 'next' ? 1 : -1);
       if (catalog.indices.isNotEmpty && selected != null) {
-        final desired = current.chapterIndex + (action == 'next' ? 1 : -1);
-        chosen = line
+        final desired = catalog.indices[selected.id]! + (action == 'next' ? 1 : -1);
+        final adjacent = line
             .where((c) => catalog.indices[c.id] == desired)
-            .singleOrNull;
+            .toList();
+        chosen = adjacent.singleOrNull;
+        if (chosen == null && adjacent.isNotEmpty) {
+          final remoteIds = _chapters?.map((c) => c.id).toSet();
+          chosen = adjacent.where((c) => remoteIds?.contains(c.id) == true).singleOrNull;
+        }
       } else if (index >= 0 && next >= 0 && next < line.length) {
         chosen = line[next];
       }

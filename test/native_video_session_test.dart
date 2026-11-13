@@ -537,40 +537,40 @@ void main() {
     expect(media?['url'], contains('/A1.'));
     expect(session.target?.chapterIndex, 0);
   });
+  Future<File> stored(
+    String id,
+    int index,
+    String line,
+    String filename,
+  ) async {
+    final task = VideoDownloadTask(
+      id: VideoDownloadCenter.identity('fixture', 'show', id),
+      sourceId: 'fixture',
+      itemId: 'show',
+      chapterId: id,
+      title: '测试作品',
+      chapterTitle: '第${index + 1}集',
+      chapterIndex: index,
+      line: line,
+      state: 'done',
+      fileName: filename,
+    );
+    downloads.tasks.add(task);
+    await Directory(downloads.folder(task)).create(recursive: true);
+    final file = downloads.localFile(task);
+    if (filename.endsWith('.m3u8')) {
+      await file.writeAsString(
+        '#EXTM3U\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n',
+      );
+      await File.fromUri(file.uri.resolve('part.ts')).writeAsBytes([1, 2, 3]);
+    } else {
+      await file.writeAsBytes([4, 5, 6]);
+    }
+    return file;
+  }
+
   test('offline catalog switches downloaded episodes with original positions and releases HLS', () async {
     HttpOverrides.global = null;
-    Future<File> stored(
-      String id,
-      int index,
-      String line,
-      String filename,
-    ) async {
-      final task = VideoDownloadTask(
-        id: VideoDownloadCenter.identity('fixture', 'show', id),
-        sourceId: 'fixture',
-        itemId: 'show',
-        chapterId: id,
-        title: '测试作品',
-        chapterTitle: '第${index + 1}集',
-        chapterIndex: index,
-        line: line,
-        state: 'done',
-        fileName: filename,
-      );
-      downloads.tasks.add(task);
-      await Directory(downloads.folder(task)).create(recursive: true);
-      final file = downloads.localFile(task);
-      if (filename.endsWith('.m3u8')) {
-        await file.writeAsString(
-          '#EXTM3U\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n',
-        );
-        await File.fromUri(file.uri.resolve('part.ts')).writeAsBytes([1, 2, 3]);
-      } else {
-        await file.writeAsBytes([4, 5, 6]);
-      }
-      return file;
-    }
-
     await stored('A4', 3, 'A', 'index.m3u8');
     final third = await stored('A3', 2, 'A', 'merged.mp4');
     await stored('B1', 0, 'B', 'merged.mp4');
@@ -608,6 +608,49 @@ void main() {
       client.getUrl(uri).then((r) => r.close()),
       throwsA(isA<IOException>()),
     );
+  });
+  test('downloaded episodes switch immediately while the source catalog is stalled', () async {
+    final first = await stored('A1', 0, 'A', 'media.mp4');
+    final second = await stored('A2', 1, 'A', 'media.mp4');
+    final backup = await stored('B2', 1, 'B', 'media.mp4');
+    source.pendingCatalog = Completer<List<SourceChapter>>();
+    try {
+      await start(initialMedia: DownloadedVideoPlayback(first.uri).media('下载'));
+      final next = await request('next').timeout(const Duration(seconds: 2));
+      expect((next['media'] as Map)['url'], second.uri.toString());
+      final lines = await request('lines').timeout(const Duration(seconds: 2));
+      expect((lines['items'] as List).map((e) => e['id']), ['A', 'B']);
+      final switched = await request('line', {'id': 'B'}).timeout(const Duration(seconds: 2));
+      expect((switched['media'] as Map)['url'], backup.uri.toString());
+      expect(source.resolved, isEmpty);
+    } finally {
+      source.pendingCatalog!.complete(source.episodes);
+    }
+  });
+  test('the first menu in downloaded playback includes promptly available online episodes', () async {
+    final first = await stored('A1', 0, 'A', 'media.mp4');
+    await start(initialMedia: DownloadedVideoPlayback(first.uri).media('下载'));
+    final list = await request('episodes');
+    expect((list['items'] as List).map((e) => e['id']), ['A1', 'A2']);
+  });
+  test('a removed episode stays selectable from its local copy beside online episodes', () async {
+    final third = await stored('A3', 2, 'A', 'media.mp4');
+    await start();
+    final list = await request('episodes');
+    expect((list['items'] as List).map((e) => e['id']), ['A1', 'A2', 'A3']);
+    expect(((await request('next'))['media'] as Map)['url'], contains('/A2.'));
+    expect(((await request('next'))['media'] as Map)['url'], third.uri.toString());
+    expect(session.target?.chapterIndex, 2);
+    expect(source.resolved, ['A2']);
+  });
+  test('next follows the online catalog when an older download shares its index', () async {
+    final old = await stored('oldA2', 1, 'A', 'media.mp4');
+    await start();
+    final list = await request('episodes');
+    expect((list['items'] as List).map((e) => e['id']), ['A1', 'A2', 'oldA2']);
+    expect(((await request('next'))['media'] as Map)['url'], contains('/A2.'));
+    expect(((await request('episode', {'id': 'oldA2'}))['media'] as Map)['url'], old.uri.toString());
+    expect(source.resolved, ['A2']);
   });
   for (final uri in [
     Uri.parse('file:///downloads/movie.mp4'),
@@ -894,6 +937,8 @@ void main() {
 
 class _EmptyDownloads extends VideoDownloadCenter {
   @override
+  Future<void> boot() async {}
+  @override
   Future<DownloadedVideoPlayback?> completedPlayback(String sourceId, String itemId, String chapterId) async => null;
 }
 
@@ -902,6 +947,7 @@ class _Source extends MockDataSource implements DanmakuCapable {
   final blocked = <String, Completer<ChapterContent>>{};
   final resolved = <String>[];
   bool catalogOffline = false;
+  Completer<List<SourceChapter>>? pendingCatalog;
   @override
   String get id => 'fixture';
   List<SourceChapter> episodes = const [
@@ -912,7 +958,7 @@ class _Source extends MockDataSource implements DanmakuCapable {
   @override
   Future<List<SourceChapter>> chapters(String itemId) async {
     if (catalogOffline) throw StateError('catalog offline');
-    return episodes;
+    return pendingCatalog?.future ?? Future.value(episodes);
   }
 
   @override
