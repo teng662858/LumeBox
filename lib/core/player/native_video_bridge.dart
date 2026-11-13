@@ -42,12 +42,10 @@ class NativeVideoBridge {
     }
     if (call.method == 'request') {
       try {
-        return await session
-            .request(
-              data['action'] as String? ?? '',
-              Map<String, Object?>.from(data['arguments'] as Map? ?? const {}),
-            )
-            .timeout(const Duration(seconds: 20));
+        return await session.request(
+          data['action'] as String? ?? '',
+          Map<String, Object?>.from(data['arguments'] as Map? ?? const {}),
+        );
       } catch (error) {
         return <String, Object?>{'error': '$error'};
       }

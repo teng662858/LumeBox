@@ -111,6 +111,8 @@ class NativeVideoSourceSession {
       payload = await _payload(_media, position: position);
     }
     if (_closed) return;
+    if (current != null) _targets[_identity] = current;
+    _saved[_identity] = position;
     _connection = _bridge.connect(request: _request, event: _event);
     await _connection!.open(payload, {
       'kernel': _settings.kernel.name,
@@ -155,8 +157,6 @@ class NativeVideoSourceSession {
         inspect: true,
       );
     }
-    if (current != null) _targets[identity] = current;
-    _saved.putIfAbsent(identity, () => position);
     return {
       'url': prepared.uri.toString(),
       'sourceUrl': media.uri.toString(),
@@ -187,18 +187,30 @@ class NativeVideoSourceSession {
     Map<String, Object?> arguments,
   ) async {
     if (_closed) return {'error': '播放会话已经关闭'};
-    final revision =
-        {
-          'quality',
-          'episode',
-          'retry',
-          'next',
-          'previous',
-          'line',
-          'kernel',
-        }.contains(action)
-        ? ++_resolution
-        : _resolution;
+    final changesMedia = const {
+      'quality',
+      'episode',
+      'retry',
+      'next',
+      'previous',
+      'line',
+      'kernel',
+    }.contains(action);
+    final revision = changesMedia ? ++_resolution : _resolution;
+    return _resolve(action, arguments, revision).timeout(
+      const Duration(seconds: 20),
+      onTimeout: () {
+        if (changesMedia && revision == _resolution) _resolution++;
+        return {'error': '播放请求超时，请重试'};
+      },
+    );
+  }
+
+  Future<Map<String, Object?>> _resolve(
+    String action,
+    Map<String, Object?> arguments,
+    int revision,
+  ) async {
     if (action == 'kernel') {
       final kernel = arguments['id'] == 'mpv'
           ? PlayerKernel.mpv
@@ -281,12 +293,15 @@ class NativeVideoSourceSession {
         ],
       };
     }
+    if (revision != _resolution) return {'error': '此次取址已经取消'};
     if (current == null) {
-      return action == 'retry'
-          ? {'media': await _payload(_media, position: _saved[_identity] ?? 0)}
-          : {'message': '此资源没有选集'};
+      if (action != 'retry') return {'message': '此资源没有选集'};
+      final payload = await _payload(_media, position: _saved[_identity] ?? 0);
+      if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
+      return {'media': payload};
     }
     final dataSource = await _source();
+    if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
     if (dataSource == null) return {'error': '源不可用，请返回更新订阅后重试'};
     SourceChapter? chosen;
     final selected = chapters
@@ -351,15 +366,16 @@ class NativeVideoSourceSession {
           SourcePlayback.contentHeaders(content, source: dataSource),
       title: nextTarget.mediaTitle,
     );
+    final position = same ? _saved[_identity] ?? 0.0 : 0.0;
     final payload = await _payload(
       nextMedia,
       targetOverride: nextTarget,
-      position: same
-          ? _saved['${current.identity}:${current.chapterId}'] ?? 0
-          : 0,
+      position: position,
     );
     if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
     target = nextTarget;
+    _targets[_identity] = nextTarget;
+    if (nextTarget.chapterId != current.chapterId) _saved[_identity] = position;
     qualities = nextQualities;
     _media = nextMedia;
     return {'media': payload};

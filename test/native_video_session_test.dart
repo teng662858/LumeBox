@@ -470,6 +470,39 @@ void main() {
     expect((await old)['error'], contains('取消'));
     expect(session.target?.chapterId, 'B1');
   });
+  testWidgets(
+    'a media preparation that finishes after the request timeout cannot change the episode',
+    (tester) async {
+      final preparing = Completer<PlayerMedia>();
+      await tester.runAsync(
+        () => start(
+          prepare: (media, _) async =>
+              media.uri.path.contains('A2') ? preparing.future : media,
+        ),
+      );
+      final pending = request('next');
+      await tester.pump();
+      expect(source.resolved, contains('A2'));
+      await tester.pump(const Duration(seconds: 21));
+      expect((await pending)['error'], isNotNull);
+      preparing.complete(
+        PlayerMedia(uri: Uri.parse('https://example/late.mp4')),
+      );
+      await tester.pump();
+      expect(session.target?.chapterId, 'A1');
+    },
+  );
+
+  test(
+    'returning to an episode resets the position used by immediate retry',
+    () async {
+      await start();
+      await progress(41);
+      await request('next');
+      expect(((await request('previous'))['media'] as Map)['position'], 0);
+      expect(((await request('retry'))['media'] as Map)['position'], 0);
+    },
+  );
   test(
     'closing cancels a source completion and releases its runtime pin',
     () async {
