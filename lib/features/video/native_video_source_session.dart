@@ -149,6 +149,7 @@ class NativeVideoSourceSession {
   Future<Map<String, Object?>> _payload(
     PlayerMedia media, {
     double position = 0,
+    String? resumeIdentity,
     VideoPlayTarget? targetOverride,
     PlayerKernel? kernelOverride,
   }) async {
@@ -172,13 +173,16 @@ class NativeVideoSourceSession {
         inspect: true,
       );
     }
+    // Preparation may involve redirects and container probing while the old
+    // player is still advancing or accepting seeks.
+    final playhead = _saved[resumeIdentity] ?? position;
     return {
       'url': prepared.uri.toString(),
       'sourceUrl': media.uri.toString(),
       'headers': prepared.headers ?? const <String, String>{},
       'title': current?.mediaTitle ?? media.title ?? '播放',
       'identity': identity,
-      'position': position.isFinite ? position.clamp(0, 365 * 86400) : 0,
+      'position': playhead.isFinite ? playhead.clamp(0.0, 365.0 * 86400) : 0.0,
     };
   }
 
@@ -269,7 +273,7 @@ class NativeVideoSourceSession {
           : PlayerKernel.avplayer;
       final payload = await _payload(
         _media,
-        position: _saved[_identity] ?? 0,
+        resumeIdentity: _identity,
         kernelOverride: kernel,
       );
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
@@ -299,7 +303,7 @@ class NativeVideoSourceSession {
         headers: choice.headers,
         title: _media.title,
       );
-      final payload = await _payload(media, position: _saved[_identity] ?? 0);
+      final payload = await _payload(media, resumeIdentity: _identity);
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
       _media = media;
       _manualQuality = choice;
@@ -359,7 +363,7 @@ class NativeVideoSourceSession {
     if (revision != _resolution) return {'error': '此次取址已经取消'};
     if (current == null || (action == 'retry' && _media.isDownloaded)) {
       if (action != 'retry') return {'message': '此资源没有选集'};
-      final payload = await _payload(_media, position: _saved[_identity] ?? 0);
+      final payload = await _payload(_media, resumeIdentity: _identity);
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
       return {'media': payload};
     }
@@ -459,17 +463,16 @@ class NativeVideoSourceSession {
           title: nextTarget.mediaTitle,
         );
       }
-      final position = same ? _saved[_identity] ?? 0.0 : 0.0;
       final payload = await _payload(
         nextMedia,
         targetOverride: nextTarget,
-        position: position,
+        resumeIdentity: same ? _identity : null,
       );
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
       target = nextTarget;
       _targets[_identity] = nextTarget;
       if (nextTarget.chapterId != current.chapterId) {
-        _saved[_identity] = position;
+        _saved[_identity] = payload['position'] as double;
       }
       qualities = nextQualities;
       _media = nextMedia;

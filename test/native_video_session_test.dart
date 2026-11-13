@@ -708,6 +708,41 @@ void main() {
     expect(reply['position'], 18);
     expect(session.target?.chapterId, 'B1');
   });
+  for (final (action, arguments) in [
+    ('quality', <String, Object?>{'id': 0}),
+    ('line', <String, Object?>{'id': 'B'}),
+    ('retry', <String, Object?>{}),
+    ('kernel', <String, Object?>{'id': 'mpv'}),
+  ]) {
+    test('$action uses the most recent playhead when media preparation finishes', () async {
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      var switching = false;
+      await start(
+        qualities: [VideoQuality(label: '720p', url: Uri.parse('https://example.test/720.m3u8'))],
+        prepare: (media, _) async {
+          if (switching) {
+            entered.complete();
+            await release.future;
+          }
+          return media;
+        },
+      );
+      await progress(12);
+      switching = true;
+      final result = request(action, arguments);
+      await entered.future;
+      await progress(24, type: 'seek');
+      release.complete();
+      final media = (await result)['media'] as Map;
+      expect(media['position'], 24);
+      if (action == 'line') {
+        switching = false;
+        final retry = (await request('retry'))['media'] as Map;
+        expect(retry['position'], 24);
+      }
+    });
+  }
   test('stale source completions cannot replace a newer episode', () async {
     await start();
     final delayed = source.blocked['A2'] = Completer<ChapterContent>();
