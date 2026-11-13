@@ -186,6 +186,43 @@ void main() {
     expect(reopened.positions[resource.id]?['position'], 39000);
   });
 
+  for (final (String label, int? index, Duration? at, bool restart, int expectedIndex, int seconds) in [
+    ('自动续听', null, null, false, 2, 73),
+    ('指定章节续听', 2, null, false, 2, 73),
+    ('从头播放', 2, null, true, 2, 0),
+    ('书签', 1, const Duration(seconds: 19), false, 1, 19),
+  ]) {
+    test('读取进度暂时失败后重试会保留$label的位置', () async {
+      final fresh = AudioBookSettings();
+      final other = AudioBookSession(
+        factory: () => player, settings: fresh, initialize: () async {},
+      );
+      addTearDown(() async {
+        await other.shutdown();
+        other.dispose();
+      });
+      settings.chapterIds[resource.id] = 'c2';
+      settings.positions[resource.id] = {'index': 2, 'position': 73000};
+      await settings.save();
+      var available = false;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'), (_) async {
+          if (!available) throw PlatformException(code: 'unavailable');
+          return root.path;
+        },
+      );
+      await other.open(resource, tracks, index: index, initialPosition: at, restart: restart);
+      expect(other.error, isNotNull);
+      expect(player.loads, 0);
+      available = true;
+      await other.retry();
+      expect(other.error, isNull);
+      expect(other.current, expectedIndex);
+      expect(other.position, Duration(seconds: seconds));
+      expect(other.playing, true);
+    });
+  }
+
   test('failed loading can retry the same chapter and resume time', () async {
     settings.positions[resource.id] = {'index': 1, 'position': 47000};
     player.failLoads = 1;

@@ -363,6 +363,8 @@ class AudioBookSession extends ChangeNotifier {
   int _pauseRevision = 0;
   Future<void> _loads = Future.value();
   List<AudioBookTrack> _tracks = [];
+  // Until settings load, the visible index and time are only placeholders.
+  ({int? index, Duration? position, bool resume})? _pendingStart;
   bool _ready = false;
   bool _acceptEvents = false;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
@@ -431,11 +433,13 @@ class AudioBookSession extends ChangeNotifier {
   Future<void> retry() async {
     final entry = resource;
     if (entry == null || loading) return;
+    final start = _pendingStart;
     final task = load(
       entry,
       _tracks,
-      index: current,
-      initialPosition: position,
+      index: start == null ? current : start.index,
+      initialPosition: start == null ? position : start.position,
+      resume: start?.resume ?? false,
     );
     final generation = _generation;
     final pauseRevision = _pauseRevision;
@@ -480,6 +484,7 @@ class AudioBookSession extends ChangeNotifier {
         ? resource!.episodes[current].id
         : null;
     final wasReady = _ready;
+    _pendingStart = (index: requested, position: initialPosition, resume: restore);
     _ready = false;
     seeking = false;
     _seekFailed = false;
@@ -532,6 +537,7 @@ class AudioBookSession extends ChangeNotifier {
       position = resume;
       duration = Duration.zero;
       current = index;
+      _pendingStart = null;
       final policy = MediaPreload.instance;
       final configuration = '${policy.bufferSeconds}|${policy.capacityMb}';
       if (_player != null && _preloadConfiguration != configuration) {
