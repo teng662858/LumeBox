@@ -154,6 +154,18 @@ void main() {
       await restored.boot();
       final next = restored.tasks.single;
       expect(next.state, 'paused');
+      final playback = await restored.completedPlayback('source', 'movie', 'one');
+      expect(playback, isNotNull, reason: 'All HLS files survived the interrupted merge');
+      final client = HttpClient();
+      try {
+        final response = await (await client.getUrl(playback!.uri)).close();
+        expect(await response.transform(utf8.decoder).join(), contains('a.ts'));
+        final segment = await (await client.getUrl(playback.uri.resolve('a.ts'))).close();
+        expect(await segment.expand((bytes) => bytes).toList(), [1, 2, 3]);
+      } finally {
+        client.close(force: true);
+        await playback?.close();
+      }
       await restored.resume(next);
       await waitFor(() => next.state == 'done');
       await restored.flush();

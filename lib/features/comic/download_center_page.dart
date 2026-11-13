@@ -319,9 +319,7 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
                               onPressed: () => videos.resume(task),
                               child: const Text('合并为 MP4'),
                             ),
-                          if (!task.running &&
-                              (task.state == 'done' ||
-                                  task.hasLocalPlaylist)) ...[
+                          if (task.canPlayOffline) ...[
                             TextButton(
                               onPressed: _busy
                                   ? null

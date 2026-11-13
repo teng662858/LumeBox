@@ -282,6 +282,8 @@ void main() {
     expect(await restored.completedFile('s', 'i', 'e'), isNotNull);
     restored.dispose();
     task.state = 'paused';
+    expect(await c.completedFile('s', 'i', 'e'), isNotNull);
+    task.state = 'merging';
     expect(await c.completedFile('s', 'i', 'e'), isNull);
     task.state = 'done';
     await c.localFile(task).delete();

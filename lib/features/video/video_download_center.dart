@@ -65,6 +65,10 @@ class VideoDownloadTask {
   double bytesPerSecond = 0;
   bool get running => state == 'running' || state == 'merging';
   bool get hasLocalPlaylist => fileName.endsWith('.m3u8');
+  bool get canPlayOffline =>
+      fileName.isNotEmpty &&
+      (state == 'done' ||
+          hasLocalPlaylist && (state == 'paused' || state == 'merge_failed'));
   double? get progress => total > 0
       ? completed / total
       : totalBytes > 0
@@ -190,12 +194,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     await boot();
     final id = identity(sourceId, itemId, chapterId);
     final task = tasks
-        .where(
-          (t) =>
-              t.id == id &&
-              (t.state == 'done' || t.state == 'merge_failed') &&
-              t.fileName.isNotEmpty,
-        )
+        .where((t) => t.id == id && t.canPlayOffline)
         .firstOrNull;
     if (task == null) return null;
     final file = localFile(task);
