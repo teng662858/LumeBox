@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/cat/cat_data_source.dart';
 import 'package:lume_box/core/media/media_library.dart';
 import 'package:lume_box/core/media/media_resource_service.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
@@ -170,6 +171,40 @@ void main() {
     expect(fallback.media!.headers, {'Cookie': 'source-only'});
     expect(fallback.media!.isDownloaded, false);
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('旧猫源媒体条目从原板块续播，切集仍使用猫源管理器', (tester) async {
+    const source = 'sub|video|site';
+    const item = '["sub|video|site","show"]';
+    final oldId = MediaResource.sourceKey(Section.video, source, item);
+    final entry = MediaResource.fromJson({
+      'id': oldId, 'title': '旧猫源影片', 'kind': 'video', 'destination': 'video',
+      'manual': true, 'originSection': 'video', 'sourceId': source, 'itemId': item,
+      'episodes': [
+        for (final id in ['one', 'two']) {'id': id, 'title': id, 'url': 'https://cdn.test/$id.mp4'},
+      ],
+    });
+    final cat = (await tester.runAsync(() => ReadingLibrary.open(Section.cat)))!;
+    cat.saveProgress(VideoProgress(
+      section: Section.cat, sourceId: source, itemId: item, chapterId: 'two',
+      chapterIndex: 1, chapterTitle: '第二集', position: const Duration(seconds: 34),
+      duration: const Duration(minutes: 3), updatedAt: DateTime.now(),
+    ));
+    final observer = _PlaybackObserver();
+    await tester.pumpWidget(MaterialApp(navigatorObservers: [observer], home: Builder(
+      builder: (context) => TextButton(
+        onPressed: () => openMediaResource(context, entry, downloadCenter: downloads),
+        child: const Text('续播'),
+      ),
+    )));
+    await observer.tapAndWait(tester, '续播');
+    final page = tester.widget<VideoPlayerPage>(find.byType(VideoPlayerPage));
+    expect(page.target?.chapterId, 'two');
+    expect(page.library, same(cat));
+    expect(page.sourceManager, isA<CatAggregateSourceManager>());
+    expect(entry.id, oldId);
+    expect(entry.manual, true);
+    expect(MediaResource.sourceKey(Section.cat, source, item), oldId);
   });
 
   for (final explicit in [false, true]) {

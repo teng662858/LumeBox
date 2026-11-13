@@ -52,7 +52,7 @@ Future<void> openMediaResource(
   final route = ModalRoute.of(context);
   final library = sourced ? await ReadingLibrary.open(origin) : null;
   if (!context.mounted || route?.isCurrent == false) return;
-  final manager = sourced ? LumeSources.manager(origin) : null;
+  final manager = sourced ? MediaResourceService.sourceManager(origin) : null;
   var selected = index ?? 0;
   if (index == null && library != null) {
     final saved = library.videoProgress(itemId!, sourceId: sourceId);

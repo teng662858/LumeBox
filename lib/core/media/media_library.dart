@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../session/section.dart';
+import '../cat/cat_service.dart';
 import '../session/privacy_settings.dart';
 
 enum ResourceKind {
@@ -136,9 +137,13 @@ class MediaResource {
   final Section? originSection;
   final String? sourceId, itemId, cover;
   final List<ResourceEpisode> episodes;
-  static String sourceKey(Section section, String source, String item) => sha256
-      .convert(utf8.encode(jsonEncode([section.id, source, item])))
-      .toString();
+  static String sourceKey(Section section, String source, String item) {
+    // Listening positions and manual placement use this ID across app versions.
+    final keySection = section == Section.cat
+        ? CatSite.legacyMediaSection(source) ?? section
+        : section;
+    return sha256.convert(utf8.encode(jsonEncode([keySection.id, source, item]))).toString();
+  }
   MediaResource placed(ResourceKind kind, Section section) => MediaResource(
     id: id,
     title: title,
@@ -163,6 +168,15 @@ class MediaResource {
     'cover': cover,
     'manual': manual,
   };
+  static Section? _storedOrigin(Map data) {
+    final section = Section.values.where((s) => s.id == data['originSection']).firstOrNull;
+    final source = data['sourceId'] as String?;
+    if (source != null && section != null && section == CatSite.legacyMediaSection(source)) {
+      return Section.cat;
+    }
+    return section;
+  }
+
   static MediaResource fromJson(Map data) => MediaResource(
     id: data['id'] as String,
     title: data['title'] as String,
@@ -173,9 +187,7 @@ class MediaResource {
     episodes: (data['episodes'] as List)
         .map((e) => ResourceEpisode.fromJson(e as Map))
         .toList(),
-    originSection: Section.values
-        .where((s) => s.id == data['originSection'])
-        .firstOrNull,
+    originSection: _storedOrigin(data),
     sourceId: data['sourceId'] as String?,
     itemId: data['itemId'] as String?,
     cover: data['cover'] as String?,

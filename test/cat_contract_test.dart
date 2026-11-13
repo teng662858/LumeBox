@@ -7,6 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/cat/cat_service.dart';
 import 'package:lume_box/core/cat/cat_data_source.dart';
+import 'package:lume_box/core/media/media_library.dart';
+import 'package:lume_box/core/media/media_resource_service.dart';
+import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/cat/cat_preloader.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/features/video/video_download_center.dart';
@@ -237,7 +240,7 @@ void main() {
     expect(service.subscriptions, isEmpty);
   });
 
-  test('视频下载队列从猫源订阅取址，重启后仍可按原板块离线播放', () async {
+  test('猫源订阅在媒体库重新取址，并在下载队列重启后按原板块离线播放', () async {
     await service.closeForTesting();
     service = CatService.instance;
     final record = await service.add('下载测试', remoteBase.resolve('/source.js.md5').toString());
@@ -247,6 +250,20 @@ void main() {
     final chapters = CatDataSource.parseChapters({
       'vod_play_from': 'A', 'vod_play_url': r'第2集$episode-2',
     });
+    final library = MediaLibrary();
+    await library.boot(directory: root);
+    final resource = await MediaResourceService(library: library).source(
+      source: CatDataSource(service, site), item: SourceItem(id: item, title: '猫源音频'),
+      chapters: chapters, deferContent: true, hint: ResourceKind.audioBook,
+    );
+    expect(resource.originSection, Section.cat);
+    final persisted = MediaLibrary();
+    await persisted.boot(directory: root);
+    final saved = persisted.byId(resource.id)!;
+    final track = MediaResourceService(library: persisted).audioTracks(saved).single;
+    final resolved = await track.resolve!();
+    expect(resolved.url, nodeBase.resolve('/fixture.mp4'));
+    expect(resolved.headers['Referer'], 'https://site.example/watch');
     final queue = VideoDownloadCenter(directory: () async => root);
     await queue.enqueue(section: Section.cat, sourceId: site.id, itemId: item,
         title: '猫源下载', chapters: chapters);

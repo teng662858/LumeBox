@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 import '../source/source.dart';
+import '../cat/cat_data_source.dart';
+import '../cat/cat_service.dart';
+import '../session/section.dart';
 import '../net/waf.dart';
 import '../net/source_request_log.dart';
 import 'media_library.dart';
@@ -15,6 +18,10 @@ class MediaResourceService {
   }) : library = library ?? MediaLibrary.instance;
   final MediaTrackProbe probe;
   final MediaLibrary library;
+  static SourceManager sourceManager(Section section) => section == Section.cat
+      ? CatAggregateSourceManager(CatService.instance)
+      : LumeSources.manager(section);
+
   List<AudioBookTrack> audioTracks(
     MediaResource resource, {
     int? initialIndex,
@@ -88,7 +95,8 @@ class MediaResourceService {
     bool deferContent = false,
   }) async {
     await library.boot();
-    final id = MediaResource.sourceKey(source.section, source.id, item.id);
+    final origin = source is CatDataSource ? Section.cat : source.section;
+    final id = MediaResource.sourceKey(origin, source.id, item.id);
     final previous = library.byId(id);
     if (previous?.manual == true) {
       return library.add(
@@ -98,7 +106,7 @@ class MediaResourceService {
           kind: previous!.kind,
           destination: previous.destination,
           manual: true,
-          originSection: source.section,
+          originSection: origin,
           sourceId: source.id,
           itemId: item.id,
           cover: item.cover ?? previous.cover,
@@ -135,7 +143,7 @@ class MediaResourceService {
         title: item.title,
         kind: kind,
         destination: kind.defaultSection,
-        originSection: source.section,
+        originSection: origin,
         sourceId: source.id,
         itemId: item.id,
         cover: item.cover,
@@ -186,7 +194,7 @@ class MediaResourceService {
     if (section == null || sourceId == null || item == null) {
       throw StateError('缺少源引用');
     }
-    final source = await LumeSources.manager(section).open(sourceId);
+    final source = await sourceManager(section).open(sourceId);
     if (source == null) throw StateError('源不可用');
     final content = await source.content(itemId: item, chapterId: episode.id);
     final uri = address(content);

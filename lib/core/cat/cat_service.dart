@@ -109,6 +109,13 @@ class CatSite {
   final bool searchable;
   final String iconUrl, siteUrl;
   String get id => '$subscriptionId|$kind|$key';
+  // Older media entries used the site's content section in their persistent ID.
+  static final _siteId = RegExp(r'^[^|]+\|(video|comic|novel|live)\|.+');
+  static Section? legacyMediaSection(String sourceId) {
+    final kind = _siteId.firstMatch(sourceId)?.group(1);
+    if (kind == null) return null;
+    return kind == 'comic' ? Section.comic : Section.video;
+  }
   Map<String, dynamic> toJson() => {
     'key': key,
     'name': name,

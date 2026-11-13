@@ -184,7 +184,7 @@ class VideoDownloadCenter extends ChangeNotifier {
           continue;
         }
         // Older queues stored Cat site IDs but used the video folder hash.
-        final legacyCat = RegExp(r'^[^|]+\|(video|comic|novel|live)\|.+').hasMatch(source);
+        final legacyCat = CatSite.legacyMediaSection(source) != null;
         final section = m['section'] == null
             ? (legacyCat ? Section.cat : Section.video)
             : sectionFromId('${m['section']}');

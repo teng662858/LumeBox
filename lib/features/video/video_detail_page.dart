@@ -330,7 +330,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         sourceId: _source?.id ?? widget.sourceId,
       );
       final audioEntry = MediaLibrary.instance.byId(
-        MediaResource.sourceKey(source.section, source.id, widget.item.id),
+        MediaResource.sourceKey(widget.library.section, source.id, widget.item.id),
       );
       String? audioChapterId;
       if (audioEntry?.kind == ResourceKind.audioBook) {
@@ -571,7 +571,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       await MediaLibrary.instance.boot();
       if (!mounted || route?.isCurrent == false) return;
       final known = MediaLibrary.instance.byId(
-        MediaResource.sourceKey(_source!.section, _source!.id, widget.item.id),
+        MediaResource.sourceKey(widget.library.section, _source!.id, widget.item.id),
       );
       if (known?.kind == ResourceKind.audioBook) {
         final entry = await MediaResourceService().source(
@@ -641,7 +641,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       }
       if (!mounted || route?.isCurrent == false) return;
       final saved = MediaLibrary.instance.byId(
-        MediaResource.sourceKey(_source!.section, _source!.id, widget.item.id),
+        MediaResource.sourceKey(widget.library.section, _source!.id, widget.item.id),
       );
       if (content is TextContent || content is ImageContent) {
         setState(
