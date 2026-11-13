@@ -220,10 +220,11 @@ class AudioBookProxy {
         final encoding = response.headers['content-encoding']
             ?.trim()
             .toLowerCase();
+        final rejectedRange = const [400, 403, 405].contains(response.statusCode) ||
+            response.statusCode == 416 && response.headers['content-range'] == null;
         if (upstream.headers.containsKey('range') &&
-            [206, 416].contains(response.statusCode) &&
-            encoding != null &&
-            encoding != 'identity') {
+            (rejectedRange || [206, 416].contains(response.statusCode) &&
+                encoding != null && encoding != 'identity')) {
           await response.stream.listen(null).cancel();
           ignoreRange = true;
           continue;
@@ -327,6 +328,18 @@ class AudioBookProxy {
       } else {
         request.response.statusCode = response.statusCode;
         request.response.headers.set('Content-Type', type);
+        final length = response.contentLength;
+        if (!encoded && response.statusCode == 200 && range != null && length != null) {
+          final offsets = _responseRange(request, length);
+          if (offsets == null || request.method == 'HEAD') {
+            await response.stream.listen(null).cancel();
+          } else {
+            await request.response.addStream(_slice(body.timeout(const Duration(seconds: 30)),
+                offsets.start, offsets.end));
+          }
+          await request.response.close();
+          return;
+        }
         if (!encoded) {
           for (final name in ['content-range', 'accept-ranges']) {
             final value = response.headers[name];
@@ -361,7 +374,21 @@ class AudioBookProxy {
     }
   }
 
-  // Both local files and rewritten playlists support ranges of their served bytes.
+  // Stream a requested range from a complete upstream response. Stop reading
+  // as soon as the last requested byte has been sent.
+  static Stream<List<int>> _slice(Stream<List<int>> body, int start, int end) async* {
+    var offset = 0;
+    await for (final chunk in body) {
+      final next = offset + chunk.length;
+      if (next > start && chunk.isNotEmpty) {
+        yield chunk.sublist(max(0, start - offset), min(chunk.length, end - offset));
+      }
+      if (next >= end) return;
+      offset = next;
+    }
+    throw const HttpException('音频响应未达到请求的字节范围');
+  }
+
   ({int start, int end})? _responseRange(HttpRequest request, int size) {
     var start = 0, end = size;
     request.response.headers.set('Accept-Ranges', 'bytes');

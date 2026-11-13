@@ -336,6 +336,51 @@ void main() {
       },
     );
   }
+  for (final rangeStatus in [200, 403, 416]) {
+    test('remote audio seek serves exact bytes when Range gets HTTP $rangeStatus', () async {
+      final bytes = List<int>.generate(256, (i) => i);
+      final origin = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final proxy = AudioBookProxy();
+      final client = http.Client();
+      addTearDown(() async {
+        client.close();
+        await proxy.close();
+        await origin.close(force: true);
+      });
+      origin.listen((request) async {
+        if (request.headers.value('range') != null && rangeStatus != 200) {
+          request.response.statusCode = rangeStatus;
+        } else {
+          request.response.headers.contentType = ContentType('audio', 'mpeg');
+          request.response.contentLength = bytes.length;
+          if (request.method == 'GET') {
+            request.response.add(bytes.sublist(0, 100));
+            await request.response.flush();
+            request.response.add(bytes.sublist(100));
+          }
+        }
+        await request.response.close();
+      });
+      final uri = (await proxy.prepare([AudioBookTrack(
+        id: 'remote', album: 'Book', episode: ResourceEpisode(id: 'e', title: 'E',
+          url: Uri.parse('http://127.0.0.1:${origin.port}/chapter.mp3')),
+      )])).single;
+      final part = await client.get(uri, headers: {'Range': 'bytes=90-109'});
+      expect(part.statusCode, 206);
+      expect(part.headers['content-range'], 'bytes 90-109/256');
+      expect(part.bodyBytes, bytes.sublist(90, 110));
+      final tail = await client.get(uri, headers: {'Range': 'bytes=-8'});
+      expect(tail.bodyBytes, bytes.sublist(248));
+      final head = await client.head(uri, headers: {'Range': 'bytes=100-'});
+      expect(head.statusCode, 206);
+      expect(head.headers['content-length'], '156');
+      expect(head.bodyBytes, isEmpty);
+      final invalid = await client.get(uri, headers: {'Range': 'bytes=256-'});
+      expect(invalid.statusCode, 416);
+      expect(invalid.headers['content-range'], 'bytes */256');
+    });
+  }
+
   test('audio server refusal is recorded and reset for a new queue', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
