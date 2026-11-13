@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -15,6 +16,46 @@ import 'package:lume_box/features/video/video_download_center.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
 
 void main() {
+  testWidgets('退出下载中心的动画期间离线地址就绪不会再打开播放器', (tester) async {
+    final root = Directory.systemTemp.createTempSync('offline-back-');
+    final videos = _DelayedVideoCenter(root);
+    final comics = ComicDownloadCenter(directory: () async => root);
+    const paths = MethodChannel('plugins.flutter.io/path_provider');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(paths, (_) async => root.path);
+    addTearDown(() async {
+      messenger.setMockMethodCallHandler(paths, null);
+      ReadingLibrary.disposeAll();
+      ReadingStore.disposeAll();
+      await SectionScope.closeAll();
+      videos.dispose();
+      comics.dispose();
+      root.deleteSync(recursive: true);
+    });
+    await tester.runAsync(() async {
+      await videos.boot();
+      await comics.boot();
+      await ReadingLibrary.open(Section.video);
+    });
+    videos.tasks.add(VideoDownloadTask(
+      id: 'fixture', sourceId: 's', itemId: 'i', chapterId: 'c',
+      title: '影片', chapterTitle: '正片', state: 'done', fileName: 'media.mp4',
+    ));
+    final nav = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(navigatorKey: nav, home: const Scaffold(body: Text('首页'))));
+    nav.currentState!.push(MaterialPageRoute<void>(builder: (_) =>
+        DownloadCenterPage(center: comics, videoCenter: videos)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('离线播放'));
+    expect(videos.started.isCompleted, true);
+    nav.currentState!.pop();
+    final local = _TrackedPlayback();
+    videos.pending.complete(local);
+    await tester.pumpAndSettle();
+    expect(find.byType(VideoPlayerPage), findsNothing);
+    expect(find.text('首页'), findsOneWidget);
+    expect(local.closed, true);
+  });
   testWidgets('manual selection returns only chosen episodes in order', (
     tester,
   ) async {
@@ -166,4 +207,24 @@ void main() {
       root.deleteSync(recursive: true);
     },
   );
+}
+
+class _DelayedVideoCenter extends VideoDownloadCenter {
+  _DelayedVideoCenter(Directory root) : super(directory: () async => root);
+  final started = Completer<void>();
+  final pending = Completer<DownloadedVideoPlayback?>();
+
+  @override
+  Future<DownloadedVideoPlayback?> completedPlayback(String sourceId, String itemId, String chapterId,
+      {Section section = Section.video}) {
+    started.complete();
+    return pending.future;
+  }
+}
+
+class _TrackedPlayback extends DownloadedVideoPlayback {
+  _TrackedPlayback() : super(Uri.file('/fixture/media.mp4'));
+  bool closed = false;
+  @override
+  Future<void> close() async { closed = true; }
 }

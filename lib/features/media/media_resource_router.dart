@@ -48,7 +48,9 @@ Future<void> openMediaResource(
       sourceId = entry.sourceId,
       itemId = entry.itemId;
   final sourced = origin != null && sourceId != null && itemId != null;
+  final route = ModalRoute.of(context);
   final library = sourced ? await ReadingLibrary.open(origin) : null;
+  if (!context.mounted || route?.isCurrent == false) return;
   final manager = sourced ? LumeSources.manager(origin) : null;
   var selected = index ?? 0;
   if (index == null && library != null) {
@@ -76,8 +78,10 @@ Future<void> openMediaResource(
   var media = initialMedia;
   if (media == null && episode.url == null && sourced) {
     source = await manager!.open(sourceId);
+    if (!context.mounted || route?.isCurrent == false) return;
     if (source == null) throw StateError('源不可用');
     final content = await source.content(itemId: itemId, chapterId: episode.id);
+    if (!context.mounted || route?.isCurrent == false) return;
     if (content is! VideoContent) throw StateError('源没有返回视频地址');
     qualities = SourcePlayback.contentQualities(content, source: source);
     final quality = PlaybackQualityPreference.select(
@@ -92,7 +96,7 @@ Future<void> openMediaResource(
     );
   }
   media ??= await service.resolve(entry, episode);
-  if (!context.mounted) return;
+  if (!context.mounted || route?.isCurrent == false) return;
   final playback = PlayerMedia(
     uri: media.url,
     headers: media.headers,
@@ -102,9 +106,9 @@ Future<void> openMediaResource(
     playback,
     library: library,
     target: target,
-    stillActive: () => context.mounted,
+    stillActive: () => context.mounted && route?.isCurrent != false,
   );
-  if (!context.mounted) {
+  if (!context.mounted || route?.isCurrent == false) {
     await prepared?.discard();
     return;
   }

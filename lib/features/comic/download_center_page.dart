@@ -90,17 +90,19 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
   }
 
   Future<void> _play(VideoDownloadTask task) async {
+    final route = ModalRoute.of(context);
     final playback = await videos.completedPlayback(
       task.sourceId,
       task.itemId,
       task.chapterId,
       section: task.section,
     );
-    if (playback == null) throw StateError('本地文件不存在，请重新下载');
     try {
-      if (!mounted) return;
+      if (!mounted || route?.isCurrent == false) return;
+      if (playback == null) throw StateError('本地文件不存在，请重新下载');
       final media = playback.media('${task.title} · ${task.chapterTitle}');
       final library = await ReadingLibrary.open(task.section);
+      if (!mounted || route?.isCurrent == false) return;
       final target = VideoPlayTarget(
         sourceId: task.sourceId,
         itemId: task.itemId,
@@ -113,9 +115,9 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
         media,
         library: library,
         target: target,
-        stillActive: () => mounted,
+        stillActive: () => mounted && route?.isCurrent != false,
       );
-      if (!mounted) {
+      if (!mounted || route?.isCurrent == false) {
         await prepared?.discard();
         return;
       }
@@ -132,7 +134,7 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
         ),
       );
     } finally {
-      await playback.close();
+      await playback?.close();
     }
   }
 

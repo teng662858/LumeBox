@@ -66,6 +66,29 @@ void main() {
           throw StateError('Legacy Dart engine must not be created'),
     ),
   );
+  testWidgets('从媒体库返回后，刚解析好的本地视频不会再弹出播放器', (tester) async {
+    final navigator = GlobalKey<NavigatorState>();
+    final entry = MediaResource(
+      id: 'file', title: '本地视频', kind: ResourceKind.video,
+      destination: Section.video,
+      episodes: [ResourceEpisode(id: 'one', title: '正片', url: Uri.file('/fixture.mp4'))],
+    );
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: navigator, home: const Scaffold(body: Text('首页')),
+    ));
+    late BuildContext origin;
+    navigator.currentState!.push(MaterialPageRoute<void>(builder: (context) {
+      origin = context;
+      return const Scaffold(body: Text('媒体库'));
+    }));
+    await tester.pumpAndSettle();
+    final opening = openMediaResource(origin, entry);
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(VideoPlayerPage), findsNothing);
+    expect(find.text('首页'), findsOneWidget);
+    await opening;
+  });
   for (final explicit in [false, true]) {
     testWidgets('media library retains source identity and selected chapter (explicit=$explicit)', (tester) async {
       library.saveProgress(VideoProgress(
