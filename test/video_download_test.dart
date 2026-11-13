@@ -777,6 +777,8 @@ void main() {
             '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="other",NAME="Other",URI="unused.m3u8"',
             '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="English",INSTREAM-ID="CC1"',
             '#EXT-X-STREAM-INF:SUBTITLES="subs",BANDWIDTH=100,AUDIO="main",CLOSED-CAPTIONS="cc"',
+            '# video rendition',
+            '',
             'video.m3u8',
           ].join('\n'),
         );
@@ -794,6 +796,7 @@ void main() {
     final task = c.tasks.single;
     await until(() => ['failed', 'merge_failed'].contains(task.state));
     await c.flush();
+    expect(task.state, 'merge_failed', reason: task.error);
     final master = await c.localFile(task).readAsString();
     expect(master, contains('NAME="Original",DEFAULT=YES'));
     expect(master, contains('NAME="English, dubbed"'));

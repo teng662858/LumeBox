@@ -130,4 +130,14 @@ medium.m3u8
     expect(result, contains('https://cdn.example/b.m3u8'));
     expect(result, isNot(contains('/a.m3u8')));
   });
+  test('画质选择忽略标签与地址之间的空行和注释', () {
+    final selected = HighestHls.singleRendition(
+      '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=10\n# low\nlow.m3u8\n'
+      '#EXT-X-STREAM-INF:BANDWIDTH=20\n\n# high\nhigh.m3u8\n',
+      Uri.parse('https://cdn.example/master.m3u8'),
+    );
+    expect(selected, contains('https://cdn.example/high.m3u8'));
+    expect(selected, isNot(contains('low.m3u8')));
+    expect(selected, isNot(contains('BANDWIDTH=10')));
+  });
 }

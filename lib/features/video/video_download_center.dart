@@ -24,6 +24,7 @@ import '../../core/player/abstract_player.dart';
 import '../../core/player/apple_hls_fragments.dart';
 import '../../core/player/hls_ad_filter.dart';
 import '../../core/player/hls_attributes.dart';
+import '../../core/player/hls_variants.dart';
 import '../../core/player/video_disk_cache.dart';
 import 'video_download_merger.dart';
 import 'offline_video_server.dart';
@@ -901,15 +902,17 @@ class VideoDownloadCenter extends ChangeNotifier {
     final lines = const LineSplitter().convert(body);
     final variants =
         <({Map<String, String> attributes, String url, int bandwidth})>[];
-    for (var i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith('#EXT-X-STREAM-INF:') && i + 1 < lines.length) {
-        final attributes = hlsRawAttributes(lines[i]);
-        variants.add((
-          attributes: attributes,
-          url: lines[i + 1].trim(),
-          bandwidth: int.tryParse(attributes['BANDWIDTH'] ?? '') ?? 0,
-        ));
-      }
+    for (final pair in hlsVariants(lines)) {
+      final attributes = hlsRawAttributes(lines[pair.tag]);
+      variants.add((
+        attributes: attributes,
+        url: lines[pair.uri].trim(),
+        bandwidth: int.tryParse(attributes['BANDWIDTH'] ?? '') ?? 0,
+      ));
+    }
+    if (variants.isEmpty &&
+        lines.any((line) => line.trimLeft().startsWith('#EXT-X-STREAM-INF:'))) {
+      throw StateError('播放清单缺少画质线路地址');
     }
     if (variants.isNotEmpty) {
       variants.sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
@@ -922,7 +925,8 @@ class VideoDownloadCenter extends ChangeNotifier {
         final media = hlsRawAttributes(line);
         final type = media['TYPE'];
         if (type != 'AUDIO' && type != 'CLOSED-CAPTIONS') continue;
-        if (media['GROUP-ID'] == null || media['GROUP-ID'] != attributes[type]) {
+        if (media['GROUP-ID'] == null ||
+            media['GROUP-ID'] != attributes[type]) {
           continue;
         }
         final rawUri = media['URI'];

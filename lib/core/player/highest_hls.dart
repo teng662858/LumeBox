@@ -1,4 +1,5 @@
 import 'playback_presentation.dart';
+import 'hls_variants.dart';
 
 import 'dart:convert';
 import 'dart:io';
@@ -25,8 +26,9 @@ class HighestHls {
     final lines = text.split('\n').map((line) => line.trim()).toList();
     final variants =
         <({int index, int height, int bandwidth, bool hdr, bool dolby})>[];
-    for (var i = 0; i + 1 < lines.length; i++) {
-      if (!lines[i].startsWith('#EXT-X-STREAM-INF:')) continue;
+    final pairs = hlsVariants(lines).toList();
+    for (final pair in pairs) {
+      final i = pair.tag;
       final height =
           int.tryParse(
             RegExp(r'RESOLUTION=\d+x(\d+)').firstMatch(lines[i])?.group(1) ??
@@ -41,28 +43,25 @@ class HighestHls {
                 '',
           ) ??
           0;
-      if (lines[i + 1].isNotEmpty && !lines[i + 1].startsWith('#')) {
-        final dolby = RegExp(
-          r'(?:dvh1|dvhe)',
-          caseSensitive: false,
-        ).hasMatch(lines[i]);
-        final hdr =
-            dolby ||
-            RegExp(
-              r'VIDEO-RANGE=(PQ|HLG)',
-              caseSensitive: false,
-            ).hasMatch(lines[i]);
-        variants.add((
-          index: i,
-          height: height,
-          bandwidth: bandwidth,
-          hdr: hdr,
-          dolby: dolby,
-        ));
-      }
+      final dolby = RegExp(
+        r'(?:dvh1|dvhe)',
+        caseSensitive: false,
+      ).hasMatch(lines[i]);
+      final hdr =
+          dolby ||
+          RegExp(
+            r'VIDEO-RANGE=(PQ|HLG)',
+            caseSensitive: false,
+          ).hasMatch(lines[i]);
+      variants.add((
+        index: i,
+        height: height,
+        bandwidth: bandwidth,
+        hdr: hdr,
+        dolby: dolby,
+      ));
     }
     if (variants.length < 2) return null;
-    final indices = variants.map((v) => v.index).toSet();
     final p = presentation;
     if (p != null) {
       // Prefer compatible alternatives, but retain single-format streams for tone mapping.
@@ -91,12 +90,13 @@ class HighestHls {
       return resolution != 0 ? resolution : b.bandwidth.compareTo(a.bandwidth);
     });
     final selected = variants.first.index;
+    final excluded = {
+      for (final pair in pairs)
+        if (pair.tag != selected) ...[pair.tag, pair.uri],
+    };
     final result = <String>[];
     for (var i = 0; i < lines.length; i++) {
-      if (indices.contains(i) && i != selected) {
-        i++;
-        continue;
-      }
+      if (excluded.contains(i)) continue;
       var line = lines[i];
       if (line.startsWith('#EXT-X-I-FRAME-STREAM-INF:')) continue;
       if (line.startsWith('#')) {
