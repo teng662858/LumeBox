@@ -61,6 +61,7 @@ Future<void> openMediaResource(
       MaterialPageRoute<void>(
         builder: (_) => VideoPlayerPage(
           media: playback,
+          initialPosition: position,
           prelaunch: prepared,
           title: entry.title,
         ),

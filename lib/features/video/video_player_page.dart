@@ -25,6 +25,7 @@ class VideoPlayerPage extends StatefulWidget {
   const VideoPlayerPage({
     super.key,
     this.media,
+    this.initialPosition,
     this.title,
     this.target,
     this.sourceId,
@@ -47,6 +48,7 @@ class VideoPlayerPage extends StatefulWidget {
   });
 
   final PlayerMedia? media;
+  final Duration? initialPosition;
   final String? title, sourceId;
   final VideoPlayTarget? target;
   final List<VideoQuality> qualities;
@@ -106,6 +108,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       if (_disposed) return;
       final session = NativeVideoSourceSession(
         media: media,
+        initialPosition: widget.initialPosition,
         library: library,
         target: widget.target,
         source: widget.source,

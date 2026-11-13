@@ -28,6 +28,7 @@ class NativeVideoSourceSession {
     required PlayerMedia media,
     required this.library,
     this.target,
+    this.initialPosition,
     this.source,
     this.manager,
     this.qualities = const [],
@@ -39,6 +40,7 @@ class NativeVideoSourceSession {
        _bridge = bridge ?? NativeVideoBridge.shared;
 
   final ReadingLibrary library;
+  final Duration? initialPosition;
   final DataSource? source;
   final SourceManager? manager;
   final Future<PlayerMedia> Function(PlayerMedia, bool)? prepareMedia;
@@ -90,8 +92,8 @@ class NativeVideoSourceSession {
       );
     }
     final current = target;
-    var position = 0.0;
-    if (current != null) {
+    var position = (initialPosition?.inMilliseconds ?? 0) / 1000;
+    if (initialPosition == null && current != null) {
       final saved = library.videoEpisodeProgress(
         current.itemId,
         current.chapterId,

@@ -264,6 +264,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
           final uri = selected?.url ?? SourcePlayback.contentAddress(content);
           if (uri == null) throw StateError('没有播放地址');
           screen = VideoPlayerPage(
+            initialPosition: seconds == null ? null : Duration(seconds: seconds),
             media: PlayerMedia(
               uri: uri,
               headers:
@@ -285,23 +286,6 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
             ),
             qualities: qualities,
           );
-          if (seconds != null) {
-            lib.saveProgress(
-              VideoProgress(
-                section: ref.section,
-                sourceId: ref.source,
-                itemId: ref.item,
-                chapterIndex: index,
-                chapterId: chapters[index].id,
-                chapterTitle: chapters[index].title,
-                updatedAt: DateTime.now(),
-                position: Duration(seconds: seconds),
-                duration: progress is VideoProgress
-                    ? progress.duration
-                    : Duration.zero,
-              ),
-            );
-          }
         }
       }
     }

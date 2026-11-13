@@ -84,10 +84,12 @@ void main() {
   Future<void> start({
     VideoPlayTarget? target,
     PlayerMedia? initialMedia,
+    Duration? initialPosition,
     List<VideoQuality> qualities = const [],
     Future<PlayerMedia> Function(PlayerMedia, bool)? prepare,
   }) async {
     session = NativeVideoSourceSession(
+      initialPosition: initialPosition,
       media:
           initialMedia ??
           PlayerMedia(
@@ -291,6 +293,19 @@ void main() {
       );
     },
   );
+  for (final incognito in [false, true]) {
+    test('a bookmark near the end opens at its timestamp without rewriting history (incognito=$incognito)', () async {
+      await start();
+      await progress(35);
+      await session.close();
+      library.setSetting('history.incognito', '$incognito');
+      await start(initialPosition: const Duration(seconds: 98));
+      expect((opened['media'] as Map)['position'], 98);
+      expect(library.videoEpisodeProgress('show', 'A1', sourceId: 'fixture')?.position,
+          const Duration(seconds: 35));
+    });
+  }
+
   test('an explicit seek to zero updates retry and history, while startup zero preserves them', () async {
     await start();
     await progress(35);
