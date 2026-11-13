@@ -259,13 +259,14 @@ class VideoDiskCache extends ChangeNotifier {
     if (path.endsWith('.ts')) return 'video/mp2t';
     if (path.endsWith('.vtt') || path.endsWith('.webvtt')) return 'text/vtt';
     if (path.endsWith('.aac')) return 'audio/aac';
+    if (path.endsWith('.mp3')) return 'audio/mpeg';
     if (path.endsWith('.ac3')) return 'audio/ac3';
     if (path.endsWith('.ec3') || path.endsWith('.eac3')) return 'audio/eac3';
     return original ?? 'application/octet-stream';
   }
 
   static bool _packedAudio(String path) =>
-      const ['.aac', '.ac3', '.ec3', '.eac3'].any(path.endsWith);
+      const ['.aac', '.ac3', '.ec3', '.eac3', '.mp3'].any(path.endsWith);
 
   static bool _isHlsAudioSegment(String path) =>
       path.contains('.hls.') && _packedAudio(path);
@@ -1393,7 +1394,6 @@ class VideoDiskCache extends ChangeNotifier {
             '.webvtt',
             '.webm',
             '.mov',
-            '.mp3',
             '.m4a',
           ].any(path.endsWith) ||
           _packedAudio(path);

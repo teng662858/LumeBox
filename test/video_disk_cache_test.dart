@@ -478,11 +478,14 @@ void main() {
       expect(utf8.decode(slice.$2), 'WEBVTT');
     });
   }
-  for (final (extension, type) in [('aac', 'audio/aac'), ('ac3', 'audio/ac3'), ('ec3', 'audio/eac3')]) {
+  for (final (extension, type) in [('aac', 'audio/aac'), ('ac3', 'audio/ac3'), ('ec3', 'audio/eac3'), ('mp3', 'audio/mpeg')]) {
     test('HLS packed $extension audio can play from a server that rejects Range', () async {
       final track = await cache.wrap(PlayerMedia(uri: upstream.resolve('/audio-track/main.m3u8?ext=$extension')));
       final playlist = utf8.decode((await get(track.uri)).$2);
       final uri = Uri.parse(const LineSplitter().convert(playlist).firstWhere((line) => !line.startsWith('#')));
+      final coldProbe = await get(uri, 'bytes=0-1');
+      expect(coldProbe.$1.statusCode, 206);
+      expect(coldProbe.$2, data.take(2));
       final initial = await get(uri);
       expect(initial.$1.contentLength, 128, reason: 'finite audio must have an unambiguous EOF');
       final probe = await get(uri, 'bytes=4-15');
