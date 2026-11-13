@@ -940,7 +940,7 @@ class VideoDiskCache extends ChangeNotifier {
       return;
     }
     final encoding = first.header('content-encoding');
-    final validator = first.header('etag') ?? first.header('last-modified');
+    String? validator;
     var offset = 0;
     int? total;
     var part = first;
@@ -950,6 +950,7 @@ class VideoDiskCache extends ChangeNotifier {
         await part.listen(null).cancel();
         throw const HttpException('视频分片已变化');
       }
+      validator ??= nextValidator;
       if (offset > 0 && part.statusCode == 416 && total == null &&
           part.header('content-range') == 'bytes */$offset') {
         await part.listen(null).cancel();
@@ -1586,7 +1587,7 @@ class VideoDiskCache extends ChangeNotifier {
       response.contentLength = end - start + 1;
       if (request.method == 'HEAD') return;
       final total = block.total;
-      final validator = block.validator;
+      var validator = block.validator;
       final encoding = block.encoding;
       start += prefixBytes;
       final physicalEnd = end + prefixBytes;
@@ -1601,6 +1602,7 @@ class VideoDiskCache extends ChangeNotifier {
           await _discardChangedMedia(media);
           throw const HttpException('媒体已变化，请重新加载');
         }
+        validator ??= block.validator;
         final offset = start - block.start;
         final length = min(block.data.length - offset, physicalEnd - start + 1);
         if (length <= 0) throw const HttpException('媒体代理没有返回后续数据');

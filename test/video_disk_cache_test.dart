@@ -401,9 +401,11 @@ void main() {
         final match = RegExp(r'bytes=(\d+)-(\d*)')
             .firstMatch(request.headers.value('range') ?? '');
         final start = match == null ? 0 : int.parse(match[1]!);
-        final oldVersion = request.uri.path == '/replaced.mp4' &&
-            paths.where((p) => p == '/replaced.mp4').length == 1;
-        if (request.uri.path == '/replaced.mp4') {
+        final replacement = request.uri.path == '/replaced.mp4';
+        final lateTag = request.uri.query == 'late';
+        final revisionRequest = paths.where((p) => p == '/replaced.mp4').length;
+        final oldVersion = replacement && revisionRequest <= (lateTag ? 2 : 1);
+        if (replacement && (!lateTag || revisionRequest > 1)) {
           request.response.headers.set('ETag', oldVersion ? '"old"' : '"new"');
         }
         if (request.uri.path == '/expires.mp4' &&
@@ -817,28 +819,65 @@ void main() {
       }
     });
   }
-  test('retry after an ETag change drops the old prefix and plays the replacement', () async {
-    final other = await cache.wrap(PlayerMedia(uri: upstream));
-    await get(other.uri, 'bytes=0-15');
-    final wrapped = await cache.wrap(PlayerMedia(uri: upstream.resolve('/replaced.mp4')));
-    final first = await client.getUrl(wrapped.uri);
-    first.headers.set('Range', 'bytes=0-');
-    final interrupted = await first.close();
-    var received = 0;
-    try {
-      await for (final chunk in interrupted) {
-        received += chunk.length;
+  for (final lateTag in [false, true]) {
+    test('retry after an ETag change drops the old prefix and plays the replacement (lateTag=$lateTag)', () async {
+      final other = await cache.wrap(PlayerMedia(uri: upstream));
+      await get(other.uri, 'bytes=0-15');
+      final wrapped = await cache.wrap(PlayerMedia(uri: upstream.resolve(lateTag ? '/replaced.mp4?late' : '/replaced.mp4')));
+      final first = await client.getUrl(wrapped.uri);
+      first.headers.set('Range', 'bytes=0-');
+      final interrupted = await first.close();
+      var received = 0;
+      try {
+        await for (final chunk in interrupted) {
+          received += chunk.length;
+        }
+      } on HttpException {
+        // A changed representation cannot complete the existing response.
       }
-    } on HttpException {
-      // A changed representation cannot complete the existing response.
-    }
-    expect(received, VideoDiskCache.blockBytes);
-    final retry = await get(wrapped.uri, 'bytes=0-');
-    expect(retry.$1.statusCode, 206);
-    expect(retry.$2, data);
-    final previousCalls = calls;
-    expect((await get(other.uri, 'bytes=0-15')).$2, data.take(16));
-    expect(calls, previousCalls, reason: 'another video keeps its buffered data');
+      expect(received, VideoDiskCache.blockBytes * (lateTag ? 2 : 1));
+      final retry = await get(wrapped.uri, 'bytes=0-');
+      expect(retry.$1.statusCode, 206);
+      expect(retry.$2, data);
+      final previousCalls = calls;
+      expect((await get(other.uri, 'bytes=0-15')).$2, data.take(16));
+      expect(calls, previousCalls, reason: 'another video keeps its buffered data');
+    });
+  }
+
+  test('HLS key assembly detects a rotation after a late ETag', () async {
+    final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => source.close(force: true));
+    var requests = 0;
+    source.listen((r) async {
+      if (r.uri.path == '/master.m3u8') {
+        r.response.write('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key"\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n');
+      } else {
+        requests++;
+        final start = switch (r.headers.value('range')) {
+          'bytes=4-' => 4,
+          'bytes=8-' => 8,
+          _ => 0,
+        };
+        final end = start == 8 ? 15 : start + 3;
+        r.response.statusCode = 206;
+        r.response.headers.set('Content-Range', 'bytes $start-$end/16');
+        if (requests != 1) {
+          r.response.headers.set('ETag', requests == 2 ? '"old"' : '"new"');
+        }
+        r.response.add(List.filled(end - start + 1, requests < 3 ? 1 : 2));
+      }
+      await r.response.close();
+    });
+    final manifest = await cache.wrap(PlayerMedia(
+      uri: Uri.parse('http://127.0.0.1:${source.port}/master.m3u8'),
+    ));
+    final text = utf8.decode((await get(manifest.uri)).$2);
+    final key = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(text)![1]!);
+    final mixed = await get(key);
+    expect(mixed.$1.statusCode, 502);
+    expect(mixed.$2, isEmpty);
+    expect((await get(key)).$2, List.filled(16, 2));
   });
 
   test(
