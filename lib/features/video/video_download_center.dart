@@ -839,8 +839,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       );
       final previousUri = uri;
       (response, uri) = next;
-      if (uri.removeFragment() != previousUri.removeFragment() &&
-          !_sameStrongTag(validator, response)) {
+      if (uri.removeFragment() != previousUri.removeFragment()) {
         await response.listen(null).cancel();
         throw StateError('下载中途文件地址发生变化，请重试');
       }
@@ -906,18 +905,19 @@ class VideoDownloadCenter extends ChangeNotifier {
         previousValidator != null &&
         responseValidator != null &&
         previousValidator != responseValidator;
-    // Query parameters can select a different movie or simply rotate a token.
-    // Across addresses, only reuse bytes when the server confirms a strong ETag.
+    // An ETag is scoped to its target resource. Another CDN path or query can
+    // serve different bytes with the same tag and length.
     final headerHash = _headerHash(headers);
+    final sameResource = old['responseHash'] == _addressHash(finalUri);
     final sameRequest =
         old['requestHash'] == _addressHash(uri) &&
-        old['responseHash'] == _addressHash(finalUri) &&
         old['headerHash'] == headerHash;
     final previousLength = old['length'] is int ? old['length'] as int : null;
     final range = response.headers.value('content-range');
     final responseTotal = int.tryParse(range?.split('/').last ?? '');
     final restart =
         changed ||
+        !sameResource ||
         (!sameRequest && !_sameStrongTag(previousValidator, response)) ||
         (previousLength != null &&
             responseTotal != null &&

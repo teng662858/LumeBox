@@ -814,6 +814,8 @@ void main() {
     ('redirect', 206, false),
     ('query', 416, false),
     ('redirect', 206, true),
+    ('query', 206, true),
+    ('query', 416, true),
     ('header', 206, false),
     ('header', 416, false),
     ('header', 206, true),
@@ -847,8 +849,8 @@ void main() {
         } else if (version == 'old') {
           if (range == null) {
             response.statusCode = 206;
-            response.headers.set('Content-Range', 'bytes 0-31/64');
-            response.add(sameTag ? newBytes.sublist(0, 32) : List.filled(32, 99));
+            response.headers.set('Content-Range', 'bytes 0-31/${status == 416 ? '*' : 64}');
+            response.add(sameTag && change == 'header' ? newBytes.sublist(0, 32) : List.filled(32, 99));
           } else {
             response.statusCode = 503;
           }
@@ -877,32 +879,35 @@ void main() {
       await c.flush();
       expect(task.state, 'done', reason: task.error);
       expect(await c.localFile(task).readAsBytes(), newBytes);
-      expect(resumedRanges, ['bytes=32-', if (!sameTag) null]);
+      expect(resumedRanges, ['bytes=32-', if (!sameTag || change != 'header') null]);
     });
   }
 
-  test('a redirect during a range sequence cannot mix two files', () async {
-    server.listen((r) async {
-      final range = r.headers.value('range');
-      if (range != null && r.uri.path == '/file.mp4') {
-        r.response.statusCode = 302;
-        r.response.headers.set('Location', 'other.mp4');
-      } else {
-        final start = range == null ? 0 : 32;
-        r.response.statusCode = 206;
-        r.response.headers.set('Content-Range', 'bytes $start-${start + 31}/64');
-        r.response.add(List.filled(32, start));
-      }
-      await r.response.close();
+  for (final tag in [null, '"same-revision"']) {
+    test('a redirect during a range sequence cannot mix two files (tag=$tag)', () async {
+      server.listen((r) async {
+        if (tag != null) r.response.headers.set('ETag', tag);
+        final range = r.headers.value('range');
+        if (range != null && r.uri.path == '/file.mp4') {
+          r.response.statusCode = 302;
+          r.response.headers.set('Location', 'other.mp4');
+        } else {
+          final start = range == null ? 0 : 32;
+          r.response.statusCode = 206;
+          r.response.headers.set('Content-Range', 'bytes $start-${start + 31}/64');
+          r.response.add(List.filled(32, start));
+        }
+        await r.response.close();
+      });
+      final c = await center('file.mp4');
+      await enqueue(c);
+      final task = c.tasks.single;
+      await until(() => ['done', 'failed'].contains(task.state));
+      await c.flush();
+      expect(task.state, 'failed');
+      expect(task.fileName, isEmpty);
     });
-    final c = await center('file.mp4');
-    await enqueue(c);
-    final task = c.tasks.single;
-    await until(() => ['done', 'failed'].contains(task.state));
-    await c.flush();
-    expect(task.state, 'failed');
-    expect(task.fileName, isEmpty);
-  });
+  }
 
   for (final status in [206, 416]) {
     test('a late total length survives an interrupted download (HTTP $status)', () async {
