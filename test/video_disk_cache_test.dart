@@ -178,7 +178,8 @@ void main() {
       if (request.uri.path.startsWith('/subtitles/')) {
         final type = request.uri.queryParameters['type'] ?? 'vtt';
         if (request.uri.path.endsWith('/master.m3u8')) {
-          request.response.write('#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="中文",LANGUAGE="zh",URI="track?type=$type"\n'
+          final padding = request.uri.queryParameters.containsKey('padded') ? '  ' : '';
+          request.response.write('#EXTM3U\n$padding#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="中文",LANGUAGE="zh",URI="track?type=$type"$padding\n'
               '#EXT-X-STREAM-INF:BANDWIDTH=10000,SUBTITLES="subs"\nvideo.m3u8\n');
         } else if (request.uri.path.endsWith('/track')) {
           request.response.write('#EXTM3U\n#EXT-X-TARGETDURATION:1\n'
@@ -520,6 +521,19 @@ void main() {
       final slice = await get(cue, 'bytes=0-5');
       expect(slice.$1.headers.contentType?.mimeType, 'text/vtt');
       expect(utf8.decode(slice.$2), 'WEBVTT');
+    });
+    test('缩进字幕标签的 HLS 仍以 WebVTT 回应播放器的字节请求（apple=$apple）', () async {
+      final master = await cache.wrap(
+        PlayerMedia(uri: upstream.resolve('/subtitles/master.m3u8?padded=1')),
+        appleHls: apple,
+      );
+      final manifest = utf8.decode((await get(master.uri)).$2);
+      final track = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(manifest)![1]!);
+      final playlist = utf8.decode((await get(track)).$2);
+      final cue = Uri.parse(const LineSplitter().convert(playlist).firstWhere((line) => !line.startsWith('#')));
+      final response = await get(cue, 'bytes=0-5');
+      expect(response.$1.headers.contentType?.mimeType, 'text/vtt');
+      expect(utf8.decode(response.$2), 'WEBVTT');
     });
   }
   for (final (extension, type) in [('aac', 'audio/aac'), ('ac3', 'audio/ac3'), ('ec3', 'audio/eac3'), ('mp3', 'audio/mpeg')]) {

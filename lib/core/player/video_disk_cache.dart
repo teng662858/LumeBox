@@ -1476,9 +1476,9 @@ class VideoDiskCache extends ChangeNotifier {
             : rawManifest;
         final master = manifestText.contains('#EXT-X-STREAM-INF:');
         final mapped = manifestText.contains('#EXT-X-MAP:');
-        final original = const LineSplitter().convert(manifestText);
+        final original = const LineSplitter().convert(manifestText).map((line) => line.trim()).toList();
         bool isResource(String line) =>
-            line.trim().isNotEmpty && !line.trimLeft().startsWith('#');
+            line.isNotEmpty && !line.startsWith('#');
         final first = original.where(isResource).firstOrNull;
         var fragment = false;
         if (apple &&
@@ -1493,7 +1493,7 @@ class VideoDiskCache extends ChangeNotifier {
                   l.startsWith('#EXT-X-DISCONTINUITY') ||
                   l.startsWith('#EXT-X-GAP'),
             )) {
-          final child = childMedia(first.trim());
+          final child = childMedia(first);
           if (child != null) {
             try {
               fragment = transportStreamHasHevc(
@@ -1513,7 +1513,7 @@ class VideoDiskCache extends ChangeNotifier {
             lines.addAll([
               line,
               '#EXT-X-VERSION:7',
-              '#EXT-X-MAP:URI="${await rewrite(first!.trim(), '.init.mp4', sequence: 1)}"',
+              '#EXT-X-MAP:URI="${await rewrite(first!, '.init.mp4', sequence: 1)}"',
             ]);
           } else if (fragment && line.startsWith('#EXT-X-VERSION:')) {
             continue;
@@ -1521,12 +1521,12 @@ class VideoDiskCache extends ChangeNotifier {
             if (fragment) {
               sequence++;
               lines.add(
-                await rewrite(line.trim(), '.frag.m4s', sequence: sequence),
+                await rewrite(line, '.frag.m4s', sequence: sequence),
               );
             } else {
               lines.add(
                 await rewrite(
-                  line.trim(),
+                  line,
                   master
                       ? '.m3u8'
                       : mapped
