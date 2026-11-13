@@ -55,6 +55,7 @@ class VideoDiskCache extends ChangeNotifier {
   DateTime? _warmRetry;
   Directory? _root;
   File? _settings;
+  Future<void>? _booting;
   HttpServer? _server;
   Future<void>? _starting;
   Future<void> _diskTail = Future.value();
@@ -73,32 +74,37 @@ class VideoDiskCache extends ChangeNotifier {
     _warmMark = null;
   }
 
-  Future<void> boot({Directory? directory}) async {
-    if (_ready) return;
-    final base = directory ?? await getApplicationSupportDirectory();
-    _settings = File('${base.path}/video_buffer.json');
-    if (await _settings!.exists()) {
-      try {
-        final p = jsonDecode(await _settings!.readAsString()) as Map;
-        enabled = p['enabled'] != false;
-        skipHlsAds = p['skipHlsAds'] != false;
-        final capacity = p['capacityMb'];
-        if (capacity is num && capacity.isFinite) {
-          capacityMb = capacity.toInt().clamp(minCapacityMb, maxCapacityMb);
-        }
-      } catch (_) {
-        /* Keep bounded defaults for damaged settings. */
-      }
-    }
-    _root = Directory('${base.path}/video-buffer-v1');
+  Future<void> boot({Directory? directory}) {
+    if (_ready && _root != null) return Future.value();
+    return _booting ??= _openDisk(directory).whenComplete(() => _booting = null);
+  }
+
+  Future<void> _openDisk(Directory? directory) async {
     try {
-      await _root!.create(recursive: true);
+      final base = directory ?? await getApplicationSupportDirectory();
+      _settings = File('${base.path}/video_buffer.json');
+      if (await _settings!.exists()) {
+        try {
+          final p = jsonDecode(await _settings!.readAsString()) as Map;
+          enabled = p['enabled'] != false;
+          skipHlsAds = p['skipHlsAds'] != false;
+          final capacity = p['capacityMb'];
+          if (capacity is num && capacity.isFinite) {
+            capacityMb = capacity.toInt().clamp(minCapacityMb, maxCapacityMb);
+          }
+        } catch (_) {
+          /* Keep bounded defaults for damaged settings. */
+        }
+      }
+      final root = await Directory('${base.path}/video-buffer-v1').create(recursive: true);
       // Tickets and validators are session-owned; never reuse stale signed media.
-      await for (final entry in _root!.list(followLinks: false)) {
+      await for (final entry in root.list(followLinks: false)) {
         if (entry is File) await entry.delete();
       }
-    } on FileSystemException {
-      _root = null;
+      _root = root;
+      if (!_diskAvailable) status = '磁盘缓存已恢复';
+      _diskAvailable = true;
+    } on Exception {
       _diskAvailable = false;
       status = '磁盘不可用，使用内核内存缓冲';
     }
@@ -1698,6 +1704,7 @@ class VideoDiskCache extends ChangeNotifier {
   }
 
   Future<void> close() async {
+    await _booting;
     _bypassed.clear();
     _detectedFormats.clear();
     _progressNotice?.cancel();

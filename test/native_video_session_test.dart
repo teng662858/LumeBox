@@ -86,6 +86,21 @@ void main() {
     });
   }
 
+  test('缓存目录服务不可用时原生播放器仍收到打开媒体的请求', () async {
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (_) async => throw PlatformException(code: 'storage_unavailable'),
+    );
+    final remote = Uri.parse('https://cdn.example/episode.mp4');
+    session = NativeVideoSourceSession(
+      media: PlayerMedia(uri: remote), library: library, bridge: bridge,
+    );
+    addTearDown(session.close);
+    await session.open();
+    expect((opened['media'] as Map)['sourceUrl'], remote.toString());
+    expect((opened['media'] as Map)['url'], isNotEmpty);
+  });
+
   Future<void> start({
     VideoPlayTarget? target,
     PlayerMedia? initialMedia,

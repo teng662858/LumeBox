@@ -50,6 +50,48 @@ void main() {
     },
   );
 
+  Future<List<int>> readFirstBytes(Uri uri) async {
+    final request = await client.getUrl(uri);
+    request.headers.set('Range', 'bytes=0-3');
+    return (await request.close()).expand((chunk) => chunk).toList();
+  }
+
+  test('并发初始化只清理一次旧缓存，随后仍可从磁盘复用视频数据', () async {
+    final base = await Directory('${root.path}/cold').create();
+    final blocks = await Directory('${base.path}/video-buffer-v1').create();
+    for (var i = 0; i < 24; i++) {
+      await File('${blocks.path}/old-$i').writeAsBytes([0]);
+    }
+    final cold = VideoDiskCache()..freeSpace = () async => 1024 * 1024 * 1024;
+    addTearDown(cold.close);
+    await Future.wait(List.generate(8, (_) => cold.boot(directory: base)));
+    expect(await blocks.list().isEmpty, true);
+    final media = await cold.wrap(PlayerMedia(uri: upstream));
+    expect(await readFirstBytes(media.uri), data.sublist(0, 4));
+    final requests = calls;
+    expect(await readFirstBytes(media.uri), data.sublist(0, 4));
+    expect(calls, requests);
+    expect(cold.bytes, greaterThan(0));
+  });
+
+  test('缓存目录不可写时仍传输视频，目录恢复后同一播放地址可重新缓存', () async {
+    final base = await Directory('${root.path}/recover').create();
+    final obstacle = await File('${base.path}/video-buffer-v1').create();
+    final cold = VideoDiskCache()..freeSpace = () async => 1024 * 1024 * 1024;
+    addTearDown(cold.close);
+    await cold.boot(directory: base);
+    final media = await cold.wrap(PlayerMedia(uri: upstream));
+    expect(await readFirstBytes(media.uri), data.sublist(0, 4));
+    expect(cold.bytes, 0);
+    await obstacle.delete();
+    await cold.boot(directory: base);
+    expect(await readFirstBytes(media.uri), data.sublist(0, 4));
+    expect(cold.bytes, greaterThan(0));
+    final requests = calls;
+    expect(await readFirstBytes(media.uri), data.sublist(0, 4));
+    expect(calls, requests);
+  });
+
   for (final throws in [false, true]) {
     test('缓存装载失败回退原始地址并保留请求头：throws=$throws', () async {
       final player = _TransportPlayer(throws);
