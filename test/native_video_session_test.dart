@@ -446,6 +446,16 @@ void main() {
       Duration.zero,
     );
   });
+  test('private playback opens at the position carried by a matching line', () async {
+    library.setSetting('history.incognito', 'true');
+    await start(target: const VideoPlayTarget(
+      sourceId: 'fixture', itemId: 'show', title: '测试作品', chapterIndex: 0,
+      chapterId: 'B1', chapterTitle: '第1集', resumePosition: Duration(seconds: 75),
+    ));
+    expect((opened['media'] as Map)['position'], 75);
+    await progress(81);
+    expect(library.videoProgress('show', sourceId: 'fixture'), isNull);
+  });
   test('incognito and error events do not overwrite saved history', () async {
     await start();
     await progress(10);

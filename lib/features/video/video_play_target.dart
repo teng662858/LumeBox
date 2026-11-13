@@ -17,6 +17,7 @@ class VideoPlayTarget {
     required this.chapterId,
     required this.chapterTitle,
     this.cover,
+    this.resumePosition,
   });
 
   /// 所属图源 id（本板块内）。
@@ -37,6 +38,8 @@ class VideoPlayTarget {
   final String chapterTitle;
 
   final String? cover;
+  /// Position carried from the matching episode on another line or source.
+  final Duration? resumePosition;
 
   /// 同一作品的同一集：用于判断「是不是又点开了刚才那一集」。
   bool isSameEpisode(VideoPlayTarget other) =>

@@ -105,8 +105,9 @@ class NativeVideoSourceSession {
       );
     }
     final current = target;
-    var position = (initialPosition?.inMilliseconds ?? 0) / 1000;
-    if (initialPosition == null && current != null) {
+    final requestedPosition = initialPosition ?? current?.resumePosition;
+    var position = (requestedPosition?.inMilliseconds ?? 0) / 1000;
+    if (requestedPosition == null && current != null) {
       final saved = library.videoEpisodeProgress(
         current.itemId,
         current.chapterId,

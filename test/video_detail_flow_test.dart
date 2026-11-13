@@ -430,6 +430,34 @@ void main() {
       const Duration(seconds: 75),
     );
   });
+  testWidgets('无痕切线按当前线路续播，保留目标线路之前的记录', (tester) async {
+    final multi = MultiLineDetailSource();
+    for (final (id, seconds) in [('b2', 9), ('a2', 75)]) {
+      library.saveProgress(VideoProgress(
+        sourceId: multi.id, itemId: 'private-switch', section: Section.video,
+        chapterIndex: 1, chapterId: id, chapterTitle: '第2集',
+        updatedAt: DateTime.now(), position: Duration(seconds: seconds),
+        duration: const Duration(minutes: 4),
+      ));
+    }
+    library.setSetting('history.incognito', 'true');
+    VideoPlayTarget? target;
+    await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
+      source: multi, item: const SourceItem(id: 'private-switch', title: '详情测试片'),
+      library: library, onPlay: (_, next, _, _) async { target = next; },
+    )));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(VideoDetailPage));
+    expect(state.changeLine('线路B'), true);
+    await tester.pumpAndSettle();
+    expect(state.episodeProgress(1).position.inSeconds, 75);
+    await tester.runAsync(() async { await state.play(); });
+    await tester.pumpAndSettle();
+    expect(target?.chapterId, 'b2');
+    expect(target?.resumePosition?.inSeconds, 75);
+    expect(state.episodeProgress(1).position.inSeconds, 75);
+    expect(library.videoEpisodeProgress('private-switch', 'b2', sourceId: multi.id)?.position.inSeconds, 9);
+  });
   testWidgets('换源存在多个相同集号时先确认，未选择前不解析播放', (tester) async {
     await tester.binding.setSurfaceSize(const Size(440, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));

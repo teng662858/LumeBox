@@ -632,23 +632,6 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       if (address == null) throw StateError('源未返回有效的播放地址');
       final headers = quality?.headers ??
           SourcePlayback.contentHeaders(content, source: _source!);
-      if (lineResume != null && widget.recordHistory) {
-        final saved = lineResume!;
-        widget.library.saveProgress(
-          VideoProgress(
-            sourceId: _source!.id,
-            section: widget.library.section,
-            itemId: widget.item.id,
-            chapterIndex: selected,
-            chapterId: chapter.id,
-            chapterTitle: chapter.title,
-            updatedAt: DateTime.now(),
-            position: saved.position,
-            duration: saved.duration,
-          ),
-        );
-        lineResume = null;
-      }
       // Source-declared audio and recognizable video URLs need no second
       // native asset load before navigation. Probe only ambiguous addresses.
       final audioHint =
@@ -711,6 +694,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         title: title,
         headers: headers,
       );
+      final resume = lineResume;
       final target = VideoPlayTarget(
         sourceId: _source!.id,
         itemId: widget.item.id,
@@ -719,6 +703,8 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         chapterIndex: selected,
         chapterId: chapter.id,
         chapterTitle: VideoEpisodeCatalog.labelOf(chapter),
+        resumePosition:
+            resume?.isFinished == true ? Duration.zero : resume?.position,
       );
       final sourceDirection =
           (content is VideoContent
@@ -744,6 +730,24 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         stillActive: () => mounted,
       );
       if (!mounted) return;
+      if (resume != null &&
+          widget.recordHistory &&
+          widget.library.setting('history.incognito') != 'true') {
+        widget.library.saveProgress(
+          VideoProgress(
+            sourceId: target.sourceId,
+            section: widget.library.section,
+            itemId: target.itemId,
+            chapterIndex: target.chapterIndex,
+            chapterId: target.chapterId,
+            chapterTitle: target.chapterTitle,
+            updatedAt: DateTime.now(),
+            position: resume.position,
+            duration: resume.duration,
+          ),
+        );
+        lineResume = null;
+      }
       final transferred = prepared;
       prepared = null;
       final beforePlayback = widget.library.videoProgress(
@@ -782,6 +786,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
               );
             }
             setState(() {
+              lineResume = null;
               currentLine = entry.key;
               chapters = entry.value;
               selected = index;
@@ -1693,12 +1698,12 @@ class _VideoDetailPageState extends State<VideoDetailPage>
 
   VideoProgress? episodeProgress(int index) {
     final chapter = chapters[index];
+    if (index == selected && lineResume != null) return lineResume;
     return widget.library.videoEpisodeProgress(
-          widget.item.id,
-          chapter.id,
-          sourceId: _source?.id ?? widget.sourceId,
-        ) ??
-        (index == selected ? lineResume : null);
+      widget.item.id,
+      chapter.id,
+      sourceId: _source?.id ?? widget.sourceId,
+    );
   }
 
   String get playLabel {
