@@ -705,6 +705,27 @@ class AudioBookSession extends ChangeNotifier {
     }
   }
 
+  Future<void> playChapter(int index) async {
+    final entry = resource;
+    if (entry == null || loading || index < 0 || index >= _tracks.length) {
+      return;
+    }
+    if (!_ready || error != null) {
+      await open(entry, _tracks, index: index, restart: true);
+      return;
+    }
+    final generation = _generation;
+    final pauseRevision = _pauseRevision;
+    final seekRevision = _seekRevision + 1;
+    await seek(Duration.zero, index: index);
+    if (generation == _generation &&
+        pauseRevision == _pauseRevision &&
+        seekRevision == _seekRevision &&
+        error == null) {
+      unawaited(play());
+    }
+  }
+
   Future<void> next() async {
     if (current + 1 < (resource?.episodes.length ?? 0)) await _player?.next();
   }

@@ -357,6 +357,35 @@ void main() {
     expect(session.error, isNotNull);
   });
 
+  test('a pending chapter selection respects a later pause', () async {
+    await session.open(resource, tracks);
+    final gate = Completer<void>();
+    player.beforeSeek = () => gate.future;
+    final selecting = session.playChapter(1);
+    await session.pause();
+    gate.complete();
+    await selecting;
+    expect(session.playing, isFalse);
+  });
+
+  test('a failed chapter selection keeps the error without replaying the old chapter', () async {
+    await session.load(resource, tracks);
+    player.beforeSeek = () async => throw StateError('chapter unavailable');
+    await session.playChapter(1);
+    await Future<void>.delayed(Duration.zero);
+    expect(session.error, '跳转失败，请重试');
+    expect(player.loads, 1);
+    expect(session.playing, isFalse);
+  });
+
+  test('a released session selects and plays the requested chapter', () async {
+    await session.open(resource, tracks);
+    await session.release();
+    await session.playChapter(2);
+    expect(session.playing, isTrue);
+    expect(session.current, 2);
+  });
+
   test('a late seek failure belongs only to the previous chapter', () async {
     await session.open(resource, tracks, index: 0);
     final gate = Completer<void>();

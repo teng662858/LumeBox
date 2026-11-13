@@ -372,8 +372,9 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
             title: Text(widget.resource.episodes[index].title),
             onTap: () async {
               Navigator.pop(context);
-              await session.seek(Duration.zero, index: index);
-              unawaited(session.play());
+              if (session.resource?.id == widget.resource.id) {
+                await session.playChapter(index);
+              }
             },
           ),
         ),
