@@ -10,6 +10,7 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/experience/reading_offline.dart';
 import 'package:lume_box/features/experience/tracking_service.dart';
+import 'package:lume_box/features/video/video_download_center.dart';
 
 import 'support/fake_reading_source.dart';
 import 'support/fake_source_manager.dart';
@@ -90,6 +91,43 @@ void main() {
     expect(await check(), 1);
     expect(center.rows('updates').single['latest'], '第3集（下）');
     expect(await check(), 0);
+  });
+  test('追更下载保存每条线路的集序，断网后仍能定位相邻集', () async {
+    final video = SplitVideo();
+    video.episodes
+      ..clear()
+      ..addAll(const [
+        SourceChapter(id: 'a1', title: '第1集', line: 'A'),
+        SourceChapter(id: 'b1', title: 'B · 第1集'),
+        SourceChapter(id: 'b2', title: 'B · 第2集'),
+      ]);
+    final lib = await ReadingLibrary.open(Section.video);
+    final ref = ContentRef(Section.video, video.id, 'show', '剧集');
+    lib.shelve(sourceId: video.id, itemId: 'show', title: '剧集');
+    center.setTrackingState(ref, 'active');
+    center.put('downloadUpdates', true);
+    center.put('wifiOnly', true);
+    final tracker = TrackingService(
+      managerFor: (_) => FakeSourceManager(opened: {video.id: video}),
+      wait: () async {},
+    );
+    expect((await tracker.check(libraries: [lib])).newChapters, 0);
+    video.episodes.addAll(const [
+      SourceChapter(id: 'b3', title: 'B · 第3集'),
+      SourceChapter(id: 'b4', title: 'B · 第4集'),
+    ]);
+    center.put('checked.${ref.key}', DateTime(2000).toIso8601String());
+    expect((await tracker.check(libraries: [lib])).newChapters, 2);
+    final downloads = VideoDownloadCenter.instance;
+    while (downloads.tasks.any((t) => t.state == 'queued' || t.running)) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    await downloads.flush();
+    final restored = VideoDownloadCenter(directory: () async => root);
+    await restored.boot();
+    expect(restored.tasks.map((t) => (t.chapterId, t.chapterIndex)), [
+      ('b3', 2), ('b4', 3),
+    ]);
   });
   test('暂停和完结不请求；恢复首检建基线，之后新增进入收件箱', () async {
     final manager = FakeSourceManager(opened: {source.id: source});

@@ -59,7 +59,7 @@ class VideoDownloadTask {
     this.error,
   });
   final String id, sourceId, itemId, chapterId, title, chapterTitle;
-  final int chapterIndex;
+  int chapterIndex;
   final String line;
   String state, fileName;
   String? error;
@@ -254,6 +254,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       final id = identity(sourceId, itemId, chapter.id);
       final existing = tasks.where((t) => t.id == id).firstOrNull;
       if (existing != null) {
+        existing.chapterIndex = chapterIndices[chapter.id] ?? existing.chapterIndex;
         if (!existing.running &&
             (existing.state != 'done' || !await localFile(existing).exists())) {
           existing.state = 'queued';

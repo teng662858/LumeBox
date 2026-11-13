@@ -326,6 +326,33 @@ void main() {
     }
   });
 
+  test('selecting a previously downloaded episode repairs its saved index locally', () async {
+    var requests = 0;
+    server.listen((r) async {
+      requests++;
+      r.response.add(List.filled(32, 1));
+      await r.response.close();
+    });
+    final c = await center('movie.mp4');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => task.state == 'done');
+    await c.flush();
+    expect(task.chapterIndex, 0);
+    await c.enqueue(
+      sourceId: 'fixture',
+      itemId: 'movie',
+      title: 'Movie',
+      chapters: const [SourceChapter(id: 'episode', title: 'Episode')],
+      chapterIndices: const {'episode': 4},
+    );
+    await c.flush();
+    final restored = await center('movie.mp4');
+    expect(restored.tasks.single.chapterIndex, 4);
+    expect(restored.tasks.single.state, 'done');
+    expect(requests, 1);
+  });
+
   test('a missing completed file can be downloaded again after restart', () async {
     server.listen((r) async {
       r.response.add(List.filled(32, 1));

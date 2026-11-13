@@ -11,6 +11,7 @@ import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../video/video_download_center.dart';
+import '../video/video_episode_catalog.dart';
 
 class TrackingReport {
   const TrackingReport(
@@ -167,10 +168,15 @@ class TrackingService with WidgetsBindingObserver {
                 center.enabled('downloadUpdates') &&
                 lib.section == Section.video) {
               final ids = added.map((c) => c.key).toSet();
+              final indices = {
+                for (final line in VideoEpisodeCatalog.group(chapters).values)
+                  for (var i = 0; i < line.length; i++) line[i].id: i,
+              };
               await VideoDownloadCenter.instance.enqueue(
                 sourceId: item.sourceId,
                 itemId: item.itemId,
                 title: item.title,
+                chapterIndices: indices,
                 chapters: chapters
                     .where((c) => ids.remove(TrackingResume.chapterKey(c)))
                     .take(center.number('nextDownloads', 2).clamp(1, 5))
