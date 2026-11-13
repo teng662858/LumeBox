@@ -10,17 +10,12 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
+import 'package:lume_box/features/video/native_video_settings_page.dart';
 import 'package:lume_box/features/video/player_settings_sheet.dart';
 import 'package:lume_box/core/player/player_capabilities.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 
-/// 播放方向偏好（用户要求）：
-/// - 全局设置里的「横屏播放」开关；
-/// - 播放器设置弹窗里的「方向锁定」（自动 / 强制横屏 / 强制竖屏）；
-/// 两者写的是**同一份**应用级偏好，落盘一个小 JSON，坏值回退「自动」。
-///
-/// 播放器页自己的行为（按视频宽高比自动选方向、锁定覆盖自动判断）在
-/// `player_full_feature_test.dart` 里验证——那里有真实的播放器替身与平台通道。
+/// 兼容旧面板的方向偏好，并验证正式设置入口只展示原生播放器使用的参数。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -96,7 +91,7 @@ void main() {
     });
   });
 
-  group('全局设置：横屏播放', () {
+  group('全局播放器设置', () {
     Future<void> pumpSettings(WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(900, 1400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -111,26 +106,14 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('播放器设置'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('画面与显示'));
-      await tester.tap(find.text('画面与显示'));
-      await tester.pumpAndSettle();
     }
 
-    testWidgets('画面分类统一设置方向，强制横屏与自动写入同一偏好', (tester) async {
+    testWidgets('进入原生播放器设置时不显示旧版方向控件', (tester) async {
       await pumpSettings(tester);
-      expect(find.text('横屏播放'), findsNothing, reason: '避免重复的两档方向开关');
-      await tester.tap(find.widgetWithText(ChoiceChip, '强制横屏'));
-      await tester.pumpAndSettle();
-      expect(
-        PlaybackOrientationController.instance.orientation,
-        PlaybackOrientation.landscape,
-      );
-      await tester.tap(find.widgetWithText(ChoiceChip, '自动'));
-      await tester.pumpAndSettle();
-      expect(
-        PlaybackOrientationController.instance.orientation,
-        PlaybackOrientation.auto,
-      );
+      expect(find.byType(NativeVideoSettingsPage), findsOneWidget);
+      expect(find.text('默认播放内核'), findsOneWidget);
+      expect(find.text('画面与显示'), findsNothing);
+      expect(find.text('横屏播放'), findsNothing);
     });
   });
 
