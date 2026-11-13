@@ -146,39 +146,56 @@ class VideoDownloadCenter extends ChangeNotifier {
     final manifest = File(p.join(root.path, 'tasks.json'));
     try {
       if (await manifest.exists()) {
-        for (final value in jsonDecode(await manifest.readAsString()) as List) {
-          final m = value as Map;
-          final id = identity(
-            '${m['sourceId']}',
-            '${m['itemId']}',
-            '${m['chapterId']}',
-          );
-          if (m['id'] != id) continue;
-          final fileName = '${m['fileName'] ?? ''}';
-          if (fileName.isNotEmpty &&
-              (p.isAbsolute(fileName) || p.split(fileName).contains('..'))) {
+        final rows = jsonDecode(await manifest.readAsString()) as List;
+        for (final m in rows.whereType<Map>()) {
+          final source = m['sourceId'];
+          final item = m['itemId'];
+          final chapter = m['chapterId'];
+          if (source is! String || item is! String || chapter is! String) {
             continue;
           }
-          tasks.add(
-            VideoDownloadTask(
-              id: id,
-              sourceId: '${m['sourceId']}',
-              itemId: '${m['itemId']}',
-              chapterId: '${m['chapterId']}',
-              title: '${m['title']}',
-              chapterTitle: '${m['chapterTitle']}',
-              chapterIndex: (m['chapterIndex'] as num?)?.toInt() ?? 0,
-              line: m['line'] as String? ?? '',
-              state: ['done', 'merge_failed'].contains(m['state'])
-                  ? '${m['state']}'
-                  : 'paused',
-              bytes: (m['bytes'] as num?)?.toInt() ?? 0,
-              totalBytes: (m['totalBytes'] as num?)?.toInt() ?? 0,
-              completed: (m['completed'] as num?)?.toInt() ?? 0,
-              total: (m['total'] as num?)?.toInt() ?? 0,
-              fileName: fileName,
-            ),
+          final id = identity(source, item, chapter);
+          if (m['id'] != id) continue;
+          final fileName = m['fileName'] is String ? m['fileName'] as String : '';
+          if (fileName.isNotEmpty &&
+              (fileName.contains('\u0000') ||
+                  p.isAbsolute(fileName) ||
+                  p.split(fileName).contains('..'))) {
+            continue;
+          }
+          int counter(String key) {
+            final value = m[key];
+            return value is num && value.isFinite && value >= 0
+                ? value.toInt()
+                : 0;
+          }
+
+          final task = VideoDownloadTask(
+            id: id,
+            sourceId: source,
+            itemId: item,
+            chapterId: chapter,
+            title: '${m['title'] ?? item}',
+            chapterTitle: '${m['chapterTitle'] ?? chapter}',
+            chapterIndex: counter('chapterIndex'),
+            line: m['line'] is String ? m['line'] as String : '',
+            state: ['done', 'merge_failed'].contains(m['state'])
+                ? '${m['state']}'
+                : 'paused',
+            bytes: counter('bytes'),
+            totalBytes: counter('totalBytes'),
+            completed: counter('completed'),
+            total: counter('total'),
+            fileName: fileName,
           );
+          if ((fileName.isNotEmpty || task.state != 'paused') &&
+              (fileName.isEmpty || !await localFile(task).exists())) {
+            task.fileName = '';
+            task.state = 'paused';
+            task.bytes = task.totalBytes = task.completed = task.total = 0;
+            task.error = '本地视频文件缺失，可重新下载';
+          }
+          tasks.add(task);
         }
       }
     } catch (_) {

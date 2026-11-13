@@ -293,6 +293,60 @@ void main() {
     c.dispose();
   });
 
+  test('damaged manifest entries do not hide playable downloads after restart', () async {
+    final c = await center('unused');
+    Map<String, Object?> entry(String chapter) => VideoDownloadTask(
+      id: VideoDownloadCenter.identity('s', 'i', chapter),
+      sourceId: 's',
+      itemId: 'i',
+      chapterId: chapter,
+      title: 'Movie',
+      chapterTitle: chapter,
+      state: 'done',
+      fileName: 'media.mp4',
+    ).toJson();
+    final older = entry('older')..['bytes'] = 'unknown';
+    final latest = entry('latest')..['chapterIndex'] = 4;
+    for (final row in [older, latest]) {
+      final dir = await Directory('${c.root.path}/${row['id']}').create();
+      await File('${dir.path}/media.mp4').writeAsBytes([1, 2, 3]);
+    }
+    await File('${c.root.path}/tasks.json').writeAsString(
+      jsonEncode([older, null, entry('bad')..['id'] = 'invalid', latest]),
+    );
+    final restored = VideoDownloadCenter(directory: () async => root);
+    await restored.boot();
+    expect(restored.tasks.map((t) => t.chapterId), ['older', 'latest']);
+    expect(restored.tasks.first.bytes, 0);
+    expect(restored.tasks.last.chapterIndex, 4);
+    for (final chapter in ['older', 'latest']) {
+      final playback = await restored.completedPlayback('s', 'i', chapter);
+      expect(await File.fromUri(playback!.uri).readAsBytes(), [1, 2, 3]);
+      await playback.close();
+    }
+  });
+
+  test('a missing completed file can be downloaded again after restart', () async {
+    server.listen((r) async {
+      r.response.add(List.filled(32, 1));
+      await r.response.close();
+    });
+    final c = await center('movie.mp4');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => task.state == 'done');
+    await c.flush();
+    await c.localFile(task).delete();
+    final restored = await center('movie.mp4');
+    final missing = restored.tasks.single;
+    expect(missing.canPlayOffline, isFalse);
+    expect(missing.state, 'paused');
+    await restored.resume(missing);
+    await until(() => missing.state == 'done');
+    await restored.flush();
+    expect(await restored.localFile(missing).readAsBytes(), List.filled(32, 1));
+  });
+
   test('下载 HLS 跳过明确标记的广告，不请求广告分片', () async {
     final requested = <String>[];
     server.listen((request) async {
