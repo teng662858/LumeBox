@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../core/reading/chapter_display_order.dart';
 import '../../core/source/source.dart';
 
 /// Route grouping never rewrites chapter IDs: the original source still resolves them.
@@ -40,24 +41,39 @@ abstract final class VideoEpisodeCatalog {
     return chapter.title.replaceFirst(prefix, '').trim();
   }
 
+  static const _ordinal = r'[0-9０-９零〇一二两兩三四五六七八九十百千]+';
+  static final _season = RegExp(
+    '第\\s*($_ordinal)\\s*季|(?:season\\s*|s)([0-9]{1,3})(?![0-9])',
+    caseSensitive: false,
+  );
+  static final _episode = RegExp(
+    '第\\s*($_ordinal)\\s*[集话話期]|(?:^|[^a-z0-9]|s[0-9]{1,3})(?:episode|ep?)[ ._-]*([0-9]{1,4})(?![0-9])',
+    caseSensitive: false,
+  );
+  static final _numberOnly = RegExp('^($_ordinal)(?:集|话|話)?\$');
+
+  static int? _matchedNumber(RegExpMatch? match) {
+    if (match == null) return null;
+    final digits = match[1] ?? match[2]!;
+    return ChapterDisplayOrder.parseNumber(digits)?.toInt();
+  }
+
+  static int? seasonNumber(String label) =>
+      _matchedNumber(_season.firstMatch(label));
+
+  static ({int? season, int episode})? episodeNumber(String label) {
+    final number = _matchedNumber(
+      _episode.firstMatch(label) ?? _numberOnly.firstMatch(label.trim()),
+    );
+    return number == null
+        ? null
+        : (season: seasonNumber(label), episode: number);
+  }
+
   /// Only explicit episode numbers are comparable; a missing episode never falls back by index.
   static String? episodeKey(SourceChapter chapter) {
-    final label = labelOf(chapter);
-    final season = RegExp(
-      r's(\d{1,3})[ ._-]*e(\d{1,4})',
-      caseSensitive: false,
-    ).firstMatch(label);
-    if (season != null) {
-      return '${int.parse(season[1]!)}:${int.parse(season[2]!)}';
-    }
-    final number =
-        RegExp(r'第\s*(\d{1,4})\s*[集话話期]').firstMatch(label) ??
-        RegExp(
-          r'(?:^|[ ._\]-])(?:ep?|episode)[ ._-]*(\d{1,4})(?!\d)',
-          caseSensitive: false,
-        ).firstMatch(label) ??
-        RegExp(r'^(\d{1,4})(?:集|话|話)?$').firstMatch(label);
-    return number == null ? null : '1:${int.parse(number[1]!)}';
+    final number = episodeNumber(labelOf(chapter));
+    return number == null ? null : '${number.season ?? 1}:${number.episode}';
   }
 
   static int matchingIndex(

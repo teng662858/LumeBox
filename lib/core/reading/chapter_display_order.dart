@@ -54,10 +54,12 @@ class ChapterDisplayOrder {
         _chapter.firstMatch(text) ??
         _english.firstMatch(text) ??
         _leading.firstMatch(text);
-    return matched == null ? null : _number(matched.group(1)!);
+    return matched == null ? null : parseNumber(matched.group(1)!);
   }
 
-  static double? _number(String value) {
+  static double? parseNumber(String value) {
+    value = _normalize(value);
+    if (value.isEmpty) return null;
     final decimal = double.tryParse(value);
     if (decimal != null && decimal.isFinite) return decimal;
     final pieces = value.replaceAll('點', '点').replaceAll('.', '点').split('点');
@@ -143,7 +145,7 @@ class ChapterDisplayOrder {
     final numbers = chapters.map((c) => chapterNumber(c.title)).toList();
     final volumes = chapters.map((c) {
       final match = _volume.firstMatch(_normalize(c.title));
-      return match == null ? null : _number(match.group(1) ?? match.group(2)!);
+      return match == null ? null : parseNumber(match.group(1) ?? match.group(2)!);
     }).toList();
     final numbered = indexes.where((i) => numbers[i] != null).toList();
     final allHaveVolumes =

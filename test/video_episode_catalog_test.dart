@@ -6,6 +6,17 @@ import 'package:lume_box/features/video/video_episode_catalog.dart';
 import 'package:lume_box/features/video/direct_video_source.dart';
 
 void main() {
+  test('换线路按中文季数和集数匹配，不把第二季当成第一季', () {
+    const second = SourceChapter(id: 'cn', title: '第2季 第03集');
+    const first = SourceChapter(id: 's1', title: 'S01E03');
+    const matching = SourceChapter(id: 's2', title: 'Drama.S02E03.mkv');
+    expect(VideoEpisodeCatalog.matchingIndex(second, [first, matching]), 1);
+    expect(VideoEpisodeCatalog.matchingIndex(second, [first]), -1);
+    expect(VideoEpisodeCatalog.episodeKey(second), '2:3');
+    expect(VideoEpisodeCatalog.episodeNumber('第二季 第十一話'), (season: 2, episode: 11));
+    expect(VideoEpisodeCatalog.episodeNumber('第２季 第０３集'), (season: 2, episode: 3));
+    expect(VideoEpisodeCatalog.episodeNumber('Season 2 Episode 3'), (season: 2, episode: 3));
+  });
   test('跨线路只匹配明确同集，兼容文件名但不混淆季数和重复集数', () {
     const current = SourceChapter(id: 'a', title: '第2集');
     const file = SourceChapter(
