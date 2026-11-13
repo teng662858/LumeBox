@@ -376,6 +376,34 @@ void main() {
     expect(session.error, isNotNull);
   });
 
+  for (final lastFails in [false, true]) {
+    test('overlapping audiobook seeks keep the last confirmed position (failure=$lastFails)', () async {
+      await session.open(resource, tracks);
+      await session.seek(const Duration(seconds: 5));
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      var requests = 0;
+      player.beforeSeek = () async {
+        if (++requests == 1) {
+          entered.complete();
+          await release.future;
+        } else if (lastFails) {
+          throw StateError('unavailable');
+        }
+      };
+      final first = session.seek(const Duration(seconds: 15));
+      await entered.future;
+      final last = session.seek(const Duration(seconds: 90));
+      final requested = session.position;
+      release.complete();
+      await Future.wait([first, last]);
+      expect(requested.inSeconds, 90);
+      expect(session.position.inSeconds, lastFails ? 15 : 90);
+      expect(settings.positions[resource.id]?['position'], lastFails ? 15000 : 90000);
+      expect(session.error != null, lastFails);
+    });
+  }
+
   test('a pending chapter selection respects a later pause', () async {
     await session.open(resource, tracks);
     final gate = Completer<void>();
@@ -385,6 +413,26 @@ void main() {
     gate.complete();
     await selecting;
     expect(session.playing, isFalse);
+  });
+
+  test('failed and superseded seeks never become the audiobook resume point', () async {
+    await session.open(resource, tracks);
+    await session.seek(const Duration(seconds: 5));
+    final gate = Completer<void>();
+    var requests = 0;
+    player.beforeSeek = () async {
+      requests++;
+      await gate.future;
+      throw StateError('unavailable');
+    };
+    final first = session.seek(const Duration(seconds: 20));
+    final superseded = session.seek(const Duration(seconds: 40));
+    final last = session.seek(const Duration(seconds: 60));
+    gate.complete();
+    await Future.wait([first, superseded, last]);
+    expect(requests, 2);
+    expect(session.position.inSeconds, 5);
+    expect(settings.positions[resource.id]?['position'], 5000);
   });
 
   test('a failed chapter selection keeps the error without replaying the old chapter', () async {

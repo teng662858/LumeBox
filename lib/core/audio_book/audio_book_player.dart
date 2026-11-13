@@ -356,6 +356,8 @@ class AudioBookSession extends ChangeNotifier {
   DateTime _savedAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _generation = 0;
   int _seekRevision = 0;
+  Future<void>? _pendingSeek;
+  Duration _confirmedSeekPosition = Duration.zero;
   int _pauseRevision = 0;
   Future<void> _loads = Future.value();
   List<AudioBookTrack> _tracks = [];
@@ -478,6 +480,7 @@ class AudioBookSession extends ChangeNotifier {
     final wasReady = _ready;
     _ready = false;
     seeking = false;
+    _pendingSeek = null;
     _acceptEvents = false;
     _sleep?.cancel();
     sleepAt = null;
@@ -701,23 +704,32 @@ class AudioBookSession extends ChangeNotifier {
     }
     final generation = _generation;
     final revision = ++_seekRevision;
-    final previous = position;
+    if (!seeking) _confirmedSeekPosition = position;
     seeking = true;
     position = value;
+    final previous = _pendingSeek;
+    Future<void> apply() async {
+      if (previous != null) await previous;
+      if (generation != _generation || revision != _seekRevision) return;
+      try {
+        await _player!.seek(value, index: index);
+        if (generation == _generation) _confirmedSeekPosition = value;
+      } catch (_) {
+        if (generation == _generation && revision == _seekRevision) {
+          error = '跳转失败，请重试';
+        }
+      }
+    }
+
+    final pending = _pendingSeek = apply();
     notifyListeners();
-    try {
-      await _player?.seek(value, index: index);
-    } catch (_) {
-      if (generation == _generation && revision == _seekRevision) {
-        position = previous;
-        error = '跳转失败，请重试';
-      }
-    } finally {
-      if (generation == _generation && revision == _seekRevision) {
-        seeking = false;
-        _remember();
-        notifyListeners();
-      }
+    await pending;
+    if (generation == _generation && revision == _seekRevision) {
+      _pendingSeek = null;
+      position = _confirmedSeekPosition;
+      seeking = false;
+      _remember();
+      notifyListeners();
     }
   }
 
