@@ -78,6 +78,7 @@ import UniformTypeIdentifiers
   private var wantsPlay = true, closing = false, switching = false, resolving = false
   private var speed = 1.0, volume = 1.0, fill = false, locked = false, scrubbing = false
   private var hardware = true, autoNext = true, interrupted = false, resumeAfterInterruption = false
+  private var handledEnd = false
   private var landscape = false, chromeVisible = true, readyRecorded = false, frameRecorded = false
   private var pip: AVPictureInPictureController?
   private var pipStarting = false
@@ -240,6 +241,7 @@ import UniformTypeIdentifiers
     let previous = engine; engine = nil
     previous?.pause(); previous?.view.removeFromSuperview(); fatalMessage = nil
     state = NativeVideoState(); renderState()
+    handledEnd = false
     emit("load-start")
     let create = { [weak self] in
       guard let self, !self.closing, self.generation == revision else { return }
@@ -250,6 +252,7 @@ import UniformTypeIdentifiers
       next.changed = { [weak self, weak next] value in
         guard let self, let next, !self.closing, self.generation == revision, self.engine === next else { return }
         self.state = value
+        if !value.ended { self.handledEnd = false }
         if let message = self.fatalMessage { self.state.error = message; self.state.buffering = false; self.state.playing = false }
         self.renderState()
       }
@@ -307,7 +310,12 @@ import UniformTypeIdentifiers
           MPNowPlayingInfoPropertyPlaybackRate: state.playing ? speed : 0]
       }
     }
-    if state.ended && autoNext && !resolving { wantsPlay = false; resolve("next", automatic: true) }
+    if state.ended && !handledEnd && !resolving && !switching && state.error == nil {
+      handledEnd = true
+      wantsPlay = false
+      controls["play"]?.setImage(UIImage(systemName: "play.fill"), for: .normal)
+      if autoNext { resolve("next", automatic: true) }
+    }
   }
   private func showError(_ message: String) {
     fatalMessage = message
@@ -350,7 +358,6 @@ import UniformTypeIdentifiers
       if let error = response?["error"] as? String { self.showError(error); return }
       guard let payload = response?["media"] as? [String: Any] else {
         if action == "retry" { self.switchEngine(self.kernel); return }
-        if automatic { self.autoNext = false; self.state.ended = false }
         self.toast(response?["message"] as? String ?? "没有可播放的下一项"); self.renderState(); return
       }
       do {
