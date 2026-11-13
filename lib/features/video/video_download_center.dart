@@ -1219,7 +1219,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       throw StateError('播放清单格式无效');
     }
     if (VideoDiskCache.instance.skipHlsAds) body = HlsAdFilter.filter(body);
-    final lines = const LineSplitter().convert(body);
+    final lines = const LineSplitter().convert(body).map((line) => line.trim()).toList();
     final variants =
         <({Map<String, String> attributes, String url, int bandwidth, bool? hasVideo})>[];
     for (final pair in hlsVariants(lines)) {

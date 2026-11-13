@@ -532,6 +532,49 @@ void main() {
     c.dispose();
   });
 
+  test('下载带行首尾空白的 HLS 时保留独立音轨、密钥和正确分片', () async {
+    final paths = <String>[];
+    server.listen((request) async {
+      final path = request.uri.path;
+      paths.add(path);
+      switch (path) {
+        case '/master.m3u8':
+          request.response.write([
+            '#EXTM3U',
+            '  #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="lang",NAME="原声",URI="voice.m3u8"  ',
+            ' #EXT-X-STREAM-INF:BANDWIDTH=100,AUDIO="lang"',
+            ' video.m3u8  ',
+          ].join('\r\n'));
+        case '/video.m3u8':
+          request.response.write([
+            '#EXTM3U', '  ', '  #EXTINF:2,',
+            '  #EXT-X-KEY:METHOD=AES-128,URI="key"  ',
+            '  clip.ts  ', '  #EXT-X-ENDLIST',
+          ].join('\r\n'));
+        case '/voice.m3u8':
+          request.response.write('#EXTM3U\n#EXTINF:2,\nvoice.aac\n#EXT-X-ENDLIST');
+        case '/key':
+        case '/clip.ts':
+        case '/voice.aac':
+          request.response.add(List.filled(16, 3));
+        default:
+          request.response.statusCode = 404;
+      }
+      await request.response.close();
+    });
+    final c = await center('master.m3u8');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['merge_failed', 'failed'].contains(task.state));
+    await c.flush();
+    expect(paths, containsAll(['/voice.m3u8', '/voice.aac', '/key', '/clip.ts']));
+    final master = await c.localFile(task).readAsString();
+    expect(master, contains('URI="index-audio.m3u8"'));
+    final video = await File('${c.folder(task)}/index-video.m3u8').readAsLines();
+    expect(video.where((line) => line.startsWith('#EXT-X-KEY:')).single, contains('.key"'));
+    expect(task.completed, 2);
+  });
+
   test(
     'unsupported playlists are rejected before any segments are scheduled',
     () {
