@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/cat/cat_data_source.dart';
+import '../../core/cat/cat_service.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
@@ -51,8 +53,12 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
   String? error;
   String? opening;
   bool loading = true;
-  SourceManager manager(Section section) =>
-      widget.managers[section] ?? LumeSources.manager(section);
+  SourceManager manager(Section section, String sourceId) =>
+      widget.managers[section] ??
+      (section == Section.cat
+          ? CatAggregateSourceManager(CatService.instance,
+              kind: sourceId.split('|').elementAtOrNull(1))
+          : LumeSources.manager(section));
   int generation = 0;
   @override
   void initState() {
@@ -170,7 +176,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
         builder: (context) => VideoDetailPage(
           source: source,
           sourceId: source.id,
-          manager: manager(library.section),
+          manager: manager(library.section, source.id),
           item: item,
           library: library,
           initialChapterId: differentItem ? null : progress?.chapterId,
@@ -208,7 +214,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
                   target: target,
                   source: origin.source,
                   sourceId: target.sourceId,
-                  sourceManager: manager(library.section),
+                  sourceManager: manager(library.section, target.sourceId),
                   library: library,
                   qualities: qualities,
                   prelaunch: entering,
@@ -223,6 +229,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
 
   Future<void> alternative(_Activity row) async {
     final item = row.item!;
+    final sources = manager(row.section, item.sourceId);
     await Navigator.push(
       context,
       MaterialPageRoute<void>(
@@ -230,9 +237,10 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
           section: row.section,
           keyword: item.title,
           mode: SearchMode.aggregate,
+          manager: sources,
           onOpenItem: (selection) async {
             try {
-              final source = await manager(row.section)
+              final source = await sources
                   .open(selection.sourceId)
                   .timeout(const Duration(seconds: 15));
               if (source != null) {
@@ -297,7 +305,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
                       chapterId: progress.chapterId,
                       chapterTitle: progress.chapterTitle,
                     ),
-                    sourceManager: manager(row.section),
+                    sourceManager: manager(row.section, item.sourceId),
                   ),
                 ),
               );
@@ -307,11 +315,14 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
             return;
           }
         }
-        final source = await manager(row.section)
+        final source = await manager(row.section, item.sourceId)
             .open(item.sourceId)
             .timeout(const Duration(seconds: 15));
         if (source == null) throw StateError('来源不可用');
-        if (source.section != row.section) throw StateError('来源板块不匹配');
+        if (source.section != row.section &&
+            !(row.section == Section.cat && source is CatDataSource)) {
+          throw StateError('来源板块不匹配');
+        }
         if (!mounted || activeGeneration != generation) return;
         final target = ReadingTarget(
           sourceId: item.sourceId,

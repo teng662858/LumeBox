@@ -2,10 +2,13 @@ import 'package:lume_box/core/audio_book/audio_book_player.dart';
 import 'package:lume_box/core/media/media_library.dart';
 
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/cat/cat_data_source.dart';
+import 'package:lume_box/core/cat/cat_service.dart';
 import 'package:lume_box/core/net/network_activity.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
@@ -17,10 +20,33 @@ import 'package:lume_box/core/source/source_health.dart';
 import 'package:lume_box/features/reading/continue_activity_page.dart';
 import 'package:lume_box/features/reading/history_privacy.dart';
 import 'package:lume_box/features/reading/history_sheet.dart';
+import 'package:lume_box/features/reading/search_results_page.dart';
+import 'package:lume_box/features/video/video_detail_page.dart';
+import 'package:lume_box/features/video/video_download_center.dart';
+import 'package:lume_box/features/video/video_player_page.dart';
 import 'package:lume_box/shared/widgets/network_waiting_view.dart';
 
 import 'support/pump_io.dart';
 import 'support/fake_source_manager.dart';
+
+class _ResumeCatService extends CatService {
+  _ResumeCatService() : super.testing();
+
+  @override
+  Future<void> boot() async {}
+
+  @override
+  Future<Map<String, dynamic>> call(CatSite site, String operation, [
+    Map<String, dynamic> body = const {},
+  ]) async => operation == 'play'
+      ? {'url': 'https://example.test/${body['id']}.mp4'}
+      : {
+          'list': [
+            {'vod_id': 'movie', 'vod_name': '猫源续播', 'vod_play_from': 'A',
+             'vod_play_url': r'第1集$one#第2集$two'},
+          ],
+        };
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -37,6 +63,7 @@ void main() {
     }
     await MediaLibrary.instance.boot();
     await AudioBookSettings.instance.load();
+    await VideoDownloadCenter.instance.boot();
   });
   tearDown(() async {
     ReadingLibrary.disposeAll();
@@ -172,6 +199,76 @@ void main() {
     expect(find.text('原来源暂不可用，记录已保留'), findsOneWidget);
     expect(find.text('搜索其他来源'), findsOneWidget);
     expect(library.progress('v', sourceId: 'missing')!.chapterIndex, 1);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  const catSite = CatSite(
+    subscriptionId: 'sub', kind: 'video', key: 'no-search', name: '已知站点',
+    api: '/source', searchable: false,
+  );
+  const chapterId = '{"flag":"A","id":"two"}';
+  void saveCatProgress(String sourceId) {
+    final library = ReadingLibrary.find(Section.cat)!;
+    final itemId = jsonEncode([sourceId, 'movie']);
+    library.recordHistoryItem(sourceId: sourceId, itemId: itemId, title: '猫源续播');
+    library.saveProgress(VideoProgress(
+      sourceId: sourceId, section: Section.cat, itemId: itemId,
+      chapterIndex: 1, chapterId: chapterId, chapterTitle: '第2集',
+      updatedAt: DateTime.now(), position: const Duration(seconds: 75),
+    ));
+  }
+
+  testWidgets('统一续看从不支持搜索的猫源站点恢复原集与进度', (tester) async {
+    final service = _ResumeCatService();
+    addTearDown(service.dispose);
+    service.subscriptions.add(CatSubscription(id: 'sub', name: '订阅', url: '', sites: [catSite]));
+    saveCatProgress(catSite.id);
+    await tester.pumpWidget(MaterialApp(home: ContinueActivityPage(
+      managers: {Section.cat: CatAggregateSourceManager(service)},
+    )));
+    await pumpIoAndSettle(tester);
+    await tester.tap(find.text('猫源续播'));
+    await pumpIoAndSettle(tester);
+    final finder = find.byType(VideoDetailPage);
+    expect(finder, findsOneWidget);
+    final page = tester.widget<VideoDetailPage>(finder);
+    expect(page.source?.id, catSite.id);
+    expect(page.library.section, Section.cat);
+    final dynamic state = tester.state(finder);
+    expect(state.chapters[state.selected].id, chapterId);
+    expect(state.episodeProgress(state.selected).position, const Duration(seconds: 75));
+    final play = find.byKey(const Key('video-detail-play'));
+    await Scrollable.ensureVisible(tester.element(play), alignment: 0.5);
+    await tester.tap(play);
+    await pumpIoAndSettle(tester);
+    final player = tester.widget<VideoPlayerPage>(find.byType(VideoPlayerPage));
+    expect(player.target?.chapterId, chapterId);
+    expect(player.target?.resumePosition, const Duration(seconds: 75));
+    expect(player.media?.uri.toString(), 'https://example.test/two.mp4');
+    expect(player.library?.section, Section.cat);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('猫源原站不存在时，换源入口从磁盘读取猫源订阅', (tester) async {
+    final service = CatService.instance;
+    addTearDown(service.subscriptions.clear);
+    final file = File('${root.path}/sections/cat/node/subscriptions.json');
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(jsonEncode({
+      'startupRecoveryVersion': 1,
+      'subscriptions': [CatSubscription(id: 'sub', name: '订阅', url: '', sites: [catSite]).toJson()],
+    }));
+    saveCatProgress('missing|video|old');
+    await tester.pumpWidget(const MaterialApp(home: ContinueActivityPage()));
+    await pumpIoAndSettle(tester);
+    await tester.tap(find.text('猫源续播'));
+    await pumpIoAndSettle(tester);
+    await tester.tap(find.text('搜索其他来源'));
+    await pumpIoAndSettle(tester);
+    final manager = tester.widget<SearchResultsPage>(find.byType(SearchResultsPage)).manager;
+    expect(manager, isA<CatAggregateSourceManager>());
+    expect((await manager!.open(catSite.id))?.id, catSite.id);
+    expect(await manager.list(), isEmpty);
     await tester.pumpWidget(const SizedBox());
   });
 

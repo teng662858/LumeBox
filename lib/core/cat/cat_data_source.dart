@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../session/section.dart';
+import '../session/privacy_settings.dart';
 import '../source/source.dart';
 import 'cat_service.dart';
 import '../source/source_content_type.dart';
@@ -459,32 +460,39 @@ class CatAggregateSourceManager implements SourceManager {
   final CatService service;
   final String? kind;
 
-  Iterable<CatSite> get sites => service.subscriptions
+  Iterable<CatSite> get _enabledSites => service.subscriptions
       .where((record) => record.enabled)
       .expand((record) => record.sites)
-      .where((site) => site.searchable && (kind == null || site.kind == kind));
+      .where((site) => (kind == null || site.kind == kind) &&
+          PrivacySettings.instance.allowsSource(site.id, site.name));
+
+  Iterable<CatSite> get sites => _enabledSites.where((site) => site.searchable);
 
   @override
   bool get runtimeAvailable => true;
   @override
   Future<DataSource?> open(String sourceId) async {
-    final site = sites.where((site) => site.id == sourceId).firstOrNull;
+    await service.boot();
+    final site = _enabledSites.where((site) => site.id == sourceId).firstOrNull;
     return site == null ? null : CatDataSource(service, site);
   }
 
   @override
-  Future<List<SourceDescriptor>> list() async => [
-    for (final site in sites)
-      SourceDescriptor(
-        id: site.id,
-        name: site.name,
-        version: 'Node',
-        enabled: true,
-        runtimeKind: 'cat',
-        section: site.kind == 'comic' ? Section.comic : Section.video,
-        mediaKind: site.kind,
-      ),
-  ];
+  Future<List<SourceDescriptor>> list() async {
+    await service.boot();
+    return [
+      for (final site in sites)
+        SourceDescriptor(
+          id: site.id,
+          name: site.name,
+          version: 'Node',
+          enabled: true,
+          runtimeKind: 'cat',
+          section: site.kind == 'comic' ? Section.comic : Section.video,
+          mediaKind: site.kind,
+        ),
+    ];
+  }
   @override
   Future<SourceDescriptor?> current() async => (await list())
       .where((site) => site.id == service.selectedSiteId)

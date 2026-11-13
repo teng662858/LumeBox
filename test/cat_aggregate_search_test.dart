@@ -9,6 +9,9 @@ class FakeCatService extends CatService {
   String title = '测试作品';
 
   @override
+  Future<void> boot() async {}
+
+  @override
   Future<Map<String, dynamic>> call(
     CatSite site,
     String operation, [
