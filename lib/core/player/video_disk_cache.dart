@@ -563,6 +563,47 @@ class VideoDiskCache extends ChangeNotifier {
     }
   }
 
+  // A partial response may omit the total. A one-byte suffix gives its
+  // absolute final offset without transferring the entire video.
+  static final _contentRange = RegExp(
+    r'^bytes (\d+)-(\d+)/(\d+|\*)$',
+    caseSensitive: false,
+  );
+
+  Future<int?> _rangeTotal(
+    PlayerMedia media,
+    _MediaResponse response,
+    RegExpMatch range,
+  ) async {
+    if (range[3] != '*') return int.tryParse(range[3]!);
+    final probe = await _request(media, 'bytes=-1');
+    try {
+      for (final header in ['etag', 'last-modified', 'content-encoding']) {
+        final original = response.header(header);
+        final latest = probe.header(header);
+        if (original != latest &&
+            (header == 'content-encoding' || original != null && latest != null)) {
+          throw const HttpException('媒体已变化，请重新加载');
+        }
+      }
+      if (probe.statusCode == 200) {
+        return int.tryParse(probe.header('content-length') ?? '');
+      }
+      if (probe.statusCode != 206) return null;
+      final suffix = _contentRange.firstMatch(probe.header('content-range') ?? '');
+      final end = int.tryParse(suffix?[2] ?? '');
+      if (end == null ||
+          end == 0x7fffffffffffffff ||
+          int.tryParse(suffix![1]!) != end ||
+          (suffix[3] != '*' && int.tryParse(suffix[3]!) != end + 1)) {
+        return null;
+      }
+      return end + 1;
+    } finally {
+      await probe.listen(null).cancel();
+    }
+  }
+
   Future<_Block> _fetch(
     PlayerMedia media,
     int start, {
@@ -579,8 +620,7 @@ class VideoDiskCache extends ChangeNotifier {
         await response.listen(null).cancel();
         continue;
       }
-      final range = RegExp(r'^bytes (\d+)-(\d+)/(\d+)$')
-          .firstMatch(response.header('content-range') ?? '');
+      final range = _contentRange.firstMatch(response.header('content-range') ?? '');
       if (response.statusCode >= 400) {
         PlaybackDiagnostics.record(
           'cache-upstream-failed',
@@ -643,12 +683,14 @@ class VideoDiskCache extends ChangeNotifier {
           (range == null || int.parse(range[1]!) != start)) {
         throw const HttpException('媒体代理分段起点不匹配');
       }
-      final total = range == null ? data.length : int.parse(range[3]!);
-      if (data.isEmpty || total < start + data.length) {
+      final total = range == null ? data.length : await _rangeTotal(media, response, range);
+      final declaredEnd = int.tryParse(range?[2] ?? '');
+      if (data.isEmpty || total == null || total < start + data.length ||
+          (range != null && (declaredEnd == null || declaredEnd < start || declaredEnd >= total))) {
         throw const HttpException('媒体代理分段长度无效');
       }
       if (range != null &&
-          data.length != int.parse(range[2]!) - start + 1 &&
+          data.length != declaredEnd! - start + 1 &&
           !_loopback(media.uri)) {
         throw const HttpException('远端媒体分段不完整');
       }
@@ -829,16 +871,32 @@ class VideoDiskCache extends ChangeNotifier {
       await upstream.listen(null).cancel();
       throw _UpstreamStatus(upstream.statusCode);
     }
-    final range = RegExp(r'^bytes (\d+)-(\d+)/(\d+)$')
-        .firstMatch(upstream.header('content-range') ?? '');
+    final range = _contentRange.firstMatch(upstream.header('content-range') ?? '');
     final length = int.tryParse(upstream.header('content-length') ?? '');
     final partial = upstream.statusCode == 206;
     final start = partial ? int.tryParse(range?[1] ?? '') ?? -1 : 0;
     final end = int.tryParse(range?[2] ?? '');
     final total = partial ? int.tryParse(range?[3] ?? '') : length;
-    final expected = partial && total != null
+    var expected = partial && total != null
         ? parseHttpByteRange(rangeHeader ?? 'bytes=0-', total)
         : null;
+    if (partial &&
+        range?[3] == '*' &&
+        end != null &&
+        end >= start &&
+        start >= 0 &&
+        end < 0x7fffffffffffffff &&
+        rangeHeader != null) {
+      // The origin can serve a requested interval without knowing EOF.
+      // A suffix still needs the final offset, which the block path probes.
+      final asked = RegExp(r'^bytes=(\d+)-(\d*)$', caseSensitive: false)
+          .firstMatch(rangeHeader.trim());
+      final limit = int.tryParse(asked?[2] ?? '');
+      if (int.tryParse(asked?[1] ?? '') == start &&
+          (asked![2]!.isEmpty || limit != null && end <= limit)) {
+        expected = (start: start, end: end);
+      }
+    }
     if (![200, 206].contains(upstream.statusCode) ||
         partial &&
             (expected == null ||
@@ -882,7 +940,12 @@ class VideoDiskCache extends ChangeNotifier {
     }
 
     Future<void> persist(List<int> bytes) async {
-      if (start != 0 || generation != _generation || !enabled) return;
+      if (start != 0 ||
+          partial && total == null ||
+          generation != _generation ||
+          !enabled) {
+        return;
+      }
       if (total == null && cached.length == blockBytes) return;
       var offset = 0;
       while (offset < bytes.length) {
@@ -954,7 +1017,8 @@ class VideoDiskCache extends ChangeNotifier {
           upstream.header('content-range')!,
         );
       }
-      if (length != null) response.contentLength = length - skipped;
+      final bodyLength = partial ? end! - start + 1 : length;
+      if (bodyLength != null) response.contentLength = bodyLength - skipped;
       response.bufferOutput = false;
       if (prefix.isNotEmpty) {
         final bytes = prefix.takeBytes();
@@ -968,7 +1032,7 @@ class VideoDiskCache extends ChangeNotifier {
         await response.flush();
         await persist(chunks.current);
       }
-      if (length != null && received != length) {
+      if (bodyLength != null && received != bodyLength) {
         throw const HttpException('媒体流长度不完整');
       }
       if (start == 0 && cached.isNotEmpty) {

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:lume_box/core/net/http_byte_range.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/player_stats.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
@@ -94,6 +95,23 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path == '/unknown-total.mp4') {
+        final range = request.headers.value('range');
+        final offsets = range == null ? null : parseHttpByteRange(range, data.length);
+        final response = request.response;
+        if (range != null && offsets == null) {
+          response.statusCode = 416;
+          response.headers.set('Content-Range', 'bytes */${data.length}');
+        } else if (offsets != null) {
+          response.statusCode = 206;
+          response.headers.set('Content-Range', 'bytes ${offsets.start}-${offsets.end}/*');
+          response.add(data.sublist(offsets.start, offsets.end + 1));
+        } else {
+          response.add(data);
+        }
+        await response.close();
+        return;
+      }
       if (request.uri.path == '/slow-redirect.mp4') {
         request.response.statusCode = 302;
         request.response.headers.set('Location', '/movie.mp4');
@@ -650,6 +668,42 @@ void main() {
     expect(response.statusCode, 200);
     expect(bytes, [1, 2, 3]);
     expect(requests.last.url.host, '192.0.2.2');
+  });
+
+  test('seek and suffix requests recover an undisclosed video length', () async {
+    final media = await cache.wrap(PlayerMedia(uri: upstream.resolve('/unknown-total.mp4')));
+    final first = await get(media.uri, 'bytes=0-31');
+    expect(first.$1.statusCode, 206);
+    expect(first.$2, data.take(32));
+    final tail = await get(media.uri, 'bytes=-16');
+    expect(tail.$2, data.sublist(data.length - 16));
+    expect(tail.$1.headers.value('Content-Range'), 'bytes ${data.length - 16}-${data.length - 1}/${data.length}');
+  });
+
+  test('remote bounded seeks stream exact ranges without requiring a total or caching a false EOF', () async {
+    final ranges = <String?>[];
+    final native = MockClient((request) async {
+      final range = request.headers['range'];
+      ranges.add(range);
+      if (range != 'bytes=0-15' && range != 'bytes=48-63') {
+        return http.Response('', 400);
+      }
+      final offsets = parseHttpByteRange(range!, data.length)!;
+      return http.Response.bytes(data.sublist(offsets.start, offsets.end + 1), 206,
+          headers: {'content-range': 'bytes ${offsets.start}-${offsets.end}/*'});
+    });
+    await cache.close();
+    cache = VideoDiskCache(ipHttpsClient: native);
+    await cache.boot(directory: root);
+    final wrapped = await cache.wrap(PlayerMedia(uri: Uri.parse('https://192.0.2.1/seek.mp4')));
+    for (final start in [0, 48]) {
+      final (response, bytes) = await get(wrapped.uri, 'bytes=$start-${start + 15}');
+      expect(response.statusCode, 206);
+      expect(response.headers.value('Content-Range'), 'bytes $start-${start + 15}/*');
+      expect(bytes, data.sublist(start, start + 16));
+    }
+    expect(ranges, ['bytes=0-15', 'bytes=48-63']);
+    expect(cache.bytes, 0);
   });
 
   test('remote seeks repair a mismatched 206 and preserve the 416 length', () async {
