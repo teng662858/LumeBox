@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 flutter precache --ios
 FLUTTER_ROOT=$(dirname "$(dirname "$(command -v flutter)")")
 FLUTTER_FRAMEWORK="$FLUTTER_ROOT/bin/cache/artifacts/engine/ios/Flutter.xcframework/ios-arm64_x86_64-simulator"
+ARCH=$(uname -m)
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 CHECK=$(mktemp -d)
 trap 'rm -rf "$CHECK"' EXIT
@@ -12,23 +13,23 @@ mkdir -p out/native-video "$CHECK/NativeVideoCheck.app/Frameworks" "$CHECK/fixtu
 curl --fail -L --retry 2 'https://github.com/media-kit/libmpv-darwin-build/releases/download/v0.6.0/libmpv-xcframeworks_v0.6.0_ios-universal-video-default.tar.gz' -o "$CHECK/mpv.tar.gz"
 echo 'a95bc18508af26136b8a408341c05b5585d644ec013f00ac07db09d2e28d36ae  '"$CHECK/mpv.tar.gz" | shasum -a 256 -c -
 tar -xzf "$CHECK/mpv.tar.gz" -C "$CHECK"
-python3 - "$CHECK" <<'PY'
+python3 - "$CHECK" "$ARCH" <<'PY'
 from pathlib import Path
 import plistlib, shutil, sys
 root = Path(sys.argv[1]); destination = root / 'NativeVideoCheck.app/Frameworks'
 for package in root.rglob('*.xcframework'):
     data = plistlib.loads((package / 'Info.plist').read_bytes())
     for lib in data['AvailableLibraries']:
-        if lib.get('SupportedPlatformVariant') == 'simulator' and lib['SupportedPlatform'] == 'ios' and 'arm64' in lib['SupportedArchitectures']:
+        if lib.get('SupportedPlatformVariant') == 'simulator' and lib['SupportedPlatform'] == 'ios' and sys.argv[2] in lib['SupportedArchitectures']:
             framework = package / lib['LibraryIdentifier'] / lib['LibraryPath']
             shutil.copytree(framework, destination / framework.name, dirs_exist_ok=True)
             break
 PY
 cp -R "$FLUTTER_FRAMEWORK/Flutter.framework" "$CHECK/NativeVideoCheck.app/Frameworks/"
 xcrun clang -fobjc-arc -fmodules -Wno-deprecated-declarations -isysroot "$SDK" \
-  -target arm64-apple-ios18.0-simulator -c ios/Runner/NativeMPVBridge.m -o "$CHECK/NativeMPVBridge.o"
+  -target "${ARCH}-apple-ios18.0-simulator" -c ios/Runner/NativeMPVBridge.m -o "$CHECK/NativeMPVBridge.o"
 cat ios/Runner/NativeVideoPlayerController.swift tool/native_video_smoke.swift > "$CHECK/NativeVideoCheck.swift"
-xcrun swiftc -D DEBUG -sdk "$SDK" -target arm64-apple-ios18.0-simulator \
+xcrun swiftc -D DEBUG -sdk "$SDK" -target "${ARCH}-apple-ios18.0-simulator" \
   -F "$CHECK/NativeVideoCheck.app/Frameworks" -import-objc-header ios/Runner/NativeMPVBridge.h \
   ios/Runner/NativeVideoEngine.swift "$CHECK/NativeVideoCheck.swift" "$CHECK/NativeMPVBridge.o" \
   -framework Flutter -framework Mpv -framework OpenGLES -framework QuartzCore -framework CoreVideo -framework CoreMedia \
