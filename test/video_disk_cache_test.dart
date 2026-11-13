@@ -77,7 +77,7 @@ void main() {
     player.info.dispose();
   });
   Completer<void>? pause;
-  late Completer<void> redirectBody;
+  late Completer<void> slowBody;
   setUp(() async {
     root = await Directory.systemTemp.createTemp('video-buffer-test-');
     cache = VideoDiskCache();
@@ -88,7 +88,7 @@ void main() {
     paths.clear();
     failures = 0;
     pause = null;
-    redirectBody = Completer<void>();
+    slowBody = Completer<void>();
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     upstream = Uri.parse('http://127.0.0.1:${server.port}/movie.mp4');
     server.listen((request) async {
@@ -99,7 +99,7 @@ void main() {
         request.response.headers.set('Location', '/movie.mp4');
         request.response.write('redirecting');
         await request.response.flush();
-        await redirectBody.future;
+        await slowBody.future;
         await request.response.close();
         return;
       }
@@ -110,6 +110,32 @@ void main() {
         request.response.headers.set('Content-Encoding', request.uri.queryParameters['codec']!);
         request.response.add(codec.encode(manifest));
         await request.response.close();
+        return;
+      }
+      if (request.uri.path == '/error-body.mp4' && calls == 1) {
+        final status = int.parse(request.uri.queryParameters['status']!);
+        request.response.statusCode = status;
+        if (status == 416) {
+          request.response.headers.set('Content-Range', 'bytes */0');
+        }
+        request.response.write('error');
+        await request.response.flush();
+        await slowBody.future;
+        await request.response.close();
+        return;
+      }
+      if (request.uri.path == '/large-nonseekable.mp4') {
+        final response = request.response;
+        final length = VideoDiskCache.blockBytes * 9;
+        response.contentLength = length;
+        if (request.headers.value('range') != null) {
+          response.add(Uint8List(length));
+        } else {
+          response.add([0]);
+          await response.flush();
+          await slowBody.future;
+        }
+        await response.close().catchError((Object _) {});
         return;
       }
       if (request.uri.path == '/mislabelled.mp4') {
@@ -440,7 +466,35 @@ void main() {
       expect(response.statusCode, 206);
       expect(bytes, data.take(32));
     } finally {
-      redirectBody.complete();
+      slowBody.complete();
+    }
+  });
+
+  for (final status in [502, 416]) {
+    test('range playback handles HTTP $status before the error body ends', () async {
+      final media = PlayerMedia(uri: upstream.resolve('/error-body.mp4?status=$status'));
+      final wrapped = await cache.wrap(media);
+      try {
+        final (res, bytes) = await get(wrapped.uri, 'bytes=0-31').timeout(const Duration(seconds: 3));
+        expect(res.statusCode, status == 502 ? 206 : 416);
+        expect(bytes, status == 502 ? data.sublist(0, 32) : isEmpty);
+        if (status == 416) expect(res.headers.value('content-range'), 'bytes */0');
+      } finally {
+        slowBody.complete();
+      }
+    });
+  }
+
+  test('HEAD passthrough returns metadata while the upstream GET is open', () async {
+    final wrapped = await cache.wrap(PlayerMedia(uri: upstream.resolve('/large-nonseekable.mp4')));
+    try {
+      final head = await client.headUrl(wrapped.uri);
+      final response = await head.close().timeout(const Duration(seconds: 3));
+      expect(response.statusCode, 200);
+      expect(response.contentLength, VideoDiskCache.blockBytes * 9);
+      expect(await response.expand((bytes) => bytes).toList(), isEmpty);
+    } finally {
+      slowBody.complete();
     }
   });
 

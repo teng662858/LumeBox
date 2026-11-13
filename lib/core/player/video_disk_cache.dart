@@ -576,7 +576,7 @@ class VideoDiskCache extends ChangeNotifier {
             : 'bytes=$start-${start + blockBytes - 1}',
       );
       if ([502, 503, 504].contains(response.statusCode) && attempt == 0) {
-        await response.drain<void>();
+        await response.listen(null).cancel();
         continue;
       }
       final range = RegExp(r'^bytes (\d+)-(\d+)/(\d+)$')
@@ -591,7 +591,7 @@ class VideoDiskCache extends ChangeNotifier {
       if (response.statusCode == 416) {
         final total = RegExp(r'^bytes \*/(\d+)$')
             .firstMatch(response.header('content-range') ?? '');
-        await response.drain<void>();
+        await response.listen(null).cancel();
         if (total != null) {
           return _Block(
             Uint8List(0),
@@ -1272,7 +1272,7 @@ class VideoDiskCache extends ChangeNotifier {
       if (request.method != 'HEAD') {
         await response.addStream(upstream);
       } else {
-        await upstream.drain<void>();
+        await upstream.listen(null).cancel();
       }
     } on _UpstreamStatus catch (error) {
       // The first range may have been sent before the next range returned 403
