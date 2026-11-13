@@ -669,6 +669,82 @@ void main() {
     });
   }
 
+  test('抓取的 Range 与缓存条件不会截断整片下载，防盗链请求头仍生效', () async {
+    final data = List.generate(64, (i) => i);
+    server.listen((r) async {
+      if (r.headers.value('if-none-match') != null) {
+        r.response.statusCode = 304;
+      } else if (r.headers.value('range') != null || r.headers.value('if-range') != null) {
+        r.response.statusCode = 416;
+      } else if (r.headers.value('referer') != 'https://fixture.test/watch') {
+        r.response.statusCode = 403;
+      } else {
+        r.response.add(data);
+      }
+      await r.response.close();
+    });
+    final c = await center('captured.mp4', headers: {
+      'Range': 'bytes=32-63',
+      'If-Range': '"old-probe"',
+      'IF-NONE-MATCH': '"browser-cache"',
+      'Referer': 'https://fixture.test/watch',
+    });
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['failed', 'done'].contains(task.state));
+    await c.flush();
+    expect(task.state, 'done', reason: task.error);
+    expect(await c.localFile(task).readAsBytes(), data);
+  });
+
+  for (final kind in ['weak-etag', 'recent-date', 'established-date']) {
+    test('续传只发送可用于字节校验的 If-Range ($kind)', () async {
+      var retry = false;
+      final conditions = <String?>[];
+      final starts = <int>[];
+      final replacement = List.generate(64, (i) => i);
+      final date = DateTime.utc(2026, 1, 1);
+      final modified = HttpDate.format(kind == 'established-date'
+          ? date.subtract(const Duration(minutes: 5)) : date);
+      final expected = kind == 'established-date' ? modified : null;
+      server.listen((r) async {
+        final condition = r.headers.value('if-range');
+        conditions.add(condition);
+        final start = r.headers.value('range') == 'bytes=32-' ? 32 : 0;
+        if (retry) starts.add(start);
+        if (!retry && start > 0) {
+          r.response.statusCode = 503;
+        } else if (condition != (start == 0 ? null : expected)) {
+          r.response.statusCode = 400;
+        } else {
+          r.response.statusCode = 206;
+          r.response.headers.set('Date', HttpDate.format(date));
+          r.response.headers.set('Last-Modified', modified);
+          if (kind == 'weak-etag') r.response.headers.set('ETag', 'W/"same"');
+          r.response.headers.set('Content-Range', 'bytes $start-${start + 31}/64');
+          r.response.add(retry || expected != null
+              ? replacement.sublist(start, start + 32) : List.filled(32, 255));
+        }
+        await r.response.close();
+      });
+      final c = await center('weak.mp4');
+      await enqueue(c);
+      final task = c.tasks.single;
+      await until(() => task.state == 'failed');
+      retry = true;
+      await c.flush();
+      final restored = await center('weak.mp4');
+      final saved = restored.tasks.single;
+      await restored.resume(saved);
+      await until(() => ['failed', 'done'].contains(saved.state));
+      await restored.flush();
+      expect(saved.state, 'done', reason: saved.error);
+      expect(conditions, [null, expected, if (expected == null) null, expected]);
+      expect(starts, [if (expected == null) 0, 32]);
+      expect(await restored.localFile(saved).readAsBytes(), replacement);
+    });
+  }
+
   test('malformed partial response cannot become a completed video', () async {
     server.listen((request) async {
       request.response.statusCode = 206;

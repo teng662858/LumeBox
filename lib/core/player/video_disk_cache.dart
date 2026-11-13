@@ -429,16 +429,8 @@ class VideoDiskCache extends ChangeNotifier {
         <String, String>{
           for (final entry
               in (media.headers ?? const <String, String>{}).entries)
-            entry.key.toLowerCase(): entry.value,
-        }..removeWhere(
-          (key, _) => const {
-            'host',
-            'range',
-            'connection',
-            'content-length',
-            'accept-encoding',
-          }.contains(key),
-        );
+            if (!isMediaTransportHeader(entry.key)) entry.key.toLowerCase(): entry.value,
+        };
     headers['accept-encoding'] = 'identity';
     if (LumeNet.settings.userAgent.isNotEmpty) {
       headers.putIfAbsent('user-agent', () => LumeNet.settings.userAgent);

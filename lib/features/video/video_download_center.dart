@@ -656,7 +656,10 @@ class VideoDownloadCenter extends ChangeNotifier {
   }
 
   Map<String, String> _requestHeaders(Map<String, String> headers) {
-    final result = {for (final e in headers.entries) e.key.toLowerCase(): e.value};
+    final result = {
+      for (final e in headers.entries)
+        if (!isMediaTransportHeader(e.key)) e.key.toLowerCase(): e.value,
+    };
     result.putIfAbsent('user-agent', () => LumeNet.settings.userAgent.isNotEmpty
         ? LumeNet.settings.userAgent : LumeHttp.defaultUserAgent);
     result['accept-encoding'] = 'identity';
@@ -716,7 +719,8 @@ class VideoDownloadCenter extends ChangeNotifier {
     int offset, {
     int? expectedLength,
     String? expectedValidator,
-    void Function(String)? onValidator,
+    String? expectedDate,
+    void Function(String, String?)? onValidator,
     void Function(int)? onLength,
   }) {
     final encoding = _encoding(response);
@@ -729,6 +733,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       offset,
       expectedLength: expectedLength,
       expectedValidator: expectedValidator,
+      expectedDate: expectedDate,
       onValidator: onValidator,
       onLength: encoding == 'identity' ? onLength : null,
     );
@@ -749,13 +754,34 @@ class VideoDownloadCenter extends ChangeNotifier {
   String? _validator(HttpClientResponse response) =>
       response.headers.value('etag') ?? response.headers.value('last-modified');
 
+  // Weak ETags can identify byte-different encodings of the same content.
+  // Compare them for changes, but never use them as an If-Range precondition.
+  String? _strongTag(Object? validator) =>
+      validator is String && validator.startsWith('"') && validator.endsWith('"')
+          ? validator
+          : null;
+
+  String? _ifRange(Object? validator, Object? responseDate) {
+    final tag = _strongTag(validator);
+    if (tag != null) return tag;
+    if (validator is! String || validator.startsWith('W/') || responseDate is! String) {
+      return null;
+    }
+    try {
+      // Allow clock skew when deciding whether the last-modified second is
+      // distinguishable from the response time (RFC 9110 section 8.8.2.2).
+      final age = HttpDate.parse(responseDate).difference(HttpDate.parse(validator));
+      return age >= const Duration(minutes: 1) ? validator : null;
+    } on HttpException {
+      return null;
+    }
+  }
+
   String _addressHash(Uri uri) =>
       sha256.convert(utf8.encode(uri.removeFragment().toString())).toString();
 
   bool _sameStrongTag(Object? previous, HttpClientResponse response) =>
-      previous is String &&
-      previous.startsWith('"') &&
-      previous.endsWith('"') &&
+      _strongTag(previous) != null &&
       previous == response.headers.value('etag');
 
   // Byte ranges and validators refer to the encoded HTTP representation.
@@ -768,7 +794,8 @@ class VideoDownloadCenter extends ChangeNotifier {
     int offset, {
     int? expectedLength,
     String? expectedValidator,
-    void Function(String)? onValidator,
+    String? expectedDate,
+    void Function(String, String?)? onValidator,
     void Function(int)? onLength,
   }) async* {
     if (response.statusCode == 200) {
@@ -777,6 +804,9 @@ class VideoDownloadCenter extends ChangeNotifier {
       return;
     }
     var validator = expectedValidator ?? _validator(response);
+    var validatorDate = expectedValidator == null
+        ? response.headers.value('date')
+        : expectedDate;
     final encoding = _encoding(response);
     var total = expectedLength;
     while (true) {
@@ -818,7 +848,8 @@ class VideoDownloadCenter extends ChangeNotifier {
       }
       if (validator == null && nextValidator != null) {
         validator = nextValidator;
-        onValidator?.call(nextValidator);
+        validatorDate = response.headers.value('date');
+        onValidator?.call(nextValidator, validatorDate);
       }
       onLength?.call(total ?? 0);
       await for (final chunk in response.timeout(const Duration(seconds: 45))) {
@@ -835,7 +866,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         uri,
         origin,
         headers,
-        extra: {'Range': 'bytes=$offset-', 'If-Range': ?validator},
+        extra: {'Range': 'bytes=$offset-', 'If-Range': ?_ifRange(validator, validatorDate)},
       );
       final previousUri = uri;
       (response, uri) = next;
@@ -881,15 +912,17 @@ class VideoDownloadCenter extends ChangeNotifier {
     try {
       old = jsonDecode(await validator.readAsString()) as Map;
     } catch (_) {}
-    if ((old['signature'] != signature || old['encoded'] == true) &&
+    final previousValidator = old['validator'];
+    final previousIfRange = _ifRange(previousValidator, old['validatorDate']);
+    if ((old['signature'] != signature || old['encoded'] == true ||
+            previousValidator != null && previousIfRange == null) &&
         await partial.exists()) {
       await partial.delete();
     }
     var offset = await partial.exists() ? await partial.length() : 0;
     final extra = <String, String>{
       if (offset > 0) 'Range': 'bytes=$offset-',
-      if (offset > 0 && old['validator'] is String)
-        'If-Range': old['validator'] as String,
+      if (offset > 0) 'If-Range': ?previousIfRange,
     };
     var scopedHeaders = Map.of(headers);
     var (response, finalUri) = await _open(
@@ -899,7 +932,6 @@ class VideoDownloadCenter extends ChangeNotifier {
       scopedHeaders,
       extra: extra,
     );
-    final previousValidator = old['validator'];
     final responseValidator = _validator(response);
     final changed =
         previousValidator != null &&
@@ -949,6 +981,9 @@ class VideoDownloadCenter extends ChangeNotifier {
     var etag =
         _validator(response) ??
         (offset > 0 ? old['validator'] as String? : null);
+    var validatorDate = _validator(response) == null && offset > 0
+        ? old['validatorDate'] as String?
+        : response.headers.value('date');
     final iterator = StreamIterator(
       _downloadBody(
         task,
@@ -959,7 +994,11 @@ class VideoDownloadCenter extends ChangeNotifier {
         offset,
         expectedLength: offset > 0 ? previousLength : null,
         expectedValidator: etag,
-        onValidator: (value) => etag = value,
+        expectedDate: validatorDate,
+        onValidator: (value, date) {
+          etag = value;
+          validatorDate = date;
+        },
         onLength: (length) => task.totalBytes = length,
       ),
     );
@@ -1008,6 +1047,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         'headerHash': headerHash,
         if (task.totalBytes > 0) 'length': task.totalBytes,
         'validator': ?etag,
+        if (etag != null && validatorDate != null) 'validatorDate': validatorDate,
         if (_encoding(response) != 'identity') 'encoded': true,
       };
       await validator.writeAsString(jsonEncode(resumeInfo), flush: true);
@@ -1026,6 +1066,7 @@ class VideoDownloadCenter extends ChangeNotifier {
           if (resumeInfo['validator'] != etag ||
               task.totalBytes > 0 && resumeInfo['length'] != task.totalBytes) {
             if (etag != null) resumeInfo['validator'] = etag;
+            if (validatorDate != null) resumeInfo['validatorDate'] = validatorDate;
             if (task.totalBytes > 0) resumeInfo['length'] = task.totalBytes;
             await validator.writeAsString(jsonEncode(resumeInfo), flush: true);
           }

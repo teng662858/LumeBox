@@ -945,6 +945,31 @@ void main() {
     expect((await get(key)).$2, List.filled(16, 2));
   });
 
+  test('播放器拖动使用自己的 Range，不沿用网页缓存条件', () async {
+    final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => source.close(force: true));
+    source.listen((r) async {
+      if (r.headers.value('if-none-match') != null) {
+        r.response.statusCode = 304;
+      } else if (r.headers.value('if-range') != null || r.headers.value('cookie') != 'sid=valid') {
+        r.response.statusCode = 403;
+      } else {
+        final range = parseHttpByteRange(r.headers.value('range') ?? 'bytes=0-', 128)!;
+        r.response.statusCode = 206;
+        r.response.headers.set('Content-Range', 'bytes ${range.start}-${range.end}/128');
+        r.response.add(data.sublist(range.start, range.end + 1));
+      }
+      await r.response.close();
+    });
+    final media = await cache.wrap(PlayerMedia(
+      uri: Uri.parse('http://127.0.0.1:${source.port}/video.mp4'),
+      headers: const {'Range': 'bytes=100-', 'If-Range': '"prev"', 'If-None-Match': '"cached"', 'Cookie': 'sid=valid'},
+    ));
+    final response = await get(media.uri, 'bytes=10-30');
+    expect(response.$1.statusCode, 206);
+    expect(response.$2, data.sublist(10, 31));
+  });
+
   test('未知长度的视频不会采用另一个文件的尾字节作为总长度', () async {
     final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() => source.close(force: true));
