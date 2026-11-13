@@ -364,7 +364,7 @@ class NativeVideoSourceSession {
         kernelOverride: kernel,
       );
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-      return {'media': payload};
+      return {'media': payload, 'speed': _settings.copyWith(kernel: kernel).speed};
     }
     if (action == 'danmaku') return _danmaku();
     if (action == 'qualities') {
@@ -613,7 +613,7 @@ class NativeVideoSourceSession {
         kernel: kernel,
         speed: speed is num && speed.isFinite
             ? speed.toDouble().clamp(0.25, 4)
-            : _settings.speed,
+            : null,
         hardwareDecoding:
             data['hardwareDecoding'] as bool? ?? _settings.hardwareDecoding,
         autoNext: data['autoNext'] as bool? ?? _settings.autoNext,

@@ -360,6 +360,10 @@ import UniformTypeIdentifiers
         self.subtitleCues = []; self.caption.text = nil; self.danmaku = []; self.danmakuIndex = 0
         self.bullets.subviews.forEach { $0.removeFromSuperview() }
         let selected = action == "kernel" ? (arguments["id"] as? String ?? self.kernel) : self.kernel
+        if action == "kernel", let rate = (response?["speed"] as? NSNumber)?.doubleValue,
+           rate.isFinite, (0.25...4.0).contains(rate) {
+          self.speed = rate
+        }
         self.wantsPlay = automatic || action == "episode" || action == "next" || action == "previous" ? true : self.wantsPlay
         self.switchEngine(selected, resume: self.item.position, emitProgress: false)
         if self.danmakuEnabled { self.loadDanmaku() }
@@ -401,10 +405,16 @@ import UniformTypeIdentifiers
     showList("播放设置", rows: rows) { [weak self] row in
       guard let self else { return }
       switch row["id"] as? String {
-      case "speed": self.showList("播放速度", rows: [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map { ["title": "\($0)×", "value": $0] }) { [weak self] row in
-        guard let self, let rate = row["value"] as? Double else { return }; self.speed = rate
-        if self.wantsPlay { self.engine?.play(rate: rate) }; self.emit("settings", extra: ["speed": rate])
-      }
+      case "speed":
+        let rates = stride(from: 0.25, through: 4.0, by: 0.25).map { rate -> [String: Any] in
+          ["title": "\(rate)×", "value": rate, "selected": rate == self.speed]
+        }
+        self.showList("播放速度", rows: rates) { [weak self] row in
+          guard let self, let rate = row["value"] as? Double else { return }
+          self.speed = rate
+          if self.wantsPlay { self.engine?.play(rate: rate) }
+          self.emit("settings", extra: ["speed": rate])
+        }
       case "tracks": self.showTracks()
       case "subtitle": self.present(UIDocumentPickerViewController(forOpeningContentTypes: [.plainText, .data], asCopy: true), animated: true) { [weak self] in
         (self?.presentedViewController as? UIDocumentPickerViewController)?.delegate = self
@@ -725,6 +735,7 @@ import UniformTypeIdentifiers
     result["session"] = session; result["kernel"] = kernel; result["generation"] = generation
     result["closing"] = closing; result["resolving"] = resolving; result["switching"] = switching
     result["nativeControls"] = controls.count; result["wantsPlay"] = wantsPlay
+    result["speed"] = speed
     result["pipSupported"] = kernel == "avplayer"
     result["viewAttached"] = engine?.view.window != nil
     if let back = controls["close"] {
@@ -751,7 +762,7 @@ import UniformTypeIdentifiers
     switch args["action"] as? String {
     case "tap": if let id = args["control"] as? String { controls[id]?.sendActions(for: .touchUpInside) }
     case "seek": if let at = args["position"] as? Double { commitSeek(at) }
-    case "kernel": if let value = args["kernel"] as? String { switchEngine(value) }
+    case "kernel": if let value = args["kernel"] as? String { resolve("kernel", arguments: ["id": value]) }
     case "pip": preparePip()
     default: break
     }

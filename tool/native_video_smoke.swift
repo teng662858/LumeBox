@@ -23,7 +23,12 @@
     do {
       let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)"])
       let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": false, "headlessAudio": true])
-      view.request = { _, _, completion in completion([:]) }
+      view.request = { [weak view] action, arguments, completion in
+        guard action == "kernel" else { completion([:]); return }
+        var media = item.payload
+        media["position"] = view?.debugState["position"]
+        completion(["media": media, "speed": arguments["id"] as? String == "mpv" ? 2.5 : 1.0])
+      }
       screen = view
       window?.rootViewController?.present(view, animated: false) {
         self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in MainActor.assumeIsolated { self.tick() } }
@@ -72,9 +77,11 @@
     } else if phase == 3 && state["firstFrame"] as? Bool == true && state["switching"] as? Bool == false {
       if swaps == 1 {
         check(state["kernel"] as? String == "mpv", "switch to MPV")
+        check(state["speed"] as? Double == 2.5, "MPV restores its saved rate")
         screen.debugAction(["action": "kernel", "kernel": "avplayer"]); swaps = 2
       } else {
         check(state["kernel"] as? String == "avplayer", "switch back to AVPlayer")
+        check(state["speed"] as? Double == 1.0, "AVPlayer restores its own rate")
         print("NATIVE_VIDEO_SWITCH_OK"); complete()
       }
     }

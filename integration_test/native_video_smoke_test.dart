@@ -136,17 +136,20 @@ void main() {
     'native engine replacement and closing during startup remain responsive',
     (tester) async {
       await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+      final media = {
+        'url': 'http://127.0.0.1:18765/protected/smoke.mp4',
+        'headers': {'X-Lume-Test': r'ticket=a,b\c'},
+        'identity': 'switch',
+      };
       final connection = bridge.connect(
-        request: (_, _) async => {},
+        request: (action, arguments) async => action == 'kernel'
+            ? {'media': media, 'speed': arguments['id'] == 'mpv' ? 2.5 : 1.0}
+            : {},
         event: (_) {},
       );
       addTearDown(connection.close);
       await connection.open(
-        {
-          'url': 'http://127.0.0.1:18765/protected/smoke.mp4',
-          'headers': {'X-Lume-Test': r'ticket=a,b\c'},
-          'identity': 'switch',
-        },
+        media,
         {'headlessAudio': true, 'autoNext': false},
       );
       await waitFor(
@@ -161,6 +164,7 @@ void main() {
           connection,
           (s) =>
               s['kernel'] == kernel &&
+              s['speed'] == (kernel == 'mpv' ? 2.5 : 1.0) &&
               s['firstFrame'] == true &&
               s['switching'] == false,
         );
