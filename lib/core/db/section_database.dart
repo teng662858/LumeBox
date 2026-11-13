@@ -61,10 +61,15 @@ CREATE TABLE IF NOT EXISTS section_setting (
   static Future<SectionDatabase> open(SectionScope scope) async {
     final existing = _opened[scope.section.id];
     if (existing != null) return existing;
+    final cipher = await LocalCipher.open();
+    // Another caller may have finished opening this section while the key
+    // was loading. From here through registration there are no async gaps.
+    final opened = _opened[scope.section.id];
+    if (opened != null) return opened;
     final database = SectionDatabase._(
       sqlite3.open(scope.dbPath),
       scope.section.id,
-      await LocalCipher.open(),
+      cipher,
     );
     try {
       database._migrate();

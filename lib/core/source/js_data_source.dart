@@ -196,14 +196,7 @@ class JsDataSource
 
   @override
   Future<List<SourceCategory>> categories() async {
-    const key = 'categories';
-    final cached = SourceResponseCache.bypassed
-        ? null
-        : cache?.read(section, id, key);
-    if (cached is List<SourceCategory>) return cached;
-    final value = parseCategories(await _invoke(JsSourceContract.categories));
-    cache?.write(section, id, key, value);
-    return value;
+    return parseCategories(await _invoke(JsSourceContract.categories));
   }
 
   Future<Set<String>>? _contract;
@@ -292,26 +285,13 @@ class JsDataSource
 
   @override
   Future<SourceDetail?> detail(String itemId) async {
-    final key = 'detail|$itemId';
-    final cached = SourceResponseCache.bypassed
-        ? null
-        : cache?.read(section, id, key);
-    if (cached is SourceDetail) return cached;
-    final value = SourceDetail.parse(
+    return SourceDetail.parse(
       await _invoke(JsSourceContract.detail, <String, Object?>{'id': itemId}),
     );
-    // 空结果是「条目不存在」，不是可复用的元数据，不进缓存。
-    if (value != null) cache?.write(section, id, key, value);
-    return value;
   }
 
   @override
   Future<List<SourceChapter>> chapters(String itemId) async {
-    final key = 'chapters|$itemId';
-    final cached = SourceResponseCache.bypassed
-        ? null
-        : cache?.read(section, id, key);
-    if (cached is List<SourceChapter>) return cached;
     final value = <SourceChapter>[];
     if ((await _contractMethods()).contains('chapterPage')) {
       var page = 1;
@@ -346,7 +326,6 @@ class JsDataSource
         ),
       );
     }
-    cache?.write(section, id, key, value);
     return value;
   }
 

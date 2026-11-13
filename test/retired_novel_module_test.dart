@@ -63,12 +63,12 @@ void main() {
   });
 
   test(
-    'text payloads are rejected while images and video remain supported',
+    'text, image and video payloads remain readable after section migration',
     () {
       expect(() => ChapterContent.parse('正文'), throwsFormatException);
       expect(
-        () => ChapterContent.parse({'kind': 'text', 'text': '正文'}),
-        throwsFormatException,
+        (ChapterContent.parse({'kind': 'text', 'text': '正文'}) as TextContent).text,
+        '正文',
       );
       expect(
         ChapterContent.parse({

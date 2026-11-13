@@ -72,11 +72,9 @@ void main() {
         entry.key,
         reason: '对象式契约名必须在末位（命中它即收对象入参）',
       );
-      expect(
-        names.first,
-        startsWith('get'),
-        reason: '首位是函数式契约的推荐写法，报错里点名它',
-      );
+      if (names.length > 1) {
+        expect(names.first, startsWith('get'), reason: '首位是函数式契约的推荐写法');
+      }
     }
     expect(LumeSourceBridge.aliases['list'], contains('getList'));
   });

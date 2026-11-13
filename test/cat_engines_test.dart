@@ -37,7 +37,7 @@ void main() {
     );
     // 板块作用域在真实时钟里先打开（fake-async 里等不到真实异步）。
     for (final section in Section.values) {
-      await SectionScope.open(section);
+      await SectionDatabase.open(await SectionScope.open(section));
     }
   });
 

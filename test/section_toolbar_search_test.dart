@@ -44,6 +44,7 @@ void main() {
         );
     for (final section in Section.values) {
       await SectionScope.open(section);
+      await ReadingLibrary.open(section);
     }
   });
 
@@ -821,7 +822,7 @@ void main() {
       expect(comic.setting('search.results.siteLayout'), isNull);
       await tester.pumpWidget(const SizedBox());
       ReadingLibrary.close(Section.video);
-      final reopened = await ReadingLibrary.open(Section.video);
+      final reopened = (await tester.runAsync(() => ReadingLibrary.open(Section.video)))!;
       expect(reopened.setting('search.results.siteLayout'), 'top');
       await tester.pumpWidget(page());
       await tester.pumpAndSettle();
@@ -909,6 +910,11 @@ void main() {
         await tester.tap(find.widgetWithText(ListTile, '聚合搜索'));
         await tester.pumpAndSettle();
         expect(find.widgetWithText(CheckboxListTile, '停用站点'), findsNothing);
+        await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('search-site-source-b')),
+          150,
+          scrollable: find.descendant(of: find.byType(BottomSheet), matching: find.byType(Scrollable)).first,
+        );
         await tester.tap(find.byKey(const ValueKey('search-site-source-b')));
         await tester.pumpAndSettle();
         expect(find.text('已选 1/2 个站点'), findsOneWidget);
@@ -924,7 +930,7 @@ void main() {
         expect(find.text('甲作品结果'), findsOneWidget);
         expect(find.text('乙作品结果'), findsNothing);
 
-        await tester.tap(find.widgetWithIcon(TextButton, Icons.checklist));
+        await tester.tap(find.widgetWithText(TextButton, '站点 1'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('清空'));
         await tester.pumpAndSettle();
@@ -946,7 +952,7 @@ void main() {
         expect(store.load(), {'source-b'});
 
         // Dismissing without applying must not search or persist the draft.
-        await tester.tap(find.widgetWithIcon(TextButton, Icons.checklist));
+        await tester.tap(find.widgetWithText(TextButton, '站点 1'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('全选'));
         await tester.pumpAndSettle();

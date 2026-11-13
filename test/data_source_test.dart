@@ -347,11 +347,11 @@ void main() {
     });
   });
 
-  /// 读缓存（本轮新增）：分类 / 详情 / 章节按板块进缓存，列表与内容不进。
+  /// 分类、详情、章节和分页列表共用按源配置隔离的读缓存。
   ///
   /// 缓存由组合根注入（生产走 [SectionMemoryCache]，测试不传就没有缓存行为），
   /// 因此这里显式传缓存来验证「命中 / 不缓存 / 失败不写 / 清空后重取」四条口径。
-  group('读缓存：元数据进缓存，列表与内容不进', () {
+  group('读缓存：复用元数据和列表，播放地址始终重新解析', () {
     final cache = SectionMemoryCache.instance;
 
     setUp(cache.clearAll);
@@ -412,7 +412,29 @@ void main() {
       expect(callsOf(runtime, JsSourceContract.chapters), 1);
     });
 
-    test('列表与内容永不缓存：每次都走脚本', () async {
+    test('changing the source mirror refreshes categories, detail and episodes', () async {
+      var mirror = 'https://one.example';
+      final runtime = _FakeRuntime((method, _) async => switch (method) {
+        JsSourceContract.detail => {'id': 'item', 'title': mirror},
+        _ => [{'id': 'one', 'title': mirror}],
+      });
+      final source = JsDataSource(
+        id: 'demo',
+        name: '示例源',
+        section: Section.video,
+        runtime: runtime,
+        cache: cache,
+        sourceConfiguration: () => SourceSiteConfig(domainOverride: mirror),
+      );
+      for (final host in ['https://one.example', 'https://two.example']) {
+        mirror = host;
+        expect((await source.categories()).single.title, host);
+        expect((await source.detail('item'))?.title, host);
+        expect((await source.chapters('item')).single.title, host);
+      }
+    });
+
+    test('相同列表命中缓存，章节内容每次都走脚本', () async {
       final runtime = _FakeRuntime(
         (method, argument) async => switch (method) {
           JsSourceContract.list => <String, Object?>{
@@ -434,9 +456,9 @@ void main() {
       await source.content(itemId: 'a', chapterId: 'a-1');
       await source.content(itemId: 'a', chapterId: 'a-1');
 
-      expect(callsOf(runtime, JsSourceContract.list), 2);
+      expect(callsOf(runtime, JsSourceContract.list), 1);
       expect(callsOf(runtime, JsSourceContract.content), 2);
-      expect(cache.usageOf(Section.video).isEmpty, isTrue, reason: '一条都不该进缓存');
+      expect(cache.usageOf(Section.video).entries, 1);
     });
 
     test('失败不进缓存：抛错之后重试仍然走脚本', () async {

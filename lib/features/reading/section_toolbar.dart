@@ -180,7 +180,7 @@ class AggregateSearch {
       ),
     );
     void publish() {
-      if (completed == 0 || completed == enabled.length) {
+      if (completed <= 1 || completed == enabled.length) {
         publishTimer?.cancel();
         publishTimer = null;
         if (parent?.isCancelled != true) emit();

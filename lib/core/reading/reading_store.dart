@@ -192,11 +192,12 @@ CREATE TABLE IF NOT EXISTS reading_setting (
 
   static Future<ReadingStore> _open(Section section) async {
     final scope = await SectionScope.open(section);
+    final cipher = await LocalCipher.open();
     final store = ReadingStore._(
       section,
       scope,
       sqlite3.open(_readingDbPath(scope)),
-      await LocalCipher.open(),
+      cipher,
     );
     try {
       store._migrate();

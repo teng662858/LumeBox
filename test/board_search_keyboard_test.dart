@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/js/lume_js_engine.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
@@ -35,10 +36,13 @@ void main() {
     );
     LumeJsEngine.debugSupportedOverride = true;
     await SectionScope.open(Section.video);
+    await ReadingLibrary.open(Section.video);
   });
 
   tearDown(() async {
     LumeJsEngine.debugSupportedOverride = null;
+    ReadingLibrary.disposeAll();
+    ReadingStore.disposeAll();
     await SectionScope.closeAll();
     if (root.existsSync()) root.deleteSync(recursive: true);
   });

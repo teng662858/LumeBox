@@ -41,6 +41,17 @@ void main() {
   Future<SectionDatabase> openDatabase(Section section) async =>
       SectionDatabase.open(await SectionScope.open(section));
 
+  test('concurrent opens share a single live database connection', () async {
+    final scope = await SectionScope.open(Section.video);
+    final databases = await Future.wait(
+      List.generate(8, (_) => SectionDatabase.open(scope)),
+    );
+    expect(databases.toSet(), hasLength(1));
+    SectionDatabase.disposeAll();
+    await File(scope.dbPath).delete();
+    expect(await File(scope.dbPath).exists(), isFalse);
+  });
+
   test('更新声明与重命名均保留线路选择、自定义地址、账号和扩展参数', () async {
     final db = await openDatabase(Section.video);
     final fields = SourceSetting.parseAll([
