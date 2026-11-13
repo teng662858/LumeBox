@@ -443,7 +443,7 @@ class VideoDownloadCenter extends ChangeNotifier {
             ..start();
           _speedBytes = 0;
           await _policyCheckpoint(task);
-          await _download(task, uri, content.headers);
+          await _download(task, uri, _requestHeaders(content.headers));
           _check(task);
           if (task.hasLocalPlaylist) {
             await _save();
@@ -578,6 +578,20 @@ class VideoDownloadCenter extends ChangeNotifier {
     }
   }
 
+  Map<String, String> _requestHeaders(Map<String, String> headers) {
+    final result = {for (final e in headers.entries) e.key.toLowerCase(): e.value};
+    result.putIfAbsent('user-agent', () => LumeNet.settings.userAgent.isNotEmpty
+        ? LumeNet.settings.userAgent : LumeHttp.defaultUserAgent);
+    result['accept-encoding'] = 'identity';
+    return result;
+  }
+
+  String _headerHash(Map<String, String> headers) {
+    final entries = headers.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return sha256.convert(utf8.encode(jsonEncode(Map.fromEntries(entries)))).toString();
+  }
+
   Future<(HttpClientResponse, Uri)> _open(
     VideoDownloadTask task,
     Uri uri,
@@ -598,15 +612,6 @@ class VideoDownloadCenter extends ChangeNotifier {
         }
         req.headers.set(e.key, e.value);
       }
-      if (!headers.keys.any((key) => key.toLowerCase() == 'user-agent')) {
-        req.headers.set(
-          'User-Agent',
-          LumeNet.settings.userAgent.isNotEmpty
-              ? LumeNet.settings.userAgent
-              : LumeHttp.defaultUserAgent,
-        );
-      }
-      req.headers.set('Accept-Encoding', 'identity');
       for (final e in extra.entries) {
         req.headers.set(e.key, e.value);
       }
@@ -813,15 +818,17 @@ class VideoDownloadCenter extends ChangeNotifier {
         previousValidator != responseValidator;
     // Query parameters can select a different movie or simply rotate a token.
     // Across addresses, only reuse bytes when the server confirms a strong ETag.
-    final sameAddresses =
+    final headerHash = _headerHash(headers);
+    final sameRequest =
         old['requestHash'] == _addressHash(uri) &&
-        old['responseHash'] == _addressHash(finalUri);
+        old['responseHash'] == _addressHash(finalUri) &&
+        old['headerHash'] == headerHash;
     final previousLength = old['length'] is int ? old['length'] as int : null;
     final range = response.headers.value('content-range');
     final responseTotal = int.tryParse(range?.split('/').last ?? '');
     final restart =
         changed ||
-        (!sameAddresses && !_sameStrongTag(previousValidator, response)) ||
+        (!sameRequest && !_sameStrongTag(previousValidator, response)) ||
         (previousLength != null &&
             responseTotal != null &&
             previousLength != responseTotal);
@@ -906,6 +913,7 @@ class VideoDownloadCenter extends ChangeNotifier {
           'signature': signature,
           'requestHash': _addressHash(uri),
           'responseHash': _addressHash(finalUri),
+          'headerHash': headerHash,
           if (task.totalBytes > 0) 'length': task.totalBytes,
           'validator': ?etag,
           if (_encoding(response) != 'identity') 'encoded': true,
@@ -1082,13 +1090,14 @@ class VideoDownloadCenter extends ChangeNotifier {
     // Identical relative names can resolve to different keys and media after
     // a resolver changes CDN or directory between attempts.
     final plan = sha256
-        .convert(utf8.encode(jsonEncode(['ts-v2', uri.toString(), body])))
+        .convert(utf8.encode(jsonEncode(['ts-v3', origin.origin, uri.toString(), _headerHash(headers), body])))
         .toString()
         .substring(0, 16);
     final resourceDir = Directory(p.join(folder(task), '$name-$plan'));
     await resourceDir.create(recursive: true);
     final output = <String>[];
     var encrypted = false;
+    var keySuffix = '';
     var mappedMp4 = false;
     var index = 0;
     task.total += lines.where((l) => l.isNotEmpty && !l.startsWith('#')).length;
@@ -1106,12 +1115,15 @@ class VideoDownloadCenter extends ChangeNotifier {
         await flushSegments();
         final key = line.startsWith('#EXT-X-KEY:');
         final attributes = hlsRawAttributes(line);
-        if (key) encrypted = attributes['METHOD'] != 'NONE';
+        if (key) {
+          encrypted = attributes['METHOD'] != 'NONE';
+          keySuffix = '';
+        }
         final rawUri = attributes['URI'];
         if (rawUri != null) {
           final url = uri.resolve(hlsAttributeValue(rawUri));
           final relative =
-              '$name-$plan/${key ? 'key' : 'map'}-${index++}.${key ? 'key' : 'mp4'}';
+              '$name-$plan/${key ? 'key' : 'map'}-${index++}$keySuffix.${key ? 'key' : 'mp4'}';
           final file = File(p.join(folder(task), relative));
           await _policyCheckpoint(task);
           await _resource(
@@ -1122,7 +1134,10 @@ class VideoDownloadCenter extends ChangeNotifier {
             file,
             key: key,
           );
-          if (!key) {
+          if (key) {
+            // Key URLs can stay the same while the encrypted segments rotate.
+            keySuffix = '-${sha256.convert(await file.readAsBytes()).toString().substring(0, 16)}';
+          } else {
             mappedMp4 = encrypted
                 ? const {'.mp4', '.m4s', '.m4a'}.contains(p.extension(url.path).toLowerCase())
                 : await hasMp4BoxHeader(file);
@@ -1139,7 +1154,7 @@ class VideoDownloadCenter extends ChangeNotifier {
             const {'.ts', '.m4s', '.mp4', '.aac', '.mp3', '.ac3', '.ec3', '.eac3'}.contains(suffix)
             ? suffix
             : mappedMp4 ? '.m4s' : '.ts';
-        final relative = '$name-$plan/segment-${index++}$extension';
+        final relative = '$name-$plan/segment-${index++}$keySuffix$extension';
         final unwrap = !encrypted && extension == '.ts';
         pending.add(() async {
           if (_yieldToPlayback) {
@@ -1215,7 +1230,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     bool key = false,
     bool unwrap = false,
   }) async {
-    if (await file.exists() && await file.length() > 0) {
+    if (!key && await file.exists() && await file.length() > 0) {
       task.bytes += await file.length();
       return;
     }

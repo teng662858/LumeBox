@@ -668,25 +668,34 @@ void main() {
     expect(await c.localFile(task).readAsBytes(), data);
     expect(task.bytes, data.length);
   });
-  for (final (redirect, status, sameTag) in [
-    (false, 206, false),
-    (true, 206, false),
-    (false, 416, false),
-    (true, 206, true),
+  for (final (change, status, sameTag) in [
+    ('query', 206, false),
+    ('redirect', 206, false),
+    ('query', 416, false),
+    ('redirect', 206, true),
+    ('header', 206, false),
+    ('header', 416, false),
+    ('header', 206, true),
   ]) {
-    test('a changed media query checks the partial file (redirect=$redirect, status=$status, sameTag=$sameTag)', () async {
+    test('a changed media request checks the partial file ($change, status=$status, sameTag=$sameTag)', () async {
       var version = 'old';
       final newBytes = List.generate(status == 416 ? 32 : 64, (i) => i);
       final resumedRanges = <String?>[];
       final c = VideoDownloadCenter(
         directory: () async => root,
         resolve: (_) async => VideoContent(
-          url: origin.resolve(redirect ? 'play' : 'file.mp4?v=$version'),
+          url: origin.resolve(switch (change) {
+            'redirect' => 'play',
+            'header' => 'file.mp4',
+            _ => 'file.mp4?v=$version',
+          }),
+          headers: change == 'header' ? {'Authorization': 'private-$version'} : const {},
         ),
       );
       server.listen((request) async {
         final response = request.response;
         final range = request.headers.value('range');
+        if (change == 'header') expect(request.headers.value('authorization'), 'private-$version');
         if (sameTag) response.headers.set('ETag', '"movie"');
         if (version == 'new' && request.uri.path == '/file.mp4') {
           resumedRanges.add(range);
@@ -719,6 +728,8 @@ void main() {
       final task = c.tasks.single;
       await until(() => task.state == 'failed');
       expect(task.bytes, 32);
+      final metadata = await File('${c.folder(task)}/resume.json').readAsString();
+      expect(metadata, isNot(contains('private-old')));
       version = 'new';
       await c.resume(task);
       await until(() => ['done', 'failed'].contains(task.state));
@@ -931,7 +942,7 @@ void main() {
   });
 
   test('HLS retries completed fragments, stores AES-128 keys, and plays through local HTTP without origin access', () async {
-    var first = 0, second = 0;
+    var first = 0, second = 0, keys = 0;
     const playlist =
         '#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-KEY:METHOD=AES-128,URI="key"\n#EXTINF:4,\na.ts\n#EXTINF:4,\nb.ts\n#EXT-X-ENDLIST\n';
     server.listen((r) async {
@@ -939,6 +950,7 @@ void main() {
         case '/index.m3u8':
           r.response.write(playlist);
         case '/key':
+          keys++;
           r.response.add(List.filled(16, 7));
         case '/a.ts':
           first++;
@@ -953,14 +965,19 @@ void main() {
       }
       await r.response.close();
     });
-    final c = await center('index.m3u8');
+    final headers = {'X-Route': 'test', 'Authorization': 'private-fixture'};
+    final c = await center('index.m3u8', headers: headers);
     await enqueue(c);
     await until(() => c.tasks.single.state == 'failed');
+    headers
+      ..clear()
+      ..addAll({'authorization': 'private-fixture', 'x-route': 'test'});
     await c.resume(c.tasks.single);
     await until(() => c.tasks.single.state == 'merge_failed');
     await c.flush();
     expect(first, 1);
     expect(second, 2);
+    expect(keys, 2);
     expect(c.tasks.single.completed, 2);
     final local = await OfflineVideoServer.open(
       Directory(c.folder(c.tasks.single)),
@@ -1128,6 +1145,53 @@ void main() {
     }
   });
 
+  for (final rotatedKey in [false, true]) {
+    test('HLS resume rejects stale downloaded resources after a header or key changes (key=$rotatedKey)', () async {
+      var version = 1;
+      final c = VideoDownloadCenter(
+        directory: () async => root,
+        merge: (_, _, _) async => throw StateError('fixture cannot remux'),
+        resolve: (_) async => VideoContent(
+          url: origin.resolve('index.m3u8'),
+          headers: {'Authorization': 'token-${rotatedKey ? 1 : version}'},
+        ),
+      );
+      server.listen((r) async {
+        final generation = rotatedKey ? version : int.parse(r.headers.value('authorization')!.split('-').last);
+        switch (r.uri.path) {
+          case '/index.m3u8':
+            r.response.write('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key",IV=0x00000000000000000000000000000000\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:1,\na.m4s\n#EXTINF:1,\nb.m4s\n#EXT-X-ENDLIST\n');
+          case '/key':
+            r.response.add(List.filled(16, rotatedKey ? generation : 9));
+          default:
+            if (generation == 1 && r.uri.path == '/b.m4s') {
+              r.response.statusCode = 503;
+            } else {
+              r.response.add(List.filled(32, generation));
+            }
+        }
+        await r.response.close();
+      });
+      await enqueue(c);
+      final task = c.tasks.single;
+      await until(() => task.state == 'failed');
+      version = 2;
+      await c.resume(task);
+      await until(() => ['failed', 'merge_failed'].contains(task.state));
+      await c.flush();
+      expect(task.state, 'merge_failed', reason: task.error);
+      final manifest = await c.localFile(task).readAsString();
+      final refs = [
+        for (final m in RegExp(r'URI="([^"]+)"').allMatches(manifest)) m[1]!,
+        ...LineSplitter.split(manifest).where((line) => line.endsWith('.m4s')),
+      ];
+      expect(refs, hasLength(4));
+      for (final path in refs) {
+        expect(await File.fromUri(c.localFile(task).uri.resolve(path)).readAsBytes(),
+            everyElement(path.endsWith('.key') && !rotatedKey ? 9 : 2), reason: path);
+      }
+    });
+  }
   test('offline master retains in-band audio, alternate languages and caption descriptors', () async {
     final requests = <String>[];
     server.listen((r) async {
