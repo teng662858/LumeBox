@@ -48,10 +48,28 @@ void main() {
     expect(center.hidden(first), true);
     center.hide(first, false);
     expect(center.hidden(first), false);
-    center.clip(first, text: '对白', folder: '片段', seconds: 125, chapter: 2);
+    center.clip(
+      first,
+      text: '对白',
+      folder: '片段',
+      seconds: 125,
+      chapter: 2,
+      chapterId: 'e-37',
+    );
     expect(center.rows('clips').single['seconds'], 125);
     expect(center.rows('clips').single['folder'], '片段');
+    expect(center.rows('clips').single['chapterId'], 'e-37');
   });
+  test('保存无备注的听书书签和漫画页码，保留零时间点和第一页', () {
+    center.clip(first, text: '  ', chapter: 1, seconds: 0);
+    center.clip(second, text: '', chapter: 2, page: 0);
+    expect(center.rows('clips').map((clip) => clip['text']), ['0:00', '第 1 页']);
+    expect(center.rows('clips').first['seconds'], 0);
+    expect(center.rows('clips').last['page'], 0);
+    center.clip(first, text: ' ', chapter: 1);
+    expect(center.rows('clips'), hasLength(2));
+  });
+
   test('离线策略不把未知网络当作 Wi-Fi，播放让路及空间阈值生效', () async {
     center.put('wifiOnly', true);
     expect(

@@ -76,20 +76,35 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
       flexibleSpace: const SizedBox.expand(),
       title: const Text('音频播放'),
       actions: [
-        IconButton(
-          tooltip: '保存听书书签',
-          icon: const Icon(Icons.bookmark_add_outlined),
-          onPressed: () => saveContentClip(
-            context,
-            ContentRef(
-              widget.resource.destination,
-              '@audio-library',
-              widget.resource.id,
-              widget.resource.title,
-            ),
-            chapter: session.current,
-            seconds: session.position.inSeconds,
-          ),
+        ListenableBuilder(
+          listenable: session,
+          builder: (context, _) {
+            final entry = session.resource;
+            final chapter = entry?.episodes.elementAtOrNull(session.current);
+            return IconButton(
+              tooltip: '保存听书书签',
+              icon: const Icon(Icons.bookmark_add_outlined),
+              onPressed:
+                  _starting ||
+                      session.loading ||
+                      session.error != null ||
+                      entry?.id != widget.resource.id ||
+                      chapter == null
+                  ? null
+                  : () => saveContentClip(
+                      context,
+                      ContentRef(
+                        widget.resource.destination,
+                        '@audio-library',
+                        widget.resource.id,
+                        widget.resource.title,
+                      ),
+                      chapter: session.current,
+                      chapterId: chapter.id,
+                      seconds: session.position.inSeconds,
+                    ),
+            );
+          },
         ),
 
         IconButton(

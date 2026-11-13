@@ -7,6 +7,7 @@ Future<void> saveContentClip(
   ContentRef ref, {
   String text = '',
   int? chapter,
+  String? chapterId,
   int? seconds,
   int? page,
 }) async {
@@ -52,6 +53,7 @@ Future<void> saveContentClip(
       text: note.text,
       folder: folder.text,
       chapter: chapter,
+      chapterId: chapterId,
       seconds: seconds,
       page: page,
     );

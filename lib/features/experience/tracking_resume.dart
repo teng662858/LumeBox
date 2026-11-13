@@ -19,16 +19,26 @@ abstract final class TrackingResume {
 
   static List<SourceChapter> episodes(
     List<SourceChapter> chapters,
-    VideoProgress? progress,
-  ) {
+    VideoProgress? progress, {
+    String? chapterId,
+  }) {
     if (chapters.isEmpty) return [];
     final current = chapters
-        .where((c) => c.id == progress?.chapterId)
+        .where((c) => c.id == (chapterId ?? progress?.chapterId))
         .firstOrNull;
     return VideoEpisodeCatalog.forChapter(
       chapters,
       current?.id ?? chapters.first.id,
     );
+  }
+
+  static int bookmarkIndex(Iterable<String> ids, String chapterId) {
+    var index = 0;
+    for (final id in ids) {
+      if (id == chapterId) return index;
+      index++;
+    }
+    throw const FormatException('书签对应的章节已从目录移除');
   }
 
   static int index(List<SourceChapter> episodes, VideoProgress? progress) {

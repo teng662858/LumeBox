@@ -193,6 +193,19 @@ void main() {
     );
     final p = progress('b1', 96);
     final episodes = TrackingResume.episodes(chapters, p);
+    final bookmarked = TrackingResume.episodes(
+      chapters.reversed.toList(),
+      p,
+      chapterId: 'a1',
+    );
+    expect(bookmarked.map((c) => c.id), contains('a1'));
+    expect(bookmarked.map((c) => c.id), isNot(contains('b1')));
+    final ids = bookmarked.map((c) => c.id);
+    expect(bookmarked[TrackingResume.bookmarkIndex(ids, 'a1')].id, 'a1');
+    expect(
+      () => TrackingResume.bookmarkIndex(ids, 'removed'),
+      throwsFormatException,
+    );
     expect(episodes.map((c) => c.id), ['b1', 'b2']);
     expect(TrackingResume.index(episodes, p), 1);
     expect(TrackingResume.index(episodes, progress('b1', 30)), 0);

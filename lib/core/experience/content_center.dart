@@ -151,18 +151,29 @@ class ContentCenter extends ChangeNotifier {
     String folder = '默认',
     int? seconds,
     int? chapter,
+    String? chapterId,
     int? page,
   }) {
-    if (text.trim().isEmpty) return;
+    var label = text.trim();
+    if (label.isEmpty) {
+      if (seconds != null && seconds >= 0) {
+        label = '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+      } else if (page != null && page >= 0) {
+        label = '第 ${page + 1} 页';
+      } else {
+        return;
+      }
+    }
     put('clips', [
       ...rows('clips'),
       {
         'id': DateTime.now().microsecondsSinceEpoch.toString(),
         'ref': ref.toJson(),
-        'text': text.trim(),
+        'text': label,
         'folder': folder.trim().isEmpty ? '默认' : folder.trim(),
         'seconds': seconds,
         'chapter': chapter,
+        if (chapterId != null && chapterId.isNotEmpty) 'chapterId': chapterId,
         'page': page,
         'time': DateTime.now().toIso8601String(),
       },

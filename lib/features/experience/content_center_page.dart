@@ -69,6 +69,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
         libraries.add(await ReadingLibrary.open(section));
       }
       await AudioBookSettings.instance.load();
+      await MediaLibrary.instance.boot();
       if (mounted) setState(() {});
       if (widget.initialReference != null) {
         final key = widget.initialReference;
@@ -90,48 +91,50 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
     super.dispose();
   }
 
-  List<({LibraryItem item, ReadingProgress progress})> get audioEntries => [
-    for (final section in Section.values)
-      for (final resource in MediaLibrary.instance.entries(section))
-        if (resource.kind == ResourceKind.audioBook)
-          if (AudioBookSettings.instance.positions[resource.id]
-              case final saved?)
-            (
-              item: LibraryItem(
-                section: section,
-                itemId: resource.id,
-                sourceId: '@audio-library',
-                title: resource.title,
-                chapterCount: resource.episodes.length,
-                readChapterIndex: saved['index'] ?? 0,
-                addedAt: DateTime.fromMillisecondsSinceEpoch(
-                  saved['updatedAt'] ?? 0,
-                ),
-                updatedAt: DateTime.fromMillisecondsSinceEpoch(
-                  saved['updatedAt'] ?? 0,
-                ),
-              ),
-              progress: VideoProgress(
-                section: section,
-                sourceId: '@audio-library',
-                itemId: resource.id,
-                chapterIndex: saved['index'] ?? 0,
-                chapterId: resource.episodes.isEmpty
-                    ? ''
-                    : resource
-                          .episodes[(saved['index'] ?? 0).clamp(
-                            0,
-                            resource.episodes.length - 1,
-                          )]
-                          .id,
-                chapterTitle: '听书',
-                updatedAt: DateTime.fromMillisecondsSinceEpoch(
-                  saved['updatedAt'] ?? 0,
-                ),
-                position: Duration(milliseconds: saved['position'] ?? 0),
-              ),
+  List<({LibraryItem item, ReadingProgress progress})> get audioEntries {
+    final entries = <({LibraryItem item, ReadingProgress progress})>[];
+    final settings = AudioBookSettings.instance;
+    for (final section in Section.values) {
+      for (final resource in MediaLibrary.instance.entries(section)) {
+        final saved = settings.positions[resource.id];
+        if (resource.kind != ResourceKind.audioBook || saved == null) continue;
+        final index = settings.indexFor(resource);
+        entries.add((
+          item: LibraryItem(
+            section: section,
+            itemId: resource.id,
+            sourceId: '@audio-library',
+            title: resource.title,
+            chapterCount: resource.episodes.length,
+            readChapterIndex: index,
+            addedAt: DateTime.fromMillisecondsSinceEpoch(
+              saved['updatedAt'] ?? 0,
             ),
-  ];
+            updatedAt: DateTime.fromMillisecondsSinceEpoch(
+              saved['updatedAt'] ?? 0,
+            ),
+          ),
+          progress: VideoProgress(
+            section: section,
+            sourceId: '@audio-library',
+            itemId: resource.id,
+            chapterIndex: index,
+            chapterId:
+                settings.chapterIds[resource.id] ??
+                resource.episodes.elementAtOrNull(index)?.id ??
+                '',
+            chapterTitle: '听书',
+            updatedAt: DateTime.fromMillisecondsSinceEpoch(
+              saved['updatedAt'] ?? 0,
+            ),
+            position: Duration(milliseconds: saved['position'] ?? 0),
+          ),
+        ));
+      }
+    }
+    return entries;
+  }
+
   List<LibraryItem> get entries => [
     ...audioEntries.map((v) => v.item),
     for (final lib in libraries) ...lib.history(limit: 10000),
@@ -143,6 +146,11 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
   Future<void> run(Future<void> Function() action) async {
     try {
       await action();
+    } on FormatException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.message)));
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -166,6 +174,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
     bool resume = true,
     bool nextUnwatched = false,
     int? chapter,
+    String? chapterId,
     int? seconds,
     int? page,
   }) async {
@@ -182,7 +191,12 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
       await openMediaResource(
         context,
         resource,
-        index: chapter,
+        index: chapterId == null
+            ? chapter
+            : TrackingResume.bookmarkIndex(
+                resource.episodes.map((e) => e.id),
+                chapterId,
+              ),
         position: seconds == null ? null : Duration(seconds: seconds),
       );
       if (mounted) setState(() {});
@@ -206,6 +220,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
     if (resume &&
         (progress != null ||
             chapter != null ||
+            chapterId != null ||
             (nextUnwatched && ref.section == Section.video))) {
       var chapters = await source
           .chapters(ref.item)
@@ -215,6 +230,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
         chapters = TrackingResume.episodes(
           chapters,
           progress is VideoProgress ? progress : null,
+          chapterId: chapterId,
         );
         if (nextUnwatched) {
           final next = TrackingResume.index(
@@ -226,11 +242,10 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
         }
       }
       final saved = chapters.indexWhere((c) => c.id == progress?.chapterId);
-      final index =
-          (chapter ?? (saved >= 0 ? saved : progress?.chapterIndex ?? 0)).clamp(
-            0,
-            chapters.length - 1,
-          );
+      final index = chapterId != null
+          ? TrackingResume.bookmarkIndex(chapters.map((c) => c.id), chapterId)
+          : (chapter ?? (saved >= 0 ? saved : progress?.chapterIndex ?? 0))
+                .clamp(0, chapters.length - 1);
       if (progress is NovelProgress) {
         screen = NovelReaderPage(
           source: source,
@@ -264,7 +279,9 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
           final uri = selected?.url ?? SourcePlayback.contentAddress(content);
           if (uri == null) throw StateError('没有播放地址');
           screen = VideoPlayerPage(
-            initialPosition: seconds == null ? null : Duration(seconds: seconds),
+            initialPosition: seconds == null
+                ? null
+                : Duration(seconds: seconds),
             media: PlayerMedia(
               uri: uri,
               headers:
@@ -519,6 +536,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
                                 ref,
                                 text: note,
                                 chapter: entry.progress.chapterIndex,
+                                chapterId: entry.progress.chapterId,
                                 seconds: entry.progress is VideoProgress
                                     ? (entry.progress as VideoProgress)
                                           .position
@@ -706,6 +724,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
                           () => open(
                             ref,
                             chapter: clip['chapter'] as int?,
+                            chapterId: clip['chapterId'] as String?,
                             seconds: clip['seconds'] as int?,
                             page: clip['page'] as int?,
                           ),

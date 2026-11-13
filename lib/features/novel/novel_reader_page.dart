@@ -672,6 +672,7 @@ class _NovelReaderPageState extends State<NovelReaderPage>
                         widget.target.title,
                       ),
                       chapter: _chapterOrder[_chapter],
+                      chapterId: _orderedChapters[_chapter].id,
                       text: _text.substring(
                         _offset.clamp(0, _text.length),
                         (_offset + 300).clamp(0, _text.length),

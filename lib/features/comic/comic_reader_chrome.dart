@@ -1193,6 +1193,7 @@ extension _ComicReaderChrome on _ComicReaderPageState {
                   widget.target.title,
                 ),
                 chapter: _chapterIndex,
+                chapterId: _chapters.elementAtOrNull(_chapterIndex)?.id,
                 page: _page,
               ),
             ),
