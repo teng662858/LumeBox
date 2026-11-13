@@ -16,10 +16,13 @@ class VideoResumeRequest {
   final Duration position, duration;
   bool confident(SourceChapter chapter, {String workTitle = ''}) {
     final wanted = VideoEpisodeCatalog.episodeNumber(chapterTitle);
-    if (wanted == null) return chapter.title.trim() == chapterTitle.trim();
-    final found = VideoEpisodeCatalog.episodeNumber(
-      VideoEpisodeCatalog.labelOf(chapter),
-    );
+    final label = VideoEpisodeCatalog.labelOf(chapter);
+    if (wanted == null) return _exactTitle(chapter, label);
+    if (VideoEpisodeCatalog.episodePart(label) !=
+        VideoEpisodeCatalog.episodePart(chapterTitle)) {
+      return false;
+    }
+    final found = VideoEpisodeCatalog.episodeNumber(label);
     if (found == null || found.episode != wanted.episode) return false;
     final desiredSeason =
         wanted.season ?? VideoEpisodeCatalog.seasonNumber(title);
@@ -28,6 +31,10 @@ class VideoResumeRequest {
     return desiredSeason == null || actualSeason == desiredSeason;
   }
 
+  bool _exactTitle(SourceChapter chapter, String label) =>
+      chapterTitle.trim().isNotEmpty &&
+      (chapter.title.trim() == chapterTitle.trim() || label == chapterTitle.trim());
+
   List<SourceChapter> candidates(
     List<SourceChapter> chapters, {
     String workTitle = '',
@@ -35,19 +42,20 @@ class VideoResumeRequest {
     final wanted = VideoEpisodeCatalog.episodeNumber(chapterTitle);
     if (wanted == null) {
       return chapters
-          .where((c) => c.title.trim() == chapterTitle.trim())
+          .where((c) => _exactTitle(c, VideoEpisodeCatalog.labelOf(c)))
           .toList();
     }
     final desiredSeason =
         wanted.season ?? VideoEpisodeCatalog.seasonNumber(title);
     final workSeason = VideoEpisodeCatalog.seasonNumber(workTitle);
+    final wantedPart = VideoEpisodeCatalog.episodePart(chapterTitle);
     return chapters.where((c) {
-      final found = VideoEpisodeCatalog.episodeNumber(
-        VideoEpisodeCatalog.labelOf(c),
-      );
+      final label = VideoEpisodeCatalog.labelOf(c);
+      final found = VideoEpisodeCatalog.episodeNumber(label);
       final actualSeason = found?.season ?? workSeason;
       return found != null &&
           found.episode == wanted.episode &&
+          VideoEpisodeCatalog.episodePart(label) == wantedPart &&
           (desiredSeason == null ||
               actualSeason == null ||
               desiredSeason == actualSeason);

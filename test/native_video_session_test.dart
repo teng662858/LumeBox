@@ -738,6 +738,20 @@ void main() {
     expect(reply['position'], 18);
     expect(session.target?.chapterId, 'B1');
   });
+  test('switching lines cannot carry the playhead from part one to part two', () async {
+    source.episodes = const [
+      SourceChapter(id: 'A1', title: '第3集（上）', line: 'A'),
+      SourceChapter(id: 'B1', title: '第3集（下）', line: 'B'),
+      SourceChapter(id: 'C1', title: '第03集 上', line: 'C'),
+    ];
+    await start();
+    await progress(18);
+    expect((await request('line', {'id': 'B'}))['media'], isNull);
+    expect(session.target?.chapterId, 'A1');
+    expect(source.resolved, isEmpty);
+    expect(((await request('line', {'id': 'C'}))['media'] as Map)['position'], 18);
+    expect(source.resolved, ['C1']);
+  });
   for (final (action, arguments) in [
     ('quality', <String, Object?>{'id': 0}),
     ('line', <String, Object?>{'id': 'B'}),
@@ -890,14 +904,15 @@ class _Source extends MockDataSource implements DanmakuCapable {
   bool catalogOffline = false;
   @override
   String get id => 'fixture';
-  @override
-  Future<List<SourceChapter>> chapters(String itemId) async {
-    if (catalogOffline) throw StateError('catalog offline');
-    return const [
+  List<SourceChapter> episodes = const [
       SourceChapter(id: 'A1', title: '第1集', line: 'A'),
       SourceChapter(id: 'A2', title: '第2集', line: 'A'),
       SourceChapter(id: 'B1', title: '第1集', line: 'B'),
-    ];
+  ];
+  @override
+  Future<List<SourceChapter>> chapters(String itemId) async {
+    if (catalogOffline) throw StateError('catalog offline');
+    return episodes;
   }
 
   @override

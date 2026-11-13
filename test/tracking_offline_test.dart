@@ -32,6 +32,16 @@ class GrowingNovel extends FakeReadingDataSource {
   }
 }
 
+class SplitVideo extends FakeReadingDataSource {
+  SplitVideo() : super(section: Section.video);
+  final episodes = [
+    const SourceChapter(id: 'part1', title: '第3集（上）'),
+    const SourceChapter(id: 'full', title: '第3集'),
+  ];
+  @override
+  Future<List<SourceChapter>> chapters(String itemId) async => episodes;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory root;
@@ -57,6 +67,29 @@ void main() {
     ReadingStore.disposeAll();
     await SectionScope.closeAll();
     root.deleteSync(recursive: true);
+  });
+  test('旧版追更记录迁移已有上篇，之后新增下篇只提醒一次', () async {
+    final video = SplitVideo();
+    final lib = await ReadingLibrary.open(Section.video);
+    final ref = ContentRef(Section.video, video.id, 'show', '剧集');
+    lib.shelve(sourceId: video.id, itemId: 'show', title: '剧集');
+    center.setTrackingState(ref, 'active');
+    center.put('baselines', {ref.key: ['1:3']});
+    final tracker = TrackingService(
+      managerFor: (_) => FakeSourceManager(opened: {video.id: video}),
+      wait: () async {},
+    );
+    Future<int> check() async {
+      center.put('checked.${ref.key}', DateTime(2000).toIso8601String());
+      final report = await tracker.check(libraries: [lib]);
+      expect(report.success, 1);
+      return report.newChapters;
+    }
+    expect(await check(), 0);
+    video.episodes.add(const SourceChapter(id: 'part2', title: '第3集（下）'));
+    expect(await check(), 1);
+    expect(center.rows('updates').single['latest'], '第3集（下）');
+    expect(await check(), 0);
   });
   test('暂停和完结不请求；恢复首检建基线，之后新增进入收件箱', () async {
     final manager = FakeSourceManager(opened: {source.id: source});

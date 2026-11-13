@@ -51,6 +51,21 @@ abstract final class VideoEpisodeCatalog {
     caseSensitive: false,
   );
   static final _numberOnly = RegExp('^($_ordinal)(?:集|话|話)?\$');
+  static final _partAfterNumber = RegExp(
+    r'^[\s.·_\-（(【\[]*([上中下])(?:篇|部|段|半(?:集|场|場)?)?(?=$|[\s.·_\-）)】\]])',
+  );
+  static final _preview = RegExp(
+    r'预告|預告|(?:^|[^a-z])(?:trailer|teaser|preview)(?:$|[^a-z])',
+    caseSensitive: false,
+  );
+
+  static String episodePart(String label) {
+    final end = _episode.firstMatch(label)?.end;
+    final part = end == null
+        ? ''
+        : _partAfterNumber.firstMatch(label.substring(end))?.group(1) ?? '';
+    return _preview.hasMatch(label) ? '$part预告' : part;
+  }
 
   static int? _matchedNumber(RegExpMatch? match) {
     if (match == null) return null;
@@ -72,17 +87,23 @@ abstract final class VideoEpisodeCatalog {
 
   /// Only explicit episode numbers are comparable; a missing episode never falls back by index.
   static String? episodeKey(SourceChapter chapter) {
-    final number = episodeNumber(labelOf(chapter));
-    return number == null ? null : '${number.season ?? 1}:${number.episode}';
+    final label = labelOf(chapter);
+    final number = episodeNumber(label);
+    if (number == null) return null;
+    final part = episodePart(label);
+    final key = '${number.season ?? 1}:${number.episode}';
+    return part.isEmpty ? key : '$key:$part';
   }
 
   static int matchingIndex(
     SourceChapter current,
     List<SourceChapter> candidates,
   ) {
+    final label = labelOf(current);
+    if (label.isEmpty) return -1;
     final exact = [
       for (var i = 0; i < candidates.length; i++)
-        if (labelOf(candidates[i]) == labelOf(current)) i,
+        if (labelOf(candidates[i]) == label) i,
     ];
     if (exact.isNotEmpty) return exact.length == 1 ? exact.single : -1;
     final key = episodeKey(current);
@@ -102,9 +123,10 @@ abstract final class VideoEpisodeCatalog {
         ).hasMatch(label) ||
         label.length > 35 ||
         RegExp(r'^\d+$').hasMatch(label)) {
-      final key = episodeKey(chapter);
-      final number = key == null ? index + 1 : int.parse(key.split(':').last);
-      return '第 ${number.toString().padLeft(2, '0')} 集';
+      final episode = episodeNumber(label);
+      final number = episode?.episode ?? index + 1;
+      final part = episodePart(label);
+      return '第 ${number.toString().padLeft(2, '0')} 集${part.isEmpty ? '' : '（$part）'}';
     }
     return label.isEmpty ? '第 ${index + 1} 集' : label;
   }

@@ -6,6 +6,25 @@ import 'package:lume_box/features/video/video_episode_catalog.dart';
 import 'package:lume_box/features/video/direct_video_source.dart';
 
 void main() {
+  test('换线路和追更区分同集的上、下篇、预告和正片', () {
+    const top = SourceChapter(id: 'top', title: '第3集（上）');
+    const bottom = SourceChapter(id: 'bottom', title: '第3集（下）');
+    const preview = SourceChapter(id: 'preview', title: '第3集预告');
+    const full = SourceChapter(id: 'full', title: 'S01E03');
+    const sameTop = SourceChapter(id: 'other', title: '第03集 上');
+    expect(VideoEpisodeCatalog.matchingIndex(top, [bottom]), -1);
+    expect(VideoEpisodeCatalog.matchingIndex(top, [bottom, sameTop]), 1);
+    expect(VideoEpisodeCatalog.matchingIndex(full, [preview]), -1);
+    expect(VideoEpisodeCatalog.matchingIndex(preview, [full]), -1);
+    expect(VideoEpisodeCatalog.displayLabel(
+      const SourceChapter(id: 'file', title: 'Show.S01E03（下）.mkv'), 9,
+    ), '第 03 集（下）');
+    expect(VideoEpisodeCatalog.matchingIndex(
+      const SourceChapter(id: 'unknown', title: ''),
+      [const SourceChapter(id: 'unknown2', title: '')],
+    ), -1);
+    expect({for (final c in [top, bottom, preview, full]) VideoEpisodeCatalog.episodeKey(c)}, hasLength(4));
+  });
   test('换线路按中文季数和集数匹配，不把第二季当成第一季', () {
     const second = SourceChapter(id: 'cn', title: '第2季 第03集');
     const first = SourceChapter(id: 's1', title: 'S01E03');

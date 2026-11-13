@@ -90,6 +90,23 @@ void main() {
       isEmpty,
     );
   });
+  test('跨源续播上篇不会把进度转移给下篇、预告或完整集', () {
+    const request = VideoResumeRequest(
+      title: '演示',
+      chapterTitle: '第3集（上）',
+      chapterIndex: 2,
+      position: Duration(minutes: 11),
+      duration: Duration(minutes: 20),
+    );
+    const chapters = [
+      SourceChapter(id: 'bottom', title: '第3集（下）'),
+      SourceChapter(id: 'trailer', title: '第3集预告'),
+      SourceChapter(id: 'whole', title: 'S01E03'),
+      SourceChapter(id: 'top', title: '第03集 上'),
+    ];
+    expect(request.candidates(chapters).map((c) => c.id), ['top']);
+    expect(chapters.where(request.confident).map((c) => c.id), ['top']);
+  });
   test('同名搜索保留年份和季数边界，按更新集数排序，不丢失来源', () {
     SearchHit hit(String source, String title, String sub) => SearchHit(
       sourceId: source,
