@@ -76,6 +76,7 @@ import UniformTypeIdentifiers
   private var kernel: String
   private var generation = 0, requestGeneration = 0
   private var wantsPlay = true, closing = false, switching = false, resolving = false
+  private var handledEnd = false
   private var speed = 1.0, volume = 1.0, fill = false, locked = false, scrubbing = false
   private var hardware = true, autoNext = true, interrupted = false, resumeAfterInterruption = false
   private var landscape = false, chromeVisible = true, readyRecorded = false, frameRecorded = false
@@ -239,7 +240,7 @@ import UniformTypeIdentifiers
     let at = resume ?? state.position
     let previous = engine; engine = nil
     previous?.pause(); previous?.view.removeFromSuperview(); fatalMessage = nil
-    state = NativeVideoState(); renderState()
+    handledEnd = false; state = NativeVideoState(); renderState()
     emit("load-start")
     let create = { [weak self] in
       guard let self, !self.closing, self.generation == revision else { return }
@@ -283,6 +284,9 @@ import UniformTypeIdentifiers
     if state.ready && !readyRecorded { readyRecorded = true; emit("ready") }
     if state.firstFrame && !frameRecorded { frameRecorded = true; timeout?.invalidate(); emit("firstFrame") }
     if state.firstFrame && pip == nil { preparePip() }
+    let reachedEnd = state.ended && !handledEnd
+    if reachedEnd { wantsPlay = false }
+    handledEnd = state.ended
     if !scrubbing {
       slider.maximumValue = Float(max(1, state.duration)); slider.value = Float(state.position)
       elapsed.text = Self.clock(state.position)
@@ -299,7 +303,7 @@ import UniformTypeIdentifiers
     let cue = subtitleCues.first { $0.0 <= state.position && state.position < $0.1 }?.2 ?? ""
     if cue != subtitleText { subtitleText = cue; caption.text = cue }
     updateDanmaku()
-    if CACurrentMediaTime() - lastEvent >= 1 || state.ended || state.error != nil {
+    if CACurrentMediaTime() - lastEvent >= 1 || reachedEnd || state.error != nil {
       lastEvent = CACurrentMediaTime(); emit("progress")
       if UserDefaults.standard.string(forKey: "lumebox.mediaOwner") == mediaOwner {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: item.title,
@@ -307,7 +311,9 @@ import UniformTypeIdentifiers
           MPNowPlayingInfoPropertyPlaybackRate: state.playing ? speed : 0]
       }
     }
-    if state.ended && autoNext && !resolving { wantsPlay = false; resolve("next", automatic: true) }
+    if reachedEnd && autoNext && !resolving && !switching && state.error == nil {
+      resolve("next", automatic: true)
+    }
   }
   private func showError(_ message: String) {
     fatalMessage = message
@@ -316,7 +322,11 @@ import UniformTypeIdentifiers
   }
   private func togglePlay() {
     guard !switching else { return }
-    wantsPlay.toggle()
+    setPlaying(!wantsPlay)
+  }
+  private func setPlaying(_ playing: Bool) {
+    guard !closing, !switching else { return }
+    wantsPlay = playing
     if wantsPlay {
       if state.error != nil { resolve("retry"); return }
       if state.ended { engine?.seek(0) {} }
@@ -350,7 +360,6 @@ import UniformTypeIdentifiers
       if let error = response?["error"] as? String { self.showError(error); return }
       guard let payload = response?["media"] as? [String: Any] else {
         if action == "retry" { self.switchEngine(self.kernel); return }
-        if automatic { self.autoNext = false; self.state.ended = false }
         self.toast(response?["message"] as? String ?? "没有可播放的下一项"); self.renderState(); return
       }
       do {
@@ -499,7 +508,7 @@ import UniformTypeIdentifiers
   }
   func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) { completionHandler(!closing) }
   func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {
-    wantsPlay = playing; if playing { engine?.play(rate: speed) } else { engine?.pause() }
+    setPlaying(playing)
   }
   func pictureInPictureControllerTimeRangeForPlayback(_ pictureInPictureController: AVPictureInPictureController) -> CMTimeRange {
     CMTimeRange(start: .zero, duration: CMTime(seconds: max(1, state.duration), preferredTimescale: 600))
@@ -574,8 +583,8 @@ import UniformTypeIdentifiers
       let target = command.addTarget { _ in DispatchQueue.main.async(execute: action); return .success }
       remoteTargets.append((command, target))
     }
-    bind(remote.playCommand) { [weak self] in self?.wantsPlay = true; if let self { self.engine?.play(rate: self.speed) } }
-    bind(remote.pauseCommand) { [weak self] in self?.wantsPlay = false; self?.engine?.pause() }
+    bind(remote.playCommand) { [weak self] in self?.setPlaying(true) }
+    bind(remote.pauseCommand) { [weak self] in self?.setPlaying(false) }
     bind(remote.togglePlayPauseCommand) { [weak self] in self?.togglePlay() }
     bind(remote.nextTrackCommand) { [weak self] in self?.resolve("next") }
     bind(remote.previousTrackCommand) { [weak self] in self?.resolve("previous") }
@@ -725,6 +734,7 @@ import UniformTypeIdentifiers
     result["session"] = session; result["kernel"] = kernel; result["generation"] = generation
     result["closing"] = closing; result["resolving"] = resolving; result["switching"] = switching
     result["nativeControls"] = controls.count; result["wantsPlay"] = wantsPlay
+    result["autoNext"] = autoNext
     result["pipSupported"] = kernel == "avplayer"
     result["viewAttached"] = engine?.view.window != nil
     if let back = controls["close"] {

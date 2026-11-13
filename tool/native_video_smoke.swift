@@ -5,6 +5,7 @@
   private var screen: NativeVideoScreen?
   private var timer: Timer?
   private var caseIndex = 0, phase = 0, swaps = 0
+  private var nextRequests = 0
   private var started = Date(), pausedAt = Date(), pausedPosition = 0.0
   private let cases = [("avplayer", "smoke.mp4"), ("avplayer", "smoke.m3u8"), ("mpv", "smoke.mp4"), ("mpv", "smoke.m3u8")]
 
@@ -19,11 +20,16 @@
   }
   private func next() {
     guard caseIndex < cases.count else { print("NATIVE_VIDEO_ALL_OK"); fflush(stdout); exit(0) }
-    let test = cases[caseIndex]; phase = 0; swaps = 0; started = Date()
+    let test = cases[caseIndex]; phase = 0; swaps = 0; nextRequests = 0; started = Date()
     do {
       let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)"])
-      let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": false, "headlessAudio": true])
-      view.request = { _, _, completion in completion([:]) }
+      let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": test.1 == "smoke.mp4", "headlessAudio": true])
+      view.request = { [weak self] action, _, completion in
+        guard let self, action == "next" else { completion([:]); return }
+        self.nextRequests += 1
+        self.check(self.nextRequests <= 2, "one next request per end of playback")
+        completion(self.nextRequests == 2 ? ["error": "fixture next unavailable"] : [:])
+      }
       screen = view
       window?.rootViewController?.present(view, animated: false) {
         self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in MainActor.assumeIsolated { self.tick() } }
@@ -33,7 +39,8 @@
   private func tick() {
     guard let screen else { return }
     let state = screen.debugState
-    check(state["error"] == nil, "\(cases[caseIndex]) \(state)")
+    let expectedError = phase == 7 && nextRequests == 2 && state["error"] as? String == "fixture next unavailable"
+    check(state["error"] == nil || expectedError, "\(cases[caseIndex]) \(state)")
     check(Date().timeIntervalSince(started) < 40, "timeout phase=\(phase) state=\(state)")
     let position = (state["position"] as? NSNumber)?.doubleValue ?? 0
     if phase == 0 && state["firstFrame"] as? Bool == true && position > 0.5 {
@@ -68,16 +75,31 @@
         screen.debugAction(["action": "kernel", "kernel": "mpv"])
         check((screen.debugState["loadElapsedMs"] as? Int ?? Int.max) < 1000, "kernel switch resets the load clock")
         phase = 3; swaps = 1
-      } else { complete() }
+      } else if caseIndex == 2 { checkEnding() } else { complete() }
     } else if phase == 3 && state["firstFrame"] as? Bool == true && state["switching"] as? Bool == false {
       if swaps == 1 {
         check(state["kernel"] as? String == "mpv", "switch to MPV")
         screen.debugAction(["action": "kernel", "kernel": "avplayer"]); swaps = 2
       } else {
         check(state["kernel"] as? String == "avplayer", "switch back to AVPlayer")
-        print("NATIVE_VIDEO_SWITCH_OK"); complete()
+        print("NATIVE_VIDEO_SWITCH_OK"); checkEnding()
       }
+    } else if phase == 4 && nextRequests == 1 {
+      check(state["autoNext"] as? Bool == true, "catalog end preserves auto-next preference")
+      check(state["wantsPlay"] as? Bool == false, "finished video offers replay")
+      pausedAt = Date(); phase = 5
+    } else if phase == 5 && Date().timeIntervalSince(pausedAt) > 0.8 {
+      check(nextRequests == 1, "end notification is consumed once")
+      screen.debugAction(["action": "tap", "control": "play"]); phase = 6
+    } else if phase == 6 && position > 0.2 && position < 2.5 && state["playing"] as? Bool == true {
+      phase = 7; screen.debugAction(["action": "seek", "position": 11.0])
+    } else if phase == 7 && expectedError {
+      check(state["autoNext"] as? Bool == true, "failed next preserves preference")
+      print("NATIVE_VIDEO_REPLAY_OK \(cases[caseIndex].0)"); complete()
     }
+  }
+  private func checkEnding() {
+    phase = 4; screen?.debugAction(["action": "seek", "position": 11.0])
   }
   private func complete() {
     timer?.invalidate(); timer = nil
