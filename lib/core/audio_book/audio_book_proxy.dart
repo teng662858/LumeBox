@@ -53,16 +53,26 @@ class AudioBookProxy {
   }
 
   int _generation = 0;
+  static final _mediaExtension = RegExp(
+    r'\.(?:m3u8|ts|m2ts|m4s|mp4|m4a|mp3|aac|ac3|ec3|flac|ogg|opus|wav|vtt|webvtt|key)$',
+    caseSensitive: false,
+  );
+
+  static String _extension(Uri? uri) =>
+      _mediaExtension.stringMatch(uri?.path ?? '')?.toLowerCase() ?? '';
+
   Uri _register(AudioBookTrack track, int port) {
     final id = sha256
         .convert(utf8.encode('$_generation:${track.id}'))
         .toString();
-    _tracks[id] = track;
+    final ticket =
+        '$id${track.resolve == null ? _extension(track.episode.url) : ''}';
+    _tracks[ticket] = track;
     return Uri(
       scheme: 'http',
       host: '127.0.0.1',
       port: port,
-      path: '/$_token/$id',
+      path: '/$_token/$ticket',
     );
   }
 
@@ -117,7 +127,7 @@ class AudioBookProxy {
     scheme: 'http',
     host: '127.0.0.1',
     port: port,
-    path: '/$_token/$id',
+    path: '/$_token/$id/asset${_extension(uri)}',
     queryParameters: {'asset': base64Url.encode(utf8.encode(uri.toString()))},
   );
   Future<void> _serve(HttpRequest request) async {
@@ -125,7 +135,8 @@ class AudioBookProxy {
     try {
       final path = request.uri.pathSegments;
       final port = request.connectionInfo!.localPort;
-      if (path.length != 2 ||
+      final raw = request.uri.queryParameters['asset'];
+      if (!(path.length == 2 || path.length == 3 && raw != null) ||
           path[0] != _token ||
           !_tracks.containsKey(path[1]) ||
           !['GET', 'HEAD'].contains(request.method)) {
@@ -138,7 +149,6 @@ class AudioBookProxy {
       final resolved = await _resolve(track)
           .timeout(const Duration(seconds: 20));
       if (generation != _generation) throw const HttpException('播放列表已更换');
-      final raw = request.uri.queryParameters['asset'];
       var uri = raw == null
           ? resolved.url
           : Uri.parse(utf8.decode(base64Url.decode(raw)));

@@ -119,8 +119,12 @@ void main() {
               ),
             ),
           ])).single;
+          if (entry.endsWith('.m3u8')) expect(local.path, endsWith('.m3u8'));
           final full = await client.get(local);
           expect(full.body, contains('127.0.0.1'));
+          final segment = LineSplitter.split(full.body)
+              .firstWhere((line) => line.startsWith('http'));
+          expect(Uri.parse(segment).path, endsWith('.aac'));
           final length = full.bodyBytes.length;
           final partial = await client.get(
             local,
