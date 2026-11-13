@@ -3,6 +3,7 @@ import 'package:lume_box/core/media/media_library.dart';
 
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -28,6 +29,25 @@ import 'package:lume_box/shared/widgets/network_waiting_view.dart';
 
 import 'support/pump_io.dart';
 import 'support/fake_source_manager.dart';
+import 'support/fake_reading_source.dart';
+
+class _DelayedSelectionManager extends FakeSourceManager {
+  _DelayedSelectionManager(this.source) : super(sources: [
+    SourceDescriptor(id: source.id, name: source.name, version: '', enabled: true),
+  ]);
+  final DataSource source;
+  final pending = <Completer<DataSource?>>[];
+  bool delaySelection = false;
+
+  @override
+  Future<DataSource?> open(String sourceId) async {
+    if (sourceId != source.id) return null;
+    if (!delaySelection) return source;
+    final request = Completer<DataSource?>();
+    pending.add(request);
+    return request.future;
+  }
+}
 
 class _ResumeCatService extends CatService {
   _ResumeCatService() : super.testing();
@@ -199,6 +219,60 @@ void main() {
     expect(find.text('原来源暂不可用，记录已保留'), findsOneWidget);
     expect(find.text('搜索其他来源'), findsOneWidget);
     expect(library.progress('v', sourceId: 'missing')!.chapterIndex, 1);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  Future<_DelayedSelectionManager> openReplacementSearch(WidgetTester tester) async {
+    final manager = _DelayedSelectionManager(FakeReadingDataSource(section: Section.video));
+    final library = ReadingLibrary.find(Section.video)!;
+    library.recordHistoryItem(sourceId: 'missing', itemId: 'v', title: '测试作品');
+    library.saveProgress(VideoProgress(
+      sourceId: 'missing', section: Section.video, itemId: 'v', chapterIndex: 0,
+      chapterId: 'old', chapterTitle: '第1集', updatedAt: DateTime.now(),
+      position: const Duration(seconds: 9),
+    ));
+    await tester.pumpWidget(MaterialApp(home: ContinueActivityPage(managers: {Section.video: manager})));
+    await pumpIoAndSettle(tester);
+    await tester.tap(find.text('测试作品'));
+    await pumpIoAndSettle(tester);
+    await tester.tap(find.text('搜索其他来源'));
+    await pumpIoAndSettle(tester);
+    await tester.tap(find.byKey(ValueKey('search-filter-${manager.source.id}')));
+    await tester.pumpAndSettle();
+    manager.delaySelection = true;
+    return manager;
+  }
+
+  testWidgets('换源结果仍在打开时返回，不再弹出详情', (tester) async {
+    final manager = await openReplacementSearch(tester);
+    await tester.tap(find.byKey(ValueKey('search-hit-${manager.source.id}-item-1')));
+    await tester.pump();
+    expect(manager.pending, hasLength(1));
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    manager.pending.single.complete(manager.source);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(VideoDetailPage, skipOffstage: false), findsNothing);
+    expect(find.byType(ContinueActivityPage), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('连续点击两个换源结果，只打开最后选择的作品', (tester) async {
+    final manager = await openReplacementSearch(tester);
+    for (final item in ['item-1', 'item-2']) {
+      await tester.tap(find.byKey(ValueKey('search-hit-${manager.source.id}-$item')));
+      await tester.pump();
+    }
+    expect(manager.pending, hasLength(2));
+    manager.pending.first.complete(manager.source);
+    await tester.pump();
+    expect(find.byType(VideoDetailPage, skipOffstage: false), findsNothing);
+    manager.pending.last.complete(manager.source);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    final page = tester.widget<VideoDetailPage>(find.byType(VideoDetailPage, skipOffstage: false));
+    expect(page.item.id, 'item-2');
     await tester.pumpWidget(const SizedBox());
   });
 

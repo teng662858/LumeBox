@@ -230,34 +230,42 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
   Future<void> alternative(_Activity row) async {
     final item = row.item!;
     final sources = manager(row.section, item.sourceId);
+    var latestSelection = 0;
     await Navigator.push(
       context,
       MaterialPageRoute<void>(
-        builder: (_) => SearchResultsPage(
+        builder: (searchContext) => SearchResultsPage(
           section: row.section,
           keyword: item.title,
           mode: SearchMode.aggregate,
           manager: sources,
           onOpenItem: (selection) async {
+            final route = ModalRoute.of(searchContext);
+            final request = ++latestSelection;
+            final activeGeneration = generation;
+            final messenger = ScaffoldMessenger.of(searchContext);
+            bool active() => mounted && route?.isCurrent == true && request == latestSelection &&
+                generation == activeGeneration;
             try {
               final source = await sources
                   .open(selection.sourceId)
                   .timeout(const Duration(seconds: 15));
-              if (source != null) {
-                await detail(
-                  source,
-                  selection.item,
-                  await ReadingLibrary.open(row.section),
-                  row.progress,
-                  resumeTitle: row.item?.title,
-                  differentItem: selection.sourceId != item.sourceId ||
-                      selection.item.id != item.itemId,
-                );
-              }
+              if (!active()) return;
+              if (source == null) throw StateError('来源不可用');
+              final library = await ReadingLibrary.open(row.section);
+              if (!active()) return;
+              await detail(
+                source,
+                selection.item,
+                library,
+                row.progress,
+                resumeTitle: item.title,
+                differentItem: selection.sourceId != item.sourceId ||
+                    selection.item.id != item.itemId,
+              );
             } catch (_) {
-              if (mounted) {
-                ScaffoldMessenger.of(context)
-                    .showSnackBar(const SnackBar(content: Text('来源暂时无法打开')));
+              if (active()) {
+                messenger.showSnackBar(const SnackBar(content: Text('来源暂时无法打开')));
               }
             }
           },
