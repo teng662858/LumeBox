@@ -7,6 +7,7 @@ import 'package:lume_box/core/media/playback_focus.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/native_video_bridge.dart';
+import 'package:lume_box/core/player/playback_orientation.dart';
 import 'package:lume_box/core/player/playback_diagnostics.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
@@ -160,6 +161,16 @@ void main() {
     );
     await directory.delete(recursive: true);
   });
+
+  for (final mode in PlaybackOrientation.values) {
+    test('native handoff includes the ${mode.id} orientation', () async {
+      final controller = PlaybackOrientationController.instance;
+      addTearDown(controller.resetForTesting);
+      controller.apply(mode);
+      await start();
+      expect((opened['options'] as Map)['orientation'], mode.id);
+    });
+  }
 
   test('native handoff preserves signed URLs and exact headers without creating Dart engines', () async {
     await start();

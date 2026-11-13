@@ -5,6 +5,7 @@ import '../../core/media/playback_focus.dart';
 import '../../core/net/ios_verified_webview.dart';
 import '../../core/player/abstract_player.dart';
 import '../../core/player/native_video_bridge.dart';
+import '../../core/player/playback_orientation.dart';
 import '../../core/player/playback_diagnostics.dart';
 import '../../core/player/player_settings.dart';
 import '../../core/player/video_disk_cache.dart';
@@ -118,6 +119,7 @@ class NativeVideoSourceSession {
     _connection = _bridge.connect(request: _request, event: _event);
     await _connection!.open(payload, {
       'kernel': _settings.kernel.name,
+      'orientation': PlaybackOrientationController.instance.orientation.id,
       'speed': _settings.speed,
       'hardwareDecoding': _settings.hardwareDecoding,
       'autoNext': _settings.autoNext,
