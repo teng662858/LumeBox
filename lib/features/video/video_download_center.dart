@@ -590,7 +590,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       final response = await req.close().timeout(const Duration(seconds: 30));
       if ([301, 302, 303, 307, 308].contains(response.statusCode)) {
         final location = response.headers.value('location');
-        await response.drain<void>();
+        await response.listen(null).cancel();
         if (location == null) throw StateError('下载重定向缺少地址');
         uri = uri.resolve(location);
         continue;

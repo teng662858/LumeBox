@@ -647,6 +647,7 @@ void main() {
     }
   });
   test('redirected HLS playlists resolve media against each final URL', () async {
+    final finishRedirect = Completer<void>();
     final cdn = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() => cdn.close(force: true));
     final paths = <String>[], hosts = <String?>[], auth = <String?>[];
@@ -654,7 +655,12 @@ void main() {
     server.listen((r) async {
       sourcePaths.add(r.uri.path);
       if (r.uri.path == '/play') {
-        await r.response.redirect(Uri.parse('http://127.0.0.1:${cdn.port}/show/master.m3u8'));
+        r.response.statusCode = 302;
+        r.response.headers.set('Location', 'http://127.0.0.1:${cdn.port}/show/master.m3u8');
+        r.response.write('redirecting');
+        await r.response.flush();
+        await finishRedirect.future;
+        await r.response.close();
       } else {
         r.response.statusCode = 404;
         await r.response.close();
@@ -689,7 +695,12 @@ void main() {
       'Host': 'source.example',
     });
     await enqueue(c);
-    await until(() => ['failed', 'merge_failed'].contains(c.tasks.single.state));
+    try {
+      await until(() => ['failed', 'merge_failed'].contains(c.tasks.single.state))
+          .timeout(const Duration(seconds: 2));
+    } finally {
+      finishRedirect.complete();
+    }
     await c.flush();
     expect(sourcePaths, ['/play']);
     expect(paths, containsAll(['/media/audio/sound.aac', '/media/video/init.mp4', '/media/video/first.m4s']));

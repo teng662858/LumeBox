@@ -475,7 +475,7 @@ class VideoDiskCache extends ChangeNotifier {
           location == null) {
         return response;
       }
-      await response.drain<void>();
+      await response.listen(null).cancel();
       final next = uri.resolve(location);
       if (!['http', 'https'].contains(next.scheme)) {
         throw const HttpException('Invalid media redirect');

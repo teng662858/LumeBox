@@ -77,6 +77,7 @@ void main() {
     player.info.dispose();
   });
   Completer<void>? pause;
+  late Completer<void> redirectBody;
   setUp(() async {
     root = await Directory.systemTemp.createTemp('video-buffer-test-');
     cache = VideoDiskCache();
@@ -87,11 +88,21 @@ void main() {
     paths.clear();
     failures = 0;
     pause = null;
+    redirectBody = Completer<void>();
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     upstream = Uri.parse('http://127.0.0.1:${server.port}/movie.mp4');
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path == '/slow-redirect.mp4') {
+        request.response.statusCode = 302;
+        request.response.headers.set('Location', '/movie.mp4');
+        request.response.write('redirecting');
+        await request.response.flush();
+        await redirectBody.future;
+        await request.response.close();
+        return;
+      }
       if (request.uri.path == '/encoded-script') {
         final codec = request.uri.queryParameters['codec'] == 'gzip' ? gzip : zlib;
         final manifest = utf8.encode('#EXTM3U\n#EXTINF:2,\npart.ts\n#EXT-X-ENDLIST\n');
@@ -420,6 +431,17 @@ void main() {
       1,
       reason: 'confirmed format is reused across kernel switches',
     );
+  });
+
+  test('a redirect opens the media without waiting for the redirect body to finish', () async {
+    final wrapped = await cache.wrap(PlayerMedia(uri: upstream.resolve('/slow-redirect.mp4')));
+    try {
+      final (response, bytes) = await get(wrapped.uri, 'bytes=0-31').timeout(const Duration(seconds: 2));
+      expect(response.statusCode, 206);
+      expect(bytes, data.take(32));
+    } finally {
+      redirectBody.complete();
+    }
   });
 
   for (final path in ['/expires.mp4', '/changes.mp4']) {
