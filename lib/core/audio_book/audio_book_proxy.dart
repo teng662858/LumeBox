@@ -130,7 +130,7 @@ class AudioBookProxy {
     path: '/$_token/$id/asset${playlist ? '.m3u8' : _extension(uri)}',
     queryParameters: {'asset': base64Url.encode(utf8.encode(uri.toString()))},
   );
-  Future<void> _serve(HttpRequest request) async {
+  Future<void> _serve(HttpRequest request, {bool canRefresh = true}) async {
     http.Client? client;
     try {
       final path = request.uri.pathSegments;
@@ -243,6 +243,21 @@ class AudioBookProxy {
       }
       if (![200, 206].contains(response.statusCode)) {
         final status = response.statusCode;
+        if (canRefresh && raw == null && track.resolve != null &&
+            const [401, 403, 404, 410].contains(status)) {
+          await response.stream.listen(null).cancel();
+          if (generation != _generation) throw const HttpException('播放列表已更换');
+          // Concurrent seeks can fail against the same expired URL. Keep any
+          // newer resolution and let _resolve coalesce an in-flight refresh.
+          if (identical(_resolved[track.id]?.audio, resolved)) {
+            _resolved.remove(track.id);
+          }
+          _clients.remove(client);
+          client.close();
+          client = null;
+          await _serve(request, canRefresh: false);
+          return;
+        }
         lastError = status == 401 || status == 403
             ? '音频服务器拒绝访问（HTTP $status），请在源网页确认能否播放'
             : '音频服务器请求失败（HTTP $status），请稍后重试或更换源';

@@ -381,6 +381,65 @@ void main() {
     });
   }
 
+  test('a cached chapter URL that expires during playback is refreshed on the same seek', () async {
+    var resolutions = 0;
+    var expired = false;
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((request) async {
+      if (request.headers['authorization'] != request.url.queryParameters['token']) {
+        return http.Response('', 401);
+      }
+      if (expired && request.url.queryParameters['token'] == '1') {
+        return http.Response('', 410);
+      }
+      return http.Response.bytes([11, 22, 33, 44], 200);
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final url = (await proxy.prepare([AudioBookTrack(
+      id: 'signed', album: 'Book', episode: const ResourceEpisode(id: 'e', title: 'E'),
+      resolve: () async {
+        final token = (++resolutions).toString();
+        return ResolvedAudio(Uri.parse('https://audio.test/track.mp3?token=$token'),
+            headers: {'Authorization': token});
+      },
+    )])).single;
+    expect((await client.get(url)).bodyBytes, [11, 22, 33, 44]);
+    expired = true;
+    final seek = await client.get(url, headers: {'Range': 'bytes=2-'});
+    expect(seek.statusCode, 206);
+    expect(seek.bodyBytes, [33, 44]);
+    expect((await client.get(url)).bodyBytes, [11, 22, 33, 44]);
+    expect(resolutions, 2);
+    expect(proxy.lastError, isNull);
+  });
+
+  test('concurrent expired seeks share one refresh and a denied replacement fails once', () async {
+    var resolutions = 0, oldRequests = 0, deniedRequests = 0;
+    final bothExpired = Completer<void>();
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+      if (r.url.path == '/1') {
+        if (++oldRequests == 2) bothExpired.complete();
+        await bothExpired.future;
+        return http.Response('', 410);
+      }
+      deniedRequests++;
+      return http.Response('', 401);
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final url = (await proxy.prepare([AudioBookTrack(
+      id: 'e', album: 'Book', episode: const ResourceEpisode(id: 'e', title: 'E'),
+      resolve: () async => ResolvedAudio(Uri.parse('https://audio.test/${++resolutions}')),
+    )])).single;
+    final responses = await Future.wait([
+      client.get(url, headers: {'Range': 'bytes=2-'}),
+      client.get(url, headers: {'Range': 'bytes=4-'}),
+    ]);
+    expect(responses.map((r) => r.statusCode), [502, 502]);
+    expect([resolutions, oldRequests, deniedRequests], [2, 2, 2]);
+    expect(proxy.lastError, contains('401'));
+  });
+
   test('audio server refusal is recorded and reset for a new queue', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
