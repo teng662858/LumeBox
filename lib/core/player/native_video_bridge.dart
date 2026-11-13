@@ -38,11 +38,16 @@ class NativeVideoBridge {
     final session = _sessions[data['session']];
     if (session == null || session._closed) return null;
     if (call.method == 'event') {
+      if (session._closing != null &&
+          data['type'] != 'progress' &&
+          data['type'] != 'closed') {
+        return null;
+      }
       session.event(data);
       if (data['type'] == 'closed') session._finish();
       return null;
     }
-    if (call.method == 'request') {
+    if (call.method == 'request' && session._closing == null) {
       try {
         return await session.request(
           data['action'] as String? ?? '',
@@ -64,13 +69,14 @@ class NativeVideoConnection {
   final void Function(Map<String, Object?>) event;
   final _finished = Completer<void>();
   bool _closed = false, _opened = false;
+  Future<void>? _closing;
   Future<void> get finished => _finished.future;
 
   Future<void> open(
     Map<String, Object?> media,
     Map<String, Object?> options,
   ) async {
-    if (_closed || _opened) throw StateError('播放会话已经打开或关闭');
+    if (_closed || _opened || _closing != null) throw StateError('播放会话已经打开或关闭');
     _opened = true;
     try {
       await _bridge.channel
@@ -87,11 +93,12 @@ class NativeVideoConnection {
     }
   }
 
-  Future<void> close() async {
+  Future<void> close() => _closing ??= _close();
+
+  Future<void> _close() async {
     if (_closed) return;
-    _finish();
-    if (!_opened) return;
     try {
+      if (!_opened) return;
       await _bridge.channel
           .invokeMethod<void>('close', {'session': id})
           .timeout(const Duration(seconds: 3));
@@ -101,6 +108,8 @@ class NativeVideoConnection {
       LumeLog.warn('[native-video] 关闭原生播放页失败：${error.code}');
     } on TimeoutException {
       // UIKit dismisses immediately; decoder teardown continues natively.
+    } finally {
+      _finish();
     }
   }
 

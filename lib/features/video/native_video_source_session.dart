@@ -411,8 +411,9 @@ class NativeVideoSourceSession {
   }
 
   void _event(Map<String, Object?> data) {
-    if (_closed) return;
     final type = data['type'];
+    // The native screen emits its final progress while handling close.
+    if (_closed && type != 'progress') return;
     final identity = data['identity'] as String? ?? '';
     final active = identity == _identity;
     if (type == 'settings' && (active || identity.isEmpty)) {

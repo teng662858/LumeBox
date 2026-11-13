@@ -223,6 +223,24 @@ void main() {
     expect(calls.last.method, 'close');
   });
 
+  test('focus handoff saves the native playhead reported during dismissal', () async {
+    await start();
+    await progress(10);
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'close') {
+        await progress(14);
+        await native('event', {'session': opened['session'], 'type': 'closed'});
+      }
+      return null;
+    });
+    await PlaybackFocus.acquire('audioBook');
+    expect(library.videoProgress('show', sourceId: 'fixture')?.position,
+        const Duration(seconds: 14));
+    await progress(60);
+    expect(library.videoProgress('show', sourceId: 'fixture')?.position,
+        const Duration(seconds: 14));
+  });
+
   test('native handoff preserves signed URLs and exact headers without creating Dart engines', () async {
     await start();
     final media = opened['media'] as Map;
