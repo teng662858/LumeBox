@@ -279,13 +279,15 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
     final key = row.resource?.id ?? row.item!.identity;
     setState(() => opening = key);
     final activeGeneration = generation;
+    final route = ModalRoute.of(context);
+    bool active() => activeGeneration == generation && route?.isCurrent != false;
     try {
       if (row.resource != null) {
         await openMediaResource(context, row.resource!);
       } else {
         final item = row.item!, progress = row.progress!;
         final library = await ReadingLibrary.open(row.section);
-        if (!mounted || activeGeneration != generation) return;
+        if (!mounted || !active()) return;
         if (progress is VideoProgress) {
           final file = await VideoDownloadCenter.instance.completedPlayback(
             item.sourceId,
@@ -293,7 +295,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
             progress.chapterId,
             section: row.section,
           );
-          if (!mounted || activeGeneration != generation) {
+          if (!mounted || !active()) {
             await file?.close();
             return;
           }
@@ -327,12 +329,12 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
         final source = await manager(row.section, item.sourceId)
             .open(item.sourceId)
             .timeout(const Duration(seconds: 15));
+        if (!mounted || !active()) return;
         if (source == null) throw StateError('来源不可用');
         if (source.section != row.section &&
             !(row.section == Section.cat && source is CatDataSource)) {
           throw StateError('来源板块不匹配');
         }
-        if (!mounted || activeGeneration != generation) return;
         final target = ReadingTarget(
           sourceId: item.sourceId,
           itemId: item.itemId,
@@ -344,7 +346,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
           final chapters = await source
               .chapters(item.itemId)
               .timeout(const Duration(seconds: 15));
-          if (!mounted || activeGeneration != generation) return;
+          if (!mounted || !active()) return;
           final index = chapters.indexWhere((c) => c.id == progress.chapterId);
           if (index < 0) {
             await detail(
@@ -353,7 +355,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
               library,
               progress,
             );
-          } else if (mounted) {
+          } else {
             await Navigator.push(
               context,
               MaterialPageRoute<void>(
@@ -391,7 +393,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
         }
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && active()) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('原来源暂不可用，记录已保留'),
@@ -407,7 +409,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
     } finally {
       if (mounted) {
         setState(() => opening = null);
-        await load();
+        if (active()) await load();
       }
     }
   }

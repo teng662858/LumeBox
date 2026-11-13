@@ -222,6 +222,39 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('离开继续观看后，刚打开的片源不会盖住新页面', (tester) async {
+    final source = FakeReadingDataSource(section: Section.video);
+    final manager = _DelayedSelectionManager(source)..delaySelection = true;
+    final library = ReadingLibrary.find(Section.video)!;
+    library.recordHistoryItem(sourceId: source.id, itemId: 'item-1', title: '等待中的剧集');
+    library.saveProgress(VideoProgress(
+      sourceId: source.id, section: Section.video, itemId: 'item-1',
+      chapterId: 'one', chapterIndex: 0, chapterTitle: '第一集',
+      position: const Duration(seconds: 12), updatedAt: DateTime.now(),
+    ));
+    final nav = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(navigatorKey: nav,
+      home: ContinueActivityPage(managers: {Section.video: manager}),
+    ));
+    await pumpIoAndSettle(tester);
+    await tester.tap(find.text('等待中的剧集'));
+    for (var i = 0; i < 50 && manager.pending.isEmpty; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+      await tester.pump();
+    }
+    expect(manager.pending, hasLength(1));
+    nav.currentState!.push(MaterialPageRoute<void>(
+      builder: (_) => const Scaffold(body: Text('另一页面')),
+    ));
+    await tester.pump();
+    manager.pending.single.complete(source);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(VideoDetailPage, skipOffstage: false), findsNothing);
+    expect(find.text('另一页面'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   Future<_DelayedSelectionManager> openReplacementSearch(WidgetTester tester) async {
     final manager = _DelayedSelectionManager(FakeReadingDataSource(section: Section.video));
     final library = ReadingLibrary.find(Section.video)!;
