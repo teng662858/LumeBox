@@ -213,6 +213,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
   }
 
   Future<void> loadOwned() async {
+    final token = NetworkCancellation.current;
     setState(() {
       loading = true;
       error = null;
@@ -220,6 +221,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
     try {
       final source =
           _updatedSource ?? widget.source ?? await widget.loadSource?.call();
+      token?.check();
       if (source == null) throw StateError('源不可用（未启用或脚本加载失败）');
       _source = source;
       pipeline.bindSource(source);
@@ -231,7 +233,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       } catch (_) {
         // Some video sources only implement episodes/content. Metadata is optional.
       }
-      NetworkCancellation.current?.check();
+      token?.check();
       if (!mounted) return;
       final cover = metadata?.cover ?? widget.item.cover;
       if (cover != null) {
@@ -265,6 +267,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         try {
           episodes = await source.chapters(widget.item.id);
         } catch (_) {
+          token?.check();
           if (metadata?.chapters.isNotEmpty != true) rethrow;
           episodes = metadata!.chapters;
         }
@@ -272,6 +275,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           episodes = metadata!.chapters;
         }
       }
+      token?.check();
       if (!mounted) return;
       if (widget.detectContent && direct == null) {
         final type = await detectSourceContent(
@@ -281,6 +285,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           chapters: episodes,
           hint: widget.item.mediaType,
         );
+        token?.check();
         if (!mounted) return;
         if (type != null && type != SourceContentType.video) {
           setState(() {
@@ -323,6 +328,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       String? audioChapterId;
       if (audioEntry?.kind == ResourceKind.audioBook) {
         await AudioBookSettings.instance.load();
+        token?.check();
         if (!mounted) return;
         final session = AudioBookSession.instance;
         final index = session.resource?.id == audioEntry!.id
@@ -386,6 +392,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
             ),
           );
         }
+        token?.check();
         if (!mounted) return;
         if (chosen != null) {
           transferredChapter = chosen;

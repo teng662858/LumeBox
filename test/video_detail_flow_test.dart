@@ -109,6 +109,14 @@ class MultiLineDetailSource extends DetailSource {
   ];
 }
 
+class _DelayedCatalog extends DetailSource {
+  final pending = Completer<List<SourceChapter>>();
+  @override
+  String get id => 'outdated';
+  @override
+  Future<List<SourceChapter>> chapters(String id) => pending.future;
+}
+
 class NumericDetailSource extends DetailSource {
   @override
   Future<List<SourceChapter>> chapters(String id) async => const [
@@ -265,6 +273,39 @@ void main() {
       expect(find.text('第1集'), findsWidgets);
       expect(find.text('第2集'), findsWidgets);
       expect(source.parses, 0);
+    });
+  }
+
+  for (final delayCatalog in [false, true]) {
+    testWidgets('重新加载后旧请求不能替换剧集或播放源（延迟目录=$delayCatalog）', (tester) async {
+      final old = _DelayedCatalog();
+      final pendingSource = Completer<DataSource>();
+      var loads = 0;
+      VideoPlayTarget? played;
+      await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
+        loadSource: () async {
+          if (++loads == 1) return delayCatalog ? old : pendingSource.future;
+          return source;
+        },
+        detectContent: false,
+        item: const SourceItem(id: 'refreshed-catalog', title: '测试'),
+        library: library,
+        onPlay: (_, target, _, _) async { played = target; },
+      )));
+      await tester.pump();
+      final dynamic state = tester.state(find.byType(VideoDetailPage));
+      final reload = state.load() as Future<void>;
+      await tester.pump();
+      await reload;
+      old.pending.complete(const [SourceChapter(id: 'stale', title: '过期剧集')]);
+      pendingSource.complete(old);
+      await tester.pumpAndSettle();
+      expect(state.chapters.first.id, 'e1');
+      await tester.runAsync(() async { await state.play(); });
+      expect(played?.sourceId, source.id);
+      expect(played?.chapterId, 'e1');
+      expect(old.parses, 0);
+      expect(source.parses, 1);
     });
   }
 
