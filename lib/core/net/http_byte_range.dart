@@ -25,29 +25,36 @@ import 'dart:typed_data';
   return start > end ? null : (start: start, end: end);
 }
 
-void serveHttpBytes(HttpRequest request, Uint8List bytes, String contentType) {
+({int start, int end})? prepareHttpByteResponse(
+  HttpRequest request, int length, String contentType,
+) {
   final response = request.response;
   response.headers.set('Content-Type', contentType);
   response.headers.set('Accept-Ranges', 'bytes');
-  var start = 0, end = bytes.length - 1;
+  var start = 0, end = length - 1;
   final range = request.headers.value('range');
   if (range != null) {
-    final offsets = parseHttpByteRange(range, bytes.length);
+    final offsets = parseHttpByteRange(range, length);
     if (offsets == null) {
       response.statusCode = 416;
-      response.headers.set('Content-Range', 'bytes */${bytes.length}');
-      return;
+      response.headers.set('Content-Range', 'bytes */$length');
+      return null;
     }
     start = offsets.start;
     end = offsets.end;
     response.statusCode = 206;
     response.headers.set(
       'Content-Range',
-      'bytes $start-$end/${bytes.length}',
+      'bytes $start-$end/$length',
     );
   }
   response.contentLength = end - start + 1;
-  if (request.method != 'HEAD') {
-    response.add(Uint8List.sublistView(bytes, start, end + 1));
+  return (start: start, end: end);
+}
+
+void serveHttpBytes(HttpRequest request, Uint8List bytes, String contentType) {
+  final offsets = prepareHttpByteResponse(request, bytes.length, contentType);
+  if (offsets != null && request.method != 'HEAD') {
+    request.response.add(Uint8List.sublistView(bytes, offsets.start, offsets.end + 1));
   }
 }

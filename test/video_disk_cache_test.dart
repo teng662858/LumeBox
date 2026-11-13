@@ -98,12 +98,13 @@ void main() {
       if (request.uri.path.startsWith('/audio-track/')) {
         if (request.uri.path.endsWith('.m3u8')) {
           final suffix = request.uri.queryParameters['ext'];
-          request.response.write('#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\npart.$suffix?sig=A\n#EXT-X-ENDLIST\n');
+          final part = request.uri.queryParameters.containsKey('large') ? 'large' : 'part';
+          request.response.write('#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\n$part.$suffix?sig=A\n#EXT-X-ENDLIST\n');
         } else if (request.headers.value('range') != null) {
           request.response.statusCode = 403;
         } else {
           request.response.headers.contentType = ContentType.binary;
-          request.response.add(data.sublist(0, 128));
+          request.response.add(request.uri.path.contains('/large.') ? data : data.sublist(0, 128));
         }
         await request.response.close();
         return;
@@ -286,8 +287,8 @@ void main() {
         await request.response.close();
         return;
       }
-      if (request.uri.path == '/slow.ts' || request.uri.path == '/slow.mp4') {
-        request.response.contentLength = data.length;
+      if (['/slow.ts', '/slow.mp4', '/slow.aac'].contains(request.uri.path)) {
+        if (request.uri.path != '/slow.aac') request.response.contentLength = data.length;
         request.response.add(data.sublist(0, 16384));
         await request.response.flush();
         await pause!.future;
@@ -458,6 +459,8 @@ void main() {
       final track = await cache.wrap(PlayerMedia(uri: upstream.resolve('/audio-track/main.m3u8?ext=$extension')));
       final playlist = utf8.decode((await get(track.uri)).$2);
       final uri = Uri.parse(const LineSplitter().convert(playlist).firstWhere((line) => !line.startsWith('#')));
+      final initial = await get(uri);
+      expect(initial.$1.contentLength, 128, reason: 'finite audio must have an unambiguous EOF');
       final probe = await get(uri, 'bytes=4-15');
       expect(probe.$1.statusCode, 206);
       expect(probe.$2, data.sublist(4, 16));
@@ -467,6 +470,18 @@ void main() {
       expect(response.$2, data.take(128));
     });
   }
+  test('chunked packed audio larger than a buffer block preserves byte ranges and EOF', () async {
+    final track = await cache.wrap(PlayerMedia(uri: upstream.resolve('/audio-track/main.m3u8?ext=aac&large=1')));
+    final manifest = utf8.decode((await get(track.uri)).$2);
+    final uri = Uri.parse(const LineSplitter().convert(manifest).firstWhere((line) => !line.startsWith('#')));
+    final partial = await get(uri, 'bytes=-64');
+    expect(partial.$1.statusCode, 206);
+    expect(partial.$1.headers.value('content-range'), 'bytes ${data.length-64}-${data.length-1}/${data.length}');
+    expect(partial.$2, data.sublist(data.length-64));
+    final complete = await get(uri);
+    expect(complete.$1.contentLength, data.length);
+    expect(complete.$2, data);
+  });
   test('mapped fMP4 subtitles retain their initialization and fragment routes', () async {
     final master = await cache.wrap(PlayerMedia(
       uri: upstream.resolve('/subtitles/master.m3u8?type=mp4'),
@@ -569,7 +584,7 @@ void main() {
     },
   );
 
-  for (final suffix in ['ts', 'mp4']) {
+  for (final suffix in ['ts', 'mp4', 'aac']) {
     test(
       'slow $suffix delivers first bytes before the upstream finishes',
       () async {

@@ -267,6 +267,9 @@ class VideoDiskCache extends ChangeNotifier {
   static bool _packedAudio(String path) =>
       const ['.aac', '.ac3', '.ec3', '.eac3'].any(path.endsWith);
 
+  static bool _isHlsAudioSegment(String path) =>
+      path.contains('.hls.') && _packedAudio(path);
+
   Future<PlayerMedia> _ticket(PlayerMedia media, String suffix) async {
     try {
       await (_starting ??= _start());
@@ -1010,13 +1013,13 @@ class VideoDiskCache extends ChangeNotifier {
       await upstream.listen(null).cancel();
       upstream = await _request(media, rangeHeader);
     }
+    if (rangeHeader != null && _packedAudio(request.uri.path) &&
+        const [400, 403, 405, 416].contains(upstream.statusCode)) {
+      await upstream.listen(null).cancel();
+      if (!_isHlsAudioSegment(request.uri.path)) return false;
+      upstream = await _request(media, null);
+    }
     if (upstream.statusCode >= 400) {
-      if (rangeHeader != null &&
-          _packedAudio(request.uri.path) &&
-          const [400, 403, 405, 416].contains(upstream.statusCode)) {
-        await upstream.listen(null).cancel();
-        return false;
-      }
       final contentRange = upstream.header('content-range');
       if (upstream.statusCode == 416 &&
           contentRange != null &&
@@ -1061,6 +1064,11 @@ class VideoDiskCache extends ChangeNotifier {
       // Preserve the established repair path for capped/misdeclared local proxies.
       await upstream.listen(null).cancel();
       return false;
+    }
+    if (!partial && (length == null || rangeHeader != null) &&
+        _isHlsAudioSegment(request.uri.path)) {
+      await _serveCompleteAudioSegment(request, media, upstream, generation);
+      return true;
     }
     final chunks = StreamIterator(
       upstream.timeout(const Duration(seconds: 30)),
@@ -1198,6 +1206,66 @@ class VideoDiskCache extends ChangeNotifier {
     }
   }
 
+  // Some demuxers report an I/O error at a chunked EOF even after decoding
+  // all frames. A playlist segment is finite, so measure it before serving it.
+  Future<void> _serveCompleteAudioSegment(
+    HttpRequest request,
+    PlayerMedia media,
+    _MediaResponse upstream,
+    int generation,
+  ) async {
+    final buffer = BytesBuilder(copy: false);
+    Directory? directory;
+    File? overflow;
+    RandomAccessFile? writer;
+    var length = 0;
+    final prefix = <int>[];
+    try {
+      await for (final chunk in upstream.timeout(const Duration(seconds: 30))) {
+        if (prefix.length < 80) {
+          prefix.addAll(chunk.take(80 - prefix.length));
+          _rejectHtml(prefix);
+        }
+        length += chunk.length;
+        downloadedBytes += chunk.length;
+        if (writer == null && length > blockBytes) {
+          directory = await Directory.systemTemp.createTemp('lume-audio-');
+          overflow = File('${directory.path}/segment');
+          writer = await overflow.open(mode: FileMode.write);
+          await writer.writeFrom(buffer.takeBytes());
+        }
+        if (writer == null) {
+          buffer.add(chunk);
+        } else {
+          await writer.writeFrom(chunk);
+        }
+      }
+      final mime = _responseType(request.uri.path, upstream.header('content-type'));
+      final encoding = upstream.header('content-encoding');
+      if (encoding != null) request.response.headers.set('Content-Encoding', encoding);
+      if (overflow == null) {
+        final bytes = buffer.takeBytes();
+        await _store(_key(media, 0), _Block(bytes, 0, length, mime,
+            upstream.header('etag') ?? upstream.header('last-modified'),
+            upstream.uri, encoding), generation);
+        serveHttpBytes(request, bytes, mime);
+      } else {
+        await writer!.close();
+        writer = null;
+        final offsets = prepareHttpByteResponse(request, length, mime);
+        if (offsets != null && request.method != 'HEAD') {
+          await request.response.addStream(overflow.openRead(offsets.start, offsets.end + 1));
+        }
+      }
+    } finally {
+      try {
+        await writer?.close();
+      } finally {
+        await directory?.delete(recursive: true);
+      }
+    }
+  }
+
   PlayerMedia _playlistReload(PlayerMedia media, Uri ticket) {
     if (!ticket.hasQuery || !ticket.path.endsWith('.m3u8')) return media;
     const names = {'_HLS_msn', '_HLS_part', '_HLS_skip'};
@@ -1282,7 +1350,7 @@ class VideoDiskCache extends ChangeNotifier {
       final cached = _files[_key(media, start ~/ blockBytes * blockBytes)];
       if (request.method == 'GET' &&
           canStream &&
-          (rawRange == null || !segment && !_loopback(media.uri)) &&
+          (rawRange == null || _isHlsAudioSegment(path) || !segment && !_loopback(media.uri)) &&
           !(enabled &&
               (cached?.bytes ?? 0) >=
                   min(
@@ -1327,6 +1395,7 @@ class VideoDiskCache extends ChangeNotifier {
             suffix = fallback;
           }
           if (apple && suffix == '.m3u8') suffix = '.apple.m3u8';
+          if (fallback == '.ts' && _packedAudio(suffix)) suffix = '.hls$suffix';
           var uri = (await _ticket(child, suffix)).uri;
           if (sequence != null) {
             uri = uri.replace(queryParameters: {'n': '$sequence'});
