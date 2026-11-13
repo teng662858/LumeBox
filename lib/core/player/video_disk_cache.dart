@@ -782,16 +782,16 @@ class VideoDiskCache extends ChangeNotifier {
     int limit, {
     bool prefix = false,
   }) async {
-    final upstream = await _request(
-      media,
-      prefix ? 'bytes=0-${limit - 1}' : null,
-    );
+    // Read a bounded decoded prefix. Byte ranges apply to the encoded
+    // representation and some segment endpoints reject Range altogether.
+    final upstream = await _request(media, null);
     if (upstream.statusCode != 200 && upstream.statusCode != 206) {
       await upstream.listen(null).cancel();
       throw _UpstreamStatus(upstream.statusCode);
     }
     final body = BytesBuilder(copy: false);
-    await for (final chunk in upstream.timeout(const Duration(seconds: 20))) {
+    final decoded = _decodedBody(upstream, upstream.header('content-encoding'));
+    await for (final chunk in decoded.timeout(const Duration(seconds: 20))) {
       if (prefix && chunk.length >= limit - body.length) {
         body.add(chunk.sublist(0, limit - body.length));
         break;

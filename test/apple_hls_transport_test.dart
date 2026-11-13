@@ -72,6 +72,24 @@ void main() {
         switch (request.uri.path) {
           case '/p.jpg':
             r.add(packet);
+          case '/gzip.ts':
+            r.headers.set('Content-Encoding', 'gzip');
+            r.add(gzip.encode(packet));
+          case '/deflate.ts':
+            r.headers.set('Content-Encoding', 'deflate');
+            r.add(zlib.encode(packet));
+          case '/get-only.ts':
+            if (request.headers.value('range') != null) {
+              r.statusCode = 416;
+            } else {
+              r.add(packet);
+            }
+          case '/gzip.m3u8':
+          case '/deflate.m3u8':
+          case '/get-only.m3u8':
+            final segment = request.uri.path.replaceFirst('.m3u8', '.ts');
+            r.write('#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n'
+                '#EXTINF:4,\n$segment\n#EXT-X-ENDLIST\n');
           case '/avc.jpg':
             r.add(Uint8List.fromList(packet)..[17] = 0x1b);
           case '/png.jpg':
@@ -139,7 +157,15 @@ void main() {
     return utf8.decode((await read(media.uri)).$2);
   }
 
-  for (final name in ['plain.php', 'no-extension', 'normal.m3u8', 'master']) {
+  for (final name in [
+    'plain.php',
+    'no-extension',
+    'normal.m3u8',
+    'master',
+    'gzip.m3u8',
+    'deflate.m3u8',
+    'get-only.m3u8',
+  ]) {
     test(
       'Apple HEVC TS playback through $name keeps headers and converts once',
       () async {
