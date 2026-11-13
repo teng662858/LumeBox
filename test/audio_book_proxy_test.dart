@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -263,6 +264,74 @@ void main() {
       }
     },
   );
+  for (final encoding in ['gzip', 'deflate']) {
+    test(
+      'compressed $encoding audio and HLS return playable bytes and valid lengths',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final audio = List.generate(4096, (i) => i % 251);
+        const manifest = '#EXTM3U\n#EXTINF:1,\nchapter.aac\n#EXT-X-ENDLIST\n';
+        server.listen((request) async {
+          final data = request.uri.path.endsWith('.m3u8')
+              ? utf8.encode(manifest)
+              : audio;
+          final compressed = (encoding == 'gzip' ? gzip : zlib).encode(data);
+          final r = request.response;
+          r.headers.set('Content-Encoding', encoding);
+          if (request.headers.value('range') != null) {
+            r.statusCode = 206;
+            r.headers.set('Content-Range', 'bytes 2-11/${compressed.length}');
+            r.contentLength = 10;
+            r.add(compressed.sublist(2, 12));
+          } else {
+            r.contentLength = compressed.length;
+            if (request.method != 'HEAD') r.add(compressed);
+          }
+          await r.close();
+        });
+        final proxy = AudioBookProxy();
+        final client = http.Client();
+        try {
+          final track = AudioBookTrack(
+            id: 'encoded',
+            album: 'Book',
+            episode: ResourceEpisode(
+              id: 'e',
+              title: 'E',
+              url: Uri.parse('http://127.0.0.1:${server.port}/book.m3u8'),
+            ),
+          );
+          final url = (await proxy.prepare([track])).single;
+          final playlist = await client.get(url);
+          expect(playlist.statusCode, 200);
+          final asset = Uri.parse(
+            LineSplitter.split(playlist.body)
+                .firstWhere((s) => s.startsWith('http')),
+          );
+          final head = await client.head(asset);
+          expect(head.headers['content-length'], isNull);
+          final result = await client.get(asset);
+          expect(result.bodyBytes, audio);
+          final seek = await client.get(
+            asset,
+            headers: {'Range': 'bytes=2-11'},
+          );
+          if (seek.statusCode == 206) {
+            expect(seek.headers['content-range'], 'bytes 2-11/${audio.length}');
+            expect(seek.bodyBytes, audio.sublist(2, 12));
+          } else {
+            expect(seek.statusCode, 200);
+            expect(seek.headers['content-range'], isNull);
+            expect(seek.bodyBytes, audio);
+          }
+        } finally {
+          client.close();
+          await proxy.close();
+          await server.close(force: true);
+        }
+      },
+    );
+  }
   test('audio server refusal is recorded and reset for a new queue', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {

@@ -15,7 +15,7 @@ import '../util/lume_log.dart';
 
 /// Loopback-only, authenticated-by-random-path byte relay. It lazily resolves
 /// source chapters and preserves Range requests, including audio HLS playlists.
-/// The bytes are never decoded or synthesized by this layer.
+/// HTTP content codings are removed before relaying playable audio bytes.
 class AudioBookProxy {
   AudioBookProxy({http.Client Function()? clientFactory})
     : _clientFactory = clientFactory ?? AudioBookHttpClient.new;
@@ -160,13 +160,14 @@ class AudioBookProxy {
       _clients.add(client);
       http.StreamedResponse? response;
       var fetchPlaylist = false;
+      var ignoreRange = false;
       var redirects = 0;
       while (true) {
         final full = fetchPlaylist || uri.path.toLowerCase().endsWith('.m3u8');
         final upstream = http.Request(full ? 'GET' : request.method, uri)
           ..headers.addAll(headers)
           ..followRedirects = false;
-        if (full) {
+        if (full || ignoreRange) {
           upstream.headers.remove('range');
         } else if (range != null) {
           upstream.headers['range'] = range;
@@ -200,6 +201,19 @@ class AudioBookProxy {
           fetchPlaylist = true;
           continue;
         }
+        // Offsets in an encoded response refer to compressed bytes. Request
+        // the complete representation and stream the decoded audio from zero.
+        final encoding = response.headers['content-encoding']
+            ?.trim()
+            .toLowerCase();
+        if (upstream.headers.containsKey('range') &&
+            [206, 416].contains(response.statusCode) &&
+            encoding != null &&
+            encoding != 'identity') {
+          await response.stream.listen(null).cancel();
+          ignoreRange = true;
+          continue;
+        }
         break;
       }
       if (generation != _generation) throw const HttpException('播放列表已更换');
@@ -224,21 +238,40 @@ class AudioBookProxy {
       final hls =
           uri.path.toLowerCase().endsWith('.m3u8') ||
           type.toLowerCase().contains('mpegurl');
+      final encoding = response.headers['content-encoding']
+          ?.trim()
+          .toLowerCase();
+      final encoded = encoding != null && encoding != 'identity';
+      Stream<List<int>> body = response.stream;
+      if (encoded) {
+        final nativeDecoded =
+            client is AudioBookHttpClient &&
+            client.decodesContentEncoding &&
+            const {'gzip', 'deflate', 'br'}.contains(encoding);
+        if (response.statusCode == 206) {
+          throw const FormatException('音频服务器未返回完整压缩响应');
+        }
+        if (!nativeDecoded) {
+          body = switch (encoding) {
+            'gzip' => body.transform(gzip.decoder),
+            'deflate' => body.transform(zlib.decoder),
+            _ => throw FormatException('不支持的音频内容编码：$encoding'),
+          };
+        }
+      }
       if (hls) {
         final bytes = <int>[];
-        await for (final chunk in response.stream.timeout(
-          const Duration(seconds: 20),
-        )) {
+        await for (final chunk in body.timeout(const Duration(seconds: 20))) {
           bytes.addAll(chunk);
           if (bytes.length > 2 * 1024 * 1024) {
             throw const FormatException('播放清单过大');
           }
         }
-        final body = utf8.decode(bytes);
-        if (!body.trimLeft().startsWith('#EXTM3U')) {
+        final manifest = utf8.decode(bytes);
+        if (!manifest.trimLeft().startsWith('#EXTM3U')) {
           throw const FormatException('无效音频清单');
         }
-        final rewritten = body
+        final rewritten = manifest
             .split('\n')
             .map((line) {
               final value = line.trim();
@@ -264,16 +297,19 @@ class AudioBookProxy {
         }
       } else {
         request.response.statusCode = response.statusCode;
-        for (final name in ['content-type', 'content-range', 'accept-ranges']) {
-          final value = response.headers[name];
-          if (value != null) request.response.headers.set(name, value);
-        }
-        if (response.contentLength != null) {
-          request.response.contentLength = response.contentLength!;
+        request.response.headers.set('Content-Type', type);
+        if (!encoded) {
+          for (final name in ['content-range', 'accept-ranges']) {
+            final value = response.headers[name];
+            if (value != null) request.response.headers.set(name, value);
+          }
+          if (response.contentLength != null) {
+            request.response.contentLength = response.contentLength!;
+          }
         }
         if (request.method == 'GET') {
           await request.response.addStream(
-            response.stream.timeout(const Duration(seconds: 30)),
+            body.timeout(const Duration(seconds: 30)),
           );
         } else {
           await response.stream.listen(null).cancel();

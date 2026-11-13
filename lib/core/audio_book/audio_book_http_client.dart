@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cupertino_http/cupertino_http.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 /// Each relay request owns its cancellation, while Apple requests share one
 /// ephemeral system session for the lifetime of the app. Closing a request must
@@ -21,10 +22,11 @@ class AudioBookHttpClient extends http.BaseClient {
           ..cache = null,
       );
     }
-    return http.Client();
+    return IOClient(HttpClient()..autoUncompress = false);
   }
 
   final http.Client _client;
+  bool get decodesContentEncoding => _client is CupertinoClient;
   final bool _ownsClient;
   final _pending = <Completer<void>>{};
   bool _closed = false;
