@@ -521,12 +521,13 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       playbackFailed = false;
       _playFailure = null;
     });
+    final route = ModalRoute.of(context);
     PlayerPrelaunch? prepared;
     DownloadedVideoPlayback? offline;
     try {
       final chapter = chapters[selected];
       await MediaLibrary.instance.boot();
-      if (!mounted) return;
+      if (!mounted || route?.isCurrent == false) return;
       final known = MediaLibrary.instance.byId(
         MediaResource.sourceKey(_source!.section, _source!.id, widget.item.id),
       );
@@ -539,7 +540,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           trackInfo: const MediaTrackInfo(known: true, audio: true),
           deferContent: true,
         );
-        if (!mounted) return;
+        if (!mounted || route?.isCurrent == false) return;
         await openMediaResource(
           context,
           entry,
@@ -547,6 +548,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           restartAudio: _restartAudio,
         );
         _restartAudio = false;
+        if (!mounted) return;
         _syncAudioChapter(entry);
         widget.library.refresh();
         return;
@@ -561,7 +563,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           } catch (_) {
             PlaybackDiagnostics.record('offline-lookup-failed', source: _source!.id);
           }
-          if (!mounted) return;
+          if (!mounted || route?.isCurrent == false) return;
         }
       }
       final direct = SourcePlayback.itemAddress(widget.item.id);
@@ -582,13 +584,13 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                 );
               });
         } on CatWebParseRequired catch (request) {
-          if (!mounted) return;
+          if (!mounted || route?.isCurrent == false) return;
           if (request.webPlayer) {
             await showSourceWebPlayer(context, request);
             return;
           }
           final parsed = await showCatWebParsePage(context, request);
-          if (parsed == null || !mounted) return;
+          if (parsed == null || !mounted || route?.isCurrent == false) return;
           content = VideoContent(
             url: parsed,
             headers: {...request.headers, 'Referer': request.page.toString()},
@@ -598,12 +600,11 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           content = VideoContent(url: direct);
         }
       }
-      if (!mounted) return;
+      if (!mounted || route?.isCurrent == false) return;
       final saved = MediaLibrary.instance.byId(
         MediaResource.sourceKey(_source!.section, _source!.id, widget.item.id),
       );
       if (content is TextContent || content is ImageContent) {
-        if (!mounted) return;
         setState(
           () => _typedDetail = contentDetailPage(
             type: content is TextContent
@@ -660,6 +661,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
               address,
               headers: headers,
             );
+      if (!mounted || route?.isCurrent == false) return;
       if ((saved?.manual == true && saved!.kind != ResourceKind.video) ||
           (saved?.manual != true &&
               (tracks.kind == ResourceKind.audioBook ||
@@ -677,7 +679,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
                     ? const MediaTrackInfo(known: true, audio: true)
                     : tracks,
               );
-        if (!mounted) return;
+        if (!mounted || route?.isCurrent == false) return;
         await openMediaResource(
           context,
           entry,
@@ -689,11 +691,11 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           ),
         );
         _restartAudio = false;
+        if (!mounted) return;
         _syncAudioChapter(entry);
         widget.library.refresh();
         return;
       }
-      if (!mounted) return;
       final title = '${widget.item.title} · ${VideoEpisodeCatalog.labelOf(chapter)}';
       final media = offline?.media(title) ?? PlayerMedia(
         uri: address,
@@ -734,9 +736,9 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         target: target,
         sourceDirection: sourceDirection,
         fallbackDirection: portraitEntry ? 'portrait' : 'landscape',
-        stillActive: () => mounted,
+        stillActive: () => mounted && route?.isCurrent != false,
       );
-      if (!mounted) return;
+      if (!mounted || route?.isCurrent == false) return;
       if (resume != null &&
           widget.recordHistory &&
           widget.library.setting('history.incognito') != 'true') {
@@ -767,8 +769,8 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         qualities,
         transferred,
       );
-      widget.library.refresh();
       if (mounted) {
+        widget.library.refresh();
         final last = widget.library.videoProgress(
           widget.item.id,
           sourceId: _source?.id ?? widget.sourceId,
@@ -806,7 +808,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         }
       }
     } catch (failure) {
-      if (mounted) {
+      if (mounted && route?.isCurrent != false) {
         setState(() {
           playbackFailed = true;
           _playFailure = failure;

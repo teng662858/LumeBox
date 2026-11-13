@@ -2,6 +2,7 @@ import 'package:lume_box/core/media/media_library.dart';
 import 'package:lume_box/features/reading/history_sheet.dart';
 import 'package:lume_box/features/video/video_detail_page.dart';
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/media/playback_focus.dart';
 import 'package:lume_box/core/intro/intro_store.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
@@ -20,6 +22,7 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/video/video_page.dart';
+import 'package:lume_box/features/video/video_play_target.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
 import 'package:lume_box/features/video/video_download_center.dart';
 import 'package:lume_box/features/video/video_player_settings.dart';
@@ -193,6 +196,37 @@ void main() {
     expect(find.text('视频地址或本地路径'), findsNothing, reason: '播放器的地址栏不该占着首页');
     // Playback controls now belong to UIKit and are exercised by the native
     // integration suite. This source-flow test stops at the media handoff.
+  });
+
+  testWidgets('等待其他音频释放焦点时离开详情不会再打开播放器', (tester) async {
+    source.items = const [SourceItem(id: 'https://example.com/movie.mp4', title: '等待焦点')];
+    await pumpBoard(tester);
+    await tester.tap(find.text('等待焦点'));
+    await tester.pumpAndSettle();
+    final detail = find.byType(VideoDetailPage);
+    final pending = Completer<void>();
+    var releasing = false;
+    Future<void> release() {
+      releasing = true;
+      return pending.future;
+    }
+    await PlaybackFocus.acquire('test-audio', onRelease: release);
+    try {
+      final page = tester.widget<VideoDetailPage>(detail);
+      const target = VideoPlayTarget(sourceId: 'demo-video', itemId: 'movie', title: '等待焦点',
+        chapterIndex: 0, chapterId: 'movie', chapterTitle: '正片');
+      unawaited(page.onPlay(PlayerMedia(uri: Uri.parse('https://example.com/movie.mp4')), target, [], null));
+      await tester.pump();
+      expect(releasing, isTrue);
+      Navigator.of(tester.element(detail)).pop();
+      pending.complete();
+      await tester.pumpAndSettle();
+      expect(find.byType(VideoPlayerPage), findsNothing);
+      expect(PlaybackFocus.owner, 'test-audio');
+    } finally {
+      if (!pending.isCompleted) pending.complete();
+      PlaybackFocus.unregister('test-audio', release);
+    }
   });
 
   testWidgets('条目没有地址：走剧集链路，选一集后起播取到的视频地址', (tester) async {

@@ -211,19 +211,23 @@ class _VideoPageState extends State<VideoPage> {
       await Navigator.push(
         context,
         MaterialPageRoute<void>(
-          builder: (_) => VideoDetailPage(
+          builder: (detailContext) => VideoDetailPage(
             sourceId: selection.sourceId,
             manager: manager,
             loadSource: () => manager.open(selection.sourceId),
             item: selection.item,
             library: library,
             prelaunch: _startPrelaunch,
-            onPlay: (media, target, qualities, prelaunch) => _openPlayer(
-              media,
-              target: target,
-              qualities: qualities,
-              prelaunch: prelaunch,
-            ),
+            onPlay: (media, target, qualities, prelaunch) {
+              final detailRoute = ModalRoute.of(detailContext);
+              return _openPlayer(
+                media,
+                target: target,
+                qualities: qualities,
+                prelaunch: prelaunch,
+                originRoute: detailRoute,
+              );
+            },
           ),
         ),
       );
@@ -245,21 +249,26 @@ class _VideoPageState extends State<VideoPage> {
     VideoPlayTarget? target,
     List<VideoQuality> qualities = const <VideoQuality>[],
     PlayerPrelaunch? prelaunch,
+    ModalRoute<dynamic>? originRoute,
   }) async {
-    if (!mounted) {
+    if (!mounted || originRoute?.isCurrent == false) {
       _discardPrelaunch(prelaunch);
       return;
     }
-    await PlaybackFocus.acquire('video');
+    await PlaybackFocus.acquire('video', stillWanted: () => mounted && originRoute?.isCurrent != false);
+    if (!mounted || originRoute?.isCurrent == false) {
+      _discardPrelaunch(prelaunch);
+      return;
+    }
     final entering =
         prelaunch ??
         await preparePlaybackRoute(
           media,
           library: _library,
           target: target,
-          stillActive: () => mounted,
+          stillActive: () => mounted && originRoute?.isCurrent != false,
         );
-    if (!mounted) {
+    if (!mounted || originRoute?.isCurrent == false) {
       _discardPrelaunch(entering);
       return;
     }

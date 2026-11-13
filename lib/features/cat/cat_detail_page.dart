@@ -173,6 +173,7 @@ class _CatDetailPageState extends State<CatDetailPage>
   Future<void> play(int index) async {
     if (playing) return;
     setState(() => playing = true);
+    final route = ModalRoute.of(context);
     PlayerPrelaunch? prelaunch;
     var openedPlayer = false;
     try {
@@ -198,20 +199,20 @@ class _CatDetailPageState extends State<CatDetailPage>
           chapterId: chapter.id,
         );
       } on CatWebParseRequired catch (request) {
-        if (!mounted) return;
+        if (!mounted || route?.isCurrent == false) return;
         if (request.webPlayer) {
           await showSourceWebPlayer(context, request);
           return;
         }
         final resolved = await showCatWebParsePage(context, request);
-        if (resolved == null || !mounted) return;
+        if (resolved == null || !mounted || route?.isCurrent == false) return;
         content = VideoContent(
           url: resolved,
           headers: {...request.headers, 'Referer': request.page.toString()},
         );
       }
       if (content is! VideoContent) throw StateError('站点未返回视频地址');
-      if (!mounted) return;
+      if (!mounted || route?.isCurrent == false) return;
       widget.source.service.playInfo = {
         'name': widget.item.title,
         'title': widget.item.title,
@@ -236,10 +237,10 @@ class _CatDetailPageState extends State<CatDetailPage>
           PlaybackOrientationController.instance.orientation ==
               PlaybackOrientation.auto) {
         await preparePlaybackEntry(prelaunch, media, settings);
-        if (!mounted) return;
+        if (!mounted || route?.isCurrent == false) return;
       }
       await applyPlaybackEntryOrientation(prelaunch);
-      if (!mounted) return;
+      if (!mounted || route?.isCurrent == false) return;
       final transferred = prelaunch;
       openedPlayer = true;
       final opening = Navigator.push(
@@ -273,7 +274,7 @@ class _CatDetailPageState extends State<CatDetailPage>
       prelaunch = null;
       await opening;
     } catch (failure) {
-      if (mounted) {
+      if (mounted && route?.isCurrent != false) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('$failure')));
       }

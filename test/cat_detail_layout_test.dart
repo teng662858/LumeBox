@@ -2,6 +2,7 @@ import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
 import 'package:lume_box/core/tmdb/tmdb.dart';
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -17,12 +18,14 @@ import 'package:lume_box/features/cat/cat_detail_page.dart';
 class FixtureCat extends CatDataSource {
   FixtureCat(super.service, super.site, {super.chapterFlag});
   int parses = 0;
+  Completer<VideoContent>? pending;
   @override
   Future<ChapterContent?> content({
     required String itemId,
     required String chapterId,
   }) async {
     parses++;
+    if (pending case final gate?) return gate.future;
     throw const SourceException(SourceErrorKind.network, 'fixture播放解析失败');
   }
 
@@ -121,6 +124,27 @@ void main() {
     expect(find.byType(CatDetailPage), findsOneWidget);
     expect(find.byType(VideoPlayerPage), findsNothing);
     expect(find.textContaining('fixture播放解析失败'), findsOneWidget);
+  });
+
+  testWidgets('猫源详情退出时不打开刚解析完成的视频', (tester) async {
+    final nav = GlobalKey<NavigatorState>();
+    final pending = source.pending = Completer<VideoContent>();
+    final item = source.item(await source.rawDetail('movie'))!;
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: nav, home: const Scaffold(body: Text('列表')),
+    ));
+    nav.currentState!.push(MaterialPageRoute<void>(builder: (_) =>
+        CatDetailPage(source: source, item: item, library: library)));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(CatDetailPage));
+    state.play(0);
+    expect(source.parses, 1);
+    nav.currentState!.pop();
+    expect(state.mounted, isTrue);
+    pending.complete(VideoContent(url: Uri.parse('https://fixture.test/video.mp4')));
+    await tester.pumpAndSettle();
+    expect(find.byType(VideoPlayerPage), findsNothing);
+    expect(find.text('列表'), findsOneWidget);
   });
 
   for (final width in [320.0, 390.0]) {

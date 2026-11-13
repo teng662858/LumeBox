@@ -37,6 +37,8 @@ import 'support/fake_reading_source.dart';
 class DetailSource extends FakeReadingDataSource {
   DetailSource() : super(section: Section.video);
   int parses = 0;
+  Completer<VideoContent>? delayedContent;
+  Completer<void>? resolvingContent;
   bool failParse = false;
   String extension = 'mp4';
   List<VideoQuality> qualities = [];
@@ -76,6 +78,10 @@ class DetailSource extends FakeReadingDataSource {
     required String chapterId,
   }) async {
     parses++;
+    if (delayedContent case final pending?) {
+      resolvingContent?.complete();
+      return pending.future;
+    }
     if (failParse) {
       throw const SourceException(SourceErrorKind.network, 'fixture解析失败');
     }
@@ -308,6 +314,41 @@ void main() {
       expect(source.parses, 1);
     });
   }
+
+  testWidgets('返回详情的退出动画中取址完成不会重新打开播放器', (tester) async {
+    final nav = GlobalKey<NavigatorState>();
+    final downloads = VideoDownloadCenter(directory: () async => root);
+    await tester.runAsync(downloads.boot);
+    var opens = 0;
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: nav,
+      home: const Scaffold(body: Text('列表')),
+    ));
+    nav.currentState!.push(MaterialPageRoute<void>(builder: (_) => VideoDetailPage(
+      source: source, item: const SourceItem(id: 'late-play', title: '测试'),
+      detectContent: false, library: library, downloadCenter: downloads,
+      onPlay: (_, _, _, _) async { opens++; },
+    )));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(VideoDetailPage));
+    late Future<void> play;
+    await tester.runAsync(() async {
+      final started = source.resolvingContent = Completer<void>();
+      source.delayedContent = Completer<VideoContent>();
+      play = state.play() as Future<void>;
+      await started.future.timeout(const Duration(seconds: 3));
+    });
+    expect(source.parses, 1);
+    nav.currentState!.pop();
+    expect(state.mounted, isTrue);
+    await tester.runAsync(() async {
+      source.delayedContent!.complete(VideoContent(url: Uri.parse('https://example.test/movie.mp4')));
+      await play.timeout(const Duration(seconds: 3));
+    });
+    await tester.pumpAndSettle();
+    expect(opens, 0);
+    expect(find.text('列表'), findsOneWidget);
+  });
 
   testWidgets('详情起播使用默认清晰度和对应线路的请求头', (tester) async {
     VideoPlayerSettingsStore(library).save(
