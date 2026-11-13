@@ -95,6 +95,42 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path.startsWith('/limited/')) {
+        if (request.uri.path.endsWith('/start.m3u8')) {
+          if (request.headers.value('range') != null) {
+            request.response.statusCode = 403;
+            await request.response.close();
+            return;
+          }
+          await request.response.redirect(upstream.resolve('/limited/sub/index.m3u8').replace(query: request.uri.query));
+          return;
+        }
+        if (request.uri.path.endsWith('key.bin') || request.uri.path.endsWith('part.ts')) {
+          request.response.add([1, 2, 3]);
+          await request.response.close();
+          return;
+        }
+        final limit = request.uri.queryParameters['encoding'] == 'gzip' ? 16 : 24;
+        final plain = utf8.encode('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n');
+        final compressed = request.uri.queryParameters['encoding'] == 'gzip';
+        final content = compressed ? gzip.encode(plain) : plain;
+        final raw = request.headers.value('range') ?? 'bytes=0-';
+        final start = raw == 'bytes=-1' ? content.length - 1
+            : int.parse(RegExp(r'^bytes=(\d+)-').firstMatch(raw)![1]!);
+        final end = (start + limit).clamp(0, content.length);
+        if (start >= content.length) {
+          request.response.statusCode = 416;
+          request.response.headers.set('Content-Range', 'bytes */${content.length}');
+        } else {
+          request.response.statusCode = 206;
+          request.response.headers.set('Content-Range', 'bytes $start-${end - 1}/${compressed ? "*" : content.length}');
+          request.response.headers.set('Content-Type', 'application/octet-stream');
+          if (compressed) request.response.headers.set('Content-Encoding', 'gzip');
+          request.response.add(content.sublist(start, end));
+        }
+        await request.response.close();
+        return;
+      }
       if (request.uri.path == '/unknown-total.mp4') {
         final range = request.headers.value('range');
         final offsets = range == null ? null : parseHttpByteRange(range, data.length);
@@ -316,6 +352,24 @@ void main() {
     if (range != null) request.headers.set('Range', range);
     final response = await request.close();
     return (response, await response.expand((b) => b).toList());
+  }
+
+  for (final (path, encoding) in [
+    ('start.m3u8', 'identity'), ('start.m3u8', 'gzip'), ('sub/label.mp4', 'identity'),
+  ]) {
+    test('complete a capped $encoding HLS playlist before rewriting $path', () async {
+      final media = await cache.wrap(PlayerMedia(uri: upstream.resolve('/limited/$path?encoding=$encoding')));
+      final result = await get(media.uri);
+      expect(result.$1.statusCode, 200);
+      final manifest = utf8.decode(result.$2);
+      expect(manifest, contains('#EXT-X-ENDLIST'));
+      final key = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(manifest)![1]!);
+      final part = Uri.parse(LineSplitter.split(manifest).firstWhere((line) => line.startsWith('http')));
+      for (final uri in [key, part]) {
+        expect((await get(uri)).$2, [1, 2, 3]);
+      }
+      expect(paths, containsAll(['/limited/sub/key.bin', '/limited/sub/part.ts']));
+    });
   }
 
   test(

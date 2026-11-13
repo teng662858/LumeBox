@@ -187,7 +187,7 @@ class VideoDiskCache extends ChangeNotifier {
         return '';
       }
       final format = await _inspectFormat(
-        response.timeout(const Duration(seconds: 3)),
+        _completeBody(response).timeout(const Duration(seconds: 3)),
         response.header('content-encoding'),
       );
       if (format.isNotEmpty) {
@@ -460,6 +460,7 @@ class VideoDiskCache extends ChangeNotifier {
           native.statusCode,
           uri,
           header,
+            headers,
         );
       } else {
         final request = await _client
@@ -468,7 +469,7 @@ class VideoDiskCache extends ChangeNotifier {
         request.followRedirects = false;
         headers.forEach(request.headers.set);
         final io = await request.close().timeout(const Duration(seconds: 30));
-        response = _MediaResponse(io, io.statusCode, uri, io.headers.value);
+        response = _MediaResponse(io, io.statusCode, uri, io.headers.value, headers);
       }
       final location = response.header('location');
       if (![301, 302, 303, 307, 308].contains(response.statusCode) ||
@@ -571,12 +572,11 @@ class VideoDiskCache extends ChangeNotifier {
   );
 
   Future<int?> _rangeTotal(
-    PlayerMedia media,
     _MediaResponse response,
     RegExpMatch range,
   ) async {
     if (range[3] != '*') return int.tryParse(range[3]!);
-    final probe = await _request(media, 'bytes=-1');
+    final probe = await _request(response.media, 'bytes=-1');
     try {
       for (final header in ['etag', 'last-modified', 'content-encoding']) {
         final original = response.header(header);
@@ -678,12 +678,33 @@ class VideoDiskCache extends ChangeNotifier {
               .trim()
               .toLowerCase() ??
           'application/octet-stream';
+      // A CDN may cap even an ordinary playlist GET. Rewriting a prefix can
+      // silently discard variants, keys and the end of a media playlist.
+      if (start == 0 && response.statusCode == 206 &&
+          (playlist || media.uri.path.toLowerCase().endsWith('.m3u8') ||
+              mime.contains('mpegurl') || _playlistSignature(data))) {
+        final first = _MediaResponse(
+          Stream.value(data), 206, response.uri, response.header, response.requestHeaders,
+        );
+        final complete = BytesBuilder(copy: false);
+        await for (final part in _completeBody(first).timeout(const Duration(seconds: 30))) {
+          if (complete.length + part.length > 8 * blockBytes) {
+            throw const HttpException('媒体清单过大');
+          }
+          complete.add(part);
+        }
+        downloadedBytes += complete.length - data.length;
+        final manifest = complete.takeBytes();
+        return _Block(manifest, 0, manifest.length, mime,
+            response.header('etag') ?? response.header('last-modified'),
+            response.uri, response.header('content-encoding'));
+      }
       if (response.statusCode == 200 && start != 0) throw const _Passthrough();
       if (response.statusCode == 206 &&
           (range == null || int.parse(range[1]!) != start)) {
         throw const HttpException('媒体代理分段起点不匹配');
       }
-      final total = range == null ? data.length : await _rangeTotal(media, response, range);
+      final total = range == null ? data.length : await _rangeTotal(response, range);
       final declaredEnd = int.tryParse(range?[2] ?? '');
       if (data.isEmpty || total == null || total < start + data.length ||
           (range != null && (declaredEnd == null || declaredEnd < start || declaredEnd >= total))) {
@@ -813,13 +834,15 @@ class VideoDiskCache extends ChangeNotifier {
   }
 
   static bool _playlist(_Block block) =>
-      block.mime.contains('mpegurl') ||
+      block.mime.contains('mpegurl') || _playlistSignature(block.data);
+
+  static bool _playlistSignature(List<int> bytes) =>
       utf8
-          .decode(block.data.take(16).toList(), allowMalformed: true)
+          .decode(bytes.take(16).toList(), allowMalformed: true)
           .trimLeft()
           .startsWith('#EXTM3U');
 
-  Stream<List<int>> _segmentBody(PlayerMedia media, _MediaResponse first) async* {
+  Stream<List<int>> _completeBody(_MediaResponse first) async* {
     if (first.statusCode == 200) {
       yield* first;
       return;
@@ -866,7 +889,7 @@ class VideoDiskCache extends ChangeNotifier {
       }
       if (offset != end + 1) throw const HttpException('视频分片不完整');
       if (offset == total) return;
-      part = await _request(media, 'bytes=$offset-');
+      part = await _request(part.media, 'bytes=$offset-');
     }
   }
 
@@ -883,7 +906,7 @@ class VideoDiskCache extends ChangeNotifier {
       throw _UpstreamStatus(upstream.statusCode);
     }
     final body = BytesBuilder(copy: false);
-    final decoded = _decodedBody(_segmentBody(media, upstream), upstream.header('content-encoding'));
+    final decoded = _decodedBody(_completeBody(upstream), upstream.header('content-encoding'));
     await for (final chunk in decoded.timeout(const Duration(seconds: 20))) {
       if (prefix && chunk.length >= limit - body.length) {
         body.add(chunk.sublist(0, limit - body.length));
@@ -1450,10 +1473,12 @@ class VideoDiskCache extends ChangeNotifier {
 }
 
 class _MediaResponse extends StreamView<List<int>> {
-  _MediaResponse(super.stream, this.statusCode, this.uri, this.header);
+  _MediaResponse(super.stream, this.statusCode, this.uri, this.header, this.requestHeaders);
   final int statusCode;
   final Uri uri;
   final String? Function(String name) header;
+  final Map<String, String> requestHeaders;
+  PlayerMedia get media => PlayerMedia(uri: uri, headers: requestHeaders);
 }
 
 class _UpstreamStatus implements Exception {
