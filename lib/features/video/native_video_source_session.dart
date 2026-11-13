@@ -55,6 +55,7 @@ class NativeVideoSourceSession {
   final _targets = <String, VideoPlayTarget>{};
   final _saved = <String, double>{};
   bool _closed = false;
+  Future<void>? _closing;
   int _resolution = 0;
   void Function()? _releasePin;
   late PlayerSettings _settings;
@@ -82,9 +83,15 @@ class NativeVideoSourceSession {
     ).hasMatch(_media.uri.path)) {
       _settings = _settings.copyWith(kernel: PlayerKernel.mpv);
     }
-    await PlaybackFocus.acquire('video');
-    if (_closed) return;
-    PlaybackFocus.register('video', close);
+    await PlaybackFocus.acquire(
+      'video',
+      onRelease: close,
+      stillWanted: () => !_closed,
+    );
+    if (_closed) {
+      PlaybackFocus.unregister('video', close);
+      return;
+    }
     if (target != null) {
       _releasePin = SourceRuntimePins.retain(
         source?.section ?? library.section,
@@ -497,15 +504,15 @@ class NativeVideoSourceSession {
     unawaited(BangumiSyncService.instance.afterProgress(library, progress));
   }
 
-  Future<void> close() async {
-    if (_closed) return;
+  Future<void> close() => _closing ??= _close();
+
+  Future<void> _close() async {
     _closed = true;
     _resolution++;
-    PlaybackFocus.unregister('video', close);
-    PlaybackFocus.setPlaying('video', false);
     try {
       await _connection?.close();
     } finally {
+      PlaybackFocus.unregister('video', close);
       _releasePin?.call();
       _releasePin = null;
     }

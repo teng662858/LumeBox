@@ -161,6 +161,68 @@ void main() {
     await directory.delete(recursive: true);
   });
 
+  test('a new video waits for the previous native screen to close', () async {
+    await start();
+    final first = session;
+    final closing = Completer<void>();
+    final dismissed = Completer<void>();
+    addTearDown(() { if (!dismissed.isCompleted) dismissed.complete(); });
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      if (call.method == 'close' && call.arguments['session'] == first.connectionId) {
+        closing.complete();
+        await dismissed.future;
+      }
+      if (call.method == 'open') {
+        if (!dismissed.isCompleted) throw PlatformException(code: 'busy');
+        opened = Map<String, Object?>.from(call.arguments as Map);
+      }
+      return null;
+    });
+    final second = start();
+    await Future<void>.delayed(Duration.zero);
+    try {
+      expect(closing.isCompleted, isTrue);
+      expect(calls.map((c) => c.method), ['open', 'close']);
+    } finally {
+      dismissed.complete();
+      await second;
+    }
+    await progress(7);
+    await first.close();
+    expect(PlaybackFocus.isPlaying, isTrue);
+  });
+
+  test('a replaced video still preparing its URL cannot present afterwards', () async {
+    final preparing = Completer<void>();
+    final delayed = Completer<PlayerMedia>();
+    final first = start(prepare: (media, _) {
+      preparing.complete();
+      return delayed.future;
+    });
+    await preparing.future;
+    await start();
+    await progress(7);
+    delayed.complete(PlayerMedia(uri: Uri.parse('https://cdn.example/old.mp4')));
+    await first;
+    expect(calls.where((c) => c.method == 'open'), hasLength(1));
+    expect(PlaybackFocus.isPlaying, isTrue);
+  });
+
+  test('cancelling a queued route leaves the current video playing', () async {
+    await start();
+    await progress(7);
+    final first = session;
+    final second = start();
+    await session.close();
+    await second;
+    expect(calls.map((c) => c.method), ['open']);
+    expect(PlaybackFocus.isPlaying, isTrue);
+    await PlaybackFocus.acquire('audioBook');
+    expect(calls.last.arguments['session'], first.connectionId);
+    expect(calls.last.method, 'close');
+  });
+
   test('native handoff preserves signed URLs and exact headers without creating Dart engines', () async {
     await start();
     final media = opened['media'] as Map;
