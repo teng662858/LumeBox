@@ -999,6 +999,36 @@ class VideoDiskCache extends ChangeNotifier {
     return Uint8List.sublistView(bytes, transportStreamImagePrefix(bytes));
   }
 
+  static String _keySuffix(String line) {
+    final attributes = hlsRawAttributes(line);
+    final format = hlsAttributeValue(attributes['KEYFORMAT'] ?? 'identity');
+    return attributes['METHOD'] == 'AES-128' && format == 'identity'
+        ? '.identity.key'
+        : '.key';
+  }
+
+  Future<Uint8List> _identityKey(PlayerMedia media) async {
+    var response = await _request(media, null);
+    if (const [502, 503, 504].contains(response.statusCode)) {
+      await response.listen(null).cancel();
+      response = await _request(media, null);
+    }
+    if (response.statusCode != 200 && response.statusCode != 206) {
+      await response.listen(null).cancel();
+      throw _UpstreamStatus(response.statusCode);
+    }
+    final key = Uint8List(16);
+    var offset = 0;
+    final body = _decodedBody(_completeBody(response), response.header('content-encoding'));
+    await for (final chunk in body.timeout(const Duration(seconds: 20))) {
+      if (chunk.length > key.length - offset) throw const FormatException('HLS 密钥长度无效');
+      key.setRange(offset, offset + chunk.length, chunk);
+      offset += chunk.length;
+    }
+    if (offset != key.length) throw const FormatException('HLS 密钥不完整');
+    return key;
+  }
+
   /// Forward playable bytes before filling a disk block. Keeping the native
   /// HTTP reader behind a complete 1 MiB download delays every playback kernel.
   Future<bool> _streamMedia(
@@ -1301,6 +1331,11 @@ class VideoDiskCache extends ChangeNotifier {
         return;
       }
       final path = request.uri.path;
+      if (path.endsWith('.identity.key')) {
+        response.headers.set('Cache-Control', 'no-store');
+        serveHttpBytes(request, await _identityKey(media), 'application/octet-stream');
+        return;
+      }
       if (path.endsWith('.init.mp4') || path.endsWith('.frag.m4s')) {
         final sequence = int.tryParse(request.uri.queryParameters['n'] ?? '');
         if (sequence == null || sequence < 1 || sequence > 0x7fffffff) {
@@ -1391,7 +1426,8 @@ class VideoDiskCache extends ChangeNotifier {
           final child = childMedia(text);
           if (child == null) return text;
           var suffix = _mediaSuffix(child.uri);
-          if (sequence != null || suffix.isEmpty || fallback.endsWith('.m3u8')) {
+          if (sequence != null || suffix.isEmpty || fallback.endsWith('.m3u8') ||
+              fallback == '.identity.key') {
             suffix = fallback;
           }
           if (apple && suffix == '.m3u8') suffix = '.apple.m3u8';
@@ -1483,7 +1519,7 @@ class VideoDiskCache extends ChangeNotifier {
               r'URI="([^"]+)"',
             ).allMatches(line).toList().reversed) {
               final attributeSuffix = switch (line.split(':').first) {
-                '#EXT-X-KEY' || '#EXT-X-SESSION-KEY' => '.key',
+                '#EXT-X-KEY' || '#EXT-X-SESSION-KEY' => _keySuffix(line),
                 '#EXT-X-MAP' => '.mp4',
                 '#EXT-X-MEDIA' => hlsRawAttributes(line)['TYPE'] == 'SUBTITLES'
                     ? '.subtitles.m3u8'

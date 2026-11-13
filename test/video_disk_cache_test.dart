@@ -95,6 +95,30 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path.startsWith('/rotate/')) {
+        if (request.uri.path.endsWith('.m3u8')) {
+          final tag = request.uri.queryParameters['tag'] ?? 'KEY';
+          final resource = request.uri.queryParameters['key'] ?? 'secret.mp4';
+          request.response.write('#EXTM3U\n#EXT-X-$tag:METHOD=AES-128,URI="$resource?sig=fixture"\n'
+              '#EXTINF:1,\nsegment.ts\n#EXT-X-ENDLIST\n');
+        } else if (request.headers.value('range') != null ||
+            request.uri.query != 'sig=fixture' ||
+            request.headers.value('authorization') != 'Bearer fixture') {
+          request.response.statusCode = 403;
+        } else {
+          final version = paths.where((path) => path == request.uri.path).length;
+          if (request.uri.path.endsWith('invalid') && version <= 2) {
+            request.response.add(List.filled(version == 1 ? 15 : 17, 42));
+          } else if (request.uri.path.endsWith('invalid')) {
+            request.response.headers.set('Content-Encoding', 'gzip');
+            request.response.add(gzip.encode(ascii.encode('<html>0123456789')));
+          } else {
+            request.response.add(List.filled(16, version));
+          }
+        }
+        await request.response.close();
+        return;
+      }
       if (request.uri.path.startsWith('/audio-track/')) {
         if (request.uri.path.endsWith('.m3u8')) {
           final suffix = request.uri.queryParameters['ext'];
@@ -184,7 +208,7 @@ void main() {
           return;
         }
         if (request.uri.path.endsWith('key.bin') || request.uri.path.endsWith('part.ts')) {
-          request.response.add([1, 2, 3]);
+          request.response.add(request.uri.path.endsWith('key.bin') ? List.filled(16, 7) : [1, 2, 3]);
           await request.response.close();
           return;
         }
@@ -560,9 +584,8 @@ void main() {
       expect(manifest, contains('#EXT-X-ENDLIST'));
       final key = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(manifest)![1]!);
       final part = Uri.parse(LineSplitter.split(manifest).firstWhere((line) => line.startsWith('http')));
-      for (final uri in [key, part]) {
-        expect((await get(uri)).$2, [1, 2, 3]);
-      }
+      expect((await get(key)).$2, List.filled(16, 7));
+      expect((await get(part)).$2, [1, 2, 3]);
       expect(paths, containsAll(['/limited/sub/key.bin', '/limited/sub/part.ts']));
     });
   }
@@ -1231,6 +1254,39 @@ void main() {
     final (response, body) = await get(wrapped.uri);
     expect(response.statusCode, 200);
     expect(utf8.decode(body), startsWith('#EXTM3U'));
+  });
+
+  for (final tag in ['KEY', 'SESSION-KEY']) {
+    test('HLS $tag returns the current key on each request without persisting it', () async {
+      final wrapped = await cache.wrap(PlayerMedia(
+        uri: upstream.resolve('/rotate/master.m3u8?tag=$tag'),
+        headers: const {'Authorization': 'Bearer fixture'},
+      ));
+      final manifest = utf8.decode((await get(wrapped.uri)).$2);
+      final key = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(manifest)![1]!);
+      expect((await get(key)).$2, List.filled(16, 1));
+      final next = await get(key, 'bytes=2-5');
+      expect(next.$1.statusCode, 206);
+      expect(next.$2, List.filled(4, 2));
+      expect(next.$1.headers.value('cache-control'), contains('no-store'));
+      expect(cache.bytes, 0);
+      expect((await Directory('${root.path}/video-buffer-v1').list().toList()), isEmpty);
+    });
+  }
+  test('HLS rejects short and oversized AES keys and recovers with exact decoded bytes', () async {
+    final wrapped = await cache.wrap(PlayerMedia(
+      uri: upstream.resolve('/rotate/master.m3u8?key=invalid'),
+      headers: const {'Authorization': 'Bearer fixture'},
+    ));
+    final manifest = utf8.decode((await get(wrapped.uri)).$2);
+    final key = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(manifest)![1]!);
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final (response, body) = await get(key);
+      expect(response.statusCode, 502);
+      expect(body, isEmpty);
+    }
+    expect((await get(key)).$2, ascii.encode('<html>0123456789'));
+    expect(cache.bytes, 0);
   });
 
   test('HLS rewrites keys and segments and never caches a playlist', () async {
