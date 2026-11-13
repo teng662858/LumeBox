@@ -612,6 +612,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     Map<String, String> headers,
     HttpClientResponse response,
     int offset, {
+    int? expectedLength,
     void Function(int)? onLength,
   }) {
     final encoding = _encoding(response);
@@ -622,6 +623,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       headers,
       response,
       offset,
+      expectedLength: expectedLength,
       onLength: encoding == 'identity' ? onLength : null,
     );
     if (encoding == 'identity') return wire;
@@ -641,6 +643,15 @@ class VideoDownloadCenter extends ChangeNotifier {
   String? _validator(HttpClientResponse response) =>
       response.headers.value('etag') ?? response.headers.value('last-modified');
 
+  String _addressHash(Uri uri) =>
+      sha256.convert(utf8.encode(uri.removeFragment().toString())).toString();
+
+  bool _sameStrongTag(Object? previous, HttpClientResponse response) =>
+      previous is String &&
+      previous.startsWith('"') &&
+      previous.endsWith('"') &&
+      previous == response.headers.value('etag');
+
   // Byte ranges and validators refer to the encoded HTTP representation.
   Stream<List<int>> _wireBody(
     VideoDownloadTask task,
@@ -649,6 +660,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     Map<String, String> headers,
     HttpClientResponse response,
     int offset, {
+    int? expectedLength,
     void Function(int)? onLength,
   }) async* {
     if (response.statusCode == 200) {
@@ -658,7 +670,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     }
     final validator = _validator(response);
     final encoding = _encoding(response);
-    int? total;
+    var total = expectedLength;
     while (true) {
       final nextValidator = _validator(response);
       if (validator != null &&
@@ -713,7 +725,13 @@ class VideoDownloadCenter extends ChangeNotifier {
         headers,
         extra: {'Range': 'bytes=$offset-', 'If-Range': ?validator},
       );
+      final previousUri = uri;
       (response, uri) = next;
+      if (uri.removeFragment() != previousUri.removeFragment() &&
+          !_sameStrongTag(validator, response)) {
+        await response.listen(null).cancel();
+        throw StateError('下载中途文件地址发生变化，请重试');
+      }
     }
   }
 
@@ -757,11 +775,25 @@ class VideoDownloadCenter extends ChangeNotifier {
         previousValidator != null &&
         responseValidator != null &&
         previousValidator != responseValidator;
+    // Query parameters can select a different movie or simply rotate a token.
+    // Across addresses, only reuse bytes when the server confirms a strong ETag.
+    final sameAddresses =
+        old['requestHash'] == _addressHash(uri) &&
+        old['responseHash'] == _addressHash(finalUri);
+    final previousLength = old['length'] is int ? old['length'] as int : null;
+    final range = response.headers.value('content-range');
+    final responseTotal = int.tryParse(range?.split('/').last ?? '');
+    final restart =
+        changed ||
+        (!sameAddresses && !_sameStrongTag(previousValidator, response)) ||
+        (previousLength != null &&
+            responseTotal != null &&
+            previousLength != responseTotal);
     if (offset > 0 &&
         (response.statusCode == 206 &&
-                (_encoding(response) != 'identity' || changed) ||
+                (_encoding(response) != 'identity' || restart) ||
             response.statusCode == 416 &&
-                (changed ||
+                (restart ||
                     response.headers.value('content-range') !=
                         'bytes */$offset'))) {
       await response.listen(null).cancel();
@@ -793,6 +825,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         headers,
         response,
         offset,
+        expectedLength: offset > 0 ? previousLength : null,
         onLength: (length) => task.totalBytes = length,
       ),
     );
@@ -837,6 +870,9 @@ class VideoDownloadCenter extends ChangeNotifier {
       await validator.writeAsString(
         jsonEncode({
           'signature': signature,
+          'requestHash': _addressHash(uri),
+          'responseHash': _addressHash(finalUri),
+          if (task.totalBytes > 0) 'length': task.totalBytes,
           'validator': ?etag,
           if (_encoding(response) != 'identity') 'encoded': true,
         }),

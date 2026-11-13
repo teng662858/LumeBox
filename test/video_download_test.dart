@@ -546,6 +546,127 @@ void main() {
     expect(await c.localFile(task).readAsBytes(), data);
     expect(task.bytes, data.length);
   });
+  for (final (redirect, status, sameTag) in [
+    (false, 206, false),
+    (true, 206, false),
+    (false, 416, false),
+    (true, 206, true),
+  ]) {
+    test('a changed media query checks the partial file (redirect=$redirect, status=$status, sameTag=$sameTag)', () async {
+      var version = 'old';
+      final newBytes = List.generate(status == 416 ? 32 : 64, (i) => i);
+      final resumedRanges = <String?>[];
+      final c = VideoDownloadCenter(
+        directory: () async => root,
+        resolve: (_) async => VideoContent(
+          url: origin.resolve(redirect ? 'play' : 'file.mp4?v=$version'),
+        ),
+      );
+      server.listen((request) async {
+        final response = request.response;
+        final range = request.headers.value('range');
+        if (sameTag) response.headers.set('ETag', '"movie"');
+        if (version == 'new' && request.uri.path == '/file.mp4') {
+          resumedRanges.add(range);
+        }
+        if (request.uri.path == '/play') {
+          response.statusCode = 302;
+          response.headers.set('Location', 'file.mp4?v=$version');
+        } else if (version == 'old') {
+          if (range == null) {
+            response.statusCode = 206;
+            response.headers.set('Content-Range', 'bytes 0-31/64');
+            response.add(sameTag ? newBytes.sublist(0, 32) : List.filled(32, 99));
+          } else {
+            response.statusCode = 503;
+          }
+        } else if (range != null) {
+          response.statusCode = status;
+          if (status == 416) {
+            response.headers.set('Content-Range', 'bytes */32');
+          } else {
+            response.headers.set('Content-Range', 'bytes 32-63/64');
+            response.add(newBytes.sublist(32));
+          }
+        } else {
+          response.add(newBytes);
+        }
+        await response.close();
+      });
+      await enqueue(c);
+      final task = c.tasks.single;
+      await until(() => task.state == 'failed');
+      expect(task.bytes, 32);
+      version = 'new';
+      await c.resume(task);
+      await until(() => ['done', 'failed'].contains(task.state));
+      await c.flush();
+      expect(task.state, 'done', reason: task.error);
+      expect(await c.localFile(task).readAsBytes(), newBytes);
+      expect(resumedRanges, ['bytes=32-', if (!sameTag) null]);
+    });
+  }
+
+  test('a redirect during a range sequence cannot mix two files', () async {
+    server.listen((r) async {
+      final range = r.headers.value('range');
+      if (range != null && r.uri.path == '/file.mp4') {
+        r.response.statusCode = 302;
+        r.response.headers.set('Location', 'other.mp4');
+      } else {
+        final start = range == null ? 0 : 32;
+        r.response.statusCode = 206;
+        r.response.headers.set('Content-Range', 'bytes $start-${start + 31}/64');
+        r.response.add(List.filled(32, start));
+      }
+      await r.response.close();
+    });
+    final c = await center('file.mp4');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['done', 'failed'].contains(task.state));
+    await c.flush();
+    expect(task.state, 'failed');
+    expect(task.fileName, isEmpty);
+  });
+
+  for (final status in [206, 416]) {
+    test('a changed file length restarts a partial download (HTTP $status)', () async {
+      final next = List.generate(status == 206 ? 80 : 32, (i) => i);
+      var requests = 0;
+      server.listen((r) async {
+        requests++;
+        if (requests == 1) {
+          r.response.statusCode = 206;
+          r.response.headers.set('Content-Range', 'bytes 0-31/64');
+          r.response.add(List.filled(32, 99));
+        } else if (requests == 2) {
+          r.response.statusCode = 503;
+        } else if (r.headers.value('range') != null) {
+          r.response.statusCode = status;
+          if (status == 206) {
+            r.response.headers.set('Content-Range', 'bytes 32-79/80');
+            r.response.add(next.sublist(32));
+          } else {
+            r.response.headers.set('Content-Range', 'bytes */32');
+          }
+        } else {
+          r.response.add(next);
+        }
+        await r.response.close();
+      });
+      final c = await center('file.mp4');
+      await enqueue(c);
+      final task = c.tasks.single;
+      await until(() => task.state == 'failed');
+      await c.resume(task);
+      await until(() => ['done', 'failed'].contains(task.state));
+      await c.flush();
+      expect(task.state, 'done', reason: task.error);
+      expect(await c.localFile(task).readAsBytes(), next);
+    });
+  }
+
   test('resumed download restarts if the CDN returns a different ETag with 206', () async {
     final ranges = <String?>[];
     final next = List<int>.generate(64, (i) => i);
