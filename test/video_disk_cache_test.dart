@@ -819,6 +819,41 @@ void main() {
       }
     });
   }
+  test('播放缓存遇到同标签的重定向替换会中断旧响应，重试读取完整新视频', () async {
+    final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => source.close(force: true));
+    var switched = false;
+    source.listen((r) async {
+      final range = r.headers.value('range') ?? '';
+      final start = int.tryParse(RegExp(r'^bytes=(\d+)-').firstMatch(range)?[1] ?? '') ?? 0;
+      if (r.uri.path == '/play.mp4') {
+        if (start > 0) switched = true;
+        await r.response.redirect(r.uri.resolve(switched ? '/b' : '/a'));
+        return;
+      }
+      final end = (start + VideoDiskCache.blockBytes).clamp(start, data.length);
+      r.response.statusCode = 206;
+      r.response.headers.set('Content-Range', 'bytes $start-${end - 1}/${data.length}');
+      r.response.headers.set('ETag', '"revision-1"');
+      r.response.add(r.uri.path == '/a' ? Uint8List(end - start) : data.sublist(start, end));
+      await r.response.close();
+    });
+    final wrapped = await cache.wrap(PlayerMedia(uri: Uri.parse('http://127.0.0.1:${source.port}/play.mp4')));
+    final first = await client.getUrl(wrapped.uri);
+    first.headers.set('Range', 'bytes=0-');
+    final response = await first.close();
+    var count = 0;
+    try {
+      await for (final chunk in response) {
+        count += chunk.length;
+      }
+    } on HttpException {
+      // The first block has already been sent with the original length.
+    }
+    expect(count, VideoDiskCache.blockBytes);
+    expect((await get(wrapped.uri, 'bytes=0-')).$2, data);
+  });
+
   for (final lateTag in [false, true]) {
     test('retry after an ETag change drops the old prefix and plays the replacement (lateTag=$lateTag)', () async {
       final other = await cache.wrap(PlayerMedia(uri: upstream));
@@ -878,6 +913,64 @@ void main() {
     expect(mixed.$1.statusCode, 502);
     expect(mixed.$2, isEmpty);
     expect((await get(key)).$2, List.filled(16, 2));
+  });
+
+  test('分段 HLS 密钥重定向到另一文件时不会交给播放器', () async {
+    final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => source.close(force: true));
+    var switched = false;
+    source.listen((r) async {
+      if (r.uri.path == '/master.m3u8') {
+        r.response.write('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key"\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n');
+      } else {
+        final tail = r.headers.value('range') == 'bytes=8-';
+        if (r.uri.path == '/key' && (tail || switched)) {
+          switched = true;
+          await r.response.redirect(r.uri.resolve('/replacement'));
+          return;
+        }
+        r.response.statusCode = 206;
+        r.response.headers.set('Content-Range', tail ? 'bytes 8-15/16' : 'bytes 0-7/16');
+        r.response.headers.set('ETag', '"revision-1"');
+        r.response.add(List.filled(8, switched ? 2 : 1));
+      }
+      await r.response.close();
+    });
+    final media = await cache.wrap(PlayerMedia(uri: Uri.parse('http://127.0.0.1:${source.port}/master.m3u8')));
+    final text = utf8.decode((await get(media.uri)).$2);
+    final key = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(text)![1]!);
+    final mixed = await get(key);
+    expect(mixed.$1.statusCode, 502);
+    expect(mixed.$2, isEmpty);
+    expect((await get(key)).$2, List.filled(16, 2));
+  });
+
+  test('未知长度的视频不会采用另一个文件的尾字节作为总长度', () async {
+    final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => source.close(force: true));
+    source.listen((r) async {
+      if (r.uri.path == '/video.mp4' && r.headers.value('range') == 'bytes=-1') {
+        await r.response.redirect(r.uri.resolve('/other'));
+        return;
+      }
+      r.response.statusCode = 206;
+      r.response.headers.set('ETag', '"rev-1"');
+      if (r.uri.path == '/other') {
+        r.response.headers.set('Content-Range', 'bytes 199-199/200');
+        r.response.add([0]);
+      } else {
+        r.response.headers.set('Content-Range', 'bytes 0-31/*');
+        r.response.add(List.filled(32, 1));
+      }
+      await r.response.close();
+    });
+    final media = await cache.wrap(PlayerMedia(
+      uri: Uri.parse('http://127.0.0.1:${source.port}/video.mp4'),
+    ));
+    final response = await (await client.openUrl('HEAD', media.uri)).close();
+    expect(response.statusCode, 502);
+    expect(response.contentLength, isNot(200));
+    await response.drain<void>();
   });
 
   test(

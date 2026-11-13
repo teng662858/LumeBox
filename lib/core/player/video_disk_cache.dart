@@ -637,6 +637,9 @@ class VideoDiskCache extends ChangeNotifier {
     if (range[3] != '*') return int.tryParse(range[3]!);
     final probe = await _request(response.media, 'bytes=-1');
     try {
+      if (probe.uri.removeFragment() != response.uri.removeFragment()) {
+        throw const HttpException('媒体已变化，请重新加载');
+      }
       for (final header in ['etag', 'last-modified', 'content-encoding']) {
         final original = response.header(header);
         final latest = probe.header(header);
@@ -703,7 +706,7 @@ class VideoDiskCache extends ChangeNotifier {
             int.parse(total[1]!),
             'application/octet-stream',
             null,
-            media.uri,
+            response.uri,
             null,
           );
         }
@@ -760,7 +763,7 @@ class VideoDiskCache extends ChangeNotifier {
         );
         final complete = BytesBuilder(copy: false);
         var keepOriginHeaders = first.hasOriginHeaders;
-        await for (final part in _completeBody(first, onPart: (response) {
+        await for (final part in _completeBody(first, playlistPart: (response) {
           keepOriginHeaders = keepOriginHeaders && response.hasOriginHeaders;
         }).timeout(const Duration(seconds: 30))) {
           if (complete.length + part.length > 8 * blockBytes) {
@@ -934,17 +937,24 @@ class VideoDiskCache extends ChangeNotifier {
           .trimLeft()
           .startsWith('#EXTM3U');
 
-  Stream<List<int>> _completeBody(_MediaResponse first, {void Function(_MediaResponse)? onPart}) async* {
+  Stream<List<int>> _completeBody(_MediaResponse first, {void Function(_MediaResponse)? playlistPart}) async* {
     if (first.statusCode == 200) {
       yield* first;
       return;
     }
     final encoding = first.header('content-encoding');
+    final resource = first.uri.removeFragment();
     String? validator;
     var offset = 0;
     int? total;
     var part = first;
     while (true) {
+      // Playlist origins may explicitly route their continuation ranges to a
+      // CDN. The rewriter scopes child credentials across every such hop.
+      if (playlistPart == null && part.uri.removeFragment() != resource) {
+        await part.listen(null).cancel();
+        throw const HttpException('视频分片已变化');
+      }
       final nextValidator = part.header('etag') ?? part.header('last-modified');
       if (validator != null && nextValidator != null && validator != nextValidator) {
         await part.listen(null).cancel();
@@ -973,7 +983,7 @@ class VideoDiskCache extends ChangeNotifier {
         await part.listen(null).cancel();
         throw const HttpException('视频分片长度无效');
       }
-      onPart?.call(part);
+      playlistPart?.call(part);
       await for (final bytes in part) {
         if (bytes.length > end + 1 - offset) {
           throw const HttpException('视频分片超过声明范围');
@@ -1587,6 +1597,7 @@ class VideoDiskCache extends ChangeNotifier {
       response.contentLength = end - start + 1;
       if (request.method == 'HEAD') return;
       final total = block.total;
+      final resource = block.base.removeFragment();
       var validator = block.validator;
       final encoding = block.encoding;
       start += prefixBytes;
@@ -1595,7 +1606,8 @@ class VideoDiskCache extends ChangeNotifier {
         block = await _read(media, start);
       }
       while (start <= physicalEnd) {
-        if (block.total != total || block.encoding != encoding ||
+        if (block.base.removeFragment() != resource ||
+            block.total != total || block.encoding != encoding ||
             (validator != null &&
                 block.validator != null &&
                 validator != block.validator)) {
