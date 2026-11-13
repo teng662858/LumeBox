@@ -578,10 +578,15 @@ class NativeVideoSourceSession {
       duration:
           duration is num &&
               duration.isFinite &&
-              duration >= 0 &&
+              duration > 0 &&
               duration <= 365 * 86400
           ? Duration(milliseconds: (duration * 1000).round())
-          : Duration.zero,
+          : library.videoEpisodeProgress(
+                current.itemId,
+                current.chapterId,
+                sourceId: current.sourceId,
+              )?.duration ??
+              Duration.zero,
     );
     if (!active) {
       library.saveVideoEpisodeProgress(progress);

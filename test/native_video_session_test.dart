@@ -72,13 +72,14 @@ void main() {
     String type = 'progress',
     String? error,
     bool playing = true,
+    double duration = 100,
   }) async {
     await native('event', {
       'session': opened['session'],
       'identity': identity ?? (opened['media'] as Map)['identity'],
       'type': type,
       'position': at,
-      'duration': 100.0,
+      'duration': duration,
       'playing': playing,
       'error': ?error,
     });
@@ -392,6 +393,21 @@ void main() {
     expect(library.videoEpisodeProgress('show', 'A1', sourceId: 'fixture')?.position,
         const Duration(seconds: 14));
     expect(PlaybackFocus.isPlaying, isTrue);
+  });
+
+  test('a final update with unknown duration keeps the known duration of that episode', () async {
+    await start();
+    await progress(96);
+    await progress(97, duration: 0, playing: false);
+    final saved = library.videoProgress('show', sourceId: 'fixture');
+    expect(saved?.position.inSeconds, 97);
+    expect(saved?.duration.inSeconds, 100);
+    expect(saved?.isFinished, isTrue);
+    final next = (await request('next'))['media'] as Map;
+    await progress(8, duration: 0, identity: next['identity'] as String);
+    expect(library.videoProgress('show', sourceId: 'fixture')?.duration, Duration.zero);
+    await progress(9, duration: 45, identity: next['identity'] as String);
+    expect(library.videoProgress('show', sourceId: 'fixture')?.duration.inSeconds, 45);
   });
   for (final incognito in [false, true]) {
     test('a bookmark near the end opens at its timestamp without rewriting history (incognito=$incognito)', () async {
