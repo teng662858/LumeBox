@@ -389,6 +389,45 @@ void main() {
     expect(await reopened.completedFile(source, item, chapter), isNull);
   });
 
+  test('同一下载中心可在目录重新可用后恢复已有文件', () async {
+    final task = VideoDownloadTask(
+      id: VideoDownloadCenter.identity('s', 'i', 'e'),
+      sourceId: 's', itemId: 'i', chapterId: 'e', title: '影片',
+      chapterTitle: '正片', state: 'done', fileName: 'movie.mp4',
+    );
+    final downloads = Directory('${root.path}/video_downloads');
+    final folder = await Directory('${downloads.path}/${task.id}').create(recursive: true);
+    final movie = await File('${folder.path}/movie.mp4').writeAsBytes([1, 2]);
+    await File('${downloads.path}/tasks.json').writeAsString(jsonEncode([task.toJson()]));
+    var available = false;
+    final c = VideoDownloadCenter(directory: () async {
+      if (!available) throw const FileSystemException('offline');
+      return root;
+    });
+    await expectLater(c.boot(), throwsA(isA<FileSystemException>()));
+    expect(await c.playbackIfAvailable('s', 'i', 'e'), isNull);
+    available = true;
+    await Future.wait([c.boot(), c.boot()]);
+    expect(c.tasks.single.id, task.id);
+    final local = (await c.playbackIfAvailable('s', 'i', 'e'))!;
+    expect(await FileSystemEntity.identical(File.fromUri(local.uri).path, movie.path), true);
+    await local.close();
+    expect(c.storageError, isNull);
+  });
+
+  test('任务清单暂不可读时添加下载不会覆盖原始清单', () async {
+    final downloads = await Directory('${root.path}/video_downloads').create();
+    final manifest = await File('${downloads.path}/tasks.json').writeAsString('[{"id":');
+    final c = VideoDownloadCenter(directory: () async => root);
+    await expectLater(enqueue(c), throwsFormatException);
+    expect(await manifest.readAsString(), '[{"id":');
+    expect(c.tasks, isEmpty);
+    expect(c.storageError, isNotNull);
+    await manifest.writeAsString('[]');
+    await c.boot();
+    expect(c.storageError, isNull);
+  });
+
   test('damaged manifest entries do not hide playable downloads after restart', () async {
     final c = await center('unused');
     Map<String, Object?> entry(String chapter) => VideoDownloadTask(

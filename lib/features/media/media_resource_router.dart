@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../core/media/media_library.dart';
 import '../../core/media/media_resource_service.dart';
 import '../../core/player/abstract_player.dart';
-import '../../core/player/playback_diagnostics.dart';
 import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
 import '../video/playback_entry_preparation.dart';
@@ -78,12 +77,8 @@ Future<void> openMediaResource(
   DownloadedVideoPlayback? offline;
   try {
     if (sourced) {
-      try {
-        offline = await (downloadCenter ?? VideoDownloadCenter.instance)
-            .completedPlayback(sourceId, itemId, episode.id, section: origin);
-      } catch (_) {
-        PlaybackDiagnostics.record('offline-lookup-failed', source: sourceId);
-      }
+      offline = await (downloadCenter ?? VideoDownloadCenter.instance)
+          .playbackIfAvailable(sourceId, itemId, episode.id, section: origin);
       if (!context.mounted || route?.isCurrent == false) return;
     }
     DataSource? source;

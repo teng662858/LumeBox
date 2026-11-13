@@ -54,6 +54,7 @@ class VideoPage extends StatefulWidget {
     this.pipBackend,
     this.brightnessBackend,
     this.sourceManager,
+    this.downloadCenter,
     this.library,
     this.sourceRevision = 0,
     this.sourceSelectionRevision = 0,
@@ -79,6 +80,7 @@ class VideoPage extends StatefulWidget {
 
   /// 图源管理端口（首页的浏览面用它取本板块图源）。为空时用正式实现。
   final SourceManager? sourceManager;
+  final VideoDownloadCenter? downloadCenter;
 
   /// 本板块阅读库（播放进度）；为空时按板块打开正式实现。
   final ReadingLibrary? library;
@@ -212,6 +214,7 @@ class _VideoPageState extends State<VideoPage> {
         context,
         MaterialPageRoute<void>(
           builder: (_) => VideoDetailPage(
+            downloadCenter: widget.downloadCenter,
             sourceId: selection.sourceId,
             manager: manager,
             loadSource: () => manager.open(selection.sourceId),
@@ -325,12 +328,13 @@ class _VideoPageState extends State<VideoPage> {
     LibraryItem item,
     VideoProgress progress,
   ) async {
-    final file = await VideoDownloadCenter.instance.completedPlayback(
+    final route = ModalRoute.of(context);
+    final file = await (widget.downloadCenter ?? VideoDownloadCenter.instance).playbackIfAvailable(
       item.sourceId,
       item.itemId,
       progress.chapterId,
     );
-    if (!mounted) {
+    if (!mounted || route?.isCurrent == false) {
       await file?.close();
       return;
     }
@@ -338,6 +342,7 @@ class _VideoPageState extends State<VideoPage> {
       try {
         await _openPlayer(
           file.media(item.title),
+          originRoute: route,
           target: VideoPlayTarget(
             sourceId: item.sourceId,
             itemId: item.itemId,

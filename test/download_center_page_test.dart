@@ -16,6 +16,30 @@ import 'package:lume_box/features/video/video_download_center.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
 
 void main() {
+  testWidgets('下载中心报告读取失败，恢复后可以在原页面重试', (tester) async {
+    final root = Directory.systemTemp.createTempSync('download-retry-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    var available = false;
+    final videos = VideoDownloadCenter(directory: () async {
+      if (!available) throw const FileSystemException('unavailable');
+      return root;
+    });
+    final comics = ComicDownloadCenter(directory: () async => root);
+    await tester.runAsync(comics.boot);
+    await tester.pumpWidget(MaterialApp(home: DownloadCenterPage(center: comics, videoCenter: videos)));
+    await tester.pump();
+    expect(find.text('下载任务记录读取失败，已下载文件仍保留'), findsOneWidget);
+    expect(find.textContaining('暂无下载任务'), findsNothing);
+    available = true;
+    await tester.runAsync(() async {
+      await tester.tap(find.text('重新读取视频下载'));
+      await videos.boot();
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('重新读取视频下载'), findsNothing);
+    expect(find.textContaining('暂无下载任务'), findsOneWidget);
+  });
+
   testWidgets('退出下载中心的动画期间离线地址就绪不会再打开播放器', (tester) async {
     final root = Directory.systemTemp.createTempSync('offline-back-');
     final videos = _DelayedVideoCenter(root);

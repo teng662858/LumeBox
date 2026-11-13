@@ -12,8 +12,11 @@ import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/comic/comic_page.dart';
 import 'package:lume_box/features/reading/history_sheet.dart';
 import 'package:lume_box/features/video/video_page.dart';
+import 'package:lume_box/features/video/video_detail_page.dart';
+import 'package:lume_box/features/video/video_download_center.dart';
 
 import 'support/fake_source_manager.dart';
+import 'support/pump_io.dart';
 
 /// 三个板块右上角的入口与它们的落点（真机反馈的改造，其后按用户要求删掉了日历）：
 ///
@@ -152,6 +155,25 @@ void main() {
         findsWidgets,
         reason: '进度只显示已播 / 总长，不再带集数',
       );
+    });
+
+    testWidgets('播放历史在下载目录不可用时仍打开对应影片', (tester) async {
+      await seed(Section.video, itemId: 'movie-1', title: '续播影片',
+        progress: videoProgressAt('movie-1', const Duration(minutes: 12)));
+      final downloads = VideoDownloadCenter(directory: () async {
+        throw const FileSystemException('unavailable');
+      });
+      await pump(tester, VideoPage(catalog: const _NoKernelCatalog(),
+        sourceManager: FakeSourceManager(), downloadCenter: downloads));
+      await tester.tap(find.byTooltip('播放历史'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('续播影片').first);
+      await pumpIoAndSettle(tester);
+      expect(downloads.needsRestore, true);
+      final detail = tester.widget<VideoDetailPage>(find.byType(VideoDetailPage));
+      expect(detail.sourceId, 'demo-source');
+      expect(detail.item.id, 'movie-1');
+      await tester.pumpWidget(const SizedBox.shrink());
     });
 
     testWidgets('视频：抽屉里可以清空（视频的记录就是它的书架）', (tester) async {

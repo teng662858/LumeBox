@@ -33,7 +33,7 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
   void initState() {
     super.initState();
     center.boot();
-    videos.boot();
+    videos.boot().ignore(); // The download list displays restore errors and offers retry.
   }
 
   Future<void> _perform(Future<void> Function() action) async {
@@ -252,7 +252,9 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
           if (_busy) const LinearProgressIndicator(),
           if (center.storageError != null) Text(center.storageError!),
           if (videos.storageError != null) Text(videos.storageError!),
-          if (videos.tasks.isEmpty &&
+          if (videos.needsRestore)
+            TextButton(onPressed: () => videos.boot().ignore(), child: const Text('重新读取视频下载')),
+          if (!videos.needsRestore && videos.tasks.isEmpty &&
               !center.tasks.any((t) => t.indices.isNotEmpty))
             const GlassCard(
               padding: EdgeInsets.all(24),

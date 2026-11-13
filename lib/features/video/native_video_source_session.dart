@@ -519,19 +519,12 @@ class NativeVideoSourceSession {
           );
     DownloadedVideoPlayback? local;
     try {
-      try {
-        local = await _downloads.completedPlayback(
-          current.sourceId,
-          current.itemId,
-          chosen.id,
-          section: library.section,
-        );
-      } catch (_) {
-        PlaybackDiagnostics.record(
-          'offline-lookup-failed',
-          source: current.sourceId,
-        );
-      }
+      local = await _downloads.playbackIfAvailable(
+        current.sourceId,
+        current.itemId,
+        chosen.id,
+        section: library.section,
+      );
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
       List<VideoQuality> nextQualities = const [];
       VideoQuality? choice;

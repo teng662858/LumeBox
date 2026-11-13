@@ -289,7 +289,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
         final library = await ReadingLibrary.open(row.section);
         if (!mounted || !active()) return;
         if (progress is VideoProgress) {
-          final file = await VideoDownloadCenter.instance.completedPlayback(
+          final file = await VideoDownloadCenter.instance.playbackIfAvailable(
             item.sourceId,
             item.itemId,
             progress.chapterId,

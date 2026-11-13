@@ -25,6 +25,7 @@ import '../../core/util/sensitive_data.dart';
 import 'source_playback.dart';
 import 'direct_video_source.dart';
 import '../../core/player/abstract_player.dart';
+import '../../core/player/playback_diagnostics.dart';
 import '../../core/player/apple_hls_fragments.dart';
 import '../../core/player/hls_ad_filter.dart';
 import '../../core/player/hls_attributes.dart';
@@ -148,7 +149,13 @@ class VideoDownloadCenter extends ChangeNotifier {
       {Section section = Section.video}) => sha256
       .convert(utf8.encode(jsonEncode([if (section != Section.video) section.id, source, item, chapter])))
       .toString();
-  Future<void> boot() => _boot ??= _restore();
+  bool get needsRestore => _boot == null && storageError != null;
+  Future<void> boot() => _boot ??= _restore().onError((Object error, StackTrace stack) {
+    _boot = null;
+    storageError = '下载任务记录读取失败，已下载文件仍保留';
+    notifyListeners();
+    Error.throwWithStackTrace(error, stack);
+  });
   Future<void> _restore() async {
     root = Directory(
       p.join(
@@ -158,101 +165,107 @@ class VideoDownloadCenter extends ChangeNotifier {
     );
     await root.create(recursive: true);
     final manifest = File(p.join(root.path, 'tasks.json'));
+    String? contents;
     try {
-      if (await manifest.exists()) {
-        var migrated = false;
-        final rows = jsonDecode(await manifest.readAsString()) as List;
-        for (final m in rows.whereType<Map>()) {
-          final source = m['sourceId'];
-          var item = m['itemId'];
-          var chapter = m['chapterId'];
-          if (source is! String || item is! String || chapter is! String) {
-            continue;
-          }
-          // Older queues stored Cat site IDs but used the video folder hash.
-          final legacyCat = RegExp(r'^[^|]+\|(video|comic|novel|live)\|.+').hasMatch(source);
-          final section = m['section'] == null
-              ? (legacyCat ? Section.cat : Section.video)
-              : sectionFromId('${m['section']}');
-          if (section == null) continue;
-          var id = m['id'];
-          final legacyFolder = section == Section.cat && legacyCat &&
-              id == identity(source, item, chapter);
-          if (id is! String ||
-              (!legacyFolder && id != identity(source, item, chapter, section: section))) {
-            continue;
-          }
-          final fileName = m['fileName'] is String ? m['fileName'] as String : '';
-          if (fileName.isNotEmpty &&
-              (fileName.contains('\u0000') ||
-                  p.isAbsolute(fileName) ||
-                  p.split(fileName).contains('..'))) {
-            continue;
-          }
-          int counter(String key) {
-            final value = m[key];
-            return value is num && value.isFinite && value >= 0
-                ? value.toInt()
-                : 0;
-          }
+      contents = await manifest.readAsString();
+    } on PathNotFoundException {
+      // A new download library has no manifest yet.
+    }
+    final restored = <VideoDownloadTask>[];
+    var migrated = false;
+    if (contents != null) {
+      final rows = jsonDecode(contents);
+      if (rows is! List) throw const FormatException('下载任务清单格式无效');
+      for (final m in rows.whereType<Map>()) {
+        final source = m['sourceId'];
+        var item = m['itemId'];
+        var chapter = m['chapterId'];
+        if (source is! String || item is! String || chapter is! String) {
+          continue;
+        }
+        // Older queues stored Cat site IDs but used the video folder hash.
+        final legacyCat = RegExp(r'^[^|]+\|(video|comic|novel|live)\|.+').hasMatch(source);
+        final section = m['section'] == null
+            ? (legacyCat ? Section.cat : Section.video)
+            : sectionFromId('${m['section']}');
+        if (section == null) continue;
+        var id = m['id'];
+        final legacyFolder = section == Section.cat && legacyCat &&
+            id == identity(source, item, chapter);
+        if (id is! String ||
+            (!legacyFolder && id != identity(source, item, chapter, section: section))) {
+          continue;
+        }
+        final fileName = m['fileName'] is String ? m['fileName'] as String : '';
+        if (fileName.isNotEmpty &&
+            (fileName.contains('\u0000') ||
+                p.isAbsolute(fileName) ||
+                p.split(fileName).contains('..'))) {
+          continue;
+        }
+        int counter(String key) {
+          final value = m[key];
+          return value is num && value.isFinite && value >= 0
+              ? value.toInt()
+              : 0;
+        }
 
-          var capture = m['capture'] is String ? m['capture'] as String : null;
-          if (section == Section.video && source.startsWith('web-') &&
-              item == 'captured-video' && fileName.isEmpty && capture == null) {
-            final uri = Uri.tryParse(chapter);
-            if (uri != null && ['http', 'https'].contains(uri.scheme) && uri.host.isNotEmpty) {
-              final newItem = DirectVideoSource.captureItemId('', uri);
-              const newChapter = 'web-episode-0';
-              final newId = identity(source, newItem, newChapter);
-              try {
-                final cipher = await LocalCipher.open();
-                capture = cipher.seal(
-                  jsonEncode({'url': chapter, 'headers': {}}),
-                  context: 'video-download:$newId',
-                );
-                item = newItem;
-                chapter = newChapter;
-                id = newId;
-                migrated = true;
-              } catch (_) {
-                // Keep the existing entry if the device key is unavailable.
-              }
+        var capture = m['capture'] is String ? m['capture'] as String : null;
+        if (section == Section.video && source.startsWith('web-') &&
+            item == 'captured-video' && fileName.isEmpty && capture == null) {
+          final uri = Uri.tryParse(chapter);
+          if (uri != null && ['http', 'https'].contains(uri.scheme) && uri.host.isNotEmpty) {
+            final newItem = DirectVideoSource.captureItemId('', uri);
+            const newChapter = 'web-episode-0';
+            final newId = identity(source, newItem, newChapter);
+            try {
+              final cipher = await LocalCipher.open();
+              capture = cipher.seal(
+                jsonEncode({'url': chapter, 'headers': {}}),
+                context: 'video-download:$newId',
+              );
+              item = newItem;
+              chapter = newChapter;
+              id = newId;
+              migrated = true;
+            } catch (_) {
+              // Keep the existing entry if the device key is unavailable.
             }
           }
-          final task = VideoDownloadTask(
-            id: id,
-            section: section,
-            sourceId: source,
-            itemId: item,
-            chapterId: chapter,
-            title: '${m['title'] ?? item}',
-            chapterTitle: '${m['chapterTitle'] ?? chapter}',
-            chapterIndex: counter('chapterIndex'),
-            line: m['line'] is String ? m['line'] as String : '',
-            state: ['done', 'merge_failed'].contains(m['state'])
-                ? '${m['state']}'
-                : 'paused',
-            bytes: counter('bytes'),
-            totalBytes: counter('totalBytes'),
-            completed: counter('completed'),
-            total: counter('total'),
-            fileName: fileName,
-            encryptedCapture: capture,
-          );
-          if ((fileName.isNotEmpty || task.state != 'paused') &&
-              (fileName.isEmpty || !await localFile(task).exists())) {
-            task.fileName = '';
-            task.state = 'paused';
-            task.bytes = task.totalBytes = task.completed = task.total = 0;
-            task.error = '本地视频文件缺失，可重新下载';
-          }
-          tasks.add(task);
         }
-        if (migrated) await _save();
+        final task = VideoDownloadTask(
+          id: id,
+          section: section,
+          sourceId: source,
+          itemId: item,
+          chapterId: chapter,
+          title: '${m['title'] ?? item}',
+          chapterTitle: '${m['chapterTitle'] ?? chapter}',
+          chapterIndex: counter('chapterIndex'),
+          line: m['line'] is String ? m['line'] as String : '',
+          state: ['done', 'merge_failed'].contains(m['state'])
+              ? '${m['state']}'
+              : 'paused',
+          bytes: counter('bytes'),
+          totalBytes: counter('totalBytes'),
+          completed: counter('completed'),
+          total: counter('total'),
+          fileName: fileName,
+          encryptedCapture: capture,
+        );
+        if ((fileName.isNotEmpty || task.state != 'paused') &&
+            (fileName.isEmpty || !await localFile(task).exists())) {
+          task.fileName = '';
+          task.state = 'paused';
+          task.bytes = task.totalBytes = task.completed = task.total = 0;
+          task.error = '本地视频文件缺失，可重新下载';
+        }
+        restored.add(task);
       }
-    } catch (_) {
-      storageError = '下载任务记录读取失败，已下载文件仍保留';
     }
+    tasks.addAll(restored);
+    storageError = null;
+    if (migrated) await _save();
     notifyListeners();
   }
 
@@ -295,6 +308,21 @@ class VideoDownloadCenter extends ChangeNotifier {
       ),
       server,
     );
+  }
+
+  /// Online-capable entry points may continue with the source on storage errors.
+  Future<DownloadedVideoPlayback?> playbackIfAvailable(
+    String sourceId,
+    String itemId,
+    String chapterId, {
+    Section section = Section.video,
+  }) async {
+    try {
+      return await completedPlayback(sourceId, itemId, chapterId, section: section);
+    } catch (_) {
+      PlaybackDiagnostics.record('offline-lookup-failed', source: sourceId);
+      return null;
+    }
   }
 
   Future<void> enqueue({

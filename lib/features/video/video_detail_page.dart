@@ -600,13 +600,9 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         prepared = widget.prelaunch?.call();
       }
       if (known?.manual != true || known?.kind == ResourceKind.video) {
-        try {
-          offline = await (widget.downloadCenter ?? VideoDownloadCenter.instance)
-              .completedPlayback(_source!.id, widget.item.id, chapter.id,
-                  section: widget.library.section);
-        } catch (_) {
-          PlaybackDiagnostics.record('offline-lookup-failed', source: _source!.id);
-        }
+        offline = await (widget.downloadCenter ?? VideoDownloadCenter.instance)
+            .playbackIfAvailable(_source!.id, widget.item.id, chapter.id,
+                section: widget.library.section);
         if (!mounted || route?.isCurrent == false) return;
       }
       final direct = SourcePlayback.itemAddress(widget.item.id);
