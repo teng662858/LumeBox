@@ -92,6 +92,15 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path == '/encoded-script') {
+        final codec = request.uri.queryParameters['codec'] == 'gzip' ? gzip : zlib;
+        final manifest = utf8.encode('#EXTM3U\n#EXTINF:2,\npart.ts\n#EXT-X-ENDLIST\n');
+        request.response.headers.set('Content-Type', 'application/octet-stream');
+        request.response.headers.set('Content-Encoding', request.uri.queryParameters['codec']!);
+        request.response.add(codec.encode(manifest));
+        await request.response.close();
+        return;
+      }
       if (request.uri.path == '/mislabelled.mp4') {
         request.response.headers.contentType = ContentType('video', 'mp4');
         request.response.write(
@@ -797,6 +806,21 @@ void main() {
     expect(response.$1.headers.value('content-encoding'), isNull);
     expect(cache.bytes, 0);
   });
+
+  for (final encoding in ['gzip', 'deflate']) {
+    test('extensionless $encoding HLS with binary MIME rewrites relative segment URLs', () async {
+      final media = PlayerMedia(uri: upstream.resolve('/encoded-script?codec=$encoding'));
+      final wrapped = await cache.wrap(media, inspect: true, appleHls: true);
+      expect(wrapped.uri.path, endsWith('.apple.m3u8'));
+      final (response, body) = await get(wrapped.uri);
+      expect(response.statusCode, 200);
+      expect(response.headers.contentType?.mimeType, 'application/vnd.apple.mpegurl');
+      final segment = Uri.parse(utf8.decode(body).split('\n').firstWhere((l) => l.endsWith('.ts')));
+      expect(segment.port, wrapped.uri.port);
+      expect(segment.host, '127.0.0.1');
+      expect(cache.bytes, 0);
+    });
+  }
 
   test('HLS 清单按普通 GET 获取，兼容拒绝 Range 的服务器', () async {
     final wrapped = await cache.wrap(

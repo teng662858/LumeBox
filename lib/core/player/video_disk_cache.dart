@@ -182,13 +182,14 @@ class VideoDiskCache extends ChangeNotifier {
     if (cached != null) return cached;
     try {
       final response = await _request(media, null);
-      final prefix = BytesBuilder();
-      await for (final chunk in response.timeout(const Duration(seconds: 3))) {
-        prefix.add(chunk.take(1024 - prefix.length).toList());
-        if (prefix.length >= 1024) break;
+      if (response.statusCode ~/ 100 != 2) {
+        await response.listen(null).cancel();
+        return '';
       }
-      if (response.statusCode ~/ 100 != 2) return '';
-      final format = detectFormat(prefix.takeBytes());
+      final format = await _inspectFormat(
+        response.timeout(const Duration(seconds: 3)),
+        response.header('content-encoding'),
+      );
       if (format.isNotEmpty) {
         if (_detectedFormats.length >= 128) {
           _detectedFormats.remove(_detectedFormats.keys.first);
@@ -199,6 +200,22 @@ class VideoDiskCache extends ChangeNotifier {
     } catch (_) {
       return '';
     }
+  }
+
+  static Stream<List<int>> _decodedBody(Stream<List<int>> body, String? encoding) =>
+      switch (encoding?.trim().toLowerCase()) {
+        'gzip' => body.transform(gzip.decoder),
+        'deflate' => body.transform(zlib.decoder),
+        _ => body,
+      };
+
+  static Future<String> _inspectFormat(Stream<List<int>> body, String? encoding) async {
+    final prefix = BytesBuilder();
+    await for (final chunk in _decodedBody(body, encoding)) {
+      prefix.add(chunk.take(1024 - prefix.length).toList());
+      if (prefix.length >= 1024) break;
+    }
+    return detectFormat(prefix.takeBytes());
   }
 
   @visibleForTesting
@@ -1041,7 +1058,9 @@ class VideoDiskCache extends ChangeNotifier {
         path.endsWith('.m3u8') || segment ? 0 : start,
         playlist: path.endsWith('.m3u8'),
       );
-      if (_playlist(block)) {
+      if (_playlist(block) ||
+          path.endsWith('.m3u8') && block.encoding != null &&
+              await _inspectFormat(Stream.value(block.data), block.encoding) == '.m3u8') {
         // Always refetch playlists. Relative segment, key, map and variant URLs
         // share the same cache while cross-origin credentials stay scoped.
         PlayerMedia? childMedia(String text) {
@@ -1074,13 +1093,7 @@ class VideoDiskCache extends ChangeNotifier {
           return uri.toString();
         }
 
-        Stream<List<int>> manifest = Stream.value(block.data);
-        if (block.encoding == 'gzip') {
-          manifest = manifest.transform(gzip.decoder);
-        }
-        if (block.encoding == 'deflate') {
-          manifest = manifest.transform(zlib.decoder);
-        }
+        final manifest = _decodedBody(Stream.value(block.data), block.encoding);
         final decoded = BytesBuilder(copy: false);
         await for (final chunk in manifest) {
           decoded.add(chunk);
