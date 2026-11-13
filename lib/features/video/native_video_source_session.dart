@@ -294,7 +294,7 @@ class NativeVideoSourceSession {
       };
     }
     if (revision != _resolution) return {'error': '此次取址已经取消'};
-    if (current == null) {
+    if (current == null || (action == 'retry' && _media.isDownloaded)) {
       if (action != 'retry') return {'message': '此资源没有选集'};
       final payload = await _payload(_media, position: _saved[_identity] ?? 0);
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};

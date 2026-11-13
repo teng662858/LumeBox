@@ -145,7 +145,7 @@ void main() {
       chapterTitle: '第3集',
       chapterIndex: 2,
       state: 'merge_failed',
-      fileName: 'index.m3u8',
+      fileName: 'episode.m3u8',
     );
     c.tasks.add(task);
     await Directory(c.folder(task)).create(recursive: true);

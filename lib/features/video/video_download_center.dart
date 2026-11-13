@@ -19,6 +19,7 @@ import '../../core/session/section.dart';
 import '../../core/source/source.dart';
 import '../../core/util/sensitive_data.dart';
 import 'source_playback.dart';
+import '../../core/player/abstract_player.dart';
 import '../../core/player/hls_ad_filter.dart';
 import '../../core/player/video_disk_cache.dart';
 import 'video_download_merger.dart';
@@ -28,6 +29,8 @@ class DownloadedVideoPlayback {
   DownloadedVideoPlayback(this.uri, [this.server]);
   final Uri uri;
   final OfflineVideoServer? server;
+  PlayerMedia media(String title) =>
+      PlayerMedia(uri: uri, title: title, isDownloaded: true);
   Future<void> close() async {
     await server?.close();
   }
@@ -111,6 +114,7 @@ class VideoDownloadCenter extends ChangeNotifier {
   bool _draining = false;
   HttpClient? _client;
   VideoDownloadTask? _active;
+  Completer<void>? _activeFinished;
   String? storageError;
   String _proxy = '';
   final _speedWatch = Stopwatch();
@@ -342,6 +346,7 @@ class VideoDownloadCenter extends ChangeNotifier {
           continue;
         }
         _active = task;
+        final finished = _activeFinished = Completer<void>();
         task.state = 'running';
         task.error = null;
         task.completed = 0;
@@ -430,8 +435,10 @@ class VideoDownloadCenter extends ChangeNotifier {
           _client?.close(force: true);
           _client = null;
           _active = null;
+          _activeFinished = null;
           task.bytesPerSecond = 0;
           await _save();
+          finished.complete();
           notifyListeners();
         }
       }
@@ -974,7 +981,12 @@ class VideoDownloadCenter extends ChangeNotifier {
     return _writes;
   }
 
-  Future<void> flush() => _writes;
+  Future<void> flush() async {
+    // A completed merge can still be removing fragments and writing its
+    // final manifest. Flushing a running transfer only waits for its writes.
+    if (_active?.state == 'done') await _activeFinished?.future;
+    await _writes;
+  }
 }
 
 class _Paused implements Exception {

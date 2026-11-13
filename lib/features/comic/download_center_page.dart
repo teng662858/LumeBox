@@ -5,12 +5,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
-import '../../core/player/abstract_player.dart';
 import '../../core/reading/reading.dart';
 import '../../shared/widgets/glass_card.dart';
 import '../download/local_download_export.dart';
 import '../settings/settings_ui.dart';
-import '../video/offline_video_server.dart';
 import '../video/video_download_center.dart';
 import '../video/video_player_page.dart';
 import '../video/video_play_target.dart';
@@ -93,20 +91,15 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
   }
 
   Future<void> _play(VideoDownloadTask task) async {
-    final file = videos.localFile(task);
-    if (!await file.exists()) throw StateError('本地文件不存在，请重新下载');
-    OfflineVideoServer? server;
+    final playback = await videos.completedPlayback(
+      task.sourceId,
+      task.itemId,
+      task.chapterId,
+    );
+    if (playback == null) throw StateError('本地文件不存在，请重新下载');
     try {
-      final uri = task.fileName.endsWith('.m3u8')
-          ? (server = await OfflineVideoServer.open(
-              Directory(videos.folder(task)),
-            )).uri
-          : file.uri;
       if (!mounted) return;
-      final media = PlayerMedia(
-        uri: uri,
-        title: '${task.title} · ${task.chapterTitle}',
-      );
+      final media = playback.media('${task.title} · ${task.chapterTitle}');
       final library = await ReadingLibrary.open(Section.video);
       final target = VideoPlayTarget(
         sourceId: task.sourceId,
@@ -138,7 +131,7 @@ class _DownloadCenterPageState extends State<DownloadCenterPage> {
         ),
       );
     } finally {
-      await server?.close();
+      await playback.close();
     }
   }
 

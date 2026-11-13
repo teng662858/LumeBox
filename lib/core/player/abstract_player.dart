@@ -16,6 +16,7 @@ class PlayerMedia {
     this.headers,
     this.title,
     this.previews = const [],
+    this.isDownloaded = false,
   });
 
   /// 本地文件与网络地址统一用 URI 表达。
@@ -25,6 +26,7 @@ class PlayerMedia {
 
   final String? title;
   final List<VideoPreview> previews;
+  final bool isDownloaded;
 
   bool get isNetwork => uri.scheme == 'http' || uri.scheme == 'https';
 }

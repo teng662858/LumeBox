@@ -13,7 +13,6 @@ import '../video/video_detail_page.dart';
 import '../video/video_player_page.dart';
 import '../video/video_download_center.dart';
 import '../video/video_play_target.dart';
-import '../../core/player/abstract_player.dart';
 import '../video/video_resume_match.dart';
 import '../video/playback_entry_preparation.dart';
 import '../media/media_resource_router.dart';
@@ -284,7 +283,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
                 context,
                 MaterialPageRoute<void>(
                   builder: (_) => VideoPlayerPage(
-                    media: PlayerMedia(uri: file.uri, title: item.title),
+                    media: file.media(item.title),
                     library: library,
                     target: VideoPlayTarget(
                       sourceId: item.sourceId,

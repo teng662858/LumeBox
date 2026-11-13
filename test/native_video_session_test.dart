@@ -14,6 +14,7 @@ import 'package:lume_box/core/session/section_module_settings.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/source/source_runtime_pins.dart';
 import 'package:lume_box/features/video/native_video_source_session.dart';
+import 'package:lume_box/features/video/video_download_center.dart';
 import 'package:lume_box/features/video/video_play_target.dart';
 import 'package:lume_box/features/video/video_player_settings.dart';
 import 'package:lume_box/features/video/source_playback_profiles.dart';
@@ -82,14 +83,20 @@ void main() {
 
   Future<void> start({
     VideoPlayTarget? target,
+    PlayerMedia? initialMedia,
     List<VideoQuality> qualities = const [],
     Future<PlayerMedia> Function(PlayerMedia, bool)? prepare,
   }) async {
     session = NativeVideoSourceSession(
-      media: PlayerMedia(
-        uri: Uri.parse('https://cdn.example/A1.m3u8'),
-        headers: const {'Referer': 'https://example/', 'Cookie': 'session=a,b'},
-      ),
+      media:
+          initialMedia ??
+          PlayerMedia(
+            uri: Uri.parse('https://cdn.example/A1.m3u8'),
+            headers: const {
+              'Referer': 'https://example/',
+              'Cookie': 'session=a,b',
+            },
+          ),
       library: library,
       source: source,
       bridge: bridge,
@@ -369,6 +376,25 @@ void main() {
     expect(media?['url'], contains('/A1.'));
     expect(session.target?.chapterIndex, 0);
   });
+  for (final uri in [
+    Uri.parse('file:///downloads/movie.mp4'),
+    Uri.parse('http://127.0.0.1:43002/session/index.m3u8'),
+  ]) {
+    test(
+      'retrying a downloaded ${uri.scheme} episode keeps its offline address',
+      () async {
+        await start(initialMedia: DownloadedVideoPlayback(uri).media('下载'));
+        await progress(37);
+        final media = (await request('retry'))['media'] as Map;
+        expect(media['sourceUrl'], uri.toString());
+        expect(media['position'], 37);
+        expect(source.resolved, isEmpty);
+        await request('next');
+        await request('retry');
+        expect(source.resolved, ['A2', 'A2']);
+      },
+    );
+  }
 
   test('switching to a headerless quality does not reuse the previous track credentials', () async {
     await start(

@@ -69,8 +69,8 @@ void main() {
     await center.resume(task);
     await waitFor(() => task.state == 'done');
     await center.flush();
-    // Completion notification precedes asynchronous cleanup.
-    await waitFor(() => !File('${center.folder(task)}/a.ts').existsSync());
+    expect(File('${center.folder(task)}/a.ts').existsSync(), isFalse);
+    expect(File('${center.folder(task)}/index.m3u8').existsSync(), isFalse);
     expect(calls, 1);
     expect(task.fileName, 'merged.mp4');
     expect(await center.localFile(task).readAsBytes(), mp4);

@@ -326,7 +326,7 @@ class _VideoPageState extends State<VideoPage> {
     if (file != null) {
       try {
         await _openPlayer(
-          PlayerMedia(uri: file.uri, title: item.title),
+          file.media(item.title),
           target: VideoPlayTarget(
             sourceId: item.sourceId,
             itemId: item.itemId,
