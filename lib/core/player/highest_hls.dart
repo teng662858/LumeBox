@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:math';
 
 import '../net/lume_http.dart';
+import '../net/http_header_scope.dart';
 import '../net/network_settings.dart';
 
 /// Select the highest HLS rendition before opening the native player.
@@ -258,9 +259,7 @@ class HighestHls {
         final next = base.resolve(location);
         if (!['http', 'https'].contains(next.scheme)) return null;
         if (next.origin != base.origin) {
-          requestHeaders.removeWhere(
-            (key, _) => ['cookie', 'authorization'].contains(key.toLowerCase()),
-          );
+          requestHeaders.removeWhere((key, _) => isOriginBoundHttpHeader(key));
         }
         base = next;
       }

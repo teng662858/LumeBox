@@ -1,4 +1,5 @@
 import '../../core/net/site_session_pool.dart';
+import '../../core/net/http_header_scope.dart';
 import '../../core/net/source_request_log.dart';
 import '../../core/net/waf.dart';
 import '../../core/source/source.dart';
@@ -187,16 +188,9 @@ class SourcePlayback {
         from.port == to.port) {
       return content.headers;
     }
-    const privateHeaders = {
-      'cookie',
-      'authorization',
-      'proxy-authorization',
-      'host',
-    };
     return {
       for (final entry in content.headers.entries)
-        if (!privateHeaders.contains(entry.key.toLowerCase()))
-          entry.key: entry.value,
+        if (!isOriginBoundHttpHeader(entry.key)) entry.key: entry.value,
     };
   }
 

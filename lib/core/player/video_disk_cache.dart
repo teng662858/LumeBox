@@ -16,6 +16,7 @@ import 'hls_ad_filter.dart';
 import 'apple_hls_fragments.dart';
 import 'playback_diagnostics.dart';
 import '../net/lume_net.dart';
+import '../net/http_header_scope.dart';
 
 /// Bounded, session-only HTTP cache shared by all native playback kernels.
 /// Credentials stay in memory; local URLs expose only an unguessable ticket.
@@ -462,9 +463,7 @@ class VideoDiskCache extends ChangeNotifier {
         throw const HttpException('Invalid media redirect');
       }
       if (next.origin != uri.origin) {
-        headers.removeWhere(
-          (k, _) => ['authorization', 'cookie'].contains(k.toLowerCase()),
-        );
+        headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
       }
       uri = next;
     }
@@ -1032,9 +1031,7 @@ class VideoDiskCache extends ChangeNotifier {
           if (!['http', 'https'].contains(uri.scheme)) return null;
           final headers = Map<String, String>.of(media.headers ?? {});
           if (uri.origin != media.uri.origin) {
-            headers.removeWhere(
-              (k, _) => ['authorization', 'cookie'].contains(k.toLowerCase()),
-            );
+            headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
           }
           return PlayerMedia(uri: uri, headers: headers);
         }

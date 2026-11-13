@@ -5,6 +5,7 @@ import '../../core/source/source_runtime_pins.dart';
 import '../../core/media/playback_focus.dart';
 import '../../core/net/lume_net.dart';
 import '../../core/net/lume_http.dart';
+import '../../core/net/http_header_scope.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -544,13 +545,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       final req = await _client!.getUrl(uri);
       req.followRedirects = false;
       for (final e in headers.entries) {
-        if (uri.origin != origin.origin &&
-            [
-              'cookie',
-              'authorization',
-              'proxy-authorization',
-              'host',
-            ].contains(e.key.toLowerCase())) {
+        if (uri.origin != origin.origin && isOriginBoundHttpHeader(e.key)) {
           continue;
         }
         req.headers.set(e.key, e.value);

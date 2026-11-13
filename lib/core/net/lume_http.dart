@@ -1,4 +1,5 @@
 import 'network_cancellation.dart';
+import 'http_header_scope.dart';
 import 'ios_verified_webview.dart';
 import 'site_session_pool.dart';
 import 'source_text_decoder.dart';
@@ -313,14 +314,7 @@ class LumeHttp {
         throw const LumeHttpException('redirect_scheme：不支持的跳转地址');
       }
       if (next.origin != target.origin) {
-        outgoing.removeWhere(
-          (k, _) => [
-            'cookie',
-            'authorization',
-            'proxy-authorization',
-            'host',
-          ].contains(k.toLowerCase()),
-        );
+        outgoing.removeWhere((key, _) => isOriginBoundHttpHeader(key));
       }
       if (target.scheme == 'https' && next.scheme == 'http') {
         outgoing.removeWhere(
@@ -491,14 +485,7 @@ class LumeHttp {
     if (original == target) return headers;
     final from = Uri.parse(original), to = Uri.parse(target);
     if (from.origin != to.origin) {
-      headers.removeWhere(
-        (key, _) => const {
-          'cookie',
-          'authorization',
-          'proxy-authorization',
-          'host',
-        }.contains(key.toLowerCase()),
-      );
+      headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
     }
     for (final key in headers.keys.toList()) {
       if (key.toLowerCase() == 'referer') {

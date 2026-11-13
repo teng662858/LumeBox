@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import '../net/lume_http.dart';
+import '../net/http_header_scope.dart';
 import '../net/site_session_pool.dart';
 import '../js/source_tools.dart';
 
@@ -218,9 +219,7 @@ class SourceMediaRuntime {
     // Do not forward playlist cookies to a CDN. Its own scoped session is used.
     final segmentURL = Uri.parse(segment['url'] as String);
     if (segmentURL.origin != uri.origin) {
-      outgoing.removeWhere(
-        (k, _) => ['cookie', 'authorization'].contains(k.toLowerCase()),
-      );
+      outgoing.removeWhere((key, _) => isOriginBoundHttpHeader(key));
     }
     outgoing = SiteSessionPool.shared.headersFor(
       segmentURL.toString(),
@@ -251,9 +250,7 @@ class SourceMediaRuntime {
       final keyURL = Uri.parse(encryption['url'] as String);
       var keyHeaders = Map<String, String>.of(headers);
       if (keyURL.origin != uri.origin) {
-        keyHeaders.removeWhere(
-          (k, _) => ['cookie', 'authorization'].contains(k.toLowerCase()),
-        );
+        keyHeaders.removeWhere((key, _) => isOriginBoundHttpHeader(key));
       }
       keyHeaders = SiteSessionPool.shared.headersFor(
         keyURL.toString(),

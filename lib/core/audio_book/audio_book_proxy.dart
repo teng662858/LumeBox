@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
 import '../net/http_byte_range.dart';
+import '../net/http_header_scope.dart';
 import 'audio_book_track.dart';
 import 'audio_book_http_client.dart';
 import '../util/lume_log.dart';
@@ -136,11 +137,8 @@ class AudioBookProxy {
         throw const FormatException('不支持的音频地址');
       }
       final headers = Map<String, String>.from(resolved.headers);
-      if (uri.host != resolved.url.host) {
-        headers.removeWhere(
-          (key, _) =>
-              const ['cookie', 'authorization'].contains(key.toLowerCase()),
-        );
+      if (uri.scheme != resolved.url.scheme || uri.origin != resolved.url.origin) {
+        headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
       }
       headers['Accept-Encoding'] = 'identity';
       final range = request.headers.value(HttpHeaders.rangeHeader);
@@ -163,11 +161,8 @@ class AudioBookProxy {
           if (!['http', 'https'].contains(next.scheme)) {
             throw const FormatException('不支持的重定向');
           }
-          if (next.host != uri.host) {
-            headers.removeWhere(
-              (key, _) =>
-                  const ['cookie', 'authorization'].contains(key.toLowerCase()),
-            );
+          if (next.origin != uri.origin) {
+            headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
           }
           uri = next;
           continue;

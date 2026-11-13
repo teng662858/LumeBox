@@ -518,6 +518,7 @@ void main() {
       expect(request.headers['user-agent'], 'media-agent');
       if (request.url.path == '/resolve') {
         expect(request.headers['authorization'], 'test-only');
+        expect(request.headers['proxy-authorization'], 'proxy-only');
         return http.Response(
           '',
           302,
@@ -525,6 +526,7 @@ void main() {
         );
       }
       expect(request.headers.containsKey('authorization'), isFalse);
+      expect(request.headers.containsKey('proxy-authorization'), isFalse);
       if (request.url.path == '/hls/index') {
         return http.Response(
           '#EXTM3U\n#EXTINF:4,\npart.ts\n#EXT-X-ENDLIST\n',
@@ -548,7 +550,11 @@ void main() {
     await cache.boot(directory: root);
     final media = PlayerMedia(
       uri: Uri.parse('https://192.0.2.1/resolve'),
-      headers: {'Authorization': 'test-only', 'User-Agent': 'media-agent'},
+      headers: {
+        'Authorization': 'test-only',
+        'Proxy-Authorization': 'proxy-only',
+        'User-Agent': 'media-agent',
+      },
     );
     final local = await cache.wrap(media, inspect: true);
     expect(local.uri.path, endsWith('.m3u8'));

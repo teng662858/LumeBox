@@ -3,11 +3,86 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:lume_box/core/audio_book/audio_book_proxy.dart';
 import 'package:lume_box/core/audio_book/audio_book_track.dart';
 import 'package:lume_box/core/media/media_library.dart';
 
 void main() {
+  test(
+    'audio redirects and playlist children scope headers by scheme and port',
+    () async {
+      final requests = <http.Request>[];
+      final proxy = AudioBookProxy(
+        clientFactory: () => MockClient((request) async {
+          requests.add(request);
+          if (request.url.path == '/start') {
+            return http.Response(
+              '',
+              302,
+              headers: {'location': 'http://origin.test/list.m3u8'},
+            );
+          }
+          if (request.url.path == '/list.m3u8') {
+            return http.Response(
+              '#EXTM3U\n#EXTINF:1,\nhttps://origin.test:9443/song.aac\n#EXT-X-ENDLIST\n',
+              200,
+            );
+          }
+          return http.Response.bytes([1, 2, 3], 200);
+        }),
+      );
+      final client = http.Client();
+      try {
+        final urls = await proxy.prepare([
+          AudioBookTrack(
+            id: 'a',
+            album: 'Book',
+            episode: ResourceEpisode(
+              id: 'a',
+              title: 'A',
+              url: Uri.parse('https://origin.test/start'),
+              headers: const {
+                'Cookie': 'session',
+                'Authorization': 'user',
+                'Proxy-Authorization': 'proxy',
+                'Host': 'origin.test',
+                'Referer': 'https://origin.test/',
+              },
+            ),
+          ),
+        ]);
+        final manifest = await client.get(urls.single);
+        final asset = manifest.body
+            .split('\n')
+            .firstWhere((line) => line.startsWith('http'));
+        expect((await client.get(Uri.parse(asset))).bodyBytes, [1, 2, 3]);
+        expect(requests, hasLength(3));
+        for (final name in [
+          'cookie',
+          'authorization',
+          'proxy-authorization',
+          'host',
+        ]) {
+          expect(requests.first.headers[name], isNotNull);
+          for (final request in requests.skip(1)) {
+            expect(
+              request.headers[name],
+              isNull,
+              reason: '$name sent to ${request.url}',
+            );
+          }
+        }
+        expect(
+          requests.map((r) => r.headers['referer']),
+          everyElement('https://origin.test/'),
+        );
+      } finally {
+        client.close();
+        await proxy.close();
+      }
+    },
+  );
   test('audio server refusal is recorded and reset for a new queue', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
