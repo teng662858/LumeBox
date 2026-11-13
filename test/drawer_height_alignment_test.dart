@@ -61,7 +61,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       final bounds = tester.getRect(
-        find.byKey(const ValueKey('browse-left-drawer')),
+        find.byKey(const Key('classification-drawer-frame')),
       );
       Navigator.pop(page);
       await tester.pumpAndSettle();

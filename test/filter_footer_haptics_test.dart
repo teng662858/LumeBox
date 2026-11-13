@@ -46,7 +46,9 @@ void main() {
       expect(before.left, 24);
       expect(
         before.right,
-        tester.getRect(find.byKey(const ValueKey('browse-left-drawer'))).right -
+        tester
+                .getRect(find.byKey(const Key('classification-drawer-frame')))
+                .right -
             24,
       );
       expect(height - footer.bottom, 34);
