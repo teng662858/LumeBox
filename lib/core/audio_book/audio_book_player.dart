@@ -113,8 +113,11 @@ class AudioBookSettings extends ChangeNotifier {
   }
 }
 
+typedef AudioBookPlayhead = ({int? index, Duration position, Duration? duration});
+
 /// Every future implementation must satisfy this audio-only contract.
 abstract interface class AudioBookPlayer {
+  AudioBookPlayhead get playhead;
   Stream<Duration> get position;
   Stream<Duration?> get duration;
   Stream<bool> get playing;
@@ -176,6 +179,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   Future<void>? _singleLoad;
   int _chapterRequest = 0;
   int _offset = 0;
+  final _singleIndex = StreamController<int>.broadcast();
   StreamSubscription<ja.PlayerState>? _completion;
   VoidCallback? _removePreloadClearer;
   static Future<void>? _background;
@@ -191,9 +195,31 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   @override
   Stream<bool> get playing => _player.playingStream;
   @override
-  Stream<int?> get index => _player.currentIndexStream.map(
-    (index) => index == null ? null : index + (_singleMode ? _offset : 0),
-  );
+  AudioBookPlayhead get playhead {
+    final event = _player.playbackEvent;
+    return (
+      index: _singleMode
+          ? (_singleLoad == null && event.currentIndex != null ? _offset : null)
+          : event.currentIndex,
+      position: _player.position,
+      duration: event.duration,
+    );
+  }
+
+  @override
+  Stream<int?> get index => Stream<int?>.multi((events) {
+    final native = _player.currentIndexStream.listen((value) {
+      if (!_singleMode) events.addSync(value);
+    });
+    final single = _singleIndex.stream.listen(events.addSync);
+    if (_singleMode && _singleLoad == null && _playlist.isNotEmpty) {
+      events.add(_offset);
+    }
+    events.onCancel = () async {
+      await native.cancel();
+      await single.cancel();
+    };
+  }).distinct();
   @override
   Stream<String> get errors => _player.errorStream.map((error) {
     LumeLog.warn('[audioBook] 播放器错误: $error');
@@ -280,12 +306,15 @@ class JustAudioBookPlayer implements AudioBookPlayer {
       await pending.catchError((_) {});
       if (request != _chapterRequest || !identical(playlist, _playlist)) return;
     }
-    _offset = index;
     final load = _player.setAudioSource(playlist[index], initialPosition: position)
         .then<void>((_) {});
     _singleLoad = load;
     try {
       await load;
+      if (identical(playlist, _playlist)) {
+        _offset = index;
+        _singleIndex.add(index);
+      }
     } finally {
       if (identical(_singleLoad, load)) _singleLoad = null;
     }
@@ -320,6 +349,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   }
 
   Future<void> disposeNative() async {
+    await _singleIndex.close();
     await _proxy.close();
     await _player.dispose();
   }
@@ -556,34 +586,15 @@ class AudioBookSession extends ChangeNotifier {
         _player = _factory();
         _preloadConfiguration = configuration;
         _subscriptions.addAll([
-          _player!.position.listen((value) {
-            if (!_acceptEvents) return;
-            if (!seeking && !_seekFailed) {
-              position = value;
-              _notifyProgress();
-            }
-            if (!loading &&
-                DateTime.now().difference(_savedAt).inSeconds >= 5) {
-              _remember();
-            }
-          }),
-          _player!.duration.listen((value) {
-            if (!_acceptEvents) return;
-            duration = value ?? Duration.zero;
-            _notifyProgress();
-          }),
+          _player!.position.listen((_) => _syncPlayhead()),
+          _player!.duration.listen((_) => _syncPlayhead()),
+          _player!.index.listen((_) => _syncPlayhead()),
           _player!.playing.listen((value) {
             if (!_acceptEvents) return;
             if (playing == value) return;
             playing = value;
             notifyListeners();
             if (!loading && !value) _remember();
-          }),
-          _player!.index.listen((value) {
-            if (!_acceptEvents || seeking || _seekFailed) return;
-            if (value == null || value < 0 || value >= _tracks.length) return;
-            current = value;
-            notifyListeners();
           }),
           _player!.errors.listen((message) {
             if (!_acceptEvents) return;
@@ -630,6 +641,7 @@ class AudioBookSession extends ChangeNotifier {
         await _player?.release();
         return;
       }
+      _syncPlayhead();
       await _player!.speed(settings.speed);
       if (generation != _generation) return;
       _ready = true;
@@ -647,6 +659,28 @@ class AudioBookSession extends ChangeNotifier {
         loading = false;
         notifyListeners();
       }
+    }
+  }
+
+  void _syncPlayhead() {
+    if (!_acceptEvents || seeking || _seekFailed) return;
+    // Index, duration and timer ticks arrive independently. Read all three
+    // from the current playback event even when an older tick arrives late.
+    final head = _player!.playhead;
+    final index = head.index;
+    if (index == null || index < 0 || index >= _tracks.length) return;
+    final changedChapter = current != index;
+    if (changedChapter && loading) return;
+    current = index;
+    position = head.position;
+    duration = head.duration ?? Duration.zero;
+    if (changedChapter) {
+      notifyListeners();
+    } else {
+      _notifyProgress();
+    }
+    if (changedChapter || DateTime.now().difference(_savedAt).inSeconds >= 5) {
+      _remember();
     }
   }
 
@@ -747,6 +781,10 @@ class AudioBookSession extends ChangeNotifier {
       _pendingSeek = null;
       position = _confirmedSeekPosition;
       seeking = false;
+      final head = _player!.playhead;
+      if (!_seekFailed && head.index == current) {
+        duration = head.duration ?? Duration.zero;
+      }
       _remember();
       notifyListeners();
     }

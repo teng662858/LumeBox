@@ -310,11 +310,35 @@ void main() {
     session.addListener(() => pageUpdates++);
     session.progress.addListener(() => progressUpdates++);
     for (var n = 1; n < 10; n++) {
-      player.p.add(Duration(milliseconds: n * 100));
+      player.emitPosition(Duration(milliseconds: n * 100));
     }
     expect(progressUpdates, 9);
     expect(pageUpdates, 0);
   });
+
+  for (final positionFirst in [false, true]) {
+    test('自动切章后立即退出会保存新章的时间（先收到${positionFirst ? '进度' : '章节'}）', () async {
+      await session.open(resource, tracks);
+      await session.seek(const Duration(minutes: 4, seconds: 59));
+      player.current = 1;
+      player.nativePosition = const Duration(seconds: 2);
+      player.nativeDuration = const Duration(minutes: 3);
+      if (positionFirst) {
+        player.p.add(player.nativePosition);
+      } else {
+        player.i.add(1);
+      }
+      // The previous chapter's last notification is delivered late.
+      player.p.add(const Duration(minutes: 4, seconds: 59));
+      expect(session.progress.value, (player.nativePosition, player.nativeDuration));
+      await session.release();
+      await settings.save();
+      final reopened = AudioBookSettings();
+      await reopened.load();
+      expect(reopened.chapterIds[resource.id], 'c1');
+      expect(reopened.positions[resource.id]?['position'], 2000);
+    });
+  }
 
   test(
     'chapter IDs survive reordered catalogs and missing chapters start safely',
@@ -689,6 +713,15 @@ class _AudioPlayer implements AudioBookPlayer {
   Future<void> Function()? beforeSeek, beforePlay;
   bool resolveTracks = false;
   double rate = 1;
+  Duration nativePosition = Duration.zero;
+  Duration nativeDuration = const Duration(minutes: 5);
+  @override
+  AudioBookPlayhead get playhead =>
+      (index: current, position: nativePosition, duration: nativeDuration);
+  void emitPosition(Duration value) {
+    nativePosition = value;
+    p.add(value);
+  }
   @override
   Stream<Duration> get position => p.stream;
   @override
@@ -715,8 +748,8 @@ class _AudioPlayer implements AudioBookPlayer {
     lastTracks = tracks;
     current = index;
     i.add(index);
-    p.add(position);
-    d.add(const Duration(minutes: 5));
+    emitPosition(position);
+    d.add(nativeDuration);
   }
 
   @override
@@ -736,7 +769,7 @@ class _AudioPlayer implements AudioBookPlayer {
       current = index;
       i.add(index);
     }
-    p.add(position);
+    emitPosition(position);
   }
 
   @override

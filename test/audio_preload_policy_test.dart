@@ -64,15 +64,31 @@ void main() {
     expect(native.playing, isFalse);
   });
 
+  test('单集模式下原生索引持续为零也能通知后台自动切章', () async {
+    MediaPreload.instance.update(audio: false);
+    final observed = <int?>[];
+    final subscription = player.index.listen(observed.add);
+    addTearDown(subscription.cancel);
+    await player.load(tracks);
+    await player.play();
+    native.states.add(ja.PlayerState(true, ja.ProcessingState.completed));
+    await Future<void>.delayed(Duration.zero);
+    expect(native.singles, hasLength(2));
+    expect(observed.last, 1);
+    expect(player.playhead.index, 1);
+  });
+
   test('切章缓冲期间的暂停优先于此前的续播请求', () async {
     MediaPreload.instance.update(audio: false);
     await player.load(tracks);
     await player.play();
     native.pendingLoad = Completer<Duration?>();
     final change = player.next();
+    expect(player.playhead.index, isNull);
     await player.pause();
     native.pendingLoad!.complete(const Duration(minutes: 10));
     await change;
+    expect(player.playhead.index, 1);
     expect(native.playing, isFalse);
   });
 
@@ -180,11 +196,17 @@ class _NativeAudio implements ja.AudioPlayer {
   @override
   Duration position = Duration.zero;
   @override
+  ja.PlaybackEvent get playbackEvent => ja.PlaybackEvent(
+    currentIndex: currentIndex,
+    updatePosition: position,
+    duration: const Duration(minutes: 10),
+  );
+  @override
   bool playing = false;
   @override
   Stream<ja.PlayerState> get playerStateStream => states.stream;
   @override
-  Stream<int?> get currentIndexStream => indices.stream;
+  Stream<int?> get currentIndexStream => indices.stream.distinct();
   @override
   dynamic noSuchMethod(Invocation call) {
     if (call.memberName == #setAudioSource ||
