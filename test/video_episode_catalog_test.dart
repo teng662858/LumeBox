@@ -51,6 +51,16 @@ void main() {
     expect(VideoEpisodeCatalog.episodeNumber('第２季 第０３集'), (season: 2, episode: 3));
     expect(VideoEpisodeCatalog.episodeNumber('Season 2 Episode 3'), (season: 2, episode: 3));
   });
+  test('文件名的 DTS 声道数不参与换线，季标记兼容点号分隔', () {
+    const current = SourceChapter(id: 'current', title: '第2季 第3集');
+    const tagged = SourceChapter(id: 'right', title: 'Drama.DTS5.1.S02E03.mkv');
+    const dotted = SourceChapter(id: 'dotted', title: 'Drama.Season.02.Episode.03.mkv');
+    const other = SourceChapter(id: 'wrong', title: 'Drama.DTS2.0.S05E03.mkv');
+    expect(VideoEpisodeCatalog.matchingIndex(current, [other, tagged]), 1);
+    expect(VideoEpisodeCatalog.matchingIndex(current, [dotted]), 0);
+    expect(VideoEpisodeCatalog.seasonNumber('Drama.DTS5.1.E03.mkv'), isNull);
+    expect(VideoEpisodeCatalog.seasonNumber('剧名S02E03'), 2);
+  });
   test('跨线路只匹配明确同集，兼容文件名但不混淆季数和重复集数', () {
     const current = SourceChapter(id: 'a', title: '第2集');
     const file = SourceChapter(

@@ -611,6 +611,19 @@ void main() {
     expect(media?['url'], contains('/A1.'));
     expect(session.target?.chapterIndex, 0);
   });
+  test('switching lines carries the playhead to the matching season despite audio metadata', () async {
+    source.episodes = const [
+      SourceChapter(id: 'A1', title: '第二季 第3集', line: 'A'),
+      SourceChapter(id: 'wrong', title: 'Drama.DTS2.0.S05E03.mkv', line: 'B'),
+      SourceChapter(id: 'right', title: 'Drama.DTS5.1.S02E03.mkv', line: 'B'),
+    ];
+    await start();
+    await progress(45);
+    final reply = await request('line', {'id': 'B'});
+    expect(session.target?.chapterId, 'right');
+    expect((reply['media'] as Map)['position'], 45);
+    expect(source.resolved, ['right']);
+  });
   test('a direct catalog item can retry its original URL while its resolver is unavailable', () async {
     const url = 'https://cdn.example/direct.mp4?ticket=first';
     const headers = {'Authorization': 'Bearer fixture'};

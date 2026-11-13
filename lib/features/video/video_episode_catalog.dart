@@ -44,7 +44,9 @@ abstract final class VideoEpisodeCatalog {
   static const _ordinal = r'[0-9０-９零〇一二两兩三四五六七八九十百千]+';
   static const _episodeOrdinal = '$_ordinal(?:[.．点點]$_ordinal)?';
   static final _season = RegExp(
-    '第\\s*($_ordinal)\\s*季|(?:season\\s*|s)([0-9]{1,3})(?![0-9])',
+    '第\\s*($_ordinal)\\s*季|'
+    r'(?:(?:^|[^a-z0-9])(?:season|s)[ ._-]*|s(?=[0-9]{1,3}e[0-9]))'
+    r'([0-9]{1,3})(?![0-9])',
     caseSensitive: false,
   );
   static final _episode = RegExp(
