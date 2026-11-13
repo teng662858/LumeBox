@@ -45,7 +45,7 @@ void main() {
     expect(native.singles.length, 1);
     expect(observed.last, 1);
     await player.play();
-    native.states.add(ja.PlayerState(true, ja.ProcessingState.completed));
+    native.completeChapter();
     await Future<void>.delayed(Duration.zero);
     expect(native.singles.length, 2);
     expect(observed.last, 2);
@@ -58,9 +58,37 @@ void main() {
   test('暂停在章节末尾时不自动切章或恢复播放', () async {
     MediaPreload.instance.update(audio: false);
     await player.load(tracks);
-    native.states.add(ja.PlayerState(false, ja.ProcessingState.completed));
+    native.completeChapter();
     await Future<void>.delayed(Duration.zero);
     expect(native.singles, hasLength(1));
+    expect(native.playing, isFalse);
+  });
+
+  for (final preload in [true, false]) {
+    test('最后一章播完显示暂停，点击播放从该章开头重播（预载 $preload）', () async {
+      MediaPreload.instance.update(audio: preload);
+      await player.load(tracks, index: 2);
+      await player.play();
+      native.completeChapter();
+      await Future<void>.delayed(Duration.zero);
+      expect(native.playing, isFalse);
+      expect(native.position, const Duration(minutes: 10));
+      await player.play();
+      expect(native.playing, isTrue);
+      expect(native.position, Duration.zero);
+      expect(player.playhead.index, 2);
+    });
+  }
+
+  test('重播定位尚未完成时暂停，不会在定位完成后重新出声', () async {
+    await player.load(tracks, index: 2);
+    native.processingState = ja.ProcessingState.completed;
+    final gate = native.seekGate = Completer<void>();
+    final replay = player.play();
+    await player.pause();
+    gate.complete();
+    await replay;
+    expect(native.seekCalls, 1);
     expect(native.playing, isFalse);
   });
 
@@ -71,7 +99,7 @@ void main() {
     addTearDown(subscription.cancel);
     await player.load(tracks);
     await player.play();
-    native.states.add(ja.PlayerState(true, ja.ProcessingState.completed));
+    native.completeChapter();
     await Future<void>.delayed(Duration.zero);
     expect(native.singles, hasLength(2));
     expect(observed.last, 1);
@@ -196,7 +224,25 @@ class _NativeAudio implements ja.AudioPlayer {
   @override
   Duration position = Duration.zero;
   @override
+  ja.ProcessingState processingState = ja.ProcessingState.ready;
+  Completer<void>? seekGate;
+  int seekCalls = 0;
+  void completeChapter() {
+    position = const Duration(minutes: 10);
+    processingState = ja.ProcessingState.completed;
+    states.add(ja.PlayerState(playing, processingState));
+  }
+
+  @override
+  Future<void> seek(Duration? time, {int? index}) async {
+    seekCalls++;
+    await seekGate?.future;
+    position = time ?? Duration.zero;
+    processingState = ja.ProcessingState.ready;
+  }
+  @override
   ja.PlaybackEvent get playbackEvent => ja.PlaybackEvent(
+    processingState: processingState,
     currentIndex: currentIndex,
     updatePosition: position,
     duration: const Duration(minutes: 10),
@@ -219,6 +265,7 @@ class _NativeAudio implements ja.AudioPlayer {
         );
       }
       currentIndex = call.namedArguments[#initialIndex] as int? ?? 0;
+      processingState = ja.ProcessingState.ready;
       position =
           call.namedArguments[#initialPosition] as Duration? ?? Duration.zero;
       indices.add(currentIndex);

@@ -178,6 +178,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   bool _singleMode = false;
   Future<void>? _singleLoad;
   int _chapterRequest = 0;
+  int _playRequest = 0;
   int _offset = 0;
   final _singleIndex = StreamController<int>.broadcast();
   StreamSubscription<ja.PlayerState>? _completion;
@@ -231,6 +232,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
     int index = 0,
     Duration position = Duration.zero,
   }) async {
+    _playRequest++;
     await _configureSession();
     final urls = await _proxy.prepare(sources);
     // Huge native queues serialize thousands of MediaItems on route entry.
@@ -244,17 +246,24 @@ class JustAudioBookPlayer implements AudioBookPlayer {
       await _loadSingle(index, position: position);
     });
     _completion ??= _player.playerStateStream.listen((state) {
-      if (_singleMode &&
-          _singleLoad == null &&
-          state.playing &&
-          _player.playing &&
-          state.processingState == ja.ProcessingState.completed &&
-          _offset + 1 < _playlist.length) {
+      if (_singleLoad != null ||
+          _playlist.isEmpty ||
+          !state.playing ||
+          !_player.playing ||
+          state.processingState != ja.ProcessingState.completed ||
+          _player.processingState != ja.ProcessingState.completed) {
+        return;
+      }
+      if (_singleMode && _offset + 1 < _playlist.length) {
         unawaited(
           _loadSingle(_offset + 1).catchError((Object error) {
             LumeLog.warn('[audioBook] 自动切集失败：$error');
           }),
         );
+      } else {
+        unawaited(pause().catchError((Object error) {
+          LumeLog.warn('[audioBook] 播放结束后暂停失败：$error');
+        }));
       }
     });
     try {
@@ -290,9 +299,19 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   }
 
   @override
-  Future<void> play() => _player.play();
+  Future<void> play() async {
+    final request = ++_playRequest;
+    if (_player.processingState == ja.ProcessingState.completed) {
+      await _player.seek(Duration.zero);
+      if (request != _playRequest) return;
+    }
+    await _player.play();
+  }
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() {
+    _playRequest++;
+    return _player.pause();
+  }
   Future<void> _loadSingle(
     int index, {
     Duration position = Duration.zero,
@@ -321,7 +340,10 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   }
 
   @override
-  Future<void> stop() => _player.stop();
+  Future<void> stop() {
+    _playRequest++;
+    return _player.stop();
+  }
   @override
   Future<void> seek(Duration value, {int? index}) =>
       _singleMode && index != null
@@ -337,6 +359,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   Future<void> speed(double value) => _player.setSpeed(value);
   @override
   Future<void> release() async {
+    _playRequest++;
     _chapterRequest++;
     _playlist = [];
     _removePreloadClearer?.call();
