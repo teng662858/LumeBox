@@ -423,6 +423,96 @@ void main() {
     expect(task.fileName, isEmpty);
   });
 
+  test('downloads compressed HLS manifests, keys and segments as playable bytes', () async {
+    final paths = <String>[];
+    final segment = List<int>.generate(188, (i) => i);
+    final key = List<int>.filled(16, 42);
+    server.listen((request) async {
+      paths.add(request.uri.path);
+      final plain = switch (request.uri.path) {
+        '/play' => utf8.encode('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nmedia\n'),
+        '/media' => utf8.encode('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="k"\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n'),
+        '/k' => key,
+        _ => segment,
+      };
+      final deflate = request.uri.path == '/media';
+      final bytes = deflate ? zlib.encode(plain) : gzip.encode(plain);
+      request.response.headers.set('Content-Encoding', deflate ? 'deflate' : 'gzip');
+      request.response.contentLength = bytes.length;
+      request.response.add(bytes);
+      await request.response.close();
+    });
+    final c = await center('play');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['done', 'failed', 'merge_failed'].contains(task.state));
+    await c.flush();
+    expect(task.fileName, 'index.m3u8', reason: task.error);
+    expect(paths, containsAll(['/play', '/media', '/k', '/s.ts']));
+    final files = await Directory(c.folder(task)).list(recursive: true).where((f) => f is File).cast<File>().toList();
+    expect(await files.singleWhere((f) => f.path.endsWith('.key')).readAsBytes(), key);
+    expect(await files.singleWhere((f) => f.path.endsWith('.ts')).readAsBytes(), segment);
+  });
+  test('decodes a capped gzip media stream after stitching its wire ranges', () async {
+    final data = List<int>.generate(1024, (i) => i % 251);
+    final wire = gzip.encode(data);
+    final starts = <int>[];
+    server.listen((r) async {
+      final range = r.headers.value('range');
+      final start = range == null ? 0 : int.parse(range.substring(6, range.length - 1));
+      starts.add(start);
+      final end = (start + 39).clamp(start, wire.length - 1);
+      r.response.statusCode = 206;
+      r.response.headers.set('content-encoding', 'gzip');
+      r.response.headers.set('content-range', 'bytes $start-$end/${wire.length}');
+      r.response.contentLength = end - start + 1;
+      r.response.add(wire.sublist(start, end + 1));
+      await r.response.close();
+    });
+    final c = await center('capped.mp4');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['done', 'failed'].contains(task.state));
+    await c.flush();
+    expect(task.state, 'done', reason: task.error);
+    expect(starts, containsAllInOrder([0, 40, 80]));
+    expect(await c.localFile(task).readAsBytes(), data);
+    expect(task.bytes, data.length);
+  });
+  test('resumed download restarts if the CDN returns a different ETag with 206', () async {
+    final ranges = <String?>[];
+    final next = List<int>.generate(64, (i) => i);
+    server.listen((r) async {
+      final range = r.headers.value('range');
+      ranges.add(range);
+      r.response.headers.set('ETag', ranges.length == 1 ? '"old"' : '"new"');
+      if (ranges.length == 1) {
+        r.response.statusCode = 206;
+        r.response.headers.set('Content-Range', 'bytes 0-31/64');
+        r.response.add(List<int>.filled(32, 99));
+      } else if (ranges.length == 2) {
+        r.response.statusCode = 503;
+      } else if (range != null) {
+        r.response.statusCode = 206;
+        r.response.headers.set('Content-Range', 'bytes 32-63/64');
+        r.response.add(next.sublist(32));
+      } else {
+        r.response.add(next);
+      }
+      await r.response.close();
+    });
+    final c = await center('changed.mp4');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => task.state == 'failed');
+    await c.resume(task);
+    await until(() => ['done', 'failed'].contains(task.state));
+    await c.flush();
+    expect(task.state, 'done', reason: task.error);
+    expect(await c.localFile(task).readAsBytes(), next);
+    expect(ranges, [null, 'bytes=32-', 'bytes=32-', null]);
+  });
+
   test(
     'a capped HLS segment is stored in full before it becomes playable offline',
     () async {

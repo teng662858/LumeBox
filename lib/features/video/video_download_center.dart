@@ -575,8 +575,44 @@ class VideoDownloadCenter extends ChangeNotifier {
     throw StateError('下载重定向过多');
   }
 
-  // Some CDNs cap each response even for an open-ended Range request.
   Stream<List<int>> _downloadBody(
+    VideoDownloadTask task,
+    Uri uri,
+    Uri origin,
+    Map<String, String> headers,
+    HttpClientResponse response,
+    int offset, {
+    void Function(int)? onLength,
+  }) {
+    final encoding = _encoding(response);
+    final wire = _wireBody(
+      task,
+      uri,
+      origin,
+      headers,
+      response,
+      offset,
+      onLength: encoding == 'identity' ? onLength : null,
+    );
+    if (encoding == 'identity') return wire;
+    if (offset != 0) throw StateError('压缩响应无法从中间解码');
+    onLength?.call(0);
+    return switch (encoding) {
+      'gzip' => wire.transform(gzip.decoder),
+      'deflate' => wire.transform(zlib.decoder),
+      _ => throw StateError('不支持的下载内容编码：$encoding'),
+    };
+  }
+
+  String _encoding(HttpClientResponse response) =>
+      response.headers.value('content-encoding')?.trim().toLowerCase() ??
+      'identity';
+
+  String? _validator(HttpClientResponse response) =>
+      response.headers.value('etag') ?? response.headers.value('last-modified');
+
+  // Byte ranges and validators refer to the encoded HTTP representation.
+  Stream<List<int>> _wireBody(
     VideoDownloadTask task,
     Uri uri,
     Uri origin,
@@ -590,9 +626,8 @@ class VideoDownloadCenter extends ChangeNotifier {
       yield* response.timeout(const Duration(seconds: 45));
       return;
     }
-    final validator =
-        response.headers.value('etag') ??
-        response.headers.value('last-modified');
+    final validator = _validator(response);
+    final encoding = _encoding(response);
     int? total;
     while (true) {
       if (response.statusCode == 416 &&
@@ -603,6 +638,13 @@ class VideoDownloadCenter extends ChangeNotifier {
         return;
       }
       if (response.statusCode != 206) throw StateError('服务器未继续返回分段内容，请重试');
+      if (_encoding(response) != encoding) throw StateError('下载中途内容编码发生变化');
+      final nextValidator = _validator(response);
+      if (validator != null &&
+          nextValidator != null &&
+          nextValidator != validator) {
+        throw StateError('下载中途文件已更换，请重试');
+      }
       final range = RegExp(
         r'^bytes (\d+)-(\d+)/(\d+|\*)$',
         caseSensitive: false,
@@ -661,7 +703,8 @@ class VideoDownloadCenter extends ChangeNotifier {
     try {
       old = jsonDecode(await validator.readAsString()) as Map;
     } catch (_) {}
-    if (old['signature'] != signature && await partial.exists()) {
+    if ((old['signature'] != signature || old['encoded'] == true) &&
+        await partial.exists()) {
       await partial.delete();
     }
     var offset = await partial.exists() ? await partial.length() : 0;
@@ -670,13 +713,30 @@ class VideoDownloadCenter extends ChangeNotifier {
       if (offset > 0 && old['validator'] is String)
         'If-Range': old['validator'] as String,
     };
-    final (response, finalUri) = await _open(
+    var (response, finalUri) = await _open(
       task,
       uri,
       uri,
       headers,
       extra: extra,
     );
+    final previousValidator = old['validator'];
+    final responseValidator = _validator(response);
+    final changed =
+        previousValidator != null &&
+        responseValidator != null &&
+        previousValidator != responseValidator;
+    if (offset > 0 &&
+        (response.statusCode == 206 &&
+                (_encoding(response) != 'identity' || changed) ||
+            response.statusCode == 416 &&
+                (changed ||
+                    response.headers.value('content-range') !=
+                        'bytes */$offset'))) {
+      await response.listen(null).cancel();
+      offset = 0;
+      (response, finalUri) = await _open(task, uri, uri, headers);
+    }
     if (response.statusCode == 416 &&
         offset > 0 &&
         response.headers.value('content-range') == 'bytes */$offset') {
@@ -692,8 +752,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     }
     if (response.statusCode == 200) offset = 0;
     final etag =
-        response.headers.value('etag') ??
-        response.headers.value('last-modified') ??
+        _validator(response) ??
         (offset > 0 ? old['validator'] as String? : null);
     final iterator = StreamIterator(
       _downloadBody(
@@ -745,8 +804,13 @@ class VideoDownloadCenter extends ChangeNotifier {
               prefix.toLowerCase().startsWith('<html'))) {
         throw StateError('站点返回网页而非视频文件');
       }
+      if (offset == 0 && await partial.exists()) await partial.delete();
       await validator.writeAsString(
-        jsonEncode({'signature': signature, 'validator': ?etag}),
+        jsonEncode({
+          'signature': signature,
+          'validator': ?etag,
+          if (_encoding(response) != 'identity') 'encoded': true,
+        }),
         flush: true,
       );
       task.bytes = offset;
@@ -1050,6 +1114,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     if (size == 0 ||
         key && size != 16 ||
         r.statusCode == 200 &&
+            _encoding(r) == 'identity' &&
             r.contentLength >= 0 &&
             size != r.contentLength) {
       throw StateError('分片或密钥不完整');
