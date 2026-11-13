@@ -1031,13 +1031,12 @@ class VideoDownloadCenter extends ChangeNotifier {
       _check(task);
       if (line.startsWith('#EXT-X-KEY:') || line.startsWith('#EXT-X-MAP:')) {
         await flushSegments();
-        if (line.startsWith('#EXT-X-KEY:')) {
-          encrypted = !RegExp(r'(?:^|[:,])METHOD=NONE(?:,|$)').hasMatch(line);
-        }
-        final match = RegExp(r'URI="([^"]+)"').firstMatch(line);
-        if (match != null) {
-          final url = uri.resolve(match.group(1)!);
-          final key = line.startsWith('#EXT-X-KEY:');
+        final key = line.startsWith('#EXT-X-KEY:');
+        final attributes = hlsRawAttributes(line);
+        if (key) encrypted = attributes['METHOD'] != 'NONE';
+        final rawUri = attributes['URI'];
+        if (rawUri != null) {
+          final url = uri.resolve(hlsAttributeValue(rawUri));
           final relative =
               '$name-$plan/${key ? 'key' : 'map'}-${index++}.${key ? 'key' : 'mp4'}';
           await _policyCheckpoint(task);
@@ -1049,9 +1048,8 @@ class VideoDownloadCenter extends ChangeNotifier {
             File(p.join(folder(task), relative)),
             key: key,
           );
-          output.add(
-            line.replaceRange(match.start, match.end, 'URI="$relative"'),
-          );
+          attributes['URI'] = '"$relative"';
+          output.add(hlsTag(key ? '#EXT-X-KEY' : '#EXT-X-MAP', attributes));
           continue;
         }
       }
@@ -1102,15 +1100,24 @@ class VideoDownloadCenter extends ChangeNotifier {
     if (lines.any((line) => line.startsWith('#EXT-X-BYTERANGE'))) {
       return '该线路使用字节范围 HLS，暂不支持下载';
     }
-    if (lines.any(
-      (line) =>
-          line.startsWith('#EXT-X-KEY:') &&
-          !line.contains('METHOD=NONE') &&
-          (!line.contains('METHOD=AES-128') ||
-              line.contains('KEYFORMAT=') &&
-                  !line.contains('KEYFORMAT="identity"')),
-    )) {
-      return '该加密格式不支持离线下载';
+    var needsMapIv = false;
+    for (final line in lines) {
+      final key = line.startsWith('#EXT-X-KEY:');
+      if (!key && !line.startsWith('#EXT-X-MAP:')) continue;
+      final attributes = hlsRawAttributes(line);
+      if (key) {
+        final method = attributes['METHOD'];
+        needsMapIv = method != 'NONE' && attributes['IV'] == null;
+        if (method == 'NONE') continue;
+        if (method != 'AES-128' ||
+            hlsAttributeValue(attributes['KEYFORMAT'] ?? 'identity') != 'identity') {
+          return '该加密格式不支持离线下载';
+        }
+      }
+      if (hlsAttributeValue(attributes['URI'] ?? '').trim().isEmpty) {
+        return key ? '播放清单缺少密钥地址' : '播放清单缺少初始化片段地址';
+      }
+      if (!key && needsMapIv) return '加密初始化片段缺少 IV';
     }
     return null;
   }

@@ -845,6 +845,34 @@ void main() {
     final master = await c.localFile(c.tasks.single).readAsString();
     expect(master, contains('URI="index-audio.m3u8"'));
   });
+  for (final (tag, reason) in [
+    ('#EXT-X-KEY:METHOD=SAMPLE-AES,URI="key?METHOD=NONE"', '加密'),
+    ('#EXT-X-KEY:METHOD=AES-128', '密钥地址'),
+    ('#EXT-X-MAP:BYTERANGE="128@32"', '初始化片段地址'),
+    ('#EXT-X-KEY:METHOD=AES-128,URI="key"\n#EXT-X-MAP:URI="init.mp4"', 'IV'),
+  ]) {
+    test('unsupported or incomplete HLS fails before any resource request: $tag', () async {
+      final requested = <String>[];
+      server.listen((r) async {
+        requested.add(r.uri.path);
+        if (r.uri.path == '/entry.m3u8') {
+          r.response.write('#EXTM3U\n$tag\n#EXTINF:1,\ns.ts\n#EXT-X-ENDLIST\n');
+        } else {
+          r.response.add(List.filled(16, 1));
+        }
+        await r.response.close();
+      });
+      final c = await center('entry.m3u8');
+      await enqueue(c);
+      final task = c.tasks.single;
+      await until(() => ['merge_failed', 'failed'].contains(task.state));
+      await c.flush();
+      expect(requested, ['/entry.m3u8']);
+      expect(task.error, contains(reason));
+      expect(task.fileName, isEmpty);
+    });
+  }
+
   test(
     'DRM HLS is reported as a failure, never as a completed download',
     () async {
