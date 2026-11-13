@@ -136,7 +136,8 @@ class MediaResourceService {
                 uri,
                 headers: headers(content, source: source),
               ));
-    final kind = tracks.kind ?? hint ?? ResourceKind.video;
+    final kind = tracks.kind ?? hint ??
+        (content is VideoContent && content.audioOnly ? ResourceKind.audioBook : ResourceKind.video);
     return library.add(
       MediaResource(
         id: id,

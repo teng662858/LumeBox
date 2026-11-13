@@ -391,7 +391,8 @@ class CatDataSource
       }),
     );
     final requestHeaders = headers(data['header'] ?? data['headers']);
-    final contentKind = SourceContentType.parse(catText(data['kind']));
+    final kind = catText(data['kind']).trim().toLowerCase();
+    final contentKind = SourceContentType.parse(kind);
     if (contentKind == SourceContentType.novel ||
         (site.kind == 'novel' &&
             (data['text'] is String || data['html'] is String))) {
@@ -443,7 +444,7 @@ class CatDataSource
       throw StateError('站点未返回可播放地址');
     }
     return ChapterContent.parse({
-      'kind': 'video',
+      'kind': const {'audio', 'audiobook', 'audio-book'}.contains(kind) ? 'audio' : 'video',
       'url': uri.toString(),
       'headers': requestHeaders,
       'qualities': data['qualities'] ?? data['levels'],

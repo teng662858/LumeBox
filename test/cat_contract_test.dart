@@ -27,6 +27,7 @@ void main() {
   var index = 'module.exports={start:async()=>{}}';
   var advertised = '';
   var failDownload = false;
+  String? playKind;
   Future<Map<String, dynamic>> bridge(
     String action,
     Map<String, dynamic> opt, {
@@ -57,6 +58,7 @@ void main() {
     starts = 0;
     runtime = null;
     failDownload = false;
+    playKind = null;
     index = 'module.exports={start:async()=>{}}';
     advertised = md5.convert(utf8.encode(index)).toString();
     remote = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -134,6 +136,7 @@ void main() {
       } else if (req.uri.path.endsWith('/play')) {
         expect(body['id'], 'episode-2');
         req.response.write(jsonEncode({
+          'kind': ?playKind,
           'url': '/fixture.mp4',
           'headers': {'Referer': 'https://site.example/watch'},
         }));
@@ -250,12 +253,20 @@ void main() {
     final chapters = CatDataSource.parseChapters({
       'vod_play_from': 'A', 'vod_play_url': r'第2集$episode-2',
     });
+    final source = CatDataSource(service, site);
+    for (final kind in ['audio', 'AudioBook', 'audio-book', 'video']) {
+      playKind = kind;
+      final content = await source.content(itemId: item, chapterId: chapters.single.id) as VideoContent;
+      expect(content.audioOnly, kind != 'video', reason: kind);
+    }
+    playKind = 'audio';
     final library = MediaLibrary();
     await library.boot(directory: root);
     final resource = await MediaResourceService(library: library).source(
-      source: CatDataSource(service, site), item: SourceItem(id: item, title: '猫源音频'),
-      chapters: chapters, deferContent: true, hint: ResourceKind.audioBook,
+      source: source, item: SourceItem(id: item, title: '猫源音频'),
+      chapters: chapters, trackInfo: const MediaTrackInfo(),
     );
+    expect(resource.kind, ResourceKind.audioBook);
     expect(resource.originSection, Section.cat);
     final persisted = MediaLibrary();
     await persisted.boot(directory: root);
