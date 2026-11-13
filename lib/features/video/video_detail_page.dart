@@ -355,14 +355,16 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           episodes,
           workTitle: metadata?.title ?? widget.item.title,
         );
-        SourceChapter? chosen;
-        if (matches.length == 1 &&
+        SourceChapter? chosen = episodes
+            .where((chapter) => chapter.id == initialChapter)
+            .firstOrNull;
+        if (chosen == null && matches.length == 1 &&
             request.confident(
               matches.single,
               workTitle: metadata?.title ?? widget.item.title,
             )) {
           chosen = matches.single;
-        } else if (mounted) {
+        } else if (chosen == null && mounted) {
           chosen = await showGlassModalBottomSheet<SourceChapter>(
             context: context,
             showDragHandle: true,

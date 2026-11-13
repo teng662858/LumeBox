@@ -563,6 +563,28 @@ void main() {
     expect(state.selected, 1);
     expect(state.lineResume.position, const Duration(minutes: 8));
   });
+  testWidgets('原作品续播用已知剧集 ID 恢复线路和时间，多个同集号无需重选', (tester) async {
+    final multi = MultiLineDetailSource();
+    await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
+      source: multi,
+      item: const SourceItem(id: 'same-work', title: '详情测试片'),
+      library: library,
+      initialChapterId: 'b2',
+      resumeRequest: const VideoResumeRequest(
+        title: '详情测试片', chapterTitle: '第2集', chapterIndex: 1,
+        position: Duration(seconds: 75), duration: Duration(minutes: 40),
+      ),
+      onPlay: (_, _, _, _, _) async {},
+    )));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('确认续播剧集'), findsNothing);
+    final dynamic state = tester.state(find.byType(VideoDetailPage));
+    expect(state.currentLine, '线路B');
+    expect(state.chapters[state.selected].id, 'b2');
+    expect(state.episodeProgress(state.selected).position, const Duration(seconds: 75));
+  });
+
   testWidgets('换源存在多个相同集号时先确认，未选择前不解析播放', (tester) async {
     await tester.binding.setSurfaceSize(const Size(440, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));

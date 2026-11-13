@@ -161,7 +161,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
     ReadingLibrary library,
     ReadingProgress? progress, {
     String? resumeTitle,
-    bool differentSource = false,
+    bool differentItem = false,
   }) async {
     if (!mounted) return;
     await Navigator.push(
@@ -173,7 +173,7 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
           manager: manager(library.section),
           item: item,
           library: library,
-          initialChapterId: differentSource ? null : progress?.chapterId,
+          initialChapterId: differentItem ? null : progress?.chapterId,
           resumeRequest: progress is VideoProgress
               ? VideoResumeRequest(
                   title: resumeTitle ?? item.title,
@@ -242,7 +242,8 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
                   await ReadingLibrary.open(row.section),
                   row.progress,
                   resumeTitle: row.item?.title,
-                  differentSource: selection.sourceId != row.item?.sourceId,
+                  differentItem: selection.sourceId != item.sourceId ||
+                      selection.item.id != item.itemId,
                 );
               }
             } catch (_) {
