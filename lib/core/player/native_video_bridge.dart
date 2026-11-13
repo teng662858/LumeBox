@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../util/lume_log.dart';
+
 typedef NativeVideoRequest = Future<Map<String, Object?>> Function(
   String action,
   Map<String, Object?> arguments,
@@ -95,6 +97,8 @@ class NativeVideoConnection {
           .timeout(const Duration(seconds: 3));
     } on MissingPluginException {
       // The route may be disposed before native presentation was possible.
+    } on PlatformException catch (error) {
+      LumeLog.warn('[native-video] 关闭原生播放页失败：${error.code}');
     } on TimeoutException {
       // UIKit dismisses immediately; decoder teardown continues natively.
     }

@@ -130,4 +130,18 @@ void main() {
     expect(calls.where((c) => c.method == 'close'), hasLength(1));
     await connection.finished;
   });
+
+  test('a teardown error keeps the presentation failure and releases the route', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      throw PlatformException(code: call.method);
+    });
+    final connection = bridge.connect(request: (_, _) async => {}, event: (_) {});
+    await expectLater(
+      connection.open({'url': 'https://example/video.mp4'}, {}),
+      throwsA(isA<PlatformException>().having((e) => e.code, 'code', 'open')),
+    );
+    await connection.finished;
+    await Future<void>.delayed(Duration.zero);
+    expect(await incoming('request', connection.id, {'action': 'next'}), isNull);
+  });
 }

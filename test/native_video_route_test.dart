@@ -91,4 +91,36 @@ void main() {
     expect(find.text('重试'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets('a failed direct address can be retried without re-entering it', (
+    tester,
+  ) async {
+    final tried = <String>[];
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'open') {
+        tried.add(call.arguments['media']['url'] as String);
+        if (tried.length == 1) throw PlatformException(code: 'invalid_media');
+      }
+      return null;
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VideoPlayerPage(
+          library: library,
+          bridge: bridge,
+          prepareMedia: (media, _) async => media,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'https://example/video.mp4');
+    await tester.tap(find.text('打开原生播放器'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('invalid_media'), findsOneWidget);
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(tried, ['https://example/video.mp4', 'https://example/video.mp4']);
+    expect(find.textContaining('invalid_media'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }

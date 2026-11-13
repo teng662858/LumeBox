@@ -136,6 +136,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
   }
 
+  void _openAddress() {
+    final uri = Uri.tryParse(_address.text.trim());
+    if (uri == null || !uri.hasScheme) {
+      setState(() => _error = '请输入完整媒体地址');
+      return;
+    }
+    unawaited(_open(PlayerMedia(uri: uri)));
+  }
+
   @override
   void dispose() {
     _disposed = true;
@@ -165,8 +174,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 Text(_error!, style: const TextStyle(color: Colors.white)),
                 const SizedBox(height: 16),
                 FilledButton(
-                  onPressed: _opening || widget.media == null
+                  onPressed: _opening
                       ? null
+                      : widget.media == null
+                      ? _openAddress
                       : () => _open(widget.media!),
                   child: const Text('重试'),
                 ),
@@ -180,14 +191,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
-                  onPressed: () {
-                    final uri = Uri.tryParse(_address.text.trim());
-                    if (uri == null || !uri.hasScheme) {
-                      setState(() => _error = '请输入完整媒体地址');
-                      return;
-                    }
-                    unawaited(_open(PlayerMedia(uri: uri)));
-                  },
+                  onPressed: _openAddress,
                   child: const Text('打开原生播放器'),
                 ),
               ],
