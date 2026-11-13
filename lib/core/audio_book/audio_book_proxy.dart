@@ -23,7 +23,7 @@ class AudioBookProxy {
   final http.Client Function() _clientFactory;
 
   String? lastError;
-  HttpServer? _server;
+  Future<HttpServer>? _binding;
   final _tracks = <String, AudioBookTrack>{};
   final _clients = <http.Client>{};
   final _resolved = <String, ({DateTime time, ResolvedAudio audio})>{};
@@ -33,23 +33,35 @@ class AudioBookProxy {
       .replaceAll('=', '');
   Future<List<Uri>> prepare(List<AudioBookTrack> tracks) async {
     reset();
-    _server ??= await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    if (!_listening) {
-      _listening = true;
-      _server!.listen((request) => unawaited(_serve(request)));
+    final generation = _generation;
+    final binding = _binding ??= _bind();
+    final HttpServer server;
+    try {
+      server = await binding;
+    } catch (_) {
+      if (identical(_binding, binding)) _binding = null;
+      rethrow;
     }
-    return [for (final track in tracks) _register(track)];
+    if (generation != _generation) throw StateError('播放列表已更换');
+    return [for (final track in tracks) _register(track, server.port)];
   }
 
-  bool _listening = false;
+  Future<HttpServer> _bind() async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) => unawaited(_serve(request)));
+    return server;
+  }
+
   int _generation = 0;
-  Uri _register(AudioBookTrack track) {
-    final id = sha256.convert(utf8.encode(track.id)).toString();
+  Uri _register(AudioBookTrack track, int port) {
+    final id = sha256
+        .convert(utf8.encode('$_generation:${track.id}'))
+        .toString();
     _tracks[id] = track;
     return Uri(
       scheme: 'http',
       host: '127.0.0.1',
-      port: _server!.port,
+      port: port,
       path: '/$_token/$id',
     );
   }
@@ -68,9 +80,9 @@ class AudioBookProxy {
 
   Future<void> close() async {
     reset();
-    await _server?.close(force: true);
-    _server = null;
-    _listening = false;
+    final binding = _binding;
+    _binding = null;
+    await (await binding)?.close(force: true);
   }
 
   Future<ResolvedAudio> _resolve(AudioBookTrack track) async {
@@ -101,10 +113,10 @@ class AudioBookProxy {
     }
   }
 
-  Uri _asset(String id, Uri uri) => Uri(
+  Uri _asset(int port, String id, Uri uri) => Uri(
     scheme: 'http',
     host: '127.0.0.1',
-    port: _server!.port,
+    port: port,
     path: '/$_token/$id',
     queryParameters: {'asset': base64Url.encode(utf8.encode(uri.toString()))},
   );
@@ -112,6 +124,7 @@ class AudioBookProxy {
     http.Client? client;
     try {
       final path = request.uri.pathSegments;
+      final port = request.connectionInfo!.localPort;
       if (path.length != 2 ||
           path[0] != _token ||
           !_tracks.containsKey(path[1]) ||
@@ -234,10 +247,10 @@ class AudioBookProxy {
                 return line.replaceAllMapped(
                   RegExp(r'URI="([^"]+)"'),
                   (match) =>
-                      'URI="${_asset(path[1], uri.resolve(match.group(1)!))}"',
+                      'URI="${_asset(port, path[1], uri.resolve(match.group(1)!))}"',
                 );
               }
-              return _asset(path[1], uri.resolve(value)).toString();
+              return _asset(port, path[1], uri.resolve(value)).toString();
             })
             .join('\n');
         final output = utf8.encode(rewritten);

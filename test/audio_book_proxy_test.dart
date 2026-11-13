@@ -9,6 +9,76 @@ import 'package:lume_box/core/audio_book/audio_book_track.dart';
 import 'package:lume_box/core/media/media_library.dart';
 
 void main() {
+  AudioBookTrack queueTrack(String path) => AudioBookTrack(
+    id: 'shared-chapter',
+    album: 'Book',
+    episode: ResourceEpisode(
+      id: 'e',
+      title: 'E',
+      url: Uri.parse('https://fixture.test/$path'),
+    ),
+  );
+
+  test(
+    'replacing a queue invalidates old URLs even when chapter IDs match',
+    () async {
+      final proxy = AudioBookProxy(
+        clientFactory: () =>
+            MockClient((r) async => http.Response(r.url.path, 200)),
+      );
+      final client = http.Client();
+      try {
+        final old = (await proxy.prepare([queueTrack('first')])).single;
+        final current = (await proxy.prepare([queueTrack('second')])).single;
+        expect((await client.get(old)).statusCode, 404);
+        expect((await client.get(current)).body, '/second');
+        expect(current.port, old.port);
+      } finally {
+        client.close();
+        await proxy.close();
+      }
+    },
+  );
+
+  test('overlapping first prepares only publish the newest queue', () async {
+    final proxy = AudioBookProxy(
+      clientFactory: () =>
+          MockClient((r) async => http.Response(r.url.path, 200)),
+    );
+    final client = http.Client();
+    try {
+      final old = proxy.prepare([queueTrack('first')]);
+      final newest = proxy.prepare([queueTrack('second')]);
+      await expectLater(old, throwsStateError);
+      final local = (await newest).single;
+      expect((await client.get(local)).body, '/second');
+    } finally {
+      client.close();
+      await proxy.close();
+    }
+  });
+
+  test(
+    'closing during initial bind cancels preparation and permits a fresh queue',
+    () async {
+      final proxy = AudioBookProxy(
+        clientFactory: () =>
+            MockClient((r) async => http.Response(r.url.path, 200)),
+      );
+      final client = http.Client();
+      try {
+        final pending = proxy.prepare([queueTrack('old')]);
+        final closing = proxy.close();
+        await expectLater(pending, throwsStateError);
+        await closing;
+        final current = (await proxy.prepare([queueTrack('new')])).single;
+        expect((await client.get(current)).body, '/new');
+      } finally {
+        client.close();
+        await proxy.close();
+      }
+    },
+  );
   for (final entry in ['book.m3u8', 'signed']) {
     test(
       'audio HLS HEAD and ranges use the rewritten playlist for $entry',
