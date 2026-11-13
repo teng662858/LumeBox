@@ -123,11 +123,11 @@ class AudioBookProxy {
     }
   }
 
-  Uri _asset(int port, String id, Uri uri) => Uri(
+  Uri _asset(int port, String id, Uri uri, {bool playlist = false}) => Uri(
     scheme: 'http',
     host: '127.0.0.1',
     port: port,
-    path: '/$_token/$id/asset${_extension(uri)}',
+    path: '/$_token/$id/asset${playlist ? '.m3u8' : _extension(uri)}',
     queryParameters: {'asset': base64Url.encode(utf8.encode(uri.toString()))},
   );
   Future<void> _serve(HttpRequest request) async {
@@ -166,6 +166,7 @@ class AudioBookProxy {
       }
       headers['Accept-Encoding'] = 'identity';
       final range = request.headers.value(HttpHeaders.rangeHeader);
+      final playlistAsset = path.length == 3 && path.last == 'asset.m3u8';
       client = _clientFactory();
       _clients.add(client);
       http.StreamedResponse? response;
@@ -173,7 +174,10 @@ class AudioBookProxy {
       var ignoreRange = false;
       var redirects = 0;
       while (true) {
-        final full = fetchPlaylist || uri.path.toLowerCase().endsWith('.m3u8');
+        final full =
+            playlistAsset ||
+            fetchPlaylist ||
+            uri.path.toLowerCase().endsWith('.m3u8');
         final upstream = http.Request(full ? 'GET' : request.method, uri)
           ..headers.addAll(headers)
           ..followRedirects = false;
@@ -246,6 +250,7 @@ class AudioBookProxy {
       final type =
           response.headers['content-type'] ?? 'application/octet-stream';
       final hls =
+          playlistAsset ||
           uri.path.toLowerCase().endsWith('.m3u8') ||
           type.toLowerCase().contains('mpegurl');
       final encoding = response.headers['content-encoding']
@@ -281,19 +286,33 @@ class AudioBookProxy {
         if (!manifest.trimLeft().startsWith('#EXTM3U')) {
           throw const FormatException('无效音频清单');
         }
-        final rewritten = manifest
-            .split('\n')
+        final lines = manifest.split('\n');
+        final master = lines.any(
+          (line) => line.trimLeft().startsWith('#EXT-X-STREAM-INF:'),
+        );
+        final rewritten = lines
             .map((line) {
               final value = line.trim();
               if (value.isEmpty) return line;
               if (value.startsWith('#')) {
+                final tag = value.split(':').first;
+                final playlistUri = const {
+                  '#EXT-X-MEDIA',
+                  '#EXT-X-I-FRAME-STREAM-INF',
+                  '#EXT-X-RENDITION-REPORT',
+                }.contains(tag);
                 return line.replaceAllMapped(
                   RegExp(r'URI="([^"]+)"'),
                   (match) =>
-                      'URI="${_asset(port, path[1], uri.resolve(match.group(1)!))}"',
+                      'URI="${_asset(port, path[1], uri.resolve(match.group(1)!), playlist: playlistUri)}"',
                 );
               }
-              return _asset(port, path[1], uri.resolve(value)).toString();
+              return _asset(
+                port,
+                path[1],
+                uri.resolve(value),
+                playlist: master,
+              ).toString();
             })
             .join('\n');
         final output = utf8.encode(rewritten);

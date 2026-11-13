@@ -474,6 +474,58 @@ void main() {
       await server.close(force: true);
     }
   });
+  test('signed audio HLS variants and alternate renditions rewrite their own children', () async {
+    final originPaths = <String>[];
+    final proxy = AudioBookProxy(
+      clientFactory: () => MockClient((request) async {
+        originPaths.add(request.url.path);
+        if (request.url.path == '/master.m3u8') {
+          return http.Response(
+            '#EXTM3U\n'
+            '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="A",URI="audio?id=1"\n'
+            '#EXT-X-STREAM-INF:BANDWIDTH=64000,AUDIO="a"\nvariant?id=2\n',
+            200,
+          );
+        }
+        if (request.url.path == '/audio' || request.url.path == '/variant') {
+          expect(request.headers['range'], isNull);
+          return http.Response(
+            '#EXTM3U\n#EXTINF:1,\npart.aac\n#EXT-X-ENDLIST\n',
+            200,
+            headers: {'content-type': 'application/octet-stream'},
+          );
+        }
+        return http.Response.bytes([1, 2, 3], 200);
+      }),
+    );
+    final client = http.Client();
+    try {
+      final url = (await proxy.prepare([queueTrack('master.m3u8')])).single;
+      final master = (await client.get(url)).body;
+      for (final child in [
+        RegExp(r'URI="([^"]+)"').firstMatch(master)![1]!,
+        LineSplitter.split(master)
+            .firstWhere((line) => line.startsWith('http')),
+      ]) {
+        final uri = Uri.parse(child);
+        final nested = await client.get(uri);
+        expect(nested.headers['content-type'], contains('mpegurl'));
+        final segment = LineSplitter.split(nested.body)
+            .firstWhere((line) => line.startsWith('http'));
+        expect((await client.get(Uri.parse(segment))).bodyBytes, [1, 2, 3]);
+        final probe = await client.get(uri, headers: {'Range': 'bytes=0-6'});
+        expect(probe.statusCode, 206);
+        expect(probe.body, '#EXTM3U');
+      }
+      expect(
+        originPaths,
+        containsAll(['/master.m3u8', '/audio', '/variant', '/part.aac']),
+      );
+    } finally {
+      client.close();
+      await proxy.close();
+    }
+  });
   test(
     'a late chapter resolution cannot overwrite a replaced playlist',
     () async {
