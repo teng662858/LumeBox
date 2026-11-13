@@ -463,6 +463,38 @@ void main() {
     expect(session.error, isNotNull);
   });
 
+  for (final selectChapter in [false, true]) {
+    test('手动跳转失败后重新加载会重试所选${selectChapter ? "章节" : "时间"}', () async {
+      await session.open(resource, tracks, index: 1);
+      await session.seek(const Duration(seconds: 25));
+      player.beforeSeek = () async => throw StateError('unavailable');
+      if (selectChapter) {
+        await session.playChapter(2);
+      } else {
+        await session.seek(const Duration(seconds: 80));
+      }
+      expect(settings.chapterIds[resource.id], 'c1');
+      expect(settings.positions[resource.id]?['position'], 25000);
+      player.beforeSeek = null;
+      await session.retry();
+      expect(session.current, selectChapter ? 2 : 1);
+      expect(session.position.inSeconds, selectChapter ? 0 : 80);
+      expect(session.playing, isTrue);
+      expect(session.error, isNull);
+    });
+  }
+
+  test('跳转失败后退出再续听仍使用实际听到的位置', () async {
+    await session.open(resource, tracks, index: 1);
+    await session.seek(const Duration(seconds: 25));
+    player.beforeSeek = () async => throw StateError('unavailable');
+    await session.playChapter(2);
+    await session.release();
+    await session.play();
+    expect(session.current, 1);
+    expect(session.position.inSeconds, 25);
+  });
+
   for (final lastFails in [false, true]) {
     test('overlapping audiobook seeks keep the last confirmed position (failure=$lastFails)', () async {
       await session.open(resource, tracks);

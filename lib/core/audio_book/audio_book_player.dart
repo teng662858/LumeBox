@@ -441,7 +441,7 @@ class AudioBookSession extends ChangeNotifier {
   int _pauseRevision = 0;
   Future<void> _loads = Future.value();
   List<AudioBookTrack> _tracks = [];
-  // Until settings load, the visible index and time are only placeholders.
+  // A retry target may differ from the last confirmed listening position.
   ({int? index, Duration? position, bool resume})? _pendingStart;
   bool _ready = false;
   bool _acceptEvents = false;
@@ -826,12 +826,16 @@ class AudioBookSession extends ChangeNotifier {
           if (index != null) current = index;
           _confirmedSeekPosition = value;
           _seekFailed = false;
+          _pendingStart = null;
           if (error == _seekError) error = null;
         }
       } catch (_) {
         if (generation == _generation) {
           _seekFailed = true;
-          if (revision == _seekRevision) error = _seekError;
+          if (revision == _seekRevision) {
+            error = _seekError;
+            _pendingStart = (index: index ?? current, position: value, resume: false);
+          }
         }
       }
     }
@@ -899,6 +903,7 @@ class AudioBookSession extends ChangeNotifier {
 
   Future<void> release() async {
     _remember();
+    if (_seekFailed) _pendingStart = null;
     final generation = ++_generation;
     loading = false;
     seeking = false;
