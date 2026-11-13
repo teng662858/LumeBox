@@ -713,7 +713,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         headers,
         extra: {'Range': 'bytes=$offset-', 'If-Range': ?validator},
       );
-      response = next.$1;
+      (response, uri) = next;
     }
   }
 
@@ -788,7 +788,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     final iterator = StreamIterator(
       _downloadBody(
         task,
-        uri,
+        finalUri,
         uri,
         headers,
         response,
@@ -907,7 +907,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       throw StateError('播放清单不可用：HTTP ${r.statusCode}');
     }
     return (
-      await _text(_downloadBody(task, uri, origin, headers, r, 0)),
+      await _text(_downloadBody(task, finalUri, origin, headers, r, 0)),
       finalUri,
     );
   }
@@ -1151,7 +1151,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       task.bytes += await file.length();
       return;
     }
-    final (r, _) = await _open(task, uri, origin, headers);
+    final (r, finalUri) = await _open(task, uri, origin, headers);
     if (r.statusCode != 200 && r.statusCode != 206) {
       throw StateError('分片下载失败：HTTP ${r.statusCode}');
     }
@@ -1160,7 +1160,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     final prefix = <int>[];
     var size = 0, received = 0;
     try {
-      final body = _downloadBody(task, uri, origin, headers, r, 0).map((chunk) {
+      final body = _downloadBody(task, finalUri, origin, headers, r, 0).map((chunk) {
         received += chunk.length;
         return chunk;
       });

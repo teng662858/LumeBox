@@ -765,21 +765,32 @@ void main() {
       paths.add(r.uri.path);
       hosts.add(r.headers.value('host'));
       auth.add(r.headers.value('authorization'));
+      void capped(List<int> bytes) {
+        final raw = r.headers.value('range') ?? 'bytes=0-';
+        final start = int.parse(raw.substring(6, raw.length - 1));
+        final stop = (start + 16).clamp(0, bytes.length);
+        r.response.statusCode = 206;
+        r.response.headers.set('Content-Range', 'bytes $start-${stop - 1}/${bytes.length}');
+        r.response.add(bytes.sublist(start, stop));
+      }
       switch (r.uri.path) {
         case '/show/master.m3u8':
-          r.response.write('#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Main",URI="audio"\n#EXT-X-STREAM-INF:BANDWIDTH=123,AUDIO="a"\nvideo\n');
+          capped(utf8.encode('#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Main",URI="audio"\n#EXT-X-STREAM-INF:BANDWIDTH=123,AUDIO="a"\nvideo\n'));
         case '/show/audio':
         case '/show/video':
           r.response.statusCode = 302;
           r.response.headers.set('location', '/media/${r.uri.pathSegments.last}/stream.m3u8');
         case '/media/audio/stream.m3u8':
-          r.response.write('#EXTM3U\n#EXTINF:1,\nsound.aac\n#EXT-X-ENDLIST\n');
+          capped(utf8.encode('#EXTM3U\n#EXTINF:1,\nsound.aac\n#EXT-X-ENDLIST\n'));
         case '/media/video/stream.m3u8':
           r.response.write('#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:1,\nfirst.m4s\n#EXT-X-ENDLIST\n');
         case '/media/audio/sound.aac':
         case '/media/video/init.mp4':
         case '/media/video/first.m4s':
-          r.response.add([1, 2, 3]);
+          r.response.statusCode = 302;
+          r.response.headers.set('Location', '/storage/segment');
+        case '/storage/segment':
+          capped(List<int>.generate(33, (i) => i));
         default:
           r.response.statusCode = 404;
       }
@@ -798,6 +809,9 @@ void main() {
     }
     await c.flush();
     expect(sourcePaths, ['/play']);
+    for (final path in ['/show/audio', '/show/video', '/media/video/first.m4s']) {
+      expect(paths.where((value) => value == path), hasLength(1));
+    }
     expect(paths, containsAll(['/media/audio/sound.aac', '/media/video/init.mp4', '/media/video/first.m4s']));
     expect(hosts, everyElement('127.0.0.1:${cdn.port}'));
     expect(auth, everyElement(isNull));
