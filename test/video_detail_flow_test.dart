@@ -26,6 +26,7 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/video/video_detail_page.dart';
+import 'package:lume_box/features/video/video_download_center.dart';
 import 'package:lume_box/features/video/direct_video_source.dart';
 import 'package:lume_box/features/video/video_play_target.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
@@ -1345,5 +1346,60 @@ void main() {
           .onPressed,
       isNotNull,
     );
+  });
+
+  testWidgets('从详情选已下载的一集直接播放本地文件，删除后恢复在线解析', (tester) async {
+    final downloads = VideoDownloadCenter(directory: () async => root);
+    final task = VideoDownloadTask(
+      id: VideoDownloadCenter.identity(source.id, 'movie', 'e2'),
+      sourceId: source.id,
+      itemId: 'movie',
+      chapterId: 'e2',
+      title: '详情测试片',
+      chapterTitle: '第2集',
+      state: 'done',
+      fileName: 'merged.mp4',
+    );
+    await tester.runAsync(() async {
+      await downloads.boot();
+      downloads.tasks.add(task);
+      await Directory(downloads.folder(task)).create();
+      await downloads.localFile(task).writeAsBytes([1, 2, 3]);
+    });
+    source.failParse = true;
+    final opened = <PlayerMedia>[];
+    final chapters = <String>[];
+    await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
+      source: source,
+      item: const SourceItem(id: 'movie', title: '详情测试片', mediaType: 'video'),
+      library: library,
+      downloadCenter: downloads,
+      onPlay: (media, target, _, _) async {
+        opened.add(media);
+        chapters.add(target.chapterId);
+      },
+    )));
+    await tester.pumpAndSettle();
+    final episode = find.byKey(const ValueKey('video-detail-episode-1'));
+    await tester.ensureVisible(episode);
+    Future<void> select() async {
+      await tester.runAsync(() async {
+        await tester.tap(episode);
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+      });
+      await tester.pumpAndSettle();
+    }
+    await select();
+    expect(source.parses, 0);
+    expect(opened.single.uri, downloads.localFile(task).uri);
+    expect(opened.single.isDownloaded, isTrue);
+    expect(opened.single.headers, anyOf(isNull, isEmpty));
+    await tester.runAsync(() => downloads.localFile(task).delete());
+    source.failParse = false;
+    await select();
+    expect(source.parses, 1);
+    expect(chapters, ['e2', 'e2']);
+    expect(opened.last.uri.host, 'example.test');
+    expect(opened.last.isDownloaded, isFalse);
   });
 }

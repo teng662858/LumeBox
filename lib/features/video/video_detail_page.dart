@@ -515,9 +515,11 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       _playFailure = null;
     });
     PlayerPrelaunch? prepared;
+    DownloadedVideoPlayback? offline;
     try {
       final chapter = chapters[selected];
       await MediaLibrary.instance.boot();
+      if (!mounted) return;
       final known = MediaLibrary.instance.byId(
         MediaResource.sourceKey(_source!.section, _source!.id, widget.item.id),
       );
@@ -545,10 +547,19 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       // Start the kernel while the source resolves the selected episode.
       if (_source!.section == Section.video) {
         prepared = widget.prelaunch?.call();
+        if (known?.manual != true || known?.kind == ResourceKind.video) {
+          try {
+            offline = await (widget.downloadCenter ?? VideoDownloadCenter.instance)
+                .completedPlayback(_source!.id, widget.item.id, chapter.id);
+          } catch (_) {
+            PlaybackDiagnostics.record('offline-lookup-failed', source: _source!.id);
+          }
+          if (!mounted) return;
+        }
       }
       final direct = SourcePlayback.itemAddress(widget.item.id);
       ChapterContent? content;
-      {
+      if (offline == null) {
         try {
           final resolveWatch = Stopwatch()..start();
           content =
@@ -613,6 +624,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
               VideoPlayerSettingsStore(widget.library).load(),
             );
       final address =
+          offline?.uri ??
           quality?.url ??
           SourcePlayback.contentAddress(content) ??
           direct ??
@@ -652,7 +664,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       final declaredVideo =
           _source!.section == Section.video && content is VideoContent;
       final tracks =
-          saved?.manual == true || audioHint || videoAddress || declaredVideo
+          offline != null || saved?.manual == true || audioHint || videoAddress || declaredVideo
           ? const MediaTrackInfo()
           : await const MediaTrackProbe().inspect(
               address,
@@ -692,10 +704,11 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         return;
       }
       if (!mounted) return;
-      final media = PlayerMedia(
+      final title = '${widget.item.title} · ${VideoEpisodeCatalog.labelOf(chapter)}';
+      final media = offline?.media(title) ?? PlayerMedia(
         uri: address,
         previews: content is VideoContent ? content.previews : const [],
-        title: '${widget.item.title} · ${VideoEpisodeCatalog.labelOf(chapter)}',
+        title: title,
         headers: headers,
       );
       final target = VideoPlayTarget(
@@ -788,6 +801,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       }
     } finally {
       if (prepared != null) unawaited(prepared.discard());
+      await offline?.close();
       if (mounted) setState(() => resolving = false);
     }
   }
