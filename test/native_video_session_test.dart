@@ -324,6 +324,18 @@ void main() {
       1.5,
     );
   });
+  test('auto-next changed on a profiled source survives reopening the player', () async {
+    SourcePlaybackProfiles(library).save('fixture', const PlayerSettings(kernel: PlayerKernel.mpv), 60);
+    await start();
+    expect((opened['options'] as Map)['autoNext'], true);
+    await native('event', {
+      'session': opened['session'], 'type': 'settings', 'kernel': 'mpv', 'autoNext': false,
+    });
+    await session.close();
+    await start();
+    expect((opened['options'] as Map)['autoNext'], false);
+    expect(VideoPlayerSettingsStore(library).load().kernel, PlayerKernel.avplayer);
+  });
   test(
     'native options preserve module buffer limits without waiting to fill them',
     () async {

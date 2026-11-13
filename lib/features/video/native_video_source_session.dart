@@ -515,6 +515,8 @@ class NativeVideoSourceSession {
           ? PlayerKernel.mpv
           : PlayerKernel.avplayer;
       final speed = data['speed'];
+      final changedAutoNext = data['autoNext'] is bool &&
+          data['autoNext'] != _settings.autoNext;
       _settings = _settings.copyWith(
         kernel: kernel,
         speed: speed is num && speed.isFinite
@@ -528,6 +530,11 @@ class NativeVideoSourceSession {
       final profiles = SourcePlaybackProfiles(library);
       if (id != null && profiles.contains(id)) {
         profiles.save(id, _settings, profiles.bufferSeconds(id, 0));
+        // Auto-next is shared by all sources, including those with custom
+        // kernel settings. Native also echoes it when opening an engine.
+        if (changedAutoNext) {
+          library.setSetting(VideoPlayerSettingsStore.keyAutoNext, _settings.autoNext.toString());
+        }
       } else {
         VideoPlayerSettingsStore(library).save(_settings);
       }
