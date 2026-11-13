@@ -5,6 +5,19 @@ import 'package:path/path.dart' as p;
 
 import '../../core/net/http_byte_range.dart';
 
+// Old downloads can have a .ts suffix on fragmented MP4 media from script URLs.
+Future<bool> hasMp4BoxHeader(File file) async {
+  final input = await file.open();
+  try {
+    final header = await input.read(8);
+    if (header.length < 8) return false;
+    return const {'ftyp', 'styp', 'moof', 'sidx', 'moov', 'emsg', 'prft'}
+        .contains(String.fromCharCodes(header, 4, 8));
+  } finally {
+    await input.close();
+  }
+}
+
 /// A session-only loopback endpoint makes downloaded HLS playable by AVFoundation as well as FFmpeg.
 class OfflineVideoServer {
   OfflineVideoServer._(this._server, this._root, this._token);
@@ -86,7 +99,7 @@ class OfflineVideoServer {
         '.m3u8' => 'application/vnd.apple.mpegurl',
         '.aac' => 'audio/aac',
         '.mp3' => 'audio/mpeg',
-        '.ts' => 'video/mp2t',
+        '.ts' => await hasMp4BoxHeader(file) ? 'video/mp4' : 'video/mp2t',
         '.mp4' || '.m4s' => 'video/mp4',
         _ => 'application/octet-stream',
       });

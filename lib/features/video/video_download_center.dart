@@ -1023,6 +1023,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     await resourceDir.create(recursive: true);
     final output = <String>[];
     var encrypted = false;
+    var mappedMp4 = false;
     var index = 0;
     task.total += lines.where((l) => l.isNotEmpty && !l.startsWith('#')).length;
     final pending = <Future<void> Function()>[];
@@ -1045,15 +1046,21 @@ class VideoDownloadCenter extends ChangeNotifier {
           final url = uri.resolve(hlsAttributeValue(rawUri));
           final relative =
               '$name-$plan/${key ? 'key' : 'map'}-${index++}.${key ? 'key' : 'mp4'}';
+          final file = File(p.join(folder(task), relative));
           await _policyCheckpoint(task);
           await _resource(
             task,
             url,
             origin,
             headers,
-            File(p.join(folder(task), relative)),
+            file,
             key: key,
           );
+          if (!key) {
+            mappedMp4 = encrypted
+                ? const {'.mp4', '.m4s', '.m4a'}.contains(p.extension(url.path).toLowerCase())
+                : await hasMp4BoxHeader(file);
+          }
           attributes['URI'] = '"$relative"';
           output.add(hlsTag(key ? '#EXT-X-KEY' : '#EXT-X-MAP', attributes));
           continue;
@@ -1065,7 +1072,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         final extension =
             ['.ts', '.m4s', '.mp4', '.aac', '.mp3'].contains(suffix)
             ? suffix
-            : '.ts';
+            : mappedMp4 ? '.m4s' : '.ts';
         final relative = '$name-$plan/segment-${index++}$extension';
         final unwrap = !encrypted && extension == '.ts';
         pending.add(() async {

@@ -891,6 +891,45 @@ void main() {
     }
   });
 
+  test('offline fMP4 segments from signed endpoints retain their MP4 media type', () async {
+    final init = [0, 0, 0, 8, ...ascii.encode('ftyp')];
+    final fragment = [0, 0, 0, 8, ...ascii.encode('moof')];
+    server.listen((r) async {
+      switch (r.uri.path) {
+        case '/index.m3u8':
+          r.response.write('#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:1\n'
+              '#EXT-X-MAP:URI="asset?id=init"\n#EXTINF:1,\nasset?id=part\n#EXT-X-ENDLIST\n');
+        default:
+          r.response.add(r.uri.queryParameters['id'] == 'init' ? init : fragment);
+      }
+      await r.response.close();
+    });
+    final c = await center('index.m3u8');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => task.state == 'merge_failed');
+    await c.flush();
+    final local = await OfflineVideoServer.open(Directory(c.folder(task)));
+    final client = HttpClient();
+    try {
+      final manifest = await c.localFile(task).readAsString();
+      final segment = LineSplitter.split(manifest).firstWhere((line) => !line.startsWith('#'));
+      expect(segment, endsWith('.m4s'));
+      final response = await (await client.getUrl(local.uri.resolve(segment))).close();
+      expect(response.headers.contentType?.mimeType, 'video/mp4');
+      expect(await response.expand((b) => b).toList(), fragment);
+      // Older releases saved the same fragments under a TS filename.
+      final legacy = File('${c.folder(task)}/legacy.ts');
+      await legacy.writeAsBytes(fragment);
+      final old = await (await client.headUrl(local.uri.resolve('legacy.ts'))).close();
+      expect(old.headers.contentType?.mimeType, 'video/mp4');
+      await old.drain<void>();
+    } finally {
+      client.close(force: true);
+      await local.close();
+    }
+  });
+
   test('HLS master retains a selected separate audio rendition', () async {
     final paths = <String>[];
     server.listen((r) async {
