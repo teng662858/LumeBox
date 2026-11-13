@@ -263,11 +263,11 @@ class VideoDownloadCenter extends ChangeNotifier {
           encryptedCapture: capture,
         );
         if ((fileName.isNotEmpty || task.state != 'paused') &&
-            (fileName.isEmpty || !await localFile(task).exists())) {
+            await checkedLocalFile(task) == null) {
           task.fileName = '';
           task.state = 'paused';
           task.bytes = task.totalBytes = task.completed = task.total = 0;
-          task.error = '本地视频文件缺失，可重新下载';
+          task.error = '本地视频文件缺失或不完整，可重新下载';
         }
         restored.add(task);
       }
@@ -281,6 +281,21 @@ class VideoDownloadCenter extends ChangeNotifier {
   String folder(VideoDownloadTask task) => p.join(root.path, task.id);
   File localFile(VideoDownloadTask task) =>
       File(p.join(folder(task), task.fileName));
+
+  Future<File?> checkedLocalFile(VideoDownloadTask task) async {
+    if (task.fileName.isEmpty) return null;
+    final file = localFile(task);
+    // HLS counts bytes across the package, not just the entry playlist.
+    final expected = task.state == 'done' && !task.hasLocalPlaylist ? task.bytes : 0;
+    final stat = await file.stat();
+    if (stat.type != FileSystemEntityType.file ||
+        stat.size == 0 ||
+        expected > 0 && stat.size != expected) {
+      return null;
+    }
+    return file;
+  }
+
   VideoDownloadTask? _find(Section section, String source, String item, String chapter) =>
       tasks.where((t) => t.section == section && t.sourceId == source &&
           t.itemId == item && t.chapterId == chapter).firstOrNull;
@@ -294,8 +309,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     await boot();
     final task = _find(section, sourceId, itemId, chapterId);
     if (task == null || !task.canPlayOffline) return null;
-    final file = localFile(task);
-    return await file.exists() ? file : null;
+    return checkedLocalFile(task);
   }
 
   Future<DownloadedVideoPlayback?> completedPlayback(
@@ -310,16 +324,17 @@ class VideoDownloadCenter extends ChangeNotifier {
         !(task.canPlayOffline || task.hasLocalPlaylist && task.state == 'merging')) {
       return null;
     }
-    final file = localFile(task);
     if (!task.hasLocalPlaylist) {
-      return await file.exists() ? DownloadedVideoPlayback(file.uri) : null;
+      final file = await checkedLocalFile(task);
+      return file == null ? null : DownloadedVideoPlayback(file.uri);
     }
     // Retain the input before awaiting I/O: the merger can publish its MP4
     // and start cleaning the old playlist while the loopback server binds.
     _playlistReaders.update(task, (n) => n + 1, ifAbsent: () => 1);
     var opened = false;
     try {
-      if (!await file.exists()) return null;
+      final file = await checkedLocalFile(task);
+      if (file == null) return null;
       final server = await OfflineVideoServer.open(file.parent);
       opened = true;
       return DownloadedVideoPlayback(
@@ -382,7 +397,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         if (encrypted != null) existing.encryptedCapture = encrypted;
         existing.chapterIndex = chapterIndices[chapter.id] ?? existing.chapterIndex;
         if (!existing.running &&
-            (existing.state != 'done' || !await localFile(existing).exists())) {
+            (existing.state != 'done' || await checkedLocalFile(existing) == null)) {
           existing.state = 'queued';
         }
         continue;
@@ -492,9 +507,10 @@ class VideoDownloadCenter extends ChangeNotifier {
       while (true) {
         final task = tasks.where((t) => t.state == 'queued').firstOrNull;
         if (task == null) break;
-        final localMerge = task.hasLocalPlaylist && await localFile(task).exists();
+        final localMerge = task.hasLocalPlaylist && await checkedLocalFile(task) != null;
         final blocked = await OfflinePolicy.blocked(needsNetwork: !localMerge);
         if (task.state != 'queued') continue;
+        if (!localMerge) task.fileName = '';
         if (blocked != null) {
           task.state = 'paused';
           task.error = blocked;

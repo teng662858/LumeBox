@@ -488,6 +488,34 @@ void main() {
     expect(requests, 1);
   });
 
+  for (final remaining in [0, 7]) {
+    test('a completed video truncated to $remaining bytes can be downloaded again', () async {
+      var requests = 0;
+      final content = List.filled(32, 1);
+      server.listen((r) async {
+        requests++;
+        r.response.add(content);
+        await r.response.close();
+      });
+      final c = await center('movie.mp4');
+      await enqueue(c);
+      final task = c.tasks.single;
+      await until(() => task.state == 'done');
+      await c.flush();
+      await c.localFile(task).writeAsBytes(content.take(remaining).toList());
+      expect(await c.playbackIfAvailable('fixture', 'movie', 'episode'), isNull);
+      expect(await c.completedFile('fixture', 'movie', 'episode'), isNull);
+      final restored = await center('movie.mp4');
+      expect(restored.tasks.single.state, 'paused');
+      expect(restored.tasks.single.canPlayOffline, isFalse);
+      await enqueue(c);
+      await until(() => task.state == 'done');
+      await c.flush();
+      expect(requests, 2);
+      expect(await c.localFile(task).readAsBytes(), content);
+    });
+  }
+
   test('a missing completed file can be downloaded again after restart', () async {
     server.listen((r) async {
       r.response.add(List.filled(32, 1));

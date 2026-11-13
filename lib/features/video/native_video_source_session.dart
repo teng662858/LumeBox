@@ -255,7 +255,7 @@ class NativeVideoSourceSession {
             task.sourceId == current.sourceId &&
             task.itemId == current.itemId &&
             task.canPlayOffline &&
-            await _downloads.localFile(task).exists())
+            await _downloads.checkedLocalFile(task) != null)
           task,
     ]..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
   }
