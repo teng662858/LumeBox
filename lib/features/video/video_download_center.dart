@@ -35,13 +35,20 @@ import 'video_download_merger.dart';
 import 'offline_video_server.dart';
 
 class DownloadedVideoPlayback {
-  DownloadedVideoPlayback(this.uri, [this.server]);
+  DownloadedVideoPlayback(this.uri, [this.server, this._onClose]);
   final Uri uri;
   final OfflineVideoServer? server;
+  final Future<void> Function()? _onClose;
+  Future<void>? _closing;
   PlayerMedia media(String title) =>
       PlayerMedia(uri: uri, title: title, isDownloaded: true);
-  Future<void> close() async {
-    await server?.close();
+  Future<void> close() => _closing ??= _close();
+  Future<void> _close() async {
+    try {
+      await server?.close();
+    } finally {
+      await _onClose?.call();
+    }
   }
 }
 
@@ -134,6 +141,8 @@ class VideoDownloadCenter extends ChangeNotifier {
 
   final _merger = VideoDownloadMerger();
   final tasks = <VideoDownloadTask>[];
+  final _playlistReaders = <VideoDownloadTask, int>{};
+  final _pendingCleanup = <VideoDownloadTask>{};
   Future<void>? _boot;
   Future<void> _writes = Future.value();
   bool _draining = false;
@@ -295,19 +304,44 @@ class VideoDownloadCenter extends ChangeNotifier {
     String chapterId, {
     Section section = Section.video,
   }) async {
-    final file = await completedFile(sourceId, itemId, chapterId, section: section);
-    if (file == null) return null;
-    if (!file.path.endsWith('.m3u8')) return DownloadedVideoPlayback(file.uri);
-    final server = await OfflineVideoServer.open(file.parent);
-    return DownloadedVideoPlayback(
-      server.uri.replace(
-        pathSegments: [
-          ...server.uri.pathSegments.take(1),
-          p.basename(file.path),
-        ],
-      ),
-      server,
-    );
+    await boot();
+    final task = _find(section, sourceId, itemId, chapterId);
+    if (task == null ||
+        !(task.canPlayOffline || task.hasLocalPlaylist && task.state == 'merging')) {
+      return null;
+    }
+    final file = localFile(task);
+    if (!task.hasLocalPlaylist) {
+      return await file.exists() ? DownloadedVideoPlayback(file.uri) : null;
+    }
+    // Retain the input before awaiting I/O: the merger can publish its MP4
+    // and start cleaning the old playlist while the loopback server binds.
+    _playlistReaders.update(task, (n) => n + 1, ifAbsent: () => 1);
+    var opened = false;
+    try {
+      if (!await file.exists()) return null;
+      final server = await OfflineVideoServer.open(file.parent);
+      opened = true;
+      return DownloadedVideoPlayback(
+        server.uri.resolve(Uri.encodeComponent(p.basename(file.path))),
+        server,
+        () => _releasePlaylist(task),
+      );
+    } finally {
+      if (!opened) await _releasePlaylist(task);
+    }
+  }
+
+  Future<void> _releasePlaylist(VideoDownloadTask task) async {
+    final remaining = _playlistReaders[task]! - 1;
+    if (remaining > 0) {
+      _playlistReaders[task] = remaining;
+      return;
+    }
+    _playlistReaders.remove(task);
+    if (_pendingCleanup.remove(task) && tasks.contains(task) && task.fileName == 'merged.mp4') {
+      await _cleanMergedInputs(task);
+    }
   }
 
   /// Online-capable entry points may continue with the source on storage errors.
@@ -634,17 +668,31 @@ class VideoDownloadCenter extends ChangeNotifier {
       await _save();
       // Persist the committed MP4 before removing any original media.
       if (storageError == null) {
-        await for (final entry in dir.list(followLinks: false)) {
-          if (p.equals(entry.path, output.path)) continue;
-          try {
-            await entry.delete(recursive: true);
-          } on FileSystemException {
-            task.error = 'MP4 已合并，部分临时文件未能清理';
-          }
+        if (_playlistReaders.containsKey(task)) {
+          _pendingCleanup.add(task);
+        } else {
+          await _cleanMergedInputs(task);
         }
       }
     } finally {
       if (await part.exists()) await part.delete();
+    }
+  }
+
+  Future<void> _cleanMergedInputs(VideoDownloadTask task) async {
+    final output = File(p.join(folder(task), 'merged.mp4'));
+    try {
+      if (!await output.exists()) return;
+      await for (final entry in output.parent.list(followLinks: false)) {
+        if (p.equals(entry.path, output.path)) continue;
+        try {
+          await entry.delete(recursive: true);
+        } on FileSystemException {
+          task.error = 'MP4 已合并，部分临时文件未能清理';
+        }
+      }
+    } on FileSystemException {
+      task.error = 'MP4 已合并，部分临时文件未能清理';
     }
   }
 

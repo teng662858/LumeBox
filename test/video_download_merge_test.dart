@@ -110,6 +110,49 @@ void main() {
     expect(calls, 2);
   });
 
+  test('离线 HLS 播放期间合并完成，直到最后一个播放页面关闭仍能拖动和读取分片', () async {
+    final merging = Completer<void>(), finishMerge = Completer<void>();
+    final center = VideoDownloadCenter(
+      directory: () async => root,
+      merge: (_, output, _) async {
+        merging.complete();
+        await finishMerge.future;
+        await output.writeAsBytes(mp4);
+      },
+    );
+    final task = await downloaded(center);
+    final first = (await center.completedPlayback('source', 'movie', 'one'))!;
+    await center.resume(task);
+    await merging.future;
+    final second = await center.completedPlayback('source', 'movie', 'one');
+    finishMerge.complete();
+    final client = HttpClient();
+    try {
+      expect(second, isNotNull);
+      await waitFor(() => task.fileName == 'merged.mp4');
+      await center.flush();
+      final latest = (await center.completedPlayback('source', 'movie', 'one'))!;
+      expect(latest.uri, center.localFile(task).uri);
+      await latest.close();
+      await first.close();
+      await first.close();
+      final list = await (await client.getUrl(second!.uri)).close();
+      expect(list.statusCode, 200);
+      expect(await list.transform(utf8.decoder).join(), contains('a.ts'));
+      final seek = await client.getUrl(second.uri.resolve('a.ts'));
+      seek.headers.set('Range', 'bytes=1-2');
+      final response = await seek.close();
+      expect(response.statusCode, 206);
+      expect(await response.expand((bytes) => bytes).toList(), [2, 3]);
+    } finally {
+      client.close(force: true);
+      await first.close();
+      await second?.close();
+    }
+    expect(await File('${center.folder(task)}/a.ts').exists(), isFalse);
+    expect(await center.localFile(task).readAsBytes(), mp4);
+  });
+
   test('pausing an active merge cancels it and preserves fragments for a local retry', () async {
     var calls = 0, cancellations = 0;
     final entered = Completer<void>(), release = Completer<void>();
