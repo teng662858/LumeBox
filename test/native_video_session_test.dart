@@ -854,6 +854,21 @@ void main() {
     expect(reply['position'], 18);
     expect(session.target?.chapterId, 'B1');
   });
+  test('switching lines from a fractional episode transfers progress only to the same episode', () async {
+    source.episodes = const [
+      SourceChapter(id: 'A1', title: 'S01E03.5', line: 'A'),
+      SourceChapter(id: 'B3', title: '第3集', line: 'B'),
+      SourceChapter(id: 'C3', title: '第03.5集', line: 'C'),
+    ];
+    await start();
+    await progress(18);
+    expect((await request('line', {'id': 'B'}))['media'], isNull);
+    expect(session.target?.chapterId, 'A1');
+    expect(source.resolved, isEmpty);
+    final switched = (await request('line', {'id': 'C'}))['media'] as Map;
+    expect(switched['position'], 18);
+    expect(session.target?.chapterId, 'C3');
+  });
   test('switching lines cannot carry the playhead from part one to part two', () async {
     source.episodes = const [
       SourceChapter(id: 'A1', title: '第3集（上）', line: 'A'),

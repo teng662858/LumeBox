@@ -90,6 +90,19 @@ void main() {
       isEmpty,
     );
   });
+  test('跨源续播只将小数集进度转移到同一小数集', () {
+    const request = VideoResumeRequest(
+      title: '演示', chapterTitle: 'S01E03.5', chapterIndex: 3,
+      position: Duration(minutes: 8), duration: Duration(minutes: 20),
+    );
+    const chapters = [
+      SourceChapter(id: 'full', title: '第一季 第3集'),
+      SourceChapter(id: 'special', title: '第一季 第3.5话'),
+      SourceChapter(id: 'otherSeason', title: '第二季 第3.5集'),
+    ];
+    expect(request.candidates(chapters).map((c) => c.id), ['special']);
+    expect(chapters.where(request.confident).map((c) => c.id), ['special']);
+  });
   test('跨源续播上篇不会把进度转移给下篇、预告或完整集', () {
     const request = VideoResumeRequest(
       title: '演示',

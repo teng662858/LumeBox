@@ -6,6 +6,21 @@ import 'package:lume_box/features/video/video_episode_catalog.dart';
 import 'package:lume_box/features/video/direct_video_source.dart';
 
 void main() {
+  test('小数集号与整集分别匹配，文件名的清晰度不是小数', () {
+    const recap = SourceChapter(id: 'r', title: '番剧.S01E03.5.mkv');
+    const cn = SourceChapter(id: 'c', title: '第三点五话');
+    const feature = SourceChapter(id: 'f', title: '第3集');
+    expect(VideoEpisodeCatalog.matchingIndex(recap, [feature]), -1);
+    expect(VideoEpisodeCatalog.matchingIndex(recap, [feature, cn]), 1);
+    expect(VideoEpisodeCatalog.episodeKey(recap), '1:3.5');
+    expect(VideoEpisodeCatalog.episodeKey(
+      const SourceChapter(id: 'full', title: '第０３．５０集'),
+    ), '1:3.5');
+    expect(VideoEpisodeCatalog.displayLabel(recap, 8), '第 03.5 集');
+    for (final suffix in ['1080p', '2160p', '10bit']) {
+      expect(VideoEpisodeCatalog.episodeNumber('Show.S01E03.$suffix.mkv')?.episode, 3);
+    }
+  });
   test('换线路和追更区分同集的上、下篇、预告和正片', () {
     const top = SourceChapter(id: 'top', title: '第3集（上）');
     const bottom = SourceChapter(id: 'bottom', title: '第3集（下）');
