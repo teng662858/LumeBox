@@ -445,6 +445,78 @@ void main() {
     expect(session.playing, isFalse);
   });
 
+  test('a failed native chapter change preserves the last confirmed chapter and time', () async {
+    await session.open(resource, tracks, index: 1);
+    await session.seek(const Duration(seconds: 31));
+    player.beforeSeek = () async {
+      player.current = 2;
+      player.i.add(2);
+      player.p.add(Duration.zero);
+      throw StateError('new chapter unavailable');
+    };
+    await session.seek(Duration.zero, index: 2);
+    player.i.add(2);
+    player.p.add(Duration.zero);
+    expect(session.current, 1);
+    expect(session.position.inSeconds, 31);
+    expect(settings.chapterIds[resource.id], 'c1');
+    expect(settings.positions[resource.id]?['position'], 31000);
+    expect(session.error, isNotNull);
+    player.beforeSeek = null;
+    await session.seek(const Duration(seconds: 11));
+    expect(player.current, 1);
+    expect(session.error, isNull);
+    await session.seek(const Duration(seconds: 12), index: 2);
+    expect(session.current, 2);
+    expect(session.error, isNull);
+    expect(settings.chapterIds[resource.id], 'c2');
+  });
+
+  test('overlapping chapter changes persist the successful chapter when the latest fails', () async {
+    await session.open(resource, tracks);
+    final entered = Completer<void>(), release = Completer<void>();
+    var requests = 0;
+    player.beforeSeek = () async {
+      if (++requests == 1) {
+        entered.complete();
+        await release.future;
+      } else {
+        player.i.add(2);
+        throw StateError('unavailable');
+      }
+    };
+    final first = session.seek(const Duration(seconds: 21), index: 1);
+    await entered.future;
+    final last = session.seek(const Duration(seconds: 80), index: 2);
+    release.complete();
+    await Future.wait([first, last]);
+    expect(session.current, 1);
+    expect(session.position.inSeconds, 21);
+    expect(settings.chapterIds[resource.id], 'c1');
+  });
+
+  test('a queued time seek reselects the playable chapter after a failed switch', () async {
+    await session.open(resource, tracks, index: 1);
+    final entered = Completer<void>(), release = Completer<void>();
+    player.beforeSeek = () async {
+      player.beforeSeek = null;
+      player.current = 2;
+      player.i.add(2);
+      entered.complete();
+      await release.future;
+      throw StateError('unavailable');
+    };
+    final failed = session.seek(Duration.zero, index: 2);
+    await entered.future;
+    final retry = session.seek(const Duration(seconds: 17));
+    release.complete();
+    await Future.wait([failed, retry]);
+    expect(player.current, 1);
+    expect(session.current, 1);
+    expect(session.position.inSeconds, 17);
+    expect(session.error, isNull);
+  });
+
   test('a released session selects and plays the requested chapter', () async {
     await session.open(resource, tracks);
     await session.release();

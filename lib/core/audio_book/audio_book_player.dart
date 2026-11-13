@@ -356,6 +356,8 @@ class AudioBookSession extends ChangeNotifier {
   DateTime _savedAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _generation = 0;
   int _seekRevision = 0;
+  static const _seekError = '跳转失败，请重试';
+  bool _seekFailed = false;
   Future<void>? _pendingSeek;
   Duration _confirmedSeekPosition = Duration.zero;
   int _pauseRevision = 0;
@@ -480,6 +482,7 @@ class AudioBookSession extends ChangeNotifier {
     final wasReady = _ready;
     _ready = false;
     seeking = false;
+    _seekFailed = false;
     _pendingSeek = null;
     _acceptEvents = false;
     _sleep?.cancel();
@@ -549,7 +552,7 @@ class AudioBookSession extends ChangeNotifier {
         _subscriptions.addAll([
           _player!.position.listen((value) {
             if (!_acceptEvents) return;
-            if (!seeking) {
+            if (!seeking && !_seekFailed) {
               position = value;
               _notifyProgress();
             }
@@ -571,8 +574,9 @@ class AudioBookSession extends ChangeNotifier {
             if (!loading && !value) _remember();
           }),
           _player!.index.listen((value) {
-            if (!_acceptEvents) return;
-            current = value ?? 0;
+            if (!_acceptEvents || seeking || _seekFailed) return;
+            if (value == null || value < 0 || value >= _tracks.length) return;
+            current = value;
             notifyListeners();
           }),
           _player!.errors.listen((message) {
@@ -712,11 +716,20 @@ class AudioBookSession extends ChangeNotifier {
       if (previous != null) await previous;
       if (generation != _generation || revision != _seekRevision) return;
       try {
-        await _player!.seek(value, index: index);
-        if (generation == _generation) _confirmedSeekPosition = value;
+        // A failed native load may already have switched its internal index.
+        // Re-anchor a time-only retry to the chapter the listener actually heard.
+        final target = index ?? (_seekFailed ? current : null);
+        await _player!.seek(value, index: target);
+        if (generation == _generation) {
+          if (index != null) current = index;
+          _confirmedSeekPosition = value;
+          _seekFailed = false;
+          if (error == _seekError) error = null;
+        }
       } catch (_) {
-        if (generation == _generation && revision == _seekRevision) {
-          error = '跳转失败，请重试';
+        if (generation == _generation) {
+          _seekFailed = true;
+          if (revision == _seekRevision) error = _seekError;
         }
       }
     }
