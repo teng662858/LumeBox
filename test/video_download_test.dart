@@ -695,6 +695,36 @@ void main() {
     expect(auth, everyElement(isNull));
     expect(c.tasks.single.fileName, 'index.m3u8');
   });
+  test('offline HLS removes verified PNG wrappers only from plaintext TS segments', () async {
+    final ts = List<int>.filled(188 * 5, 0);
+    for (var i = 0; i < ts.length; i += 188) {
+      ts.setAll(i, [0x47, 0x40, 0, 0x10]);
+    }
+    final wrapped = [137, 80, 78, 71, 13, 10, 26, 10, ...List.filled(32768, 0), ...ts];
+    server.listen((r) async {
+      if (r.uri.path.endsWith('.m3u8')) {
+        r.response.write('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="k"\n#EXTINF:1,\ncipher.png\n#EXT-X-KEY:METHOD=NONE\n#EXTINF:1,\nclear.png\n#EXT-X-ENDLIST\n');
+      } else if (r.uri.path == '/k') {
+        r.response.add(List<int>.filled(16, 9));
+      } else {
+        r.response.add(wrapped.sublist(0, 3));
+        await r.response.flush();
+        r.response.add(wrapped.sublist(3));
+      }
+      await r.response.close();
+    });
+    final c = await center('index.m3u8');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['failed', 'merge_failed'].contains(task.state));
+    await c.flush();
+    final playlist = c.localFile(task);
+    final parts = (await playlist.readAsLines()).where((line) => line.endsWith('.ts')).toList();
+    expect(await File.fromUri(playlist.uri.resolve(parts.first)).readAsBytes(), wrapped);
+    final clear = await File.fromUri(playlist.uri.resolve(parts.last)).readAsBytes();
+    expect(clear.length, ts.length);
+    expect(clear, ts);
+  });
 
   test('HLS retries do not mix segments or AES keys from a different playlist location', () async {
     var generation = 'old';

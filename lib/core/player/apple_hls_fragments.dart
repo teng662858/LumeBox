@@ -1,17 +1,20 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data' show BytesBuilder;
 
 import 'package:flutter/services.dart';
 
 import '../net/http_byte_range.dart';
 
+const transportStreamProbeLength = 65536 + 188 * 3 + 4;
+const _pngHeader = [137, 80, 78, 71, 13, 10, 26, 10];
+
 /// A PNG prefix is removed only after four aligned, plaintext MPEG-TS packets
 /// have been confirmed. Encrypted segments and real images stay unchanged.
 int transportStreamImagePrefix(List<int> bytes) {
-  const png = [137, 80, 78, 71, 13, 10, 26, 10];
   if (bytes.length < 8) return 0;
   for (var i = 0; i < 8; i++) {
-    if (bytes[i] != png[i]) return 0;
+    if (bytes[i] != _pngHeader[i]) return 0;
   }
   final limit = (bytes.length - 188 * 3 - 4).clamp(0, 65536);
   for (var offset = 8; offset <= limit; offset++) {
@@ -26,6 +29,35 @@ int transportStreamImagePrefix(List<int> bytes) {
     if (valid) return offset;
   }
   return 0;
+}
+
+Stream<List<int>> unwrapTransportStream(Stream<List<int>> input) async* {
+  final prefix = BytesBuilder(copy: false);
+  var probing = true;
+  await for (final chunk in input) {
+    if (!probing) {
+      yield chunk;
+      continue;
+    }
+    final count = (transportStreamProbeLength - prefix.length).clamp(0, chunk.length);
+    final start = prefix.length;
+    prefix.add(count == chunk.length ? chunk : chunk.sublist(0, count));
+    for (var i = start; i < _pngHeader.length && i < prefix.length; i++) {
+      if (chunk[i - start] != _pngHeader[i]) {
+        probing = false;
+        break;
+      }
+    }
+    if (probing && prefix.length < transportStreamProbeLength) continue;
+    final bytes = prefix.takeBytes();
+    yield Uint8List.sublistView(bytes, probing ? transportStreamImagePrefix(bytes) : 0);
+    probing = false;
+    if (count < chunk.length) yield chunk.sublist(count);
+  }
+  if (prefix.isNotEmpty) {
+    final bytes = prefix.takeBytes();
+    yield Uint8List.sublistView(bytes, transportStreamImagePrefix(bytes));
+  }
 }
 
 /// MPEG-TS program map stream type 0x24 identifies HEVC without guessing from

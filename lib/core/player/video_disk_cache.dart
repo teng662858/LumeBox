@@ -916,7 +916,7 @@ class VideoDiskCache extends ChangeNotifier {
           final bytes = prefix.toBytes();
           if (!listEquals(bytes.take(8).toList(), png)) break;
           skipped = transportStreamImagePrefix(bytes);
-          if (skipped > 0 || prefix.length >= 65536 + 188 * 3 + 4) break;
+          if (skipped > 0 || prefix.length >= transportStreamProbeLength) break;
         }
       }
       final response = request.response;

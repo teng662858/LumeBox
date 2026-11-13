@@ -21,6 +21,7 @@ import '../../core/source/source.dart';
 import '../../core/util/sensitive_data.dart';
 import 'source_playback.dart';
 import '../../core/player/abstract_player.dart';
+import '../../core/player/apple_hls_fragments.dart';
 import '../../core/player/hls_ad_filter.dart';
 import '../../core/player/video_disk_cache.dart';
 import 'video_download_merger.dart';
@@ -979,12 +980,13 @@ class VideoDownloadCenter extends ChangeNotifier {
     // Identical relative names can resolve to different keys and media after
     // a resolver changes CDN or directory between attempts.
     final plan = sha256
-        .convert(utf8.encode(jsonEncode([uri.toString(), body])))
+        .convert(utf8.encode(jsonEncode(['ts-v2', uri.toString(), body])))
         .toString()
         .substring(0, 16);
     final resourceDir = Directory(p.join(folder(task), '$name-$plan'));
     await resourceDir.create(recursive: true);
     final output = <String>[];
+    var encrypted = false;
     var index = 0;
     task.total += lines.where((l) => l.isNotEmpty && !l.startsWith('#')).length;
     final pending = <Future<void> Function()>[];
@@ -999,6 +1001,9 @@ class VideoDownloadCenter extends ChangeNotifier {
       _check(task);
       if (line.startsWith('#EXT-X-KEY:') || line.startsWith('#EXT-X-MAP:')) {
         await flushSegments();
+        if (line.startsWith('#EXT-X-KEY:')) {
+          encrypted = !RegExp(r'(?:^|[:,])METHOD=NONE(?:,|$)').hasMatch(line);
+        }
         final match = RegExp(r'URI="([^"]+)"').firstMatch(line);
         if (match != null) {
           final url = uri.resolve(match.group(1)!);
@@ -1028,6 +1033,7 @@ class VideoDownloadCenter extends ChangeNotifier {
             ? suffix
             : '.ts';
         final relative = '$name-$plan/segment-${index++}$extension';
+        final unwrap = !encrypted && extension == '.ts';
         pending.add(() async {
           if (_yieldToPlayback) {
             await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -1038,6 +1044,7 @@ class VideoDownloadCenter extends ChangeNotifier {
             origin,
             headers,
             File(p.join(folder(task), relative)),
+            unwrap: unwrap,
           );
           task.completed++;
           _notifyProgress();
@@ -1085,6 +1092,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     Map<String, String> headers,
     File file, {
     bool key = false,
+    bool unwrap = false,
   }) async {
     if (await file.exists() && await file.length() > 0) {
       task.bytes += await file.length();
@@ -1096,9 +1104,13 @@ class VideoDownloadCenter extends ChangeNotifier {
     }
     final temporary = File('${file.path}.part');
     final sink = temporary.openWrite();
-    var size = 0;
+    var size = 0, received = 0;
     try {
-      await for (final b in _downloadBody(task, uri, origin, headers, r, 0)) {
+      final body = _downloadBody(task, uri, origin, headers, r, 0).map((chunk) {
+        received += chunk.length;
+        return chunk;
+      });
+      await for (final b in (unwrap ? unwrapTransportStream(body) : body)) {
         _check(task);
         sink.add(b);
         size += b.length;
@@ -1121,7 +1133,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         r.statusCode == 200 &&
             _encoding(r) == 'identity' &&
             r.contentLength >= 0 &&
-            size != r.contentLength) {
+            received != r.contentLength) {
       throw StateError('分片或密钥不完整');
     }
     _check(task);
