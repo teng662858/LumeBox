@@ -7,6 +7,7 @@ import '../net/lume_http.dart';
 import '../net/http_header_scope.dart';
 import '../net/site_session_pool.dart';
 import '../js/source_tools.dart';
+import 'hls_attributes.dart';
 
 class SourceMediaRuntime {
   SourceMediaRuntime(this.http);
@@ -27,10 +28,8 @@ class SourceMediaRuntime {
   }
 
   static Map<String, String> attributes(String line) => {
-    for (final m in RegExp(
-      r'([A-Z0-9-]+)=("[^" ]*(?: [^"]*)?"|[^,]*)',
-    ).allMatches(line))
-      m[1]!: m[2]!.replaceAll(RegExp(r'^"|"$'), ''),
+    for (final entry in hlsRawAttributes(line).entries)
+      entry.key: hlsAttributeValue(entry.value),
   };
   static Map<String, Object?> parseM3u8(String text, Uri base) {
     if (text.length > 1024 * 1024 || !text.trimLeft().startsWith('#EXTM3U')) {

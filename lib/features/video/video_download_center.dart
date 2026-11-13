@@ -23,6 +23,7 @@ import 'source_playback.dart';
 import '../../core/player/abstract_player.dart';
 import '../../core/player/apple_hls_fragments.dart';
 import '../../core/player/hls_ad_filter.dart';
+import '../../core/player/hls_attributes.dart';
 import '../../core/player/video_disk_cache.dart';
 import 'video_download_merger.dart';
 import 'offline_video_server.dart';
@@ -898,66 +899,66 @@ class VideoDownloadCenter extends ChangeNotifier {
     }
     if (VideoDiskCache.instance.skipHlsAds) body = HlsAdFilter.filter(body);
     final lines = const LineSplitter().convert(body);
-    final variants = <({String tag, String url, int bandwidth})>[];
+    final variants =
+        <({Map<String, String> attributes, String url, int bandwidth})>[];
     for (var i = 0; i < lines.length; i++) {
       if (lines[i].startsWith('#EXT-X-STREAM-INF:') && i + 1 < lines.length) {
-        final bandwidth =
-            int.tryParse(
-              RegExp(r'(?:^|,)BANDWIDTH=(\d+)')
-                      .firstMatch(lines[i].split(':').skip(1).join(':'))
-                      ?.group(1) ??
-                  '',
-            ) ??
-            0;
+        final attributes = hlsRawAttributes(lines[i]);
         variants.add((
-          tag: lines[i],
+          attributes: attributes,
           url: lines[i + 1].trim(),
-          bandwidth: bandwidth,
+          bandwidth: int.tryParse(attributes['BANDWIDTH'] ?? '') ?? 0,
         ));
       }
     }
     if (variants.isNotEmpty) {
       variants.sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
       final best = variants.first;
-      var tag = best.tag.replaceAll(RegExp(r',?SUBTITLES="[^"]*"'), '');
-      final group = RegExp(r'AUDIO="([^"]+)"').firstMatch(tag)?.group(1);
+      final attributes = best.attributes..remove('SUBTITLES');
       final master = <String>['#EXTM3U'];
-      if (group != null) {
-        final audios = lines
-            .where(
-              (l) =>
-                  l.startsWith('#EXT-X-MEDIA:') &&
-                  l.contains('TYPE=AUDIO') &&
-                  l.contains('GROUP-ID="$group"') &&
-                  l.contains('URI="'),
-            )
-            .toList();
-        if (audios.isNotEmpty) {
-          final audio =
-              audios.where((l) => l.contains('DEFAULT=YES')).firstOrNull ??
-              audios.first;
-          final url = uri.resolve(
-            RegExp(r'URI="([^"]+)"').firstMatch(audio)!.group(1)!,
-          );
-          final (text, finalUri) = await _fetchText(task, url, origin, headers);
-          await _playlist(
-            task,
-            finalUri,
-            origin,
-            headers,
-            text,
-            '$name-audio',
-            depth + 1,
-          );
-          master.add(
-            audio.replaceFirst(
-              RegExp(r'URI="[^"]+"'),
-              'URI="$name-audio.m3u8"',
-            ),
-          );
-        } else {
-          tag = tag.replaceAll(RegExp(r',?AUDIO="[^"]*"'), '');
+      final audioFiles = <Uri, String>{};
+      final retained = <String>{};
+      for (final line in lines.where((l) => l.startsWith('#EXT-X-MEDIA:'))) {
+        final media = hlsRawAttributes(line);
+        final type = media['TYPE'];
+        if (type != 'AUDIO' && type != 'CLOSED-CAPTIONS') continue;
+        if (media['GROUP-ID'] == null || media['GROUP-ID'] != attributes[type]) {
+          continue;
         }
+        final rawUri = media['URI'];
+        if (type == 'AUDIO' && rawUri != null) {
+          final url = uri.resolve(hlsAttributeValue(rawUri));
+          var local = audioFiles[url];
+          if (local == null) {
+            local = audioFiles.isEmpty
+                ? '$name-audio'
+                : '$name-audio-${audioFiles.length + 1}';
+            final (text, finalUri) = await _fetchText(
+              task,
+              url,
+              origin,
+              headers,
+            );
+            await _playlist(
+              task,
+              finalUri,
+              origin,
+              headers,
+              text,
+              local,
+              depth + 1,
+            );
+            audioFiles[url] = local;
+          }
+          media['URI'] = '"$local.m3u8"';
+        }
+        retained.add(type!);
+        master.add(hlsTag('#EXT-X-MEDIA', media));
+      }
+      if (!retained.contains('AUDIO')) attributes.remove('AUDIO');
+      if (!retained.contains('CLOSED-CAPTIONS') &&
+          attributes['CLOSED-CAPTIONS'] != 'NONE') {
+        attributes.remove('CLOSED-CAPTIONS');
       }
       final url = uri.resolve(best.url);
       final (text, finalUri) = await _fetchText(task, url, origin, headers);
@@ -970,7 +971,10 @@ class VideoDownloadCenter extends ChangeNotifier {
         '$name-video',
         depth + 1,
       );
-      master.addAll([tag, '$name-video.m3u8']);
+      master.addAll([
+        hlsTag('#EXT-X-STREAM-INF', attributes),
+        '$name-video.m3u8',
+      ]);
       await File(p.join(folder(task), '$name.m3u8'))
           .writeAsString('${master.join('\n')}\n', flush: true);
       return;

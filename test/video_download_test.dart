@@ -763,6 +763,53 @@ void main() {
     }
   });
 
+  test('offline master retains in-band audio, alternate languages and caption descriptors', () async {
+    final requests = <String>[];
+    server.listen((r) async {
+      requests.add(r.uri.path);
+      if (r.uri.path == '/master.m3u8') {
+        r.response.write(
+          [
+            '#EXTM3U',
+            '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="main",NAME="Original",DEFAULT=YES,AUTOSELECT=YES',
+            '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="main",LANGUAGE="en",NAME="English, dubbed",URI="en.m3u8"',
+            '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="main",LANGUAGE="fr",NAME="French",URI="fr.m3u8"',
+            '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="other",NAME="Other",URI="unused.m3u8"',
+            '#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="English",INSTREAM-ID="CC1"',
+            '#EXT-X-STREAM-INF:SUBTITLES="subs",BANDWIDTH=100,AUDIO="main",CLOSED-CAPTIONS="cc"',
+            'video.m3u8',
+          ].join('\n'),
+        );
+      } else if (r.uri.path.endsWith('.m3u8')) {
+        r.response.write(
+          '#EXTM3U\n#EXTINF:1,\n${r.uri.path.substring(1)}.ts\n#EXT-X-ENDLIST\n',
+        );
+      } else {
+        r.response.add([1, 2, 3]);
+      }
+      await r.response.close();
+    });
+    final c = await center('master.m3u8');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['failed', 'merge_failed'].contains(task.state));
+    await c.flush();
+    final master = await c.localFile(task).readAsString();
+    expect(master, contains('NAME="Original",DEFAULT=YES'));
+    expect(master, contains('NAME="English, dubbed"'));
+    expect(master, contains('NAME="French"'));
+    expect(master, contains('INSTREAM-ID="CC1"'));
+    expect(master, contains('#EXT-X-STREAM-INF:BANDWIDTH=100,'));
+    expect(requests, containsAll(['/en.m3u8', '/fr.m3u8', '/video.m3u8']));
+    expect(requests, isNot(contains('/unused.m3u8')));
+    for (final m in RegExp(r'URI="([^"]+)"').allMatches(master)) {
+      expect(
+        await File.fromUri(c.localFile(task).uri.resolve(m[1]!)).exists(),
+        isTrue,
+      );
+    }
+  });
+
   test('HLS master retains a selected separate audio rendition', () async {
     final paths = <String>[];
     server.listen((r) async {
