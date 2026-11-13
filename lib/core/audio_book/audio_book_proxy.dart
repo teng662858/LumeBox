@@ -137,25 +137,34 @@ class AudioBookProxy {
         throw const FormatException('不支持的音频地址');
       }
       final headers = Map<String, String>.from(resolved.headers);
-      if (uri.scheme != resolved.url.scheme || uri.origin != resolved.url.origin) {
+      if (uri.scheme != resolved.url.scheme ||
+          uri.origin != resolved.url.origin) {
         headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
       }
       headers['Accept-Encoding'] = 'identity';
       final range = request.headers.value(HttpHeaders.rangeHeader);
-      if (range != null) headers[HttpHeaders.rangeHeader] = range;
       client = _clientFactory();
       _clients.add(client);
       http.StreamedResponse? response;
-      for (var redirect = 0; redirect <= 5; redirect++) {
-        final upstream = http.Request(request.method, uri)
+      var fetchPlaylist = false;
+      var redirects = 0;
+      while (true) {
+        final full = fetchPlaylist || uri.path.toLowerCase().endsWith('.m3u8');
+        final upstream = http.Request(full ? 'GET' : request.method, uri)
           ..headers.addAll(headers)
           ..followRedirects = false;
+        if (full) {
+          upstream.headers.remove('range');
+        } else if (range != null) {
+          upstream.headers['range'] = range;
+        }
         response = await client
             .send(upstream)
             .timeout(const Duration(seconds: 20));
         if ([301, 302, 303, 307, 308].contains(response.statusCode)) {
           final location = response.headers['location'];
           await response.stream.listen(null).cancel();
+          if (++redirects > 5) throw const FormatException('音频重定向过多');
           if (location == null) throw const FormatException('无效音频重定向');
           final next = uri.resolve(location);
           if (!['http', 'https'].contains(next.scheme)) {
@@ -165,23 +174,44 @@ class AudioBookProxy {
             headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
           }
           uri = next;
+          fetchPlaylist = false;
+          continue;
+        }
+        if (!full &&
+            (upstream.method == 'HEAD' ||
+                upstream.headers.containsKey('range')) &&
+            (response.headers['content-type'] ?? '').toLowerCase().contains(
+              'mpegurl',
+            )) {
+          await response.stream.listen(null).cancel();
+          fetchPlaylist = true;
           continue;
         }
         break;
       }
-      if (response == null || ![200, 206].contains(response.statusCode)) {
-        final status = response?.statusCode;
+      if (generation != _generation) throw const HttpException('播放列表已更换');
+      if (response.statusCode == 416) {
+        final size = response.headers['content-range'];
+        await response.stream.listen(null).cancel();
+        request.response.statusCode = 416;
+        if (size != null) request.response.headers.set('content-range', size);
+        request.response.contentLength = 0;
+        await request.response.close();
+        return;
+      }
+      if (![200, 206].contains(response.statusCode)) {
+        final status = response.statusCode;
         lastError = status == 401 || status == 403
             ? '音频服务器拒绝访问（HTTP $status），请在源网页确认能否播放'
             : '音频服务器请求失败（HTTP $status），请稍后重试或更换源';
-        throw HttpException('音频服务器请求失败: HTTP ${response?.statusCode}');
+        throw HttpException('音频服务器请求失败: HTTP $status');
       }
       final type =
           response.headers['content-type'] ?? 'application/octet-stream';
       final hls =
           uri.path.toLowerCase().endsWith('.m3u8') ||
           type.toLowerCase().contains('mpegurl');
-      if (hls && request.method == 'GET') {
+      if (hls) {
         final bytes = <int>[];
         await for (final chunk in response.stream.timeout(
           const Duration(seconds: 20),
@@ -215,8 +245,10 @@ class AudioBookProxy {
           'application',
           'vnd.apple.mpegurl',
         );
-        request.response.contentLength = output.length;
-        request.response.add(output);
+        final offsets = _responseRange(request, output.length);
+        if (offsets != null && request.method == 'GET') {
+          request.response.add(output.sublist(offsets.start, offsets.end));
+        }
       } else {
         request.response.statusCode = response.statusCode;
         for (final name in ['content-type', 'content-range', 'accept-ranges']) {
@@ -251,17 +283,18 @@ class AudioBookProxy {
     }
   }
 
-  Future<void> _file(HttpRequest request, File file) async {
-    final size = await file.length();
+  // Both local files and rewritten playlists support ranges of their served bytes.
+  ({int start, int end})? _responseRange(HttpRequest request, int size) {
     var start = 0, end = size;
+    request.response.headers.set('Accept-Ranges', 'bytes');
     final raw = request.headers.value(HttpHeaders.rangeHeader);
     if (raw != null) {
       final offsets = parseHttpByteRange(raw, size);
       if (offsets == null) {
         request.response.statusCode = 416;
         request.response.headers.set('Content-Range', 'bytes */$size');
-        await request.response.close();
-        return;
+        request.response.contentLength = 0;
+        return null;
       }
       start = offsets.start;
       end = offsets.end + 1;
@@ -271,6 +304,11 @@ class AudioBookProxy {
         'bytes $start-${end - 1}/$size',
       );
     }
+    request.response.contentLength = end - start;
+    return (start: start, end: end);
+  }
+
+  Future<void> _file(HttpRequest request, File file) async {
     final ext = file.path.toLowerCase().split('.').last;
     request.response.headers.set('Content-Type', switch (ext) {
       'm4a' || 'mp4' => 'audio/mp4',
@@ -280,10 +318,11 @@ class AudioBookProxy {
       'aac' => 'audio/aac',
       _ => 'audio/mpeg',
     });
-    request.response.headers.set('Accept-Ranges', 'bytes');
-    request.response.contentLength = end - start;
-    if (request.method == 'GET') {
-      await request.response.addStream(file.openRead(start, end));
+    final offsets = _responseRange(request, await file.length());
+    if (offsets != null && request.method == 'GET') {
+      await request.response.addStream(
+        file.openRead(offsets.start, offsets.end),
+      );
     }
     await request.response.close();
   }

@@ -9,6 +9,116 @@ import 'package:lume_box/core/audio_book/audio_book_track.dart';
 import 'package:lume_box/core/media/media_library.dart';
 
 void main() {
+  for (final entry in ['book.m3u8', 'signed']) {
+    test(
+      'audio HLS HEAD and ranges use the rewritten playlist for $entry',
+      () async {
+        const body = '#EXTM3U\n#EXTINF:3,\nbook.aac\n#EXT-X-ENDLIST\n';
+        final proxy = AudioBookProxy(
+          clientFactory: () => MockClient((request) async {
+            final range = request.headers['range'];
+            final headers = {'content-type': 'application/vnd.apple.mpegurl'};
+            if (range != null) {
+              return http.Response(
+                'xx',
+                206,
+                headers: {
+                  ...headers,
+                  'content-range': 'bytes 8-9/${body.length}',
+                },
+              );
+            }
+            return http.Response(
+              request.method == 'HEAD' ? '' : body,
+              200,
+              headers: headers,
+            );
+          }),
+        );
+        final client = http.Client();
+        try {
+          final local = (await proxy.prepare([
+            AudioBookTrack(
+              id: 'book',
+              album: 'Book',
+              episode: ResourceEpisode(
+                id: 'e',
+                title: 'E',
+                url: Uri.parse('https://audio.test/$entry'),
+              ),
+            ),
+          ])).single;
+          final full = await client.get(local);
+          expect(full.body, contains('127.0.0.1'));
+          final length = full.bodyBytes.length;
+          final partial = await client.get(
+            local,
+            headers: {'Range': 'bytes=8-9'},
+          );
+          expect(partial.statusCode, 206);
+          expect(partial.headers['content-range'], 'bytes 8-9/$length');
+          expect(partial.bodyBytes, full.bodyBytes.sublist(8, 10));
+          final head = await client.head(local);
+          expect(head.headers['content-length'], '$length');
+          expect(head.bodyBytes, isEmpty);
+          final suffix = await client.head(
+            local,
+            headers: {'Range': 'bytes=-4'},
+          );
+          expect(suffix.statusCode, 206);
+          expect(
+            suffix.headers['content-range'],
+            'bytes ${length - 4}-${length - 1}/$length',
+          );
+          final invalid = await client.get(
+            local,
+            headers: {'Range': 'bytes=$length-'},
+          );
+          expect(invalid.statusCode, 416);
+          expect(invalid.headers['content-range'], 'bytes */$length');
+          expect(proxy.lastError, isNull);
+        } finally {
+          client.close();
+          await proxy.close();
+        }
+      },
+    );
+  }
+  test(
+    'remote unsatisfiable audio range preserves the representation size',
+    () async {
+      final proxy = AudioBookProxy(
+        clientFactory: () => MockClient(
+          (_) async =>
+              http.Response('', 416, headers: {'content-range': 'bytes */8'}),
+        ),
+      );
+      final client = http.Client();
+      try {
+        final local = (await proxy.prepare([
+          AudioBookTrack(
+            id: 'a',
+            album: 'A',
+            episode: ResourceEpisode(
+              id: 'a',
+              title: 'A',
+              url: Uri.parse('https://audio.test/audio.mp3'),
+            ),
+          ),
+        ])).single;
+        final result = await client.get(
+          local,
+          headers: {'Range': 'bytes=100-'},
+        );
+        expect(result.statusCode, 416);
+        expect(result.headers['content-range'], 'bytes */8');
+        expect(proxy.lastError, isNull);
+      } finally {
+        client.close();
+        await proxy.close();
+      }
+    },
+  );
   test(
     'audio redirects and playlist children scope headers by scheme and port',
     () async {
