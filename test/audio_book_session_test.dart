@@ -267,6 +267,48 @@ void main() {
     expect(player.loads, 0);
   });
 
+  test('opening an empty book stops the audible previous book and keeps its bookmark', () async {
+    var audible = false;
+    final output = player.playing.listen((value) => audible = value);
+    addTearDown(output.cancel);
+    await session.open(resource, tracks, index: 1);
+    await session.seek(const Duration(seconds: 37));
+    expect(audible, isTrue);
+    await session.open(resource, [], restart: true);
+    expect(session.error, '资源没有可播放的章节');
+    expect(audible, isFalse);
+    expect(settings.positions[resource.id]?['position'], 37000);
+  });
+
+  for (final retry in [false, true]) {
+    test(
+      'pause during pending ${retry ? "retry" : "open"} cancels autoplay',
+      () async {
+        if (retry) {
+          player.failLoads = 1;
+          await session.open(resource, tracks);
+        }
+        final entered = Completer<void>(), release = Completer<void>();
+        player.beforeLoad = () async {
+          entered.complete();
+          await release.future;
+        };
+        final loading = retry
+            ? session.retry()
+            : session.open(resource, tracks);
+        await entered.future;
+        await session.pause();
+        release.complete();
+        await loading;
+        expect(session.loading, isFalse);
+        expect(session.error, isNull);
+        expect(session.playing, isFalse);
+        await session.play();
+        expect(session.playing, isTrue);
+      },
+    );
+  }
+
   test('a failed seek keeps the last playable resume position', () async {
     await session.open(resource, tracks, index: 1);
     await session.seek(const Duration(seconds: 25));
@@ -427,6 +469,7 @@ class _AudioPlayer implements AudioBookPlayer {
     b.add(true);
     if (beforePlay != null) await beforePlay!();
   }
+
   @override
   Future<void> pause() async => b.add(false);
   @override

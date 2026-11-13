@@ -340,6 +340,7 @@ class AudioBookSession extends ChangeNotifier {
   DateTime _savedAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _generation = 0;
   int _seekRevision = 0;
+  int _pauseRevision = 0;
   Future<void> _loads = Future.value();
   List<AudioBookTrack> _tracks = [];
   bool _ready = false;
@@ -389,8 +390,10 @@ class AudioBookSession extends ChangeNotifier {
     }
     final task = load(entry, sources, index: index, resume: !restart);
     final generation = _generation;
+    final pauseRevision = _pauseRevision;
     await task;
     if (generation == _generation &&
+        pauseRevision == _pauseRevision &&
         resource?.id == entry.id &&
         error == null) {
       unawaited(play());
@@ -407,8 +410,13 @@ class AudioBookSession extends ChangeNotifier {
       initialPosition: position,
     );
     final generation = _generation;
+    final pauseRevision = _pauseRevision;
     await task;
-    if (generation == _generation && error == null) unawaited(play());
+    if (generation == _generation &&
+        pauseRevision == _pauseRevision &&
+        error == null) {
+      unawaited(play());
+    }
   }
 
   Future<void> load(
@@ -464,6 +472,8 @@ class AudioBookSession extends ChangeNotifier {
     notifyListeners();
     _tracks = sources;
     try {
+      await _player?.stop();
+      if (generation != _generation) return;
       if (sources.isEmpty) throw const AudioBookFailure('资源没有可播放的章节');
       await PlaybackFocus.acquire('audioBook');
       await settings.load();
@@ -545,8 +555,6 @@ class AudioBookSession extends ChangeNotifier {
           }),
         ]);
       }
-      _remember();
-      await _player!.stop();
       if (generation != _generation) return;
       _acceptEvents = true;
       loadingMessage = '正在加载音频…';
@@ -638,11 +646,13 @@ class AudioBookSession extends ChangeNotifier {
   }
 
   Future<void> pause() async {
+    _pauseRevision++;
     await _player?.pause();
     _remember();
   }
 
   Future<void> stop() async {
+    _pauseRevision++;
     _remember();
     _sleep?.cancel();
     sleepAt = null;
