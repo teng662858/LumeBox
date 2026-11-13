@@ -284,6 +284,18 @@ void main() {
       );
     },
   );
+  test('an explicit seek to zero updates retry and history, while startup zero preserves them', () async {
+    await start();
+    await progress(35);
+    await progress(0, type: 'ready');
+    expect(((await request('retry'))['media'] as Map)['position'], 35);
+    await progress(0, type: 'seek');
+    expect(((await request('retry'))['media'] as Map)['position'], 0);
+    expect(
+      library.videoEpisodeProgress('show', 'A1', sourceId: 'fixture')?.position,
+      Duration.zero,
+    );
+  });
   test('incognito and error events do not overwrite saved history', () async {
     await start();
     await progress(10);

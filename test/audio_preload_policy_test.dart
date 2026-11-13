@@ -44,6 +44,7 @@ void main() {
     expect(native.batches, isEmpty);
     expect(native.singles.length, 1);
     expect(observed.last, 1);
+    await player.play();
     native.states.add(ja.PlayerState(true, ja.ProcessingState.completed));
     await Future<void>.delayed(Duration.zero);
     expect(native.singles.length, 2);
@@ -52,6 +53,27 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(observed.last, 1);
     await subscription.cancel();
+  });
+
+  test('暂停在章节末尾时不自动切章或恢复播放', () async {
+    MediaPreload.instance.update(audio: false);
+    await player.load(tracks);
+    native.states.add(ja.PlayerState(false, ja.ProcessingState.completed));
+    await Future<void>.delayed(Duration.zero);
+    expect(native.singles, hasLength(1));
+    expect(native.playing, isFalse);
+  });
+
+  test('切章缓冲期间的暂停优先于此前的续播请求', () async {
+    MediaPreload.instance.update(audio: false);
+    await player.load(tracks);
+    await player.play();
+    native.pendingLoad = Completer<Duration?>();
+    final change = player.next();
+    await player.pause();
+    native.pendingLoad!.complete(const Duration(minutes: 10));
+    await change;
+    expect(native.playing, isFalse);
   });
 
   test('五千章目录只提交当前集，切集保持目录索引与恢复位置', () async {
@@ -110,6 +132,7 @@ void main() {
 /// Implements the native engine boundary, so the real playlist/policy/proxy
 /// wiring is exercised without pretending to decode audio on Windows.
 class _NativeAudio implements ja.AudioPlayer {
+  Completer<Duration?>? pendingLoad;
   final states = StreamController<ja.PlayerState>.broadcast();
   final indices = StreamController<int?>.broadcast();
   final singles = <ja.AudioSource>[];
@@ -139,7 +162,8 @@ class _NativeAudio implements ja.AudioPlayer {
       position =
           call.namedArguments[#initialPosition] as Duration? ?? Duration.zero;
       indices.add(currentIndex);
-      return Future<Duration?>.value(const Duration(minutes: 10));
+      return pendingLoad?.future ??
+          Future<Duration?>.value(const Duration(minutes: 10));
     }
     if (call.memberName == #play) {
       playing = true;

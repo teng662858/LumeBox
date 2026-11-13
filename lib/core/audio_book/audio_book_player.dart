@@ -207,19 +207,20 @@ class JustAudioBookPlayer implements AudioBookPlayer {
     _singleMode = !MediaPreload.instance.audio || sources.length > 200;
     _removePreloadClearer ??= MediaPreload.instance.onClear(() async {
       if (_playlist.isEmpty || _changing || _singleMode) return;
-      final index = (_player.currentIndex ?? 0) + (_singleMode ? _offset : 0);
-      final wasPlaying = _player.playing;
+      final index = _player.currentIndex ?? 0;
       final position = _player.position;
       _singleMode = true;
-      await _loadSingle(index, position: position, play: wasPlaying);
+      await _loadSingle(index, position: position);
     });
     _completion ??= _player.playerStateStream.listen((state) {
       if (_singleMode &&
           !_changing &&
+          state.playing &&
+          _player.playing &&
           state.processingState == ja.ProcessingState.completed &&
           _offset + 1 < _playlist.length) {
         unawaited(
-          _loadSingle(_offset + 1, play: true).catchError((Object error) {
+          _loadSingle(_offset + 1).catchError((Object error) {
             LumeLog.warn('[audioBook] 自动切集失败：$error');
           }),
         );
@@ -264,14 +265,12 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   Future<void> _loadSingle(
     int index, {
     Duration position = Duration.zero,
-    bool play = false,
   }) async {
     if (index < 0 || index >= _playlist.length || _changing) return;
     _changing = true;
     try {
       _offset = index;
       await _player.setAudioSource(_playlist[index], initialPosition: position);
-      if (play) unawaited(_player.play());
     } finally {
       _changing = false;
     }
@@ -282,16 +281,14 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   @override
   Future<void> seek(Duration value, {int? index}) =>
       _singleMode && index != null
-      ? _loadSingle(index, position: value, play: _player.playing)
+      ? _loadSingle(index, position: value)
       : _player.seek(value, index: index);
   @override
-  Future<void> next() => _singleMode
-      ? _loadSingle(_offset + 1, play: _player.playing)
-      : _player.seekToNext();
+  Future<void> next() =>
+      _singleMode ? _loadSingle(_offset + 1) : _player.seekToNext();
   @override
-  Future<void> previous() => _singleMode
-      ? _loadSingle(_offset - 1, play: _player.playing)
-      : _player.seekToPrevious();
+  Future<void> previous() =>
+      _singleMode ? _loadSingle(_offset - 1) : _player.seekToPrevious();
   @override
   Future<void> speed(double value) => _player.setSpeed(value);
   @override
@@ -660,7 +657,12 @@ class AudioBookSession extends ChangeNotifier {
     if (!_ready) {
       // A bookmark seek on a released session can load directly at the
       // requested time, without briefly selecting a different chapter.
-      await load(entry, _tracks, index: index ?? current, initialPosition: value);
+      await load(
+        entry,
+        _tracks,
+        index: index ?? current,
+        initialPosition: value,
+      );
       return;
     }
     final generation = _generation;

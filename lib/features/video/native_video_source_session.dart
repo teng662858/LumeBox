@@ -429,7 +429,8 @@ class NativeVideoSourceSession {
     final position = data['position'], duration = data['duration'];
     if (position is! num ||
         !position.isFinite ||
-        position <= 0 ||
+        position < 0 ||
+        (position == 0 && type != 'seek') ||
         position > 365 * 86400 ||
         data['error'] != null) {
       return;
