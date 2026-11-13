@@ -112,6 +112,25 @@ void main() {
         await request.response.close();
         return;
       }
+      if (request.uri.path == '/live/hints.m3u8') {
+        final first = paths.where((p) => p == '/live/hints.m3u8').length == 1;
+        final mapTag = first ? '#EXT-X-PRELOAD-HINT:TYPE=MAP,' : '#EXT-X-MAP:';
+        final partTag = first ? '#EXT-X-PRELOAD-HINT:TYPE=PART,' : '#EXT-X-PART:DURATION=0.5,';
+        request.response.write('#EXTM3U\n#EXT-X-TARGETDURATION:2\n'
+            '#EXT-X-PART-INF:PART-TARGET=0.5\n'
+            '${mapTag}URI="init?sig=A"\n${partTag}URI="chunk?sig=B"\n');
+        await request.response.close();
+        return;
+      }
+      if (request.uri.path == '/live/chunk' || request.uri.path == '/live/init') {
+        if (request.headers.value('range') != null) {
+          request.response.statusCode = 403;
+        } else {
+          request.response.add(data.sublist(0, 256));
+        }
+        await request.response.close();
+        return;
+      }
       if (request.uri.path.startsWith('/challenge/')) {
         request.response.headers.set('Content-Type', 'application/octet-stream');
         final payload = calls == 1
@@ -406,6 +425,23 @@ void main() {
       expect(paths.where((p) => p == 'fixture'), hasLength(2));
     });
   }
+  test('preload hints retain their local URL when signed parts and maps are published', () async {
+    final media = await cache.wrap(PlayerMedia(uri: upstream.resolve('/live/hints.m3u8')));
+    Future<List<String>> resources() async {
+      final manifest = utf8.decode((await get(media.uri)).$2);
+      return [for (final match in RegExp(r'URI="([^"]+)"').allMatches(manifest)) match[1]!];
+    }
+    final hints = await resources();
+    for (final hint in hints) {
+      final response = await get(Uri.parse(hint));
+      expect(response.$1.statusCode, 200);
+      expect(response.$2, data.take(256));
+    }
+    final published = await resources();
+    expect(hints, published);
+    expect(hints.first, endsWith('.mp4'));
+    expect(hints.last, endsWith('.m4s'));
+  });
   for (final (path, range) in [
     ('movie.mp4', null),
     ('movie.mp4', 'bytes=0-15'),

@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'abstract_player.dart';
 import 'hls_ad_filter.dart';
+import 'hls_attributes.dart';
 import 'apple_hls_fragments.dart';
 import 'playback_diagnostics.dart';
 import '../net/lume_net.dart';
@@ -1386,6 +1387,11 @@ class VideoDiskCache extends ChangeNotifier {
                 '#EXT-X-I-FRAME-STREAM-INF' ||
                 '#EXT-X-RENDITION-REPORT' => '.m3u8',
                 '#EXT-X-PART' => '.m4s',
+                '#EXT-X-PRELOAD-HINT' => switch (hlsRawAttributes(line)['TYPE']) {
+                  'PART' => '.m4s',
+                  'MAP' => '.mp4',
+                  _ => '',
+                },
                 _ => '',
               };
               result = result.replaceRange(
