@@ -1001,6 +1001,62 @@ void main() {
       await local.close();
     }
   });
+  test('offline HLS keeps credentials scoped to each rendition', () async {
+    final cdn = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => cdn.close(force: true));
+    final auth = <String, String?>{};
+    final referers = <String?>[];
+    void record(HttpRequest request) {
+      auth[request.uri.path] = request.headers.value('authorization');
+      referers.add(request.headers.value('referer'));
+    }
+    cdn.listen((r) async {
+      record(r);
+      await r.response.redirect(origin.resolve('audio.m3u8'));
+    });
+    server.listen((r) async {
+      record(r);
+      switch (r.uri.path) {
+        case '/master':
+          r.response.write('#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Main",URI="audio"\n#EXT-X-STREAM-INF:BANDWIDTH=100,AUDIO="a"\nvideo.m3u8\n');
+        case '/audio':
+          await r.response.redirect(Uri.parse('http://127.0.0.1:${cdn.port}/bounce'));
+          return;
+        case '/audio.m3u8':
+          r.response.write('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key"\n#EXTINF:1,\nsound.aac\n#EXT-X-ENDLIST\n');
+        case '/video.m3u8':
+          r.response.write('#EXTM3U\n#EXTINF:1,\npicture.ts\n#EXT-X-ENDLIST\n');
+        case '/key':
+        case '/sound.aac':
+        case '/picture.ts':
+          r.response.add(List<int>.filled(16, 1));
+        default:
+          r.response.statusCode = 404;
+      }
+      await r.response.close();
+    });
+    final c = await center('master', headers: {
+      'Authorization': 'source-only',
+      'Referer': 'https://viewer.example/',
+    });
+    await enqueue(c);
+    await until(() => ['failed', 'merge_failed'].contains(c.tasks.single.state));
+    await c.flush();
+    expect(c.tasks.single.state, 'merge_failed', reason: c.tasks.single.error);
+    expect(await c.localFile(c.tasks.single).exists(), isTrue);
+    expect(auth, {
+      '/master': 'source-only',
+      '/audio': 'source-only',
+      '/bounce': null,
+      '/audio.m3u8': null,
+      '/key': null,
+      '/sound.aac': null,
+      '/video.m3u8': 'source-only',
+      '/picture.ts': 'source-only',
+    });
+    expect(referers, everyElement('https://viewer.example/'));
+  });
+
   test('redirected HLS playlists resolve media against each final URL', () async {
     final finishRedirect = Completer<void>();
     final cdn = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

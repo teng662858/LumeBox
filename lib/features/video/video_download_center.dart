@@ -596,7 +596,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     VideoDownloadTask task,
     Uri uri,
     Uri origin,
-    Map<String, String> headers, {
+    Map<String, String> scopedHeaders, {
     Map<String, String> extra = const {},
   }) async {
     for (var redirects = 0; redirects < 6; redirects++) {
@@ -606,10 +606,12 @@ class VideoDownloadCenter extends ChangeNotifier {
       }
       final req = await _client!.getUrl(uri);
       req.followRedirects = false;
-      for (final e in headers.entries) {
-        if (uri.origin != origin.origin && isOriginBoundHttpHeader(e.key)) {
-          continue;
-        }
+      // Each fetch owns its headers. Range continuations and child manifests
+      // inherit any restrictions introduced by a redirect in this branch.
+      if (uri.origin != origin.origin) {
+        scopedHeaders.removeWhere((name, _) => isOriginBoundHttpHeader(name));
+      }
+      for (final e in scopedHeaders.entries) {
         req.headers.set(e.key, e.value);
       }
       for (final e in extra.entries) {
@@ -803,11 +805,12 @@ class VideoDownloadCenter extends ChangeNotifier {
       if (offset > 0 && old['validator'] is String)
         'If-Range': old['validator'] as String,
     };
+    var scopedHeaders = Map.of(headers);
     var (response, finalUri) = await _open(
       task,
       uri,
       uri,
-      headers,
+      scopedHeaders,
       extra: extra,
     );
     final previousValidator = old['validator'];
@@ -841,7 +844,8 @@ class VideoDownloadCenter extends ChangeNotifier {
                         'bytes */$offset'))) {
       await response.listen(null).cancel();
       offset = 0;
-      (response, finalUri) = await _open(task, uri, uri, headers);
+      scopedHeaders = Map.of(headers);
+      (response, finalUri) = await _open(task, uri, uri, scopedHeaders);
     }
     if (response.statusCode == 416 &&
         offset > 0 &&
@@ -863,7 +867,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         task,
         finalUri,
         uri,
-        headers,
+        scopedHeaders,
         response,
         offset,
         expectedLength: offset > 0 ? previousLength : null,
@@ -896,7 +900,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         final playlist = await _text(stream());
         task.bytes = 0;
         task.totalBytes = 0;
-        await _playlist(task, finalUri, uri, headers, playlist, 'index', 0);
+        await _playlist(task, finalUri, uri, scopedHeaders, playlist, 'index', 0);
         task.fileName = 'index.m3u8';
         return;
       }
@@ -971,20 +975,22 @@ class VideoDownloadCenter extends ChangeNotifier {
     return utf8.decode(bytes);
   }
 
-  Future<(String, Uri)> _fetchText(
+  Future<(String, Uri, Map<String, String>)> _fetchText(
     VideoDownloadTask task,
     Uri uri,
     Uri origin,
     Map<String, String> headers,
   ) async {
     await _policyCheckpoint(task);
-    final (r, finalUri) = await _open(task, uri, origin, headers);
+    final scopedHeaders = Map.of(headers);
+    final (r, finalUri) = await _open(task, uri, origin, scopedHeaders);
     if (r.statusCode != 200 && r.statusCode != 206) {
       throw StateError('播放清单不可用：HTTP ${r.statusCode}');
     }
     return (
-      await _text(_downloadBody(task, finalUri, origin, headers, r, 0)),
+      await _text(_downloadBody(task, finalUri, origin, scopedHeaders, r, 0)),
       finalUri,
+      scopedHeaders,
     );
   }
 
@@ -1039,7 +1045,7 @@ class VideoDownloadCenter extends ChangeNotifier {
             local = audioFiles.isEmpty
                 ? '$name-audio'
                 : '$name-audio-${audioFiles.length + 1}';
-            final (text, finalUri) = await _fetchText(
+            final (text, finalUri, audioHeaders) = await _fetchText(
               task,
               url,
               origin,
@@ -1049,7 +1055,7 @@ class VideoDownloadCenter extends ChangeNotifier {
               task,
               finalUri,
               origin,
-              headers,
+              audioHeaders,
               text,
               local,
               depth + 1,
@@ -1067,12 +1073,12 @@ class VideoDownloadCenter extends ChangeNotifier {
         attributes.remove('CLOSED-CAPTIONS');
       }
       final url = uri.resolve(best.url);
-      final (text, finalUri) = await _fetchText(task, url, origin, headers);
+      final (text, finalUri, videoHeaders) = await _fetchText(task, url, origin, headers);
       await _playlist(
         task,
         finalUri,
         origin,
-        headers,
+        videoHeaders,
         text,
         '$name-video',
         depth + 1,
@@ -1234,7 +1240,8 @@ class VideoDownloadCenter extends ChangeNotifier {
       task.bytes += await file.length();
       return;
     }
-    final (r, finalUri) = await _open(task, uri, origin, headers);
+    final scopedHeaders = Map.of(headers);
+    final (r, finalUri) = await _open(task, uri, origin, scopedHeaders);
     if (r.statusCode != 200 && r.statusCode != 206) {
       throw StateError('分片下载失败：HTTP ${r.statusCode}');
     }
@@ -1243,7 +1250,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     final prefix = <int>[];
     var size = 0, received = 0;
     try {
-      final body = _downloadBody(task, finalUri, origin, headers, r, 0).map((chunk) {
+      final body = _downloadBody(task, finalUri, origin, scopedHeaders, r, 0).map((chunk) {
         received += chunk.length;
         return chunk;
       });
