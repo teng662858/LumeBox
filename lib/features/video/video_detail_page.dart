@@ -746,6 +746,10 @@ class _VideoDetailPageState extends State<VideoDetailPage>
       if (!mounted) return;
       final transferred = prepared;
       prepared = null;
+      final beforePlayback = widget.library.videoProgress(
+        widget.item.id,
+        sourceId: _source?.id ?? widget.sourceId,
+      );
       await widget.onPlay(
         media,
         target,
@@ -758,17 +762,25 @@ class _VideoDetailPageState extends State<VideoDetailPage>
           widget.item.id,
           sourceId: _source?.id ?? widget.sourceId,
         );
-        if (last?.chapterId == chapter.id && last!.position > Duration.zero) {
-          widget.library.setSetting(
-            'video.line.work.${jsonEncode([_source!.id, widget.item.id])}',
-            currentLine,
-          );
+        // Leaving before the first progress event (including private playback)
+        // must not make the detail page jump back to an older session's episode.
+        if (last == null ||
+            last.chapterId == beforePlayback?.chapterId &&
+                last.position == beforePlayback?.position &&
+                last.updatedAt == beforePlayback?.updatedAt) {
+          return;
         }
         for (final entry in lines.entries) {
           final index = entry.value.indexWhere(
-            (chapter) => chapter.id == last?.chapterId,
+            (chapter) => chapter.id == last.chapterId,
           );
           if (index >= 0) {
+            if (last.position > Duration.zero) {
+              widget.library.setSetting(
+                'video.line.work.${jsonEncode([_source!.id, widget.item.id])}',
+                entry.key,
+              );
+            }
             setState(() {
               currentLine = entry.key;
               chapters = entry.value;

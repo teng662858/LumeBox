@@ -343,6 +343,55 @@ void main() {
     });
   }
 
+  for (final private in [false, true]) {
+    testWidgets('退出未写入进度的播放器时保留这次选择的集数（无痕=$private）', (tester) async {
+      library.saveProgress(VideoProgress(
+        section: Section.video, sourceId: source.id, itemId: 'return-detail',
+        chapterIndex: 0, chapterId: 'e1', chapterTitle: '第1集',
+        position: const Duration(seconds: 60), duration: const Duration(minutes: 5),
+        updatedAt: DateTime.now(),
+      ));
+      library.setSetting('history.incognito', private.toString());
+      VideoPlayTarget? played;
+      await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
+        source: source, item: const SourceItem(id: 'return-detail', title: '详情测试片'),
+        library: library, initialChapterId: 'e2',
+        onPlay: (_, target, _, _) async { played = target; },
+      )));
+      await tester.pumpAndSettle();
+      final dynamic state = tester.state(find.byType(VideoDetailPage));
+      expect(state.selected, 1);
+      await tester.runAsync(() async { await state.play(); });
+      await tester.pumpAndSettle();
+      expect(played?.chapterId, 'e2');
+      expect(state.selected, 1);
+      expect(library.videoProgress('return-detail', sourceId: source.id)?.chapterId, 'e1');
+    });
+  }
+
+  testWidgets('播放器换线并写入新进度后详情同步实际线路与集数', (tester) async {
+    final multi = MultiLineDetailSource();
+    await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
+      source: multi, item: const SourceItem(id: 'switch-return', title: '详情测试片'),
+      library: library, initialChapterId: 'a1',
+      onPlay: (_, _, _, _) async {
+        library.saveProgress(VideoProgress(
+          sourceId: multi.id, itemId: 'switch-return', section: Section.video,
+          chapterIndex: 1, chapterId: 'b2', chapterTitle: '第2集',
+          position: const Duration(seconds: 30), duration: const Duration(minutes: 2),
+          updatedAt: DateTime.now(),
+        ));
+      },
+    )));
+    await tester.pumpAndSettle();
+    final dynamic state = tester.state(find.byType(VideoDetailPage));
+    await tester.runAsync(() async { await state.play(); });
+    await tester.pumpAndSettle();
+    expect(state.currentLine, '线路B');
+    expect(state.selected, 1);
+    expect(library.setting('video.line.work.["${multi.id}","switch-return"]'), '线路B');
+  });
+
   testWidgets('换源选择对应剧集，并把时间点写入目标源进度', (tester) async {
     await tester.binding.setSurfaceSize(const Size(440, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
