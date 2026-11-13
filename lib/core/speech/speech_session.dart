@@ -205,6 +205,8 @@ class SpeechSession {
   Timer? _watch;
   bool _supported = false;
   bool _destroyed = false;
+  int _queueRevision = 0;
+  bool _switchingSegment = false;
 
   /// 待读片段队列与当前下标。
   List<SpeechSegment> _segments = const <SpeechSegment>[];
@@ -297,6 +299,8 @@ class SpeechSession {
     if (!_supported) return '当前平台不支持语音朗读';
     final speakable = segments.where((segment) => segment.isSpeakable).toList();
     if (speakable.isEmpty) return '本章没有可朗读的内容';
+    _queueRevision++;
+    _switchingSegment = false;
     _cancelWatch();
     _segments = List<SpeechSegment>.unmodifiable(speakable);
     final chapterBackend = backend;
@@ -314,18 +318,22 @@ class SpeechSession {
   Future<String?> pause() async {
     if (_destroyed) return '页面已销毁';
     if (_state.value != SpeechState.speaking) return '当前未在朗读';
+    final revision = _queueRevision;
     _cancelWatch();
     _emit(SpeechState.pausing);
     try {
       await backend.pause();
     } catch (error, stackTrace) {
+      if (revision != _queueRevision) return null;
       LumeLog.error(error, stackTrace);
       _emit(SpeechState.speaking);
       _armWatch();
       return '暂停失败';
     }
     // 部分平台不补发 paused 事件：主动收敛，不停在中间态。
-    if (_state.value == SpeechState.pausing) _emit(SpeechState.paused);
+    if (revision == _queueRevision && _state.value == SpeechState.pausing) {
+      _emit(SpeechState.paused);
+    }
     return null;
   }
 
@@ -333,6 +341,7 @@ class SpeechSession {
   Future<String?> resume() async {
     if (_destroyed) return '页面已销毁';
     if (_state.value != SpeechState.paused) return '当前未暂停';
+    final revision = _queueRevision;
     _emit(SpeechState.speaking);
     // 暂停期间跳转过片段：引擎里已经没有内容，必须重新下发这一段。
     if (_needsRespeak) {
@@ -342,17 +351,22 @@ class SpeechSession {
     try {
       await backend.resume();
     } catch (error, stackTrace) {
+      if (revision != _queueRevision) return null;
       LumeLog.error(error, stackTrace);
       _emit(SpeechState.paused);
       return '继续朗读失败';
     }
-    _armWatch();
+    if (revision == _queueRevision && _state.value == SpeechState.speaking) {
+      _armWatch();
+    }
     return null;
   }
 
   /// 停止（清空队列）。
   Future<void> stop() async {
     if (_destroyed) return;
+    final revision = ++_queueRevision;
+    _switchingSegment = false;
     _cancelWatch();
     _segments = const <SpeechSegment>[];
     _index = 0;
@@ -362,6 +376,7 @@ class SpeechSession {
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
     }
+    if (revision != _queueRevision) return;
     // 停止后锁屏控件不该还显示着这本书。
     unawaited(_clearNowPlayingQuietly());
     _emit(_supported ? SpeechState.idle : SpeechState.unavailable);
@@ -373,6 +388,8 @@ class SpeechSession {
   Future<String?> seekToSegment(int index) async {
     if (_destroyed) return '页面已销毁';
     if (_segments.isEmpty) return '当前没有朗读内容';
+    final revision = ++_queueRevision;
+    _switchingSegment = true;
     final wasPaused = _state.value == SpeechState.paused;
     _cancelWatch();
     try {
@@ -380,6 +397,8 @@ class SpeechSession {
     } catch (error, stackTrace) {
       LumeLog.error(error, stackTrace);
     }
+    if (revision != _queueRevision) return null;
+    _switchingSegment = false;
     _moveToSegment(index.clamp(0, _segments.length - 1));
     if (wasPaused) {
       _needsRespeak = true;
@@ -393,6 +412,9 @@ class SpeechSession {
   /// 释放会话：正在朗读时先停止，再退订事件、释放快照。
   Future<void> dispose() async {
     if (_destroyed) return;
+    _destroyed = true;
+    _queueRevision++;
+    _cancelWatch();
     if (isActive || isPaused) {
       try {
         await backend.stop();
@@ -402,8 +424,6 @@ class SpeechSession {
     }
     // 页面退出时把锁屏控件一并收掉（不等原生回调，避免卡住释放路径）。
     unawaited(_clearNowPlayingQuietly());
-    _destroyed = true;
-    _cancelWatch();
     final subscription = _subscription;
     _subscription = null;
     unawaited(subscription?.cancel());
@@ -434,6 +454,7 @@ class SpeechSession {
 
   /// 朗读当前片段；返回失败原因（null 表示已下发）。
   Future<String?> _speakCurrent() async {
+    final revision = _queueRevision;
     final segment = _segments[_index];
     try {
       final source = backend;
@@ -443,6 +464,7 @@ class SpeechSession {
         await backend.speak(segment.text);
       }
     } catch (error, stackTrace) {
+      if (revision != _queueRevision) return null;
       LumeLog.error(error, stackTrace);
       _fail(
         '朗读失败',
@@ -450,12 +472,14 @@ class SpeechSession {
       );
       return '朗读失败';
     }
-    _armWatch();
+    if (revision == _queueRevision && _state.value == SpeechState.speaking) {
+      _armWatch();
+    }
     return null;
   }
 
   void _onBackendEvent(SpeechEvent event) {
-    if (_destroyed) return;
+    if (_destroyed || _segments.isEmpty || _switchingSegment) return;
     switch (event.kind) {
       case SpeechEventKind.started:
         // 引擎有动静就喂看门狗：只在「完全没动静」时才兜底。

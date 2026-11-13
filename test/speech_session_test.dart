@@ -258,6 +258,39 @@ void main() {
   });
 
   group('暂停 / 继续 / 停止', () {
+    test('跳段等待原生停止时退出朗读，不会恢复旧片段', () async {
+      final session = await openSession();
+      addTearDown(session.dispose);
+      await session.start(segments(3));
+      final pending = backend.nextStop = Completer<void>();
+      final jump = session.seekToSegment(2);
+      await session.stop();
+      pending.complete();
+      await jump;
+      expect(session.segmentCount, 0);
+      expect(session.state.value, SpeechState.idle);
+      expect(backend.spoken, hasLength(1));
+    });
+
+    test('停止期间晚到的段末和开始事件不会更新进度或切到下一章', () async {
+      var completions = 0;
+      final positions = <int>[];
+      final session = SpeechSession(
+        backend: backend, onCompleted: () => completions++, onPosition: positions.add,
+      );
+      await pumpEventQueue();
+      addTearDown(session.dispose);
+      await session.start(segments(1));
+      final pending = backend.nextStop = Completer<void>();
+      final stopping = session.stop();
+      await emit(SpeechEventKind.finished);
+      pending.complete();
+      await stopping;
+      await emit(SpeechEventKind.started);
+      expect(session.state.value, SpeechState.idle);
+      expect(completions, 0);
+      expect(positions, isEmpty);
+    });
     test('暂停后状态为 paused，引擎不补事件也会收敛', () async {
       final session = await openSession();
       addTearDown(session.dispose);
@@ -488,6 +521,7 @@ class _FakeSpeechBackend implements SpeechBackend {
   bool supported = true;
   bool throwOnProbe = false;
   bool throwOnSpeak = false;
+  Completer<void>? nextStop;
 
   final List<String> spoken = <String>[];
   int paused = 0;
@@ -514,7 +548,12 @@ class _FakeSpeechBackend implements SpeechBackend {
   }
 
   @override
-  Future<void> stop() async => stopped++;
+  Future<void> stop() async {
+    stopped++;
+    final pending = nextStop;
+    nextStop = null;
+    await pending?.future;
+  }
 
   @override
   Future<void> pause() async => paused++;
