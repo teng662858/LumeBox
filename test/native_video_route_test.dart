@@ -3,12 +3,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/media/media_library.dart';
+import 'package:lume_box/core/media/media_resource_service.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/native_video_bridge.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
+import 'package:lume_box/features/media/media_resource_router.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -63,6 +66,45 @@ void main() {
           throw StateError('Legacy Dart engine must not be created'),
     ),
   );
+  for (final explicit in [false, true]) {
+    testWidgets('media library retains source identity and selected chapter (explicit=$explicit)', (tester) async {
+      library.saveProgress(VideoProgress(
+        section: Section.video, sourceId: 'fixture', itemId: 'show',
+        chapterIndex: 0, chapterId: 'second', chapterTitle: '第二集',
+        position: const Duration(seconds: 28), duration: const Duration(minutes: 3),
+        updatedAt: DateTime.now(),
+      ));
+      final entry = MediaResource(
+        id: 'placed', title: '剧集', kind: ResourceKind.video,
+        destination: Section.comic, originSection: Section.video,
+        sourceId: 'fixture', itemId: 'show',
+        episodes: [
+          for (final id in ['first', 'second'])
+            ResourceEpisode(id: id, title: id, url: Uri.parse('https://cdn.test/$id.mp4')),
+        ],
+      );
+      await tester.pumpWidget(MaterialApp(home: Builder(builder: (context) => TextButton(
+        onPressed: () => openMediaResource(
+          context, entry,
+          index: explicit ? 0 : null,
+          initialMedia: explicit ? ResolvedMedia(Uri.parse('https://cdn.test/signed.mp4'),
+              headers: {'X-Test': 'ticket'}) : null,
+        ),
+        child: const Text('打开'),
+      ))));
+      await tester.tap(find.text('打开'));
+      await tester.pumpAndSettle();
+      final page = tester.widget<VideoPlayerPage>(find.byType(VideoPlayerPage));
+      expect(page.target?.chapterId, explicit ? 'first' : 'second');
+      expect(page.target?.chapterIndex, explicit ? 0 : 1);
+      expect(page.target?.sourceId, 'fixture');
+      expect(page.target?.itemId, 'show');
+      expect(page.library, same(library));
+      expect(page.sourceManager, isNotNull);
+      expect(page.media?.uri.path, explicit ? '/signed.mp4' : '/second.mp4');
+      if (explicit) expect(page.media?.headers, {'X-Test': 'ticket'});
+    });
+  }
   testWidgets(
     'route hands off once, does not run a hidden Flutter animation, and tears down on exit',
     (tester) async {
