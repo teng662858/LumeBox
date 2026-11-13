@@ -32,7 +32,7 @@ void main() {
         if (name == '源选择') {
           expect(find.byType(GridView), findsNothing);
           expect(
-            find.byKey(const ValueKey('picker-category-columns')),
+            find.byKey(const ValueKey('picker-grouped-list')),
             findsOneWidget,
           );
         } else {

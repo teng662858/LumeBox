@@ -40,8 +40,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('测试 API 连接'));
-    await tester.tap(find.text('测试 API 连接'));
+    final testApi = find.widgetWithText(OutlinedButton, '测试 API 连接');
+    await tester.scrollUntilVisible(
+      testApi.hitTestable(),
+      200,
+      scrollable: find.ancestor(of: testApi, matching: find.byType(Scrollable)).first,
+    );
+    await tester.tap(testApi);
     await tester.pumpAndSettle();
     expect(find.textContaining('DNS 解析失败'), findsOneWidget);
     expect(find.textContaining('TMDB 官方API地址'), findsOneWidget);

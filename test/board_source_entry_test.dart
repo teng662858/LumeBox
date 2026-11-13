@@ -14,6 +14,7 @@ import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/cat/cat_page.dart';
 import 'package:lume_box/features/comic/comic_page.dart';
 import 'package:lume_box/features/video/video_page.dart';
+import 'package:lume_box/shared/widgets/glass_card.dart';
 
 import 'support/fake_source_manager.dart';
 
@@ -145,7 +146,11 @@ void main() {
     );
 
     expect(find.text('公开样片测试源'), findsOneWidget);
-    expect(find.text('已停用'), findsOneWidget);
+    final sourceCard = find.widgetWithText(GlassCard, '公开样片测试源');
+    expect(
+      find.descendant(of: sourceCard, matching: find.text('已停用')),
+      findsOneWidget,
+    );
     expect(find.byType(Switch), findsOneWidget);
 
     // 启用开关：写回本板块的管理器。

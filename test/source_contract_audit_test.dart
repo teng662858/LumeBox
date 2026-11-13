@@ -43,6 +43,18 @@ void main() {
       : '未找到可用的 quickjs 原生桥（${Qjs.availabilityDetail}）';
   _heavyPageTest(skipReason: nativeSkipReason);
 
+  test('缓存枚举保留待审计脚本，忽略网页脚本快照', () async {
+    final cache = await Directory.systemTemp.createTemp('lume-source-audit-');
+    addTearDown(() => cache.delete(recursive: true));
+    for (final path in ['comic/broken.js', 'video/source.js', 'snapshots/player.js']) {
+      await File('${cache.path}/$path').create(recursive: true);
+    }
+    expect(
+      _cachedScripts(cache).map((f) => f.uri.pathSegments.last),
+      ['broken.js', 'source.js'],
+    );
+  });
+
   test('审计：三份订阅里的脚本都能载入、元信息对得上、被拦时抛对标记', () async {
     final scripts = _cachedScripts();
     if (scripts.isEmpty) {
@@ -203,14 +215,17 @@ String _auditSkipReason() =>
     '（从 $lumeSourcesRepo 拉到 .sources-cache/）再审计';
 
 /// 缓存里的全部脚本（按板块目录分好）。
-List<File> _cachedScripts() {
-  final dir = sourceCacheDir;
-  if (!dir.existsSync()) return const <File>[];
-  final files = dir
-      .listSync(recursive: true)
-      .whereType<File>()
-      .where((file) => file.path.endsWith('.js'))
-      .toList();
+List<File> _cachedScripts([Directory? cache]) {
+  // fetch_sources writes installable scripts directly under each board.
+  // Other cache directories contain site assets, including browser-only JS.
+  final files = <File>[];
+  for (final section in Section.values) {
+    final dir = Directory('${(cache ?? sourceCacheDir).path}/${section.id}');
+    if (!dir.existsSync()) continue;
+    files.addAll(
+      dir.listSync().whereType<File>().where((file) => file.path.endsWith('.js')),
+    );
+  }
   files.sort((a, b) => a.path.compareTo(b.path));
   return files;
 }

@@ -52,7 +52,7 @@ void main() {
       final raw = File('${exports.path}/$filename').readAsStringSync();
       final input = SourceImportInput.classify(raw, name: filename);
       expect(input.isScript, isTrue);
-      final section = ['comic', 'images'].contains(target)
+      final section = ['audio', 'comic', 'images'].contains(target)
           ? Section.comic
           : Section.video;
       final manager = LumeSources.manager(section);
@@ -137,13 +137,13 @@ void main() {
     final raw = File('${exports.path}/kazumi.json').readAsStringSync();
     final input = SourceImportInput.classify(raw, name: 'kazumi.json');
     expect(input.isScript, isTrue);
-    final manager = LumeSources.manager(Section.video);
+    final manager = LumeSources.manager(Section.comic);
     final imported = await manager.importScript(input.text);
     expect(imported.isSuccess, isTrue, reason: imported.message);
     expect(imported.descriptor!.isKazumi, isTrue);
     final engine = await LumeJsEngine.create(
       sourceId: 'maker-kazumi',
-      section: Section.video,
+      section: Section.comic,
       http: LumeHttp(
         client: MockClient(
           (r) async => http.Response(
@@ -163,7 +163,7 @@ void main() {
     final source = JsDataSource(
       id: 'kazumi',
       name: 'Kazumi',
-      section: Section.video,
+      section: Section.comic,
       runtime: _Runtime(engine),
     );
     final list = await source.list(keyword: '测试');

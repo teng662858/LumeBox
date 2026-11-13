@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../cache/section_memory_cache.dart';
 import '../net/lume_http.dart';
 import '../net/waf.dart';
 import '../reading/reading_library.dart';
@@ -43,7 +44,10 @@ class RexWidgetSettings {
     if (utf8.encode(text).length > 128 * 1024) {
       throw const FormatException('Widget 参数合计不能超过 128KB');
     }
-    (await ReadingLibrary.open(section)).setSetting(_params(id), text);
+    final library = await ReadingLibrary.open(section);
+    if (library.setting(_params(id)) == text) return;
+    library.setSetting(_params(id), text);
+    SectionMemoryCache.instance.removeSource(section, id);
   }
 
   static Future<void> saveDefinitions(

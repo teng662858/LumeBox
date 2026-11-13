@@ -395,7 +395,7 @@ void main() {
       );
       await pumpManager(tester, manager);
 
-      expect(find.text('订阅'), findsOneWidget, reason: '只有订阅导入的源带这个标记');
+      expect(find.text('订阅 · example.com'), findsOneWidget);
 
       await openMoreMenu(tester);
       await tester.tap(find.text('更新订阅源'));

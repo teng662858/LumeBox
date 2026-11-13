@@ -24,6 +24,7 @@ import 'package:lume_box/features/comic/comic_page_filters.dart';
 import 'package:lume_box/features/comic/comic_reader_page.dart';
 import 'package:lume_box/features/comic/comic_reader_preferences.dart';
 import 'package:lume_box/features/comic/comic_settings.dart';
+import 'package:lume_box/shared/widgets/native_glass_controls.dart';
 
 import 'support/fake_reading_source.dart';
 
@@ -350,6 +351,9 @@ void main() {
   Finder activeText(String text) =>
       find.descendant(of: activeMenu(), matching: find.text(text));
 
+  NativeGlassSlider pageSlider(WidgetTester tester) =>
+      tester.widget(find.byKey(const Key('comic.pageSlider')));
+
   Future<void> selectMenuItem(WidgetTester tester, String text) async {
     await tester.scrollUntilVisible(
       activeText(text),
@@ -655,9 +659,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 700));
     await settle(tester);
     expect(tools.calls, 1);
-    tester.widget<Slider>(find.byKey(const Key('comic.pageSlider'))).onChanged!(
-      1,
-    );
+    pageSlider(tester).onChanged!(1);
     await tester.pump(const Duration(milliseconds: 700));
     await settle(tester);
     expect(tools.calls, 2);
@@ -670,18 +672,14 @@ void main() {
     await menu(tester, '翻译');
     await selectMenuItem(tester, '实时翻译');
     expect(tools.calls, 1);
-    tester.widget<Slider>(find.byKey(const Key('comic.pageSlider'))).onChanged!(
-      1,
-    );
+    pageSlider(tester).onChanged!(1);
     await settle(tester);
     await tester.pump(const Duration(milliseconds: 700));
     await settle(tester);
     expect(tools.calls, 2);
     await menu(tester, '翻译');
     await selectMenuItem(tester, '关闭');
-    tester.widget<Slider>(find.byKey(const Key('comic.pageSlider'))).onChanged!(
-      2,
-    );
+    pageSlider(tester).onChanged!(2);
     await settle(tester);
     await tester.pump(const Duration(milliseconds: 700));
     expect(tools.calls, 2);
@@ -1467,9 +1465,7 @@ void main() {
     gate = true;
     await menu(tester, '分享页面');
     expect(calls, 0);
-    tester.widget<Slider>(find.byKey(const Key('comic.pageSlider'))).onChanged!(
-      3,
-    );
+    pageSlider(tester).onChanged!(3);
     await tester.pump();
     pending.complete(page);
     await settle(tester);
@@ -1490,10 +1486,7 @@ void main() {
       }
       image.dispose();
     });
-    expect(
-      tester.widget<Slider>(find.byKey(const Key('comic.pageSlider'))).value,
-      3,
-    );
+    expect(pageSlider(tester).value, 3);
   });
 
   testWidgets('当前页译文进入分享图片，导出失败后可以重试', (tester) async {
@@ -1671,8 +1664,7 @@ void main() {
     await tester.tap(find.byTooltip('更多'));
     await settle(tester);
     await capture(tester, 'menu');
-    await tester.tap(find.text('画面调整'));
-    await settle(tester);
+    await selectMenuItem(tester, '画面调整');
     await capture(tester, 'adjustments');
     Navigator.of(tester.element(find.byType(BottomSheet).last)).pop();
     await settle(tester);
