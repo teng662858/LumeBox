@@ -1,14 +1,15 @@
-import '../video/playback_entry_preparation.dart';
-
 import 'package:flutter/material.dart';
 
 import '../../core/media/media_library.dart';
 import '../../core/media/media_resource_service.dart';
 import '../../core/player/abstract_player.dart';
+import '../../core/player/playback_diagnostics.dart';
 import '../../core/reading/reading.dart';
 import '../../core/source/source.dart';
+import '../video/playback_entry_preparation.dart';
 import '../video/playback_quality_preference.dart';
 import '../video/source_playback.dart';
+import '../video/video_download_center.dart';
 import '../video/video_play_target.dart';
 import '../video/video_player_page.dart';
 import '../video/video_player_settings.dart';
@@ -21,6 +22,7 @@ Future<void> openMediaResource(
   Duration? position,
   ResolvedMedia? initialMedia,
   bool restartAudio = false,
+  VideoDownloadCenter? downloadCenter,
 }) async {
   if (entry.episodes.isEmpty) throw StateError('资源没有章节');
   final service = MediaResourceService();
@@ -73,59 +75,82 @@ Future<void> openMediaResource(
           chapterTitle: episode.title,
         )
       : null;
-  DataSource? source;
-  var qualities = const <VideoQuality>[];
-  var media = initialMedia;
-  if (media == null && episode.url == null && sourced) {
-    source = await manager!.open(sourceId);
-    if (!context.mounted || route?.isCurrent == false) return;
-    if (source == null) throw StateError('源不可用');
-    final content = await source.content(itemId: itemId, chapterId: episode.id);
-    if (!context.mounted || route?.isCurrent == false) return;
-    if (content is! VideoContent) throw StateError('源没有返回视频地址');
-    qualities = SourcePlayback.contentQualities(content, source: source);
-    final quality = PlaybackQualityPreference.select(
-      qualities,
-      VideoPlayerSettingsStore(library!).load(),
+  DownloadedVideoPlayback? offline;
+  try {
+    if (sourced) {
+      try {
+        offline = await (downloadCenter ?? VideoDownloadCenter.instance)
+            .completedPlayback(sourceId, itemId, episode.id, section: origin);
+      } catch (_) {
+        PlaybackDiagnostics.record('offline-lookup-failed', source: sourceId);
+      }
+      if (!context.mounted || route?.isCurrent == false) return;
+    }
+    DataSource? source;
+    var qualities = const <VideoQuality>[];
+    final title = target?.mediaTitle ?? entry.title;
+    final PlayerMedia playback;
+    if (offline != null) {
+      playback = offline.media(title);
+    } else {
+      var media = initialMedia;
+      if (media == null && episode.url == null && sourced) {
+        source = await manager!.open(sourceId);
+        if (!context.mounted || route?.isCurrent == false) return;
+        if (source == null) throw StateError('源不可用');
+        final content = await source.content(
+          itemId: itemId,
+          chapterId: episode.id,
+        );
+        if (!context.mounted || route?.isCurrent == false) return;
+        if (content is! VideoContent) throw StateError('源没有返回视频地址');
+        qualities = SourcePlayback.contentQualities(content, source: source);
+        final quality = PlaybackQualityPreference.select(
+          qualities,
+          VideoPlayerSettingsStore(library!).load(),
+        );
+        media = ResolvedMedia(
+          quality?.url ?? content.url,
+          headers:
+              quality?.headers ??
+              SourcePlayback.contentHeaders(content, source: source),
+        );
+      }
+      media ??= await service.resolve(entry, episode);
+      if (!context.mounted || route?.isCurrent == false) return;
+      playback = PlayerMedia(
+        uri: media.url,
+        headers: media.headers,
+        title: title,
+      );
+    }
+    final prepared = await preparePlaybackRoute(
+      playback,
+      library: library,
+      target: target,
+      stillActive: () => context.mounted && route?.isCurrent != false,
     );
-    media = ResolvedMedia(
-      quality?.url ?? content.url,
-      headers:
-          quality?.headers ??
-          SourcePlayback.contentHeaders(content, source: source),
-    );
-  }
-  media ??= await service.resolve(entry, episode);
-  if (!context.mounted || route?.isCurrent == false) return;
-  final playback = PlayerMedia(
-    uri: media.url,
-    headers: media.headers,
-    title: target?.mediaTitle ?? entry.title,
-  );
-  final prepared = await preparePlaybackRoute(
-    playback,
-    library: library,
-    target: target,
-    stillActive: () => context.mounted && route?.isCurrent != false,
-  );
-  if (!context.mounted || route?.isCurrent == false) {
-    await prepared?.discard();
-    return;
-  }
-  await Navigator.push(
-    context,
-    MaterialPageRoute<void>(
-      builder: (_) => VideoPlayerPage(
-        media: playback,
-        initialPosition: position,
-        prelaunch: prepared,
-        title: entry.title,
-        target: target,
-        library: library,
-        source: source,
-        sourceManager: manager,
-        qualities: qualities,
+    if (!context.mounted || route?.isCurrent == false) {
+      await prepared?.discard();
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => VideoPlayerPage(
+          media: playback,
+          initialPosition: position,
+          prelaunch: prepared,
+          title: entry.title,
+          target: target,
+          library: library,
+          source: source,
+          sourceManager: manager,
+          qualities: qualities,
+        ),
       ),
-    ),
-  );
+    );
+  } finally {
+    await offline?.close();
+  }
 }

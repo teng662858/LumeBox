@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -11,7 +12,28 @@ import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/features/video/video_player_page.dart';
+import 'package:lume_box/features/video/video_download_center.dart';
 import 'package:lume_box/features/media/media_resource_router.dart';
+
+class _LocalHttp extends HttpOverrides {}
+
+class _PlaybackObserver extends NavigatorObserver {
+  Completer<void>? opened;
+
+  Future<void> tapAndWait(WidgetTester tester, String label) async {
+    await tester.runAsync(() async {
+      opened = Completer<void>();
+      await tester.tap(find.text(label));
+      await opened!.future.timeout(const Duration(seconds: 5));
+    });
+    await tester.pumpAndSettle();
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (previousRoute != null) opened?.complete();
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +43,7 @@ void main() {
   late ReadingLibrary library;
   late Directory directory;
   late NativeVideoBridge bridge;
+  late VideoDownloadCenter downloads;
   final calls = <MethodCall>[];
   setUp(() async {
     calls.clear();
@@ -40,6 +63,8 @@ void main() {
     await SectionScope.open(Section.video);
     library = await ReadingLibrary.open(Section.video);
     bridge = NativeVideoBridge();
+    downloads = VideoDownloadCenter(directory: () async => directory);
+    await downloads.boot();
   });
   tearDown(() async {
     ReadingLibrary.disposeAll();
@@ -89,6 +114,64 @@ void main() {
     expect(find.text('首页'), findsOneWidget);
     await opening;
   });
+  testWidgets('媒体库从下载播放 HLS，关闭后释放服务，删除后回到在线地址', (tester) async {
+    final task = VideoDownloadTask(
+      id: VideoDownloadCenter.identity('saved-source', 'show', 'second'),
+      sourceId: 'saved-source', itemId: 'show', chapterId: 'second',
+      title: '离线影片', chapterTitle: '第二集', chapterIndex: 1,
+      state: 'merge_failed', fileName: 'index.m3u8',
+    );
+    downloads.tasks.add(task);
+    Directory(downloads.folder(task)).createSync(recursive: true);
+    downloads.localFile(task).writeAsStringSync('#EXTM3U\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n');
+    File('${downloads.folder(task)}/part.ts').writeAsBytesSync([9, 8, 7]);
+    final online = Uri.parse('https://expired.invalid/second.mp4');
+    final entry = MediaResource(
+      id: 'placed', title: '离线影片', kind: ResourceKind.video,
+      destination: Section.comic, originSection: Section.video,
+      sourceId: task.sourceId, itemId: task.itemId,
+      episodes: [
+        const ResourceEpisode(id: 'first', title: '第一集'),
+        ResourceEpisode(id: 'second', title: '第二集', url: online, headers: const {'Cookie': 'source-only'}),
+      ],
+    );
+    final nav = GlobalKey<NavigatorState>();
+    final observer = _PlaybackObserver();
+    await tester.pumpWidget(MaterialApp(navigatorKey: nav, navigatorObservers: [observer], home: Builder(builder: (context) =>
+        TextButton(onPressed: () => openMediaResource(context, entry, index: 1, downloadCenter: downloads),
+            child: const Text('播放')))));
+    Future<VideoPlayerPage> open() async {
+      await observer.tapAndWait(tester, '播放');
+      return tester.widget<VideoPlayerPage>(find.byType(VideoPlayerPage));
+    }
+    final page = await open();
+    expect(page.media!.isDownloaded, true);
+    expect(page.media!.headers, isNull);
+    final uri = page.media!.uri;
+    expect(uri.host, '127.0.0.1');
+    expect(page.target?.chapterId, 'second');
+    await tester.runAsync(() async {
+      final client = _LocalHttp().createHttpClient(null);
+      try {
+        final response = await (await client.getUrl(uri.resolve('part.ts'))).close();
+        expect(await response.expand((chunk) => chunk).toList(), [9, 8, 7]);
+      } finally {
+        client.close(force: true);
+      }
+    });
+    nav.currentState!.pop();
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await expectLater(Socket.connect(uri.host, uri.port), throwsA(isA<SocketException>()));
+    });
+    downloads.localFile(task).deleteSync();
+    final fallback = await open();
+    expect(fallback.media!.uri, online);
+    expect(fallback.media!.headers, {'Cookie': 'source-only'});
+    expect(fallback.media!.isDownloaded, false);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final explicit in [false, true]) {
     testWidgets('media library retains source identity and selected chapter (explicit=$explicit)', (tester) async {
       library.saveProgress(VideoProgress(
@@ -106,17 +189,18 @@ void main() {
             ResourceEpisode(id: id, title: id, url: Uri.parse('https://cdn.test/$id.mp4')),
         ],
       );
-      await tester.pumpWidget(MaterialApp(home: Builder(builder: (context) => TextButton(
+      final observer = _PlaybackObserver();
+      await tester.pumpWidget(MaterialApp(navigatorObservers: [observer], home: Builder(builder: (context) => TextButton(
         onPressed: () => openMediaResource(
           context, entry,
+          downloadCenter: downloads,
           index: explicit ? 0 : null,
           initialMedia: explicit ? ResolvedMedia(Uri.parse('https://cdn.test/signed.mp4'),
               headers: {'X-Test': 'ticket'}) : null,
         ),
         child: const Text('打开'),
       ))));
-      await tester.tap(find.text('打开'));
-      await tester.pumpAndSettle();
+      await observer.tapAndWait(tester, '打开');
       final page = tester.widget<VideoPlayerPage>(find.byType(VideoPlayerPage));
       expect(page.target?.chapterId, explicit ? 'first' : 'second');
       expect(page.target?.chapterIndex, explicit ? 0 : 1);
