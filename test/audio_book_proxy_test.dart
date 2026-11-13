@@ -336,6 +336,50 @@ void main() {
       },
     );
   }
+  for (final denied in [403, 405, 501]) {
+    test('仅允许 GET 的音频地址仍能响应播放器 HEAD 探测（HTTP $denied）', () async {
+      final origin = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final requests = <String>[];
+      origin.listen((request) async {
+        requests.add(request.method);
+        if (request.method == 'HEAD') {
+          request.response.statusCode = denied;
+        } else {
+          request.response.headers.contentType = ContentType('audio', 'mpeg');
+          request.response.contentLength = 5;
+          request.response.add([1, 2, 3, 4, 5]);
+        }
+        await request.response.close();
+      });
+      final proxy = AudioBookProxy();
+      final client = http.Client();
+      try {
+        final media = (await proxy.prepare([
+          AudioBookTrack(id: 'chapter', album: '测试书', episode: ResourceEpisode(
+            id: 'chapter', title: '章节', url: Uri.parse('http://127.0.0.1:${origin.port}/signed'),
+          )),
+        ])).single;
+        final head = await client.head(media);
+        expect(head.statusCode, 200);
+        expect(head.headers['content-length'], '5');
+        expect(head.headers['content-type'], contains('audio/mpeg'));
+        expect(head.bodyBytes, isEmpty);
+        expect(requests, ['HEAD', 'GET']);
+        final range = await client.head(media, headers: {'Range': 'bytes=1-3'});
+        expect(range.statusCode, 206);
+        expect(range.headers['content-range'], 'bytes 1-3/5');
+        expect(range.headers['content-length'], '3');
+        expect(range.bodyBytes, isEmpty);
+        expect((await client.get(media)).bodyBytes, [1, 2, 3, 4, 5]);
+        expect(proxy.lastError, isNull);
+      } finally {
+        client.close();
+        await proxy.close();
+        await origin.close(force: true);
+      }
+    });
+  }
+
   for (final rangeStatus in [200, 403, 416]) {
     test('remote audio seek serves exact bytes when Range gets HTTP $rangeStatus', () async {
       final bytes = List<int>.generate(256, (i) => i);

@@ -180,10 +180,11 @@ class AudioBookProxy {
       _clients.add(client);
       http.StreamedResponse? response;
       var fetchPlaylist = playlistAsset || uri.path.toLowerCase().endsWith('.m3u8');
+      var method = request.method;
       var ignoreRange = false;
       var redirects = 0;
       while (true) {
-        final upstream = http.Request(fetchPlaylist ? 'GET' : request.method, uri)
+        final upstream = http.Request(fetchPlaylist ? 'GET' : method, uri)
           ..headers.addAll(headers)
           ..followRedirects = false;
         if (fetchPlaylist || ignoreRange) {
@@ -219,6 +220,14 @@ class AudioBookProxy {
             )) {
           await response.stream.listen(null).cancel();
           fetchPlaylist = true;
+          continue;
+        }
+        // Some media servers allow playback but reject metadata-only probes.
+        // Use GET for the upstream headers and keep the downstream HEAD body empty.
+        if (upstream.method == 'HEAD' &&
+            const [403, 405, 501].contains(response.statusCode)) {
+          await response.stream.listen(null).cancel();
+          method = 'GET';
           continue;
         }
         // Offsets in an encoded response refer to compressed bytes. Request
