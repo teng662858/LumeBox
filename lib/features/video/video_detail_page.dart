@@ -87,6 +87,7 @@ TextTheme _bolderTextTheme(TextTheme base) => base.copyWith(
 );
 
 typedef OpenVideoPlayer = Future<void> Function(
+  ({BuildContext context, DataSource source}) origin,
   PlayerMedia media,
   VideoPlayTarget target,
   List<VideoQuality> qualities,
@@ -764,6 +765,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
         sourceId: _source?.id ?? widget.sourceId,
       );
       await widget.onPlay(
+        (context: context, source: _source!),
         media,
         target,
         qualities,

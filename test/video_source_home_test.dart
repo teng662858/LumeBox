@@ -198,6 +198,36 @@ void main() {
     // integration suite. This source-flow test stops at the media handoff.
   });
 
+  testWidgets('从详情换源搜索后可打开目标源播放器', (tester) async {
+    source.items = const [SourceItem(id: 'one', title: '原片')];
+    source.chapterList = const [SourceChapter(id: 'old', title: '第1集')];
+    final other = _VideoSource(id: 'other')
+      ..items = const [SourceItem(id: 'two', title: '原片（换源）')]
+      ..chapterList = const [SourceChapter(id: 'new', title: '第1集')]
+      ..contentUrl = 'https://example.com/new.mp4';
+    manager.sources.add(const SourceDescriptor(
+      id: 'other', name: '第二个源', version: '1', enabled: true,
+    ));
+    manager.opened[other.id] = other;
+    await pumpBoard(tester);
+    await tester.tap(find.text('原片'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('video-detail-more')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保持集数换源'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('search-filter-other')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('原片（换源）'));
+    await tester.pumpAndSettle();
+    await tapWithDetailPlay(tester, find.byKey(const Key('video-detail-play')));
+    final player = tester.widget<VideoPlayerPage>(find.byType(VideoPlayerPage));
+    expect(player.target?.sourceId, other.id);
+    expect(player.target?.chapterId, 'new');
+    expect(player.media?.uri.toString(), other.contentUrl);
+    expect(player.source, same(other));
+  });
+
   testWidgets('等待其他音频释放焦点时离开详情不会再打开播放器', (tester) async {
     source.items = const [SourceItem(id: 'https://example.com/movie.mp4', title: '等待焦点')];
     await pumpBoard(tester);
@@ -215,7 +245,7 @@ void main() {
       final page = tester.widget<VideoDetailPage>(detail);
       const target = VideoPlayTarget(sourceId: 'demo-video', itemId: 'movie', title: '等待焦点',
         chapterIndex: 0, chapterId: 'movie', chapterTitle: '正片');
-      unawaited(page.onPlay(PlayerMedia(uri: Uri.parse('https://example.com/movie.mp4')), target, [], null));
+      unawaited(page.onPlay((context: tester.element(detail), source: source), PlayerMedia(uri: Uri.parse('https://example.com/movie.mp4')), target, [], null));
       await tester.pump();
       expect(releasing, isTrue);
       Navigator.of(tester.element(detail)).pop();
@@ -446,11 +476,12 @@ void main() {
 
 /// 视频图源替身：列表 / 剧集 / 内容都按用例配置，不碰沙箱与网络。
 class _VideoSource implements DataSource {
+  _VideoSource({this.id = 'demo-video'});
   @override
   final Section section = Section.video;
 
   @override
-  String get id => 'demo-video';
+  final String id;
 
   @override
   String get name => '公开样片测试源';

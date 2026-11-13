@@ -183,16 +183,18 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
                   duration: progress.duration,
                 )
               : null,
-          onPlay: (media, target, qualities, prepared) async {
+          onPlay: (origin, media, target, qualities, prepared) async {
+            final context = origin.context;
+            final route = ModalRoute.of(context);
             final entering =
                 prepared ??
                 await preparePlaybackRoute(
                   media,
                   library: library,
                   target: target,
-                  stillActive: () => context.mounted,
+                  stillActive: () => context.mounted && route?.isCurrent != false,
                 );
-            if (!context.mounted) {
+            if (!context.mounted || route?.isCurrent == false) {
               await entering?.discard();
               return;
             }
@@ -204,8 +206,8 @@ class _ContinueActivityPageState extends State<ContinueActivityPage>
                 pageBuilder: (_, _, _) => VideoPlayerPage(
                   media: media,
                   target: target,
-                  source: source,
-                  sourceId: source.id,
+                  source: origin.source,
+                  sourceId: target.sourceId,
                   sourceManager: manager(library.section),
                   library: library,
                   qualities: qualities,

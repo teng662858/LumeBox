@@ -48,7 +48,7 @@ Future<void> main() async {
                           title: '山间来信（示例正文）',
                         ),
                         library: library,
-                        onPlay: (_, _, _, _) async {},
+                        onPlay: (_, _, _, _, _) async {},
                       ),
                     ),
                   ),

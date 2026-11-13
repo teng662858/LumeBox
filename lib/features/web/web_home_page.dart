@@ -310,16 +310,25 @@ class _WebHomePageState extends State<WebHomePage> {
               : 'web-episode-${request.selected}',
           library: library,
           recordHistory: false,
-          onPlay: (media, target, qualities, prelaunch) async {
-            await PlaybackFocus.acquire('video');
-            if (!mounted) return;
+          onPlay: (origin, media, target, qualities, prelaunch) async {
+            final context = origin.context;
+            final route = ModalRoute.of(context);
+            await PlaybackFocus.acquire(
+              'video',
+              stillWanted: () => context.mounted && route?.isCurrent != false,
+            );
+            if (!context.mounted || route?.isCurrent == false) {
+              await prelaunch?.discard();
+              return;
+            }
+            final captured = identical(origin.source, source);
             await Navigator.of(context).push<void>(
               MaterialPageRoute(
                 builder: (_) => VideoPlayerPage(
                   media: media,
-                  title: request.title,
-                  source: source,
-                  target: request.episodes.isEmpty ? null : target,
+                  title: target.title,
+                  source: origin.source,
+                  target: captured && request.episodes.isEmpty ? null : target,
                   library: library,
                   qualities: qualities,
                   prelaunch: prelaunch,

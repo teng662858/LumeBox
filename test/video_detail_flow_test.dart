@@ -240,7 +240,7 @@ void main() {
             source: source,
             item: const SourceItem(id: 'movie', title: '详情测试片'),
             library: library,
-            onPlay: (_, _, _, _) async => fail('下载入口不应播放视频'),
+            onPlay: (_, _, _, _, _) async => fail('下载入口不应播放视频'),
           ),
         ),
       );
@@ -296,7 +296,7 @@ void main() {
         detectContent: false,
         item: const SourceItem(id: 'refreshed-catalog', title: '测试'),
         library: library,
-        onPlay: (_, target, _, _) async { played = target; },
+        onPlay: (_, _, target, _, _) async { played = target; },
       )));
       await tester.pump();
       final dynamic state = tester.state(find.byType(VideoDetailPage));
@@ -327,7 +327,7 @@ void main() {
     nav.currentState!.push(MaterialPageRoute<void>(builder: (_) => VideoDetailPage(
       source: source, item: const SourceItem(id: 'late-play', title: '测试'),
       detectContent: false, library: library, downloadCenter: downloads,
-      onPlay: (_, _, _, _) async { opens++; },
+      onPlay: (_, _, _, _, _) async { opens++; },
     )));
     await tester.pumpAndSettle();
     final dynamic state = tester.state(find.byType(VideoDetailPage));
@@ -367,7 +367,7 @@ void main() {
       source: source,
       item: const SourceItem(id: 'quality', title: '画质测试'),
       library: library,
-      onPlay: (media, _, _, _) async { played = media; },
+      onPlay: (_, media, _, _, _) async { played = media; },
     )));
     await tester.pumpAndSettle();
     await tester.runAsync(() async {
@@ -399,7 +399,7 @@ void main() {
             source: source,
             item: SourceItem(id: 'fast-$extension', title: '详情测试片'),
             library: library,
-            onPlay: (media, target, qualities, prelaunch) async {
+            onPlay: (_, media, target, qualities, prelaunch) async {
               opened++;
             },
           ),
@@ -439,7 +439,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
         source: source, item: const SourceItem(id: 'return-detail', title: '详情测试片'),
         library: library, initialChapterId: 'e2',
-        onPlay: (_, target, _, _) async { played = target; },
+        onPlay: (_, _, target, _, _) async { played = target; },
       )));
       await tester.pumpAndSettle();
       final dynamic state = tester.state(find.byType(VideoDetailPage));
@@ -457,7 +457,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
       source: multi, item: const SourceItem(id: 'switch-return', title: '详情测试片'),
       library: library, initialChapterId: 'a1',
-      onPlay: (_, _, _, _) async {
+      onPlay: (_, _, _, _, _) async {
         library.saveProgress(VideoProgress(
           sourceId: multi.id, itemId: 'switch-return', section: Section.video,
           chapterIndex: 1, chapterId: 'b2', chapterTitle: '第2集',
@@ -492,7 +492,7 @@ void main() {
             position: Duration(seconds: 75),
             duration: Duration(minutes: 40),
           ),
-          onPlay: (_, target, _, _) async {
+          onPlay: (_, _, target, _, _) async {
             played = target;
           },
         ),
@@ -527,7 +527,7 @@ void main() {
     VideoPlayTarget? target;
     await tester.pumpWidget(MaterialApp(home: VideoDetailPage(
       source: multi, item: const SourceItem(id: 'private-switch', title: '详情测试片'),
-      library: library, onPlay: (_, next, _, _) async { target = next; },
+      library: library, onPlay: (_, _, next, _, _) async { target = next; },
     )));
     await tester.pumpAndSettle();
     final dynamic state = tester.state(find.byType(VideoDetailPage));
@@ -550,7 +550,7 @@ void main() {
         title: '详情测试片', chapterTitle: '第2集', chapterIndex: 1,
         position: Duration(minutes: 8), duration: Duration(minutes: 20),
       ),
-      onPlay: (_, _, _, _) async => fail('确认前不能播放'),
+      onPlay: (_, _, _, _, _) async => fail('确认前不能播放'),
     )));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
@@ -580,7 +580,7 @@ void main() {
             position: Duration(seconds: 60),
             duration: Duration.zero,
           ),
-          onPlay: (_, _, _, _) async {},
+          onPlay: (_, _, _, _, _) async {},
         ),
       ),
     );
@@ -610,7 +610,7 @@ void main() {
             position: Duration(seconds: 60),
             duration: Duration.zero,
           ),
-          onPlay: (_, _, _, _) async => fail('未选择剧集不能自动播放'),
+          onPlay: (_, _, _, _, _) async => fail('未选择剧集不能自动播放'),
         ),
       ),
     );
@@ -634,7 +634,7 @@ void main() {
           source: source,
           item: const SourceItem(id: 'brand', title: '详情测试片'),
           library: library,
-          onPlay: (_, _, _, _) async {},
+          onPlay: (_, _, _, _, _) async {},
         ),
       ),
     );
@@ -722,7 +722,7 @@ void main() {
           ),
           library: library,
           imagePipeline: pipeline,
-          onPlay: (_, _, _, _) async {
+          onPlay: (_, _, _, _, _) async {
             opened++;
           },
         ),
@@ -771,7 +771,7 @@ void main() {
           initialChapterId: 'e11',
           library: library,
           recordHistory: false,
-          onPlay: (_, target, _, _) async => opened = target,
+          onPlay: (_, _, target, _, _) async => opened = target,
         ),
       ),
     );
@@ -796,7 +796,7 @@ void main() {
           source: NetdiskDiagnosticSource(),
           item: const SourceItem(id: 'netdisk', title: '网盘演示'),
           library: library,
-          onPlay: (_, _, _, _) async {},
+          onPlay: (_, _, _, _, _) async {},
         ),
       ),
     );
@@ -830,7 +830,7 @@ void main() {
           source: source,
           item: const SourceItem(id: 'movie', title: '详情测试片'),
           library: library,
-          onPlay: (_, target, _, _) async => opened = target,
+          onPlay: (_, _, target, _, _) async => opened = target,
         ),
       ),
     );
@@ -977,7 +977,7 @@ void main() {
             cover: 'https://fixture.test/poster.jpg',
           ),
           library: library,
-          onPlay: (_, _, _, _) async {},
+          onPlay: (_, _, _, _, _) async {},
         ),
       ),
     );
@@ -1099,7 +1099,7 @@ void main() {
           source: MultiLineDetailSource(),
           item: const SourceItem(id: 'movie', title: '详情测试片'),
           library: library,
-          onPlay: (_, _, _, _) async {},
+          onPlay: (_, _, _, _, _) async {},
         ),
       ),
     );
@@ -1136,7 +1136,7 @@ void main() {
           source: NumericDetailSource(),
           item: const SourceItem(id: 'numeric', title: '详情测试片'),
           library: library,
-          onPlay: (_, _, _, _) async {},
+          onPlay: (_, _, _, _, _) async {},
         ),
       ),
     );
@@ -1180,7 +1180,7 @@ void main() {
           source: source,
           item: const SourceItem(id: 'long', title: '详情测试片'),
           library: library,
-          onPlay: (_, _, _, _) async {},
+          onPlay: (_, _, _, _, _) async {},
         ),
       ),
     );
@@ -1220,7 +1220,7 @@ void main() {
           source: LongDetailSource(),
           item: const SourceItem(id: 'long', title: '详情测试片'),
           library: library,
-          onPlay: (_, _, _, _) async {},
+          onPlay: (_, _, _, _, _) async {},
         ),
       ),
     );
@@ -1273,7 +1273,7 @@ void main() {
           source: source,
           item: const SourceItem(id: 'movie', title: '详情测试片'),
           library: library,
-          onPlay: (_, _, _, _) async {},
+          onPlay: (_, _, _, _, _) async {},
         ),
       ),
     );
@@ -1339,7 +1339,7 @@ void main() {
           ),
           library: library,
           imagePipeline: pipeline,
-          onPlay: (_, _, _, _) async {},
+          onPlay: (_, _, _, _, _) async {},
         ),
       ),
     );
@@ -1386,7 +1386,7 @@ void main() {
           source: source,
           item: const SourceItem(id: 'movie', title: '详情测试片'),
           library: library,
-          onPlay: (_, _, _, _) async {},
+          onPlay: (_, _, _, _, _) async {},
         ),
       ),
     );
@@ -1441,7 +1441,7 @@ void main() {
             mediaType: 'video',
           ),
           library: library,
-          onPlay: (_, _, _, _) async {
+          onPlay: (_, _, _, _, _) async {
             opened++;
           },
         ),
@@ -1476,7 +1476,7 @@ void main() {
           ),
           item: const SourceItem(id: 'movie', title: '详情测试片'),
           library: library,
-          onPlay: (_, _, _, _) async {
+          onPlay: (_, _, _, _, _) async {
             fail('不应打开播放器');
           },
         ),
@@ -1497,7 +1497,7 @@ void main() {
           source: source,
           item: const SourceItem(id: 'movie', title: '详情测试片'),
           library: library,
-          onPlay: (_, _, _, _) async {
+          onPlay: (_, _, _, _, _) async {
             opened++;
           },
         ),
@@ -1556,7 +1556,7 @@ void main() {
       item: const SourceItem(id: 'movie', title: '详情测试片', mediaType: 'video'),
       library: library,
       downloadCenter: downloads,
-      onPlay: (media, target, _, _) async {
+      onPlay: (_, media, target, _, _) async {
         opened.add(media);
         chapters.add(target.chapterId);
       },

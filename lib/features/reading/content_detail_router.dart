@@ -50,15 +50,15 @@ Widget contentDetailPage({
         ),
         library: library,
         detectContent: false,
-        onPlay: (media, playTarget, qualities, prelaunch) async {
-          await Navigator.of(context).push(
+        onPlay: (origin, media, playTarget, qualities, prelaunch) async {
+          await Navigator.of(origin.context).push(
             MaterialPageRoute<void>(
               builder: (_) => VideoPlayerPage(
                 media: media,
                 title: playTarget.title,
                 target: playTarget,
-                sourceId: source.id,
-                source: source,
+                sourceId: playTarget.sourceId,
+                source: origin.source,
                 sourceManager: manager ?? bound,
                 library: library,
                 qualities: qualities,

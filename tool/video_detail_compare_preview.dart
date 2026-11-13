@@ -96,7 +96,7 @@ Future<void> main() async {
                     library: library,
                     imagePipeline: pipeline,
                     recordHistory: false,
-                    onPlay: (_, target, _, _) async =>
+                    onPlay: (_, _, target, _, _) async =>
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('演示选择：${target.chapterTitle}'),

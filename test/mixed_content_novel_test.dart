@@ -341,7 +341,7 @@ void main() {
             source: source,
             item: SourceItem(id: itemId, title: '综合作品'),
             library: library,
-            onPlay: (_, _, _, _) async {},
+            onPlay: (_, _, _, _, _) async {},
           ),
         ),
       );

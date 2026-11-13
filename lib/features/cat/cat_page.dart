@@ -883,7 +883,7 @@ class _CatPageState extends State<CatPage>
               item: item,
               library: lib,
               manager: manager,
-              onPlay: (media, target, qualities, prelaunch) async {
+              onPlay: (origin, media, target, qualities, prelaunch) async {
                 service.playInfo = {
                   'name': target.title,
                   'title': target.title,
@@ -891,12 +891,13 @@ class _CatPageState extends State<CatPage>
                   'epName': target.chapterTitle,
                   'url': media.uri.toString(),
                 };
-                await Navigator.of(context).push(
+                await Navigator.of(origin.context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => VideoPlayerPage(
                       media: media,
                       target: target,
                       sourceId: target.sourceId,
+                      source: origin.source,
                       library: lib,
                       sourceManager: manager,
                       qualities: qualities,

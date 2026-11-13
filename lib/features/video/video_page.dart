@@ -211,21 +211,21 @@ class _VideoPageState extends State<VideoPage> {
       await Navigator.push(
         context,
         MaterialPageRoute<void>(
-          builder: (detailContext) => VideoDetailPage(
+          builder: (_) => VideoDetailPage(
             sourceId: selection.sourceId,
             manager: manager,
             loadSource: () => manager.open(selection.sourceId),
             item: selection.item,
             library: library,
             prelaunch: _startPrelaunch,
-            onPlay: (media, target, qualities, prelaunch) {
-              final detailRoute = ModalRoute.of(detailContext);
+            onPlay: (origin, media, target, qualities, prelaunch) {
               return _openPlayer(
                 media,
                 target: target,
                 qualities: qualities,
                 prelaunch: prelaunch,
-                originRoute: detailRoute,
+                source: origin.source,
+                originRoute: ModalRoute.of(origin.context),
               );
             },
           ),
@@ -249,6 +249,7 @@ class _VideoPageState extends State<VideoPage> {
     VideoPlayTarget? target,
     List<VideoQuality> qualities = const <VideoQuality>[],
     PlayerPrelaunch? prelaunch,
+    DataSource? source,
     ModalRoute<dynamic>? originRoute,
   }) async {
     if (!mounted || originRoute?.isCurrent == false) {
@@ -283,6 +284,7 @@ class _VideoPageState extends State<VideoPage> {
             title: target?.title,
             target: target,
             sourceId: target?.sourceId,
+            source: source,
             playerFactory: widget.playerFactory,
             catalog: widget.catalog,
             pipBackend: widget.pipBackend,
