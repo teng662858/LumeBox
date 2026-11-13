@@ -53,12 +53,9 @@ class _AudioPlayerPageState extends State<AudioPlayerPage> {
         widget.resource,
         widget.tracks,
         index: widget.initialIndex,
+        initialPosition: widget.initialPosition,
         restart: widget.restart,
       );
-      if (widget.initialPosition != null &&
-          session.resource?.id == widget.resource.id) {
-        await session.seek(widget.initialPosition!);
-      }
     } finally {
       if (mounted) setState(() => _starting = false);
     }

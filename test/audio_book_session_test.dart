@@ -129,6 +129,44 @@ void main() {
     },
   );
 
+  Future<void> openBookmark() => session.open(
+    resource,
+    tracks,
+    index: 1,
+    initialPosition: const Duration(seconds: 63),
+  );
+
+  test('bookmark starts at its saved time before the first play command', () async {
+    Duration? firstAudiblePosition;
+    player.beforePlay = () async => firstAudiblePosition ??= session.position;
+    await openBookmark();
+    expect(firstAudiblePosition, const Duration(seconds: 63));
+  });
+
+  test('a bookmark interrupted by video focus cannot reclaim playback', () async {
+    final entered = Completer<void>(), resume = Completer<void>();
+    player.beforeLoad = () {
+      if (!entered.isCompleted) entered.complete();
+      return resume.future;
+    };
+    final opening = openBookmark();
+    await entered.future;
+    await PlaybackFocus.acquire('video');
+    resume.complete();
+    await opening;
+    expect(PlaybackFocus.owner, 'video');
+    expect(player.loads, 1);
+  });
+
+  test('opening a bookmark in the active chapter keeps a paused player paused', () async {
+    await session.open(resource, tracks, index: 1);
+    await session.pause();
+    await openBookmark();
+    expect(session.position, const Duration(seconds: 63));
+    expect(session.playing, isFalse);
+    expect(player.loads, 1);
+  });
+
   test('failed loading can retry the same chapter and resume time', () async {
     settings.positions[resource.id] = {'index': 1, 'position': 47000};
     player.failLoads = 1;

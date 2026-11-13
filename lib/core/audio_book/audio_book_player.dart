@@ -374,6 +374,7 @@ class AudioBookSession extends ChangeNotifier {
     MediaResource entry,
     List<AudioBookTrack> sources, {
     int? index,
+    Duration? initialPosition,
     bool restart = false,
   }) async {
     if (!restart &&
@@ -386,9 +387,16 @@ class AudioBookSession extends ChangeNotifier {
           sources.length,
           (i) => i,
         ).every((i) => sources[i].id == _tracks[i].id)) {
+      if (initialPosition != null) await seek(initialPosition);
       return;
     }
-    final task = load(entry, sources, index: index, resume: !restart);
+    final task = load(
+      entry,
+      sources,
+      index: index,
+      resume: !restart,
+      initialPosition: initialPosition,
+    );
     final generation = _generation;
     final pauseRevision = _pauseRevision;
     await task;
