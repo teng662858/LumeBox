@@ -1185,6 +1185,90 @@ void main() {
     },
   );
 
+  for (final bounce in [false, true]) {
+    test('cross-origin HLS redirects cannot restore credentials on child resources (bounce: $bounce)', () async {
+      final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final cdn = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => source.close(force: true));
+      addTearDown(() => cdn.close(force: true));
+      final base = Uri.parse('http://127.0.0.1:${source.port}/');
+      final cdnBase = Uri.parse('http://127.0.0.1:${cdn.port}/');
+      final seen = <(String, String?, String?)>[];
+      final master = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=160000\n${base.resolve('variant.m3u8')}\n';
+      Future<void> serve(HttpRequest request) async {
+        seen.add((request.uri.path, request.headers.value('authorization'), request.headers.value('referer')));
+        switch (request.uri.path) {
+          case '/entry.m3u8':
+            await request.response.redirect(cdnBase.resolve('redirect'));
+            return;
+          case '/redirect' when bounce:
+            await request.response.redirect(base.resolve('master.m3u8'));
+            return;
+          case '/redirect':
+          case '/master.m3u8':
+            request.response.write(master);
+          case '/variant.m3u8':
+            request.response.write('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n');
+          case '/key.bin':
+            request.response.add(List.filled(16, 5));
+          case '/part.ts':
+            request.response.add([1, 2, 3]);
+        }
+        await request.response.close();
+      }
+      source.listen(serve);
+      cdn.listen(serve);
+      final wrapped = await cache.wrap(PlayerMedia(uri: base.resolve('entry.m3u8'),
+          headers: const {'Authorization':'Bearer fixture', 'Referer':'https://example.test/'}));
+      Uri firstChild(String body) => Uri.parse(LineSplitter.split(body).firstWhere((l) => l.startsWith('http')));
+      final masterBody = utf8.decode((await get(wrapped.uri)).$2);
+      final variant = utf8.decode((await get(firstChild(masterBody))).$2);
+      final key = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(variant)![1]!);
+      expect((await get(key)).$2, List.filled(16, 5));
+      expect((await get(firstChild(variant))).$2, [1, 2, 3]);
+      expect(seen.first.$2, 'Bearer fixture');
+      expect(seen.skip(1).map((r) => r.$2), everyElement(isNull));
+      expect(seen.map((r) => r.$3), everyElement('https://example.test/'));
+    });
+  }
+
+  test('a playlist continuation redirect also limits credentials on the assembled playlist', () async {
+    final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final cdn = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => source.close(force: true));
+    addTearDown(() => cdn.close(force: true));
+    final base = Uri.parse('http://127.0.0.1:${source.port}/');
+    final bytes = utf8.encode('#EXTM3U\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n');
+    final seen = <(String, String?)>[];
+    source.listen((r) async {
+      seen.add((r.uri.path, r.headers.value('cookie')));
+      if (r.uri.path == '/part.ts') {
+        r.response.add([9, 8, 7]);
+      } else if (r.headers.value('range') == null) {
+        r.response.statusCode = 206;
+        r.response.headers.set('Content-Range', 'bytes 0-7/${bytes.length}');
+        r.response.add(bytes.sublist(0, 8));
+      } else {
+        await r.response.redirect(Uri.parse('http://127.0.0.1:${cdn.port}/rest'));
+        return;
+      }
+      await r.response.close();
+    });
+    cdn.listen((r) async {
+      seen.add((r.uri.path, r.headers.value('cookie')));
+      r.response.statusCode = 206;
+      r.response.headers.set('Content-Range', 'bytes 8-${bytes.length - 1}/${bytes.length}');
+      r.response.add(bytes.sublist(8));
+      await r.response.close();
+    });
+    final wrapped = await cache.wrap(PlayerMedia(uri: base.resolve('index.m3u8'),
+        headers: const {'Cookie':'test=fixture'}));
+    final body = utf8.decode((await get(wrapped.uri)).$2);
+    final part = Uri.parse(LineSplitter.split(body).firstWhere((l) => l.startsWith('http')));
+    expect((await get(part)).$2, [9, 8, 7]);
+    expect(seen, [('/index.m3u8','test=fixture'),('/index.m3u8','test=fixture'),('/rest',null),('/part.ts',null)]);
+  });
+
   test('HLS redirect base is used for relative segments and keys', () async {
     final wrapped = await cache.wrap(
       PlayerMedia(uri: upstream.resolve('redirect')),

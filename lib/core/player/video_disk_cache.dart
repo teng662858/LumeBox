@@ -748,7 +748,10 @@ class VideoDiskCache extends ChangeNotifier {
           Stream.value(data), 206, response.uri, response.header, response.requestHeaders,
         );
         final complete = BytesBuilder(copy: false);
-        await for (final part in _completeBody(first).timeout(const Duration(seconds: 30))) {
+        var keepOriginHeaders = first.hasOriginHeaders;
+        await for (final part in _completeBody(first, onPart: (response) {
+          keepOriginHeaders = keepOriginHeaders && response.hasOriginHeaders;
+        }).timeout(const Duration(seconds: 30))) {
           if (complete.length + part.length > 8 * blockBytes) {
             throw const HttpException('媒体清单过大');
           }
@@ -758,7 +761,7 @@ class VideoDiskCache extends ChangeNotifier {
         final manifest = complete.takeBytes();
         return _Block(manifest, 0, manifest.length, mime,
             response.header('etag') ?? response.header('last-modified'),
-            response.uri, response.header('content-encoding'));
+            response.uri, response.header('content-encoding'), keepOriginHeaders: keepOriginHeaders);
       }
       if (response.statusCode == 200 && start > 0 && _packedAudio(media.uri.path.toLowerCase())) {
         return _Block(
@@ -792,6 +795,7 @@ class VideoDiskCache extends ChangeNotifier {
         response.header('etag') ?? response.header('last-modified'),
         response.uri,
         response.header('content-encoding'),
+        keepOriginHeaders: response.hasOriginHeaders,
       );
     }
     throw const HttpException('媒体代理暂不可用');
@@ -919,7 +923,7 @@ class VideoDiskCache extends ChangeNotifier {
           .trimLeft()
           .startsWith('#EXTM3U');
 
-  Stream<List<int>> _completeBody(_MediaResponse first) async* {
+  Stream<List<int>> _completeBody(_MediaResponse first, {void Function(_MediaResponse)? onPart}) async* {
     if (first.statusCode == 200) {
       yield* first;
       return;
@@ -957,6 +961,7 @@ class VideoDiskCache extends ChangeNotifier {
         await part.listen(null).cancel();
         throw const HttpException('视频分片长度无效');
       }
+      onPart?.call(part);
       await for (final bytes in part) {
         if (bytes.length > end + 1 - offset) {
           throw const HttpException('视频分片超过声明范围');
@@ -1410,7 +1415,7 @@ class VideoDiskCache extends ChangeNotifier {
           final uri = block.base.resolve(text);
           if (!['http', 'https'].contains(uri.scheme)) return null;
           final headers = Map<String, String>.of(media.headers ?? {});
-          if (uri.origin != media.uri.origin) {
+          if (!block.keepOriginHeaders || uri.origin != block.base.origin) {
             headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
           }
           return PlayerMedia(uri: uri, headers: headers);
@@ -1699,6 +1704,7 @@ class _MediaResponse extends StreamView<List<int>> {
   final Uri uri;
   final String? Function(String name) header;
   final Map<String, String> requestHeaders;
+  bool get hasOriginHeaders => requestHeaders.keys.any(isOriginBoundHttpHeader);
   PlayerMedia get media => PlayerMedia(uri: uri, headers: requestHeaders);
 }
 
@@ -1719,14 +1725,16 @@ class _Block {
     this.mime,
     this.validator,
     this.base,
-    this.encoding,
-  );
+    this.encoding, {
+    this.keepOriginHeaders = false,
+  });
   final Uint8List data;
   final int start, total;
   final String mime;
   final String? validator;
   final Uri base;
   final String? encoding;
+  final bool keepOriginHeaders;
   _Block withData(Uint8List data) =>
-      _Block(data, start, total, mime, validator, base, encoding);
+      _Block(data, start, total, mime, validator, base, encoding, keepOriginHeaders: keepOriginHeaders);
 }
