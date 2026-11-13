@@ -1168,15 +1168,36 @@ class VideoDiskCache extends ChangeNotifier {
     }
   }
 
+  PlayerMedia _playlistReload(PlayerMedia media, Uri ticket) {
+    if (!ticket.hasQuery || !ticket.path.endsWith('.m3u8')) return media;
+    const names = {'_HLS_msn', '_HLS_part', '_HLS_skip'};
+    final directives = {
+      for (final e in ticket.queryParameters.entries)
+        if (names.contains(e.key)) e.key: e.value,
+    };
+    if (directives.isEmpty) return media;
+    // Re-encoding the origin query can invalidate a signature or collapse
+    // repeated parameters. Replace only delivery directives supplied by the player.
+    final query = [
+      if (media.uri.query.isNotEmpty)
+        for (final pair in media.uri.query.split('&'))
+          if (!directives.containsKey(pair.split('=').first)) pair,
+      for (final e in directives.entries)
+        '${e.key}=${Uri.encodeQueryComponent(e.value)}',
+    ].join('&');
+    return PlayerMedia(uri: media.uri.replace(query: query), headers: media.headers);
+  }
+
   Future<void> _handle(HttpRequest request) async {
     final response = request.response;
     var streaming = false;
     try {
-      final media = _tickets[request.uri.path.substring(1)];
-      if (media == null) {
+      final ticket = _tickets[request.uri.path.substring(1)];
+      if (ticket == null) {
         response.statusCode = 404;
         return;
       }
+      final media = _playlistReload(ticket, request.uri);
       if (!['GET', 'HEAD'].contains(request.method)) {
         response.statusCode = 405;
         return;
@@ -1441,7 +1462,7 @@ class VideoDiskCache extends ChangeNotifier {
         return;
       }
       // Non-seekable/large responses remain playable without a disk promise.
-      final media = _tickets[request.uri.path.substring(1)]!;
+      final media = _playlistReload(_tickets[request.uri.path.substring(1)]!, request.uri);
       final upstream = await _request(media, request.headers.value('range'));
       response.statusCode = upstream.statusCode;
       for (final name in [

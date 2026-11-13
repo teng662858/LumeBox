@@ -95,6 +95,23 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path == '/live/master.m3u8') {
+        request.response.write('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=50000\nvideo?sig=a%2Fb+z&tag=x&tag=y&_HLS_msn=7\n');
+        await request.response.close();
+        return;
+      }
+      if (request.uri.path == '/live/video') {
+        final sequence = request.uri.queryParameters['_HLS_msn'];
+        request.response.write(
+          '#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:$sequence\n'
+          '#EXT-X-PART-INF:PART-TARGET=0.5\n#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES\n'
+          '#EXT-X-PART:DURATION=0.5,URI="part-$sequence.m4s"\n',
+        );
+        paths.add(request.uri.query);
+        paths.add(request.headers.value('authorization') ?? '');
+        await request.response.close();
+        return;
+      }
       if (request.uri.path.startsWith('/challenge/')) {
         request.response.headers.set('Content-Type', 'application/octet-stream');
         final payload = calls == 1
@@ -369,6 +386,26 @@ void main() {
     return (response, await response.expand((b) => b).toList());
   }
 
+  for (final apple in [true, false]) {
+    test('low latency reloads forward the requested live part through a signed variant (apple=$apple)', () async {
+      final master = await cache.wrap(PlayerMedia(
+        uri: upstream.resolve('/live/master.m3u8'),
+        headers: const {'Authorization': 'fixture'},
+      ), appleHls: apple);
+      final manifest = utf8.decode((await get(master.uri)).$2);
+      final variant = Uri.parse(const LineSplitter().convert(manifest).last);
+      final results = await Future.wait([
+        for (final sequence in [8, 9])
+          get(variant.replace(query: '_HLS_msn=$sequence&_HLS_part=1&_HLS_skip=v2&sig=override&x=extra')),
+      ]);
+      for (var i = 0; i < results.length; i++) {
+        final sequence = 8 + i;
+        expect(utf8.decode(results[i].$2), contains('#EXT-X-MEDIA-SEQUENCE:$sequence\n'));
+        expect(paths, contains('sig=a%2Fb+z&tag=x&tag=y&_HLS_msn=$sequence&_HLS_part=1&_HLS_skip=v2'));
+      }
+      expect(paths.where((p) => p == 'fixture'), hasLength(2));
+    });
+  }
   for (final (path, range) in [
     ('movie.mp4', null),
     ('movie.mp4', 'bytes=0-15'),
