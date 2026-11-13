@@ -567,6 +567,33 @@ void main() {
     expect(requests.last.url.host, '192.0.2.2');
   });
 
+  test('remote seeks repair a mismatched 206 and preserve the 416 length', () async {
+    final native = MockClient((request) async {
+      final range = request.headers['range'];
+      if (range == 'bytes=90-') {
+        return http.Response('', 416, headers: {'content-range': 'bytes */64'});
+      }
+      final wrong = range == 'bytes=33-35';
+      return http.Response.bytes(data.sublist(0, wrong ? 3 : 64), 206, headers: {
+        'content-range': wrong ? 'bytes 0-2/64' : 'bytes 0-63/64',
+        'content-type': 'video/mp4',
+      });
+    });
+    await cache.close();
+    cache = VideoDiskCache(ipHttpsClient: native);
+    await cache.boot(directory: root);
+    final wrapped = await cache.wrap(
+      PlayerMedia(uri: Uri.parse('https://192.0.2.1/movie.mp4')),
+    );
+    final (past, _) = await get(wrapped.uri, 'bytes=90-');
+    expect(past.statusCode, 416);
+    expect(past.headers.value('content-range'), 'bytes */64');
+    final (seek, bytes) = await get(wrapped.uri, 'bytes=33-35');
+    expect(seek.statusCode, 206);
+    expect(seek.headers.value('content-range'), 'bytes 33-35/64');
+    expect(bytes, data.sublist(33, 36));
+  });
+
   for (final status in [400, 401, 403, 404, 429, 500, 502, 503]) {
     test(
       'upstream HTTP $status is preserved without leaking its body',

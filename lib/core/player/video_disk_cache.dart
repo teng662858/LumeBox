@@ -803,20 +803,31 @@ class VideoDiskCache extends ChangeNotifier {
       upstream = await _request(media, rangeHeader);
     }
     if (upstream.statusCode >= 400) {
+      final contentRange = upstream.header('content-range');
+      if (upstream.statusCode == 416 &&
+          contentRange != null &&
+          RegExp(r'^bytes \*/\d+$').hasMatch(contentRange)) {
+        request.response.headers.set('Content-Range', contentRange);
+      }
       await upstream.listen(null).cancel();
       throw _UpstreamStatus(upstream.statusCode);
     }
     final range = RegExp(r'^bytes (\d+)-(\d+)/(\d+)$')
         .firstMatch(upstream.header('content-range') ?? '');
     final length = int.tryParse(upstream.header('content-length') ?? '');
-    final start = range == null ? 0 : int.parse(range[1]!);
-    final total = range == null ? length : int.parse(range[3]!);
+    final partial = upstream.statusCode == 206;
+    final start = partial ? int.tryParse(range?[1] ?? '') ?? -1 : 0;
+    final end = int.tryParse(range?[2] ?? '');
+    final total = partial ? int.tryParse(range?[3] ?? '') : length;
+    final expected = partial && total != null
+        ? parseHttpByteRange(rangeHeader ?? 'bytes=0-', total)
+        : null;
     if (![200, 206].contains(upstream.statusCode) ||
-        upstream.statusCode == 206 &&
-            (range == null ||
-                length != null && length != int.parse(range[2]!) - start + 1 ||
-                rangeHeader == null &&
-                    (start != 0 || int.parse(range[2]!) + 1 != total))) {
+        partial &&
+            (expected == null ||
+                start != expected.start ||
+                end != expected.end ||
+                length != null && length != expected.end - start + 1)) {
       // Preserve the established repair path for capped/misdeclared local proxies.
       await upstream.listen(null).cancel();
       return false;
@@ -920,7 +931,7 @@ class VideoDiskCache extends ChangeNotifier {
         final value = upstream.header(name);
         if (value != null) response.headers.set(name, value);
       }
-      if (rangeHeader != null && range != null) {
+      if (rangeHeader != null && partial) {
         response.headers.set(
           'Content-Range',
           upstream.header('content-range')!,
