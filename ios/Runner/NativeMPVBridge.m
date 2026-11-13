@@ -161,7 +161,10 @@ static void *NativeMPVProc(void *context, const char *name) { return dlsym(RTLD_
     int w = MAX(2, ((int)(width * scale) / 2) * 2), h = MAX(2, ((int)(height * scale) / 2) * 2);
     dispatch_async(_render, ^{ self->_width = w; self->_height = h; });
   }
-  _ended = _ended || [self number:"eof-reached"] != 0;
+  // With keep-open, seeking back from EOF clears eof-reached without
+  // loading a new file. Only retain the event when the property is absent.
+  NSNumber *eofReached = [self property:"eof-reached"];
+  if ([eofReached isKindOfClass:NSNumber.class]) _ended = eofReached.boolValue;
   BOOL paused = [self number:"pause"] != 0, buffering = [self number:"paused-for-cache"] != 0 || !_fileLoaded;
   NSMutableDictionary *snapshot = [@{@"position": @([self number:"time-pos"]), @"duration": @([self number:"duration"]),
     @"playing": @(!paused && !_ended && _fileLoaded), @"buffering": @(buffering), @"ready": @(_fileLoaded),

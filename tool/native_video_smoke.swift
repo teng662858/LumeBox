@@ -5,6 +5,7 @@
   private var screen: NativeVideoScreen?
   private var timer: Timer?
   private var caseIndex = 0, phase = 0, swaps = 0
+  private var nextRequests = 0
   private var started = Date(), pausedAt = Date(), pausedPosition = 0.0
   private let cases = [("avplayer", "smoke.mp4"), ("avplayer", "smoke.m3u8"), ("mpv", "smoke.mp4"), ("mpv", "smoke.m3u8")]
 
@@ -19,11 +20,14 @@
   }
   private func next() {
     guard caseIndex < cases.count else { print("NATIVE_VIDEO_ALL_OK"); fflush(stdout); exit(0) }
-    let test = cases[caseIndex]; phase = 0; swaps = 0; started = Date()
+    let test = cases[caseIndex]; phase = 0; swaps = 0; nextRequests = 0; started = Date()
     do {
       let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)"])
-      let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": false, "headlessAudio": true])
-      view.request = { _, _, completion in completion([:]) }
+      let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": true, "headlessAudio": true])
+      view.request = { action, _, completion in
+        if action == "next" { self.nextRequests += 1 }
+        completion([:])
+      }
       screen = view
       window?.rootViewController?.present(view, animated: false) {
         self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in MainActor.assumeIsolated { self.tick() } }
@@ -68,7 +72,9 @@
         screen.debugAction(["action": "kernel", "kernel": "mpv"])
         check((screen.debugState["loadElapsedMs"] as? Int ?? Int.max) < 1000, "kernel switch resets the load clock")
         phase = 3; swaps = 1
-      } else { complete() }
+      } else {
+        screen.debugAction(["action": "seek", "position": 11.0]); phase = 4
+      }
     } else if phase == 3 && state["firstFrame"] as? Bool == true && state["switching"] as? Bool == false {
       if swaps == 1 {
         check(state["kernel"] as? String == "mpv", "switch to MPV")
@@ -77,6 +83,13 @@
         check(state["kernel"] as? String == "avplayer", "switch back to AVPlayer")
         print("NATIVE_VIDEO_SWITCH_OK"); complete()
       }
+    } else if phase == 4 && state["ended"] as? Bool == true {
+      check(nextRequests == 1, "last episode must request next only once")
+      check(state["wantsPlay"] as? Bool == false, "end of media shows replay")
+      screen.debugAction(["action": "tap", "control": "play"]); phase = 5
+    } else if phase == 5 && position > 0.3 && position < 3 && state["playing"] as? Bool == true {
+      check(nextRequests == 1, "replay must leave EOF without resolving another episode")
+      complete()
     }
   }
   private func complete() {
