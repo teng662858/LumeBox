@@ -57,11 +57,13 @@ class NativeVideoSourceSession {
 
   Future<void> get finished => _connection?.finished ?? Future.value();
   String? get connectionId => _connection?.id;
+  late final String _directIdentity = _media.uri.toString();
   String get _identity => target == null
-      ? _media.uri.toString()
+      ? _directIdentity
       : '${target!.identity}:${target!.chapterId}';
 
   Future<void> open() async {
+    if (_closed) return;
     _settings = SourcePlaybackProfiles(library).load(
       target?.sourceId ?? source?.id,
       VideoPlayerSettingsStore(library).load(),
@@ -77,6 +79,7 @@ class NativeVideoSourceSession {
       _settings = _settings.copyWith(kernel: PlayerKernel.mpv);
     }
     await PlaybackFocus.acquire('video');
+    if (_closed) return;
     PlaybackFocus.register('video', close);
     if (target != null) {
       _releasePin = SourceRuntimePins.retain(
@@ -132,7 +135,7 @@ class NativeVideoSourceSession {
   }) async {
     final current = targetOverride ?? target;
     final identity = current == null
-        ? media.uri.toString()
+        ? _directIdentity
         : '${current.identity}:${current.chapterId}';
     final apple = (kernelOverride ?? _settings.kernel) == PlayerKernel.avplayer;
     final PlayerMedia prepared;
@@ -162,8 +165,10 @@ class NativeVideoSourceSession {
     };
   }
 
-  Future<DataSource?> _source() async =>
-      source ?? (_openedSource ??= await manager?.open(target?.sourceId ?? ''));
+  Future<DataSource?> _source() async {
+    if (source != null || target == null) return source;
+    return _openedSource ??= await manager?.open(target!.sourceId);
+  }
 
   Future<List<SourceChapter>> _catalog() async {
     if (_chapters != null) return _chapters!;
@@ -233,7 +238,11 @@ class NativeVideoSourceSession {
       _media = media;
       return {'media': payload};
     }
-    final chapters = await _catalog();
+    // A retry already has the chapter ID. An unavailable catalog must not
+    // prevent refreshing an expired media URL for the current episode.
+    final chapters = action == 'retry'
+        ? const <SourceChapter>[]
+        : await _catalog();
     if (_closed) return {'error': '播放会话已经关闭'};
     final current = target;
     if (action == 'episodes') {
@@ -311,15 +320,17 @@ class NativeVideoSourceSession {
     if (uri == null) return {'error': '源没有返回可播放的媒体地址'};
     final same = chosen.id == current.chapterId || action == 'line';
     final line = VideoEpisodeCatalog.forChapter(chapters, chosen.id);
-    final nextTarget = VideoPlayTarget(
-      sourceId: current.sourceId,
-      itemId: current.itemId,
-      title: current.title,
-      chapterIndex: line.indexWhere((c) => c.id == chosen!.id),
-      chapterId: chosen.id,
-      chapterTitle: VideoEpisodeCatalog.labelOf(chosen),
-      cover: current.cover,
-    );
+    final nextTarget = chosen.id == current.chapterId
+        ? current
+        : VideoPlayTarget(
+            sourceId: current.sourceId,
+            itemId: current.itemId,
+            title: current.title,
+            chapterIndex: line.indexWhere((c) => c.id == chosen!.id),
+            chapterId: chosen.id,
+            chapterTitle: VideoEpisodeCatalog.labelOf(chosen),
+            cover: current.cover,
+          );
     final nextQualities = SourcePlayback.contentQualities(
       content,
       source: dataSource,

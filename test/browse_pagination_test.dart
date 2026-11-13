@@ -235,7 +235,7 @@ void main() {
 
     for (final section in <Section>[Section.video, Section.comic]) {
       testWidgets('${section.label}：触底加载多页 + 换图源重置分页', (tester) async {
-        final pipeline = await openPipeline(section);
+        final pipeline = (await tester.runAsync(() => openPipeline(section)))!;
         addTearDown(pipeline.dispose);
         final first = _PagedSource(section: section, totalPages: 4);
         final second = _PagedSource(
@@ -316,7 +316,7 @@ void main() {
     }
 
     testWidgets('下拉刷新：重置分页并回到第 1 页', (tester) async {
-      final pipeline = await openPipeline(Section.video);
+      final pipeline = (await tester.runAsync(() => openPipeline(Section.video)))!;
       addTearDown(pipeline.dispose);
       final source = _PagedSource(section: Section.video, totalPages: 3);
       await pump(

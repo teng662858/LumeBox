@@ -342,6 +342,7 @@ class AudioBookSession extends ChangeNotifier {
   Timer? _sleep;
   DateTime _savedAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _generation = 0;
+  int _seekRevision = 0;
   Future<void> _loads = Future.value();
   List<AudioBookTrack> _tracks = [];
   bool _ready = false;
@@ -447,6 +448,7 @@ class AudioBookSession extends ChangeNotifier {
         : null;
     final wasReady = _ready;
     _ready = false;
+    seeking = false;
     _acceptEvents = false;
     _sleep?.cancel();
     sleepAt = null;
@@ -608,7 +610,7 @@ class AudioBookSession extends ChangeNotifier {
 
   void _remember() {
     final id = resource?.id;
-    if (id == null || loading || !_ready) return;
+    if (id == null || loading || seeking || !_ready) return;
     if (current >= 0 && current < (resource?.episodes.length ?? 0)) {
       settings.chapterIds[id] = resource!.episodes[current].id;
     }
@@ -628,9 +630,11 @@ class AudioBookSession extends ChangeNotifier {
       return;
     }
     if (_player == null || loading || error != null) return;
+    final generation = _generation;
     try {
       await _player!.play();
     } catch (_) {
+      if (generation != _generation) return;
       error = '音频播放失败';
       notifyListeners();
     }
@@ -650,20 +654,34 @@ class AudioBookSession extends ChangeNotifier {
   }
 
   Future<void> seek(Duration value, {int? index}) async {
-    if (!_ready && resource != null) {
-      await load(resource!, _tracks, index: index);
+    final entry = resource;
+    if (entry == null || loading) return;
+    if (index != null && (index < 0 || index >= _tracks.length)) return;
+    if (!_ready) {
+      // A bookmark seek on a released session can load directly at the
+      // requested time, without briefly selecting a different chapter.
+      await load(entry, _tracks, index: index ?? current, initialPosition: value);
+      return;
     }
+    final generation = _generation;
+    final revision = ++_seekRevision;
+    final previous = position;
     seeking = true;
     position = value;
     notifyListeners();
     try {
       await _player?.seek(value, index: index);
     } catch (_) {
-      error = '跳转失败，请重试';
+      if (generation == _generation && revision == _seekRevision) {
+        position = previous;
+        error = '跳转失败，请重试';
+      }
     } finally {
-      seeking = false;
-      _remember();
-      notifyListeners();
+      if (generation == _generation && revision == _seekRevision) {
+        seeking = false;
+        _remember();
+        notifyListeners();
+      }
     }
   }
 
@@ -699,6 +717,7 @@ class AudioBookSession extends ChangeNotifier {
     _remember();
     final generation = ++_generation;
     loading = false;
+    seeking = false;
     _sleep?.cancel();
     sleepAt = null;
     _ready = false;

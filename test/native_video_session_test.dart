@@ -348,6 +348,50 @@ void main() {
       expect(reply['url'], contains('token=fresh'));
     },
   );
+  test('retry works even when the episode catalog is offline', () async {
+    await start();
+    source.catalogOffline = true;
+    await progress(17);
+    final media = (await request('retry'))['media'] as Map?;
+    expect(media?['position'], 17);
+    expect(media?['url'], contains('/A1.'));
+    expect(session.target?.chapterIndex, 0);
+  });
+
+  test('closing during focus acquisition never retains the source', () async {
+    final pending = start();
+    await session.close();
+    await pending;
+    expect(SourceRuntimePins.contains(Section.video, 'fixture'), isFalse);
+    expect(calls.where((c) => c.method == 'open'), isEmpty);
+  });
+
+  test(
+    'direct video keeps its playhead across quality changes and retry',
+    () async {
+      final original = Uri.parse('https://example.com/a.mp4');
+      final other = Uri.parse('https://example.com/b.mp4');
+      session = NativeVideoSourceSession(
+        media: PlayerMedia(uri: original),
+        library: library,
+        qualities: [VideoQuality(label: '720p', url: other)],
+        bridge: bridge,
+        prepareMedia: (media, _) async => media,
+      );
+      addTearDown(session.close);
+      await session.open();
+      await progress(15);
+      final changed = (await request('quality', {'id': 0}))['media'] as Map;
+      expect(changed['position'], 15);
+      await progress(25, identity: changed['identity'] as String);
+      final retried = (await request('retry'))['media'] as Map;
+      expect(retried['position'], 25);
+      expect(changed['identity'], (opened['media'] as Map)['identity']);
+      expect(retried['url'], other.toString());
+      expect(source.resolved, isEmpty);
+    },
+  );
+
   test('line changes match the same episode and keep its position', () async {
     await start();
     await progress(18);
@@ -431,14 +475,23 @@ class _Source extends MockDataSource implements DanmakuCapable {
   _Source() : super(section: Section.video);
   final blocked = <String, Completer<ChapterContent>>{};
   final resolved = <String>[];
+  bool catalogOffline = false;
   @override
   String get id => 'fixture';
   @override
-  Future<List<SourceChapter>> chapters(String itemId) async => const [
-    SourceChapter(id: 'A1', title: '第1集', line: 'A'),
-    SourceChapter(id: 'A2', title: '第2集', line: 'A'),
-    SourceChapter(id: 'B1', title: '第1集', line: 'B'),
-  ];
+  Future<List<SourceChapter>> chapters(String itemId) async {
+    if (catalogOffline) throw StateError('catalog offline');
+    return const [
+      SourceChapter(id: 'A1', title: '第1集', line: 'A'),
+      SourceChapter(id: 'A2', title: '第2集', line: 'A'),
+      SourceChapter(id: 'B1', title: '第1集', line: 'B'),
+    ];
+  }
+
+  @override
+  Future<SourceDetail?> detail(String itemId) async => catalogOffline
+      ? throw StateError('catalog offline')
+      : super.detail(itemId);
   @override
   Future<ChapterContent> content({
     required String itemId,

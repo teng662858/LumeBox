@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+import '../net/http_byte_range.dart';
+
 /// A PNG prefix is removed only after four aligned, plaintext MPEG-TS packets
 /// have been confirmed. Encrypted segments and real images stay unchanged.
 int transportStreamImagePrefix(List<int> bytes) {
@@ -112,22 +114,14 @@ class AppleHlsFragments {
     var start = 0, end = bytes.length - 1;
     final range = request.headers.value('range');
     if (range != null) {
-      final match = RegExp(r'^bytes=(\d*)-(\d*)$').firstMatch(range);
-      if (match != null && (match[1]!.isNotEmpty || match[2]!.isNotEmpty)) {
-        start = match[1]!.isEmpty
-            ? (bytes.length - int.parse(match[2]!)).clamp(0, bytes.length)
-            : int.parse(match[1]!);
-        if (match[1]!.isNotEmpty && match[2]!.isNotEmpty) {
-          end = int.parse(match[2]!).clamp(0, end);
-        }
-      } else {
-        start = bytes.length;
-      }
-      if (end < start) {
+      final offsets = parseHttpByteRange(range, bytes.length);
+      if (offsets == null) {
         response.statusCode = 416;
         response.headers.set('Content-Range', 'bytes */${bytes.length}');
         return;
       }
+      start = offsets.start;
+      end = offsets.end;
       response.statusCode = 206;
       response.headers.set(
         'Content-Range',

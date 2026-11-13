@@ -267,6 +267,42 @@ void main() {
     expect(player.loads, 0);
   });
 
+  test('a failed seek keeps the last playable resume position', () async {
+    await session.open(resource, tracks, index: 1);
+    await session.seek(const Duration(seconds: 25));
+    player.beforeSeek = () async => throw StateError('seek failed');
+    await session.seek(const Duration(seconds: 80));
+    expect(session.position.inSeconds, 25);
+    expect(settings.positions[resource.id]?['position'], 25000);
+    expect(session.error, isNotNull);
+  });
+
+  test('a late seek failure belongs only to the previous chapter', () async {
+    await session.open(resource, tracks, index: 0);
+    final gate = Completer<void>();
+    player.beforeSeek = () => gate.future;
+    final seeking = session.seek(const Duration(seconds: 30));
+    await session.open(resource, tracks, index: 1);
+    gate.completeError(StateError('old seek interrupted'));
+    await seeking;
+    expect(session.current, 1);
+    expect(session.seeking, isFalse);
+    expect(session.error, isNull);
+    expect(session.position, Duration.zero);
+  });
+
+  test('an interrupted play cannot report an error on the next book', () async {
+    await session.load(resource, tracks);
+    final gate = Completer<void>();
+    player.beforePlay = () => gate.future;
+    final playing = session.play();
+    await session.load(resource, tracks, index: 1);
+    gate.completeError(StateError('old playback interrupted'));
+    await playing;
+    expect(session.current, 1);
+    expect(session.error, isNull);
+  });
+
   test('sleep timer stops output and can be cancelled without enabling another library', () async {
     await session.load(resource, tracks);
     await session.play();
@@ -353,6 +389,7 @@ class _AudioPlayer implements AudioBookPlayer {
   List<AudioBookTrack> lastTracks = [];
   int current = 0, releases = 0, loads = 0, failLoads = 0;
   Future<void> Function()? beforeLoad;
+  Future<void> Function()? beforeSeek, beforePlay;
   bool resolveTracks = false;
   double rate = 1;
   @override
@@ -386,13 +423,17 @@ class _AudioPlayer implements AudioBookPlayer {
   }
 
   @override
-  Future<void> play() async => b.add(true);
+  Future<void> play() async {
+    b.add(true);
+    if (beforePlay != null) await beforePlay!();
+  }
   @override
   Future<void> pause() async => b.add(false);
   @override
   Future<void> stop() async => b.add(false);
   @override
   Future<void> seek(Duration position, {int? index}) async {
+    if (beforeSeek != null) await beforeSeek!();
     if (index != null) {
       current = index;
       i.add(index);

@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:path/path.dart' as p;
 
+import '../../core/net/http_byte_range.dart';
+
 /// A session-only loopback endpoint makes downloaded HLS playable by AVFoundation as well as FFmpeg.
 class OfflineVideoServer {
   OfflineVideoServer._(this._server, this._root, this._token);
@@ -64,19 +66,14 @@ class OfflineVideoServer {
       var start = 0, end = length - 1;
       final range = request.headers.value('range');
       if (range != null) {
-        final match = RegExp(r'^bytes=(\d+)-(\d*)$').firstMatch(range);
-        if (match == null) {
-          request.response.statusCode = 416;
-          return;
-        }
-        start = int.parse(match.group(1)!);
-        end = match.group(2)!.isEmpty ? end : int.parse(match.group(2)!);
-        if (start >= length || end < start) {
+        final offsets = parseHttpByteRange(range, length);
+        if (offsets == null) {
           request.response.statusCode = 416;
           request.response.headers.set('Content-Range', 'bytes */$length');
           return;
         }
-        end = end.clamp(start, length - 1);
+        start = offsets.start;
+        end = offsets.end;
         request.response.statusCode = 206;
         request.response.headers.set(
           'Content-Range',

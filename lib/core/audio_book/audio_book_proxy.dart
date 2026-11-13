@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
+import '../net/http_byte_range.dart';
 import 'audio_book_track.dart';
 import 'audio_book_http_client.dart';
 import '../util/lume_log.dart';
@@ -259,22 +261,15 @@ class AudioBookProxy {
     var start = 0, end = size;
     final raw = request.headers.value(HttpHeaders.rangeHeader);
     if (raw != null) {
-      final range = RegExp(r'^bytes=(\d*)-(\d*)$').firstMatch(raw);
-      if (range == null) throw const FormatException('无效范围');
-      if (range.group(1)!.isEmpty) {
-        start = (size - (int.tryParse(range.group(2)!) ?? 0)).clamp(0, size);
-      } else {
-        start = int.parse(range.group(1)!);
-        if (range.group(2)!.isNotEmpty) {
-          end = (int.parse(range.group(2)!) + 1).clamp(0, size);
-        }
-      }
-      if (start >= size || start >= end) {
+      final offsets = parseHttpByteRange(raw, size);
+      if (offsets == null) {
         request.response.statusCode = 416;
         request.response.headers.set('Content-Range', 'bytes */$size');
         await request.response.close();
         return;
       }
+      start = offsets.start;
+      end = offsets.end + 1;
       request.response.statusCode = 206;
       request.response.headers.set(
         'Content-Range',

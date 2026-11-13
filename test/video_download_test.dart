@@ -59,6 +59,32 @@ void main() {
     title: 'Movie',
     chapters: const [SourceChapter(id: 'episode', title: 'Episode')],
   );
+  test('offline media serves suffix ranges and reports invalid offsets', () async {
+    await File('${root.path}/clip.mp4').writeAsBytes([10, 20, 30, 40]);
+    final local = await OfflineVideoServer.open(root);
+    final client = HttpClient();
+    try {
+      final uri = local.uri.resolve('clip.mp4');
+      for (final (range, status, contentRange, bytes) in [
+        ('bytes=-2', 206, 'bytes 2-3/4', [30, 40]),
+        ('bytes=1-', 206, 'bytes 1-3/4', [20, 30, 40]),
+        ('bytes=2-999999999999999999999', 206, 'bytes 2-3/4', [30, 40]),
+        ('bytes=-0', 416, 'bytes */4', <int>[]),
+        ('bytes=3-1', 416, 'bytes */4', <int>[]),
+        ('bytes=999999999999999999999-', 416, 'bytes */4', <int>[]),
+      ]) {
+        final request = await client.getUrl(uri);
+        request.headers.set(HttpHeaders.rangeHeader, range);
+        final response = await request.close();
+        expect(response.statusCode, status, reason: range);
+        expect(response.headers.value('content-range'), contentRange);
+        expect(await response.expand((chunk) => chunk).toList(), bytes);
+      }
+    } finally {
+      client.close(force: true);
+      await local.close();
+    }
+  });
   for (final playing in [false, true]) {
     test('HLS parallelism is bounded and yields to playback: $playing', () async {
       var active = 0, peak = 0;
