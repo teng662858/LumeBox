@@ -354,6 +354,13 @@ class ReadingLibrary {
     _touch();
   }
 
+  /// 切集后仍可收到上一集的最终位置，仅更新那一集的续播点。
+  void saveVideoEpisodeProgress(VideoProgress progress) {
+    if (setting('history.incognito') == 'true') return;
+    _store.saveVideoEpisodeProgress(progress);
+    _touch();
+  }
+
   // ------------------------------------------------------------------ 设置
 
   String? setting(String key) => _store.setting(key);

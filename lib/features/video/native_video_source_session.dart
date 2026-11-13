@@ -405,7 +405,8 @@ class NativeVideoSourceSession {
     if (_closed) return;
     final type = data['type'];
     final identity = data['identity'] as String? ?? '';
-    if (type == 'settings') {
+    final active = identity == _identity;
+    if (type == 'settings' && (active || identity.isEmpty)) {
       final kernel = data['kernel'] == 'mpv'
           ? PlayerKernel.mpv
           : PlayerKernel.avplayer;
@@ -427,11 +428,16 @@ class NativeVideoSourceSession {
         VideoPlayerSettingsStore(library).save(_settings);
       }
     }
-    PlaybackFocus.setPlaying('video', data['playing'] == true);
-    if (type == 'load-start' ||
-        type == 'ready' ||
-        type == 'firstFrame' ||
-        type == 'error') {
+    final sessionEvent = active || identity.isEmpty;
+    if (!sessionEvent && !_targets.containsKey(identity)) return;
+    if (sessionEvent && data['playing'] is bool) {
+      PlaybackFocus.setPlaying('video', data['playing'] == true);
+    }
+    if (sessionEvent &&
+        (type == 'load-start' ||
+            type == 'ready' ||
+            type == 'firstFrame' ||
+            type == 'error')) {
       final elapsed = data['elapsedMs'];
       PlaybackDiagnostics.record(
         type == 'load-start' ? 'native-open' : 'native-$type',
@@ -453,18 +459,12 @@ class NativeVideoSourceSession {
         data['error'] != null) {
       return;
     }
+    if (identity.isEmpty) return;
     _saved[identity] = position.toDouble();
     final current = _targets[identity];
     if (current == null || library.setting('history.incognito') == 'true') {
       return;
     }
-    library.recordHistoryItem(
-      sourceId: current.sourceId,
-      itemId: current.itemId,
-      title: current.title,
-      cover: current.cover,
-      chapterCount: 0,
-    );
     final progress = VideoProgress(
       sourceId: current.sourceId,
       section: library.section,
@@ -481,6 +481,17 @@ class NativeVideoSourceSession {
               duration <= 365 * 86400
           ? Duration(milliseconds: (duration * 1000).round())
           : Duration.zero,
+    );
+    if (!active) {
+      library.saveVideoEpisodeProgress(progress);
+      return;
+    }
+    library.recordHistoryItem(
+      sourceId: current.sourceId,
+      itemId: current.itemId,
+      title: current.title,
+      cover: current.cover,
+      chapterCount: 0,
     );
     library.saveProgress(progress);
     unawaited(BangumiSyncService.instance.afterProgress(library, progress));

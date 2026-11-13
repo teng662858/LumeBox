@@ -650,13 +650,20 @@ CREATE TABLE IF NOT EXISTS reading_setting (
 
   /// 保存阅读进度（同一作品一条，覆盖写）。
   void saveProgress(ReadingProgress progress) {
+    _writeProgress(progress, episodeOnly: false);
+  }
+
+  void saveVideoEpisodeProgress(VideoProgress progress) {
+    _writeProgress(progress, episodeOnly: true);
+  }
+
+  void _writeProgress(ReadingProgress progress, {required bool episodeOnly}) {
     if (_closed) return;
     final owner = sourceFor(
       progress.itemId,
       progress.sourceId.isEmpty ? null : progress.sourceId,
     );
     if (owner == null) throw StateError('进度缺少源身份');
-    if (_closed) return;
     _requireOwn(progress.section);
     final (position, fraction, chapterLength) = switch (progress) {
       ComicProgress(:final page, :final pageFraction) => (
@@ -680,42 +687,27 @@ CREATE TABLE IF NOT EXISTS reading_setting (
       ComicProgress() => 'comic',
       VideoProgress() => 'video',
     };
-    _db.execute(
-      'INSERT INTO reading_progress (item_id, section, source_id, chapter_index, '
-      'chapter_id, chapter_title, position, fraction, chapter_length, '
-      'progress_kind, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
-      'ON CONFLICT(source_id,item_id) DO UPDATE SET '
-      'section = excluded.section, '
-      'chapter_index = excluded.chapter_index, '
-      'chapter_id = excluded.chapter_id, '
-      'chapter_title = excluded.chapter_title, '
-      'position = excluded.position, '
-      'fraction = excluded.fraction, '
-      'chapter_length = excluded.chapter_length, '
-      'progress_kind = excluded.progress_kind, '
-      'updated_at = excluded.updated_at',
-      <Object?>[
-        rawId(progress.itemId),
-        progress.section.id,
-        owner,
-        progress.chapterIndex,
-        progress.chapterId,
-        progress.chapterTitle,
-        position,
-        fraction,
-        chapterLength,
-        kind,
-        progress.updatedAt.millisecondsSinceEpoch,
-      ],
-    );
+    const fields = '(item_id, section, source_id, chapter_index, chapter_id, '
+        'chapter_title, position, fraction, chapter_length, progress_kind, updated_at) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+    final values = <Object?>[
+      rawId(progress.itemId),
+      progress.section.id,
+      owner,
+      progress.chapterIndex,
+      progress.chapterId,
+      progress.chapterTitle,
+      position,
+      fraction,
+      chapterLength,
+      kind,
+      progress.updatedAt.millisecondsSinceEpoch,
+    ];
+    if (!episodeOnly) {
+      _db.execute('INSERT OR REPLACE INTO reading_progress $fields', values);
+    }
     if (progress is VideoProgress) {
-      _db.execute(
-        'INSERT OR REPLACE INTO video_episode_progress '
-        '(item_id, section, source_id, chapter_index, chapter_id, chapter_title, position, fraction, chapter_length, progress_kind, updated_at) '
-        'SELECT item_id, section, source_id, chapter_index, chapter_id, chapter_title, position, fraction, chapter_length, progress_kind, updated_at '
-        'FROM reading_progress WHERE item_id = ? AND section = ? AND source_id = ?',
-        [rawId(progress.itemId), section.id, owner],
-      );
+      _db.execute('INSERT OR REPLACE INTO video_episode_progress $fields', values);
     }
   }
 

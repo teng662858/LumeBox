@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/media/playback_focus.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/native_video_bridge.dart';
@@ -69,6 +70,7 @@ void main() {
     String? identity,
     String type = 'progress',
     String? error,
+    bool playing = true,
   }) async {
     await native('event', {
       'session': opened['session'],
@@ -76,7 +78,7 @@ void main() {
       'type': type,
       'position': at,
       'duration': 100.0,
-      'playing': true,
+      'playing': playing,
       'error': ?error,
     });
   }
@@ -293,6 +295,20 @@ void main() {
       );
     },
   );
+  test('late progress updates only the previous episode after a switch', () async {
+    await start();
+    final first = (opened['media'] as Map)['identity'] as String;
+    await progress(12);
+    final next = (await request('next'))['media'] as Map;
+    await progress(22, identity: next['identity'] as String);
+    await progress(14, identity: first, playing: false);
+    final latest = library.videoProgress('show', sourceId: 'fixture');
+    expect(latest?.chapterId, 'A2');
+    expect(latest?.position, const Duration(seconds: 22));
+    expect(library.videoEpisodeProgress('show', 'A1', sourceId: 'fixture')?.position,
+        const Duration(seconds: 14));
+    expect(PlaybackFocus.isPlaying, isTrue);
+  });
   for (final incognito in [false, true]) {
     test('a bookmark near the end opens at its timestamp without rewriting history (incognito=$incognito)', () async {
       await start();
