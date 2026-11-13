@@ -107,30 +107,6 @@ class AppleHlsFragments {
     throw const FormatException('缺少 MP4 媒体片段');
   }
 
-  static void serve(HttpRequest request, Uint8List bytes) {
-    final response = request.response;
-    response.headers.set('Content-Type', 'video/mp4');
-    response.headers.set('Accept-Ranges', 'bytes');
-    var start = 0, end = bytes.length - 1;
-    final range = request.headers.value('range');
-    if (range != null) {
-      final offsets = parseHttpByteRange(range, bytes.length);
-      if (offsets == null) {
-        response.statusCode = 416;
-        response.headers.set('Content-Range', 'bytes */${bytes.length}');
-        return;
-      }
-      start = offsets.start;
-      end = offsets.end;
-      response.statusCode = 206;
-      response.headers.set(
-        'Content-Range',
-        'bytes $start-$end/${bytes.length}',
-      );
-    }
-    response.contentLength = end - start + 1;
-    if (request.method != 'HEAD') {
-      response.add(Uint8List.sublistView(bytes, start, end + 1));
-    }
-  }
+  static void serve(HttpRequest request, Uint8List bytes) =>
+      serveHttpBytes(request, bytes, 'video/mp4');
 }

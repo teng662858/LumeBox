@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 /// Parses one HTTP byte range against a known representation length.
 /// Returns inclusive offsets, or null for an invalid or unsatisfiable range.
 ({int start, int end})? parseHttpByteRange(String header, int length) {
@@ -20,4 +23,31 @@
   final start = bounded(first);
   final end = last.isEmpty ? length - 1 : bounded(last).clamp(0, length - 1);
   return start > end ? null : (start: start, end: end);
+}
+
+void serveHttpBytes(HttpRequest request, Uint8List bytes, String contentType) {
+  final response = request.response;
+  response.headers.set('Content-Type', contentType);
+  response.headers.set('Accept-Ranges', 'bytes');
+  var start = 0, end = bytes.length - 1;
+  final range = request.headers.value('range');
+  if (range != null) {
+    final offsets = parseHttpByteRange(range, bytes.length);
+    if (offsets == null) {
+      response.statusCode = 416;
+      response.headers.set('Content-Range', 'bytes */${bytes.length}');
+      return;
+    }
+    start = offsets.start;
+    end = offsets.end;
+    response.statusCode = 206;
+    response.headers.set(
+      'Content-Range',
+      'bytes $start-$end/${bytes.length}',
+    );
+  }
+  response.contentLength = end - start + 1;
+  if (request.method != 'HEAD') {
+    response.add(Uint8List.sublistView(bytes, start, end + 1));
+  }
 }

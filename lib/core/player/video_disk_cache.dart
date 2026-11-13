@@ -16,6 +16,7 @@ import 'hls_ad_filter.dart';
 import 'apple_hls_fragments.dart';
 import 'playback_diagnostics.dart';
 import '../net/lume_net.dart';
+import '../net/http_byte_range.dart';
 import '../net/http_header_scope.dart';
 
 /// Bounded, session-only HTTP cache shared by all native playback kernels.
@@ -982,13 +983,19 @@ class VideoDiskCache extends ChangeNotifier {
         return;
       }
       final rawRange = request.headers.value('range');
-      final match = RegExp(r'^bytes=(\d*)-(\d*)$').firstMatch(rawRange ?? '');
+      final match = RegExp(
+        r'^bytes=(\d*)-(\d*)$',
+        caseSensitive: false,
+      ).firstMatch(rawRange?.trim() ?? '');
       if (rawRange != null &&
           (match == null || (match[1]!.isEmpty && match[2]!.isEmpty))) {
         response.statusCode = 416;
         return;
       }
-      var start = match == null || match[1]!.isEmpty ? 0 : int.parse(match[1]!);
+      // If the offset exceeds the integer range, obtain the length from block
+      // zero so the client still gets the actual unsatisfied Content-Range.
+      var start = int.tryParse(match?[1] ?? '') ?? 0;
+      if (start > 0x7fffffffffffffff - blockBytes) start = 0;
       final segment = path.endsWith('.ts');
       final canStream =
           segment ||
@@ -1158,28 +1165,22 @@ class VideoDiskCache extends ChangeNotifier {
           }
         }
         final body = utf8.encode('${lines.join('\n')}\n');
-        response.headers.contentType = ContentType(
-          'application',
-          'vnd.apple.mpegurl',
-        );
-        response.contentLength = body.length;
-        if (request.method != 'HEAD') response.add(body);
+        serveHttpBytes(request, body, 'application/vnd.apple.mpegurl');
         return;
       }
       final prefixBytes = segment ? transportStreamImagePrefix(block.data) : 0;
       final mediaTotal = block.total - prefixBytes;
-      if (match != null && match[1]!.isEmpty) {
-        start = max(0, mediaTotal - int.parse(match[2]!));
-      }
-      final end = match == null || match[2]!.isEmpty || match[1]!.isEmpty
-          ? mediaTotal - 1
-          : min(int.parse(match[2]!), mediaTotal - 1);
-      if (start >= mediaTotal || end < start) {
+      final offsets = rawRange == null
+          ? null
+          : parseHttpByteRange(rawRange, mediaTotal);
+      if (rawRange != null && offsets == null) {
         response.statusCode = 416;
         response.headers.set('Content-Range', 'bytes */$mediaTotal');
         return;
       }
-      response.statusCode = match == null ? 200 : 206;
+      start = offsets?.start ?? 0;
+      final end = offsets?.end ?? mediaTotal - 1;
+      response.statusCode = offsets == null ? 200 : 206;
       response.headers.set('Content-Type', segment ? 'video/mp2t' : block.mime);
       response.headers.set('Accept-Ranges', 'bytes');
       if (match != null) {

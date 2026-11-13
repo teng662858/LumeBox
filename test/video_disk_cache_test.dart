@@ -793,6 +793,36 @@ void main() {
     expect(calls, 2);
   });
 
+  test('range probes see bytes and length of the rewritten HLS playlist', () async {
+    final wrapped = await cache.wrap(
+      PlayerMedia(uri: upstream.resolve('/no-range/master.m3u8')),
+    );
+    final (_, full) = await get(wrapped.uri);
+    final (probe, bytes) = await get(wrapped.uri, 'bytes=0-1');
+    expect(probe.statusCode, 206);
+    expect(bytes, full.take(2));
+    expect(probe.headers.value('content-range'), 'bytes 0-1/${full.length}');
+    expect(probe.headers.contentType?.mimeType, 'application/vnd.apple.mpegurl');
+    final head = await client.headUrl(wrapped.uri);
+    head.headers.set('Range', 'bytes=-5');
+    final response = await head.close();
+    expect(response.statusCode, 206);
+    expect(response.contentLength, 5);
+    expect(await response.expand((e) => e).toList(), isEmpty);
+    expect((await get(wrapped.uri, 'bytes=${full.length}-')).$1.statusCode, 416);
+  });
+
+  test('large numeric offsets do not break cached video range probes', () async {
+    final wrapped = await cache.wrap(PlayerMedia(uri: upstream));
+    const huge = '999999999999999999999999999999999999';
+    final (past, _) = await get(wrapped.uri, 'bytes=$huge-');
+    expect(past.statusCode, 416);
+    expect(past.headers.value('content-range'), 'bytes */${data.length}');
+    final (tail, bytes) = await get(wrapped.uri, 'Bytes=${data.length - 3}-$huge');
+    expect(tail.statusCode, 206);
+    expect(bytes, data.sublist(data.length - 3));
+  });
+
   test(
     'memory mode still repairs local cat ranges; credentials stay private',
     () async {
