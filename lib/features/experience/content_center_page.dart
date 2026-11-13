@@ -1,4 +1,5 @@
 import '../video/video_player_settings.dart';
+import '../video/video_episode_catalog.dart';
 import '../video/playback_quality_preference.dart';
 import 'tracking_resume.dart';
 import '../../shared/widgets/glass_card.dart';
@@ -22,6 +23,7 @@ import '../../core/experience/content_center.dart';
 import '../../core/reading/reading.dart';
 import '../../core/session/section.dart';
 import '../../core/source/source.dart';
+import '../../core/source/source_content_type.dart';
 import '../comic/comic_detail_page.dart';
 import '../comic/comic_reader_page.dart';
 import '../novel/novel_reader_page.dart';
@@ -35,9 +37,11 @@ class ContentCenterPage extends StatefulWidget {
     super.key,
     this.initialTab = 0,
     this.initialReference,
+    this.managerFor = LumeSources.manager,
   });
   final int initialTab;
   final String? initialReference;
+  final SourceManager Function(Section) managerFor;
   @override
   State<ContentCenterPage> createState() => _ContentCenterPageState();
 }
@@ -203,7 +207,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
       return;
     }
     final lib = await ReadingLibrary.open(ref.section);
-    final manager = LumeSources.manager(ref.section);
+    final manager = widget.managerFor(ref.section);
     final source = await manager.open(ref.source);
     if (source == null) throw StateError('源未安装或不可用');
     final target = ReadingTarget(
@@ -222,8 +226,7 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
             chapter != null ||
             chapterId != null ||
             (nextUnwatched && ref.section == Section.video))) {
-      var chapters = await source
-          .chapters(ref.item)
+      var chapters = await VideoEpisodeCatalog.load(source, ref.item)
           .timeout(const Duration(seconds: 40));
       if (chapters.isEmpty) throw StateError('目录为空');
       if (ref.section == Section.video) {
@@ -246,7 +249,25 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
           ? TrackingResume.bookmarkIndex(chapters.map((c) => c.id), chapterId)
           : (chapter ?? (saved >= 0 ? saved : progress?.chapterIndex ?? 0))
                 .clamp(0, chapters.length - 1);
-      if (progress is NovelProgress) {
+      final explicitChapter = !nextUnwatched && (chapter != null || chapterId != null);
+      final SourceContentType? type;
+      if (page != null) {
+        type = SourceContentType.comic;
+      } else if (seconds != null) {
+        type = SourceContentType.video;
+      } else if (explicitChapter) {
+        type = await detectSourceContent(
+          source: source, itemId: ref.item, detail: null, chapters: [chapters[index]],
+        ).timeout(const Duration(seconds: 40));
+        if (type == null) throw const FormatException('书签对应的章节暂无内容');
+      } else {
+        type = switch (progress) {
+          NovelProgress() => SourceContentType.novel,
+          ComicProgress() => SourceContentType.comic,
+          _ => SourceContentType.video,
+        };
+      }
+      if (type == SourceContentType.novel) {
         screen = NovelReaderPage(
           source: source,
           library: lib,
@@ -254,56 +275,56 @@ class _ContentCenterPageState extends State<ContentCenterPage> {
           chapters: chapters,
           initialChapterIndex: index,
         );
-      } else if (progress is ComicProgress) {
+      } else if (type == SourceContentType.comic) {
         screen = ComicReaderPage(
           library: lib,
           dataSource: source,
           target: target,
           chapters: chapters,
           initialChapterIndex: index,
-          initialPage: page ?? progress.page,
+          initialPage: page ?? (progress is ComicProgress &&
+              progress.chapterId == chapters[index].id ? progress.page : 0),
         );
       } else {
-        final content = await source
-            .content(itemId: ref.item, chapterId: chapters[index].id)
-            .timeout(const Duration(seconds: 40));
-        if (content is VideoContent) {
-          final qualities = SourcePlayback.contentQualities(
-            content,
-            source: source,
-          );
-          final selected = PlaybackQualityPreference.select(
-            qualities,
-            VideoPlayerSettingsStore(lib).load(),
-          );
-          final uri = selected?.url ?? SourcePlayback.contentAddress(content);
-          if (uri == null) throw StateError('没有播放地址');
-          screen = VideoPlayerPage(
-            initialPosition: seconds == null
-                ? null
-                : Duration(seconds: seconds),
-            media: PlayerMedia(
-              uri: uri,
-              headers:
-                  selected?.headers ??
-                  SourcePlayback.contentHeaders(content, source: source),
-              title: ref.title,
-            ),
-            source: source,
-            sourceManager: manager,
-            library: lib,
+        final content = await SourceContentRead.read(
+          source, itemId: ref.item, chapterId: chapters[index].id,
+        ).timeout(const Duration(seconds: 40));
+        if (content is! VideoContent) throw const FormatException('此章节暂无可打开的内容');
+        final qualities = SourcePlayback.contentQualities(
+          content,
+          source: source,
+        );
+        final selected = PlaybackQualityPreference.select(
+          qualities,
+          VideoPlayerSettingsStore(lib).load(),
+        );
+        final uri = selected?.url ?? SourcePlayback.contentAddress(content);
+        if (uri == null) throw StateError('没有播放地址');
+        screen = VideoPlayerPage(
+          initialPosition: seconds == null
+              ? null
+              : Duration(seconds: seconds),
+          media: PlayerMedia(
+            uri: uri,
+            headers:
+                selected?.headers ??
+                SourcePlayback.contentHeaders(content, source: source),
+            title: ref.title,
+          ),
+          source: source,
+          sourceManager: manager,
+          library: lib,
+          sourceId: ref.source,
+          target: VideoPlayTarget(
             sourceId: ref.source,
-            target: VideoPlayTarget(
-              sourceId: ref.source,
-              itemId: ref.item,
-              title: ref.title,
-              chapterIndex: index,
-              chapterId: chapters[index].id,
-              chapterTitle: chapters[index].title,
-            ),
-            qualities: qualities,
-          );
-        }
+            itemId: ref.item,
+            title: ref.title,
+            chapterIndex: index,
+            chapterId: chapters[index].id,
+            chapterTitle: chapters[index].title,
+          ),
+          qualities: qualities,
+        );
       }
     }
     if (!mounted) return;
