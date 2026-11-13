@@ -578,6 +578,34 @@ void main() {
       await server.close(force: true);
     }
   });
+  test('audio HLS keeps playlist handling after redirect to an extensionless binary endpoint', () async {
+    final requests = <http.Request>[];
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((request) async {
+      requests.add(request);
+      if (request.url.path == '/book.m3u8') {
+        return http.Response('', 302, headers: {'location': 'https://cdn.test/chapter/manifest?sig=A'});
+      }
+      if (request.url.path == '/chapter/manifest') {
+        if (request.method != 'GET' || request.headers.containsKey('range')) return http.Response('', 403);
+        return http.Response('#EXTM3U\n#EXTINF:2,\npart.aac\n#EXT-X-ENDLIST\n', 200,
+            headers: {'content-type': 'application/octet-stream'});
+      }
+      return http.Response.bytes([2, 4, 6], 200);
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final root = (await proxy.prepare([queueTrack('book.m3u8')])).single;
+    final manifest = await client.get(root);
+    expect(manifest.headers['content-type'], contains('mpegurl'));
+    final child = Uri.parse(LineSplitter.split(manifest.body).firstWhere((line) => line.startsWith('http')));
+    expect((await client.get(child)).bodyBytes, [2, 4, 6]);
+    expect(requests.last.url.toString(), 'https://cdn.test/chapter/part.aac');
+    final probe = await client.head(root, headers: {'Range': 'bytes=0-6'});
+    expect(probe.statusCode, 206);
+    expect(probe.headers['content-range'], 'bytes 0-6/${manifest.bodyBytes.length}');
+    expect(requests.last.url.query, 'sig=A');
+  });
+
   test('signed audio HLS variants and alternate renditions rewrite their own children', () async {
     final originPaths = <String>[];
     final proxy = AudioBookProxy(

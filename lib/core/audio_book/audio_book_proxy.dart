@@ -170,18 +170,14 @@ class AudioBookProxy {
       client = _clientFactory();
       _clients.add(client);
       http.StreamedResponse? response;
-      var fetchPlaylist = false;
+      var fetchPlaylist = playlistAsset || uri.path.toLowerCase().endsWith('.m3u8');
       var ignoreRange = false;
       var redirects = 0;
       while (true) {
-        final full =
-            playlistAsset ||
-            fetchPlaylist ||
-            uri.path.toLowerCase().endsWith('.m3u8');
-        final upstream = http.Request(full ? 'GET' : request.method, uri)
+        final upstream = http.Request(fetchPlaylist ? 'GET' : request.method, uri)
           ..headers.addAll(headers)
           ..followRedirects = false;
-        if (full || ignoreRange) {
+        if (fetchPlaylist || ignoreRange) {
           upstream.headers.remove('range');
         } else if (range != null) {
           upstream.headers['range'] = range;
@@ -202,10 +198,10 @@ class AudioBookProxy {
             headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
           }
           uri = next;
-          fetchPlaylist = false;
+          fetchPlaylist = fetchPlaylist || uri.path.toLowerCase().endsWith('.m3u8');
           continue;
         }
-        if (!full &&
+        if (!fetchPlaylist &&
             (upstream.method == 'HEAD' ||
                 upstream.headers.containsKey('range')) &&
             (response.headers['content-type'] ?? '').toLowerCase().contains(
@@ -266,8 +262,7 @@ class AudioBookProxy {
       final type =
           response.headers['content-type'] ?? 'application/octet-stream';
       final hls =
-          playlistAsset ||
-          uri.path.toLowerCase().endsWith('.m3u8') ||
+          fetchPlaylist ||
           type.toLowerCase().contains('mpegurl');
       final encoding = response.headers['content-encoding']
           ?.trim()
