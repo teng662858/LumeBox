@@ -819,6 +819,57 @@ class VideoDiskCache extends ChangeNotifier {
           .trimLeft()
           .startsWith('#EXTM3U');
 
+  Stream<List<int>> _segmentBody(PlayerMedia media, _MediaResponse first) async* {
+    if (first.statusCode == 200) {
+      yield* first;
+      return;
+    }
+    final encoding = first.header('content-encoding');
+    final validator = first.header('etag') ?? first.header('last-modified');
+    var offset = 0;
+    int? total;
+    var part = first;
+    while (true) {
+      final nextValidator = part.header('etag') ?? part.header('last-modified');
+      if (validator != null && nextValidator != null && validator != nextValidator) {
+        await part.listen(null).cancel();
+        throw const HttpException('视频分片已变化');
+      }
+      if (offset > 0 && part.statusCode == 416 && total == null &&
+          part.header('content-range') == 'bytes */$offset') {
+        await part.listen(null).cancel();
+        return;
+      }
+      final range = _contentRange.firstMatch(part.header('content-range') ?? '');
+      final end = int.tryParse(range?[2] ?? '');
+      final size = int.tryParse(range?[3] ?? '');
+      if (part.statusCode != 206 ||
+          part.header('content-encoding') != encoding ||
+          int.tryParse(range?[1] ?? '') != offset ||
+          end == null || end < offset || end == 0x7fffffffffffffff ||
+          (size == null && range?[3] != '*') ||
+          (size != null && total != null && size != total)) {
+        await part.listen(null).cancel();
+        throw const HttpException('视频分片范围不匹配');
+      }
+      total ??= size;
+      if (total != null && end >= total) {
+        await part.listen(null).cancel();
+        throw const HttpException('视频分片长度无效');
+      }
+      await for (final bytes in part) {
+        if (bytes.length > end + 1 - offset) {
+          throw const HttpException('视频分片超过声明范围');
+        }
+        offset += bytes.length;
+        yield bytes;
+      }
+      if (offset != end + 1) throw const HttpException('视频分片不完整');
+      if (offset == total) return;
+      part = await _request(media, 'bytes=$offset-');
+    }
+  }
+
   Future<Uint8List> _segmentBytes(
     PlayerMedia media,
     int limit, {
@@ -832,7 +883,7 @@ class VideoDiskCache extends ChangeNotifier {
       throw _UpstreamStatus(upstream.statusCode);
     }
     final body = BytesBuilder(copy: false);
-    final decoded = _decodedBody(upstream, upstream.header('content-encoding'));
+    final decoded = _decodedBody(_segmentBody(media, upstream), upstream.header('content-encoding'));
     await for (final chunk in decoded.timeout(const Duration(seconds: 20))) {
       if (prefix && chunk.length >= limit - body.length) {
         body.add(chunk.sublist(0, limit - body.length));

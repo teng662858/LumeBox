@@ -84,9 +84,21 @@ void main() {
             } else {
               r.add(packet);
             }
+          case '/capped.ts':
+          case '/changed.ts':
+            final bytes = [for (var i = 0; i < 4; i++) ...packet];
+            final raw = request.headers.value('range') ?? 'bytes=0-';
+            final start = int.parse(raw.substring(6, raw.length - 1));
+            final end = (start + packet.length).clamp(0, bytes.length);
+            r.statusCode = 206;
+            r.headers.set('ETag', request.uri.path == '/changed.ts' && start > 0 ? '"new"' : '"old"');
+            r.headers.set('Content-Range', 'bytes $start-${end - 1}/${bytes.length}');
+            r.add(bytes.sublist(start, end));
           case '/gzip.m3u8':
           case '/deflate.m3u8':
           case '/get-only.m3u8':
+          case '/capped.m3u8':
+          case '/changed.m3u8':
             final segment = request.uri.path.replaceFirst('.m3u8', '.ts');
             r.write('#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n'
                 '#EXTINF:4,\n$segment\n#EXT-X-ENDLIST\n');
@@ -206,6 +218,23 @@ void main() {
     );
     expect((await read(fragment)).$2, body);
     expect(calls, hasLength(1));
+  });
+
+  test('Apple remux receives every byte of a capped HEVC segment', () async {
+    expectedInput = [for (var i = 0; i < 4; i++) ...packet];
+    final text = await manifest('capped.m3u8');
+    expect(text, contains('#EXT-X-MAP'));
+    final fragment = Uri.parse(text.split('\n').firstWhere((s) => s.startsWith('http')));
+    final (response, data) = await read(fragment);
+    expect(response.statusCode, 200);
+    expect(data, body);
+    expect(calls, hasLength(1));
+  });
+
+  test('a segment version change leaves the original playlist intact', () async {
+    final text = await manifest('changed.m3u8');
+    expect(text, isNot(contains('#EXT-X-MAP')));
+    expect(calls, isEmpty);
   });
 
   test(
