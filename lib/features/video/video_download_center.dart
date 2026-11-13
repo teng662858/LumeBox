@@ -1136,7 +1136,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         final url = uri.resolve(line);
         final suffix = p.extension(url.path).toLowerCase();
         final extension =
-            ['.ts', '.m4s', '.mp4', '.aac', '.mp3'].contains(suffix)
+            const {'.ts', '.m4s', '.mp4', '.aac', '.mp3', '.ac3', '.ec3', '.eac3'}.contains(suffix)
             ? suffix
             : mappedMp4 ? '.m4s' : '.ts';
         final relative = '$name-$plan/segment-${index++}$extension';

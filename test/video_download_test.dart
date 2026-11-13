@@ -1178,6 +1178,49 @@ void main() {
     }
   });
 
+  for (final (extension, mime, bsid) in [
+    ('ac3', 'audio/ac3', 8),
+    ('ec3', 'audio/eac3', 16),
+    ('eac3', 'audio/eac3', 16),
+  ]) {
+    test('offline Dolby audio keeps its format in new and legacy downloads ($extension)', () async {
+      final frame = [0x0b, 0x77, 0, 63, 0, bsid << 3, ...List.filled(122, 0)];
+      final bytes = [0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, ...frame, ...frame];
+      server.listen((r) async {
+        if (r.uri.path.endsWith('.m3u8')) {
+          r.response.write('#EXTM3U\n#EXTINF:1,\nsound.$extension?sig=x\n#EXT-X-ENDLIST\n');
+        } else {
+          r.response.add(bytes);
+        }
+        await r.response.close();
+      });
+      final c = await center('audio.m3u8');
+      await enqueue(c);
+      final task = c.tasks.single;
+      await until(() => ['failed', 'merge_failed'].contains(task.state));
+      await c.flush();
+      final playlist = await c.localFile(task).readAsLines();
+      final segment = playlist.firstWhere((l) => !l.startsWith('#'));
+      expect(segment, endsWith('.$extension'));
+      final playback = (await c.completedPlayback('fixture', 'movie', 'episode'))!;
+      final client = HttpClient();
+      try {
+        await File('${c.folder(task)}/legacy.ts').writeAsBytes(bytes);
+        for (final path in [segment, 'legacy.ts']) {
+          final request = await client.getUrl(playback.uri.resolve(path));
+          request.headers.set('Range', 'bytes=14-19');
+          final response = await request.close();
+          expect(response.statusCode, 206);
+          expect(response.headers.contentType?.mimeType, mime);
+          expect(await response.expand((b) => b).toList(), frame.take(6));
+        }
+      } finally {
+        client.close(force: true);
+        await playback.close();
+      }
+    });
+  }
+
   test('offline fMP4 segments from signed endpoints retain their MP4 media type', () async {
     final init = [0, 0, 0, 8, ...ascii.encode('ftyp')];
     final fragment = [0, 0, 0, 8, ...ascii.encode('moof')];
