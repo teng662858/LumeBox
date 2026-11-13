@@ -11,7 +11,6 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
-import 'package:lume_box/features/video/player_kernel_picker.dart';
 import 'package:lume_box/features/video/player_kernel_section.dart';
 import 'package:lume_box/features/video/video_player_settings.dart';
 
@@ -73,7 +72,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('设置页内嵌逃生入口：与视频板块共用同一份内核列表', (tester) async {
+  testWidgets('从全局设置可以切回系统播放内核并写入视频库', (tester) async {
+    final store = await VideoPlayerSettingsStore.open();
+    store.save(const PlayerSettings().copyWith(kernel: PlayerKernel.mpv));
     await tester.binding.setSurfaceSize(const Size(900, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -91,17 +92,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('播放器设置'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('内核与网络'));
-    await tester.tap(find.text('内核与网络'));
+    await tester.tap(find.byType(DropdownButtonFormField<PlayerKernel>));
     await tester.pumpAndSettle();
-    expect(
-      find.byType(PlayerKernelPicker),
-      findsOneWidget,
-      reason: '两处必须是同一个组件（列表长得一模一样）',
-    );
-    for (final kernel in PlayerKernel.values) {
-      expect(find.text(kernel.label), findsOneWidget);
-    }
+    await tester.tap(find.text('系统 AVPlayer').hitTestable().last);
+    await tester.pumpAndSettle();
+    expect(store.load().kernel, PlayerKernel.avplayer);
   });
 
   testWidgets('逃生切换：只改内核并写回视频板块的库；字幕不动，倍速按内核各记一份', (tester) async {

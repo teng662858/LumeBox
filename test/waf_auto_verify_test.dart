@@ -13,6 +13,7 @@ import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/reading/explore_view.dart';
+import 'package:lume_box/features/shell/section_preloader.dart';
 
 import 'support/fake_source_manager.dart';
 
@@ -716,6 +717,8 @@ void webViewOriginTests() {
   group('网页视图地址解析（点了没反应那条）', webViewOriginTests);
 
   group('真机反馈那条链路：加载与【重试】都只出错误卡，验证窗只能由【网页视图】开', () {
+    tearDown(() => SectionPreloader.discard(Section.comic));
+
     /// 一个「每次调用都被 WAF 拦下」的源：走**真实的** JsDataSource 接线
     /// （`_invokeOnce` 认标记 → 问自动校验 → 重试一次），只是脚本永远过不去。
     DataSource blockedSource() => JsDataSource(
