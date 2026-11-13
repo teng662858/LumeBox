@@ -26,7 +26,11 @@ void main() {
   tearDown(() async {
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
-  final mp4 = [0, 0, 0, 24, ...ascii.encode('ftypisom'), ...List.filled(16, 0)];
+  final mp4 = [
+    0, 0, 0, 16, ...ascii.encode('ftypisom'), 0, 0, 0, 0,
+    0, 0, 0, 16, ...ascii.encode('moov'), 0, 0, 0, 8, ...ascii.encode('free'),
+    0, 0, 0, 9, ...ascii.encode('mdat'), 1,
+  ];
 
   Future<VideoDownloadTask> downloaded(
     VideoDownloadCenter center, {
@@ -231,5 +235,39 @@ void main() {
     await center.flush();
     await waitFor(() => !File('${center.folder(task)}/a.ts').existsSync());
     expect(task.fileName, 'merged.mp4');
+  });
+
+  test('a truncated committed MP4 is rebuilt using the surviving local HLS', () async {
+    var calls = 0;
+    final center = VideoDownloadCenter(
+      directory: () async => root,
+      resolve: (_) async => throw StateError('Source is offline'),
+      merge: (_, output, _) async {
+        calls++;
+        await output.writeAsBytes(mp4);
+      },
+    );
+    final task = await downloaded(center, state: 'paused');
+    await File('${center.folder(task)}/merged.mp4').writeAsBytes(mp4.sublist(0, mp4.length - 1));
+    await center.resume(task);
+    await waitFor(() => ['done', 'merge_failed'].contains(task.state));
+    await center.flush();
+    expect(task.state, 'done', reason: task.error);
+    expect(calls, 1);
+    expect(await center.localFile(task).readAsBytes(), mp4);
+  });
+
+  test('MP4 with only a file type box preserves the playable local HLS', () async {
+    final center = VideoDownloadCenter(
+      directory: () async => root,
+      merge: (_, output, _) async => output.writeAsBytes(mp4.sublist(0, 16)),
+    );
+    final task = await downloaded(center);
+    await center.resume(task);
+    await waitFor(() => ['done', 'merge_failed'].contains(task.state));
+    await center.flush();
+    expect(task.state, 'merge_failed');
+    expect(await center.localFile(task).exists(), true);
+    expect(await File('${center.folder(task)}/a.ts').exists(), true);
   });
 }

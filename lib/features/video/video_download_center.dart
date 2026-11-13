@@ -489,15 +489,13 @@ class VideoDownloadCenter extends ChangeNotifier {
     final output = File(p.join(dir.path, 'merged.mp4'));
     try {
       // A crash after atomic rename but before manifest update can reuse the result.
-      if (!await output.exists()) {
+      if (!await _isMp4(output)) {
         if (await part.exists()) await part.delete();
         _check(task);
         await (merge ?? _merger.merge)(dir, part, task.id);
         _check(task);
         if (!await _isMp4(part)) throw StateError('合并未生成有效的 MP4 文件');
         await part.rename(output.path);
-      } else if (!await _isMp4(output)) {
-        throw StateError('已有合并文件不完整，请删除该文件后重试');
       }
       final length = await output.length();
       _check(task);
@@ -523,13 +521,37 @@ class VideoDownloadCenter extends ChangeNotifier {
   }
 
   static Future<bool> _isMp4(File file) async {
-    if (!await file.exists() || await file.length() < 16) return false;
-    final header = await file.open();
+    if (!await file.exists()) return false;
+    final input = await file.open();
     try {
-      final bytes = await header.read(12);
-      return ascii.decode(bytes.sublist(4, 8), allowInvalid: true) == 'ftyp';
+      // Check the remuxer's top-level boxes before deleting the source HLS.
+      // Seek over payloads so a large movie never needs to be read into memory.
+      final length = await input.length();
+      var offset = 0, hasMovie = false, hasMedia = false;
+      while (offset < length) {
+        await input.setPosition(offset);
+        final bytes = await input.read(8);
+        if (bytes.length != 8) return false;
+        final type = String.fromCharCodes(bytes, 4, 8);
+        if (offset == 0 && type != 'ftyp') return false;
+        var size = ByteData.sublistView(bytes).getUint32(0);
+        var headerSize = 8;
+        if (size == 1) {
+          final extended = await input.read(8);
+          if (extended.length != 8) return false;
+          size = ByteData.sublistView(extended).getUint64(0);
+          headerSize = 16;
+        } else if (size == 0) {
+          size = length - offset;
+        }
+        if (size < headerSize || size > length - offset) return false;
+        if (type == 'moov' && size > headerSize) hasMovie = true;
+        if (type == 'mdat' && size > headerSize) hasMedia = true;
+        offset += size;
+      }
+      return hasMovie && hasMedia;
     } finally {
-      await header.close();
+      await input.close();
     }
   }
 
