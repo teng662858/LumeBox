@@ -451,6 +451,40 @@ void main() {
     }
   });
 
+  test('audiobook seeks repair wrong partial responses before handing bytes to the player', () async {
+    final ranges = <String?>[];
+    var alwaysPartial = false;
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((request) async {
+      final range = request.headers['range'];
+      ranges.add(range);
+      if (range == 'bytes=2-4') {
+        return http.Response.bytes([2, 3], 206, headers: {'content-range': 'bytes 2-3/*'});
+      }
+      if (range != null || alwaysPartial) {
+        return http.Response.bytes([0, 1], 206, headers: {'content-range': 'bytes 0-1/8'});
+      }
+      return http.Response.bytes(List.generate(8, (i) => i), 200);
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final url = (await proxy.prepare([queueTrack('episode.mp3')])).single;
+    for (final range in ['bytes=4-5', 'bytes=-2']) {
+      final result = await client.get(url, headers: {'Range': range});
+      final start = range == 'bytes=-2' ? 6 : 4;
+      expect(result.statusCode, 206);
+      expect(result.headers['content-range'], 'bytes $start-${start + 1}/8');
+      expect(result.bodyBytes, [start, start + 1]);
+    }
+    expect(ranges, ['bytes=4-5', null, 'bytes=-2', null]);
+    final capped = await client.get(url, headers: {'Range': 'bytes=2-4'});
+    expect(capped.bodyBytes, [2, 3]);
+    expect(capped.headers['content-range'], 'bytes 2-3/*');
+    alwaysPartial = true;
+    final bad = await client.get(url, headers: {'Range': 'bytes=4-5'});
+    expect(bad.statusCode, 502);
+    expect(bad.bodyBytes, isEmpty);
+  });
+
   test('a cached chapter URL that expires during playback is refreshed on the same seek', () async {
     var resolutions = 0;
     var expired = false;

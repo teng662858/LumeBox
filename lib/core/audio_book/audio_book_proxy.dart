@@ -246,6 +246,13 @@ class AudioBookProxy {
           ignoreRange = true;
           continue;
         }
+        if (!fetchPlaylist && range != null && response.statusCode == 206 &&
+            !_matchesRange(response, range)) {
+          await response.stream.listen(null).cancel();
+          if (ignoreRange) throw const FormatException('音频服务器返回了错误的字节范围');
+          ignoreRange = true;
+          continue;
+        }
         break;
       }
       if (generation != _generation) throw const HttpException('播放列表已更换');
@@ -419,6 +426,28 @@ class AudioBookProxy {
       offset = next;
     }
     throw const HttpException('音频响应未达到请求的字节范围');
+  }
+
+  static bool _matchesRange(http.StreamedResponse response, String requested) {
+    final match = RegExp(r'^bytes (\d+)-(\d+)/(\d+|\*)$', caseSensitive: false)
+        .firstMatch(response.headers['content-range']?.trim() ?? '');
+    final start = int.tryParse(match?[1] ?? ''), end = int.tryParse(match?[2] ?? '');
+    if (start == null || end == null || start > end) return false;
+    final length = response.contentLength;
+    if (length != null && length - 1 != end - start) return false;
+    if (match![3] != '*') {
+      final total = int.tryParse(match[3]!);
+      if (total == null || end >= total) return false;
+      final offsets = parseHttpByteRange(requested, total);
+      return offsets != null && offsets.start == start && end <= offsets.end;
+    }
+    // A capped response can cover only the beginning of the requested range.
+    // Checking a suffix requires a known total.
+    final explicit = RegExp(r'^bytes=(\d+)-(\d*)$', caseSensitive: false)
+        .firstMatch(requested.trim());
+    if (explicit == null || int.tryParse(explicit[1]!) != start) return false;
+    final limit = explicit[2]!;
+    return limit.isEmpty || end <= (int.tryParse(limit) ?? 0x7fffffffffffffff);
   }
 
   ({int start, int end})? _responseRange(HttpRequest request, int size) {
