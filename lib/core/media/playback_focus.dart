@@ -31,19 +31,26 @@ class PlaybackFocus {
   }) {
     final next = (_pending ?? Future<void>.value()).then((_) async {
       if (stillWanted?.call() == false) return;
+      final previousOwner = _owner;
       final previous = _release[_owner];
       if (previous != null &&
           (_owner != name || (onRelease != null && previous != onRelease))) {
         await previous();
+        _playing.remove(previousOwner);
+        _owner = null;
       }
       if (stillWanted?.call() == false) return;
       if (_owner != name) {
+        // No player owns playback while the native handoff is outstanding.
+        // In particular, cancellation must not resurrect a released owner.
+        _owner = null;
         try {
           await const MethodChannel('lumebox/mediaTracks')
               .invokeMethod<void>('owner', name);
         } on MissingPluginException {
           /* Platform skeletons have no native owner. */
         }
+        if (stillWanted?.call() == false) return;
         _owner = name;
       }
       if (onRelease != null) register(name, onRelease);
