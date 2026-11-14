@@ -92,6 +92,32 @@ void main() {
           throw StateError('Legacy Dart engine must not be created'),
     ),
   );
+  testWidgets('原生播放关闭后恢复竖屏方向', (tester) async {
+    final orientations = <Object?>[];
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'SystemChrome.setPreferredOrientations') {
+        orientations.add(call.arguments);
+      }
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await tester.pumpWidget(route());
+    await tester.runAsync(() async {
+      for (var i = 0; i < 50 && !calls.any((call) => call.method == 'open'); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      final opened = calls.firstWhere((call) => call.method == 'open');
+      final done = Completer<void>();
+      await messenger.handlePlatformMessage(channel.name,
+        const StandardMethodCodec().encodeMethodCall(MethodCall('event', {
+          'session': (opened.arguments as Map)['session'], 'type': 'closed',
+        })), (_) => done.complete());
+      await done.future;
+    });
+    await tester.pumpAndSettle();
+    expect(orientations, contains(equals(['DeviceOrientation.portraitUp'])));
+  });
+
   testWidgets('从媒体库返回后，刚解析好的本地视频不会再弹出播放器', (tester) async {
     final navigator = GlobalKey<NavigatorState>();
     final entry = MediaResource(

@@ -1,3 +1,5 @@
+import 'package:lume_box/features/video/danmaku/dandanplay_client.dart';
+import 'package:lume_box/features/video/danmaku/danmaku_models.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -107,9 +109,11 @@ void main() {
     Duration? initialPosition,
     List<VideoQuality> qualities = const [],
     Future<PlayerMedia> Function(PlayerMedia, bool)? prepare,
+    Future<DandanplayClient> Function()? commentClient,
   }) async {
     session = NativeVideoSourceSession(
       initialPosition: initialPosition,
+      danmakuClient: commentClient,
       media:
           initialMedia ??
           PlayerMedia(
@@ -1414,6 +1418,37 @@ void main() {
     },
   );
   test(
+    'native danmaku searches, confirms and restores this episode match',
+    () async {
+      final clients = <_CommentClient>[];
+      await start(
+        commentClient: () async {
+          final client = _CommentClient();
+          clients.add(client);
+          return client;
+        },
+      );
+      final found = await request('danmaku-search', {
+        'title': '测试作品',
+        'episode': 2,
+      });
+      expect((found['items'] as List).single, containsPair('id', 'matched-2'));
+      expect(clients.single.query, '测试作品/2');
+      final selected = await request('danmaku-select', {'id': 'matched-2'});
+      expect((selected['items'] as List).single, containsPair('text', '匹配弹幕'));
+      final restored = await request('danmaku');
+      expect(restored, selected);
+      expect(clients.last.loaded, 'matched-2');
+      await request('danmaku-select', {'id': 'empty'});
+      expect(await request('danmaku'), selected);
+      final failed = await request('danmaku-select', {'id': 'unavailable'});
+      expect(failed['error'], contains('服务不可用'));
+      expect(await request('danmaku'), selected);
+      expect(clients.every((client) => client.closed), isTrue);
+    },
+  );
+
+  test(
     'source danmaku is parsed without participating in media startup',
     () async {
       await start();
@@ -1475,4 +1510,37 @@ class _Source extends MockDataSource implements DanmakuCapable {
   }) async => [
     {'time': 1000, 'text': '测试弹幕'},
   ];
+}
+
+class _CommentClient extends DandanplayClient {
+  _CommentClient() : super(credentials: const DandanplayCredentials('', ''));
+  String? query, loaded;
+  bool closed = false;
+  @override
+  Future<List<DandanplayEpisode>> search(String title, {int? episode}) async {
+    query = '$title/$episode';
+    return [
+      DandanplayEpisode(
+        id: 'matched-$episode',
+        title: title,
+        episode: '第$episode集',
+      ),
+    ];
+  }
+
+  @override
+  Future<DanmakuTrack> comments(String id) async {
+    loaded = id;
+    if (id == 'empty') return DanmakuTrack.empty;
+    if (id == 'unavailable') throw StateError('服务不可用');
+    return DanmakuTrack.parse([
+      {'time': 2, 'text': '匹配弹幕'},
+    ]);
+  }
+
+  @override
+  void close() {
+    closed = true;
+    super.close();
+  }
 }
