@@ -76,6 +76,7 @@ struct NativeVideoState {
   private var endObserver: NSObjectProtocol?
   private var timer: Timer?
   private var metadata: Task<Void, Never>?
+  private var subtitleSelection: Task<Void, Never>?
   private var groups: [String: AVMediaSelectionGroup] = [:]
   private var intent = false, seeking = false, disposed = false
   private var speed = 1.0, pendingResume = 0.0
@@ -107,14 +108,8 @@ struct NativeVideoState {
     seekRevision += 1
     state = NativeVideoState(); pendingResume = media.position; seeking = false
     player.replaceCurrentItem(with: item)
-    if !subtitlesEnabled {
-      metadata = Task { @MainActor [weak self, weak item] in
-        guard let self, let item else { return }
-        let group = try? await asset.loadMediaSelectionGroup(for: .legible)
-        guard !Task.isCancelled, !self.disposed, self.player?.currentItem === item else { return }
-        if let group { item.select(nil, in: group) }
-      }
-    }
+    subtitleSelection?.cancel()
+    if !subtitlesEnabled { disableEmbeddedSubtitles() }
     observation = item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] _, _ in
       DispatchQueue.main.async {
         guard let self, let item, self.player?.currentItem === item, !self.disposed else { return }
@@ -207,14 +202,29 @@ struct NativeVideoState {
   }
   func selectTrack(_ track: [String: Any]) {
     guard let type = track["type"] as? String, let group = groups[type], let item = player?.currentItem else { return }
+    if type == "sub" { subtitleSelection?.cancel() }
     let id = Int(track["id"] as? String ?? "") ?? -1
     item.select(group.options.indices.contains(id) ? group.options[id] : nil, in: group)
   }
-  func subtitle(_ url: URL) { /* External text subtitles are rendered by the native page. */ }
+  func subtitle(_ url: URL) {
+    // The screen draws the external captions. Hide the previously selected embedded track.
+    disableEmbeddedSubtitles()
+  }
+  private func disableEmbeddedSubtitles() {
+    subtitleSelection?.cancel()
+    guard let item = player?.currentItem else { return }
+    subtitleSelection = Task { @MainActor [weak self, weak item] in
+      guard let self, let item else { return }
+      let group = try? await item.asset.loadMediaSelectionGroup(for: .legible)
+      guard !Task.isCancelled, !self.disposed, self.player?.currentItem === item else { return }
+      if let group { item.select(nil, in: group) }
+    }
+  }
   func dispose(_ completion: @escaping () -> Void) {
     guard !disposed else { completion(); return }
     disposed = true; intent = false
     timer?.invalidate(); timer = nil; metadata?.cancel(); metadata = nil
+    subtitleSelection?.cancel(); subtitleSelection = nil
     observation = nil
     if let endObserver { NotificationCenter.default.removeObserver(endObserver) }; endObserver = nil
     player?.pause(); player?.currentItem?.cancelPendingSeeks(); player?.currentItem?.asset.cancelLoading()

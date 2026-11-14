@@ -88,8 +88,9 @@ import UniformTypeIdentifiers
   private var lastEvent = 0.0, scrubOrigin = 0.0, panVolume = 1.0, panBrightness = 0.5
   private var loadStarted = CACurrentMediaTime()
   private var fatalMessage: String?
-  private var subtitleCues: [(Double, Double, String)] = []
-  private var subtitleText = ""
+  private var subtitles = NativeVideoSubtitles()
+  private var subtitleRevision = 0
+  private var subtitlePickerGeneration: Int?
   private var danmaku: [(Double, String)] = []
   private var danmakuIndex = 0, danmakuRow = 0
   private var danmakuPosition = 0.0, danmakuEnabled = false, danmakuPaused = false
@@ -236,6 +237,7 @@ import UniformTypeIdentifiers
     switching = true; timeout?.invalidate(); resetPip()
     if emitProgress { emit("progress") }; readyRecorded = false; frameRecorded = false
     kernel = selected == "mpv" ? "mpv" : "avplayer"
+    if kernel == "mpv" { subtitles = NativeVideoSubtitles() }
     loadStarted = CACurrentMediaTime()
     let at = resume ?? state.position
     let previous = engine; engine = nil
@@ -245,6 +247,7 @@ import UniformTypeIdentifiers
     let create = { [weak self] in
       guard let self, !self.closing, self.generation == revision else { return }
       var engineOptions = self.options; engineOptions["hardwareDecoding"] = self.hardware
+      if !self.subtitles.isEmpty { engineOptions["subtitlesEnabled"] = false }
       let next: NativeVideoEngine = self.kernel == "mpv" ? NativeMPVEngine(options: engineOptions) : NativeAVEngine(options: engineOptions)
       self.engine = next; self.picture.addSubview(next.view); next.view.frame = self.picture.bounds
       next.aspect(self.fill); next.volume(self.volume)
@@ -300,8 +303,8 @@ import UniformTypeIdentifiers
     // Controls are siblings of the native picture; no UIKit platform view can cover them.
     top.isHidden = !chromeVisible || locked; bottom.isHidden = !chromeVisible || locked
     lockButton.isHidden = !chromeVisible && !locked
-    let cue = subtitleCues.first { $0.0 <= state.position && state.position < $0.1 }?.2 ?? ""
-    if cue != subtitleText { subtitleText = cue; caption.text = cue }
+    let cue = subtitles.caption(at: state.position)
+    if cue != caption.text { caption.text = cue }
     updateDanmaku()
     if CACurrentMediaTime() - lastEvent >= 1 || reachedEnd || state.error != nil {
       lastEvent = CACurrentMediaTime(); emit("progress")
@@ -371,8 +374,10 @@ import UniformTypeIdentifiers
       do {
         // Flush the previous episode with its own identity before replacing it.
         self.emit("progress")
-        self.item = try NativeVideoItem(payload); self.titleLabel.text = self.item.title
-        self.subtitleCues = []; self.caption.text = nil; self.danmaku = []; self.danmakuIndex = 0
+        let next = try NativeVideoItem(payload)
+        if self.item.identity != next.identity { self.subtitles = NativeVideoSubtitles() }
+        self.item = next; self.titleLabel.text = next.title
+        self.danmaku = []; self.danmakuIndex = 0
         self.bullets.subviews.forEach { $0.removeFromSuperview() }
         let requested = action == "kernel" ? arguments["id"] as? String : nil
         let selected = response?["kernel"] as? String ?? requested ?? self.kernel
@@ -426,9 +431,11 @@ import UniformTypeIdentifiers
         if self.wantsPlay { self.engine?.play(rate: rate) }; self.emit("settings", extra: ["speed": rate])
       }
       case "tracks": self.showTracks()
-      case "subtitle": self.present(UIDocumentPickerViewController(forOpeningContentTypes: [.plainText, .data], asCopy: true), animated: true) { [weak self] in
-        (self?.presentedViewController as? UIDocumentPickerViewController)?.delegate = self
-      }
+      case "subtitle":
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.plainText, .data], asCopy: true)
+        self.subtitlePickerGeneration = self.generation
+        picker.delegate = self
+        self.present(picker, animated: true)
       case "lines": self.choices("lines")
       case "qualities": self.choices("qualities")
       case "danmaku": self.danmakuEnabled.toggle(); self.bullets.subviews.forEach { $0.removeFromSuperview() }; if self.danmakuEnabled { self.loadDanmaku() }
@@ -457,8 +464,13 @@ import UniformTypeIdentifiers
       }
       rows.append(["title": "关闭字幕", "type": "sub", "id": "no"])
       self.showList("音轨与字幕", rows: rows) { [weak self] track in
-        self?.engine?.selectTrack(track)
-        if (track["type"] as? String) == "sub" { self?.subtitleCues = []; self?.caption.text = nil }
+        guard let self, !self.closing, self.generation == revision else { return }
+        self.engine?.selectTrack(track)
+        if (track["type"] as? String) == "sub" {
+          self.subtitleRevision += 1
+          self.subtitles = NativeVideoSubtitles()
+          self.caption.text = nil
+        }
       }
     }
   }
@@ -659,14 +671,18 @@ import UniformTypeIdentifiers
   }
 
   func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-    guard let url = urls.first else { return }
+    guard !closing, subtitlePickerGeneration == generation, let url = urls.first else { return }
+    subtitlePickerGeneration = nil
     if kernel == "mpv" { engine?.subtitle(url); return }
-    let revision = generation
+    subtitleRevision += 1
+    let revision = subtitleRevision, mediaGeneration = generation
     Task { @MainActor [weak self] in
-      let cues = await Task.detached(priority: .utility) { NativeVideoSubtitles.read(url) }.value
-      guard let self, !self.closing, self.generation == revision else { return }
-      self.subtitleCues = cues
-      if cues.isEmpty { self.toast("系统播放器支持外挂 SRT / VTT；ASS 可使用 MPV") }
+      let subtitles = await Task.detached(priority: .utility) { NativeVideoSubtitles.read(url) }.value
+      guard let self, !self.closing, self.generation == mediaGeneration, self.subtitleRevision == revision else { return }
+      guard let subtitles else { self.toast("无法读取字幕。系统播放器支持 SRT / VTT，ASS 可使用 MPV"); return }
+      self.subtitles = subtitles
+      self.engine?.subtitle(url)
+      self.renderState()
     }
   }
   private func loadDanmaku() {
@@ -816,23 +832,85 @@ extension NativeVideoScreen: UIGestureRecognizerDelegate {
   }
 }
 
-enum NativeVideoSubtitles {
-  static func read(_ url: URL) -> [(Double, Double, String)] {
-    guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]), (values.fileSize ?? 0) <= 2 * 1024 * 1024,
-          let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
-    func seconds(_ value: String) -> Double? {
-      let components = value.replacingOccurrences(of: ",", with: ".").split(separator: ":").compactMap { Double($0) }
-      guard components.count == 2 || components.count == 3 else { return nil }
-      return components.reversed().enumerated().reduce(0) { $0 + $1.element * pow(60, Double($1.offset)) }
+struct NativeVideoSubtitles: Sendable {
+  private struct Cue: Sendable {
+    let start: Double, end: Double, text: String
+  }
+  private var cues: [Cue] = []
+  private var latestEnd: [Double] = []
+  var isEmpty: Bool { cues.isEmpty }
+
+  func caption(at position: Double) -> String? {
+    var lower = 0, upper = cues.count
+    while lower < upper {
+      let mid = (lower + upper) / 2
+      if cues[mid].start <= position { lower = mid + 1 } else { upper = mid }
     }
-    let blocks = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n\n")
-    return blocks.compactMap { block in
-      let lines = block.components(separatedBy: "\n")
-      guard let index = lines.firstIndex(where: { $0.contains("-->") }) else { return nil }
-      let times = lines[index].components(separatedBy: "-->").map { $0.trimmingCharacters(in: .whitespaces).components(separatedBy: " ").first ?? "" }
-      guard times.count == 2, let start = seconds(times[0]), let end = seconds(times[1]), end > start else { return nil }
-      let caption = lines.dropFirst(index + 1).joined(separator: "\n").replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-      return (start, end, caption)
-    }.sorted { $0.0 < $1.0 }
+    var visible: [String] = []
+    var index = lower
+    while index > 0 && latestEnd[index - 1] > position {
+      index -= 1
+      if position < cues[index].end { visible.append(cues[index].text) }
+    }
+    return visible.isEmpty ? nil : visible.reversed().joined(separator: "\n")
+  }
+
+  static func read(_ url: URL) -> Self? {
+    let limit = 8 * 1024 * 1024
+    guard let file = try? FileHandle(forReadingFrom: url) else { return nil }
+    defer { try? file.close() }
+    guard let data = try? file.read(upToCount: limit + 1), data.count <= limit else { return nil }
+    let encoding: String.Encoding = data.starts(with: [0xff, 0xfe]) || data.starts(with: [0xfe, 0xff]) ? .utf16 : .utf8
+    guard let text = String(data: data, encoding: encoding) else { return nil }
+
+    func seconds(_ timestamp: Substring) -> Double? {
+      var total = 0.0
+      let fields = timestamp.replacingOccurrences(of: ",", with: ".").split(separator: ":", omittingEmptySubsequences: false)
+      guard (2...3).contains(fields.count) else { return nil }
+      for field in fields {
+        guard let number = Double(field), number.isFinite, number >= 0 else { return nil }
+        total = total * 60 + number
+      }
+      return total.isFinite ? total : nil
+    }
+
+    func parseBlock(_ lines: [String]) -> Cue? {
+      guard let first = lines.first, first != "NOTE", !first.hasPrefix("NOTE "), !first.hasPrefix("NOTE\t"),
+            let index = lines.prefix(2).firstIndex(where: { $0.contains("-->") }) else { return nil }
+      let fields = lines[index].components(separatedBy: "-->")
+      guard fields.count == 2,
+            let start = seconds(Substring(fields[0].trimmingCharacters(in: .whitespaces))),
+            let timestamp = fields[1].split(whereSeparator: { $0.isWhitespace }).first,
+            let end = seconds(timestamp), end > start else { return nil }
+      let caption = lines.dropFirst(index + 1).joined(separator: "\n")
+        .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        .replacingOccurrences(of: "&lt;", with: "<")
+        .replacingOccurrences(of: "&gt;", with: ">")
+        .replacingOccurrences(of: "&nbsp;", with: "\u{00a0}")
+        .replacingOccurrences(of: "&lrm;", with: "\u{200e}")
+        .replacingOccurrences(of: "&rlm;", with: "\u{200f}")
+        .replacingOccurrences(of: "&amp;", with: "&")
+      return caption.isEmpty ? nil : Cue(start: start, end: end, text: caption)
+    }
+
+    var subtitles = Self()
+    var lines: [String] = []
+    text.enumerateLines { line, _ in
+      if line.trimmingCharacters(in: .whitespaces).isEmpty {
+        if let cue = parseBlock(lines) { subtitles.cues.append(cue) }
+        lines.removeAll(keepingCapacity: true)
+      } else {
+        lines.append(line)
+      }
+    }
+    if let cue = parseBlock(lines) { subtitles.cues.append(cue) }
+    guard !subtitles.cues.isEmpty else { return nil }
+    subtitles.cues.sort { $0.start < $1.start }
+    var end = 0.0
+    for cue in subtitles.cues {
+      end = max(end, cue.end)
+      subtitles.latestEnd.append(end)
+    }
+    return subtitles
   }
 }

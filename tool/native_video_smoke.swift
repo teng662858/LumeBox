@@ -1,15 +1,25 @@
 // Appended to the production controller file for a standalone UIKit simulator
 // host. Exercises private production code, not a second player implementation.
+extension NativeVideoScreen {
+  fileprivate func importTestSubtitle(_ url: URL, stale: Bool = false) {
+    subtitlePickerGeneration = stale ? generation - 1 : generation
+    documentPicker(UIDocumentPickerViewController(forOpeningContentTypes: [.data]), didPickDocumentsAt: [url])
+  }
+  fileprivate var displayedSubtitle: String? { caption.text }
+}
+
 @main @MainActor final class NativeVideoSmokeApp: UIResponder, UIApplicationDelegate {
   var window: UIWindow?
   private var screen: NativeVideoScreen?
   private var timer: Timer?
   private var caseIndex = 0, phase = 0, swaps = 0
   private var nextRequests = 0
+  private let captionURL = FileManager.default.temporaryDirectory.appendingPathComponent("native-smoke.vtt")
   private var started = Date(), pausedAt = Date(), pausedPosition = 0.0
   private let cases = [("avplayer", "smoke.mp4"), ("avplayer", "smoke.m3u8"), ("mpv", "smoke.mp4"), ("mpv", "smoke.m3u8")]
 
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    do { try checkNativeSubtitles() } catch { check(false, "subtitle fixture: \(error)") }
     let host = UIWindow(frame: UIScreen.main.bounds); host.rootViewController = UIViewController()
     host.makeKeyAndVisible(); window = host
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.next() }
@@ -67,30 +77,50 @@
       }
       screen.view.frame = original; screen.view.setNeedsLayout(); screen.view.layoutIfNeeded()
       screen.debugAction(["action": "tap", "control": "play"])
+      if caseIndex == 0 {
+        do {
+          try "WEBVTT\n\n00:00.000 --> 00:12.000\n&lt;captions&gt;".write(to: captionURL, atomically: true, encoding: .utf8)
+          screen.importTestSubtitle(captionURL)
+        } catch { check(false, "write subtitle fixture: \(error)") }
+      }
       pausedAt = Date(); pausedPosition = position; phase = 1
     } else if phase == 1 && Date().timeIntervalSince(pausedAt) > 0.9 {
       check(abs(position - pausedPosition) < 0.6, "explicit pause must hold the clock")
       check(state["wantsPlay"] as? Bool == false, "pause intent")
+      if caseIndex == 0 {
+        check(screen.displayedSubtitle == "<captions>", "external captions appear while paused")
+        do {
+          try "invalid".write(to: captionURL, atomically: true, encoding: .utf8)
+          screen.importTestSubtitle(captionURL)
+        } catch { check(false, "write invalid subtitle fixture: \(error)") }
+      }
       screen.debugAction(["action": "seek", "position": 3.0])
       screen.debugAction(["action": "tap", "control": "play"]); phase = 2
     } else if phase == 2 && position > 3.3 {
       screen.debugAction(["action": "pip"])
       check(screen.debugState["viewAttached"] as? Bool == true, "PiP preparation keeps inline layer")
       if caseIndex == 0 {
+        check(screen.displayedSubtitle == "<captions>", "invalid import preserves existing captions")
         screen.debugAction(["action": "tap", "control": "next"])
         check((screen.debugState["loadElapsedMs"] as? Int ?? Int.max) < 1000, "kernel switch resets the load clock")
         phase = 3; swaps = 1
       } else { checkEnding() }
     } else if phase == 3 && state["firstFrame"] as? Bool == true && state["switching"] as? Bool == false {
       if swaps == 1 {
+        check(screen.displayedSubtitle == nil, "new episode clears previous captions")
         check(state["kernel"] as? String == "mpv", "switch to MPV")
         check(state["speed"] as? Double == 1.75, "next episode restores the MPV rate")
         screen.debugAction(["action": "kernel", "kernel": "avplayer"]); swaps = 2
       } else {
         check(state["kernel"] as? String == "avplayer", "switch back to AVPlayer")
+        do {
+          try "WEBVTT\n\n00:00.000 --> 01:00.000\nstale".write(to: captionURL, atomically: true, encoding: .utf8)
+          screen.importTestSubtitle(captionURL, stale: true)
+        } catch { check(false, "write stale subtitle fixture: \(error)") }
         print("NATIVE_VIDEO_SWITCH_OK"); checkEnding()
       }
     } else if phase == 4 && state["ended"] as? Bool == true {
+      if caseIndex == 0 { check(screen.displayedSubtitle == nil, "old picker cannot attach captions to new media") }
       let enabled = cases[caseIndex].1 == "smoke.mp4"
       check(nextRequests == (enabled ? 1 : 0), "next is requested only when enabled")
       check(state["autoNext"] as? Bool == enabled, "catalog end preserves auto-next preference")
