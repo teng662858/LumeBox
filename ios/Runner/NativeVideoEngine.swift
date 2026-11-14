@@ -251,6 +251,7 @@ struct NativeVideoState {
   private var disposed = false, desiredPlay = false
   private var speed = 1.0
   private var pendingResume = 0.0
+  private var pendingSubtitle: URL?
   private var seekRevision = 0
   private var seekCompletion: ((Bool) -> Void)?
   #if DEBUG
@@ -275,6 +276,9 @@ struct NativeVideoState {
       self.state.height = (data["height"] as? NSNumber)?.intValue ?? 0
       self.state.tracks = data["tracks"] as? [[String: Any]] ?? []
       self.state.error = data["error"] as? String
+      if self.state.ready, self.state.error == nil, let url = self.pendingSubtitle {
+        self.subtitle(url)
+      }
       if self.state.ready && self.pendingResume > 0 {
         let target = self.pendingResume; self.pendingResume = 0
         self.bridge?.command(["seek", String(target), "absolute+exact"])
@@ -312,6 +316,7 @@ struct NativeVideoState {
   }
   func load(_ item: NativeVideoItem) {
     pendingResume = item.position
+    pendingSubtitle = nil
     state = NativeVideoState(); surface.videoLayer.flushAndRemoveImage()
     bridge?.openURL(item.url.absoluteString, headers: item.headers, position: item.position)
   }
@@ -335,16 +340,25 @@ struct NativeVideoState {
     completion(state.tracks.compactMap { track in
       guard let type = track["type"] as? String, ["audio", "sub"].contains(type) else { return nil }
       let label = track["title"] as? String ?? track["lang"] as? String ?? track["codec"] as? String ?? "轨道"
-      return ["type": type, "id": "\(track["id"] ?? "")", "label": label, "selected": track["selected"] as? Bool ?? false]
+      var row: [String: Any] = ["type": type, "id": "\(track["id"] ?? "")", "label": label, "selected": track["selected"] as? Bool ?? false]
+      if let path = track["external-filename"] as? String { row["externalPath"] = path }
+      return row
     })
   }
   func selectTrack(_ track: [String: Any]) {
+    if (track["type"] as? String) == "sub" { pendingSubtitle = nil }
     bridge?.setProperty((track["type"] as? String) == "audio" ? "aid" : "sid", value: track["id"] as? String ?? "no")
   }
-  func subtitle(_ url: URL) { bridge?.command(["sub-add", url.path, "select"]) }
+  func subtitle(_ url: URL) {
+    guard !disposed else { return }
+    guard state.ready, state.error == nil else { pendingSubtitle = url; return }
+    pendingSubtitle = nil
+    bridge?.command(["sub-add", url.path, "select"])
+  }
   func dispose(_ completion: @escaping () -> Void) {
     guard !disposed else { completion(); return }
     disposed = true; changed = nil; surface.videoLayer.flushAndRemoveImage()
+    pendingSubtitle = nil
     seekCompletion?(false); seekCompletion = nil
     let pending = bridge; bridge = nil
     // GL resources cannot be destroyed in the background either. Audio pauses

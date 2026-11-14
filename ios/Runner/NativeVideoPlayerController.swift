@@ -94,6 +94,7 @@ import UniformTypeIdentifiers
   private var toastMessage: String?
   private var toastTimer: Timer?
   private var subtitles = NativeVideoSubtitles()
+  private var externalSubtitleURL: URL?
   private var subtitleRevision = 0
   private var subtitlePickerGeneration: Int?
   private var danmaku: [(Double, String)] = []
@@ -268,6 +269,7 @@ import UniformTypeIdentifiers
         var payload = self.item.payload; payload["position"] = at
         let media = try NativeVideoItem(payload)
         next.load(media)
+        if let url = self.externalSubtitleURL { self.loadExternalSubtitle(url) }
         if self.wantsPlay { next.play(rate: self.speed) }
         self.switching = false; self.armTimeout(revision)
         self.emit("settings", extra: ["speed": self.speed, "hardwareDecoding": self.hardware, "autoNext": self.autoNext])
@@ -399,7 +401,7 @@ import UniformTypeIdentifiers
         // Flush the previous episode with its own identity before replacing it.
         self.emit("progress")
         let next = try NativeVideoItem(payload)
-        if self.item.identity != next.identity { self.subtitles = NativeVideoSubtitles() }
+        if self.item.identity != next.identity { self.clearExternalSubtitle() }
         self.item = next; self.titleLabel.text = next.title
         self.danmaku = []; self.danmakuIndex = 0
         self.bullets.subviews.forEach { $0.removeFromSuperview() }
@@ -505,13 +507,16 @@ import UniformTypeIdentifiers
       rows.append(["title": "关闭字幕", "type": "sub", "id": "no"])
       self.showList("音轨与字幕", rows: rows) { [weak self] track in
         guard let self, !self.closing, self.generation == revision else { return }
-        self.engine?.selectTrack(track)
-        if (track["type"] as? String) == "sub" {
-          self.subtitleRevision += 1
-          self.subtitles = NativeVideoSubtitles()
-          self.caption.text = nil
-        }
+        self.selectPlaybackTrack(track)
       }
+    }
+  }
+  private func selectPlaybackTrack(_ track: [String: Any]) {
+    engine?.selectTrack(track)
+    guard (track["type"] as? String) == "sub" else { return }
+    clearExternalSubtitle()
+    if kernel == "mpv", let path = track["externalPath"] as? String, path.hasPrefix("/") {
+      externalSubtitleURL = URL(fileURLWithPath: path)
     }
   }
   private func showList(_ title: String, rows: [[String: Any]], selected: @escaping ([String: Any]) -> Void) {
@@ -723,13 +728,27 @@ import UniformTypeIdentifiers
   func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
     guard !closing, subtitlePickerGeneration == generation, let url = urls.first else { return }
     subtitlePickerGeneration = nil
-    if kernel == "mpv" { engine?.subtitle(url); return }
+    loadExternalSubtitle(url)
+  }
+  private func clearExternalSubtitle() {
     subtitleRevision += 1
+    externalSubtitleURL = nil
+    subtitles = NativeVideoSubtitles()
+    caption.text = nil
+  }
+  private func loadExternalSubtitle(_ url: URL) {
+    subtitleRevision += 1
+    if kernel == "mpv" {
+      externalSubtitleURL = url
+      engine?.subtitle(url)
+      return
+    }
     let revision = subtitleRevision, mediaGeneration = generation
     Task { @MainActor [weak self] in
       let subtitles = await Task.detached(priority: .utility) { NativeVideoSubtitles.read(url) }.value
       guard let self, !self.closing, self.generation == mediaGeneration, self.subtitleRevision == revision else { return }
       guard let subtitles else { self.toast("无法读取字幕。系统播放器支持 SRT / VTT，ASS 可使用 MPV"); return }
+      self.externalSubtitleURL = url
       self.subtitles = subtitles
       self.engine?.subtitle(url)
       self.renderState()

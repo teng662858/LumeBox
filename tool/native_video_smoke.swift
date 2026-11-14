@@ -6,6 +6,18 @@ extension NativeVideoScreen {
     documentPicker(UIDocumentPickerViewController(forOpeningContentTypes: [.data]), didPickDocumentsAt: [url])
   }
   fileprivate var displayedSubtitle: String? { caption.text }
+  fileprivate var rememberedSubtitle: URL? { externalSubtitleURL }
+  fileprivate var selectedExternalSubtitle: Bool {
+    state.tracks.contains { $0["type"] as? String == "sub" && $0["external"] as? Bool == true && $0["selected"] as? Bool == true }
+  }
+  fileprivate func toggleTestHardware() { hardware.toggle(); switchEngine("mpv") }
+  fileprivate func reselectTestSubtitle() {
+    engine?.tracks { [weak self] tracks in
+      if let track = tracks.first(where: { $0["type"] as? String == "sub" && $0["selected"] as? Bool == true }) {
+        self?.selectPlaybackTrack(track)
+      }
+    }
+  }
   fileprivate var displayedStatus: String? { statusLabel.text }
   fileprivate func retryTestMedia() { resolve("retry") }
   fileprivate func pauseTestPlayback() { setPlaying(false) }
@@ -163,8 +175,9 @@ extension NativeVideoScreen {
       if caseIndex == 0 {
         check(screen.displayedSubtitle == "<captions>", "external captions appear while paused")
         do {
-          try "invalid".write(to: captionURL, atomically: true, encoding: .utf8)
-          screen.importTestSubtitle(captionURL)
+          let invalidURL = captionURL.appendingPathExtension("invalid.vtt")
+          try "invalid".write(to: invalidURL, atomically: true, encoding: .utf8)
+          screen.importTestSubtitle(invalidURL)
         } catch { check(false, "write invalid subtitle fixture: \(error)") }
       }
       seekEvents.removeAll()
@@ -174,12 +187,29 @@ extension NativeVideoScreen {
     } else if phase == 11 && !seekEvents.isEmpty {
       check(seekEvents.count == 1 && seekEvents[0] < 0.26, "only the final paused seek is saved, at the start")
       check(position < 0.26 && state["wantsPlay"] as? Bool == false, "paused seek updates the decoder clock")
+      if caseIndex == 0 {
+        check(screen.rememberedSubtitle == captionURL, "invalid import preserves the selected file")
+        screen.debugAction(["action": "kernel", "kernel": "mpv"])
+        phase = 13
+        return
+      }
       if cases[caseIndex].0 == "mpv" {
         screen.debugAction(["action": "seek", "position": 1.5])
         screen.retryTestMedia()
         phase = 12
         return
       }
+      screen.debugAction(["action": "seek", "position": 3.0])
+      screen.debugAction(["action": "tap", "control": "play"]); phase = 2
+    } else if phase == 13 && screen.selectedExternalSubtitle {
+      check(state["wantsPlay"] as? Bool == false, "subtitle restore keeps playback paused")
+      screen.reselectTestSubtitle()
+      check(screen.rememberedSubtitle == captionURL, "reselecting the external track preserves its file")
+      screen.toggleTestHardware(); phase = 14
+    } else if phase == 14 && screen.selectedExternalSubtitle {
+      screen.debugAction(["action": "kernel", "kernel": "avplayer"]); phase = 15
+    } else if phase == 15 && state["firstFrame"] as? Bool == true && screen.displayedSubtitle == "<captions>" {
+      check(screen.rememberedSubtitle == captionURL, "subtitle survives kernel and hardware changes")
       screen.debugAction(["action": "seek", "position": 3.0])
       screen.debugAction(["action": "tap", "control": "play"]); phase = 2
     } else if phase == 12 && state["firstFrame"] as? Bool == true && abs(position - 1.5) < 0.26 {
@@ -198,6 +228,7 @@ extension NativeVideoScreen {
     } else if phase == 3 && state["firstFrame"] as? Bool == true && state["switching"] as? Bool == false {
       if swaps == 1 {
         check(screen.displayedSubtitle == nil, "new episode clears previous captions")
+        check(screen.rememberedSubtitle == nil, "new episode clears the selected subtitle file")
         check(state["kernel"] as? String == "mpv", "switch to MPV")
         check(state["speed"] as? Double == 1.75, "next episode restores the MPV rate")
         screen.debugAction(["action": "kernel", "kernel": "avplayer"]); swaps = 2
