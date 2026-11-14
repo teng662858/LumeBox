@@ -212,7 +212,7 @@ import UniformTypeIdentifiers
       chrome.leadingAnchor.constraint(equalTo: view.leadingAnchor), chrome.trailingAnchor.constraint(equalTo: view.trailingAnchor),
       chrome.topAnchor.constraint(equalTo: view.topAnchor), chrome.bottomAnchor.constraint(equalTo: view.bottomAnchor),
       top.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 8), top.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -8),
-      top.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4), top.heightAnchor.constraint(equalToConstant: 48),
+      top.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4), top.heightAnchor.constraint(equalToConstant: 52),
       bottom.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 8), bottom.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -8),
       bottom.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
       progressRow.heightAnchor.constraint(equalToConstant: 28),

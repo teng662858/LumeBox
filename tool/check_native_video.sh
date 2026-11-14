@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for v in d["devices"].values() for x in v if "iPhone" in x["name"]))')
+xcrun simctl boot "$DEVICE" || true
 flutter precache --ios
 FLUTTER_ROOT=$(dirname "$(dirname "$(command -v flutter)")")
 FLUTTER_FRAMEWORK="$FLUTTER_ROOT/bin/cache/artifacts/engine/ios/Flutter.xcframework/ios-arm64_x86_64-simulator"
@@ -43,8 +45,6 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=640x360:rate=24 -f
 ffmpeg -hide_banner -loglevel error -i "$CHECK/fixtures/smoke.mp4" -c copy -hls_time 1 -hls_list_size 0 "$CHECK/fixtures/smoke.m3u8"
 python3 tool/native_video_fixture_server.py "$CHECK/fixtures" > out/native-video/http.log 2>&1 &
 HTTP_PID=$!
-DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for v in d["devices"].values() for x in v if "iPhone" in x["name"]))')
-xcrun simctl boot "$DEVICE" || true
 xcrun simctl bootstatus "$DEVICE" -b
 xcrun simctl install "$DEVICE" "$CHECK/NativeVideoCheck.app"
 python3 - "$DEVICE" <<'PY' 2>&1 | tee out/native-video/test.log
