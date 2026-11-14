@@ -197,9 +197,9 @@ class VideoDiskCache extends ChangeNotifier {
       }
       final type = response.header('content-type')?.split(';').first.trim().toLowerCase();
       final String format;
-      if (type == 'application/dash+xml') {
+      if (type == 'application/dash+xml' || type == 'text/vtt') {
         await response.listen(null).cancel();
-        format = '.mpd';
+        format = type == 'text/vtt' ? '.vtt' : '.mpd';
       } else {
         format = await _inspectFormat(
           _completeBody(response).timeout(const Duration(seconds: 3)),
@@ -257,6 +257,7 @@ class VideoDiskCache extends ChangeNotifier {
         .replaceFirst('\uFEFF', '')
         .trimLeft();
     if (text.startsWith('#EXTM3U')) return '.m3u8';
+    if (RegExp(r'^WEBVTT(?:[ \t\r\n]|$)').hasMatch(text)) return '.vtt';
     if (text.startsWith('<') &&
         RegExp(r'<(?:[A-Za-z0-9_.-]+:)?MPD(?:\s|/?>)').hasMatch(text)) {
       return '.mpd';
@@ -1666,6 +1667,7 @@ class VideoDiskCache extends ChangeNotifier {
           PlaybackDiagnostics.record('hls-hevc-ts-to-fmp4', uri: media.uri);
         }
         var sequence = 0;
+        var segmentSuffix = subtitles ? '.vtt' : '.ts';
         for (final line in original) {
           if (fragment && line == '#EXTM3U') {
             lines.addAll([
@@ -1685,13 +1687,7 @@ class VideoDiskCache extends ChangeNotifier {
               lines.add(
                 await rewrite(
                   line,
-                  master
-                      ? '.m3u8'
-                      : mapped
-                      ? '.m4s'
-                      : subtitles
-                      ? '.vtt'
-                      : '.ts',
+                  master ? '.m3u8' : segmentSuffix,
                 ),
               );
             }
@@ -1700,7 +1696,8 @@ class VideoDiskCache extends ChangeNotifier {
             for (final m in RegExp(
               r'URI="([^"]+)"',
             ).allMatches(line).toList().reversed) {
-              final attributeSuffix = switch (line.split(':').first) {
+              final tag = line.split(':').first;
+              var attributeSuffix = switch (tag) {
                 '#EXT-X-KEY' || '#EXT-X-SESSION-KEY' => _keySuffix(line),
                 '#EXT-X-MAP' => '.mp4',
                 '#EXT-X-MEDIA' => hlsRawAttributes(line)['TYPE'] == 'SUBTITLES'
@@ -1716,6 +1713,21 @@ class VideoDiskCache extends ChangeNotifier {
                 },
                 _ => '',
               };
+              if (tag == '#EXT-X-MAP') {
+                segmentSuffix = '.m4s';
+                if (subtitles) {
+                  final child = childMedia(m[1]!);
+                  if (child != null) {
+                    final suffix = _mediaSuffix(child.uri);
+                    final format = suffix.isEmpty
+                        ? await _scriptFormat(child).timeout(const Duration(seconds: 3), onTimeout: () => '')
+                        : suffix;
+                    if (format == '.vtt' || format == '.webvtt') {
+                      attributeSuffix = segmentSuffix = '.vtt';
+                    }
+                  }
+                }
+              }
               result = result.replaceRange(
                 m.start,
                 m.end,
