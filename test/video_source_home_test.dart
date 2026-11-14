@@ -236,8 +236,10 @@ void main() {
     final detail = find.byType(VideoDetailPage);
     final pending = Completer<void>();
     var releasing = false;
+    var releaseCalls = 0;
     Future<void> release() {
       releasing = true;
+      releaseCalls++;
       return pending.future;
     }
     await PlaybackFocus.acquire('test-audio', onRelease: release);
@@ -252,7 +254,10 @@ void main() {
       pending.complete();
       await tester.pumpAndSettle();
       expect(find.byType(VideoPlayerPage), findsNothing);
-      expect(PlaybackFocus.owner, 'test-audio');
+      expect(PlaybackFocus.owner, isNull, reason: '已停止的音频不再占有播放焦点');
+      expect(PlaybackFocus.isPlaying, isFalse);
+      await PlaybackFocus.acquire('test-next-player');
+      expect(releaseCalls, 1, reason: '后续播放不能再次停止已经释放的旧音频');
     } finally {
       if (!pending.isCompleted) pending.complete();
       PlaybackFocus.unregister('test-audio', release);
