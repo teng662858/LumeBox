@@ -1,6 +1,21 @@
 // Appended to the production controller file for a standalone UIKit simulator
 // host. Exercises private production code, not a second player implementation.
 extension NativeVideoScreen {
+  fileprivate static func checkSubtitlePreference(_ item: NativeVideoItem) {
+    let screen = NativeVideoScreen(session: "subtitle-preference", item: item, options: ["subtitlesEnabled": true])
+    screen.selectPlaybackTrack(["type": "sub", "id": "no"])
+    precondition(screen.options["subtitlesEnabled"] as? Bool == false, "subtitle off must survive engine recreation")
+    screen.selectPlaybackTrack(["type": "audio", "id": "1"])
+    precondition(screen.options["subtitlesEnabled"] as? Bool == false, "audio selection must preserve subtitle off")
+    screen.selectPlaybackTrack(["type": "sub", "id": "1"])
+    precondition(screen.options["subtitlesEnabled"] as? Bool == true, "selecting subtitles must enable future engines")
+    screen.selectPlaybackTrack(["type": "sub", "id": "no"])
+    screen.kernel = "mpv"
+    screen.selectPlaybackTrack(["type": "sub", "id": "4", "externalPath": "/captions.vtt"])
+    precondition(screen.options["subtitlesEnabled"] as? Bool == true && screen.externalSubtitleURL != nil)
+    screen.selectPlaybackTrack(["type": "sub", "id": "no"])
+    precondition(screen.options["subtitlesEnabled"] as? Bool == false && screen.externalSubtitleURL == nil)
+  }
   fileprivate func importTestSubtitle(_ url: URL, stale: Bool = false) {
     subtitlePickerGeneration = stale ? generation - 1 : generation
     documentPicker(UIDocumentPickerViewController(forOpeningContentTypes: [.data]), didPickDocumentsAt: [url])
@@ -96,7 +111,10 @@ extension NativeVideoScreen {
     let test = cases[caseIndex]; phase = 0; swaps = 0; nextRequests = 0; started = Date()
     do {
       let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)", "position": 2.0])
-      if caseIndex == 0 { NativeVideoScreen.checkDanmakuTiming(item) }
+      if caseIndex == 0 {
+        NativeVideoScreen.checkDanmakuTiming(item)
+        NativeVideoScreen.checkSubtitlePreference(item)
+      }
       let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": test.1 == "smoke.mp4", "headlessAudio": true])
       // Speech disables scrubbing; stale audiobook actions must also be reset.
       let remote = MPRemoteCommandCenter.shared()

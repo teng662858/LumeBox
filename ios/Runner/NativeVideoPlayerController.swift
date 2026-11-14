@@ -525,6 +525,8 @@ import UniformTypeIdentifiers
   private func selectPlaybackTrack(_ track: [String: Any]) {
     engine?.selectTrack(track)
     guard (track["type"] as? String) == "sub" else { return }
+    // Recreated engines must retain an explicit subtitle-off selection.
+    options["subtitlesEnabled"] = (track["id"] as? String) != "no"
     clearExternalSubtitle()
     if kernel == "mpv", let path = track["externalPath"] as? String, path.hasPrefix("/") {
       externalSubtitleURL = URL(fileURLWithPath: path)
