@@ -50,12 +50,19 @@ final class OfflineVideoRemuxer: @unchecked Sendable {
     return url
   }
 
-  private func attribute(_ name: String, in line: String) -> String? {
-    let pattern = "(?:^|[:,])" + name + "=(?:\"([^\"]*)\"|([^,]*))"
-    guard let regex = try? NSRegularExpression(pattern: pattern),
-          let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else { return nil }
-    for i in [1, 2] {
-      if let range = Range(match.range(at: i), in: line) { return String(line[range]) }
+  private static let attributePattern = try! NSRegularExpression(
+    pattern: #"(?:^|,)([A-Z0-9-]+)=("[^"]*"|[^,]*)"#
+  )
+
+  private func attribute(_ name: String, in line: String) -> (value: String, range: Range<String.Index>)? {
+    guard line.hasPrefix("#EXT-X-"), let colon = line.firstIndex(of: ":") else { return nil }
+    let body = line.index(after: colon)..<line.endIndex
+    for match in Self.attributePattern.matches(in: line, range: NSRange(body, in: line)) {
+      guard let key = Range(match.range(at: 1), in: line), line[key] == name,
+            let range = Range(match.range(at: 2), in: line) else { continue }
+      let raw = line[range]
+      let value = raw.hasPrefix("\"") && raw.hasSuffix("\"") ? raw.dropFirst().dropLast() : raw
+      return (String(value), range)
     }
     return nil
   }
@@ -101,23 +108,23 @@ final class OfflineVideoRemuxer: @unchecked Sendable {
         sequence = value
       }
       if line.hasPrefix("#EXT-X-KEY:") {
-        let method = attribute("METHOD", in: line)
+        let method = attribute("METHOD", in: line)?.value
         if method == "NONE" { key = nil; explicitIV = nil }
         else {
           guard method == "AES-128", let ref = attribute("URI", in: line),
-                attribute("KEYFORMAT", in: line) == nil || attribute("KEYFORMAT", in: line) == "identity" else {
+                attribute("KEYFORMAT", in: line) == nil || attribute("KEYFORMAT", in: line)?.value == "identity" else {
             throw failure("不支持该视频加密格式")
           }
-          key = try Data(contentsOf: local(ref, relativeTo: playlist, root: root))
+          key = try Data(contentsOf: local(ref.value, relativeTo: playlist, root: root))
           guard key?.count == 16 else { throw failure("AES 密钥无效") }
-          explicitIV = attribute("IV", in: line)
+          explicitIV = attribute("IV", in: line)?.value
         }
         rewritten.append("#EXT-X-KEY:METHOD=NONE")
         continue
       }
       var result = line
       if let ref = attribute("URI", in: line) {
-        let source = try local(ref, relativeTo: playlist, root: root)
+        let source = try local(ref.value, relativeTo: playlist, root: root)
         var destination = source
         if source.pathExtension == "m3u8" {
           destination = try prepare(source, root: root, workspace: workspace, depth: depth + 1)
@@ -125,7 +132,7 @@ final class OfflineVideoRemuxer: @unchecked Sendable {
           guard explicitIV != nil else { throw failure("加密初始化片段缺少 IV") }
           destination = try decrypt(source, key: key, iv: iv(explicitIV, sequence: sequence), workspace: workspace)
         }
-        result = line.replacingOccurrences(of: "URI=\"\(ref)\"", with: "URI=\"\(destination.absoluteString)\"")
+        result.replaceSubrange(ref.range, with: "\"\(destination.absoluteString)\"")
       } else if !line.isEmpty && !line.hasPrefix("#") {
         let source = try local(line, relativeTo: playlist, root: root)
         let destination: URL

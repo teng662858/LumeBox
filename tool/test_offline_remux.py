@@ -51,6 +51,8 @@ def check(directory, source=None):
 plain = root / 'plain'
 plain.mkdir()
 run(*base, *video, *audio, '-t', '4', *codec, *hls, str(plain / 'index.m3u8'))
+playlist = plain / 'index.m3u8'
+playlist.write_text(playlist.read_text().replace('#EXTINF:1.000000,', '#EXTINF:1.000000,URI="missing.ts"'))
 check(plain)
 
 fragmented = root / 'fmp4'
@@ -68,7 +70,7 @@ run(*base, *audio, '-t', '4', '-c:a', 'aac', *hls, str(separate / 'audio/index.m
 run(*base, '-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000',
     '-t', '4', '-c:a', 'aac', *hls, str(separate / 'dub/index.m3u8'))
 (separate / 'index.m3u8').write_text(
-    '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Original",'
+    '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Original,URI=missing",'
     'LANGUAGE="en",DEFAULT=NO,URI="audio/index.m3u8"\n'
     '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Mandarin",'
     'LANGUAGE="zh-Hans",DEFAULT=YES,URI="dub/index.m3u8"\n'
@@ -76,7 +78,7 @@ run(*base, '-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000',
 check(separate)
 tracks = [s for s in probe(separate / 'merged.mp4.part')['streams'] if s['codec_type'] == 'audio']
 assert [(s['tags']['language'], s['tags']['handler_name'], s['disposition']['default']) for s in tracks] == [
-    ('eng', 'Original', 0), ('zho', 'Mandarin', 1)], tracks
+    ('eng', 'Original,URI=missing', 0), ('zho', 'Mandarin', 1)], tracks
 
 encrypted = root / 'encrypted'
 encrypted.mkdir()
@@ -84,6 +86,8 @@ encrypted.mkdir()
 (root / 'key-info').write_text(f'key\n{encrypted / "key"}\n')
 run(*base, *video, *audio, '-t', '4', *codec, *hls,
     '-hls_key_info_file', str(root / 'key-info'), str(encrypted / 'index.m3u8'))
+playlist = encrypted / 'index.m3u8'
+playlist.write_text(playlist.read_text().replace('#EXT-X-KEY:', '#EXT-X-KEY:X-NOTE=",METHOD=NONE",'))
 check(encrypted)
 
 # Failure and cancellation must leave input intact and no completed-looking output.

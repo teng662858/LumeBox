@@ -933,8 +933,10 @@ struct NativeVideoSubtitles: Sendable {
 
     func seconds(_ timestamp: Substring) -> Double? {
       var total = 0.0
-      let fields = timestamp.replacingOccurrences(of: ",", with: ".").split(separator: ":", omittingEmptySubsequences: false)
-      guard (2...3).contains(fields.count) else { return nil }
+      let value = timestamp.replacingOccurrences(of: ",", with: ".")
+      guard value.range(of: #"^(?:[0-9]+:)?[0-5][0-9]:[0-5][0-9]\.[0-9]{3}$"#,
+                        options: .regularExpression) != nil else { return nil }
+      let fields = value.split(separator: ":")
       for field in fields {
         guard let number = Double(field), number.isFinite, number >= 0 else { return nil }
         total = total * 60 + number
@@ -943,7 +945,9 @@ struct NativeVideoSubtitles: Sendable {
     }
 
     func parseBlock(_ lines: [String]) -> Cue? {
-      guard let first = lines.first, first != "NOTE", !first.hasPrefix("NOTE "), !first.hasPrefix("NOTE\t"),
+      guard let first = lines.first?.trimmingCharacters(in: .whitespaces),
+            first != "STYLE", first != "REGION",
+            first != "NOTE", !first.hasPrefix("NOTE "), !first.hasPrefix("NOTE\t"),
             let index = lines.prefix(2).firstIndex(where: { $0.contains("-->") }) else { return nil }
       let fields = lines[index].components(separatedBy: "-->")
       guard fields.count == 2,
