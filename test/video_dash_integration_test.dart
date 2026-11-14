@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:xml/xml.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/video_disk_cache.dart';
 
@@ -18,6 +19,7 @@ void main() {
     final root = await Directory.systemTemp.createTemp('lume-dash-play-');
     final cache = VideoDiskCache();
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final cdn = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     try {
       await cache.boot(directory: root);
       final made = await Process.run('ffmpeg', [
@@ -45,6 +47,21 @@ void main() {
       ]);
       expect(made.exitCode, 0, reason: '${made.stderr}');
       final paths = <String>[];
+      final cdnPaths = <String>[];
+      cdn.listen((request) async {
+        cdnPaths.add(request.uri.path);
+        expect(request.headers.value('authorization'), isNull);
+        expect(request.headers.value('referer'), 'https://player.example/watch');
+        final file = File('${root.path}/${request.uri.pathSegments.last}');
+        if (request.uri.path.startsWith('/final/') && await file.exists()) {
+          final bytes = await file.readAsBytes();
+          request.response.contentLength = bytes.length;
+          request.response.add(bytes);
+        } else {
+          request.response.statusCode = 404;
+        }
+        await request.response.close();
+      });
       server.listen((request) async {
         final path = request.uri.path;
         paths.add(path);
@@ -56,7 +73,21 @@ void main() {
         } else if (path.startsWith('/final/')) {
           final file = File('${root.path}/${request.uri.pathSegments.last}');
           if (await file.exists()) {
-            final bytes = await file.readAsBytes();
+            var bytes = await file.readAsBytes();
+            if (path.endsWith('.mpd') && request.uri.queryParameters.containsKey('cdn')) {
+              final document = XmlDocument.parse(utf8.decode(bytes));
+              final template = document.findAllElements('SegmentTemplate').single;
+              for (final name in ['media', 'initialization']) {
+                template.setAttribute(name, '/final/${template.getAttribute(name)!}');
+              }
+              template.parent!.children.remove(template);
+              final representation = document.findAllElements('Representation').single;
+              representation.parent!.children.insert(0, template);
+              representation.children.insert(0, XmlElement(XmlName.parts('BaseURL'), [], [
+                XmlText('http://127.0.0.1:${cdn.port}/unused/deep/'),
+              ]));
+              bytes = utf8.encode(document.toXmlString());
+            }
             if (path.endsWith('.mpd') && request.uri.queryParameters.containsKey('ranges')) {
               final range = request.headers.value('range');
               if (range == null) {
@@ -131,6 +162,17 @@ void main() {
       );
       expect(ranged.uri.path, endsWith('.mpd'));
       expect(await frames(ranged.uri.toString()), original);
+      final inherited = await cache.wrap(PlayerMedia(
+        uri: Uri.parse('http://127.0.0.1:${server.port}/entry?cdn=1'),
+        headers: const {
+          'Authorization': 'Bearer fixture', 'Referer': 'https://player.example/watch',
+        },
+      ), inspect: true);
+      expect(await frames(inherited.uri.toString()), original);
+      expect(cdnPaths, containsAll([
+        '/final/init-stream0.m4s', '/final/chunk-stream0-00001.m4s',
+        '/final/chunk-stream0-00002.m4s',
+      ]));
       expect(
         paths,
         containsAll([
@@ -140,6 +182,7 @@ void main() {
         ]),
       );
     } finally {
+      await cdn.close(force: true);
       await server.close(force: true);
       await cache.close();
       await root.delete(recursive: true);

@@ -43,6 +43,7 @@ class VideoDiskCache extends ChangeNotifier {
   static const minCapacityMb = 100, maxCapacityMb = 20480;
   final _client = HttpClient()..autoUncompress = false;
   late final _ticketSigner = Hmac(sha256, List.generate(32, (_) => Random.secure().nextInt(256)));
+  late final _dashRootMarker = '.dash-root-${List.generate(16, (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0')).join()}';
   final _tickets = <String, PlayerMedia>{};
   final _hlsDocuments = <String, Map<String, PlayerMedia>>{};
   final _retiredHlsResources = <String, PlayerMedia>{};
@@ -1545,6 +1546,10 @@ class VideoDiskCache extends ChangeNotifier {
         final uri = Uri.parse(value);
         if (uri.hasScheme) return route(uri);
         if (!value.startsWith('/')) return value;
+        // Let the player select/inherit its BaseURL before resolving a root
+        // path. An absolute loopback URL would pin it to only one CDN; leaving
+        // the slash unchanged would discard the authenticated proxy ticket.
+        if (!uri.hasAuthority) return '$_dashRootMarker$value';
         final targets = bases.map((base) => base.resolveUri(uri)).toSet();
         return targets.length == 1 ? await route(targets.single) : value;
       }
@@ -1616,7 +1621,10 @@ class VideoDiskCache extends ChangeNotifier {
         return;
       }
       if (slash >= 0 && name.endsWith('.dash-base')) {
-        final relative = path.substring(slash);
+        var relative = path.substring(slash);
+        final marker = '/$_dashRootMarker/';
+        final root = relative.lastIndexOf(marker);
+        if (root >= 0) relative = relative.substring(root + marker.length - 1);
         final uri = ticket.uri.replace(path: relative, query: request.uri.hasQuery ? request.uri.query : null);
         media = PlayerMedia(uri: uri, headers: ticket.headers);
       } else if (slash >= 0 || name.endsWith('.dash-base')) {

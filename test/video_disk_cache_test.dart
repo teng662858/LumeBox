@@ -676,13 +676,14 @@ void main() {
         }));
     final root = XmlDocument.parse(utf8.decode((await get(wrapped.uri)).$2));
     final template = root.findAllElements('SegmentTemplate').single.getAttribute('media')!;
-    final part = Uri.parse(template.replaceFirst(r'$Number%05d$', '00001'));
+    final rootBase = Uri.parse(root.rootElement.findElements('BaseURL').single.innerText);
+    final part = rootBase.resolve(template.replaceFirst(r'$Number%05d$', '00001'));
     expect(utf8.decode((await get(part)).$2), 'local');
     expect(requested, contains('/chunks/00001.m4s?sig=a%2Fb'));
     final segments = root.findAllElements('SegmentURL').toList();
     final external = segments.first.getAttribute('media')!;
-    expect(utf8.decode((await get(Uri.parse(external))).$2), 'foreign');
     final base = Uri.parse(root.findAllElements('Representation').single.findElements('BaseURL').single.innerText);
+    expect(utf8.decode((await get(base.resolve(external))).$2), 'foreign');
     expect(utf8.decode((await get(base.resolve(segments.last.getAttribute('media')!))).$2), 'foreign');
     final init = Uri.parse(root.findAllElements('Initialization').single.getAttribute('sourceURL')!);
     expect(utf8.decode((await get(init)).$2), 'foreign');
@@ -690,6 +691,72 @@ void main() {
     expect(utf8.decode((await get(refresh)).$2), contains('<MPD>'));
     expect(cdnHeaders, [null, null, null, null]);
     expect(cdnRequests, ['/foreign.m4s', '/relative.m4s?sig=a%2Fb', '/init.m4s?sig=a%2Fb', '/live.mpd']);
+  });
+
+  test('DASH root-relative references preserve every alternative CDN and inherited base', () async {
+    final originServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final cdn = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => originServer.close(force: true));
+    addTearDown(() => cdn.close(force: true));
+    final origin = Uri.parse('http://127.0.0.1:${originServer.port}/');
+    final foreign = Uri.parse('http://127.0.0.1:${cdn.port}/');
+    final seen = <String>[];
+    void serve(HttpServer server, String label, bool credentials) {
+      server.listen((r) async {
+        expect(r.headers.value('authorization'), credentials ? 'Bearer fixture' : null);
+        expect(r.headers.value('cookie'), credentials ? 'session=origin' : null);
+        expect(r.headers.value('referer'), 'https://player.example/watch');
+        expect(r.headers.value('user-agent'), 'LumeDASHFixture');
+        if (r.uri.path == '/main.mpd') {
+          r.response.write('<MPD><BaseURL>deep/local/</BaseURL><BaseURL>${foreign}short/</BaseURL>'
+              '<Period><BaseURL>/period/</BaseURL><AdaptationSet>'
+              '<SegmentTemplate media="/chunks/\$Number%05d\$.m4s?sig=a%2Fb" initialization="/init.m4s"/>'
+              '<Representation id="template"><BaseURL>/representation/</BaseURL></Representation>'
+              '<Representation id="list"><BaseURL>list/</BaseURL><SegmentList>'
+              '<Initialization sourceURL="/list-init.m4s"/>'
+              '<SegmentURL media="/list-part.m4s"/><SegmentURL media="../relative.m4s"/>'
+              '</SegmentList></Representation></AdaptationSet></Period></MPD>');
+        } else {
+          seen.add('$label${r.uri}');
+          r.response.write(label);
+        }
+        await r.response.close();
+      });
+    }
+    serve(originServer, 'origin', true);
+    serve(cdn, 'cdn', false);
+    final wrapped = await cache.wrap(PlayerMedia(uri: origin.resolve('main.mpd'), headers: const {
+      'Authorization': 'Bearer fixture', 'Cookie': 'session=origin',
+      'Referer': 'https://player.example/watch', 'User-Agent': 'LumeDASHFixture',
+    }));
+    final document = XmlDocument.parse(utf8.decode((await get(wrapped.uri)).$2));
+    final roots = document.rootElement.findElements('BaseURL').toList();
+    expect(roots, hasLength(2));
+    final period = document.findAllElements('Period').single;
+    final template = document.findAllElements('SegmentTemplate').single;
+    final representations = document.findAllElements('Representation').toList();
+    for (var i = 0; i < roots.length; i++) {
+      final label = i == 0 ? 'origin' : 'cdn';
+      final base = wrapped.uri.resolve(roots[i].innerText)
+          .resolve(period.findElements('BaseURL').single.innerText);
+      final templateBase = base.resolve(representations.first.findElements('BaseURL').single.innerText);
+      final listBase = base.resolve(representations.last.findElements('BaseURL').single.innerText);
+      final urls = [
+        templateBase.resolve(template.getAttribute('initialization')!),
+        templateBase.resolve(template.getAttribute('media')!.replaceFirst(r'$Number%05d$', '00001')),
+        listBase.resolve(document.findAllElements('Initialization').single.getAttribute('sourceURL')!),
+        for (final part in document.findAllElements('SegmentURL')) listBase.resolve(part.getAttribute('media')!),
+      ];
+      for (final url in urls) {
+        final reply = await get(url);
+        expect(reply.$1.statusCode, 200, reason: '$url');
+        expect(utf8.decode(reply.$2), label);
+      }
+      expect(seen, containsAll([
+        '$label/init.m4s', '$label/chunks/00001.m4s?sig=a%2Fb',
+        '$label/list-init.m4s', '$label/list-part.m4s', '$label/period/relative.m4s',
+      ]));
+    }
   });
 
   for (final apple in [true, false]) {
