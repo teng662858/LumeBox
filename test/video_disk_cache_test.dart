@@ -307,6 +307,15 @@ void main() {
         await request.response.close();
         return;
       }
+      if (request.uri.path == '/live/part-8.m4s' || request.uri.path == '/live/part-9.m4s') {
+        if (request.headers.value('authorization') == 'fixture') {
+          request.response.add(ascii.encode(request.uri.path));
+        } else {
+          request.response.statusCode = 403;
+        }
+        await request.response.close();
+        return;
+      }
       if (request.uri.path == '/live/chunk' || request.uri.path == '/live/init') {
         if (request.headers.value('range') != null) {
           request.response.statusCode = 403;
@@ -795,7 +804,10 @@ void main() {
       ]);
       for (var i = 0; i < results.length; i++) {
         final sequence = 8 + i;
-        expect(utf8.decode(results[i].$2), contains('#EXT-X-MEDIA-SEQUENCE:$sequence\n'));
+        final playlist = utf8.decode(results[i].$2);
+        expect(playlist, contains('#EXT-X-MEDIA-SEQUENCE:$sequence\n'));
+        final part = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(playlist)![1]!);
+        expect(utf8.decode((await get(part)).$2), '/live/part-$sequence.m4s');
         expect(paths, contains('sig=a%2Fb+z&tag=x&tag=y&_HLS_msn=$sequence&_HLS_part=1&_HLS_skip=v2'));
       }
       expect(paths.where((p) => p == 'fixture'), hasLength(2));
@@ -1971,6 +1983,45 @@ void main() {
       expect(calls, 3);
     },
   );
+
+  test('publishing a 12001-part VOD preserves its first and last segments and playlist tickets', () async {
+    final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => source.close(force: true));
+    final playlist = [
+      '#EXTM3U', '#EXT-X-TARGETDURATION:1',
+      for (var i = 0; i < 12001; i++) ...['#EXTINF:1,', 'part-$i.ts'],
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+    final seen = <String>[];
+    source.listen((r) async {
+      seen.add(r.uri.path);
+      switch (r.uri.path) {
+        case '/master.m3u8':
+          r.response.write('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000\nvideo.m3u8\n');
+        case '/video.m3u8':
+          r.response.write(playlist);
+        case '/part-0.ts':
+        case '/part-12000.ts':
+          r.response.add(ts.sublist(0, 188 * 3));
+        default:
+          r.response.statusCode = 404;
+      }
+      await r.response.close();
+    });
+    final master = await cache.wrap(PlayerMedia(uri: Uri.parse('http://127.0.0.1:${source.port}/master.m3u8')));
+    final video = Uri.parse(LineSplitter.split(utf8.decode((await get(master.uri)).$2)).last);
+    final parts = LineSplitter.split(utf8.decode((await get(video)).$2))
+        .where((line) => !line.startsWith('#')).toList();
+    expect(parts, hasLength(12001));
+    for (final part in [parts.first, parts.last]) {
+      final (response, bytes) = await get(Uri.parse(part));
+      expect(response.statusCode, 200);
+      expect(bytes, ts.sublist(0, 188 * 3));
+    }
+    expect(seen, containsAll(['/part-0.ts', '/part-12000.ts']));
+    expect((await get(master.uri)).$1.statusCode, 200);
+    expect((await get(video, 'bytes=0-7')).$2, ascii.encode('#EXTM3U\n'));
+  });
 
   for (final compressed in [false, true]) {
     test('long HLS playlists retain their last signed segment (gzip=$compressed)', () async {

@@ -39,10 +39,14 @@ class VideoDiskCache extends ChangeNotifier {
   static final instance = VideoDiskCache();
   static const blockBytes = 1024 * 1024;
   static const _maxHlsPlaylistBytes = 8 * blockBytes;
+  static const _ticketBudget = 12000;
   static const minCapacityMb = 100, maxCapacityMb = 20480;
   final _client = HttpClient()..autoUncompress = false;
+  late final _ticketSigner = Hmac(sha256, List.generate(32, (_) => Random.secure().nextInt(256)));
   final _tickets = <String, PlayerMedia>{};
-  final _ticketKeys = <String, String>{};
+  final _hlsDocuments = <String, Map<String, PlayerMedia>>{};
+  final _retiredHlsResources = <String, PlayerMedia>{};
+  int _hlsResourceCount = 0;
   final _bypassed = <String>{};
   final _detectedFormats = <String, String>{};
   Timer? _progressNotice;
@@ -317,26 +321,53 @@ class VideoDiskCache extends ChangeNotifier {
   static bool _isHlsAudioSegment(String path) =>
       path.contains('.hls.') && _packedAudio(path);
 
+  String _ticketName(PlayerMedia media, String suffix) =>
+      base64UrlEncode(_ticketSigner.convert(_mediaIdentity(media)).bytes) + suffix;
+
+  PlayerMedia? _lookupTicket(String name) {
+    final ticket = _tickets[name];
+    if (ticket != null) return ticket;
+    for (final resources in _hlsDocuments.values) {
+      final media = resources[name];
+      if (media != null) return media;
+    }
+    return _retiredHlsResources[name];
+  }
+
+  void _publishHlsResources(String playlist, Map<String, PlayerMedia> resources) {
+    // Publish the whole document together. A player may request any segment
+    // as soon as it sees the playlist, including the first after a long seek.
+    void retire(Map<String, PlayerMedia> previous) {
+      _hlsResourceCount -= previous.length;
+      for (final entry in previous.entries) {
+        if (resources.containsKey(entry.key)) continue;
+        _retiredHlsResources.remove(entry.key);
+        _retiredHlsResources[entry.key] = entry.value;
+        if (_retiredHlsResources.length > _ticketBudget) {
+          _retiredHlsResources.remove(_retiredHlsResources.keys.first);
+        }
+      }
+    }
+    final previous = _hlsDocuments.remove(playlist);
+    if (previous != null) retire(previous);
+    if (resources.isEmpty) return;
+    _hlsDocuments[playlist] = resources;
+    _hlsResourceCount += resources.length;
+    // Keep room for the current video, audio and subtitle playlists even if
+    // their combined segment count exceeds the ordinary session budget.
+    while (_hlsDocuments.length > 32 ||
+        (_hlsResourceCount > 2 * _ticketBudget && _hlsDocuments.length > 4)) {
+      retire(_hlsDocuments.remove(_hlsDocuments.keys.first)!);
+    }
+  }
+
   Future<PlayerMedia> _ticket(PlayerMedia media, String suffix) async {
     try {
       await (_starting ??= _start());
-      final key = _key(media, -1) + suffix;
-      final ticket =
-          _ticketKeys[key] ??
-          base64UrlEncode(
-                List.generate(24, (_) => Random.secure().nextInt(256)),
-              ) +
-              suffix;
+      final ticket = _ticketName(media, suffix);
+      _tickets.remove(ticket);
       _tickets[ticket] = media;
-      _ticketKeys[key] = ticket;
-      while (_tickets.length > 12000) {
-        final name = _tickets.keys.first;
-        final removed = _tickets.remove(name)!;
-        final dot = name.indexOf('.');
-        _ticketKeys.remove(
-          _key(removed, -1) + (dot < 0 ? '' : name.substring(dot)),
-        );
-      }
+      if (_tickets.length > _ticketBudget) _tickets.remove(_tickets.keys.first);
       return PlayerMedia(
         uri: Uri.parse('http://127.0.0.1:${_server!.port}/$ticket'),
         title: media.title,
@@ -554,21 +585,17 @@ class VideoDiskCache extends ChangeNotifier {
     throw const HttpException('Too many media redirects');
   }
 
-  String _key(PlayerMedia media, int start) {
+  List<int> _mediaIdentity(PlayerMedia media) {
     final headers = (media.headers ?? {}).entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
-    final identity = sha256
-        .convert(
-          utf8.encode(
-            jsonEncode([
-              media.uri.toString(),
-              [
-                for (final h in headers) [h.key, h.value],
-              ],
-            ]),
-          ),
-        )
-        .toString();
+    return utf8.encode(jsonEncode([
+      media.uri.toString(),
+      [for (final h in headers) [h.key, h.value]],
+    ]));
+  }
+
+  String _key(PlayerMedia media, int start) {
+    final identity = sha256.convert(_mediaIdentity(media)).toString();
     return start < 0 ? identity : '$identity-$start';
   }
 
@@ -1573,7 +1600,7 @@ class VideoDiskCache extends ChangeNotifier {
       final path = request.uri.path;
       final slash = path.indexOf('/', 1);
       final name = path.substring(1, slash < 0 ? null : slash);
-      final ticket = _tickets[name];
+      final ticket = _lookupTicket(name);
       if (ticket == null) {
         response.statusCode = 404;
         return;
@@ -1691,18 +1718,19 @@ class VideoDiskCache extends ChangeNotifier {
               await _inspectFormat(Stream.value(block.data), block.encoding) == '.m3u8') {
         // Always refetch playlists. Relative segment, key, map and variant URLs
         // share the same cache while cross-origin credentials stay scoped.
+        final sourceHeaders = Map<String, String>.of(media.headers ?? const {});
+        final otherOriginHeaders = Map<String, String>.of(sourceHeaders)
+          ..removeWhere((key, _) => isOriginBoundHttpHeader(key));
         PlayerMedia? childMedia(String text) {
           final uri = block.base.resolve(text);
           if (!['http', 'https'].contains(uri.scheme)) return null;
-          final headers = Map<String, String>.of(media.headers ?? {});
-          if (!block.keepOriginHeaders || uri.origin != block.base.origin) {
-            headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
-          }
-          return PlayerMedia(uri: uri, headers: headers);
+          final keepHeaders = block.keepOriginHeaders && uri.origin == block.base.origin;
+          return PlayerMedia(uri: uri, headers: keepHeaders ? sourceHeaders : otherOriginHeaders);
         }
 
         final apple = path.endsWith('.apple.m3u8');
         final subtitles = path.endsWith('.subtitles.m3u8');
+        final resources = <String, PlayerMedia>{};
         Future<String> rewrite(
           String text,
           String fallback, {
@@ -1719,7 +1747,9 @@ class VideoDiskCache extends ChangeNotifier {
           }
           if (apple && suffix == '.m3u8') suffix = '.apple.m3u8';
           if (fallback == '.ts' && _packedAudio(suffix)) suffix = '.hls$suffix';
-          var uri = (await _ticket(child, suffix)).uri;
+          final childName = _ticketName(child, suffix);
+          resources[childName] = child;
+          var uri = Uri.parse('http://127.0.0.1:${_server!.port}/$childName');
           if (sequence != null) {
             uri = uri.replace(queryParameters: {'n': '$sequence'});
           }
@@ -1842,6 +1872,7 @@ class VideoDiskCache extends ChangeNotifier {
           }
         }
         final body = utf8.encode('${lines.join('\n')}\n');
+        _publishHlsResources(name, resources);
         serveHttpBytes(request, body, 'application/vnd.apple.mpegurl');
         return;
       }
@@ -1982,7 +2013,6 @@ class VideoDiskCache extends ChangeNotifier {
     _bypassed.clear();
     _detectedFormats.clear();
     _progressNotice?.cancel();
-    _ticketKeys.clear();
     _ready = false;
     _client.close(force: true);
     _ipHttpsClient?.close();
@@ -1991,6 +2021,9 @@ class VideoDiskCache extends ChangeNotifier {
     _progressNotice?.cancel();
     _progressNotice = null;
     _tickets.clear();
+    _hlsDocuments.clear();
+    _retiredHlsResources.clear();
+    _hlsResourceCount = 0;
     _positions.clear();
   }
 }
