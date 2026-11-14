@@ -87,8 +87,10 @@ void main() {
       }
     },
   );
-  for (final compressed in [false, true]) {
-    test('a capped audiobook playlist retains its last segment (gzip=$compressed)', () async {
+  for (final (entry, compressed) in [
+    ('list.m3u8', false), ('list.m3u8', true), ('opaque', false), ('opaque', true),
+  ]) {
+    test('a capped audiobook playlist retains its last segment ($entry, gzip=$compressed)', () async {
       final manifest = utf8.encode('#EXTM3U\n#EXTINF:1,\none.aac\n#EXTINF:1,\n二.aac\n#EXT-X-ENDLIST\n');
       final bytes = compressed ? gzip.encode(manifest) : manifest;
       final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
@@ -107,7 +109,7 @@ void main() {
       }));
       final client = http.Client();
       addTearDown(() async { client.close(); await proxy.close(); });
-      final url = (await proxy.prepare([queueTrack('list.m3u8')])).single;
+      final url = (await proxy.prepare([queueTrack(entry)])).single;
       final result = await client.get(url);
       expect(result.statusCode, 200);
       expect(result.body, contains('#EXT-X-ENDLIST'));
@@ -273,6 +275,77 @@ void main() {
       },
     );
   }
+
+  for (final firstMethod in ['GET', 'HEAD', 'range']) {
+    test('opaque audio HLS rewrites the playlist when $firstMethod is the first request', () async {
+      const manifest = '#EXTM3U\n#EXTINF:1,\npart.aac\n#EXT-X-ENDLIST\n';
+      final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+        if (r.url.path == '/book/part.aac') return http.Response.bytes([1, 5, 9], 200);
+        const headers = {'content-type': 'application/octet-stream'};
+        if (r.headers['range'] == 'bytes=50-55') {
+          return http.Response('', 416, headers: {...headers, 'content-range': 'bytes */${manifest.length}'});
+        }
+        return http.Response(r.method == 'HEAD' ? '' : manifest, 200, headers: headers);
+      }));
+      final client = http.Client();
+      addTearDown(() async { client.close(); await proxy.close(); });
+      final url = (await proxy.prepare([queueTrack('book/play?sig=1')])).single;
+      final first = switch (firstMethod) {
+        'HEAD' => await client.head(url),
+        'range' => await client.get(url, headers: {'Range': 'bytes=50-55'}),
+        _ => await client.get(url),
+      };
+      expect(first.headers['content-type'], contains('mpegurl'));
+      final full = firstMethod == 'GET' ? first : await client.get(url);
+      if (firstMethod == 'HEAD') {
+        expect(first.headers['content-length'], '${full.bodyBytes.length}');
+        expect(first.bodyBytes, isEmpty);
+      } else if (firstMethod == 'range') {
+        expect(first.statusCode, 206);
+        expect(first.bodyBytes, full.bodyBytes.sublist(50, 56));
+      }
+      final asset = LineSplitter.split(full.body).firstWhere((s) => s.startsWith('http'));
+      expect((await client.get(Uri.parse(asset))).bodyBytes, [1, 5, 9]);
+    });
+  }
+
+  test('opaque progressive audio keeps native byte ranges after playlist detection', () async {
+    final bytes = List<int>.generate(128, (i) => i);
+    final requests = <String?>[];
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+      final range = r.headers['range'];
+      requests.add(range);
+      if (range == null) return http.Response.bytes(bytes, 200);
+      return http.Response.bytes(bytes.sublist(100), 206,
+          headers: {'content-range': 'bytes 100-127/128'});
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final url = (await proxy.prepare([queueTrack('play?ticket=1')])).single;
+    final first = await client.get(url, headers: {'Range': 'bytes=100-'});
+    expect(first.statusCode, 206);
+    expect(first.bodyBytes, bytes.sublist(100));
+    requests.clear();
+    final seek = await client.get(url, headers: {'Range': 'bytes=100-'});
+    expect(seek.bodyBytes, first.bodyBytes);
+    expect(requests, ['bytes=100-']);
+    expect((await client.get(url)).bodyBytes, bytes);
+  });
+
+  test('a range-only opaque audio server still serves the requested seek', () async {
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+      if (r.headers['range'] == 'bytes=2-3') {
+        return http.Response.bytes([2, 3], 206, headers: {'content-range': 'bytes 2-3/8'});
+      }
+      return http.Response('', 403);
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final url = (await proxy.prepare([queueTrack('opaque')])).single;
+    final seek = await client.get(url, headers: {'Range': 'bytes=2-3'});
+    expect(seek.statusCode, 206);
+    expect(seek.bodyBytes, [2, 3]);
+  });
   test(
     'remote unsatisfiable audio range preserves the representation size',
     () async {

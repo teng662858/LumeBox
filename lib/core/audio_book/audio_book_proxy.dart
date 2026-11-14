@@ -29,6 +29,7 @@ class AudioBookProxy {
   final _clients = <http.Client>{};
   final _resolved = <String, ({DateTime time, ResolvedAudio audio})>{};
   final _resolving = <String, Future<ResolvedAudio>>{};
+  final _playlistFormat = Expando<bool>();
   final _assetMac = Hmac(sha256, List.generate(32, (_) => Random.secure().nextInt(256)));
   final _token = base64Url
       .encode(List.generate(24, (_) => Random.secure().nextInt(256)))
@@ -138,6 +139,7 @@ class AudioBookProxy {
   }
   Future<void> _serve(HttpRequest request, {bool canRefresh = true}) async {
     http.Client? client;
+    StreamIterator<List<int>>? inspected;
     try {
       final path = request.uri.pathSegments;
       final port = request.connectionInfo!.localPort;
@@ -183,7 +185,12 @@ class AudioBookProxy {
       client = transport;
       _clients.add(transport);
       http.StreamedResponse? response;
-      var fetchPlaylist = playlistAsset || uri.path.toLowerCase().endsWith('.m3u8');
+      var fetchPlaylist = playlistAsset || uri.path.toLowerCase().endsWith('.m3u8') ||
+          raw == null && _playlistFormat[resolved] == true;
+      var probeFromStart = false;
+      var skipProbe = false;
+      Stream<List<int>>? inspectedBody;
+      Uri? inspectedBase;
       var method = request.method;
       var ignoreRange = false;
       var redirects = 0;
@@ -217,10 +224,28 @@ class AudioBookProxy {
           }
         }
       }
+      Stream<List<int>> completeResponse(http.StreamedResponse first) {
+        MediaRangeResponse part(http.StreamedResponse reply) => MediaRangeResponse(
+          reply.stream, reply.statusCode, uri, (name) => reply.headers[name], headers,
+        );
+        return completeMediaBody(
+          part(first),
+          allowRedirects: true,
+          next: (_, offset) async => part(await fetch('GET', 'bytes=$offset-')),
+        );
+      }
       while (true) {
-        final verb = fetchPlaylist ? 'GET' : method;
-        final interval = fetchPlaylist || ignoreRange ? null : range;
+        final verb = fetchPlaylist || probeFromStart ? 'GET' : method;
+        final interval = fetchPlaylist || probeFromStart || ignoreRange ? null : range;
         response = await fetch(verb, interval);
+        // The original HEAD/range may be the only form this signed URL
+        // accepts. A failed optional sniff must not replace a usable reply.
+        if (probeFromStart && ![200, 206].contains(response.statusCode)) {
+          await response.stream.listen(null).cancel();
+          probeFromStart = false;
+          skipProbe = true;
+          continue;
+        }
         if (!fetchPlaylist &&
             (verb == 'HEAD' || interval != null) &&
             (response.headers['content-type'] ?? '').toLowerCase().contains(
@@ -243,6 +268,16 @@ class AudioBookProxy {
         final encoding = response.headers['content-encoding']
             ?.trim()
             .toLowerCase();
+        final mime = (response.headers['content-type'] ?? '').split(';').first.trim().toLowerCase();
+        final sniff = !skipProbe && !fetchPlaylist && raw == null && _playlistFormat[resolved] == null &&
+            _extension(uri).isEmpty &&
+            const {'', 'application/octet-stream', 'binary/octet-stream', 'text/plain'}.contains(mime);
+        if (sniff && (verb == 'HEAD' || interval != null && response.statusCode != 200) &&
+            const [200, 206, 416].contains(response.statusCode)) {
+          await response.stream.listen(null).cancel();
+          probeFromStart = true;
+          continue;
+        }
         final rejectedRange = const [400, 403, 405].contains(response.statusCode) ||
             response.statusCode == 416 && response.headers['content-range'] == null;
         if (!fetchPlaylist && interval != null &&
@@ -253,15 +288,49 @@ class AudioBookProxy {
           continue;
         }
         if (response.statusCode == 206 && encoding != null && encoding != 'identity' &&
-            (fetchPlaylist || (response.headers['content-type'] ?? '').toLowerCase().contains('mpegurl')) &&
+            (sniff || fetchPlaylist || mime.contains('mpegurl')) &&
             transport is AudioBookHttpClient && transport.decodesContentEncoding) {
           await response.stream.listen(null).cancel();
           _clients.remove(transport);
           transport.close();
           client = transport = AudioBookHttpClient.encodedBytes();
           _clients.add(transport);
-          fetchPlaylist = true;
+          if (!sniff) fetchPlaylist = true;
           continue;
+        }
+        if (sniff && const [200, 206].contains(response.statusCode)) {
+          final first = response;
+          inspectedBase = uri;
+          final chunks = inspected = StreamIterator(
+            _decoded(completeResponse(first), encoding, transport).timeout(const Duration(seconds: 20)),
+          );
+          final prefix = <int>[];
+          final read = <List<int>>[];
+          while (prefix.length < 16 && await chunks.moveNext()) {
+            final chunk = chunks.current;
+            if (chunk.isEmpty) continue;
+            read.add(chunk);
+            prefix.addAll(chunk.take(16 - prefix.length));
+            // Most progressive audio can be identified as non-HLS on the
+            // first byte. Do not wait for a second network packet in that case.
+            final firstByte = prefix.first;
+            if (firstByte != 0xef && firstByte != 0x23 && firstByte > 0x20) break;
+          }
+          fetchPlaylist = utf8.decode(prefix, allowMalformed: true).trimLeft().startsWith('#EXTM3U');
+          _playlistFormat[resolved] = fetchPlaylist;
+          if (!fetchPlaylist && (first.statusCode == 206 || probeFromStart && range != null)) {
+            await chunks.cancel();
+            inspected = null;
+            inspectedBase = null;
+            probeFromStart = false;
+            continue;
+          }
+          inspectedBody = () async* {
+            yield* Stream.fromIterable(read);
+            while (await chunks.moveNext()) {
+              yield chunks.current;
+            }
+          }();
         }
         if (!fetchPlaylist && range != null && response.statusCode == 206 &&
             !_matchesRange(response, range)) {
@@ -313,19 +382,12 @@ class AudioBookProxy {
           ?.trim()
           .toLowerCase();
       final encoded = encoding != null && encoding != 'identity';
-      Stream<List<int>> body = response.stream;
-      final manifestBase = uri;
-      if (hls && response.statusCode == 206) {
-        MediaRangeResponse part(http.StreamedResponse reply) => MediaRangeResponse(
-          reply.stream, reply.statusCode, uri, (name) => reply.headers[name], headers,
-        );
-        body = completeMediaBody(
-          part(response),
-          allowRedirects: true,
-          next: (_, offset) async => part(await fetch('GET', 'bytes=$offset-')),
-        );
+      Stream<List<int>> body = inspectedBody ?? response.stream;
+      final manifestBase = inspectedBase ?? uri;
+      if (inspectedBody == null && hls && response.statusCode == 206) {
+        body = completeResponse(response);
       }
-      if (encoded) {
+      if (encoded && inspectedBody == null) {
         final nativeDecoded =
             client is AudioBookHttpClient &&
             client.decodesContentEncoding &&
@@ -333,13 +395,7 @@ class AudioBookProxy {
         if (response.statusCode == 206 && (!hls || nativeDecoded)) {
           throw const FormatException('音频服务器未返回完整压缩响应');
         }
-        if (!nativeDecoded) {
-          body = switch (encoding) {
-            'gzip' => body.transform(gzip.decoder),
-            'deflate' => body.transform(zlib.decoder),
-            _ => throw FormatException('不支持的音频内容编码：$encoding'),
-          };
-        }
+        body = _decoded(body, encoding, transport);
       }
       if (hls) {
         final bytes = <int>[];
@@ -399,7 +455,7 @@ class AudioBookProxy {
         if (!encoded && response.statusCode == 200 && range != null && length != null) {
           final offsets = _responseRange(request, length);
           if (offsets == null || request.method == 'HEAD') {
-            await response.stream.listen(null).cancel();
+            if (inspected == null) await response.stream.listen(null).cancel();
           } else {
             await request.response.addStream(_slice(body.timeout(const Duration(seconds: 30)),
                 offsets.start, offsets.end));
@@ -420,7 +476,7 @@ class AudioBookProxy {
           await request.response.addStream(
             body.timeout(const Duration(seconds: 30)),
           );
-        } else {
+        } else if (inspected == null) {
           await response.stream.listen(null).cancel();
         }
       }
@@ -438,7 +494,21 @@ class AudioBookProxy {
         _clients.remove(client);
         client.close();
       }
+      await inspected?.cancel();
     }
+  }
+
+  static Stream<List<int>> _decoded(Stream<List<int>> body, String? encoding, http.Client client) {
+    if (client is AudioBookHttpClient && client.decodesContentEncoding &&
+        const {'gzip', 'deflate', 'br'}.contains(encoding)) {
+      return body;
+    }
+    return switch (encoding) {
+      null || 'identity' => body,
+      'gzip' => body.transform(gzip.decoder),
+      'deflate' => body.transform(zlib.decoder),
+      _ => throw FormatException('不支持的音频内容编码：$encoding'),
+    };
   }
 
   // Stream a requested range from a complete upstream response. Stop reading
