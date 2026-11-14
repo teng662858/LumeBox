@@ -983,7 +983,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     Uri uri,
     Uri resolved,
   ) async {
-    const known = {'.mp4', '.mkv', '.webm', '.m4v', '.mov', '.ts', '.avi', '.flv', '.wmv'};
+    const known = {'.mp4', '.mkv', '.webm', '.m4v', '.mov', '.ts', '.avi', '.flv', '.asf', '.wmv'};
     final extension = [resolved, uri]
         .map((u) => p.extension(u.path).toLowerCase())
         .where(known.contains)
@@ -994,8 +994,10 @@ class VideoDownloadCenter extends ChangeNotifier {
       await partial.delete();
       throw StateError('DASH 清单暂不支持离线下载');
     }
-    if (suffix != '.webm' && format == '.mkv') {
-      suffix = '.mkv';
+    if (VideoDiskCache.mpvFormats.contains(format) &&
+        !(format == '.mkv' && suffix == '.webm') &&
+        !(format == '.asf' && suffix == '.wmv')) {
+      suffix = format;
     }
     _check(task);
     final name = 'media$suffix';

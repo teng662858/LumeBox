@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/experience/content_center.dart';
 import 'package:lume_box/core/experience/offline_policy.dart';
+import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/player/video_disk_cache.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/security/local_cipher.dart';
@@ -822,6 +824,55 @@ void main() {
       expect(task.fileName, 'media$suffix', reason: task.error);
       expect(await c.localFile(task).readAsBytes(), bytes);
     });
+  }
+
+  var ffmpegAvailable = false;
+  try {
+    ffmpegAvailable = Process.runSync('ffmpeg', ['-version']).exitCode == 0;
+  } on ProcessException {
+    // The other download and session tests can run without the encoder.
+  }
+  for (final (extension, codec, suffix) in [('avi', 'mpeg4', 'avi'), ('flv', 'flv', 'flv'), ('wmv', 'wmv2', 'asf')]) {
+    test('signed $extension video keeps its real container online and offline', () async {
+      final original = File.fromUri(root.uri.resolve('sample.$extension'));
+      final generated = await Process.run('ffmpeg', [
+        '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=64x48:rate=4',
+        '-frames:v', '4', '-c:v', codec, original.path,
+      ]);
+      expect(generated.exitCode, 0, reason: generated.stderr.toString());
+      final bytes = await original.readAsBytes();
+      server.listen((r) async {
+        r.response.headers.contentType = ContentType('video', 'mp4');
+        r.response.contentLength = bytes.length;
+        r.response.add(bytes);
+        await r.response.close();
+      });
+      const path = 'play?token=t';
+      final downloads = await center(path);
+      await enqueue(downloads);
+      final task = downloads.tasks.single;
+      await until(() => ['done', 'failed'].contains(task.state));
+      await downloads.flush();
+      expect(task.fileName, 'media.$suffix', reason: task.error);
+      expect(await downloads.localFile(task).readAsBytes(), bytes);
+      final cache = VideoDiskCache();
+      addTearDown(cache.close);
+      await cache.boot(directory: root);
+      final media = PlayerMedia(uri: origin.resolve(path));
+      await expectLater(cache.wrap(media, inspect: true, appleHls: true), throwsUnsupportedError);
+      final wrapped = await cache.wrap(media, inspect: true);
+      expect(wrapped.uri.path, endsWith('.$suffix'));
+      Future<List<String>> frames(String input) async {
+        final decoded = await Process.run('ffmpeg', [
+          '-v', 'error', '-rw_timeout', '5000000', '-i', input, '-map', '0:v:0', '-f', 'framemd5', '-',
+        ]);
+        expect(decoded.exitCode, 0, reason: decoded.stderr.toString());
+        return LineSplitter.split(decoded.stdout.toString()).where((s) => s.startsWith('0,')).toList();
+      }
+      final reference = await frames(original.path);
+      expect(reference, hasLength(4));
+      expect(await frames(wrapped.uri.toString()), reference);
+    }, skip: !ffmpegAvailable);
   }
 
   test('抓取的 Range 与缓存条件不会截断整片下载，防盗链请求头仍生效', () async {

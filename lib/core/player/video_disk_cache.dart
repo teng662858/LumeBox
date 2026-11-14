@@ -167,8 +167,7 @@ class VideoDiskCache extends ChangeNotifier {
           .timeout(const Duration(seconds: 3), onTimeout: () => '');
       if (detected.isNotEmpty) suffix = detected;
     }
-    if (appleHls &&
-        ['.mkv', '.webm', '.mpd', '.avi', '.flv', '.wmv'].contains(suffix)) {
+    if (appleHls && mpvFormats.contains(suffix)) {
       throw UnsupportedError(
         '当前内核无法打开该媒体：${suffix.substring(1).toUpperCase()} 封装需要 MPV',
       );
@@ -253,15 +252,35 @@ class VideoDiskCache extends ChangeNotifier {
     }
   }
 
-  static bool _matroskaPrefix(List<int> prefix) =>
-      prefix.length >= 4 &&
-      prefix[0] == 0x1a &&
-      prefix[1] == 0x45 &&
-      prefix[2] == 0xdf &&
-      prefix[3] == 0xa3;
+  static const mpvFormats = {'.mkv', '.webm', '.mpd', '.avi', '.flv', '.asf', '.wmv'};
+
+  static bool _matchesBytes(List<int> bytes, List<int> signature, [int offset = 0]) {
+    if (bytes.length < offset + signature.length) return false;
+    for (var i = 0; i < signature.length; i++) {
+      if (bytes[offset + i] != signature[i]) return false;
+    }
+    return true;
+  }
 
   static String detectFormat(List<int> prefix, {bool complete = true}) {
-    if (_matroskaPrefix(prefix)) return '.mkv';
+    if (_matchesBytes(prefix, const [0x1a, 0x45, 0xdf, 0xa3])) return '.mkv';
+    // RIFF also contains WAV and WebP. The form type identifies AVI.
+    if (_matchesBytes(prefix, 'RIFF'.codeUnits) && _matchesBytes(prefix, 'AVI '.codeUnits, 8)) {
+      return '.avi';
+    }
+    if (_matchesBytes(prefix, const [0x46, 0x4c, 0x56, 1]) &&
+        prefix.length >= 9 &&
+        (prefix[4] & 0xfa) == 0) {
+      final headerSize = prefix[5] << 24 | prefix[6] << 16 | prefix[7] << 8 | prefix[8];
+      if (headerSize >= 9) return '.flv';
+    }
+    // ASF header object GUID, shared by WMV and WMA.
+    if (_matchesBytes(prefix, const [
+      0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11,
+      0xa6, 0xd9, 0x00, 0xaa, 0x00, 0x62, 0xce, 0x6c,
+    ])) {
+      return '.asf';
+    }
     final text = utf8
         .decode(prefix, allowMalformed: true)
         .replaceFirst('\uFEFF', '')
@@ -277,7 +296,7 @@ class VideoDiskCache extends ChangeNotifier {
 
   static String _mediaSuffix(Uri uri) =>
       RegExp(
-        r'\.(?:m3u8|mpd|ts|mp4|m4s|mkv|mov|m4a|aac|ac3|ec3|eac3|mp3|vtt|webvtt|key|webm|flv|avi|wmv|m2ts)$',
+        r'\.(?:m3u8|mpd|ts|mp4|m4s|mkv|mov|m4a|aac|ac3|ec3|eac3|mp3|vtt|webvtt|key|webm|flv|avi|asf|wmv|m2ts)$',
       ).stringMatch(uri.path.toLowerCase()) ??
       '';
 
@@ -1541,6 +1560,10 @@ class VideoDiskCache extends ChangeNotifier {
           [
             '.mp4',
             '.mkv',
+            '.avi',
+            '.flv',
+            '.asf',
+            '.wmv',
             '.m4s',
             '.key',
             '.vtt',

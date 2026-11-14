@@ -48,7 +48,7 @@ class SourcePlayback {
     if (uri == null) return null;
     if (uri.scheme == 'https' || uri.scheme == 'http') {
       final media = RegExp(
-        r'\.(?:m3u8|mp4|m4v|mkv|webm|mov|avi|flv|mpd|ts|mp3|m4a|aac|flac|ogg|opus|wav)$',
+        r'\.(?:m3u8|mp4|m4v|mkv|webm|mov|avi|flv|asf|wmv|mpd|ts|mp3|m4a|aac|flac|ogg|opus|wav)$',
         caseSensitive: false,
       ).hasMatch(uri.path);
       final download = RegExp(
@@ -209,7 +209,7 @@ class SourcePlayback {
 
   /// 本地媒体 / 字幕文件后缀（判「这是文件还是站内路径」用）。
   static final RegExp _mediaExtension = RegExp(
-    r'\.(?:mp4|m4v|mov|mkv|webm|avi|flv|wmv|ts|m3u8|mpd|mp3|m4a|aac|flac|wav|'
+    r'\.(?:mp4|m4v|mov|mkv|webm|avi|flv|asf|wmv|ts|m3u8|mpd|mp3|m4a|aac|flac|wav|'
     r'ogg|opus|ape|srt|ass|ssa|vtt)$',
     caseSensitive: false,
   );

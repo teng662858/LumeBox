@@ -299,13 +299,23 @@ void main() {
       await session.close();
     },
   );
-  test('legacy Matroska saved as media.mp4 opens with MPV offline', () async {
-    final old = File('${directory.path}/media.mp4');
-    await old.writeAsBytes([0x1a, 0x45, 0xdf, 0xa3]);
-    await start(initialMedia: DownloadedVideoPlayback(old.uri).media('下载'));
-    expect((opened['options'] as Map)['kernel'], 'mpv');
-    expect((opened['media'] as Map)['url'], old.uri.toString());
-  });
+  for (final (format, header, kernel) in [
+    ('Matroska', [0x1a, 0x45, 0xdf, 0xa3], 'mpv'),
+    ('AVI', [...'RIFF'.codeUnits, 64, 0, 0, 0, ...'AVI '.codeUnits], 'mpv'),
+    ('FLV', [...'FLV'.codeUnits, 1, 1, 0, 0, 0, 9], 'mpv'),
+    ('ASF', [0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11,
+        0xa6, 0xd9, 0x00, 0xaa, 0x00, 0x62, 0xce, 0x6c], 'mpv'),
+    ('WAV', [...'RIFF'.codeUnits, 64, 0, 0, 0, ...'WAVE'.codeUnits], 'avplayer'),
+    ('incomplete FLV', 'FLV'.codeUnits, 'avplayer'),
+  ]) {
+    test('legacy $format saved as media.mp4 opens with $kernel offline', () async {
+      final old = File('${directory.path}/media.mp4');
+      await old.writeAsBytes(header);
+      await start(initialMedia: DownloadedVideoPlayback(old.uri).media('下载'));
+      expect((opened['options'] as Map)['kernel'], kernel);
+      expect((opened['media'] as Map)['url'], old.uri.toString());
+    });
+  }
 
   for (final profiled in [false, true]) {
     test('automatic MPV fallback keeps the default kernel on next open (profile: $profiled)', () async {

@@ -688,7 +688,7 @@ class _VideoDetailPageState extends State<VideoDetailPage>
             caseSensitive: false,
           ).hasMatch(address.path);
       final videoAddress = RegExp(
-        r'\.(m3u8|mpd|mp4|m4v|mkv|webm|mov|avi|flv|ts)$',
+        r'\.(m3u8|mpd|mp4|m4v|mkv|webm|mov|avi|flv|wmv|ts)$',
         caseSensitive: false,
       ).hasMatch(address.path);
       final declaredVideo =

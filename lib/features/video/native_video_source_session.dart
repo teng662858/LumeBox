@@ -183,17 +183,16 @@ class NativeVideoSourceSession {
     return {'media': prepared.media, 'kernel': prepared.kernel.name, 'speed': _settings.speed};
   }
 
-  static final _mpvContainer = RegExp(r'\.(mkv|webm|avi|flv|wmv|mpd)$', caseSensitive: false);
-
-  // Earlier downloads used media.mp4 for extensionless URLs, including MKV.
-  Future<bool> _legacyMatroskaDownload(PlayerMedia media) async {
+  Future<bool> _requiresMpv(PlayerMedia media) async {
+    if (VideoDiskCache.mpvFormats.any(media.uri.path.toLowerCase().endsWith)) return true;
+    // Older downloads used media.mp4 for extensionless URLs.
     if (!media.isDownloaded ||
         media.uri.scheme != 'file' ||
         !media.uri.path.endsWith('/media.mp4')) {
       return false;
     }
     try {
-      return await VideoDiskCache.detectFileFormat(File.fromUri(media.uri)) == '.mkv';
+      return VideoDiskCache.mpvFormats.contains(await VideoDiskCache.detectFileFormat(File.fromUri(media.uri)));
     } on FileSystemException {
       return false;
     }
@@ -211,7 +210,7 @@ class NativeVideoSourceSession {
         ? _directIdentity
         : '${current.identity}:${current.chapterId}';
     final apple = (kernelOverride ?? _settings.kernel) == PlayerKernel.avplayer;
-    if (apple && (_mpvContainer.hasMatch(media.uri.path) || await _legacyMatroskaDownload(media))) {
+    if (apple && await _requiresMpv(media)) {
       throw UnsupportedError('当前媒体格式需要 MPV 内核');
     }
     final PlayerMedia prepared;

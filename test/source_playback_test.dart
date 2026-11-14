@@ -60,6 +60,10 @@ void main() {
             ?.path,
         '/watch.mp4',
       );
+      for (final suffix in ['wmv', 'ASF']) {
+        final url = 'https://cdn.example/episode.$suffix?sig=fixture';
+        expect(SourcePlayback.itemAddress(url)?.toString(), url);
+      }
       expect(
         SourcePlayback.itemAddress('https://cdn.example/download.php?id=1')
             ?.path,
