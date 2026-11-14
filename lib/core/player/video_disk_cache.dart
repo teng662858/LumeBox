@@ -1053,7 +1053,9 @@ class VideoDiskCache extends ChangeNotifier {
     }
     final body = BytesBuilder(copy: false);
     final decoded = _decodedBody(_completeBody(upstream), upstream.header('content-encoding'));
-    await for (final chunk in decoded.timeout(const Duration(seconds: 20))) {
+    // Measure the probe and remux limits in actual TS bytes, after any
+    // verified image wrapper. Ordinary TS still streams from the first chunk.
+    await for (final chunk in unwrapTransportStream(decoded.timeout(const Duration(seconds: 20)))) {
       if (prefix && chunk.length >= limit - body.length) {
         body.add(chunk.sublist(0, limit - body.length));
         break;
@@ -1065,7 +1067,7 @@ class VideoDiskCache extends ChangeNotifier {
     }
     final bytes = body.takeBytes();
     _rejectHtml(bytes);
-    return Uint8List.sublistView(bytes, transportStreamImagePrefix(bytes));
+    return bytes;
   }
 
   static String _keySuffix(String line) {

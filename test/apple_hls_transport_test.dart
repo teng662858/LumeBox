@@ -105,12 +105,16 @@ void main() {
           case '/avc.jpg':
             r.add(Uint8List.fromList(packet)..[17] = 0x1b);
           case '/png.jpg':
+          case '/large-wrapper.ts':
             r.add(
-              Uint8List(4096)..setAll(0, [137, 80, 78, 71, 13, 10, 26, 10]),
+              Uint8List(request.uri.path == '/large-wrapper.ts' ? 65536 : 4096)
+                ..setAll(0, [137, 80, 78, 71, 13, 10, 26, 10]),
             );
             for (var i = 0; i < 4; i++) {
               r.add(packet);
             }
+          case '/large-wrapper.m3u8':
+            r.write('#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nlarge-wrapper.ts\n#EXT-X-ENDLIST\n');
           case '/master':
             r.write(
               '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\nplain.php\n',
@@ -216,6 +220,15 @@ void main() {
     final fragment = Uri.parse(
       text.split('\n').firstWhere((s) => s.startsWith('http')),
     );
+    expect((await read(fragment)).$2, body);
+    expect(calls, hasLength(1));
+  });
+
+  test('Apple HEVC detection reads media past a 64 KiB image wrapper', () async {
+    expectedInput = [for (var i = 0; i < 4; i++) ...packet];
+    final text = await manifest('large-wrapper.m3u8');
+    expect(text, contains('#EXT-X-MAP'));
+    final fragment = Uri.parse(text.split('\n').firstWhere((s) => s.startsWith('http')));
     expect((await read(fragment)).$2, body);
     expect(calls, hasLength(1));
   });
