@@ -72,6 +72,7 @@ import UniformTypeIdentifiers
   var closed: (() -> Void)?
   private var engine: NativeVideoEngine?
   private var pendingEngine: (() -> Void)?
+  private var pendingEngineResume: Double?
   private var state = NativeVideoState()
   private var kernel: String
   private var generation = 0, requestGeneration = 0
@@ -246,7 +247,8 @@ import UniformTypeIdentifiers
     kernel = selected == "mpv" ? "mpv" : "avplayer"
     if kernel == "mpv" { subtitles = NativeVideoSubtitles() }
     loadStarted = CACurrentMediaTime()
-    let at = resume ?? pendingSeek ?? state.position
+    let at = resume ?? pendingSeek ?? engine?.resumePosition ?? pendingEngineResume ?? state.position
+    pendingEngineResume = at
     pendingSeek = nil
     let previous = engine; engine = nil
     previous?.pause(); previous?.view.removeFromSuperview(); fatalMessage = nil; toastMessage = nil
@@ -277,6 +279,7 @@ import UniformTypeIdentifiers
         var payload = self.item.payload; payload["position"] = at
         let media = try NativeVideoItem(payload)
         next.load(media)
+        self.pendingEngineResume = nil
         if let url = self.externalSubtitleURL { self.loadExternalSubtitle(url) }
         if self.wantsPlay { next.play(rate: self.speed) }
         self.switching = false; self.armTimeout(revision)

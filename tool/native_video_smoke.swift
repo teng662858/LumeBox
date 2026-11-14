@@ -25,6 +25,12 @@ extension NativeVideoScreen {
     // AVPlayer-layer PiP changes the player directly, bypassing screen controls.
     if playing { engine?.player?.play() } else { engine?.player?.pause() }
   }
+  fileprivate func reloadTestWhileOpening() {
+    // Trigger before the decoder can report readiness, then again while MPV's
+    // asynchronous teardown may still be pending.
+    switchEngine(kernel)
+    switchEngine(kernel)
+  }
   fileprivate static func checkDanmakuTiming(_ item: NativeVideoItem) {
     let screen = NativeVideoScreen(session: "danmaku-check", item: item, options: [:])
     var replies: [([String: Any]?) -> Void] = []
@@ -89,7 +95,7 @@ extension NativeVideoScreen {
     guard caseIndex < cases.count else { print("NATIVE_VIDEO_ALL_OK"); fflush(stdout); exit(0) }
     let test = cases[caseIndex]; phase = 0; swaps = 0; nextRequests = 0; started = Date()
     do {
-      let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)"])
+      let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)", "position": 2.0])
       if caseIndex == 0 { NativeVideoScreen.checkDanmakuTiming(item) }
       let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": test.1 == "smoke.mp4", "headlessAudio": true])
       // Speech disables scrubbing; stale audiobook actions must also be reset.
@@ -122,6 +128,8 @@ extension NativeVideoScreen {
         completion(self.nextRequests == 2 ? ["error": "fixture next unavailable"] : [:])
       }
       screen = view
+      view.loadViewIfNeeded()
+      view.reloadTestWhileOpening()
       window?.rootViewController?.present(view, animated: false) {
         self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in MainActor.assumeIsolated { self.tick() } }
       }
@@ -134,6 +142,7 @@ extension NativeVideoScreen {
     check(Date().timeIntervalSince(started) < 40, "timeout phase=\(phase) state=\(state)")
     let position = (state["position"] as? NSNumber)?.doubleValue ?? 0
     if phase == 0 && state["firstFrame"] as? Bool == true && position > 0.5 {
+      check(position >= 1.7, "opening reloads preserve the requested resume position")
       screen.debugAction([:])
       let state = screen.debugState
       let remote = MPRemoteCommandCenter.shared()

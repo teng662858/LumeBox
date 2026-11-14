@@ -61,6 +61,8 @@ struct NativeVideoState {
 }
 
 @MainActor protocol NativeVideoEngine: AnyObject {
+  // The decoder clock may still be zero while an opening resume or seek is pending.
+  var resumePosition: Double? { get }
   var view: UIView { get }
   var player: AVPlayer? { get }
   var sampleLayer: AVSampleBufferDisplayLayer? { get }
@@ -85,6 +87,7 @@ struct NativeVideoState {
 }
 
 @MainActor final class NativeAVEngine: NativeVideoEngine {
+  private(set) var resumePosition: Double?
   private let surface = NativeAVSurface()
   let player: AVPlayer? = AVPlayer()
   var sampleLayer: AVSampleBufferDisplayLayer? { nil }
@@ -144,7 +147,7 @@ struct NativeVideoState {
     // This is playback read-ahead, never a startup precondition.
     item.preferredForwardBufferDuration = forwardBuffer
     seekRevision += 1
-    state = NativeVideoState(); pendingResume = media.position; seeking = false
+    state = NativeVideoState(); pendingResume = media.position; resumePosition = media.position; seeking = false
     player.replaceCurrentItem(with: item)
     subtitleSelection?.cancel()
     if !subtitlesEnabled { disableEmbeddedSubtitles() }
@@ -161,7 +164,10 @@ struct NativeVideoState {
           if self.pendingResume > 0 {
             let resume = self.pendingResume; self.pendingResume = 0
             self.seek(resume) { _ in }
-          } else { self.resume() }
+          } else {
+            if !self.seeking { self.resumePosition = nil }
+            self.resume()
+          }
           self.tick()
         }
       }
@@ -209,12 +215,13 @@ struct NativeVideoState {
   func seek(_ seconds: Double, completion: @escaping (Bool) -> Void) {
     guard !disposed, let player else { completion(false); return }
     seeking = true
+    resumePosition = max(0, seconds)
     seekRevision += 1; let revision = seekRevision
     let current = player.currentItem
     player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600), toleranceBefore: CMTime(seconds: 0.25, preferredTimescale: 600), toleranceAfter: CMTime(seconds: 0.25, preferredTimescale: 600)) { [weak self] finished in
       DispatchQueue.main.async {
         guard let self, !self.disposed, self.seekRevision == revision, self.player?.currentItem === current else { completion(false); return }
-        self.seeking = false
+        self.seeking = false; self.resumePosition = nil
         if finished { self.state.ended = false }
         self.resume(); self.tick(); completion(finished)
       }
@@ -284,6 +291,7 @@ struct NativeVideoState {
 }
 
 @MainActor final class NativeMPVEngine: NativeVideoEngine {
+  private(set) var resumePosition: Double?
   private let surface = NativeMPVSurface()
   var player: AVPlayer? { nil }
   var sampleLayer: AVSampleBufferDisplayLayer? { surface.videoLayer }
@@ -320,7 +328,9 @@ struct NativeVideoState {
       }
       if self.state.ready && self.pendingResume > 0 {
         let target = self.pendingResume; self.pendingResume = 0
-        self.bridge?.command(["seek", String(target), "absolute+exact"])
+        self.seek(target) { _ in }
+      } else if self.state.ready && self.seekCompletion == nil {
+        self.resumePosition = nil
       }
       if self.state.ready && self.desiredPlay && !self.state.playing && !self.state.buffering && !self.state.ended {
         self.bridge?.setProperty("pause", value: "no")
@@ -354,7 +364,9 @@ struct NativeVideoState {
     })
   }
   func load(_ item: NativeVideoItem) {
+    seekCompletion?(false); seekCompletion = nil; seekRevision += 1
     pendingResume = item.position
+    resumePosition = item.position
     pendingSubtitle = nil
     state = NativeVideoState(); surface.videoLayer.flushAndRemoveImage()
     bridge?.openURL(item.url.absoluteString, headers: item.headers, position: item.position)
@@ -369,7 +381,11 @@ struct NativeVideoState {
     guard !disposed, let bridge else { completion(false); return }
     seekCompletion?(false)
     seekRevision += 1
-    seekCompletion = completion
+    resumePosition = max(0, seconds)
+    seekCompletion = { [weak self] finished in
+      self?.resumePosition = nil
+      completion(finished)
+    }
     bridge.seek(to: max(0, seconds), revision: seekRevision)
   }
   func volume(_ value: Double) { bridge?.setProperty("volume", value: String(value * 100)) }
