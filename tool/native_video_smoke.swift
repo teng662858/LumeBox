@@ -1,6 +1,31 @@
 // Appended to the production controller file for a standalone UIKit simulator
 // host. Exercises private production code, not a second player implementation.
 extension NativeVideoScreen {
+  fileprivate static func checkStartupTimeout(_ item: NativeVideoItem) {
+    let screen = NativeVideoScreen(session: "startup-timeout", item: item, options: [:])
+    screen.armTimeout(screen.generation)
+    let initial = screen.timeout
+    precondition(initial?.isValid == true, "opening playback needs a first-frame deadline")
+    screen.setPlaying(false)
+    precondition(initial?.isValid == false && screen.timeout == nil, "pause must cancel the startup deadline")
+    initial?.fire()
+    precondition(screen.state.error == nil, "a paused startup must not become a playback failure")
+    screen.armTimeout(screen.generation)
+    precondition(screen.timeout == nil, "reloading while paused must not arm a deadline")
+    screen.setPlaying(true)
+    let resumed = screen.timeout
+    precondition(resumed?.isValid == true && resumed !== initial, "resume must get a fresh startup deadline")
+    resumed?.fire()
+    precondition(screen.state.error != nil, "a real playing startup timeout must still fail")
+    screen.state.error = nil
+    screen.state.firstFrame = true
+    screen.armTimeout(screen.generation)
+    precondition(screen.timeout == nil, "rendered playback must not restart the first-frame deadline")
+    screen.state.firstFrame = false
+    screen.switching = true
+    screen.armTimeout(screen.generation)
+    precondition(screen.timeout == nil, "decoder teardown must not consume the new engine's startup budget")
+  }
   fileprivate static func checkBackgroundPlaybackPolicy(_ item: NativeVideoItem) {
     let screen = NativeVideoScreen(session: "background-policy", item: item, options: ["backgroundPlayback": false])
     screen.applyBackgroundPlaybackPolicy(inPip: true)
@@ -128,6 +153,7 @@ extension NativeVideoScreen {
       if caseIndex == 0 {
         NativeVideoScreen.checkDanmakuTiming(item)
         NativeVideoScreen.checkSubtitlePreference(item)
+        NativeVideoScreen.checkStartupTimeout(item)
         NativeVideoScreen.checkBackgroundPlaybackPolicy(item)
       }
       let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": test.1 == "smoke.mp4", "headlessAudio": true])

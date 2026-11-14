@@ -273,6 +273,7 @@ import UniformTypeIdentifiers
         self.resumeAfterInterruption = false
         self.wantsPlay = playing
         if playing { self.interrupted = false }
+        self.armTimeout(self.generation)
         self.renderState(); self.emit("progress")
       }
       do {
@@ -294,10 +295,14 @@ import UniformTypeIdentifiers
     if let previous { previous.dispose(start) } else { start() }
   }
   private func armTimeout(_ revision: Int) {
-    timeout?.invalidate()
-    timeout = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
+    timeout?.invalidate(); timeout = nil
+    // A deliberately paused decoder need not produce a first frame. Resume
+    // receives a fresh budget, including when PiP changes AVPlayer directly.
+    guard !closing, !switching, wantsPlay, !state.firstFrame, state.error == nil else { return }
+    timeout = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] timer in
       MainActor.assumeIsolated {
-      guard let self, !self.closing, self.generation == revision, !self.state.firstFrame, self.state.error == nil else { return }
+      guard let self, self.timeout === timer, !self.closing, self.wantsPlay,
+            self.generation == revision, !self.state.firstFrame, self.state.error == nil else { return }
       self.engine?.pause(); self.showError("30 秒内未输出画面。点此重试，或手动更换内核、线路。")
           }
     }
@@ -358,6 +363,7 @@ import UniformTypeIdentifiers
       interrupted = false
     }
     wantsPlay = playing
+    armTimeout(generation)
     if switching { return }
     if wantsPlay {
       if state.error != nil { resolve("retry"); return }
