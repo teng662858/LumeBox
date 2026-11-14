@@ -404,6 +404,76 @@ void main() {
       expect(store.load().kernel, PlayerKernel.avplayer);
     });
   }
+  for (final action in ['next', 'quality', 'line', 'retry']) {
+    test('$action restores the preferred system player for compatible replacement media', () async {
+      final mp4 = Uri.parse('https://cdn.example/replacement.mp4');
+      final modes = <bool>[];
+      final store = VideoPlayerSettingsStore(library);
+      store.save(const PlayerSettings()
+          .copyWith(kernel: PlayerKernel.mpv, speed: 1.75)
+          .copyWith(kernel: PlayerKernel.avplayer, speed: 1.25));
+      await start(
+        initialMedia: PlayerMedia(uri: Uri.parse('https://cdn.example/first.mkv')),
+        qualities: [VideoQuality(label: '高清', url: mp4)],
+        prepare: (media, apple) async { modes.add(apple); return media; },
+      );
+      expect((opened['options'] as Map)['kernel'], 'mpv');
+      await progress(31);
+      final chapter = action == 'next' ? 'A2' : action == 'line' ? 'B1' : 'A1';
+      source.blocked[chapter] = Completer<ChapterContent>()..complete(VideoContent(url: mp4));
+      final reply = await request(action, switch (action) {
+        'line' => {'id': 'B'}, 'quality' => {'id': 0}, _ => {},
+      });
+      expect(modes, [false, true]);
+      expect(reply['kernel'], 'avplayer');
+      expect(reply['speed'], 1.25);
+      expect((reply['media'] as Map)['position'], action == 'next' ? 0 : 31);
+      expect(store.load().kernel, PlayerKernel.avplayer);
+      await native('event', {
+        'session': opened['session'], 'type': 'settings', 'kernel': 'avplayer',
+        'identity': (reply['media'] as Map)['identity'], 'speed': 1.5,
+      });
+      expect(store.load().speed, 1.5);
+      expect(store.load().copyWith(kernel: PlayerKernel.mpv).speed, 1.75);
+    });
+  }
+
+  test('an explicit MPV preference survives switching to an Apple-compatible episode', () async {
+    VideoPlayerSettingsStore(library).save(const PlayerSettings(kernel: PlayerKernel.mpv));
+    final modes = <bool>[];
+    await start(initialMedia: PlayerMedia(uri: Uri.parse('https://cdn.example/first.mkv')),
+        prepare: (media, apple) async { modes.add(apple); return media; });
+    final reply = await request('next');
+    expect(reply['media'], isNotNull);
+    expect(reply['kernel'], isNull);
+    expect(modes, [false, false]);
+  });
+
+  test('a late compatible quality cannot restore AVPlayer over the current MPV media', () async {
+    final waiting = Completer<void>(), release = Completer<void>();
+    final mp4 = Uri.parse('https://cdn.example/slow.mp4');
+    final mkv = Uri.parse('https://cdn.example/second.mkv');
+    await start(
+      initialMedia: PlayerMedia(uri: Uri.parse('https://cdn.example/first.mkv')),
+      qualities: [VideoQuality(label: '慢', url: mp4), VideoQuality(label: '快', url: mkv)],
+      prepare: (media, apple) async {
+        if (media.uri == mp4 && !waiting.isCompleted) {
+          waiting.complete();
+          await release.future;
+        }
+        return media;
+      },
+    );
+    final late = request('quality', {'id': 0});
+    await waiting.future;
+    final winner = await request('quality', {'id': 1});
+    release.complete();
+    expect((await late)['error'], contains('取消'));
+    expect(winner['kernel'], isNull);
+    expect((winner['media'] as Map)['sourceUrl'], mkv.toString());
+    expect((await request('quality', {'id': 0}))['kernel'], 'avplayer');
+  });
+
   test('a superseded MPV fallback cannot switch the engine used by the winning quality', () async {
     final waiting = Completer<void>(), finish = Completer<void>();
     final mkv = Uri.parse('https://cdn.example/alternate.mkv');

@@ -166,7 +166,9 @@ class NativeVideoSourceSession {
       media, position: position, resumeIdentity: resumeIdentity,
       targetOverride: targetOverride, kernelOverride: kernel,
     );
-    final kernel = _settings.kernel;
+    // A fallback belongs to the media that required it. A replacement URL
+    // can have a different container even on the same episode or quality.
+    final kernel = _preferredBeforeFallback ?? _settings.kernel;
     try {
       return (media: await prepare(kernel), kernel: kernel);
     } on UnsupportedError {
@@ -178,7 +180,9 @@ class NativeVideoSourceSession {
   // Commit a compatibility switch only after the caller accepts this request.
   Map<String, Object?> _acceptVideo(_PreparedVideo prepared) {
     if (prepared.kernel == _settings.kernel) return {'media': prepared.media};
-    _preferredBeforeFallback = _settings.kernel;
+    _preferredBeforeFallback = prepared.kernel == _preferredBeforeFallback
+        ? null
+        : _settings.kernel;
     _settings = _settings.copyWith(kernel: prepared.kernel);
     return {'media': prepared.media, 'kernel': prepared.kernel.name, 'speed': _settings.speed};
   }
