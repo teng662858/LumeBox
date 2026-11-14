@@ -37,11 +37,11 @@ class DanmakuItem {
     final text = '${json['text'] ?? json['content'] ?? json['m'] ?? ''}'.trim();
     if (text.isEmpty) return null;
 
-    final millis = _millis(json);
-    if (millis == null) return null;
+    final time = _time(json);
+    if (time == null) return null;
 
     return DanmakuItem(
-      time: Duration(milliseconds: millis),
+      time: time,
       text: text,
       mode: DanmakuMode.fromId('${json['mode'] ?? json['position'] ?? ''}'),
       color: _color(json['color']),
@@ -49,27 +49,39 @@ class DanmakuItem {
     );
   }
 
-  static int? _millis(Map json) {
+  // Duration stores signed 64-bit microseconds.
+  static const _maxMillis = 0x7fffffffffffffff ~/ Duration.microsecondsPerMillisecond;
+
+  static Duration? _fromMillis(int millis) {
+    if (millis < 0 || millis > _maxMillis) return null;
+    return Duration(milliseconds: millis);
+  }
+
+  static Duration? timeFromSeconds(double seconds) {
+    final millis = seconds * Duration.millisecondsPerSecond;
+    if (!millis.isFinite || millis < 0) return null;
+    return _fromMillis(millis.round());
+  }
+
+  static Duration? _time(Map json) {
     final raw = json['time'] ?? json['t'];
-    if (raw is num) return raw.toInt();
+    if (raw is num) {
+      return raw.isFinite && raw >= 0 ? _fromMillis(raw.toInt()) : null;
+    }
     if (raw is String) {
       final parsed = int.tryParse(raw);
-      if (parsed != null) return parsed;
+      if (parsed != null) return _fromMillis(parsed);
       final seconds = double.tryParse(raw);
-      if (seconds != null) return (seconds * 1000).round();
+      if (seconds != null) return timeFromSeconds(seconds);
     }
-    final seconds = json['timeSeconds'];
-    if (seconds is num) return (seconds * 1000).round();
-    if (seconds is String) {
-      final parsed = double.tryParse(seconds);
-      if (parsed != null) return (parsed * 1000).round();
-    }
-    return null;
+    final value = json['timeSeconds'];
+    final seconds = value is num ? value.toDouble() : double.tryParse('$value');
+    return seconds == null ? null : timeFromSeconds(seconds);
   }
 
   static int _color(Object? value) {
     if (value is int) return value & 0xFFFFFF;
-    if (value is num) return value.toInt() & 0xFFFFFF;
+    if (value is num && value.isFinite) return value.toInt() & 0xFFFFFF;
     if (value is String) {
       final text = value.replaceFirst('#', '').trim();
       final parsed = int.tryParse(text, radix: 16);
@@ -82,7 +94,7 @@ class DanmakuItem {
     final parsed = value is num
         ? value.toDouble()
         : double.tryParse('${value ?? ''}');
-    if (parsed == null) return 1.0;
+    if (parsed == null || !parsed.isFinite) return 1.0;
     // 常见两种口径：倍数（0.5~2）与像素（12~48）。大于 3 视为像素。
     final scale = parsed > 3 ? parsed / 25 : parsed;
     return scale.clamp(0.5, 2.0);

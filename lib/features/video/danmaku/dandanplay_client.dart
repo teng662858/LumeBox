@@ -505,17 +505,14 @@ class DandanplayClient {
       if (raw is! Map) continue;
       final fields = '${raw['p'] ?? ''}'.split(',');
       final seconds = fields.isEmpty ? null : double.tryParse(fields[0]);
+      final time = seconds == null ? null : DanmakuItem.timeFromSeconds(seconds);
       final text = '${raw['m'] ?? ''}'.trim();
-      if (seconds == null ||
-          !seconds.isFinite ||
-          seconds < 0 ||
-          text.isEmpty ||
-          fields.length < 3) {
+      if (time == null || text.isEmpty || fields.length < 3) {
         continue;
       }
       result.add(
         DanmakuItem(
-          time: Duration(milliseconds: (seconds * 1000).round()),
+          time: time,
           text: text,
           mode: DanmakuMode.fromId(fields[1]),
           color: int.tryParse(fields[2]) ?? 0xFFFFFF,
