@@ -8,6 +8,7 @@ import 'package:lume_box/core/experience/offline_policy.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/video/video_download_center.dart';
 import 'package:lume_box/features/video/offline_hls_master.dart';
+import 'package:lume_box/features/video/merged_video_mp4.dart';
 
 Future<void> waitFor(bool Function() ready) async {
   final watch = Stopwatch()..start();
@@ -29,11 +30,35 @@ void main() {
   tearDown(() async {
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
-  final mp4 = [
-    0, 0, 0, 16, ...ascii.encode('ftypisom'), 0, 0, 0, 0,
-    0, 0, 0, 16, ...ascii.encode('moov'), 0, 0, 0, 8, ...ascii.encode('free'),
-    0, 0, 0, 9, ...ascii.encode('mdat'), 1,
+  List<int> box(String type, List<int> payload) =>
+      [0, 0, 0, payload.length + 8, ...ascii.encode(type), ...payload];
+  List<int> trackWithTable(String handler, List<int> table) => box('trak', box('mdia', [
+    ...box('hdlr', [...List.filled(8, 0), ...ascii.encode(handler), ...List.filled(13, 0)]),
+    ...box('minf', box('stbl', table)),
+  ]));
+  List<int> track(String handler, int samples) => trackWithTable(handler,
+      box('stsz', [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, samples]));
+  List<int> movie(List<int> tracks) => [
+    ...box('ftyp', [...ascii.encode('isom'), 0, 0, 0, 0]),
+    ...box('moov', tracks),
+    ...box('mdat', [1]),
   ];
+  final mp4 = movie(track('vide', 1));
+
+  for (final (name, table, valid) in [
+    ('variable sizes', box('stsz', [0,0,0,0, 0,0,0,0, 0,0,0,1, 0,0,0,1]), true),
+    ('missing variable size', box('stsz', [0,0,0,0, 0,0,0,0, 0,0,0,1]), false),
+    ('compact sizes', box('stz2', [0,0,0,0, 0,0,0,4, 0,0,0,1, 0x10]), true),
+    ('missing compact sizes', box('stz2', [0,0,0,0, 0,0,0,4, 0,0,0,3, 0x11]), false),
+    ('invalid compact field width', box('stz2', [0,0,0,0, 0,0,0,0, 0,0,0,1]), false),
+    ('truncated child', [0,0,0,20, ...ascii.encode('stsz')], false),
+  ]) {
+    test('merged video inspection checks $name without reading media payload', () async {
+      final file = File('${root.path}/inspect.mp4');
+      await file.writeAsBytes(movie(trackWithTable('vide', table)));
+      expect(await isMergedVideoMp4(file), valid);
+    });
+  }
 
   Future<VideoDownloadTask> downloaded(
     VideoDownloadCenter center, {
@@ -508,4 +533,42 @@ void main() {
     expect(await center.localFile(task).exists(), true);
     expect(await File('${center.folder(task)}/a.ts').exists(), true);
   });
+  for (final (description, tracks) in [
+    ('no tracks', box('free', [])),
+    ('only audio', track('soun', 1)),
+    ('empty video alongside populated audio', [...track('vide', 0), ...track('soun', 1)]),
+  ]) {
+    test('merged MP4 with $description leaves the offline playlist available', () async {
+      final center = VideoDownloadCenter(
+        directory: () async => root,
+        merge: (_, output, _) async => output.writeAsBytes(movie(tracks)),
+      );
+      final task = await downloaded(center);
+      await center.resume(task);
+      await waitFor(() => ['done', 'merge_failed'].contains(task.state));
+      await center.flush();
+      expect(task.state, 'merge_failed');
+      expect(await center.localFile(task).exists(), isTrue);
+      expect(await File('${center.folder(task)}/a.ts').exists(), isTrue);
+    });
+    test('an old committed MP4 with $description is rebuilt from local video', () async {
+      var merges = 0;
+      final center = VideoDownloadCenter(
+        directory: () async => root,
+        resolve: (_) async => throw StateError('Source is offline'),
+        merge: (_, output, _) async {
+          merges++;
+          await output.writeAsBytes(mp4);
+        },
+      );
+      final task = await downloaded(center, state: 'paused');
+      await File('${center.folder(task)}/merged.mp4').writeAsBytes(movie(tracks));
+      await center.resume(task);
+      await waitFor(() => ['done', 'merge_failed'].contains(task.state));
+      await center.flush();
+      expect(task.state, 'done', reason: task.error);
+      expect(merges, 1);
+      expect(await center.localFile(task).readAsBytes(), mp4);
+    });
+  }
 }

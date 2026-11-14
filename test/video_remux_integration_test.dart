@@ -13,6 +13,52 @@ void main() {
   try {
     available = Process.runSync('ffmpeg', ['-version']).exitCode == 0;
   } catch (_) {}
+  test('an audio-only MP4 from a remux cannot replace the original offline video', () async {
+    final root = await Directory.systemTemp.createTemp('lume-audio-only-remux-');
+    try {
+      final audio = File('${root.path}/audio.mp4');
+      final result = await Process.run('ffmpeg', [
+        '-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.5',
+        '-c:a', 'aac', '-movflags', '+faststart', audio.path,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      final probe = await Process.run('ffprobe', [
+        '-v', 'error', '-show_streams', '-of', 'json', audio.path,
+      ]);
+      expect(probe.exitCode, 0);
+      expect((jsonDecode('${probe.stdout}')['streams'] as List).map((s) => s['codec_type']), ['audio']);
+      final center = VideoDownloadCenter(
+        directory: () async => root,
+        merge: (_, output, _) async { await audio.copy(output.path); },
+      );
+      await center.boot();
+      final task = VideoDownloadTask(
+        id: VideoDownloadCenter.identity('source', 'movie', 'one'),
+        sourceId: 'source', itemId: 'movie', chapterId: 'one',
+        title: 'Movie', chapterTitle: 'One', state: 'paused', fileName: 'index.m3u8',
+      );
+      center.tasks.add(task);
+      final directory = await Directory(center.folder(task)).create(recursive: true);
+      final generated = await Process.run('ffmpeg', [
+        '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=96x64:rate=10:duration=0.5',
+        '-c:v', 'libx264', '-f', 'hls', '-hls_playlist_type', 'vod',
+        '${directory.path}/index.m3u8',
+      ]);
+      expect(generated.exitCode, 0, reason: '${generated.stderr}');
+      await center.resume(task);
+      await waitFor(() => ['done', 'merge_failed'].contains(task.state));
+      await center.flush();
+      expect(task.state, 'merge_failed');
+      expect(await center.localFile(task).exists(), isTrue);
+      final decode = await Process.run('ffmpeg', [
+        '-v', 'error', '-i', center.localFile(task).path, '-map', '0:v', '-f', 'null', '-',
+      ]);
+      expect(decode.exitCode, 0, reason: '${decode.stderr}');
+    } finally {
+      await root.delete(recursive: true);
+    }
+  }, skip: available ? false : 'Requires FFmpeg on desktop');
+
   test(
     'real FFmpeg preserves video frames, separate audio and duration in a single MP4',
     () async {

@@ -35,6 +35,7 @@ import '../../core/player/video_disk_cache.dart';
 import 'video_download_merger.dart';
 import 'offline_video_server.dart';
 import 'offline_hls_master.dart';
+import 'merged_video_mp4.dart';
 
 class DownloadedVideoPlayback {
   DownloadedVideoPlayback(this.uri, [this.server, this._onClose]);
@@ -526,7 +527,7 @@ class VideoDownloadCenter extends ChangeNotifier {
         final task = tasks.where((t) => t.state == 'queued').firstOrNull;
         if (task == null) break;
         final localMerge = task.hasLocalPlaylist &&
-            (await _hasMergeInputs(task) || await _isMp4(File(p.join(folder(task), 'merged.mp4'))));
+            (await _hasMergeInputs(task) || await isMergedVideoMp4(File(p.join(folder(task), 'merged.mp4'))));
         final blocked = await OfflinePolicy.blocked(needsNetwork: !localMerge);
         if (task.state != 'queued') continue;
         if (!localMerge) task.fileName = '';
@@ -686,13 +687,13 @@ class VideoDownloadCenter extends ChangeNotifier {
     final output = File(p.join(dir.path, 'merged.mp4'));
     try {
       // A crash after atomic rename but before manifest update can reuse the result.
-      if (!await _isMp4(output)) {
+      if (!await isMergedVideoMp4(output)) {
         if (await part.exists()) await part.delete();
         await flattenOfflineHlsMaster(File(p.join(dir.path, 'index.m3u8')));
         _check(task);
         await (merge ?? _merger.merge)(dir, part, task.id);
         _check(task);
-        if (!await _isMp4(part)) throw StateError('合并未生成有效的 MP4 文件');
+        if (!await isMergedVideoMp4(part)) throw StateError('合并未生成有效的 MP4 文件');
         await part.rename(output.path);
       }
       final length = await output.length();
@@ -729,43 +730,6 @@ class VideoDownloadCenter extends ChangeNotifier {
       }
     } on FileSystemException {
       task.error = 'MP4 已合并，部分临时文件未能清理';
-    }
-  }
-
-  static Future<bool> _isMp4(File file) async {
-    RandomAccessFile? input;
-    try {
-      input = await file.open();
-      // Check the remuxer's top-level boxes before deleting the source HLS.
-      // Seek over payloads so a large movie never needs to be read into memory.
-      final length = await input.length();
-      var offset = 0, hasMovie = false, hasMedia = false;
-      while (offset < length) {
-        await input.setPosition(offset);
-        final bytes = await input.read(8);
-        if (bytes.length != 8) return false;
-        final type = String.fromCharCodes(bytes, 4, 8);
-        if (offset == 0 && type != 'ftyp') return false;
-        var size = ByteData.sublistView(bytes).getUint32(0);
-        var headerSize = 8;
-        if (size == 1) {
-          final extended = await input.read(8);
-          if (extended.length != 8) return false;
-          size = ByteData.sublistView(extended).getUint64(0);
-          headerSize = 16;
-        } else if (size == 0) {
-          size = length - offset;
-        }
-        if (size < headerSize || size > length - offset) return false;
-        if (type == 'moov' && size > headerSize) hasMovie = true;
-        if (type == 'mdat' && size > headerSize) hasMedia = true;
-        offset += size;
-      }
-      return hasMovie && hasMedia;
-    } on FileSystemException {
-      return false;
-    } finally {
-      await input?.close();
     }
   }
 
