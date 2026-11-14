@@ -443,7 +443,8 @@ class AudioBookSession extends ChangeNotifier {
   List<AudioBookTrack> _tracks = [];
   // A retry target may differ from the last confirmed listening position.
   ({int? index, Duration? position, bool resume})? _pendingStart;
-  bool _ready = false;
+  int? _readyGeneration;
+  bool get _ready => _readyGeneration != null;
   bool _acceptEvents = false;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   final progress = ValueNotifier<(Duration, Duration)>((
@@ -477,30 +478,36 @@ class AudioBookSession extends ChangeNotifier {
     Duration? initialPosition,
     bool restart = false,
   }) async {
-    if (!restart &&
-        resource?.id == entry.id &&
+    final active = resource;
+    final returningToChapter = !restart &&
+        active?.id == entry.id &&
         _ready &&
         error == null &&
-        (index == null || index == current) &&
+        (index == null ||
+            index >= 0 && index < sources.length &&
+                sources[index].episode.id == _tracks[current].episode.id);
+    if (returningToChapter &&
+        _readyGeneration == _generation &&
+        active?.originSection == entry.originSection &&
+        active?.sourceId == entry.sourceId &&
+        active?.itemId == entry.itemId &&
         sources.length == _tracks.length &&
-        List.generate(
-          sources.length,
-          (i) => i,
-        ).every((i) => sources[i].id == _tracks[i].id)) {
+        sources.indexed.every((row) => _tracks[row.$1].canReuseFor(row.$2))) {
       if (initialPosition != null) await seek(initialPosition);
       return;
     }
+    final shouldPlay = !returningToChapter || playing;
     final task = load(
       entry,
       sources,
       index: index,
       resume: !restart,
-      initialPosition: initialPosition,
+      initialPosition: initialPosition ?? (restart ? Duration.zero : null),
     );
     final generation = _generation;
     final pauseRevision = _pauseRevision;
     await task;
-    if (generation == _generation &&
+    if (shouldPlay && generation == _generation &&
         pauseRevision == _pauseRevision &&
         resource?.id == entry.id &&
         error == null) {
@@ -563,7 +570,7 @@ class AudioBookSession extends ChangeNotifier {
         : null;
     final wasReady = _ready;
     _pendingStart = (index: requested, position: initialPosition, resume: restore);
-    _ready = false;
+    _readyGeneration = null;
     seeking = false;
     _seekFailed = false;
     _pendingSeek = null;
@@ -659,7 +666,7 @@ class AudioBookSession extends ChangeNotifier {
               current = chapter;
               position = duration = Duration.zero;
               _remember();
-              _ready = false;
+              _readyGeneration = null;
             }
             notifyListeners();
           }),
@@ -706,7 +713,7 @@ class AudioBookSession extends ChangeNotifier {
       _syncPlayhead();
       await _player!.speed(settings.speed);
       if (generation != _generation) return;
-      _ready = true;
+      _readyGeneration = generation;
       setSleep(settings.sleepMinutes);
     } catch (failure, stack) {
       LumeLog.error('[audioBook] 加载失败: $failure', stack);
@@ -909,7 +916,7 @@ class AudioBookSession extends ChangeNotifier {
     seeking = false;
     _sleep?.cancel();
     sleepAt = null;
-    _ready = false;
+    _readyGeneration = null;
     _acceptEvents = false;
     final releaseRuntime = _releaseRuntime;
     _releaseRuntime = null;
@@ -927,7 +934,7 @@ class AudioBookSession extends ChangeNotifier {
   Future<void> shutdown() async {
     _remember();
     _generation++;
-    _ready = false;
+    _readyGeneration = null;
     _acceptEvents = false;
     loading = false;
     _sleep?.cancel();

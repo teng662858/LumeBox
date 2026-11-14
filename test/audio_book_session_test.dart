@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/audio_book/audio_book_player.dart';
 import 'package:lume_box/core/audio_book/audio_book_track.dart';
 import 'package:lume_box/core/media/media_library.dart';
+import 'package:lume_box/core/media/media_resource_service.dart';
 import 'package:lume_box/core/media/playback_focus.dart';
 import 'package:lume_box/core/session/section.dart';
 
@@ -136,6 +137,26 @@ void main() {
     initialPosition: const Duration(seconds: 63),
   );
 
+  test('reopening the current chapter supersedes a queued switch to another book', () async {
+    await session.open(resource, tracks, index: 1);
+    await session.seek(const Duration(seconds: 51));
+    await session.pause();
+    final other = MediaResource(
+      id: 'other',
+      title: '另一本书',
+      kind: ResourceKind.audioBook,
+      destination: Section.video,
+      episodes: resource.episodes,
+    );
+    final switching = session.open(other, tracks);
+    final returning = session.open(resource, tracks, index: 1);
+    await Future.wait([switching, returning]);
+    expect(session.resource?.id, resource.id);
+    expect(session.current, 1);
+    expect(session.position.inSeconds, 51);
+    expect(session.playing, isFalse);
+  });
+
   test('bookmark starts at its saved time before the first play command', () async {
     Duration? firstAudiblePosition;
     player.beforePlay = () async => firstAudiblePosition ??= session.position;
@@ -216,6 +237,7 @@ void main() {
     ('自动续听', null, null, false, 2, 73),
     ('指定章节续听', 2, null, false, 2, 73),
     ('从头播放', 2, null, true, 2, 0),
+    ('未指定章节时从头播放', null, null, true, 2, 0),
     ('书签', 1, const Duration(seconds: 19), false, 1, 19),
   ]) {
     test('读取进度暂时失败后重试会保留$label的位置', () async {
@@ -246,6 +268,50 @@ void main() {
       expect(other.current, expectedIndex);
       expect(other.position, Duration(seconds: seconds));
       expect(other.playing, true);
+    });
+  }
+
+  for (final changed in ['url', 'headers', 'prepared']) {
+    test('reopening a paused chapter refreshes its $changed and keeps the playhead', () async {
+      final service = MediaResourceService();
+      Future<void> reopen(String version) async {
+        final url = Uri.parse('https://example.com/${changed == 'url' ? version : 'track'}.mp3');
+        final episode = ResourceEpisode(
+          id: 'same',
+          title: '第一章',
+          url: url,
+          headers: {'Authorization': changed == 'headers' ? version : 'original'},
+        );
+        final book = MediaResource(
+          id: 'book',
+          title: '听书',
+          kind: ResourceKind.audioBook,
+          destination: Section.video,
+          episodes: [episode],
+        );
+        await session.open(book, service.audioTracks(
+          book,
+          initialIndex: 0,
+          initialMedia: changed == 'prepared'
+              ? ResolvedMedia(url, headers: {'Authorization': version})
+              : null,
+        ));
+      }
+      await reopen('old');
+      await session.seek(const Duration(seconds: 38));
+      await session.pause();
+      await reopen('fresh');
+      final resolved = await player.lastTracks.single.resolve!();
+      if (changed == 'url') {
+        expect(resolved.url.path, '/fresh.mp3');
+      } else {
+        expect(resolved.headers['Authorization'], 'fresh');
+      }
+      expect(session.position.inSeconds, 38);
+      expect(session.playing, isFalse);
+      final loads = player.loads;
+      await reopen('fresh');
+      expect(player.loads, loads);
     });
   }
 

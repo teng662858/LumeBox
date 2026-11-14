@@ -40,15 +40,20 @@ class MediaResourceService {
     ResourceEpisode episode, {
     ResolvedMedia? initialMedia,
   }) {
-    var prepared = initialMedia;
+    var prepared = initialMedia == null
+        ? null
+        : ResolvedAudio(initialMedia.url, headers: initialMedia.headers);
     return AudioBookTrack(
       id: '${resource.id}/${episode.id}',
       episode: episode,
       album: resource.title,
       cover: resource.cover,
+      initialMedia: prepared,
       resolve: () async {
-        final media = prepared ?? await resolve(resource, episode);
+        final first = prepared;
         prepared = null;
+        if (first != null) return first;
+        final media = await resolve(resource, episode);
         return ResolvedAudio(media.url, headers: media.headers);
       },
     );
