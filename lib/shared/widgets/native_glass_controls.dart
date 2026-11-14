@@ -22,7 +22,9 @@ class NativeGlassControl extends StatefulWidget {
     this.inactiveColor,
     this.secondaryTrackValue,
     this.secondaryTrackColor,
+    this.compact = false,
   });
+  final bool compact;
   final String kind;
   final Object value;
   final ValueChanged<Object>? onChanged;
@@ -39,6 +41,7 @@ class _NativeGlassControlState extends State<NativeGlassControl> {
   MethodChannel? channel;
   Map<String, Object> get params => {
     'control': widget.kind,
+    'compact': widget.compact,
     'value': widget.value,
     'enabled': widget.onChanged != null,
     'min': widget.min,
@@ -93,31 +96,33 @@ class _NativeGlassControlState extends State<NativeGlassControl> {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    height: 48,
+    height: widget.compact ? 32 : 48,
     width: widget.kind == 'switch' ? 60 : null,
-    child: UiKitView(
-      viewType: DockNativeGlass.viewType,
-      creationParams: params,
-      creationParamsCodec: const StandardMessageCodec(),
-      gestureRecognizers: {
-        Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
-      },
-      onPlatformViewCreated: (id) {
-        channel = MethodChannel('lumebox/glass_control_$id')
-          ..setMethodCallHandler((call) async {
-            if (!mounted || widget.onChanged == null) return;
-            final value = normalize(call.arguments);
-            switch (call.method) {
-              case 'changed':
-                widget.onChanged?.call(value);
-              case 'began':
-                widget.onChangeStart?.call(value);
-              case 'ended':
-                widget.onChangeEnd?.call(value);
-            }
-          });
-        update();
-      },
+    child: NativeOverlayView(
+      builder: (_) => UiKitView(
+        viewType: DockNativeGlass.viewType,
+        creationParams: params,
+        creationParamsCodec: const StandardMessageCodec(),
+        gestureRecognizers: {
+          Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+        },
+        onPlatformViewCreated: (id) {
+          channel = MethodChannel('lumebox/glass_control_$id')
+            ..setMethodCallHandler((call) async {
+              if (!mounted || widget.onChanged == null) return;
+              final value = normalize(call.arguments);
+              switch (call.method) {
+                case 'changed':
+                  widget.onChanged?.call(value);
+                case 'began':
+                  widget.onChangeStart?.call(value);
+                case 'ended':
+                  widget.onChangeEnd?.call(value);
+              }
+            });
+          update();
+        },
+      ),
     ),
   );
   @override
@@ -212,8 +217,9 @@ class NativeGlassSlider extends StatelessWidget {
     this.semanticFormatterCallback,
     this.secondaryTrackValue,
     this.useNative = false,
+    this.compact = false,
   });
-  final bool useNative;
+  final bool useNative, compact;
   final double value, min, max;
   final int? divisions;
   final String? label;
@@ -227,6 +233,7 @@ class NativeGlassSlider extends StatelessWidget {
           (useNative || NativeGlassPreview.enabledOf(context))
       ? NativeGlassControl(
           kind: 'slider',
+          compact: compact,
           value: value,
           min: min,
           max: max,

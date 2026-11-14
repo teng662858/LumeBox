@@ -120,6 +120,16 @@ class VideoGlassSurface extends StatelessWidget {
       child: Stack(
         fit: StackFit.passthrough,
         children: [
+          // Flutter owns a readable base even while UIKit is transitioning or
+          // cannot sample the video texture. Text never sits directly on video.
+          if (native)
+            Positioned.fill(
+              child: ColoredBox(
+                color: (dark ? const Color(0xFF202428) : tint).withValues(
+                  alpha: materialOpacity,
+                ),
+              ),
+            ),
           Positioned.fill(child: background),
           if (!native)
             Positioned.fill(

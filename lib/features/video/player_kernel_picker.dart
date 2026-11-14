@@ -43,7 +43,7 @@ class _PlayerKernelButtonState extends State<PlayerKernelButton> {
         context: context,
         key: const Key('player-kernel-menu'),
         children: [
-          for (final kernel in PlayerKernel.values)
+          for (final kernel in PlayerKernel.selectable)
             Tooltip(
               message: widget.catalog.unavailableReason(kernel) ?? kernel.label,
               child: PlayerVerticalMenu.option(
@@ -108,7 +108,7 @@ class PlayerKernelPicker extends StatelessWidget {
     final options = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final kernel in PlayerKernel.values)
+        for (final kernel in PlayerKernel.selectable)
           _KernelTile(
             kernel: kernel,
             available: catalog.isAvailable(kernel),

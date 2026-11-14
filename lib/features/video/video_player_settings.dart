@@ -74,7 +74,10 @@ class VideoPlayerSettingsStore {
 
   /// 读取设置；缺项或值非法时回退默认值。
   PlayerSettings load() {
-    final kernel = PlayerKernel.fromId(_library.setting(keyKernel));
+    final storedKernel = PlayerKernel.fromId(_library.setting(keyKernel));
+    final kernel = storedKernel == PlayerKernel.mdk
+        ? PlayerKernel.avplayer
+        : storedKernel;
 
     // 先收各内核存过的偏好，再把「老全局键」作为**兜底**迁给当前内核。
     final prefs = <PlayerKernel, KernelPrefs>{};
@@ -90,6 +93,9 @@ class VideoPlayerSettingsStore {
     }
     // 老库迁移：只在**确实存过非默认值**时才给当前内核补一格。
     // 空库不凭空造格——那会让「全新安装」与「读过一次」两种状态的设置对象不相等。
+    if (storedKernel == PlayerKernel.mdk && prefs[PlayerKernel.mdk] != null) {
+      prefs.putIfAbsent(PlayerKernel.avplayer, () => prefs[PlayerKernel.mdk]!);
+    }
     final legacy = _legacyPrefs();
     if (legacy != const KernelPrefs()) prefs.putIfAbsent(kernel, () => legacy);
 

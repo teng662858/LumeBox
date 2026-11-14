@@ -244,7 +244,7 @@ void main() {
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-  testWidgets('被普通弹窗盖住时隐藏原生玻璃，关闭后复用平台视图', (tester) async {
+  testWidgets('普通弹窗覆盖时保留底层玻璃，关闭后不重建平台视图', (tester) async {
     final messenger = tester.binding.defaultBinaryMessenger;
     var creations = 0;
     messenger.setMockMethodCallHandler(SystemChannels.platform_views, (
@@ -287,7 +287,7 @@ void main() {
     expect(find.byType(UiKitView), findsOneWidget);
     await tester.tap(find.text('打开'));
     await tester.pumpAndSettle();
-    expect(find.byType(UiKitView), findsNothing);
+    expect(find.byType(UiKitView), findsOneWidget);
     tester.state<NavigatorState>(find.byType(Navigator).first).pop();
     await tester.pumpAndSettle();
     expect(find.byType(UiKitView), findsOneWidget);

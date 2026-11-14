@@ -296,27 +296,29 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: LumeTheme.build(),
-          home: PlayerAppearanceScope(child: ClassicVideoPlayerPage(
-            fullscreenOnly: fullscreenOnly,
-            library: library,
-            prelaunch: prelaunch,
-            media: PlayerMedia(
-              uri: mediaUri ?? Uri.parse('https://example.com/a.mp4'),
+          home: PlayerAppearanceScope(
+            child: ClassicVideoPlayerPage(
+              fullscreenOnly: fullscreenOnly,
+              library: library,
+              prelaunch: prelaunch,
+              media: PlayerMedia(
+                uri: mediaUri ?? Uri.parse('https://example.com/a.mp4'),
+              ),
+              qualities: qualities,
+              catalog: catalog ?? const _AllKernelsCatalog(),
+              speedMeter: speedMeter,
+              pipBackend: pipBackend,
+              sourceValidator: validator,
+              target: target,
+              sourceManager: sourceManager,
+              source: source,
+              playerFactory: (kernel) {
+                final created_ = player ?? _FakePlayer(kernel: kernel);
+                created.add(created_);
+                return created_;
+              },
             ),
-            qualities: qualities,
-            catalog: catalog ?? const _AllKernelsCatalog(),
-            speedMeter: speedMeter,
-            pipBackend: pipBackend,
-            sourceValidator: validator,
-            target: target,
-            sourceManager: sourceManager,
-            source: source,
-            playerFactory: (kernel) {
-              final created_ = player ?? _FakePlayer(kernel: kernel);
-              created.add(created_);
-              return created_;
-            },
-          )),
+          ),
         ),
       );
       // Prelaunch can have completed in runAsync. Join its real-zone Future
@@ -335,11 +337,19 @@ void main() {
 
     testWidgets('切换经典与原生玻璃外观保留播放器实例、进度和暂停状态', (tester) async {
       final player = _FakePlayer(kernel: PlayerKernel.avplayer);
-      await tester.runAsync(() => FrostedSettings.instance.boot(directory: root));
+      await tester.runAsync(
+        () => FrostedSettings.instance.boot(directory: root),
+      );
       FrostedSettings.instance.playerNative = false;
-      addTearDown(() { FrostedSettings.instance.playerNative = false; });
+      addTearDown(() {
+        FrostedSettings.instance.playerNative = false;
+      });
       await pump(tester, player: player, fullscreenOnly: true);
-      player.emit(position: const Duration(seconds: 35), duration: const Duration(minutes: 4), playing: false);
+      player.emit(
+        position: const Duration(seconds: 35),
+        duration: const Duration(minutes: 4),
+        playing: false,
+      );
       await tester.pump();
       final state = tester.state(find.byType(ClassicVideoPlayerPage));
       final loads = player.loads;
@@ -365,7 +375,9 @@ void main() {
       // Popup callbacks run when their route animation completes. Alternate
       // the fake frame clock and actual file I/O before joining the save queue.
       for (var i = 0; i < 5; i++) {
-        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
         await tester.pump();
       }
     });
@@ -1006,6 +1018,36 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('播放网页验证'), findsOneWidget);
       expect(players.single.media!.uri, address);
+    });
+
+    testWidgets('横屏上下玻璃只包住紧凑控制行，统计信息不撑高底栏', (tester) async {
+      final players = await pump(tester);
+      players.single.pushStats(
+        const PlayerStats(
+          width: 1920,
+          height: 1080,
+          buffered: Duration(seconds: 80),
+        ),
+      );
+      await tester.tap(find.byTooltip('全屏'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byKey(const Key('fullscreen-top-surface'))).height,
+        lessThanOrEqualTo(56),
+      );
+      expect(
+        tester
+            .getSize(find.byKey(const Key('fullscreen-bottom-surface')))
+            .height,
+        lessThanOrEqualTo(88),
+      );
+      final bottom = tester.getRect(
+        find.byKey(const Key('fullscreen-bottom-surface')),
+      );
+      final stats = tester.getRect(
+        find.byKey(const Key('fullscreen-network-speed')),
+      );
+      expect(stats.bottom, lessThanOrEqualTo(bottom.top));
     });
 
     testWidgets('媒体尺寸迟到不会改变底部面板位置与尺寸', (tester) async {
@@ -1909,7 +1951,10 @@ void main() {
 
     testWidgets('全屏：收起控制栏与顶栏，点画面唤回', (tester) async {
       await pump(tester);
-      expect(find.byKey(ClassicVideoPlayerPage.controlPanelKey), findsOneWidget);
+      expect(
+        find.byKey(ClassicVideoPlayerPage.controlPanelKey),
+        findsOneWidget,
+      );
 
       await tester.tap(find.byTooltip('全屏'));
       await tester.pumpAndSettle();
@@ -1923,7 +1968,10 @@ void main() {
       // 退出全屏回到常规布局。
       await tester.tap(find.byTooltip('退出全屏').first);
       await tester.pumpAndSettle();
-      expect(find.byKey(ClassicVideoPlayerPage.controlPanelKey), findsOneWidget);
+      expect(
+        find.byKey(ClassicVideoPlayerPage.controlPanelKey),
+        findsOneWidget,
+      );
     });
 
     testWidgets('全屏顶栏只有一个锁，移除未接入的投屏入口', (tester) async {
@@ -2157,7 +2205,10 @@ void main() {
 
       await tester.tap(find.byTooltip('解除锁定'));
       await tester.pumpAndSettle();
-      expect(find.byKey(ClassicVideoPlayerPage.controlPanelKey), findsOneWidget);
+      expect(
+        find.byKey(ClassicVideoPlayerPage.controlPanelKey),
+        findsOneWidget,
+      );
     });
 
     testWidgets('网络流拖动中只预览，松手提交并保持目标进度', (tester) async {
@@ -2915,7 +2966,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(Slider), findsOneWidget, reason: '关掉自动隐藏后控制栏一直显示');
     });
-    for (final kernel in PlayerKernel.values) {
+    for (final kernel in PlayerKernel.selectable) {
       testWidgets('画中画保留 $kernel 内核、自动播放；短暂 inactive 不关闭窗口', (tester) async {
         (await ReadingLibrary.open(Section.video))
             .setSetting(VideoPlayerSettingsStore.keyKernel, kernel.id);

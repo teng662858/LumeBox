@@ -1,6 +1,6 @@
 /// 播放器设置模型（纯 Dart，不认识平台、存储与 UI）。
 ///
-/// 四套内核：AVPlayer / MPV / MDK / AetherEngine；设置项覆盖内核选择、倍速、字幕
+/// 三套内核：AVPlayer / MPV / AetherEngine；MDK 仅保留旧设置兼容；设置项覆盖内核选择、倍速、字幕
 /// （开关 / 字号 / 颜色 / 描边 / 背景透明度 / 延迟）、音频延迟、画面（缩放 /
 /// 旋转 / 镜像）与硬件解码开关。持久化由所在板块负责——播放器设置落在「视频」
 /// 板块自己的库里（见 `lib/features/video/video_player_settings.dart`），
@@ -28,6 +28,9 @@ enum PlayerKernel {
   aether('aether', 'AetherEngine');
 
   const PlayerKernel(this.id, this.label);
+
+  /// MDK remains only to read existing preference records.
+  static const selectable = [avplayer, mpv, aether];
 
   /// 稳定标识：落库与日志用。
   final String id;
@@ -525,7 +528,7 @@ class PlayerSettings {
   /// 全屏控制栏自动隐藏（用户要求；默认开）。
   ///
   /// 播放中 N 秒无操作就把进度条与按钮收起来，点屏幕再唤回；关掉则一直显示。
-  /// 与内核无关（四套内核共用一份），因此放在全局项里而不是 KernelPrefs。
+  /// 与内核无关（各内核共用一份），因此放在全局项里而不是 KernelPrefs。
   final bool autoHideControls;
 
   /// 竖屏短剧：画面中间上滑切下一集（默认关，开了才会拦截竖直手势）。

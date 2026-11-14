@@ -42,6 +42,9 @@ import Security
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "LumeBoxAether") {
+      AetherPlayerController.register(with: registrar)
+    }
     if let messenger = engineBridge.pluginRegistry.registrar(forPlugin: "LumeBoxNativeVideo")?.messenger() {
       nativeVideo.register(with: messenger)
     }

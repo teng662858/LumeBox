@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'abstract_player.dart';
 import 'av_player.dart';
+import 'aether_player.dart';
 import 'mpv_player.dart';
 import 'media_kit_mpv_engine.dart';
 import 'player_settings.dart';
@@ -45,7 +46,7 @@ class PlayerFactory {
   static bool isAvailable(PlayerKernel kernel) => switch (kernel) {
     // iOS 是主力平台：AVPlayer 与 MPV 都已接入（MPV 的原生库随 iOS 打包）。
     PlayerKernel.avplayer => Platform.isIOS,
-    PlayerKernel.aether => false,
+    PlayerKernel.aether => Platform.isIOS,
     // MPV 初始化失败过：本次运行不再提供（逃生入口仍可切回 AVPlayer）。
     PlayerKernel.mpv => Platform.isIOS && !_mpvInitFailed,
     // Removed kernel; its enum value remains for preference migration.
@@ -62,7 +63,7 @@ class PlayerFactory {
 
   /// 内核不可用的原因；可用时为 null（设置页直接展示这段文案）。
   static String? unavailableReason(PlayerKernel kernel) {
-    if (kernel == PlayerKernel.aether || kernel == PlayerKernel.mdk) {
+    if (kernel == PlayerKernel.mdk) {
       return '旧内核已移除，请使用原生系统播放器或 MPV';
     }
     if (isAvailable(kernel)) return null;
@@ -80,6 +81,7 @@ class PlayerFactory {
     if (!isAvailable(kernel)) return null;
     return switch (kernel) {
       PlayerKernel.avplayer => AvPlayer(),
+      PlayerKernel.aether => AetherPlayer(),
       PlayerKernel.mpv => MpvPlayer(
         engine: MediaKitMpvEngine.create(title: 'Lume Box'),
         engineLabel: kernel.label,

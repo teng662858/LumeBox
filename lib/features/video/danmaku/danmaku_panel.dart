@@ -23,6 +23,7 @@ Future<T?> showDanmakuPanel<T>({
   bool compact = false,
 }) {
   final back = PlayerPanelBackController();
+  PlayerPanelActivity.depth.value++;
   return showGlassModalBottomSheet<T>(
     context: context,
     videoGlass: false,
@@ -55,7 +56,11 @@ Future<T?> showDanmakuPanel<T>({
         ],
       ),
     ),
-  );
+  ).whenComplete(() => PlayerPanelActivity.depth.value--);
+}
+
+class PlayerPanelActivity {
+  static final depth = ValueNotifier<int>(0);
 }
 
 class DanmakuPanelFrame extends StatefulWidget {

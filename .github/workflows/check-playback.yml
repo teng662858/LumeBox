@@ -55,7 +55,7 @@ jobs:
           xcrun simctl io "$DEVICE" recordVideo out/playback-smoke/simulator.mp4 >/dev/null 2>&1 &
           RECORD_PID=$!
           trap 'kill -INT "$RECORD_PID" || true; wait "$RECORD_PID" || true' EXIT
-          python3 -u tool/run_native_video_smoke.py "$DEVICE" 2>&1 | tee out/playback-smoke/test.log
+          python3 -u tool/run_shared_player_glass.py "$DEVICE" 2>&1 | tee out/playback-smoke/test.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

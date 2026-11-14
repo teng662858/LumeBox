@@ -41,12 +41,8 @@ void main() {
       tester.getSize(find.byKey(const Key('player-kernel-menu'))).width,
       128,
     );
-    expect(
-      tester
-          .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'MDK'))
-          .onSelected,
-      isNull,
-    );
+    expect(find.text('MDK'), findsNothing);
+    expect(find.text('AetherEngine'), findsOneWidget);
     expect(
       tester.getSize(find.byKey(const Key('player-kernel-menu'))).height,
       lessThanOrEqualTo(160),

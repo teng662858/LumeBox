@@ -101,6 +101,16 @@ class _FrostedGlassWidgetState extends State<FrostedGlassWidget> {
             fit: StackFit.passthrough,
             children: [
               Positioned.fill(
+                child: ColoredBox(
+                  color:
+                      (widget.color ??
+                              (Theme.of(context).brightness == Brightness.dark
+                                  ? const Color(0xFF171721)
+                                  : const Color(0xFFF2F2F5)))
+                          .withValues(alpha: .32),
+                ),
+              ),
+              Positioned.fill(
                 child: DockNativeGlass(
                   borderRadius: corners,
                   cornerRadius: radius,

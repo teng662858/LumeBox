@@ -74,7 +74,10 @@ private final class LumeNativeControl: NSObject, FlutterPlatformView {
       result(nil)
     }
   }
-  deinit { channel.setMethodCallHandler(nil) }
+  deinit {
+    channel.setMethodCallHandler(nil)
+    container.removeFromSuperview()
+  }
   func view() -> UIView { container }
   private func value() -> Any { (control as? UISwitch).map { $0.isOn as Any } ?? (control as! UISlider).value }
   @objc private func changed() { channel.invokeMethod("changed", arguments: value()) }
@@ -98,6 +101,17 @@ private final class LumeNativeControl: NSObject, FlutterPlatformView {
     }
     if let toggle = control as? UISwitch { toggle.setOn(params["value"] as? Bool ?? false, animated: false) }
     if let slider = control as? UISlider {
+      if params["compact"] as? Bool == true {
+        let thumb = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 16)).image { context in
+          UIColor.white.setFill()
+          context.cgContext.fillEllipse(in: CGRect(x: 0, y: 0, width: 16, height: 16))
+        }
+        slider.setThumbImage(thumb, for: .normal)
+        slider.setThumbImage(thumb, for: .highlighted)
+      } else {
+        slider.setThumbImage(nil, for: .normal)
+        slider.setThumbImage(nil, for: .highlighted)
+      }
       slider.minimumValue = (params["min"] as? NSNumber)?.floatValue ?? 0
       slider.maximumValue = (params["max"] as? NSNumber)?.floatValue ?? 1
       if !slider.isTracking {
@@ -163,6 +177,9 @@ final class LumeGlassBackdropView: NSObject, FlutterPlatformView {
 
   deinit {
     channel.setMethodCallHandler(nil)
+    effectView.effect = nil
+    effectView.removeFromSuperview()
+    container.removeFromSuperview()
   }
 
   func view() -> UIView {

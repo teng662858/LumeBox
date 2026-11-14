@@ -94,7 +94,7 @@ void main() {
 
       final reopened = await VideoPlayerSettingsStore.open();
       final loaded = reopened.load();
-      expect(loaded.kernel, PlayerKernel.mdk);
+      expect(loaded.kernel, PlayerKernel.avplayer);
       expect(loaded.speed, 1.5);
       expect(loaded.subtitlesEnabled, isFalse);
       expect(loaded.subtitleSize, SubtitleSize.large);

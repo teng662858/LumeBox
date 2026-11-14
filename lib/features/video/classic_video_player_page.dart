@@ -70,6 +70,7 @@ import '../../core/player/pip_frame_pump.dart';
 import '../../core/player/mpv_engine.dart';
 import '../../core/player/mpv_player.dart';
 import '../../core/player/av_player.dart';
+import '../../core/player/aether_player.dart';
 import '../../core/player/playback_orientation.dart';
 import '../../core/player/player_factory.dart';
 import '../../core/player/player_kernel_launcher.dart';
@@ -460,7 +461,8 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
     PlayerLayout.tapSize,
     ClassicVideoPlayerPage.controlBox * _controlScale,
   );
-  double get _iconSize => ClassicVideoPlayerPage.controlIconSize * _controlScale;
+  double get _iconSize =>
+      ClassicVideoPlayerPage.controlIconSize * _controlScale;
 
   /// 方向锁定（用户要求）：自动 / 强制横屏 / 强制竖屏。
   ///
@@ -572,7 +574,7 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
         _preparingInlinePip ||
         _pipPreparing ||
         backend is! MethodChannelPipBackend ||
-        (engine == null && _player is! AvPlayer)) {
+        (engine == null && _player is! AvPlayer && _player is! AetherPlayer)) {
       return;
     }
     _preparingInlinePip = true;
@@ -584,6 +586,14 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
         if (id != null) {
           await _syncPipDanmaku();
           await backend.prepareAvPlayer(id);
+          if (mounted && identical(player, _player)) _inlinePipReady = true;
+        }
+        return;
+      }
+      if (player is AetherPlayer) {
+        final id = player.nativePlayerId;
+        if (id != null) {
+          await backend.prepareAetherPlayer(id);
           if (mounted && identical(player, _player)) _inlinePipReady = true;
         }
         return;
@@ -983,6 +993,7 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
     _media = media;
     _networkSpeed.reset();
     _prelaunch = widget.prelaunch;
+    PlayerPanelActivity.depth.addListener(_panelActivityChanged);
     if (_anyKernelAvailable) _boot();
   }
 
@@ -1004,8 +1015,11 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
 
   @override
   void dispose() {
-    if (widget.managePlaybackFocus) PlaybackFocus.unregister('video', _yieldPlayback);
+    if (widget.managePlaybackFocus) {
+      PlaybackFocus.unregister('video', _yieldPlayback);
+    }
     _rebuildSeq++;
+    PlayerPanelActivity.depth.removeListener(_panelActivityChanged);
     _benchmarkMeter?.dispose();
     _benchmarkMeter = null;
     _settingsForSheet.dispose();
@@ -1580,9 +1594,14 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
     await _player?.pause();
     await _playback.stop();
   }
+
   Future<void> _boot() async {
     if (widget.managePlaybackFocus) {
-      await PlaybackFocus.acquire('video', onRelease: _yieldPlayback, stillWanted: () => mounted);
+      await PlaybackFocus.acquire(
+        'video',
+        onRelease: _yieldPlayback,
+        stillWanted: () => mounted,
+      );
       if (!mounted) return;
     }
     // 两套设置共用视频阅读库：只打开一次，避免冷启动时重复建库。
@@ -1708,7 +1727,11 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
                   : selected.headers,
             );
       _syncQualityIndex(initial);
-      await _startPlaybackSafely(initial, target: widget.target, resumePosition: widget.initialPosition ?? widget.target?.resumePosition);
+      await _startPlaybackSafely(
+        initial,
+        target: widget.target,
+        resumePosition: widget.initialPosition ?? widget.target?.resumePosition,
+      );
     }
   }
 
@@ -2355,6 +2378,12 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
     }
   }
 
+  void _panelActivityChanged() {
+    if (mounted) {
+      setState(() => _panelOpen = PlayerPanelActivity.depth.value > 0);
+    }
+  }
+
   /// 播放弹窗共享同一套紧凑面板与玻璃材质。
   Future<T?> _playbackMenu<T>({
     required BuildContext context,
@@ -2365,23 +2394,17 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
     bool edgeDrawer = true,
     bool compact = false,
   }) async {
-    _panelOpen = true;
-    if (mounted) setState(() {});
-    try {
-      return await showPlaybackMenu<T>(
-        context: context,
-        builder: builder,
-        edgeDrawer: edgeDrawer,
-        compact: compact,
-        glass: _settings.playbackGlass,
-        backgroundColor: backgroundColor,
-        isScrollControlled: isScrollControlled,
-        useSafeArea: useSafeArea,
-      );
-    } finally {
-      _panelOpen = false;
-      if (mounted) setState(() {});
-    }
+    // Panel activity is tracked by showDanmakuPanel, including nested routes.
+    return showPlaybackMenu<T>(
+      context: context,
+      builder: builder,
+      edgeDrawer: edgeDrawer,
+      compact: compact,
+      glass: _settings.playbackGlass,
+      backgroundColor: backgroundColor,
+      isScrollControlled: isScrollControlled,
+      useSafeArea: useSafeArea,
+    );
   }
 
   Future<void> _openQualityMenu() =>
@@ -3654,6 +3677,10 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
             }
             await _syncPipDanmaku();
             await nativeBackend.prepareAvPlayer(id);
+          } else if (player is AetherPlayer) {
+            final id = player.nativePlayerId;
+            if (id == null) return;
+            await nativeBackend.prepareAetherPlayer(id);
           } else {
             final engine = _frameEngineOf(player);
             if (engine == null) {
@@ -4630,7 +4657,7 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
                       }
                     },
             ),
-            const Text('MPV/Aether 按预算限制预读；AVPlayer/MDK 使用时长策略，不提供严格内存上限。'),
+            const Text('MPV/Aether 按预算限制预读；AVPlayer 使用时长策略，不提供严格内存上限。'),
             if (supported)
               ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -5364,7 +5391,8 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
                           // 竖屏时两个圆钮从画面中线挪到进度条上方，避免压住竖屏短剧的人物。
                           if (portrait) ...[
                             Positioned(
-                              left: ClassicVideoPlayerPage.controlHorizontalPadding,
+                              left: ClassicVideoPlayerPage
+                                  .controlHorizontalPadding,
                               // 用户口径：放在屏幕下方三分之一处。
                               bottom: media.height / 3,
                               child: _topIcon(
@@ -5377,7 +5405,8 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
                               ),
                             ),
                             Positioned(
-                              right: ClassicVideoPlayerPage.controlHorizontalPadding,
+                              right: ClassicVideoPlayerPage
+                                  .controlHorizontalPadding,
                               bottom: media.height / 3,
                               child: _topIcon(
                                 icon: Icons.screen_rotation_alt,
@@ -5393,8 +5422,8 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
                               alignment: Alignment.centerLeft,
                               child: Padding(
                                 padding: const EdgeInsets.only(
-                                  left:
-                                      ClassicVideoPlayerPage.controlHorizontalPadding,
+                                  left: ClassicVideoPlayerPage
+                                      .controlHorizontalPadding,
                                 ),
                                 child: _topIcon(
                                   icon: Icons.lock_open,
@@ -5410,8 +5439,8 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
                               alignment: Alignment.centerRight,
                               child: Padding(
                                 padding: const EdgeInsets.only(
-                                  right:
-                                      ClassicVideoPlayerPage.controlHorizontalPadding,
+                                  right: ClassicVideoPlayerPage
+                                      .controlHorizontalPadding,
                                 ),
                                 child: _topIcon(
                                   icon: Icons.screen_rotation_alt,
@@ -5544,15 +5573,16 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
           horizontal: ClassicVideoPlayerPage.controlHorizontalPadding,
           vertical: 2,
         ),
-        child: PlaybackGlass(
-          enabled: false,
-          dark: true,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _PlayerClock(showBattery: !_panelOpen),
-              const SizedBox(height: 2),
-              Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _PlayerClock(showBattery: !_panelOpen),
+            const SizedBox(height: 2),
+            PlaybackGlass(
+              enabled: false,
+              dark: true,
+              child: Row(
+                key: const Key('fullscreen-top-surface'),
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   _topIcon(
@@ -5600,8 +5630,8 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     },
@@ -5719,28 +5749,21 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
 
   /// 全屏浮层控制栏：进度 + 主要控制 + 次级控制（退出全屏与设置都在里面）。
   Widget _buildFloatingControls() {
-    return PlaybackGlass(
-      enabled: _settings.playbackGlass,
-      dark: true,
-      child: Listener(
-        onPointerDown: (_) => _scheduleAutoHide(),
-        child: Padding(
-          // 底部留白 6（用户口径：整块往下移，靠近屏幕底边）。再往下就是安全区
-          // （home 指示条）本身留的位，按钮压不进去也不用压进去。
-          padding: const EdgeInsets.fromLTRB(
-            ClassicVideoPlayerPage.controlHorizontalPadding,
-            4,
-            ClassicVideoPlayerPage.controlHorizontalPadding,
-            2,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: ClassicVideoPlayerPage.controlHorizontalPadding,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
+            children: [
               if ((_showNetworkSpeed || _showBufferedTime) && _player != null)
                 Align(
                   alignment: Alignment.centerRight,
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 180),
+                    constraints: const BoxConstraints(maxWidth: 360),
                     child: PlayerStatsInline(
                       key: const Key('fullscreen-network-speed'),
                       stats: _player!.stats,
@@ -5748,30 +5771,55 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
                       showResolution: false,
                       showSpeed: _showNetworkSpeed,
                       showBuffer: _showBufferedTime,
-                      stacked: true,
+                      stacked: false,
                       dimmed: true,
                     ),
                   ),
                 ),
-              _liveProgress(),
-
-              // 两行（进度条行 / 按钮行）固定行距（用户口径）。
-              const SizedBox(height: ClassicVideoPlayerPage.controlRowGap),
-              PlayerSnapshotSelector<(bool, String?, String, bool?)>(
-                snapshot: _player?.snapshot ?? _idleSnapshot,
-                select: (s) => (
-                  s.playing,
-                  s.error,
-                  _nextEpisodeBuffer.status,
-                  _target == null ? null : _nextEpisodeBuffer.hasNext(_target!),
-                ),
-                builder: (context, snapshot) =>
-                    _buildFloatingSplitControls(snapshot),
-              ),
             ],
           ),
         ),
-      ),
+        PlaybackGlass(
+          enabled: _settings.playbackGlass,
+          dark: true,
+          child: Listener(
+            key: const Key('fullscreen-bottom-surface'),
+            onPointerDown: (_) => _scheduleAutoHide(),
+            child: Padding(
+              // 底部留白 6（用户口径：整块往下移，靠近屏幕底边）。再往下就是安全区
+              // （home 指示条）本身留的位，按钮压不进去也不用压进去。
+              padding: const EdgeInsets.fromLTRB(
+                ClassicVideoPlayerPage.controlHorizontalPadding,
+                4,
+                ClassicVideoPlayerPage.controlHorizontalPadding,
+                2,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  _liveProgress(),
+
+                  // 两行（进度条行 / 按钮行）固定行距（用户口径）。
+                  const SizedBox(height: ClassicVideoPlayerPage.controlRowGap),
+                  PlayerSnapshotSelector<(bool, String?, String, bool?)>(
+                    snapshot: _player?.snapshot ?? _idleSnapshot,
+                    select: (s) => (
+                      s.playing,
+                      s.error,
+                      _nextEpisodeBuffer.status,
+                      _target == null
+                          ? null
+                          : _nextEpisodeBuffer.hasNext(_target!),
+                    ),
+                    builder: (context, snapshot) =>
+                        _buildFloatingSplitControls(snapshot),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -6285,7 +6333,7 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
                   // 全屏弹幕贴屏幕顶部起排，底部仍让开进度与控制栏。
                   child: Padding(
                     padding: EdgeInsets.only(
-                      top: _fullscreen ? 0 : 8,
+                      top: _fullscreen && _overlayVisible && !_locked ? 76 : 8,
                       // 竖屏底部多了安全区，留 110 才不压进度条。
                       bottom: _fullscreen
                           ? (size.height > size.width ? 110 : 96)
@@ -6295,10 +6343,15 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
                       valueListenable: player.snapshot,
                       builder: (context, snapshot, _) => DanmakuOverlay(
                         position: snapshot.position,
-                        playing: snapshot.playing && !snapshot.buffering,
+                        playing:
+                            snapshot.playing &&
+                            !snapshot.buffering &&
+                            !_panelOpen,
                         playbackRate: _settings.speed,
                         track: _danmaku,
-                        settings: _danmakuSettings,
+                        settings: _panelOpen
+                            ? _danmakuSettings.copyWith(enabled: false)
+                            : _danmakuSettings,
                       ),
                     ),
                   ),
@@ -6854,6 +6907,7 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
     final preview = _previewTarget;
     final shown = preview ?? _committedSeekTarget ?? snapshot.position;
     final slider = NativeGlassSlider(
+      compact: _fullscreen,
       value: _fraction(shown, snapshot.duration),
       secondaryTrackValue: _fraction(
         snapshot.position + (_player?.stats.value.buffered ?? Duration.zero),
