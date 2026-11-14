@@ -51,9 +51,10 @@ void main() {
           final bounds = tester.getRect(
             find.byKey(ValueKey('browse-${side.name}-drawer')),
           );
-          expect(bounds.top, inset + 4);
+          expect(bounds.top, 0);
           expect(bounds.bottom, 844);
           expect(contentTop, inset + 4);
+          expect(tester.getTopLeft(find.text('drawer content')).dy, inset + 4);
           expect(tester.takeException(), isNull);
           Navigator.pop(page);
           await tester.pumpAndSettle();
@@ -92,10 +93,12 @@ void main() {
       );
       await tester.pump();
       final frame = find.byKey(const ValueKey('browse-right-drawer'));
-      expect(tester.getTopLeft(frame).dy, 63);
+      expect(tester.getTopLeft(frame).dy, 0);
+      expect(tester.getTopLeft(find.text('preview')).dy, 63);
       motion.settle(true);
       await tester.pumpAndSettle();
-      expect(tester.getTopLeft(frame).dy, 63);
+      expect(tester.getTopLeft(frame).dy, 0);
+      expect(tester.getTopLeft(find.text('preview')).dy, 63);
       Navigator.pop(page);
       await tester.pumpAndSettle();
       await result;

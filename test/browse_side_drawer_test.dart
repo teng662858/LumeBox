@@ -122,7 +122,7 @@ void main() {
     expect(find.text('右侧测试内容'), findsNothing);
     await tester.tap(find.text('切换源'));
     await tester.pumpAndSettle();
-    await tester.tapAt(const Offset(8, 2));
+    await tester.tap(find.text('选择并关闭'));
     await tester.pumpAndSettle();
     expect(find.text('右侧测试内容'), findsNothing);
     await tester.tap(find.text('切换源'));

@@ -1,6 +1,5 @@
 import 'package:flutter/gestures.dart';
 
-import 'dart:math' as math;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -106,7 +105,7 @@ Future<T?> _showBrowseSideDrawer<T>({
                       ),
                     ),
                     Positioned(
-                      top: top,
+                      top: 0,
                       bottom: 0,
                       width: width,
                       left: side == BrowseDrawerSide.left ? 0 : null,
@@ -122,16 +121,16 @@ Future<T?> _showBrowseSideDrawer<T>({
                           key: ValueKey('browse-${side.name}-drawer'),
                           color: Theme.of(context).colorScheme.surface,
                           elevation: 16,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(24),
-                          ),
                           clipBehavior: Clip.antiAlias,
-                          child: SafeArea(
-                            top: false,
-                            bottom: false,
-                            child: BrowseDrawerGeometry(
-                              top: top,
-                              child: Builder(builder: builder),
+                          child: Padding(
+                            padding: EdgeInsets.only(top: top),
+                            child: SafeArea(
+                              top: false,
+                              bottom: false,
+                              child: BrowseDrawerGeometry(
+                                top: top,
+                                child: Builder(builder: builder),
+                              ),
                             ),
                           ),
                         ),
@@ -271,23 +270,22 @@ class _BrowseDrawerRoute<T> extends PopupRoute<T> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = browseDrawerWidth(constraints.maxWidth);
-        final inset = math.min(top, constraints.maxHeight * .4);
         return themes.wrap(
           AnimatedBuilder(
             animation: animation,
             child: Material(
               color: Theme.of(context).colorScheme.surface,
               elevation: 16,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(24),
-              ),
               clipBehavior: Clip.antiAlias,
-              child: SafeArea(
-                top: false,
-                bottom: false,
-                child: BrowseDrawerGeometry(
-                  top: top,
-                  child: Builder(builder: builder),
+              child: Padding(
+                padding: EdgeInsets.only(top: top),
+                child: SafeArea(
+                  top: false,
+                  bottom: false,
+                  child: BrowseDrawerGeometry(
+                    top: top,
+                    child: Builder(builder: builder),
+                  ),
                 ),
               ),
             ),
@@ -342,7 +340,7 @@ class _BrowseDrawerRoute<T> extends PopupRoute<T> {
                     ),
                   ),
                   Positioned(
-                    top: inset,
+                    top: 0,
                     bottom: 0,
                     left: side == BrowseDrawerSide.left ? 0 : null,
                     right: side == BrowseDrawerSide.right ? 0 : null,

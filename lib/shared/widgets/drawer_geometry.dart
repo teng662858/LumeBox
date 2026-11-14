@@ -25,7 +25,8 @@ class DrawerGeometry {
       math.max(0, MediaQuery.sizeOf(context).height - top(context));
 
   /// SafeArea may have consumed the page's padding. The Flutter view still
-  /// reports the system cutout, so source/filter panels never cover the island.
+  /// reports the system cutout. Only the panel content is inset; its background
+  /// extends behind the status bar to the top of the screen.
   static double browseTop(BuildContext context) {
     final media = MediaQuery.of(context), view = View.of(context);
     final safeTop = math.max(
