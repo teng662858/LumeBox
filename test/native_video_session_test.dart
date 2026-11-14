@@ -357,6 +357,71 @@ void main() {
     expect(VideoPlayerSettingsStore(library).load().kernel, PlayerKernel.avplayer);
     expect(calls.where((call) => call.method == 'open'), hasLength(1));
   });
+  for (final action in ['next', 'quality', 'retry']) {
+    test('$action can move an open AVPlayer session to an MPV-only container', () async {
+      final url = Uri.parse('https://cdn.example/${action == 'quality' ? 'movie.webm' : 'signed'}');
+      final modes = <bool>[];
+      final store = VideoPlayerSettingsStore(library);
+      store.save(const PlayerSettings()
+          .copyWith(kernel: PlayerKernel.mpv, speed: 1.75)
+          .copyWith(kernel: PlayerKernel.avplayer, speed: 1.25));
+      await start(
+        qualities: [VideoQuality(label: '1080p', url: url)],
+        prepare: (media, apple) async {
+          if (media.uri == url) {
+            modes.add(apple);
+            if (apple) throw UnsupportedError('MKV');
+          }
+          return media;
+        },
+      );
+      final chapter = action == 'next' ? 'A2' : 'A1';
+      source.blocked[chapter] = Completer<ChapterContent>()..complete(VideoContent(url: url));
+      await progress(27);
+      final reply = await request(action, action == 'quality' ? {'id': 0} : {});
+      expect(reply['error'], isNull);
+      expect(reply['kernel'], 'mpv');
+      expect(reply['speed'], 1.75);
+      final media = reply['media'] as Map;
+      expect(media['sourceUrl'], url.toString());
+      expect(media['position'], action == 'next' ? 0 : 27);
+      expect(session.target?.chapterId, chapter);
+      expect(modes, action == 'quality' ? [false] : [true, false]);
+      await native('event', {
+        'session': opened['session'], 'type': 'settings', 'kernel': 'mpv',
+        'identity': media['identity'], 'hardwareDecoding': true, 'autoNext': true,
+      });
+      expect(store.load().kernel, PlayerKernel.avplayer);
+    });
+  }
+  test('a superseded MPV fallback cannot switch the engine used by the winning quality', () async {
+    final waiting = Completer<void>(), finish = Completer<void>();
+    final mkv = Uri.parse('https://cdn.example/alternate.mkv');
+    final mp4 = Uri.parse('https://cdn.example/alternate.mp4');
+    final modes = <bool>[];
+    await start(qualities: [
+      VideoQuality(label: '原画', url: mkv),
+      VideoQuality(label: '720p', url: mp4),
+    ], prepare: (media, apple) async {
+      if (media.uri == mkv) {
+        expect(apple, isFalse);
+        waiting.complete();
+        await finish.future;
+      } else if (media.uri == mp4) {
+        modes.add(apple);
+      }
+      return media;
+    });
+    final older = request('quality', {'id': 0});
+    await waiting.future;
+    final newest = await request('quality', {'id': 1});
+    finish.complete();
+    expect((await older)['media'], isNull);
+    expect((newest['media'] as Map)['sourceUrl'], mp4.toString());
+    await request('quality', {'id': 1});
+    expect(modes, [true, true]);
+    expect(VideoPlayerSettingsStore(library).load().kernel, PlayerKernel.avplayer);
+  });
   test('source profile defaults and native changes stay isolated from global preferences', () async {
     SourcePlaybackProfiles(library).save(
       'fixture',

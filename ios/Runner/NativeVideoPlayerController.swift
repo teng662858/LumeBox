@@ -359,7 +359,12 @@ import UniformTypeIdentifiers
         self.item = try NativeVideoItem(payload); self.titleLabel.text = self.item.title
         self.subtitleCues = []; self.caption.text = nil; self.danmaku = []; self.danmakuIndex = 0
         self.bullets.subviews.forEach { $0.removeFromSuperview() }
-        let selected = action == "kernel" ? (arguments["id"] as? String ?? self.kernel) : self.kernel
+        let requested = action == "kernel" ? arguments["id"] as? String : nil
+        let selected = response?["kernel"] as? String ?? requested ?? self.kernel
+        if selected != self.kernel, let rate = (response?["speed"] as? NSNumber)?.doubleValue,
+           rate.isFinite, (0.25...4).contains(rate) {
+          self.speed = rate
+        }
         self.wantsPlay = automatic || action == "episode" || action == "next" || action == "previous" ? true : self.wantsPlay
         self.switchEngine(selected, resume: self.item.position, emitProgress: false)
         if self.danmakuEnabled { self.loadDanmaku() }
@@ -725,6 +730,7 @@ import UniformTypeIdentifiers
     result["session"] = session; result["kernel"] = kernel; result["generation"] = generation
     result["closing"] = closing; result["resolving"] = resolving; result["switching"] = switching
     result["nativeControls"] = controls.count; result["wantsPlay"] = wantsPlay
+    result["speed"] = speed
     result["pipSupported"] = kernel == "avplayer"
     result["viewAttached"] = engine?.view.window != nil
     if let back = controls["close"] {

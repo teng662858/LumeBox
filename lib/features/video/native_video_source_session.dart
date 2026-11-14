@@ -30,6 +30,7 @@ typedef _EpisodeCatalog = ({
   List<SourceChapter> chapters,
   Map<String, int> indices,
 });
+typedef _PreparedVideo = ({Map<String, Object?> media, PlayerKernel kernel});
 
 /// Resolves source payloads and stores progress. Contains no decoder, frame
 /// ticker, gesture state, seek watchdog, PiP or automatic kernel recovery.
@@ -104,15 +105,6 @@ class NativeVideoSourceSession {
         _settings.kernel != PlayerKernel.mpv) {
       _settings = _settings.copyWith(kernel: PlayerKernel.mpv);
     }
-    final useMpv = RegExp(
-      r'\.(mkv|webm|avi|flv|wmv|mpd)$',
-      caseSensitive: false,
-    ).hasMatch(_media.uri.path);
-    if (_settings.kernel == PlayerKernel.avplayer &&
-        (useMpv || await _legacyMatroskaDownload(_media))) {
-      _preferredBeforeFallback = _settings.kernel;
-      _settings = _settings.copyWith(kernel: PlayerKernel.mpv);
-    }
     await PlaybackFocus.acquire(
       'video',
       onRelease: close,
@@ -141,21 +133,13 @@ class NativeVideoSourceSession {
         position = saved.position.inMilliseconds / 1000;
       }
     }
-    late Map<String, Object?> payload;
-    try {
-      payload = await _payload(_media, position: position);
-    } on UnsupportedError {
-      if (_settings.kernel != PlayerKernel.avplayer) rethrow;
-      // Signed script URLs can hide an MKV/DASH container until cache inspection.
-      _preferredBeforeFallback = _settings.kernel;
-      _settings = _settings.copyWith(kernel: PlayerKernel.mpv);
-      payload = await _payload(_media, position: position);
-    }
+    final prepared = await _prepareVideo(_media, position: position);
     if (_closed) return;
+    _acceptVideo(prepared);
     if (current != null) _targets[_identity] = current;
     _saved[_identity] = position;
     _connection = _bridge.connect(request: _request, event: _event);
-    await _connection!.open(payload, {
+    await _connection!.open(prepared.media, {
       'kernel': _settings.kernel.name,
       'speed': _settings.speed,
       'hardwareDecoding': _settings.hardwareDecoding,
@@ -171,6 +155,35 @@ class NativeVideoSourceSession {
       'fill': _settings.zoom == ZoomMode.fill,
     });
   }
+
+  Future<_PreparedVideo> _prepareVideo(
+    PlayerMedia media, {
+    double position = 0,
+    String? resumeIdentity,
+    VideoPlayTarget? targetOverride,
+  }) async {
+    Future<Map<String, Object?>> prepare(PlayerKernel kernel) => _payload(
+      media, position: position, resumeIdentity: resumeIdentity,
+      targetOverride: targetOverride, kernelOverride: kernel,
+    );
+    final kernel = _settings.kernel;
+    try {
+      return (media: await prepare(kernel), kernel: kernel);
+    } on UnsupportedError {
+      if (kernel != PlayerKernel.avplayer) rethrow;
+      return (media: await prepare(PlayerKernel.mpv), kernel: PlayerKernel.mpv);
+    }
+  }
+
+  // Commit a compatibility switch only after the caller accepts this request.
+  Map<String, Object?> _acceptVideo(_PreparedVideo prepared) {
+    if (prepared.kernel == _settings.kernel) return {'media': prepared.media};
+    _preferredBeforeFallback = _settings.kernel;
+    _settings = _settings.copyWith(kernel: prepared.kernel);
+    return {'media': prepared.media, 'kernel': prepared.kernel.name, 'speed': _settings.speed};
+  }
+
+  static final _mpvContainer = RegExp(r'\.(mkv|webm|avi|flv|wmv|mpd)$', caseSensitive: false);
 
   // Earlier downloads used media.mp4 for extensionless URLs, including MKV.
   Future<bool> _legacyMatroskaDownload(PlayerMedia media) async {
@@ -198,6 +211,9 @@ class NativeVideoSourceSession {
         ? _directIdentity
         : '${current.identity}:${current.chapterId}';
     final apple = (kernelOverride ?? _settings.kernel) == PlayerKernel.avplayer;
+    if (apple && (_mpvContainer.hasMatch(media.uri.path) || await _legacyMatroskaDownload(media))) {
+      throw UnsupportedError('当前媒体格式需要 MPV 内核');
+    }
     final PlayerMedia prepared;
     if (prepareMedia != null) {
       prepared = await prepareMedia!(media, apple);
@@ -406,7 +422,7 @@ class NativeVideoSourceSession {
         headers: choice.headers,
         title: _media.title,
       );
-      final payload = await _payload(media, resumeIdentity: _identity);
+      final prepared = await _prepareVideo(media, resumeIdentity: _identity);
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
       _media = media;
       _manualQuality = choice;
@@ -418,7 +434,7 @@ class NativeVideoSourceSession {
           choice.label,
         );
       }
-      return {'media': payload};
+      return _acceptVideo(prepared);
     }
     // A retry already has the chapter ID. An unavailable catalog must not
     // prevent refreshing an expired media URL for the current episode.
@@ -587,7 +603,7 @@ class NativeVideoSourceSession {
           title: nextTarget.mediaTitle,
         );
       }
-      final payload = await _payload(
+      final prepared = await _prepareVideo(
         nextMedia,
         targetOverride: nextTarget,
         resumeIdentity: same ? _identity : null,
@@ -596,7 +612,7 @@ class NativeVideoSourceSession {
       target = nextTarget;
       _targets[_identity] = nextTarget;
       if (nextTarget.chapterId != current.chapterId) {
-        _saved[_identity] = payload['position'] as double;
+        _saved[_identity] = prepared.media['position'] as double;
       }
       qualities = nextQualities;
       _activeQuality = choice;
@@ -605,7 +621,7 @@ class NativeVideoSourceSession {
       _localPlayback = local;
       local = null;
       if (previous != null) unawaited(previous.close());
-      return {'media': payload};
+      return _acceptVideo(prepared);
     } finally {
       await local?.close();
     }
@@ -613,9 +629,9 @@ class NativeVideoSourceSession {
 
   Future<Map<String, Object?>> _retryCurrentMedia(int revision) async {
     if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-    final payload = await _payload(_media, resumeIdentity: _identity);
+    final prepared = await _prepareVideo(_media, resumeIdentity: _identity);
     if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-    return {'media': payload};
+    return _acceptVideo(prepared);
   }
 
   Future<Map<String, Object?>> _danmaku() async {
