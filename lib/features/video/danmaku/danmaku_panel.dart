@@ -1,3 +1,4 @@
+import '../../../shared/widgets/player_appearance_scope.dart';
 import '../../../shared/widgets/native_glass_surfaces.dart';
 import '../../../shared/widgets/video_glass_surface.dart';
 import '../../../shared/widgets/module_glass_scope.dart';
@@ -32,25 +33,27 @@ Future<T?> showDanmakuPanel<T>({
     backgroundColor: Colors.transparent,
     constraints: const BoxConstraints(maxWidth: double.infinity),
     barrierColor: Colors.black.withValues(alpha: .22),
-    builder: (context) => Stack(
-      children: [
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(context).pop(),
-            child: const SizedBox.expand(),
+    builder: (context) => PlayerAppearanceScope(
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(),
+              child: const SizedBox.expand(),
+            ),
           ),
-        ),
-        DanmakuPanelFrame(
-          compact: compact,
-          edgeDrawer: edgeDrawer,
-          maxPortraitHeight: maxPortraitHeight,
-          child: PlayerPanelScope(
-            back: back,
-            child: _PanelBackGesture(back: back, child: builder(context)),
+          DanmakuPanelFrame(
+            compact: compact,
+            edgeDrawer: edgeDrawer,
+            maxPortraitHeight: maxPortraitHeight,
+            child: PlayerPanelScope(
+              back: back,
+              child: _PanelBackGesture(back: back, child: builder(context)),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 }

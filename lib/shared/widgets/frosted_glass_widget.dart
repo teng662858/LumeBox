@@ -1,3 +1,5 @@
+import 'player_appearance_scope.dart';
+
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -52,6 +54,9 @@ class _FrostedGlassWidgetState extends State<FrostedGlassWidget> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: FrostedSettings.instance,
     builder: (context, _) {
+      final useNativeGlass =
+          widget.nativeGlass &&
+          PlayerAppearanceScope.nativeOf(context) != false;
       final settings = FrostedSettings.instance;
       final style = settings.style(
         ModuleGlassScope.moduleOf(context),
@@ -69,12 +74,12 @@ class _FrostedGlassWidgetState extends State<FrostedGlassWidget> {
           widget.interactive;
       final radius =
           widget.radius *
-          (DockNativeGlass.supported && widget.nativeGlass
+          (DockNativeGlass.supported && useNativeGlass
               ? settings.native.radiusScale
               : style.value(GlassParameter.radius));
       final corners = BorderRadius.circular(radius);
       if (DockNativeGlass.supported &&
-          !widget.nativeGlass &&
+          !useNativeGlass &&
           !widget.translucentOverlay) {
         // Ordinary scrolling content stays in Flutter's single render tree.
         // Do not create a platform view, blur pass or optical animation per card.
@@ -89,7 +94,7 @@ class _FrostedGlassWidgetState extends State<FrostedGlassWidget> {
           child: widget.child,
         );
       }
-      if (DockNativeGlass.supported && widget.nativeGlass) {
+      if (DockNativeGlass.supported && useNativeGlass) {
         return ClipRRect(
           borderRadius: corners,
           child: Stack(

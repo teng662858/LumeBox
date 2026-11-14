@@ -1,3 +1,5 @@
+import 'player_appearance_scope.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/frosted_settings.dart';
@@ -14,7 +16,8 @@ class NativeGlassPreview extends InheritedNotifier<FrostedSettings> {
             .dependOnInheritedWidgetOfExactType<NativeGlassPreview>()
             ?.notifier ??
         FrostedSettings.instance;
-    return settings.nativePreview &&
+    return (PlayerAppearanceScope.nativeOf(context) ??
+            settings.nativePreview) &&
         settings.frostedEnabled &&
         !settings.reduceTransparency &&
         !MediaQuery.highContrastOf(context);

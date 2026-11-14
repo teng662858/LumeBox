@@ -1,3 +1,4 @@
+import '../../shared/widgets/player_appearance_scope.dart';
 import 'intro_settings_page.dart';
 
 import 'package:flutter/material.dart';
@@ -153,66 +154,69 @@ class _PlayerSettingsPageState extends State<PlayerSettingsPage> {
       'danmaku' => '弹幕服务',
       _ => _categories.where((entry) => entry.$1 == id).firstOrNull?.$2,
     };
-    return GlassScaffold(
-      effectModule: GlassModule.video,
-      settingsSurface: true,
-      title: title ?? '播放器设置',
-      child: id != null
-          ? id == 'intro'
-                ? const IntroSettingsPage(embedded: true)
-                : id == 'audioPlayer'
-                ? const AudioPlaybackSettingsPage(embedded: true)
-                : id == 'danmaku'
-                ? _danmakuBody(context)
-                : _categoryBody(context, id)
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                SettingsGroupCard(
-                  children: [
-                    ListTile(
-                      leading: const Icon(
-                        Icons.settings_input_component_outlined,
-                      ),
-                      title: const Text('默认播放内核'),
-                      subtitle: Text(_settings.kernel.label),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _openCategory('advanced'),
-                    ),
-                  ],
-                ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                  child: Text('这里设置全局默认值；启用独立设置的源使用自己的播放偏好。'),
-                ),
-                const SettingsGroupTitle('播放设置'),
-                SettingsGroupCard(
-                  children: [
-                    for (final entry in _categories)
+    return PlayerAppearanceScope(
+      child: GlassScaffold(
+        effectModule: GlassModule.video,
+        settingsSurface: true,
+        title: title ?? '播放器设置',
+        child: id != null
+            ? id == 'intro'
+                  ? const IntroSettingsPage(embedded: true)
+                  : id == 'audioPlayer'
+                  ? const AudioPlaybackSettingsPage(embedded: true)
+                  : id == 'danmaku'
+                  ? _danmakuBody(context)
+                  : _categoryBody(context, id)
+            : ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  const PlayerAppearanceControl(),
+                  SettingsGroupCard(
+                    children: [
                       ListTile(
-                        key: ValueKey('global-player-category-${entry.$1}'),
-                        leading: Icon(entry.$4),
-                        title: Text(entry.$2),
-                        subtitle: Text(entry.$3),
+                        leading: const Icon(
+                          Icons.settings_input_component_outlined,
+                        ),
+                        title: const Text('默认播放内核'),
+                        subtitle: Text(_settings.kernel.label),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _openCategory(entry.$1),
+                        onTap: () => _openCategory('advanced'),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                SettingsGroupCard(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.headphones_outlined),
-                      title: const Text('音频播放器'),
-                      subtitle: const Text('音频播放的独立偏好'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _openCategory('audioPlayer'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                    ],
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                    child: Text('这里设置全局默认值；启用独立设置的源使用自己的播放偏好。'),
+                  ),
+                  const SettingsGroupTitle('播放设置'),
+                  SettingsGroupCard(
+                    children: [
+                      for (final entry in _categories)
+                        ListTile(
+                          key: ValueKey('global-player-category-${entry.$1}'),
+                          leading: Icon(entry.$4),
+                          title: Text(entry.$2),
+                          subtitle: Text(entry.$3),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _openCategory(entry.$1),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SettingsGroupCard(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.headphones_outlined),
+                        title: const Text('音频播放器'),
+                        subtitle: const Text('音频播放的独立偏好'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => _openCategory('audioPlayer'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }

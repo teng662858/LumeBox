@@ -1,3 +1,4 @@
+import 'player_appearance_scope.dart';
 import 'video_glass_surface.dart';
 
 import 'package:flutter/material.dart';
@@ -66,11 +67,17 @@ Future<T?> showGlassDialog<T>({
   AnimationStyle? animationStyle,
 }) => material.showDialog<T>(
   context: context,
-  builder: (dialogContext) => (videoGlass ?? VideoGlassScope.active(context))
-      ? videoGlassDialogSurface(dialogContext, builder(dialogContext))
-      : nativeGlass || NativeGlassPreview.enabledOf(dialogContext)
-      ? nativeDialogSurface(dialogContext, builder(dialogContext))
-      : builder(dialogContext),
+  builder: (dialogContext) => PlayerAppearanceScope.inherit(
+    context,
+    Builder(
+      builder: (dialogContext) =>
+          (videoGlass ?? VideoGlassScope.active(context))
+          ? videoGlassDialogSurface(dialogContext, builder(dialogContext))
+          : nativeGlass || NativeGlassPreview.enabledOf(dialogContext)
+          ? nativeDialogSurface(dialogContext, builder(dialogContext))
+          : builder(dialogContext),
+    ),
+  ),
   barrierDismissible: barrierDismissible,
   barrierColor: barrierColor,
   barrierLabel: barrierLabel,
@@ -116,15 +123,20 @@ Future<T?> showGlassModalBottomSheet<T>({
           (!isScrollControlled && NativeGlassPreview.enabledOf(context)));
   return material.showModalBottomSheet<T>(
     context: context,
-    builder: (sheetContext) => useVideoGlass
-        ? VideoGlassSurface(child: builder(sheetContext))
-        : useNativeGlass
-        ? FrostedGlassWidget(
-            nativeGlass: true,
-            radius: 28,
-            child: builder(sheetContext),
-          )
-        : builder(sheetContext),
+    builder: (sheetContext) => PlayerAppearanceScope.inherit(
+      context,
+      Builder(
+        builder: (sheetContext) => useVideoGlass
+            ? VideoGlassSurface(child: builder(sheetContext))
+            : useNativeGlass
+            ? FrostedGlassWidget(
+                nativeGlass: true,
+                radius: 28,
+                child: builder(sheetContext),
+              )
+            : builder(sheetContext),
+      ),
+    ),
     backgroundColor: useVideoGlass || useNativeGlass
         ? Colors.transparent
         : backgroundColor,

@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'playback_entry_preparation.dart';
 
 import 'package:lume_box/core/theme/lume_typography.dart';
@@ -173,7 +171,6 @@ class _VideoPageState extends State<VideoPage> {
   /// 不可用时按目录回退（与播放器页的「生效内核」同一口径），免得预启动的实例
   /// 与页面要的内核不匹配而白建。设置库拿不到就不预启动——正式链路自己会建。
   PlayerPrelaunch? _startPrelaunch() {
-    if (Platform.isIOS) return null;
     final library = _library;
     if (library == null) return null;
     final stored = VideoPlayerSettingsStore(library).load().kernel;
@@ -259,7 +256,12 @@ class _VideoPageState extends State<VideoPage> {
       _discardPrelaunch(prelaunch);
       return;
     }
-    await PlaybackFocus.acquire('video', stillWanted: () => mounted && originRoute?.isCurrent != false);
+    if (widget.playerFactory == null) {
+      await PlaybackFocus.acquire(
+        'video',
+        stillWanted: () => mounted && originRoute?.isCurrent != false,
+      );
+    }
     if (!mounted || originRoute?.isCurrent == false) {
       _discardPrelaunch(prelaunch);
       return;
@@ -329,11 +331,8 @@ class _VideoPageState extends State<VideoPage> {
     VideoProgress progress,
   ) async {
     final route = ModalRoute.of(context);
-    final file = await (widget.downloadCenter ?? VideoDownloadCenter.instance).playbackIfAvailable(
-      item.sourceId,
-      item.itemId,
-      progress.chapterId,
-    );
+    final file = await (widget.downloadCenter ?? VideoDownloadCenter.instance)
+        .playbackIfAvailable(item.sourceId, item.itemId, progress.chapterId);
     if (!mounted || route?.isCurrent == false) {
       await file?.close();
       return;

@@ -1,3 +1,6 @@
+import 'classic_video_player_page.dart';
+import '../../shared/widgets/player_appearance_scope.dart';
+
 import 'dart:async';
 import 'dart:io' show Platform;
 
@@ -20,8 +23,9 @@ import 'playback_source_validator.dart';
 import 'player_speed_meter.dart';
 import 'video_play_target.dart';
 
-/// Route handoff only. UIKit owns the complete video screen and both native
-/// engines. Source scripts and the existing reading database remain in Dart.
+/// Both player appearances share the complete classic page and media state.
+/// An explicitly injected bridge retains the standalone native host test port;
+/// production navigation uses the shared page for both material choices.
 class VideoPlayerPage extends StatefulWidget {
   const VideoPlayerPage({
     super.key,
@@ -85,7 +89,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.media != null) unawaited(_open(widget.media!));
+      if (widget.bridge != null && widget.media != null) {
+        unawaited(_open(widget.media!));
+      }
     });
   }
 
@@ -156,56 +162,86 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void dispose() {
     _disposed = true;
     unawaited(_session?.close());
-    unawaited(widget.prelaunch?.discard());
+    // The shared player owns its prelaunch; only the standalone bridge discards here.
+    if (widget.bridge != null) unawaited(widget.prelaunch?.discard());
     _address.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.black,
-    appBar: AppBar(
-      title: Text(widget.title ?? '播放'),
-      backgroundColor: Colors.black,
-      foregroundColor: Colors.white,
-    ),
-    body: SafeArea(
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_opening && !_presented) const CircularProgressIndicator(),
-              if (_error != null) ...[
-                Text(_error!, style: const TextStyle(color: Colors.white)),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _opening
-                      ? null
-                      : widget.media == null
-                      ? _openAddress
-                      : () => _open(widget.media!),
-                  child: const Text('重试'),
-                ),
-              ],
-              if (!_opening && widget.media == null) ...[
-                TextField(
-                  controller: _address,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: const InputDecoration(labelText: '媒体地址'),
-                  keyboardType: TextInputType.url,
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: _openAddress,
-                  child: const Text('打开原生播放器'),
-                ),
-              ],
-            ],
+  Widget build(BuildContext context) => widget.bridge == null
+      ? PlayerAppearanceScope(
+          child: ClassicVideoPlayerPage(
+            managePlaybackFocus: widget.playerFactory == null,
+            media: widget.media,
+            initialPosition: widget.initialPosition,
+            title: widget.title,
+            target: widget.target,
+            sourceId: widget.sourceId,
+            qualities: widget.qualities,
+            sourceManager: widget.sourceManager,
+            source: widget.source,
+            library: widget.library,
+            prelaunch: widget.prelaunch,
+            fullscreenOnly: widget.fullscreenOnly,
+            playerFactory: widget.playerFactory,
+            catalog: widget.catalog,
+            pipBackend: widget.pipBackend,
+            brightnessBackend: widget.brightnessBackend,
+            playbackBackend: widget.playbackBackend,
+            speedMeter: widget.speedMeter,
+            healthClock: widget.healthClock,
+            sourceValidator: widget.sourceValidator,
           ),
-        ),
-      ),
-    ),
-  );
+        )
+      : Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            title: Text(widget.title ?? '播放'),
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+          ),
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_opening && !_presented)
+                      const CircularProgressIndicator(),
+                    if (_error != null) ...[
+                      Text(
+                        _error!,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: _opening
+                            ? null
+                            : widget.media == null
+                            ? _openAddress
+                            : () => _open(widget.media!),
+                        child: const Text('重试'),
+                      ),
+                    ],
+                    if (!_opening && widget.media == null) ...[
+                      TextField(
+                        controller: _address,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(labelText: '媒体地址'),
+                        keyboardType: TextInputType.url,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: _openAddress,
+                        child: const Text('打开原生播放器'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
 }

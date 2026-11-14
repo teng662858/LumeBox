@@ -1,7 +1,15 @@
-/// Mobile preview and native smoke check. Does not change the shipping entry.
+/// Shared player appearances on Android; iOS native glass falls back to compatible material here.
 library;
 
+import 'dart:typed_data';
+
+import 'package:path_provider/path_provider.dart';
+import 'package:lume_box/core/security/local_cipher.dart';
+
 import 'dart:convert';
+
+import 'package:lume_box/core/player/player_kernel_launcher.dart';
+import 'package:lume_box/features/video/playback_entry_preparation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:lume_box/core/source/source.dart';
@@ -11,6 +19,7 @@ import 'package:lume_box/core/intro/intro_backend.dart';
 import 'package:lume_box/core/intro/intro_models.dart';
 import 'package:lume_box/core/intro/intro_signals.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/player/av_player.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/reading/reading.dart';
@@ -29,10 +38,15 @@ const fixtureURL = String.fromEnvironment(
 );
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final directory = await getApplicationSupportDirectory();
+  // Debug-only isolated preview data; no production credentials.
+  // ignore: invalid_use_of_visible_for_testing_member
+  LocalCipher.configurePreview(directory.path, Uint8List(32));
   await AppPreferences.instance.boot();
   await FloatingModules.instance.boot();
   await FrostedSettings.instance.boot();
-  await ReadingLibrary.open(Section.video);
+  final library = await ReadingLibrary.open(Section.video);
+  library.setSetting('video.player.autoHideControls', 'false');
   runApp(
     MaterialApp(
       debugShowCheckedModeBanner: false,
@@ -82,12 +96,32 @@ class AndroidPlayerPreviewState extends State<AndroidPlayerPreview> {
       },
     );
     final media = PlayerMedia(uri: uri, title: '山海之间 · 第1集');
+    final prelaunch = PlayerPrelaunch.start(
+      PlayerKernel.avplayer,
+      factory: (_) => AvPlayer(),
+    );
+    await preparePlaybackEntry(
+      prelaunch,
+      media,
+      const PlayerSettings(kernel: PlayerKernel.avplayer),
+    );
+    if (!mounted) {
+      await prelaunch.discard();
+      return;
+    }
+    await applyPlaybackEntryOrientation(prelaunch);
+    if (!mounted) {
+      await prelaunch.discard();
+      return;
+    }
     await Navigator.push<void>(
       context,
       MaterialPageRoute(
         builder: (_) => VideoPlayerPage(
           catalog: const _AndroidPreviewCatalog(),
+          playerFactory: (_) => AvPlayer(),
           media: media,
+          prelaunch: prelaunch,
           title: '山海之间 · 播放器预览',
           source: source,
           qualities: qualities,

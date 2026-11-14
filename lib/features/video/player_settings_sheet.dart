@@ -1,3 +1,4 @@
+import '../../shared/widgets/player_appearance_scope.dart';
 import '../../shared/widgets/number_setting_tile.dart';
 import 'intro_settings_page.dart';
 import 'player_layout.dart';
@@ -315,7 +316,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => const IntroSettingsPage(),
+                    builder: (_) =>
+                        PlayerAppearanceScope(child: const IntroSettingsPage()),
                   ),
                 ),
               ),
@@ -570,6 +572,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
       ]),
     ];
     final children = <Widget>[
+      if (widget.embedded && widget.categoryOnly == null)
+        const PlayerAppearanceControl(),
       if (widget.embedded && widget.categoryOnly == null) _categoryNavigation(),
       ...groups,
     ];
@@ -799,6 +803,7 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
               ),
             ),
           ),
+          const PlayerAppearanceMenu(),
           IconButton(
             tooltip: '关闭',
             padding: EdgeInsets.zero,

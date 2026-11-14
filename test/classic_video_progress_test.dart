@@ -1,0 +1,2027 @@
+import 'package:lume_box/core/session/app_preferences.dart';
+import 'package:lume_box/features/video/video_play_target.dart';
+import 'package:lume_box/features/video/player_source_sheet.dart';
+import 'package:lume_box/core/player/player_experience_store.dart';
+import 'package:lume_box/core/media/media_library.dart';
+import 'package:lume_box/features/video/video_detail_page.dart';
+import 'package:lume_box/features/video/video_download_center.dart';
+import 'package:lume_box/features/video/classic_video_player_page.dart';
+import 'package:lume_box/features/video/player_settings_sheet.dart';
+import 'package:lume_box/features/video/danmaku/danmaku_overlay.dart';
+
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:lume_box/core/player/abstract_player.dart';
+import 'package:lume_box/core/intro/intro_store.dart';
+import 'package:lume_box/core/player/player_factory.dart';
+import 'package:lume_box/core/player/player_settings.dart';
+import 'package:lume_box/core/player/player_stats.dart';
+import 'package:lume_box/core/player/skip_marks.dart';
+import 'package:lume_box/core/reading/reading.dart';
+import 'package:lume_box/core/session/section.dart';
+import 'package:lume_box/core/session/section_scope.dart';
+import 'package:lume_box/core/source/source.dart';
+import 'package:lume_box/core/theme/lume_theme.dart';
+import 'package:lume_box/features/reading/history_sheet.dart';
+import 'package:lume_box/features/video/video_page.dart';
+import 'package:lume_box/features/video/video_player_settings.dart';
+
+import 'support/fake_source_manager.dart';
+
+/// 视频播放进度记忆（文档要求「视频记忆到集数 + 播放时间点」）。
+///
+/// 验证：播到一半退出后再点同一作品，从上次位置继续；换集从头播；播完不自动
+/// 跳结尾；播放记录与续看统一在右上角 ⏱️ 的抽屉里（首页的「继续观看」区块
+/// 已按用户要求删除，本文件同时钉住「它不会再回来」）。
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory root;
+  late _VideoSource source;
+  late FakeSourceManager manager;
+
+  setUp(() async {
+    root = Directory.systemTemp.createTempSync('lume_box_video_progress');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (call) async => call.method == 'getApplicationSupportDirectory'
+              ? root.path
+              : null,
+        );
+    await MediaLibrary.instance.boot();
+    await VideoDownloadCenter.instance.boot();
+    // Load file-backed routing outside the widget fake clock.
+    await IntroStore.open();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('lumebox/mediaTracks'),
+          (_) async => {'known': true, 'audio': true, 'video': true},
+        );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('lumebox/experience'),
+          (call) async => call.method == 'networkAndStorage'
+              ? {'wifi': true, 'cellular': false}
+              : null,
+        );
+    final fixtureLibrary = await ReadingLibrary.open(Section.video);
+    // Progress fixtures exercise the unchanged fast path without network probes.
+    fixtureLibrary.setSetting(
+      VideoPlayerSettingsStore.keyBackgroundSourceValidation,
+      'false',
+    );
+    fixtureLibrary.setSetting(VideoPlayerSettingsStore.keyControlStyle, 'text');
+    source = _VideoSource();
+    manager = FakeSourceManager(
+      sources: const <SourceDescriptor>[
+        SourceDescriptor(
+          id: 'demo-video',
+          name: '公开样片测试源',
+          version: '1.0.0',
+          enabled: true,
+        ),
+      ],
+      opened: <String, DataSource>{'demo-video': source},
+    );
+  });
+
+  tearDown(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('lumebox/experience'),
+          null,
+        );
+    await IntroStore.resetForTesting();
+    ReadingLibrary.disposeAll();
+    ReadingStore.disposeAll();
+    await SectionScope.closeAll();
+    if (root.existsSync()) root.deleteSync(recursive: true);
+  });
+
+  Future<List<_FakePlayer>> pumpBoard(WidgetTester tester) async {
+    final created = <_FakePlayer>[];
+    await tester.binding.setSurfaceSize(const Size(900, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        home: VideoPage(
+          catalog: const _FakeCatalog(<PlayerKernel>{PlayerKernel.avplayer}),
+          playerFactory: (kernel) {
+            final player = _FakePlayer(kernel);
+            created.add(player);
+            return player;
+          },
+          sourceManager: manager,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    return created;
+  }
+
+  for (final buffering in [false, true]) {
+    testWidgets('持续停滞自动切到同集备用线路并保留断点，授权失败不换线：buffering=$buffering', (
+      tester,
+    ) async {
+      AppPreferences.instance.experience['autoRecover'] = true;
+      var healthNow = DateTime(2026);
+      addTearDown(
+        () => AppPreferences.instance.experience.remove('autoRecover'),
+      );
+      source.chapterList = const [
+        SourceChapter(id: 'a1', title: '第1集', line: 'A'),
+        SourceChapter(id: 'b1', title: '第1集', line: 'B'),
+      ];
+      final players = <_FakePlayer>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ClassicVideoPlayerPage(
+            healthClock: () => healthNow,
+            media: PlayerMedia(uri: Uri.parse('https://example.com/a1.mp4')),
+            target: const VideoPlayTarget(
+              sourceId: 'demo-video',
+              itemId: 'movie-1',
+              title: '影片',
+              chapterId: 'a1',
+              chapterIndex: 0,
+              chapterTitle: '第1集',
+            ),
+            source: source,
+            sourceManager: manager,
+            fullscreenOnly: false,
+            catalog: const _FakeCatalog({PlayerKernel.avplayer}),
+            library: ReadingLibrary.find(Section.video),
+            playerFactory: (kernel) {
+              final p = _FakePlayer(kernel);
+              players.add(p);
+              return p;
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pumpAndSettle();
+      players.last.emit(
+        position: const Duration(seconds: 40),
+        playing: true,
+        error: 'HTTP 401 Unauthorized',
+      );
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pumpAndSettle();
+      expect(players.last.media!.uri.path, '/a1.mp4');
+      players.last.emit(position: const Duration(seconds: 40), playing: false);
+      for (var i = 0; i < 5; i++) {
+        healthNow = healthNow.add(const Duration(seconds: 5));
+        await tester.pump(const Duration(seconds: 5));
+      }
+      expect(
+        players.last.media!.uri.path,
+        '/a1.mp4',
+        reason: 'paused playback must not switch lines',
+      );
+      players.last.emit(
+        position: const Duration(seconds: 40),
+        playing: !buffering,
+        buffering: buffering,
+      );
+      for (var i = 0; i < 4; i++) {
+        healthNow = healthNow.add(const Duration(seconds: 5));
+        await tester.pump(const Duration(seconds: 5));
+      }
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 80)),
+      );
+      await tester.pumpAndSettle();
+      expect(players.last.media!.uri.path, '/b1.mp4');
+      expect(players.last.seeks, contains(const Duration(seconds: 40)));
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+      AppPreferences.instance.experience.remove('autoRecover');
+    });
+  }
+
+  testWidgets(
+    'AVPlayer only falls back after confirmed missing frames with advancing playback',
+    (tester) async {
+      AppPreferences.instance.experience['autoRecover'] = true;
+      addTearDown(
+        () => AppPreferences.instance.experience.remove('autoRecover'),
+      );
+      final players = <_FakePlayer>[];
+      var now = DateTime(2026);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ClassicVideoPlayerPage(
+            healthClock: () => now,
+            media: PlayerMedia(uri: Uri.parse('https://example.com/a1.mp4')),
+            target: const VideoPlayTarget(
+              sourceId: 'demo-video',
+              itemId: 'movie-1',
+              title: '影片',
+              chapterId: 'a1',
+              chapterIndex: 0,
+              chapterTitle: '第1集',
+            ),
+            source: source,
+            sourceManager: manager,
+            fullscreenOnly: false,
+            catalog: const _FakeCatalog({
+              PlayerKernel.avplayer,
+              PlayerKernel.mpv,
+            }),
+            library: ReadingLibrary.find(Section.video),
+            playerFactory: (kernel) {
+              final player = _FakePlayer(kernel);
+              players.add(player);
+              return player;
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pumpAndSettle();
+      final av = players.single;
+      var pos = Duration.zero;
+      for (final firstFrame in [null, false]) {
+        av.pushStats(
+          PlayerStats(width: 1920, height: 1080, firstFrameReady: firstFrame),
+        );
+        for (var i = 0; i < 4; i++) {
+          now = now.add(const Duration(seconds: 5));
+          pos += const Duration(seconds: 5);
+          av.emit(position: pos, playing: true);
+          await tester.pump(const Duration(seconds: 5));
+        }
+        if (firstFrame == null) expect(players, hasLength(1));
+      }
+      await tester.pumpAndSettle();
+      expect(players.map((p) => p.kernel), [
+        PlayerKernel.avplayer,
+        PlayerKernel.mpv,
+      ]);
+      expect(players.last.media?.uri, av.media?.uri);
+      expect(players.last.seeks, contains(pos));
+      expect(players.last.snapshot.value.playing, isTrue);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('未知时长且已缓冲 79 秒仍停在零点时尝试同地址 MPV，暂停时不换', (tester) async {
+    AppPreferences.instance.experience['autoRecover'] = true;
+    addTearDown(() => AppPreferences.instance.experience.remove('autoRecover'));
+    var now = DateTime(2026);
+    final players = <_FakePlayer>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ClassicVideoPlayerPage(
+          healthClock: () => now,
+          media: PlayerMedia(
+            uri: Uri.parse('https://example.com/stalled.m3u8'),
+            headers: const {'Referer': 'https://site.example/'},
+          ),
+          target: const VideoPlayTarget(
+            sourceId: 'demo-video',
+            itemId: 'movie-1',
+            title: '影片',
+            chapterId: 'e1',
+            chapterIndex: 0,
+            chapterTitle: '第1集',
+          ),
+          source: source,
+          sourceManager: manager,
+          fullscreenOnly: false,
+          catalog: const _FakeCatalog({
+            PlayerKernel.avplayer,
+            PlayerKernel.mpv,
+          }),
+          library: ReadingLibrary.find(Section.video),
+          playerFactory: (kernel) {
+            final p = _FakePlayer(kernel);
+            players.add(p);
+            return p;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    final av = players.single;
+    av.pushStats(
+      const PlayerStats(
+        buffered: Duration(seconds: 79),
+        width: 1080,
+        height: 1920,
+      ),
+    );
+    av.emit(position: Duration.zero, duration: Duration.zero, playing: false);
+    for (var i = 0; i < 5; i++) {
+      now = now.add(const Duration(seconds: 5));
+      await tester.pump(const Duration(seconds: 5));
+    }
+    expect(players, hasLength(1));
+    av.emit(position: Duration.zero, duration: Duration.zero, playing: true);
+    for (var i = 0; i < 4; i++) {
+      now = now.add(const Duration(seconds: 5));
+      await tester.pump(const Duration(seconds: 5));
+    }
+    await tester.pumpAndSettle();
+    expect(players.map((p) => p.kernel), [
+      PlayerKernel.avplayer,
+      PlayerKernel.mpv,
+    ]);
+    expect(players.last.media!.uri, av.media!.uri);
+    expect(players.last.media!.headers, av.media!.headers);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('Aether Cannot Open 自动切换 MPV 并保留地址、请求头和断点', (tester) async {
+    final library = ReadingLibrary.find(Section.video)!;
+    VideoPlayerSettingsStore(library).save(
+      const PlayerSettings(
+        kernel: PlayerKernel.aether,
+        backgroundSourceValidation: false,
+      ),
+    );
+    final players = <_FakePlayer>[];
+    final media = PlayerMedia(
+      uri: Uri.parse('https://example.com/cloud'),
+      headers: const {'Referer': 'https://site.example/'},
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ClassicVideoPlayerPage(
+          media: media,
+          catalog: const _FakeCatalog({PlayerKernel.aether, PlayerKernel.mpv}),
+          library: library,
+          playerFactory: (kernel) {
+            final p = _FakePlayer(kernel);
+            players.add(p);
+            return p;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    expect(players.single.kernel, PlayerKernel.aether);
+    players.single.emit(
+      position: const Duration(seconds: 42),
+      error: 'Cannot Open',
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    expect(players.map((p) => p.kernel), [
+      PlayerKernel.aether,
+      PlayerKernel.mpv,
+    ]);
+    expect(players.last.media!.uri, media.uri);
+    expect(players.last.media!.headers, media.headers);
+    expect(players.last.seeks, contains(const Duration(seconds: 42)));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  for (final playing in [false, true]) {
+    testWidgets('画质切换失败恢复原线路、进度与暂停状态：playing=$playing', (tester) async {
+      final player = _FakePlayer(PlayerKernel.avplayer)
+        ..failPaths.add('/bad.mp4');
+      final original = PlayerMedia(
+        uri: Uri.parse('https://example.test/original.mp4'),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ClassicVideoPlayerPage(
+            media: original,
+            fullscreenOnly: false,
+            catalog: const _FakeCatalog({PlayerKernel.avplayer}),
+            playerFactory: (_) => player,
+            library: ReadingLibrary.find(Section.video),
+            qualities: [
+              VideoQuality(label: '原画', url: original.uri),
+              VideoQuality(
+                label: '备用',
+                url: Uri.parse('https://example.test/bad.mp4'),
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pumpAndSettle();
+      player.emit(position: const Duration(seconds: 47), playing: playing);
+      await tester.pump();
+      await tester.ensureVisible(find.text('画质'));
+      await tapWithDetailPlay(tester, find.text('画质'));
+      final sheet = tester.widget<PlayerSourceSheet>(
+        find.byType(PlayerSourceSheet),
+      );
+      Object? failure;
+      await tester.runAsync(() async {
+        try {
+          await sheet.onSelectQuality!(1);
+        } catch (error) {
+          failure = error;
+        }
+      });
+      await tester.pump();
+      expect('$failure', contains('已恢复原画质'));
+      expect(player.media!.uri, original.uri);
+      expect(player.loads, 3);
+      expect(player.snapshot.value.position, const Duration(seconds: 47));
+      expect(player.snapshot.value.playing, playing);
+      await tester.pumpWidget(const SizedBox());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+    });
+  }
+
+  for (final remember in [true, false]) {
+    testWidgets('手选清晰度切集与预加载一致，缺项回退最高；记忆=$remember', (tester) async {
+      final library = await ReadingLibrary.open(Section.video);
+      VideoPlayerSettingsStore(library).save(
+        PlayerSettings(
+          backgroundSourceValidation: false,
+          rememberManualQuality: remember,
+        ),
+      );
+      source.items = const [SourceItem(id: 'movie', title: '画质测试')];
+      source.chapterList = const [
+        SourceChapter(id: 'e1', title: '第 1 集'),
+        SourceChapter(id: 'e2', title: '第 2 集'),
+        SourceChapter(id: 'e3', title: '第 3 集'),
+      ];
+      source.qualitiesFor = (chapter) => [
+        if (chapter != 'e3')
+          VideoQuality(
+            label: '720P',
+            url: Uri.parse('https://example.com/$chapter-720.mp4'),
+            headers: {'Referer': 'https://example.com/watch/$chapter'},
+          ),
+        VideoQuality(
+          label: '1080P',
+          url: Uri.parse('https://example.com/$chapter-1080.mp4'),
+          headers: {'Referer': 'https://example.com/watch/$chapter'},
+        ),
+      ];
+      final players = await pumpBoard(tester);
+      await tapWithDetailPlay(tester, find.text('画质测试'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      await tapWithDetailPlay(tester, find.text('第 1 集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      expect(players.last.media!.uri.path, '/e1-1080.mp4');
+      await tapWithDetailPlay(tester, find.byTooltip('播放器设置'));
+      await tester.tap(find.byKey(const ValueKey('player-category-playback')));
+      await tester.pumpAndSettle();
+      final qualityEntry = find.widgetWithText(ListTile, '画质');
+      await tester.ensureVisible(qualityEntry);
+      await tapWithDetailPlay(tester, qualityEntry);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      await tapWithDetailPlay(tester, find.widgetWithText(ListTile, '720P'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      expect(players.last.media!.uri.path, '/e1-720.mp4');
+      players.last.pushStats(
+        const PlayerStats(buffered: Duration(seconds: 15)),
+      );
+      players.last.emit(
+        position: const Duration(seconds: 40),
+        duration: const Duration(seconds: 60),
+        playing: true,
+      );
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      expect(players.length, 2);
+      final prepared = players.last;
+      expect(
+        prepared.media!.uri.path,
+        '/e2-720.mp4',
+        reason: '本次播放的手选画质应延续；记忆开关决定以后重新入场时是否沿用',
+      );
+      await tapWithDetailPlay(tester, find.byTooltip('线路 / 选集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      await tapWithDetailPlay(tester, find.widgetWithText(ChoiceChip, '第 2 集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      expect(prepared.loads, 1);
+      expect(
+        prepared.media!.headers!['Referer'],
+        'https://example.com/watch/e2',
+      );
+      await tapWithDetailPlay(tester, find.byTooltip('线路 / 选集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      await tapWithDetailPlay(tester, find.widgetWithText(ChoiceChip, '第 3 集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      expect(players.last.media!.uri.path, '/e3-1080.mp4');
+      expect(
+        library.setting(VideoPlayerSettingsStore.keyManualQualityLabel),
+        '720P',
+      );
+    });
+  }
+
+  for (final fullscreen in [false, true]) {
+    testWidgets('选集面板可切集并保留防盗链请求头：全屏=$fullscreen', (tester) async {
+      source.items = const [SourceItem(id: 'movie-1', title: '示例影片')];
+      source.chapterList = const [
+        SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+        SourceChapter(id: 'movie-1-e2', title: '第 2 集'),
+      ];
+      source.contentHeaders = const {'Referer': 'https://example.com/'};
+      final players = await pumpBoard(tester);
+      await tapWithDetailPlay(tester, find.text('示例影片'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      await tapWithDetailPlay(tester, find.text('第 1 集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      if (fullscreen && find.byTooltip('全屏').evaluate().isNotEmpty) {
+        await tapWithDetailPlay(tester, find.byTooltip('全屏'));
+        await tester.pump();
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 30));
+        });
+        await tester.pumpAndSettle();
+      }
+      expect(find.byTooltip('线路 / 选集'), findsOneWidget);
+      await tapWithDetailPlay(tester, find.byTooltip('线路 / 选集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '第 1 集'))
+            .selected,
+        isTrue,
+      );
+      await tapWithDetailPlay(tester, find.widgetWithText(ChoiceChip, '第 2 集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      expect(
+        players.single.media!.uri.toString(),
+        'https://example.com/movie-1-e2.mp4',
+      );
+      expect(players.single.media!.headers, source.contentHeaders);
+      expect(find.text('选集与线路'), findsNothing);
+      if (fullscreen) expect(find.byTooltip('退出全屏'), findsOneWidget);
+      await tapWithDetailPlay(tester, find.byTooltip('线路 / 选集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '第 2 集'))
+            .selected,
+        isTrue,
+      );
+    });
+  }
+
+  testWidgets('临近结尾预加载下一集，选集接手同一实例且不再次下载或解析', (tester) async {
+    source.withComments = true;
+    source.chapterList = const [
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+      SourceChapter(id: 'movie-1-e2', title: '第 2 集'),
+    ];
+    final players = <_FakePlayer>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ClassicVideoPlayerPage(
+          media: PlayerMedia(
+            uri: Uri.parse('https://example.com/movie-1-e1.mp4'),
+          ),
+          target: const VideoPlayTarget(
+            sourceId: 'demo-video',
+            itemId: 'movie-1',
+            title: '示例影片',
+            chapterId: 'movie-1-e1',
+            chapterIndex: 0,
+            chapterTitle: '第 1 集',
+          ),
+          source: source,
+          sourceManager: manager,
+          fullscreenOnly: false,
+          catalog: const _FakeCatalog({PlayerKernel.avplayer}),
+          library: ReadingLibrary.find(Section.video),
+          playerFactory: (kernel) {
+            final player = _FakePlayer(kernel);
+            players.add(player);
+            return player;
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    await tester.pumpAndSettle();
+    final current = players.single;
+    current.pushStats(const PlayerStats(buffered: Duration(seconds: 15)));
+    current.emit(
+      position: const Duration(seconds: 15),
+      duration: const Duration(minutes: 10),
+      playing: true,
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    expect(players, hasLength(1), reason: '提前只预热目录，不创建下一集播放器');
+    current.emit(
+      position: const Duration(minutes: 9, seconds: 40),
+      duration: const Duration(minutes: 10),
+      playing: true,
+    );
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    expect(players, hasLength(2));
+    final prepared = players.last;
+    expect(
+      prepared.media!.uri.toString(),
+      'https://example.com/movie-1-e2.mp4',
+    );
+    expect(prepared.snapshot.value.playing, isFalse);
+    expect(
+      source.commentCalls.where((id) => id == 'movie-1-e2'),
+      hasLength(1),
+      reason: '切集前已预载下一集源弹幕',
+    );
+    await tapWithDetailPlay(tester, find.text('选集'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    final sheet = tester.widget<PlayerSourceSheet>(
+      find.byType(PlayerSourceSheet),
+    );
+    await tester.runAsync(() async {
+      expect(await sheet.onSelectEpisode!(1), true);
+    });
+    await tester.pumpAndSettle();
+    expect(prepared.loads, 1, reason: '接手已装载实例，不重新load');
+    expect(prepared.snapshot.value.playing, isTrue);
+    expect(current.disposals, 1);
+    expect(
+      source.commentCalls.where((id) => id == 'movie-1-e2'),
+      hasLength(1),
+      reason: '接手命中弹幕缓存，不重复请求',
+    );
+    expect(
+      tester
+          .widget<DanmakuOverlay>(find.byType(DanmakuOverlay))
+          .track
+          .items
+          .single
+          .text,
+      'movie-1-e2 弹幕',
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+  });
+
+  testWidgets('播到一半退出：进度落库（集数 + 时间点）', (tester) async {
+    source.items = const <SourceItem>[SourceItem(id: 'movie-1', title: '示例影片')];
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+    ];
+    source.contentUrl = 'https://example.com/e1.mp4';
+    final created = await pumpBoard(tester);
+
+    await tapWithDetailPlay(tester, find.text('示例影片'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    expect(created.single.media, isNotNull);
+
+    // 播一会儿。
+    created.single.emit(position: const Duration(minutes: 12), playing: true);
+    await tester.pump();
+    created.single.emit(position: const Duration(minutes: 12, seconds: 30));
+    await tester.pump();
+
+    // 退出页面：dispose 时最后落一次盘。
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+
+    final library = await ReadingLibrary.open(Section.video);
+    final progress = library.videoProgress('movie-1');
+    expect(progress, isNotNull, reason: '退出后必须留下播放记录');
+    expect(progress!.chapterIndex, 0);
+    expect(progress.chapterTitle, '第 1 集');
+    expect(progress.position, const Duration(minutes: 12, seconds: 30));
+  });
+
+  testWidgets('返回播放页的瞬间就落库，且播放不产生收藏', (tester) async {
+    source.items = const <SourceItem>[
+      SourceItem(id: 'movie-pop', title: '立即落库片'),
+    ];
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-pop-e1', title: '第 1 集'),
+    ];
+    source.contentUrl = 'https://example.com/e1.mp4';
+    final created = await pumpBoard(tester);
+    await tapWithDetailPlay(tester, find.text('立即落库片'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    expect(created.single.media, isNotNull);
+
+    final library = await ReadingLibrary.open(Section.video);
+    expect(
+      library.videoProgress('movie-pop'),
+      isNull,
+      reason: '刚起播、位置还是 0，不该提前写记录',
+    );
+
+    // 走返回键同一条路径（maybePop），不等退场动画结束的 dispose。
+    // PopScope 应在 pop 发起时就落盘。
+    await Navigator.of(tester.element(find.byType(ClassicVideoPlayerPage)))
+        .maybePop();
+    await tester.pump();
+
+    expect(
+      library.videoProgress('movie-pop'),
+      isNotNull,
+      reason: '返回的瞬间就要落库，否则用户立刻打开历史会看不到',
+    );
+    expect(library.onShelf('movie-pop'), isFalse, reason: '播放不是收藏');
+    expect(library.shelf(), isEmpty, reason: '收藏页不该出现只播过的作品');
+
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('历史抽屉打开时新增播放记录会立刻刷新', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final library = await ReadingLibrary.open(Section.video);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: LumeTheme.build(),
+        home: Scaffold(
+          body: ReadingHistorySheet(
+            section: Section.video,
+            library: library,
+            onResume: (_, _) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('暂无内容'), findsOneWidget);
+
+    // 只打开详情（还没播放）也写历史；抽屉开着时必须立刻出现。
+    library.recordHistoryItem(sourceId: 's', itemId: 'live', title: '刚播完的片');
+    await tester.pump();
+    expect(
+      find.text('刚播完的片'),
+      findsOneWidget,
+      reason: '只看过详情也要立刻出现在历史里（监听库的 revision）',
+    );
+    expect(find.text('尚未开始'), findsOneWidget, reason: '没有进度时显示「尚未开始」，不是收藏');
+    expect(library.shelf(), isEmpty, reason: '历史行不能进收藏');
+
+    library.saveProgress(
+      VideoProgress(
+        section: Section.video,
+        itemId: 'live',
+        chapterIndex: 0,
+        chapterId: 'e1',
+        chapterTitle: '第 1 集',
+        updatedAt: DateTime.now(),
+        position: const Duration(minutes: 3),
+        duration: const Duration(minutes: 45),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('刚播完的片'), findsOneWidget, reason: '播放进度落库后历史抽屉仍要立刻刷新');
+    expect(find.text('尚未开始'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('链接中断重试重新取地址与请求头，保留断点并继续播放', (tester) async {
+    source.items = const [SourceItem(id: 'movie-1', title: '示例影片')];
+    source.chapterList = const [
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+    ];
+    source.contentUrl = 'https://example.com/movie-1-e1.mp4?token=old';
+    final players = await pumpBoard(tester);
+    await tapWithDetailPlay(tester, find.text('示例影片'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    final player = players.single;
+    player.emit(position: const Duration(minutes: 6), playing: true);
+    await tester.pump();
+    source.contentUrl = 'https://example.com/movie-1-e1.mp4?token=new';
+    source.contentHeaders = const {'Referer': 'https://new.example/'};
+    player.emit(error: 'HTTP 403', playing: false);
+    await tester.pump();
+    await tapWithDetailPlay(tester, find.text('重试播放'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    expect(player.media!.uri.query, 'token=new');
+    expect(player.media!.headers, {'Referer': 'https://new.example/'});
+    expect(player.seeks.last, const Duration(minutes: 6));
+    expect(player.snapshot.value.playing, isTrue);
+  });
+
+  for (final ua in ['', 'LumeBox-Test-UA']) {
+    testWidgets('再次点开同一集：从上次位置继续，UA=$ua', (tester) async {
+      final library = await ReadingLibrary.open(Section.video);
+      PlayerExperienceStore.forLibrary(library).update({'browserUA': ua});
+      source.items = const <SourceItem>[
+        SourceItem(id: 'movie-1', title: '示例影片'),
+      ];
+      source.chapterList = const <SourceChapter>[
+        SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+      ];
+      source.contentUrl = 'https://example.com/e1.mp4';
+
+      // 先播一段并退出。
+      final first = await pumpBoard(tester);
+      await tapWithDetailPlay(tester, find.text('示例影片'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      first.single.emit(position: const Duration(minutes: 20), playing: true);
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+
+      // 重新进入板块，再点同一作品（列表里只剩浏览区那一条）。
+      final second = await pumpBoard(tester);
+      await tapWithDetailPlay(tester, find.text('示例影片'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+
+      expect(
+        second.single.seeks,
+        contains(const Duration(minutes: 20)),
+        reason: '续看必须 seek 回上次的时间点',
+      );
+      expect(find.textContaining('已从上次位置继续'), findsOneWidget);
+    });
+  }
+
+  testWidgets('换了另一集：从头播，不 seek 到上一集的位置', (tester) async {
+    source.items = const <SourceItem>[SourceItem(id: 'movie-1', title: '示例影片')];
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+      SourceChapter(id: 'movie-1-e2', title: '第 2 集'),
+    ];
+    source.contentUrl = 'https://example.com/e2.mp4';
+
+    final first = await pumpBoard(tester);
+    await tapWithDetailPlay(tester, find.text('示例影片'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    // 选第 1 集，看一会儿。
+    await tapWithDetailPlay(tester, find.text('第 1 集'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    first.single.emit(position: const Duration(minutes: 30), playing: true);
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+
+    // 重新进入并选第 2 集（「继续观看」区块已删除，列表里只剩那一条）。
+    final second = await pumpBoard(tester);
+    await tapWithDetailPlay(tester, find.text('示例影片'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    await tapWithDetailPlay(tester, find.text('第 2 集'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+
+    expect(second.single.seeks, isEmpty, reason: '换了集就不该恢复上一集的时间点');
+  });
+
+  testWidgets('已播完的作品：续看不跳结尾（重看从头）', (tester) async {
+    source.items = const <SourceItem>[SourceItem(id: 'movie-1', title: '示例影片')];
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+    ];
+    source.contentUrl = 'https://example.com/e1.mp4';
+
+    final library = await ReadingLibrary.open(Section.video);
+    library.shelve(sourceId: 'demo-video', itemId: 'movie-1', title: '示例影片');
+    library.saveProgress(
+      VideoProgress(
+        section: Section.video,
+        itemId: 'movie-1',
+        chapterIndex: 0,
+        chapterId: 'movie-1-e1',
+        chapterTitle: '第 1 集',
+        updatedAt: DateTime.now(),
+        position: const Duration(minutes: 44, seconds: 30),
+        duration: const Duration(minutes: 45),
+      ),
+    );
+
+    final created = await pumpBoard(tester);
+    await tapWithDetailPlay(tester, find.text('示例影片').last);
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+
+    expect(created.single.seeks, isEmpty, reason: '看完了就从头上，不跳到结尾');
+    expect(find.textContaining('已从上次位置继续'), findsNothing);
+  });
+
+  testWidgets('首页不再有「继续观看」区块；记录与续看都在 ⏱️ 抽屉里（用户要求删除）', (tester) async {
+    source.items = const <SourceItem>[SourceItem(id: 'movie-1', title: '示例影片')];
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+    ];
+    source.contentUrl = 'https://example.com/e1.mp4';
+
+    final library = await ReadingLibrary.open(Section.video);
+    library.shelve(sourceId: 'demo-video', itemId: 'movie-1', title: '示例影片');
+    library.saveProgress(
+      VideoProgress(
+        section: Section.video,
+        itemId: 'movie-1',
+        chapterIndex: 0,
+        chapterId: 'movie-1-e1',
+        chapterTitle: '第 1 集',
+        updatedAt: DateTime.now(),
+        position: const Duration(minutes: 12),
+        duration: const Duration(minutes: 45),
+      ),
+    );
+
+    final created = await pumpBoard(tester);
+
+    // 首页只当浏览用：区块与它的「全部」入口都不再出现，进度条也不在首页。
+    expect(find.text('继续观看'), findsNothing, reason: '首页区块已按用户要求删除');
+    expect(find.text('全部'), findsNothing);
+
+    // 记录仍在：右上角 ⏱️ 抽屉里看得到，点一条即从上次位置续播。
+    await tapWithDetailPlay(tester, find.byTooltip('播放历史'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    final inSheet = find.descendant(
+      of: find.byType(ReadingHistorySheet),
+      matching: find.text('示例影片'),
+    );
+    expect(find.text('12:00 / 45:00', skipOffstage: false), findsWidgets);
+
+    await tapWithDetailPlay(tester, inSheet);
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    expect(
+      created.single.seeks,
+      contains(const Duration(minutes: 12)),
+      reason: '从抽屉里点一条即从上次位置续播',
+    );
+  });
+
+  testWidgets('起播：图源给的防盗链请求头原样交给内核（真机 403 慢播的回归）', (tester) async {
+    // 真机反馈：同一个源电脑上立刻能播、iPhone 上要等一两分钟。原因是图源给的
+    // 地址带防盗链头，而起播点只取了地址、把 VideoContent.headers 丢在了原地——
+    // CDN 回 403 后网络队列按退避重试，累积起来正是那个量级。
+    // 这条守的是「地址与请求头必须一起交给播放器」。
+    source.items = const <SourceItem>[SourceItem(id: 'movie-1', title: '示例影片')];
+    source.contentUrl = 'https://cdn.example/with-referer.mp4';
+    source.contentHeaders = const <String, String>{
+      'Referer': 'https://example.com/',
+      'User-Agent': 'Mozilla/5.0 (iPhone)',
+    };
+    // 两章：单章时播放器会跳过选集直接起播，就点不到「第 1 集」了。
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+      SourceChapter(id: 'movie-1-e2', title: '第 2 集'),
+    ];
+
+    final players = await pumpBoard(tester);
+    await tapWithDetailPlay(tester, find.text('示例影片').first);
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    await tapWithDetailPlay(tester, find.text('第 1 集'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+
+    final media = players.single.media;
+    expect(media, isNotNull, reason: '应当已经把媒体交给内核');
+    expect(media!.headers, <String, String>{
+      'Referer': 'https://example.com/',
+      'User-Agent': 'Mozilla/5.0 (iPhone)',
+    }, reason: '防盗链请求头不能丢：丢了就是 CDN 403 + 退避重试（等一两分钟）');
+  });
+
+  testWidgets('历史抽屉删除记录：保留收藏', (tester) async {
+    source.items = const <SourceItem>[SourceItem(id: 'movie-1', title: '示例影片')];
+    final library = await ReadingLibrary.open(Section.video);
+    library.shelve(sourceId: 'demo-video', itemId: 'movie-1', title: '示例影片');
+    library.saveProgress(
+      VideoProgress(
+        section: Section.video,
+        itemId: 'movie-1',
+        chapterIndex: 0,
+        chapterId: 'movie-1-e1',
+        chapterTitle: '第 1 集',
+        updatedAt: DateTime.now(),
+        position: const Duration(minutes: 5),
+        duration: const Duration(minutes: 45),
+      ),
+    );
+
+    await pumpBoard(tester);
+    await tapWithDetailPlay(tester, find.byTooltip('播放历史'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+
+    // 抽屉里删单条（视频的记录就是它的书架，删掉不丢别的东西）。
+    await tapWithDetailPlay(tester, find.text('多选'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    await tapWithDetailPlay(tester, find.text('全选'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    await tapWithDetailPlay(tester, find.text('删除所选'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    await tapWithDetailPlay(tester, find.widgetWithText(FilledButton, '删除'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('暂无内容'), findsOneWidget, reason: '删完抽屉给空态');
+    expect(library.videoProgress('movie-1'), isNull);
+    expect(library.onShelf('movie-1'), isTrue);
+  });
+
+  testWidgets('片头片尾：旧标记迁移后记片头保留片尾，倒计时结束跳到结尾', (tester) async {
+    source.items = const <SourceItem>[SourceItem(id: 'movie-1', title: '示例影片')];
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+    ];
+    source.contentUrl = 'https://example.com/e1.mp4';
+    // 关掉控制栏自动隐藏：这条用例要点控制栏上的快捷按钮，别跟 4 秒计时器抢时机
+    //（自动隐藏本身由 player_full_feature_test 那几条覆盖）。
+    final videoLibrary = await ReadingLibrary.open(Section.video);
+    videoLibrary.setSetting('video.player.autoHideControls', 'false');
+    // 片尾标记预先写好（走与「记片尾」按钮同一个存储）：播放器起播时读一次标记，
+    // 中途写库到不了正在播的那个实例。快捷按钮本身由「记片头」那一步覆盖。
+    SkipMarksStore(videoLibrary)
+        .save('movie-1', const SkipMarks(outro: Duration(minutes: 44)));
+    final created = await pumpBoard(tester);
+
+    // 进播放器（有作品身份：记的标记会落到这部件品上）。
+    await tapWithDetailPlay(tester, find.text('示例影片'));
+    // 旧标记迁移到两套播放器共用的同剧记忆。
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // 播到 1:35（片头结束的位置）：控制栏上的快捷智能按钮这时显示「记片头」。
+    created.last.emit(
+      position: const Duration(minutes: 1, seconds: 35),
+      duration: const Duration(minutes: 45),
+      playing: true,
+    );
+    // 播放中有常驻定时器在跑（进度落盘 / 弹幕节拍 / 跳过判定），
+    // pumpAndSettle 永远等不到「无新帧」——按固定时长推进即可。
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byTooltip('播放器设置'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('player-category-intro')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('player-category-intro')));
+    await tester.pumpAndSettle();
+    final markIntro = find.descendant(
+      of: find.byType(PlayerSettingsSheet),
+      matching: find.text('记片头'),
+    );
+    expect(markIntro, findsOneWidget, reason: '离片尾还远：快捷按钮显示「记片头」');
+    await tapWithDetailPlay(tester, markIntro);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.textContaining('已记片头'), findsOneWidget);
+    expect(created.last.seeks, isEmpty, reason: '记片头不会当场把当前片段跳走');
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+
+    // 播到片尾标记之后：这一部只有 1 集 → 跳到结尾（不走连播）。
+    // 不先停在 44:00 那一刻，避免提前启动片尾倒计时。
+    created.last.seeks.clear();
+    created.last.emit(
+      position: const Duration(minutes: 44, seconds: 30),
+      duration: const Duration(minutes: 45),
+      playing: true,
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(created.last.seeks, isEmpty, reason: '倒计时尚未结束，不提前跳转');
+    expect(find.textContaining('跳过片尾'), findsWidgets);
+    await tester.pump(const Duration(seconds: 6));
+    expect(
+      created.last.seeks,
+      contains(const Duration(minutes: 45)),
+      reason: '片尾到点：没有下一集就跳到结尾',
+    );
+    expect(created.last.seeks, hasLength(1), reason: '片尾只跳一次');
+    await tester.pump();
+    expect(find.textContaining('跳过片尾'), findsNothing, reason: '跳过后撤下倒计时提示');
+  }, timeout: const Timeout(Duration(seconds: 60)));
+
+  testWidgets('快捷智能按钮：播到片尾区间自动变成「记片尾」（用户口径）', (tester) async {
+    source.items = const <SourceItem>[SourceItem(id: 'movie-1', title: '示例影片')];
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+    ];
+    source.contentUrl = 'https://example.com/e1.mp4';
+    final videoLibrary = await ReadingLibrary.open(Section.video);
+    videoLibrary.setSetting('video.player.autoHideControls', 'false');
+    final created = await pumpBoard(tester);
+
+    await tapWithDetailPlay(tester, find.text('示例影片'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // 45 分钟的长片播到 44:30（剩余 30 秒）→ 进片尾区间，按钮自己切成「记片尾」。
+    created.last.emit(
+      position: const Duration(minutes: 44, seconds: 30),
+      duration: const Duration(minutes: 45),
+      playing: true,
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byTooltip('播放器设置'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('player-category-intro')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('player-category-intro')));
+    await tester.pumpAndSettle();
+    final markOutro = find.descendant(
+      of: find.byType(PlayerSettingsSheet),
+      matching: find.text('记片尾'),
+    );
+    expect(markOutro, findsOneWidget, reason: '剩余不到片尾窗口：显示记片尾');
+    await tapWithDetailPlay(tester, markOutro);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.textContaining('已记片尾'), findsOneWidget);
+    expect(
+      SkipMarksStore(videoLibrary).load('movie-1').outro,
+      const Duration(minutes: 44, seconds: 30),
+      reason: '记的就是当前播放位置',
+    );
+  }, timeout: const Timeout(Duration(seconds: 60)));
+
+  testWidgets('退出播放后再点别的视频：图源管理器不能被播放页关掉（真机报库已关闭的回归）', (tester) async {
+    source.items = const <SourceItem>[
+      SourceItem(id: 'movie-1', title: '示例影片'),
+      SourceItem(id: 'movie-2', title: '另一部片子'),
+    ];
+    source.chapterList = const <SourceChapter>[
+      SourceChapter(id: 'movie-1-e1', title: '第 1 集'),
+    ];
+    source.contentUrl = 'https://example.com/e1.mp4';
+    final created = await pumpBoard(tester);
+
+    // 第一条：点开播放页再返回。
+    await tapWithDetailPlay(tester, find.text('示例影片'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('player:avplayer'), findsOneWidget);
+    await backToBrowse(tester);
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+
+    // 播放页退出时**不能关掉图源管理器**：它是板块级共享实例，关了之后浏览页
+    // 再点条目就会报「This database has already been closed」（真机截图那种）。
+    expect(manager.closed, isFalse, reason: '播放页只借不关：关掉会连带关掉板块的图源库');
+
+    // 第二条照样能起播。
+    await tapWithDetailPlay(tester, find.text('另一部片子'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('player:avplayer'), findsOneWidget);
+    expect(created.length, greaterThanOrEqualTo(1));
+  });
+
+  testWidgets('没有播放记录：首页照常，抽屉给空态说明', (tester) async {
+    source.items = const <SourceItem>[SourceItem(id: 'movie-1', title: '示例影片')];
+    await pumpBoard(tester);
+    expect(find.text('继续观看'), findsNothing, reason: '这个区块已经不在了');
+
+    await tapWithDetailPlay(tester, find.byTooltip('播放历史'));
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+    expect(find.text('暂无内容'), findsOneWidget);
+  });
+
+  group('进度存储口径', () {
+    test('集数 + 时间点往返：同一作品覆盖写', () async {
+      final library = await ReadingLibrary.open(Section.video);
+      library.shelve(sourceId: 'src', itemId: 'v1', title: '作品');
+
+      library.saveProgress(
+        VideoProgress(
+          section: Section.video,
+          itemId: 'v1',
+          chapterIndex: 2,
+          chapterId: 'e3',
+          chapterTitle: '第 3 集',
+          updatedAt: DateTime.now(),
+          position: const Duration(minutes: 5),
+          duration: const Duration(minutes: 40),
+        ),
+      );
+      var saved = library.videoProgress('v1')!;
+      expect(saved.chapterIndex, 2);
+      expect(saved.chapterId, 'e3');
+      expect(saved.position, const Duration(minutes: 5));
+      expect(saved.duration, const Duration(minutes: 40));
+      expect(saved.describe(), '第 3 集 · 5:00 / 40:00');
+
+      // 同一作品再存一次：覆盖，不新增记录。
+      library.saveProgress(
+        VideoProgress(
+          section: Section.video,
+          itemId: 'v1',
+          chapterIndex: 2,
+          chapterId: 'e3',
+          chapterTitle: '第 3 集',
+          updatedAt: DateTime.now(),
+          position: const Duration(minutes: 18),
+          duration: const Duration(minutes: 40),
+        ),
+      );
+      saved = library.videoProgress('v1')!;
+      expect(saved.position, const Duration(minutes: 18));
+      expect(library.continueWatching().length, 1, reason: '同一作品只有一条记录');
+    });
+
+    test('播放只写历史：不产生收藏，显式收藏后不被播放冲掉', () async {
+      final library = await ReadingLibrary.open(Section.video);
+      library.recordHistoryItem(sourceId: 's', itemId: 'played', title: '只看过');
+      library.saveProgress(
+        VideoProgress(
+          section: Section.video,
+          itemId: 'played',
+          chapterIndex: 0,
+          chapterId: 'e1',
+          chapterTitle: '第 1 集',
+          updatedAt: DateTime.now(),
+          position: const Duration(minutes: 5),
+          duration: const Duration(minutes: 45),
+        ),
+      );
+
+      expect(library.onShelf('played'), isFalse, reason: '播放不等于收藏');
+      expect(library.shelf(), isEmpty, reason: '收藏页不该有只播过的作品');
+      expect(
+        library.continueReading().map((entry) => entry.item.itemId),
+        contains('played'),
+        reason: '历史里必须有它',
+      );
+
+      // 用户明确收藏后再播放：收藏位保持不变。
+      library.shelve(sourceId: 's', itemId: 'played', title: '只看过');
+      expect(library.onShelf('played'), isTrue);
+      library.recordHistoryItem(
+        sourceId: 's',
+        itemId: 'played',
+        title: '只看过（改名）',
+      );
+      library.saveProgress(
+        VideoProgress(
+          section: Section.video,
+          itemId: 'played',
+          chapterIndex: 0,
+          chapterId: 'e1',
+          chapterTitle: '第 1 集',
+          updatedAt: DateTime.now(),
+          position: const Duration(minutes: 8),
+          duration: const Duration(minutes: 45),
+        ),
+      );
+      expect(library.onShelf('played'), isTrue, reason: '播放不能把显式收藏冲掉');
+      expect(library.item('played')!.title, '只看过（改名）');
+    });
+
+    test('已看完判定与比例', () {
+      VideoProgress at(double ratio) => VideoProgress(
+        section: Section.video,
+        itemId: 'v',
+        chapterIndex: 0,
+        chapterId: 'c',
+        chapterTitle: '第 1 集',
+        updatedAt: DateTime.now(),
+        position: Duration(seconds: (100 * ratio).round()),
+        duration: const Duration(seconds: 100),
+      );
+
+      expect(at(0.5).isFinished, isFalse);
+      expect(at(0.5).ratio, closeTo(0.5, 0.01));
+      expect(at(0.94).isFinished, isFalse);
+      expect(at(0.95).isFinished, isTrue, reason: '≥95% 视为看完');
+      expect(at(1.0).isFinished, isTrue);
+      // 时长未知：不算看完，比例 0（不凭空说人家看完了）。
+      final unknown = VideoProgress(
+        section: Section.video,
+        itemId: 'v',
+        chapterIndex: 0,
+        chapterId: 'c',
+        chapterTitle: '第 1 集',
+        updatedAt: DateTime.now(),
+        position: const Duration(minutes: 3),
+      );
+      expect(unknown.isFinished, isFalse);
+      expect(unknown.ratio, 0);
+      expect(unknown.describe(), '第 1 集 · 3:00');
+    });
+
+    test('切换剧集：时间点归零', () {
+      final progress = VideoProgress(
+        section: Section.video,
+        itemId: 'v',
+        chapterIndex: 0,
+        chapterId: 'e1',
+        chapterTitle: '第 1 集',
+        updatedAt: DateTime.now(),
+        position: const Duration(minutes: 20),
+        duration: const Duration(minutes: 45),
+      );
+      final next = progress.withChapter(
+        chapterIndex: 1,
+        chapterId: 'e2',
+        chapterTitle: '第 2 集',
+      );
+      expect(next.chapterIndex, 1);
+      expect(next.position, Duration.zero);
+      expect(next.duration, Duration.zero, reason: '新一集时长未知，等播放器给');
+    });
+
+    test('板块隔离：视频进度不出现在其他板块，也不与阅读进度混用', () async {
+      final video = await ReadingLibrary.open(Section.video);
+      final novel = await ReadingLibrary.open(Section.cat);
+
+      video.shelve(sourceId: 's', itemId: 'shared-id', title: '视频作品');
+      video.saveProgress(
+        VideoProgress(
+          section: Section.video,
+          itemId: 'shared-id',
+          chapterIndex: 0,
+          chapterId: 'e1',
+          chapterTitle: '第 1 集',
+          updatedAt: DateTime.now(),
+          position: const Duration(minutes: 3),
+          duration: const Duration(minutes: 10),
+        ),
+      );
+
+      expect(video.videoProgress('shared-id'), isNotNull);
+      expect(
+        novel.progress('shared-id'),
+        isNull,
+        reason: '同一个 id 在小说板块不该看到视频的进度',
+      );
+      expect(novel.continueWatching(), isEmpty);
+      // 小说板块查视频进度：形状不符，如实返回 null。
+      expect(novel.videoProgress('shared-id'), isNull);
+    });
+
+    test('继续观看按最近播放倒序，且只含有进度的作品', () async {
+      final library = await ReadingLibrary.open(Section.video);
+      library.shelve(sourceId: 's', itemId: 'old', title: '先看的');
+      library.saveProgress(
+        VideoProgress(
+          section: Section.video,
+          itemId: 'old',
+          chapterIndex: 0,
+          chapterId: 'c',
+          chapterTitle: '第 1 集',
+          updatedAt: DateTime.now().subtract(const Duration(hours: 2)),
+          position: const Duration(minutes: 1),
+        ),
+      );
+      library.shelve(sourceId: 's', itemId: 'new', title: '后看的');
+      library.saveProgress(
+        VideoProgress(
+          section: Section.video,
+          itemId: 'new',
+          chapterIndex: 0,
+          chapterId: 'c',
+          chapterTitle: '第 1 集',
+          updatedAt: DateTime.now(),
+          position: const Duration(minutes: 2),
+        ),
+      );
+      // 只在书架、没有播放记录的作品不该出现。
+      library.shelve(sourceId: 's', itemId: 'never', title: '没看过');
+
+      final list = library.continueWatching();
+      expect(list.map((item) => item.itemId), <String>['new', 'old']);
+    });
+  });
+  group('跨集自动连播', () {
+    testWidgets('播完自动进下一集', (tester) async {
+      source.items = const <SourceItem>[
+        SourceItem(id: 'movie-1', title: '示例影片'),
+      ];
+      source.chapterList = const <SourceChapter>[
+        SourceChapter(id: 'e1', title: '第 1 集'),
+        SourceChapter(id: 'e2', title: '第 2 集'),
+      ];
+      source.contentUrl = 'https://example.com/e2.mp4';
+      final created = await pumpBoard(tester);
+
+      await tapWithDetailPlay(tester, find.text('示例影片'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      await tapWithDetailPlay(tester, find.text('第 1 集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+
+      // 播到结尾（模拟播放器把位置推到总时长）。
+      created.single.emit(
+        position: const Duration(minutes: 45),
+        duration: const Duration(minutes: 45),
+        playing: true,
+      );
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+
+      expect(
+        created.single.media?.uri.toString(),
+        'https://example.com/e2.mp4',
+        reason: '播完应自动加载下一集',
+      );
+      expect(find.textContaining('已自动播放'), findsOneWidget);
+    });
+
+    testWidgets('最后一集播完：停下，不越界', (tester) async {
+      source.items = const <SourceItem>[
+        SourceItem(id: 'movie-1', title: '示例影片'),
+      ];
+      source.chapterList = const <SourceChapter>[
+        SourceChapter(id: 'e1', title: '第 1 集'),
+      ];
+      source.contentUrl = 'https://example.com/e1.mp4';
+      final created = await pumpBoard(tester);
+
+      await tapWithDetailPlay(tester, find.text('示例影片'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+
+      final mediaBefore = created.single.media?.uri.toString();
+      created.single.emit(
+        position: const Duration(minutes: 45),
+        duration: const Duration(minutes: 45),
+        playing: true,
+      );
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+
+      expect(
+        created.single.media?.uri.toString(),
+        mediaBefore,
+        reason: '没有下一集就不动',
+      );
+      expect(find.textContaining('已自动播放'), findsNothing);
+    });
+
+    testWidgets('关掉自动连播：播完不跳集', (tester) async {
+      // 独立的作品 id：避免前序用例留下的播放进度影响本用例。
+      source.items = const <SourceItem>[
+        SourceItem(id: 'movie-off', title: '关连播测试片'),
+      ];
+      source.chapterList = const <SourceChapter>[
+        SourceChapter(id: 'e1', title: '第 1 集'),
+        SourceChapter(id: 'e2', title: '第 2 集'),
+      ];
+      source.contentUrl = 'https://example.com/e2.mp4';
+      final created = await pumpBoard(tester);
+
+      await tapWithDetailPlay(tester, find.text('关连播测试片'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      await tapWithDetailPlay(tester, find.text('第 1 集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+
+      // 控制栏在独立播放器页里（点条目时已经压栈）。
+      // 关掉连播开关（按图标点，避免 tooltip 在窄屏上不可见）。
+      await tapWithDetailPlay(tester, find.byTooltip('播放器设置'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('player-category-playback')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.widgetWithText(SwitchListTile, '自动连播'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      await tapWithDetailPlay(
+        tester,
+        find.widgetWithText(SwitchListTile, '自动连播'),
+      );
+
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<SwitchListTile>(find.widgetWithText(SwitchListTile, '自动连播'))
+            .value,
+        isFalse,
+      );
+      expect(created.single.media, isNotNull);
+
+      created.single.emit(
+        position: const Duration(minutes: 45),
+        duration: const Duration(minutes: 45),
+        playing: true,
+      );
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+
+      expect(
+        created.single.media?.uri.toString(),
+        isNot('https://example.com/e2.mp4'),
+        reason: '关掉后不该自动跳集',
+      );
+    });
+
+    testWidgets('时长未知时不连播（宁可不跳，也不半途跳走）', (tester) async {
+      source.items = const <SourceItem>[
+        SourceItem(id: 'movie-nodur', title: '未知时长测试片'),
+      ];
+      source.chapterList = const <SourceChapter>[
+        SourceChapter(id: 'e1', title: '第 1 集'),
+        SourceChapter(id: 'e2', title: '第 2 集'),
+      ];
+      source.contentUrl = 'https://example.com/e2.mp4';
+      final created = await pumpBoard(tester);
+
+      await tapWithDetailPlay(tester, find.text('未知时长测试片'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+      await tapWithDetailPlay(tester, find.text('第 1 集'));
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+
+      // 位置在走但时长未知（0）。
+      created.single.emit(
+        position: const Duration(minutes: 10),
+        duration: Duration.zero,
+      );
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+      });
+      await tester.pumpAndSettle();
+
+      expect(
+        created.single.media?.uri.toString(),
+        isNot('https://example.com/e2.mp4'),
+      );
+    });
+  });
+}
+
+/// 视频图源替身。
+class _VideoSource implements DataSource, DanmakuCapable {
+  bool withComments = false;
+  final commentCalls = <String>[];
+  @override
+  Future<Object?> danmaku({
+    required String itemId,
+    required String chapterId,
+  }) async {
+    commentCalls.add(chapterId);
+    return withComments
+        ? [
+            {'time': 1000, 'text': '$chapterId 弹幕'},
+          ]
+        : [];
+  }
+
+  List<VideoQuality> Function(String)? qualitiesFor;
+  @override
+  final Section section = Section.video;
+
+  @override
+  String get id => 'demo-video';
+
+  @override
+  String get name => '公开样片测试源';
+
+  List<SourceItem> items = const <SourceItem>[];
+  List<SourceChapter> chapterList = const <SourceChapter>[];
+  String contentUrl = 'https://example.com/chapter.mp4';
+
+  /// 图源给的播放请求头（防盗链）。默认空；用例可设成 Referer 之类。
+  Map<String, String> contentHeaders = const <String, String>{};
+
+  @override
+  Future<List<SourceCategory>> categories() async => const <SourceCategory>[];
+
+  @override
+  Future<SourceList> list({
+    String? categoryId,
+    String? keyword,
+    int page = 1,
+    Map<String, String>? filters,
+  }) async => SourceList(items: items, hasMore: false);
+
+  @override
+  Future<SourceDetail?> detail(String itemId) async => null;
+
+  @override
+  Future<List<SourceChapter>> chapters(String itemId) async => chapterList;
+
+  @override
+  Future<ChapterContent?> content({
+    required String itemId,
+    required String chapterId,
+  }) async {
+    // 每一集给各自的地址：contentUrl 是「当前用例关心的那一集」，
+    // 其余集按 chapterId 推出来（否则每集同址，测试断言会失去意义）。
+    final url = contentUrl.contains(chapterId)
+        ? contentUrl
+        : 'https://example.com/$chapterId.mp4';
+    return VideoContent(
+      url: Uri.parse(url),
+      headers: contentHeaders,
+      qualities: qualitiesFor?.call(chapterId) ?? const [],
+    );
+  }
+}
+
+class _FakeCatalog implements PlayerKernelCatalog {
+  const _FakeCatalog(this.available);
+
+  final Set<PlayerKernel> available;
+
+  @override
+  bool isAvailable(PlayerKernel kernel) => available.contains(kernel);
+
+  @override
+  String? unavailableReason(PlayerKernel kernel) =>
+      isAvailable(kernel) ? null : '${kernel.label} 内核尚未接入';
+}
+
+/// 播放器替身：记录 seek 与加载的媒体，位置由用例手动推进。
+class _FakePlayer extends AbstractPlayer {
+  _FakePlayer(this.kernel);
+
+  final PlayerKernel kernel;
+
+  final ValueNotifier<PlayerSnapshot> _snapshot = ValueNotifier<PlayerSnapshot>(
+    const PlayerSnapshot(),
+  );
+
+  PlayerMedia? media;
+  final List<Duration> seeks = <Duration>[];
+
+  @override
+  ValueListenable<PlayerSnapshot> get snapshot => _snapshot;
+
+  final ValueNotifier<PlayerStats> _stats = ValueNotifier(const PlayerStats());
+  @override
+  ValueListenable<PlayerStats> get stats => _stats;
+  void pushStats(PlayerStats value) => _stats.value = value;
+  int loads = 0;
+  final failPaths = <String>{};
+  int disposals = 0;
+
+  /// 用例手动推进播放位置 / 播放状态。
+  void emit({
+    Duration? position,
+    Duration? duration,
+    bool? playing,
+    bool buffering = false,
+    String? error,
+  }) {
+    _snapshot.value = PlayerSnapshot(
+      position: position ?? _snapshot.value.position,
+      duration: duration ?? const Duration(minutes: 45),
+      playing: playing ?? _snapshot.value.playing,
+      buffering: buffering,
+      error: error,
+    );
+  }
+
+  @override
+  Future<void> load(PlayerMedia media) async {
+    loads++;
+    this.media = media;
+    if (failPaths.contains(media.uri.path)) {
+      emit(position: Duration.zero, error: '测试线路不可用');
+      throw StateError('测试线路不可用');
+    }
+    if (failPaths.isNotEmpty) emit(position: Duration.zero);
+    emit(duration: const Duration(minutes: 45));
+  }
+
+  @override
+  Future<void> play() async => emit(playing: true);
+
+  @override
+  Future<void> pause() async => emit(playing: false);
+
+  @override
+  Future<void> seek(Duration position) async {
+    seeks.add(position);
+    emit(position: position);
+  }
+
+  @override
+  Future<void> stop() async => emit(playing: false, position: Duration.zero);
+
+  @override
+  Future<void> setVolume(double volume) async {}
+
+  @override
+  Future<void> applySettings(PlayerSettings settings) async {}
+
+  @override
+  Widget buildView() => Text('player:${kernel.id}');
+
+  @override
+  Future<void> dispose() async {
+    disposals++;
+    _snapshot.dispose();
+    _stats.dispose();
+  }
+}
+
+/// Existing engine regression scenarios now perform the explicit detail/play step.
+Future<void> tapWithDetailPlay(
+  WidgetTester tester,
+  Finder finder, {
+  bool warnIfMissed = true,
+}) async {
+  if (finder.evaluate().isEmpty && finder.toString().contains('全屏')) return;
+  final chapter = find
+      .ancestor(of: finder, matching: find.byType(ChoiceChip))
+      .evaluate()
+      .isNotEmpty;
+  final history = find
+      .ancestor(of: finder, matching: find.byType(HistoryEntryTile))
+      .evaluate()
+      .isNotEmpty;
+  await tester.tap(finder, warnIfMissed: warnIfMissed);
+  // Alternate real I/O and frames: prelaunch intentionally waits for endOfFrame.
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 60)),
+    );
+  }
+  await tester.pumpAndSettle();
+  if (find.byType(VideoDetailPage).evaluate().isNotEmpty) {
+    final chips = find.descendant(
+      of: find.byType(VideoDetailPage),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget.key is ValueKey<String> &&
+            RegExp(r'^video-detail-episode-[0-9]+$')
+                .hasMatch((widget.key as ValueKey<String>).value),
+      ),
+    );
+    if (chapter || history || chips.evaluate().length <= 1) {
+      final play = find.byKey(const Key('video-detail-play'));
+      if (play.evaluate().isNotEmpty &&
+          tester.widget<FilledButton>(play).onPressed != null) {
+        await tester.ensureVisible(play);
+        await tester.tap(play);
+        for (var i = 0; i < 8; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 60)),
+          );
+        }
+        await tester.pumpAndSettle();
+      }
+    }
+  }
+}
+
+Future<void> backToBrowse(WidgetTester tester) async {
+  if (find.byType(ClassicVideoPlayerPage).evaluate().isNotEmpty) {
+    Navigator.of(tester.element(find.byType(ClassicVideoPlayerPage))).pop();
+  } else {
+    await tester.pageBack();
+  }
+  await tester.pump();
+  await tester.runAsync(() async {
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+  });
+  await tester.pumpAndSettle();
+  if (find.byType(VideoDetailPage).evaluate().isNotEmpty) {
+    Navigator.of(tester.element(find.byType(VideoDetailPage))).pop();
+    await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    });
+    await tester.pumpAndSettle();
+  }
+}

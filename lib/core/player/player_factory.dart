@@ -1,11 +1,13 @@
 import 'dart:io';
 
 import 'abstract_player.dart';
+import 'av_player.dart';
+import 'mpv_player.dart';
+import 'media_kit_mpv_engine.dart';
 import 'player_settings.dart';
 
-/// Native video kernel catalog. Playback sessions are created by Swift through
-/// NativeVideoBridge; Dart never constructs a decoder or a Flutter video view.
-/// Legacy enum values are retained only to migrate saved preferences.
+/// Kernel catalog and adapters for the shared player UI. Appearance selection
+/// never chooses a different decoder. Legacy enum values migrate preferences.
 class PlayerFactory {
   PlayerFactory._();
 
@@ -73,11 +75,18 @@ class PlayerFactory {
     return '${kernel.label} 内核当前仅在 iOS 提供（Android / Windows 仅骨架）';
   }
 
-  /// Compatibility hook for old launch ports and injected test doubles.
-  /// Production video routes open NativeVideoBridge instead.
-  static AbstractPlayer? create({
-    PlayerKernel kernel = PlayerKernel.avplayer,
-  }) => null;
+  /// Adapters are created through PlayerKernelLauncher, outside synchronous UI construction.
+  static AbstractPlayer? create({PlayerKernel kernel = PlayerKernel.avplayer}) {
+    if (!isAvailable(kernel)) return null;
+    return switch (kernel) {
+      PlayerKernel.avplayer => AvPlayer(),
+      PlayerKernel.mpv => MpvPlayer(
+        engine: MediaKitMpvEngine.create(title: 'Lume Box'),
+        engineLabel: kernel.label,
+      ),
+      _ => null,
+    };
+  }
 }
 
 /// 内核目录端口：设置页依赖的最小能力集。
