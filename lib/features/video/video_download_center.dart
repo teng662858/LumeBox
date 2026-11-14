@@ -1273,13 +1273,13 @@ class VideoDownloadCenter extends ChangeNotifier {
     if (VideoDiskCache.instance.skipHlsAds) body = HlsAdFilter.filter(body);
     final lines = const LineSplitter().convert(body).map((line) => line.trim()).toList();
     final variants =
-        <({Map<String, String> attributes, String url, int bandwidth, bool? hasVideo})>[];
+        <({Map<String, String> attributes, String url, HlsVariantQuality quality, bool? hasVideo})>[];
     for (final pair in hlsVariants(lines)) {
       final attributes = hlsRawAttributes(lines[pair.tag]);
       variants.add((
         attributes: attributes,
         url: lines[pair.uri].trim(),
-        bandwidth: int.tryParse(attributes['BANDWIDTH'] ?? '') ?? 0,
+        quality: hlsVariantQuality(attributes),
         hasVideo: hlsVariantHasVideo(attributes),
       ));
     }
@@ -1291,29 +1291,29 @@ class VideoDownloadCenter extends ChangeNotifier {
       if (variants.any((v) => v.hasVideo == true)) {
         variants.removeWhere((v) => v.hasVideo == false);
       }
-      variants.sort((a, b) => b.bandwidth.compareTo(a.bandwidth));
+      variants.sort((a, b) => compareHlsQuality(a.quality, b.quality));
       final best = variants.first;
       final attributes = best.attributes..remove('SUBTITLES');
       final master = <String>['#EXTM3U'];
-      final audioFiles = <Uri, String>{};
+      final renditionFiles = <Uri, String>{};
+      final bestUrl = uri.resolve(best.url);
       final retained = <String>{};
       for (final line in lines.where((l) => l.startsWith('#EXT-X-MEDIA:'))) {
         final media = hlsRawAttributes(line);
         final type = media['TYPE'];
-        if (type != 'AUDIO' && type != 'CLOSED-CAPTIONS') continue;
+        if (type != 'AUDIO' && type != 'VIDEO' && type != 'CLOSED-CAPTIONS') continue;
         if (media['GROUP-ID'] == null ||
             media['GROUP-ID'] != attributes[type]) {
           continue;
         }
         final rawUri = media['URI'];
-        if (type == 'AUDIO' && rawUri != null) {
+        if ((type == 'AUDIO' || type == 'VIDEO') && rawUri != null) {
           final url = uri.resolve(hlsAttributeValue(rawUri));
-          var local = audioFiles[url];
+          var local = url == bestUrl ? '$name-video' : renditionFiles[url];
           if (local == null) {
-            local = audioFiles.isEmpty
-                ? '$name-audio'
-                : '$name-audio-${audioFiles.length + 1}';
-            final (text, finalUri, audioHeaders) = await _fetchText(
+            final prefix = type == 'AUDIO' ? '$name-audio' : '$name-angle';
+            local = renditionFiles.isEmpty ? prefix : '$prefix-${renditionFiles.length + 1}';
+            final (text, finalUri, trackHeaders) = await _fetchText(
               task,
               url,
               origin,
@@ -1323,12 +1323,12 @@ class VideoDownloadCenter extends ChangeNotifier {
               task,
               finalUri,
               origin,
-              audioHeaders,
+              trackHeaders,
               text,
               local,
               depth + 1,
             );
-            audioFiles[url] = local;
+            renditionFiles[url] = local;
           }
           media['URI'] = '"$local.m3u8"';
         }
@@ -1336,12 +1336,12 @@ class VideoDownloadCenter extends ChangeNotifier {
         master.add(hlsTag('#EXT-X-MEDIA', media));
       }
       if (!retained.contains('AUDIO')) attributes.remove('AUDIO');
+      if (!retained.contains('VIDEO')) attributes.remove('VIDEO');
       if (!retained.contains('CLOSED-CAPTIONS') &&
           attributes['CLOSED-CAPTIONS'] != 'NONE') {
         attributes.remove('CLOSED-CAPTIONS');
       }
-      final url = uri.resolve(best.url);
-      final (text, finalUri, videoHeaders) = await _fetchText(task, url, origin, headers);
+      final (text, finalUri, videoHeaders) = await _fetchText(task, bestUrl, origin, headers);
       await _playlist(
         task,
         finalUri,

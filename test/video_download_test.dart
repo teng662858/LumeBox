@@ -1802,6 +1802,53 @@ void main() {
       }
     });
   }
+  test('offline video downloads retain the selected camera group and its audio', () async {
+    final requests = <String>[];
+    server.listen((r) async {
+      requests.add(r.uri.path);
+      if (r.uri.path == '/master.m3u8') {
+        r.response.write([
+          '#EXTM3U',
+          '#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="hd",NAME="Main",DEFAULT=YES,URI="camera.m3u8"',
+          '#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="hd",NAME="Other angle",URI="side.m3u8"',
+          '#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="hd",NAME="Program",URI="main.m3u8"',
+          '#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="low",NAME="Low",URI="low.m3u8"',
+          '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="sound",NAME="Original",URI="sound.m3u8"',
+          '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=640x360,VIDEO="low"',
+          'preview.m3u8',
+          '#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1920x1080,VIDEO="hd",AUDIO="sound"',
+          'main.m3u8',
+        ].join('\n'));
+      } else if (r.uri.path.endsWith('.m3u8')) {
+        r.response.write('#EXTM3U\n#EXTINF:1,\n${r.uri.path.substring(1)}.ts\n#EXT-X-ENDLIST\n');
+      } else {
+        r.response.add([1, 2, 3]);
+      }
+      await r.response.close();
+    });
+    final c = await center('master.m3u8');
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['failed', 'merge_failed'].contains(task.state));
+    await c.flush();
+    final entry = c.localFile(task);
+    final master = await entry.readAsString();
+    expect(master, contains('RESOLUTION=1920x1080'));
+    expect(master, contains('NAME="Main",DEFAULT=YES,URI="'));
+    expect(master, contains('NAME="Other angle",URI="'));
+    expect(requests, containsAll(['/main.m3u8', '/camera.m3u8', '/side.m3u8', '/sound.m3u8']));
+    expect(requests, isNot(contains('/preview.m3u8')));
+    expect(requests, isNot(contains('/low.m3u8')));
+    final playlists = RegExp('URI="([^"]+)"').allMatches(master).map((m) => m[1]!).toList();
+    expect(playlists.toSet(), hasLength(4));
+    expect(requests.where((p) => p == '/main.m3u8'), hasLength(1));
+    for (final name in playlists) {
+      final child = File.fromUri(entry.uri.resolve(name));
+      final segment = (await child.readAsLines()).singleWhere((line) => line.endsWith('.ts'));
+      expect(await File.fromUri(child.uri.resolve(segment)).exists(), isTrue);
+    }
+  });
+
   test('offline master retains in-band audio, alternate languages and caption descriptors', () async {
     final requests = <String>[];
     server.listen((r) async {

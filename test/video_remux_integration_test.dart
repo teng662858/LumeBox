@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/video/video_download_center.dart';
 
 import 'video_download_merge_test.dart' show waitFor;
@@ -105,6 +106,49 @@ void main() {
         }
 
         final original = await frameHashes('${directory.path}/index.m3u8');
+        // Exercise the download path before the local merge cleans these inputs.
+        // The chosen stream points to audio, with its picture in a VIDEO group.
+        HttpOverrides.global = null;
+        final origin = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final requests = <String>[];
+        origin.listen((r) async {
+          requests.add(r.uri.path);
+          if (r.uri.path == '/master.m3u8') {
+            r.response.write('#EXTM3U\n'
+                '#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="hd",NAME="Original",DEFAULT=YES,URI="video/index.m3u8"\n'
+                '#EXT-X-STREAM-INF:BANDWIDTH=950000,RESOLUTION=48x32\nlow.m3u8\n'
+                '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=96x64,VIDEO="hd"\naudio/index.m3u8\n');
+          } else {
+            final file = File.fromUri(directory.uri.resolve(r.uri.path.substring(1)));
+            if (await file.exists()) {
+              await r.response.addStream(file.openRead());
+            } else {
+              r.response.statusCode = 404;
+            }
+          }
+          await r.response.close();
+        });
+        final remote = VideoDownloadCenter(
+          directory: () async => Directory('${root.path}/remote'),
+          resolve: (_) async => VideoContent(url: Uri.parse('http://127.0.0.1:${origin.port}/master.m3u8')),
+        );
+        try {
+          await remote.enqueue(sourceId: 'source', itemId: 'movie', title: 'Movie',
+              chapters: const [SourceChapter(id: 'one', title: 'One')]);
+          await waitFor(() => ['done', 'failed', 'merge_failed', 'paused'].contains(remote.tasks.single.state));
+          await remote.flush();
+          expect(remote.tasks.single.state, 'done', reason: remote.tasks.single.error);
+        } finally {
+          await origin.close(force: true);
+        }
+        expect(requests, containsAll(['/video/index.m3u8', '/audio/index.m3u8']));
+        expect(requests, isNot(contains('/low.m3u8')));
+        final downloaded = remote.localFile(remote.tasks.single);
+        expect(await frameHashes(downloaded.path), original);
+        Future<String> audioHash(String path) => ffmpeg([
+          '-i', path, '-map', '0:a:0', '-c:a', 'pcm_s16le', '-f', 'hash', '-',
+        ]);
+        expect(await audioHash(downloaded.path), await audioHash('${directory.path}/audio/index.m3u8'));
         await center.resume(task);
         await waitFor(
           () => task.state == 'done' || task.state == 'merge_failed',

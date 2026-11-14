@@ -26,24 +26,11 @@ class HighestHls {
   }) {
     final lines = text.split('\n').map((line) => line.trim()).toList();
     final variants =
-        <({int index, int height, int bandwidth, bool hdr, bool dolby, bool? hasVideo})>[];
+        <({int index, HlsVariantQuality quality, bool hdr, bool dolby, bool? hasVideo})>[];
     final pairs = hlsVariants(lines).toList();
     for (final pair in pairs) {
       final i = pair.tag;
-      final height =
-          int.tryParse(
-            RegExp(r'RESOLUTION=\d+x(\d+)').firstMatch(lines[i])?.group(1) ??
-                '',
-          ) ??
-          0;
-      final bandwidth =
-          int.tryParse(
-            RegExp(r'(?:^|[:,])BANDWIDTH=(\d+)')
-                    .firstMatch(lines[i])
-                    ?.group(1) ??
-                '',
-          ) ??
-          0;
+      final attributes = hlsRawAttributes(lines[i]);
       final dolby = RegExp(
         r'(?:dvh1|dvhe)',
         caseSensitive: false,
@@ -56,11 +43,10 @@ class HighestHls {
           ).hasMatch(lines[i]);
       variants.add((
         index: i,
-        height: height,
-        bandwidth: bandwidth,
+        quality: hlsVariantQuality(attributes),
         hdr: hdr,
         dolby: dolby,
-        hasVideo: hlsVariantHasVideo(hlsRawAttributes(lines[i])),
+        hasVideo: hlsVariantHasVideo(attributes),
       ));
     }
     if (variants.length < 2) return null;
@@ -87,12 +73,11 @@ class HighestHls {
       if (p != null &&
           p.wantsHdr &&
           p.dolbyVision &&
-          a.height == b.height &&
+          a.quality.height == b.quality.height &&
           a.dolby != b.dolby) {
         return a.dolby ? -1 : 1;
       }
-      final resolution = b.height.compareTo(a.height);
-      return resolution != 0 ? resolution : b.bandwidth.compareTo(a.bandwidth);
+      return compareHlsQuality(a.quality, b.quality);
     });
     final selected = variants.first.index;
     final excluded = {

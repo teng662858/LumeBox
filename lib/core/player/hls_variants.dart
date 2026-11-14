@@ -1,5 +1,20 @@
 import 'hls_attributes.dart';
 
+typedef HlsVariantQuality = ({int height, int bandwidth});
+
+HlsVariantQuality hlsVariantQuality(Map<String, String> attributes) {
+  final resolution = RegExp(r'^\d+x(\d+)$').firstMatch(attributes['RESOLUTION'] ?? '');
+  return (
+    height: int.tryParse(resolution?.group(1) ?? '') ?? 0,
+    bandwidth: int.tryParse(attributes['BANDWIDTH'] ?? '') ?? 0,
+  );
+}
+
+int compareHlsQuality(HlsVariantQuality a, HlsVariantQuality b) {
+  final resolution = b.height.compareTo(a.height);
+  return resolution != 0 ? resolution : b.bandwidth.compareTo(a.bandwidth);
+}
+
 /// Pair each variant declaration with its URI, skipping comments and blank lines.
 Iterable<({int tag, int uri})> hlsVariants(List<String> lines) sync* {
   int? pending;
