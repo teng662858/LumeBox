@@ -199,16 +199,31 @@ void main() {
         } else if (request.uri.path.endsWith('/track')) {
           request.response.write('#EXTM3U\n#EXT-X-TARGETDURATION:1\n'
               '${type == 'mp4' ? '#EXT-X-MAP:URI="init?sig=A"\n' : ''}'
-              '${type == 'vtt-map' ? '#EXT-X-MAP:URI="header?sig=A"\n' : ''}'
-              '#EXTINF:1,\ncue?sig=B&type=$type\n#EXT-X-ENDLIST\n');
+              '${type.startsWith('vtt-map') ? '#EXT-X-MAP:URI="header${type == 'vtt-map-ts' ? '.ts' : ''}?sig=A"\n' : ''}'
+              '#EXTINF:1,\n${type == 'disguised' ? 'cue.ts' : 'cue'}?sig=B&type=$type\n#EXT-X-ENDLIST\n');
         } else {
+          final interval = request.headers.value('range');
+          if ((['get-only', 'disguised'].contains(type) && interval != null) ||
+              type == 'range-only' && interval == null) {
+            request.response.statusCode = 403;
+            await request.response.close();
+            return;
+          }
           request.response.headers.contentType = ContentType.binary;
-          if (request.uri.path.endsWith('/header')) {
+          if (request.uri.pathSegments.last.startsWith('header')) {
             request.response.write('WEBVTT\nX-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:0\n\n');
           } else if (request.uri.path.endsWith('/init')) {
             request.response.add([0, 0, 0, 16, ...ascii.encode('ftypiso6'), 0, 0, 0, 1]);
-          } else if (type == 'vtt-map') {
+          } else if (type.startsWith('vtt-map')) {
             request.response.write('00:00:00.000 --> 00:00:01.000\nHello\n');
+          } else if (type == 'compressed') {
+            final bytes = gzip.encode(utf8.encode('WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n字幕\n'));
+            final start = interval == null ? 0 : int.parse(interval.substring(6).split('-').first);
+            final end = (start + 11).clamp(0, bytes.length);
+            request.response.statusCode = 206;
+            request.response.headers.set('Content-Encoding', 'gzip');
+            request.response.headers.set('Content-Range', 'bytes $start-${end - 1}/${bytes.length}');
+            request.response.add(bytes.sublist(start, end));
           } else {
             request.response.add(type == 'mp4'
               ? [0, 0, 0, 8, ...ascii.encode('moof')]
@@ -662,21 +677,47 @@ void main() {
     expect(complete.$1.contentLength, data.length);
     expect(complete.$2, data);
   });
-  test('signed subtitle cues with a separate WebVTT header retain their text format', () async {
-    final master = await cache.wrap(PlayerMedia(uri: upstream.resolve('/subtitles/master.m3u8?type=vtt-map')));
-    final text = utf8.decode((await get(master.uri)).$2);
-    final track = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(text)![1]!);
-    final playlist = utf8.decode((await get(track)).$2);
-    final map = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(playlist)![1]!);
-    final cue = Uri.parse(LineSplitter.split(playlist).firstWhere((line) => line.startsWith('http')));
-    final header = await get(map);
-    expect(header.$1.headers.contentType?.mimeType, 'text/vtt');
-    expect(utf8.decode(header.$2), startsWith('WEBVTT\nX-TIMESTAMP-MAP='));
-    final slice = await get(cue, 'bytes=0-11');
-    expect(slice.$1.statusCode, 206);
-    expect(slice.$1.headers.contentType?.mimeType, 'text/vtt');
-    expect(utf8.decode(slice.$2), '00:00:00.000');
-  });
+  for (final type in ['vtt-map', 'vtt-map-ts']) {
+    test('signed subtitle cues with a separate WebVTT header retain their text format ($type)', () async {
+      final master = await cache.wrap(PlayerMedia(uri: upstream.resolve('/subtitles/master.m3u8?type=$type')));
+      final text = utf8.decode((await get(master.uri)).$2);
+      final track = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(text)![1]!);
+      final playlist = utf8.decode((await get(track)).$2);
+      final map = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(playlist)![1]!);
+      final cue = Uri.parse(LineSplitter.split(playlist).firstWhere((line) => line.startsWith('http')));
+      final header = await get(map);
+      expect(header.$1.headers.contentType?.mimeType, 'text/vtt');
+      expect(utf8.decode(header.$2), startsWith('WEBVTT\nX-TIMESTAMP-MAP='));
+      final slice = await get(cue, 'bytes=0-11');
+      expect(slice.$1.statusCode, 206);
+      expect(slice.$1.headers.contentType?.mimeType, 'text/vtt');
+      expect(utf8.decode(slice.$2), '00:00:00.000');
+    });
+  }
+
+  for (final cueType in ['get-only', 'disguised', 'compressed', 'range-only']) {
+    test('a cold subtitle probe returns the playable WebVTT bytes ($cueType)', () async {
+      final master = await cache.wrap(PlayerMedia(uri: upstream.resolve('/subtitles/master.m3u8?type=$cueType')));
+      final text = utf8.decode((await get(master.uri)).$2);
+      final track = Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(text)![1]!);
+      final playlist = utf8.decode((await get(track)).$2);
+      final cue = Uri.parse(LineSplitter.split(playlist).firstWhere((line) => line.startsWith('http')));
+      final head = await client.headUrl(cue);
+      head.headers.set('Range', 'bytes=0-5');
+      final response = await head.close();
+      expect(response.statusCode, 206);
+      expect(response.headers.contentType?.mimeType, 'text/vtt');
+      expect(response.contentLength, 6);
+      expect(await response.expand((b) => b).toList(), isEmpty);
+      final requestsBeforeSeek = calls;
+      final first = await get(cue, 'bytes=0-5');
+      expect(first.$1.statusCode, 206);
+      expect(first.$1.headers.contentType?.mimeType, 'text/vtt');
+      expect(utf8.decode(first.$2), 'WEBVTT');
+      expect(utf8.decode((await get(cue)).$2), contains('字幕'));
+      expect(calls, requestsBeforeSeek, reason: 'repeated seeks share the verified subtitle bytes');
+    });
+  }
 
   test('mapped fMP4 subtitles retain their initialization and fragment routes', () async {
     final master = await cache.wrap(PlayerMedia(

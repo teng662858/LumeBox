@@ -595,6 +595,23 @@ class VideoDiskCache extends ChangeNotifier {
     required bool playlist,
   }) async {
     final key = _key(media, start);
+    final cached = await _cachedBlock(key);
+    if (cached != null) return cached;
+    final pending = _pending[key];
+    if (pending != null) return pending;
+    final task = _fetch(media, start, playlist: playlist);
+    final generation = _generation;
+    _pending[key] = task;
+    try {
+      final block = await task;
+      await _store(key, block, generation);
+      return block;
+    } finally {
+      if (identical(_pending[key], task)) _pending.remove(key);
+    }
+  }
+
+  Future<_Block?> _cachedBlock(String key) async {
     final cached = _files[key];
     if (enabled &&
         cached != null &&
@@ -618,18 +635,7 @@ class VideoDiskCache extends ChangeNotifier {
         /* A concurrent clear is a cache miss. */
       }
     }
-    final pending = _pending[key];
-    if (pending != null) return pending;
-    final task = _fetch(media, start, playlist: playlist);
-    final generation = _generation;
-    _pending[key] = task;
-    try {
-      final block = await task;
-      await _store(key, block, generation);
-      return block;
-    } finally {
-      if (identical(_pending[key], task)) _pending.remove(key);
-    }
+    return null;
   }
 
   // A partial response may omit the total. A one-byte suffix gives its
@@ -1118,7 +1124,7 @@ class VideoDiskCache extends ChangeNotifier {
     }
     if (!partial && (length == null || rangeHeader != null) &&
         _isHlsAudioSegment(request.uri.path)) {
-      await _serveCompleteAudioSegment(request, media, upstream, generation);
+      await _serveCompleteSegment(request, media, upstream, generation);
       return true;
     }
     final chunks = StreamIterator(
@@ -1258,12 +1264,13 @@ class VideoDiskCache extends ChangeNotifier {
 
   // Some demuxers report an I/O error at a chunked EOF even after decoding
   // all frames. A playlist segment is finite, so measure it before serving it.
-  Future<void> _serveCompleteAudioSegment(
+  Future<void> _serveCompleteSegment(
     HttpRequest request,
     PlayerMedia media,
     MediaRangeResponse upstream,
-    int generation,
-  ) async {
+    int generation, {
+    bool subtitle = false,
+  }) async {
     final buffer = BytesBuilder(copy: false);
     Directory? directory;
     File? overflow;
@@ -1271,7 +1278,13 @@ class VideoDiskCache extends ChangeNotifier {
     var length = 0;
     final prefix = <int>[];
     try {
-      await for (final chunk in upstream.timeout(const Duration(seconds: 30))) {
+      final encoding = upstream.header('content-encoding');
+      if (subtitle && !const {null, 'identity', 'gzip', 'deflate'}.contains(encoding?.trim().toLowerCase())) {
+        await upstream.listen(null).cancel();
+        throw const FormatException('不支持的字幕内容编码');
+      }
+      final body = subtitle ? _decodedBody(_completeBody(upstream), encoding) : upstream;
+      await for (final chunk in body.timeout(const Duration(seconds: 30))) {
         if (prefix.length < 80) {
           prefix.addAll(chunk.take(80 - prefix.length));
           _rejectHtml(prefix);
@@ -1279,7 +1292,7 @@ class VideoDiskCache extends ChangeNotifier {
         length += chunk.length;
         downloadedBytes += chunk.length;
         if (writer == null && length > blockBytes) {
-          directory = await Directory.systemTemp.createTemp('lume-audio-');
+          directory = await Directory.systemTemp.createTemp('lume-hls-');
           overflow = File('${directory.path}/segment');
           writer = await overflow.open(mode: FileMode.write);
           await writer.writeFrom(buffer.takeBytes());
@@ -1291,13 +1304,13 @@ class VideoDiskCache extends ChangeNotifier {
         }
       }
       final mime = _responseType(request.uri.path, upstream.header('content-type'));
-      final encoding = upstream.header('content-encoding');
-      if (encoding != null) request.response.headers.set('Content-Encoding', encoding);
+      if (encoding != null && !subtitle) request.response.headers.set('Content-Encoding', encoding);
       if (overflow == null) {
         final bytes = buffer.takeBytes();
-        await _store(_key(media, 0), _Block(bytes, 0, length, mime,
+        final key = _key(media, 0);
+        await _store(subtitle ? '$key-vtt' : key, _Block(bytes, 0, length, mime,
             upstream.header('etag') ?? upstream.header('last-modified'),
-            upstream.uri, encoding), generation);
+            upstream.uri, subtitle ? null : encoding), generation);
         serveHttpBytes(request, bytes, mime);
       } else {
         await writer!.close();
@@ -1469,6 +1482,27 @@ class VideoDiskCache extends ChangeNotifier {
         serveHttpBytes(request, await _identityKey(media), 'application/octet-stream');
         return;
       }
+      if (slash < 0 && path.endsWith('.hls.vtt')) {
+        // Map native probes and seeks to the decoded subtitle text. Signed
+        // subtitle endpoints can reject ranges or cap even an ordinary GET.
+        final generation = _generation;
+        final cached = await _cachedBlock('${_key(media, 0)}-vtt');
+        if (cached != null) {
+          serveHttpBytes(request, cached.data, 'text/vtt');
+          return;
+        }
+        var upstream = await _request(media, null);
+        if (const [400, 403, 405, 416].contains(upstream.statusCode)) {
+          await upstream.listen(null).cancel();
+          upstream = await _request(media, 'bytes=0-');
+        }
+        if (upstream.statusCode != 200 && upstream.statusCode != 206) {
+          await upstream.listen(null).cancel();
+          throw _UpstreamStatus(upstream.statusCode);
+        }
+        await _serveCompleteSegment(request, media, upstream, generation, subtitle: true);
+        return;
+      }
       if (slash < 0 && (path.endsWith('.init.mp4') || path.endsWith('.frag.m4s'))) {
         final sequence = int.tryParse(request.uri.queryParameters['n'] ?? '');
         if (sequence == null || sequence < 1 || sequence > 0x7fffffff) {
@@ -1558,7 +1592,9 @@ class VideoDiskCache extends ChangeNotifier {
           final child = childMedia(text);
           if (child == null) return text;
           var suffix = _mediaSuffix(child.uri);
-          if (sequence != null || suffix.isEmpty || fallback.endsWith('.m3u8') ||
+          if (fallback == '.vtt') {
+            suffix = '.hls.vtt';
+          } else if (sequence != null || suffix.isEmpty || fallback.endsWith('.m3u8') ||
               fallback == '.identity.key') {
             suffix = fallback;
           }
@@ -1668,9 +1704,9 @@ class VideoDiskCache extends ChangeNotifier {
                   final child = childMedia(m[1]!);
                   if (child != null) {
                     final suffix = _mediaSuffix(child.uri);
-                    final format = suffix.isEmpty
-                        ? await _scriptFormat(child).timeout(const Duration(seconds: 3), onTimeout: () => '')
-                        : suffix;
+                    final format = const {'.mp4', '.m4s', '.vtt', '.webvtt'}.contains(suffix)
+                        ? suffix
+                        : await _scriptFormat(child).timeout(const Duration(seconds: 3), onTimeout: () => '');
                     if (format == '.vtt' || format == '.webvtt') {
                       attributeSuffix = segmentSuffix = '.vtt';
                     }
