@@ -1970,6 +1970,58 @@ void main() {
     },
   );
 
+  for (final compressed in [false, true]) {
+    test('long HLS playlists retain their last signed segment (gzip=$compressed)', () async {
+      final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => source.close(force: true));
+      final signature = 'a' * 2048;
+      final body = utf8.encode([
+        '#EXTM3U', '#EXT-X-TARGETDURATION:6',
+        for (var i = 0; i < 540; i++) ...['#EXTINF:6,', '$i.ts?sig=$signature'],
+        '#EXT-X-ENDLIST',
+      ].join('\n'));
+      source.listen((request) async {
+        if (request.uri.path == '/main.m3u8') {
+          request.response.headers.set('Content-Type', 'application/vnd.apple.mpegurl');
+          if (compressed) request.response.headers.set('Content-Encoding', 'gzip');
+          request.response.add(compressed ? gzip.encode(body) : body);
+        } else if (request.uri.path == '/539.ts' && request.uri.queryParameters['sig'] == signature) {
+          request.response.add(ts.sublist(0, 188 * 3));
+        } else {
+          request.response.statusCode = 404;
+        }
+        await request.response.close();
+      });
+      final media = await cache.wrap(PlayerMedia(uri: Uri.parse('http://127.0.0.1:${source.port}/main.m3u8')));
+      final (response, bytes) = await get(media.uri);
+      expect(response.statusCode, 200);
+      final lines = LineSplitter.split(utf8.decode(bytes));
+      expect(lines.last, '#EXT-X-ENDLIST');
+      final segments = lines.where((line) => !line.startsWith('#'));
+      expect(segments, hasLength(540));
+      final last = Uri.parse(segments.last);
+      expect(last.port, media.uri.port);
+      expect((await get(last)).$2, ts.sublist(0, 188 * 3));
+    });
+
+    test('oversized HLS playlists never pass raw relative URLs to the player (gzip=$compressed)', () async {
+      final source = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => source.close(force: true));
+      final body = utf8.encode('#EXTM3U\n#${'a' * (8 * 1024 * 1024)}\n#EXTINF:1,\npart.ts\n');
+      source.listen((request) async {
+        request.response.headers.set('Content-Type', 'application/vnd.apple.mpegurl');
+        if (compressed) request.response.headers.set('Content-Encoding', 'gzip');
+        request.response.add(compressed ? gzip.encode(body) : body);
+        await request.response.close();
+      });
+      final media = await cache.wrap(PlayerMedia(uri: Uri.parse('http://127.0.0.1:${source.port}/main.m3u8')));
+      final (response, bytes) = await get(media.uri);
+      expect(response.statusCode, 502);
+      expect(bytes, isEmpty);
+      expect(cache.bytes, 0);
+    });
+  }
+
   test('gzip HLS is decoded before rewriting and never cached', () async {
     final wrapped = await cache.wrap(
       PlayerMedia(uri: upstream.resolve('/gzip/master.m3u8')),

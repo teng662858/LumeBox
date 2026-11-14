@@ -38,6 +38,7 @@ class VideoDiskCache extends ChangeNotifier {
   }
   static final instance = VideoDiskCache();
   static const blockBytes = 1024 * 1024;
+  static const _maxHlsPlaylistBytes = 8 * blockBytes;
   static const minCapacityMb = 100, maxCapacityMb = 20480;
   final _client = HttpClient()..autoUncompress = false;
   final _tickets = <String, PlayerMedia>{};
@@ -709,8 +710,9 @@ class VideoDiskCache extends ChangeNotifier {
     int start, {
     bool playlist = false,
   }) async {
+    final requestPlaylist = playlist || media.uri.path.toLowerCase().endsWith('.m3u8');
     for (var attempt = 0; attempt < 2; attempt++) {
-      var response = playlist || media.uri.path.toLowerCase().endsWith('.m3u8')
+      var response = requestPlaylist
           ? await _requestFromStart(media)
           : await _request(media, 'bytes=$start-${start + blockBytes - 1}');
       if (_packedAudio(media.uri.path.toLowerCase()) &&
@@ -759,6 +761,10 @@ class VideoDiskCache extends ChangeNotifier {
       // passthrough or any write to the block cache.
       final prefix = <int>[];
       final inspectPrefix = response.statusCode == 200 || range?[1] == '0';
+      final mime = response.header('content-type')?.split(';').first.trim().toLowerCase() ??
+          'application/octet-stream';
+      bool isPlaylist() => requestPlaylist || mime.contains('mpegurl') ||
+          (inspectPrefix && _playlistSignature(prefix));
       try {
         await for (final chunk in response.timeout(
           const Duration(seconds: 30),
@@ -767,8 +773,11 @@ class VideoDiskCache extends ChangeNotifier {
             prefix.addAll(chunk.take(80 - prefix.length));
             _rejectHtml(prefix);
           }
+          if (builder.length + chunk.length > _maxHlsPlaylistBytes) {
+            if (isPlaylist()) throw const FormatException('媒体清单过大');
+            throw const _Passthrough();
+          }
           builder.add(chunk);
-          if (builder.length > 8 * blockBytes) throw const _Passthrough();
         }
       } on HttpException {
         // Some local cat servers overstate Content-Length/Range. Only retain
@@ -780,19 +789,9 @@ class VideoDiskCache extends ChangeNotifier {
       if (![200, 206].contains(response.statusCode)) {
         throw HttpException('媒体代理 HTTP ${response.statusCode}');
       }
-      final mime =
-          response
-              .header('content-type')
-              ?.split(';')
-              .first
-              .trim()
-              .toLowerCase() ??
-          'application/octet-stream';
       // A CDN may cap even an ordinary playlist GET. Rewriting a prefix can
       // silently discard variants, keys and the end of a media playlist.
-      if (start == 0 && response.statusCode == 206 &&
-          (playlist || media.uri.path.toLowerCase().endsWith('.m3u8') ||
-              mime.contains('mpegurl') || _playlistSignature(data))) {
+      if (start == 0 && response.statusCode == 206 && isPlaylist()) {
         final first = MediaRangeResponse(
           Stream.value(data), 206, response.uri, response.header, response.requestHeaders,
         );
@@ -801,7 +800,7 @@ class VideoDiskCache extends ChangeNotifier {
         await for (final part in _completeBody(first, playlistPart: (response) {
           keepOriginHeaders = keepOriginHeaders && response.hasOriginHeaders;
         }).timeout(const Duration(seconds: 30))) {
-          if (complete.length + part.length > 8 * blockBytes) {
+          if (complete.length + part.length > _maxHlsPlaylistBytes) {
             throw const HttpException('媒体清单过大');
           }
           complete.add(part);
@@ -1730,8 +1729,10 @@ class VideoDiskCache extends ChangeNotifier {
         final manifest = _decodedBody(Stream.value(block.data), block.encoding);
         final decoded = BytesBuilder(copy: false);
         await for (final chunk in manifest) {
+          if (decoded.length + chunk.length > _maxHlsPlaylistBytes) {
+            throw const FormatException('媒体清单过大');
+          }
           decoded.add(chunk);
-          if (decoded.length > blockBytes) throw const HttpException('媒体清单过大');
         }
         final lines = <String>[];
         final rawManifest = utf8.decode(decoded.takeBytes());
