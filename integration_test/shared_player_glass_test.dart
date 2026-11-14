@@ -6,6 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:lume_box/core/player/abstract_player.dart';
 import 'package:lume_box/core/player/player_factory.dart';
 import 'package:lume_box/core/player/player_settings.dart';
+import 'package:lume_box/core/player/media_kit_mpv_engine.dart';
+import 'package:lume_box/core/player/mpv_player.dart';
 import 'package:lume_box/core/reading/reading.dart';
 import 'package:lume_box/core/security/local_cipher.dart';
 import 'package:lume_box/core/session/section.dart';
@@ -41,9 +43,20 @@ void main() {
       await Future<void>.delayed(const Duration(seconds: 3));
     }
 
-    for (final kernel in PlayerKernel.selectable) {
+    for (final kernel in [
+      PlayerKernel.avplayer,
+      PlayerKernel.aether,
+      PlayerKernel.mpv,
+    ]) {
       AbstractPlayer? player;
       PlayerKernel? chosen;
+      MediaKitMpvEngine? headlessMpv;
+      if (kernel == PlayerKernel.mpv) {
+        headlessMpv = MediaKitMpvEngine.create();
+        // Hosted runners have no audio device, just like the existing native
+        // smoke harness. Keep decoding/demuxing the audio to a null output.
+        expect(await headlessMpv.setEngineProperty('ao', 'null'), isTrue);
+      }
       store.save(
         PlayerSettings(
           kernel: kernel,
@@ -59,6 +72,9 @@ void main() {
             library: library,
             playerFactory: (selected) {
               chosen = selected;
+              if (selected == PlayerKernel.mpv && headlessMpv != null) {
+                return player = MpvPlayer(engine: headlessMpv);
+              }
               return player = PlayerFactory.create(kernel: selected);
             },
             media: PlayerMedia(
@@ -119,6 +135,8 @@ void main() {
         await frames();
         expect(find.byType(PlayerSettingsSheet), findsNothing);
         await capture('settings-closed');
+      } else {
+        await capture('${kernel.name}-controls');
       }
       await player!.seek(const Duration(seconds: 3));
       await player!.play();

@@ -59,7 +59,7 @@ def main():
             else:
                 raise TimeoutError('Shared player simulator check timed out')
         code = process.wait(timeout=30)
-        if code or not complete or passed != {'avplayer', 'mpv', 'aether'} or len(captures) != 4:
+        if code or not complete or passed != {'avplayer', 'mpv', 'aether'} or len(captures) != 6:
             print((output / 'shared-player.log').read_text()[-20000:])
             return code or 1
         return 0
