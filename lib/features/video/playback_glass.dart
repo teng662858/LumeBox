@@ -2,6 +2,8 @@ import 'danmaku/danmaku_panel.dart';
 
 import 'package:flutter/material.dart';
 
+import '../../core/theme/frosted_settings.dart';
+import '../../core/shell/dock_liquid_settings.dart';
 import '../../shared/widgets/video_glass_surface.dart';
 import '../../shared/widgets/frosted_glass_widget.dart';
 import '../../shared/widgets/module_glass_scope.dart';
@@ -19,30 +21,51 @@ class PlaybackGlass extends StatelessWidget {
   final bool enabled, dark;
   final Widget child;
   @override
-  Widget build(BuildContext context) =>
-      (enabled || NativeGlassPreview.enabledOf(context)) &&
-          !VideoGlassScope.active(context)
-      ? ModuleGlassScope(
-          module: GlassModule.video,
-          part: GlassPart.panels,
-          child: Theme(
-            data: dark
-                ? Theme.of(context).copyWith(
-                    brightness: Brightness.dark,
-                    colorScheme: Theme.of(context).colorScheme
-                        .copyWith(brightness: Brightness.dark),
-                  )
-                : Theme.of(context),
-            child: FrostedGlassWidget(
-              part: GlassPart.panels,
-              nativeGlass: true,
-              translucentOverlay: true,
-              color: dark ? const Color(0xFF171721) : null,
-              child: child,
-            ),
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([
+      FrostedSettings.instance,
+      PlayerPanelActivity.depth,
+    ]),
+    builder: (context, _) {
+      final native = NativeGlassPreview.enabledOf(context);
+      if ((!enabled && !native) || VideoGlassScope.active(context)) {
+        return child;
+      }
+      final shade = FrostedSettings.instance.playerGlassShade;
+      return ModuleGlassScope(
+        module: GlassModule.video,
+        part: GlassPart.panels,
+        child: Theme(
+          data: dark
+              ? Theme.of(context).copyWith(
+                  brightness: Brightness.dark,
+                  colorScheme: Theme.of(context).colorScheme
+                      .copyWith(brightness: Brightness.dark),
+                )
+              : Theme.of(context),
+          child: FrostedGlassWidget(
+            part: GlassPart.panels,
+            // UIKit samples Flutter overlays as a single surface. Suspend
+            // control-bar glass through panel dismissal to avoid refracting
+            // episode/settings text into the bars beneath the drawer.
+            nativeGlass: PlayerPanelActivity.depth.value == 0,
+            translucentOverlay: true,
+            nativeStyle: dark && native ? DockNativeGlassStyle.thin : null,
+            nativeBrightness: dark && native ? Brightness.light : null,
+            neutralTint: dark && native,
+            nativeBaseOpacity: dark && native ? shade : .32,
+            opacity: dark && native ? shade : .72,
+            color: dark
+                ? native
+                      ? Colors.black
+                      : const Color(0xFF171721)
+                : null,
+            child: child,
           ),
-        )
-      : child;
+        ),
+      );
+    },
+  );
 }
 
 Future<T?> showPlaybackMenu<T>({

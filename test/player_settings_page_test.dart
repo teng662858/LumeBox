@@ -155,12 +155,13 @@ void main() {
       tester.widget<GlassCard>(decodingCard).radius,
     );
     expect(find.text('MPV 内核尚未接入'), findsOneWidget);
-    expect(find.text('MDK 内核尚未接入'), findsOneWidget);
+    expect(find.text('AetherEngine 内核尚未接入'), findsOneWidget);
+    expect(find.text('MDK'), findsNothing);
     // 只有当前内核打勾。
     expect(find.byIcon(Icons.check_circle), findsOneWidget);
 
     // 未接入的内核点击无效。
-    await tester.tap(find.text('MDK'));
+    await tester.tap(find.text('AetherEngine'));
     await tester.pumpAndSettle();
     expect(changed, isNull);
   });

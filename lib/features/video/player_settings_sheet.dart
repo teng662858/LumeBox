@@ -390,6 +390,8 @@ class _PlayerSettingsSheetState extends State<PlayerSettingsSheet> {
           SizedBox(height: widget.embedded ? 20 : 12),
         ]),
       _group('controls', '手势与外观', Icons.touch_app_outlined, [
+        if (!widget.embedded || widget.categoryOnly != null)
+          const PlayerGlassShadeControl(),
         _section('按钮样式', '切换立即生效；全屏弹幕、倍速、选集保留文字'),
         SegmentedButton<PlayerControlStyle>(
           segments: const [

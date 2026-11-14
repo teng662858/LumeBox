@@ -40,8 +40,39 @@ class PlayerAppearanceControl extends StatelessWidget {
               FrostedSettings.instance.setPlayerNative(value.single),
         ),
         const SizedBox(height: 16),
+        const PlayerGlassShadeControl(),
       ],
     ),
+  );
+}
+
+class PlayerGlassShadeControl extends StatelessWidget {
+  const PlayerGlassShadeControl({super.key});
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: FrostedSettings.instance,
+    builder: (context, _) {
+      final settings = FrostedSettings.instance;
+      if (!settings.playerNative) return const SizedBox.shrink();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('玻璃控制条深浅 ${(settings.playerGlassShade * 100).round()}%'),
+          const Text('向左更通透，向右更深；仅调整播放页顶部和底部控制条'),
+          Slider(
+            key: const ValueKey('player-glass-shade'),
+            value: settings.playerGlassShade,
+            max: .5,
+            divisions: 50,
+            label: '${(settings.playerGlassShade * 100).round()}%',
+            onChanged: (value) =>
+                settings.setPlayerGlassShade(value, persist: false),
+            onChangeEnd: (_) => settings.save(),
+          ),
+          const SizedBox(height: 16),
+        ],
+      );
+    },
   );
 }
 

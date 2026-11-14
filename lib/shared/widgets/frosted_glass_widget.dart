@@ -27,6 +27,8 @@ class FrostedGlassWidget extends StatefulWidget {
     this.nativeStyle,
     this.neutralTint = false,
     this.materialOpacity = 1,
+    this.nativeBrightness,
+    this.nativeBaseOpacity = .32,
     required this.child,
   });
   final double blur, opacity, radius;
@@ -41,6 +43,8 @@ class FrostedGlassWidget extends StatefulWidget {
   final DockNativeGlassStyle? nativeStyle;
   final bool neutralTint;
   final double materialOpacity;
+  final Brightness? nativeBrightness;
+  final double nativeBaseOpacity;
   final Color? color;
   final GlassPart? part;
   final Widget child;
@@ -107,7 +111,9 @@ class _FrostedGlassWidgetState extends State<FrostedGlassWidget> {
                               (Theme.of(context).brightness == Brightness.dark
                                   ? const Color(0xFF171721)
                                   : const Color(0xFFF2F2F5)))
-                          .withValues(alpha: .32),
+                          .withValues(
+                            alpha: widget.nativeBaseOpacity.clamp(0, 1),
+                          ),
                 ),
               ),
               Positioned.fill(
@@ -126,6 +132,7 @@ class _FrostedGlassWidgetState extends State<FrostedGlassWidget> {
                       ? 0
                       : settings.native.tintOpacity,
                   materialOpacity: widget.materialOpacity,
+                  brightness: widget.nativeBrightness,
                   reduceTransparency:
                       !enabled || MediaQuery.highContrastOf(context),
                 ),

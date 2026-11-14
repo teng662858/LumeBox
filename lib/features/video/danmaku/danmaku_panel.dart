@@ -3,6 +3,7 @@ import '../../../shared/widgets/native_glass_surfaces.dart';
 import '../../../shared/widgets/video_glass_surface.dart';
 import '../../../shared/widgets/module_glass_scope.dart';
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import '../player_layout.dart';
@@ -11,10 +12,8 @@ import 'package:flutter/material.dart';
 
 /// Landscape: a right-edge drawer occupying 40% of the screen. Portrait: a bottom panel.
 ///
-/// Uses a scroll-controlled modal sheet rather than a raw dialog so the whole
-/// panel is laid out above the software keyboard. The previous dialog needed a
-/// fixed percentage height; on iOS the keyboard could still cover the text
-/// fields and the search button.
+/// Only the panel moves; the barrier stays fixed. The frame handles the actual
+/// view's keyboard inset, including input opened from a nested panel.
 Future<T?> showDanmakuPanel<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -23,44 +22,54 @@ Future<T?> showDanmakuPanel<T>({
   bool compact = false,
 }) {
   final back = PlayerPanelBackController();
-  PlayerPanelActivity.depth.value++;
-  return showGlassModalBottomSheet<T>(
-    context: context,
-    videoGlass: false,
-    isScrollControlled: true,
-    useRootNavigator: true,
-    // The frame owns safe areas inside the surface, including after rotation.
-    useSafeArea: false,
-    backgroundColor: Colors.transparent,
-    constraints: const BoxConstraints(maxWidth: double.infinity),
+  final navigator = Navigator.of(context, rootNavigator: true);
+  final themes = InheritedTheme.capture(from: context, to: navigator.context);
+  final route = RawDialogRoute<T>(
+    barrierDismissible: true,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     barrierColor: Colors.black.withValues(alpha: .22),
-    builder: (context) => PlayerAppearanceScope(
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.of(context).pop(),
-              child: const SizedBox.expand(),
+    transitionDuration: PlayerLayout.motion(context),
+    transitionBuilder: (_, _, _, child) => child,
+    pageBuilder: (context, animation, _) => themes.wrap(
+      PlayerAppearanceScope(
+        child: DanmakuPanelFrame(
+          animation: animation,
+          compact: compact,
+          edgeDrawer: edgeDrawer,
+          maxPortraitHeight: maxPortraitHeight,
+          child: PlayerPanelScope(
+            back: back,
+            child: Builder(
+              builder: (context) =>
+                  _PanelBackGesture(back: back, child: builder(context)),
             ),
           ),
-          DanmakuPanelFrame(
-            compact: compact,
-            edgeDrawer: edgeDrawer,
-            maxPortraitHeight: maxPortraitHeight,
-            child: PlayerPanelScope(
-              back: back,
-              child: _PanelBackGesture(back: back, child: builder(context)),
-            ),
-          ),
-        ],
+        ),
       ),
     ),
-  ).whenComplete(() => PlayerPanelActivity.depth.value--);
+  );
+  final result = navigator.push(route);
+  PlayerPanelActivity._open(route);
+  // popped resolves at the start of dismissal. UIKit must remain suspended
+  // until the outgoing Flutter content has actually left the overlay.
+  unawaited(route.completed.then((_) => PlayerPanelActivity._close(route)));
+  return result;
 }
 
 class PlayerPanelActivity {
   static final depth = ValueNotifier<int>(0);
+  static final _routes = <Route<dynamic>>[];
+  static bool isTop(Route<dynamic>? route) =>
+      _routes.isEmpty || identical(_routes.last, route);
+  static void _open(Route<dynamic> route) {
+    _routes.add(route);
+    depth.value = _routes.length;
+  }
+
+  static void _close(Route<dynamic> route) {
+    _routes.remove(route);
+    depth.value = _routes.length;
+  }
 }
 
 class DanmakuPanelFrame extends StatefulWidget {
@@ -71,7 +80,9 @@ class DanmakuPanelFrame extends StatefulWidget {
     this.edgeDrawer = true,
     this.maxPortraitHeight,
     this.compact = false,
+    this.animation,
   });
+  final Animation<double>? animation;
   final bool compact;
   final Widget child;
   final EdgeInsets? screenPadding;
@@ -83,6 +94,7 @@ class DanmakuPanelFrame extends StatefulWidget {
 
 class _DanmakuPanelFrameState extends State<DanmakuPanelFrame>
     with WidgetsBindingObserver {
+  double _dismissDistance = 0;
   @override
   void initState() {
     super.initState();
@@ -165,33 +177,73 @@ class _DanmakuPanelFrameState extends State<DanmakuPanelFrame>
           child: ModuleGlassScope(
             module: GlassModule.video,
             part: GlassPart.panels,
-            child: VideoGlassSurface(
-              radius: edge ? 0 : 24,
-              dark: Theme.of(context).brightness == Brightness.dark,
-              materialOpacity: .94,
-              filledOptions: true,
-              child: MediaQuery.removeViewInsets(
-                context: context,
-                removeBottom: true,
-                child: MediaQuery.removePadding(
-                  context: context,
-                  removeTop: true,
-                  removeBottom: true,
-                  removeLeft: edge,
-                  removeRight: edge,
-                  child: Padding(
-                    // 横屏贴边抽屉的内容对齐物理右边缘：iOS 横屏会把左右两侧
-                    // 安全区都报成同一数值（它不知道机器朝哪边转），照搬右侧
-                    // 数值会让卡片平白离屏 40–62pt，和 Android 观感不一致。
-                    padding: edge
-                        // 横屏贴边抽屉的工具条行放到面板最顶：不再让出顶部安全区，
-                        // 否则在状态行下面空出一条。
-                        ? EdgeInsets.only(
-                            top: 0,
-                            bottom: keyboard > 0 ? 0 : safe.bottom,
-                          )
-                        : EdgeInsets.zero,
-                    child: Column(children: [Expanded(child: widget.child)]),
+            child: SlideTransition(
+              position:
+                  Tween<Offset>(
+                        begin: landscape
+                            ? const Offset(1, 0)
+                            : const Offset(0, 1),
+                        end: Offset.zero,
+                      )
+                      .chain(CurveTween(curve: Curves.easeOutCubic))
+                      .animate(
+                        widget.animation ??
+                            const AlwaysStoppedAnimation<double>(1),
+                      ),
+              child: GestureDetector(
+                onVerticalDragStart: landscape
+                    ? null
+                    : (_) => _dismissDistance = 0,
+                onVerticalDragUpdate: landscape
+                    ? null
+                    : (event) => _dismissDistance += event.primaryDelta ?? 0,
+                onVerticalDragEnd: landscape
+                    ? null
+                    : (event) {
+                        if (_dismissDistance >= 64 ||
+                            (_dismissDistance > 0 &&
+                                (event.primaryVelocity ?? 0) > 700)) {
+                          Navigator.of(context).maybePop();
+                        }
+                      },
+                child: ValueListenableBuilder<int>(
+                  valueListenable: PlayerPanelActivity.depth,
+                  builder: (context, _, child) => VideoGlassSurface(
+                    nativeGlass: PlayerPanelActivity.isTop(
+                      ModalRoute.of(context),
+                    ),
+                    radius: edge ? 0 : 24,
+                    dark: Theme.of(context).brightness == Brightness.dark,
+                    materialOpacity: .94,
+                    filledOptions: true,
+                    child: child!,
+                  ),
+                  child: MediaQuery.removeViewInsets(
+                    context: context,
+                    removeBottom: true,
+                    child: MediaQuery.removePadding(
+                      context: context,
+                      removeTop: true,
+                      removeBottom: true,
+                      removeLeft: edge,
+                      removeRight: edge,
+                      child: Padding(
+                        // 横屏贴边抽屉的内容对齐物理右边缘：iOS 横屏会把左右两侧
+                        // 安全区都报成同一数值（它不知道机器朝哪边转），照搬右侧
+                        // 数值会让卡片平白离屏 40–62pt，和 Android 观感不一致。
+                        padding: edge
+                            // 横屏贴边抽屉的工具条行放到面板最顶：不再让出顶部安全区，
+                            // 否则在状态行下面空出一条。
+                            ? EdgeInsets.only(
+                                top: 0,
+                                bottom: keyboard > 0 ? 0 : safe.bottom,
+                              )
+                            : EdgeInsets.zero,
+                        child: Column(
+                          children: [Expanded(child: widget.child)],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),

@@ -16,6 +16,7 @@ class VideoGlassSurface extends StatelessWidget {
     this.dark = false,
     this.materialOpacity = opacity,
     this.filledOptions = false,
+    this.nativeGlass = true,
   });
 
   static const tint = Colors.white;
@@ -27,6 +28,7 @@ class VideoGlassSurface extends StatelessWidget {
   final bool dark;
   final double materialOpacity;
   final bool filledOptions;
+  final bool nativeGlass;
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +39,8 @@ class VideoGlassSurface extends StatelessWidget {
         MediaQuery.highContrastOf(context) ||
         MediaQuery.of(context).accessibleNavigation ||
         FrostedSettings.instance.reduceTransparency;
-    final native = !reduced && NativeGlassPreview.enabledOf(context);
+    final native =
+        nativeGlass && !reduced && NativeGlassPreview.enabledOf(context);
     final scheme = ColorScheme.fromSeed(
       seedColor: inherited.colorScheme.primary,
       brightness: dark ? Brightness.dark : Brightness.light,

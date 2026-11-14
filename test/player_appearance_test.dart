@@ -7,6 +7,18 @@ import 'package:lume_box/shared/widgets/player_appearance_scope.dart';
 import 'package:lume_box/shared/widgets/native_glass_surfaces.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  late Directory settingsDirectory;
+  setUpAll(() async {
+    settingsDirectory = await Directory.systemTemp.createTemp(
+      'appearance-settings-',
+    );
+    await FrostedSettings.instance.boot(directory: settingsDirectory);
+  });
+  tearDownAll(() async {
+    await FrostedSettings.instance.save();
+    await settingsDirectory.delete(recursive: true);
+  });
   test('经典版默认启用，原生玻璃选择独立保存，不改变全局材质', () async {
     final directory = await Directory.systemTemp.createTemp(
       'player-appearance-',
@@ -52,6 +64,49 @@ void main() {
       ),
     );
     expect(values, [null, false]);
+  });
+  testWidgets('控制条深浅实时调整、独立保存，经典外观隐藏调节项', (tester) async {
+    final settings = FrostedSettings.instance;
+    await tester.runAsync(() async {
+      await settings.setPlayerNative(true);
+    });
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: PlayerAppearanceControl())),
+    );
+    final slider = find.byKey(const ValueKey('player-glass-shade'));
+    expect(tester.widget<Slider>(slider).value, .12);
+    await tester.runAsync(
+      () => tester.tapAt(
+        tester.getTopLeft(slider) +
+            Offset(tester.getSize(slider).width * .75, 24),
+      ),
+    );
+    await tester.pump();
+    final updated = settings.playerGlassShade;
+    expect(updated, greaterThan(.25));
+    expect(tester.widget<Slider>(slider).value, updated);
+    await tester.runAsync(() async {
+      await settings.save();
+      final restored = FrostedSettings();
+      await restored.boot(directory: settingsDirectory);
+      expect(restored.playerGlassShade, updated);
+      expect(restored.native.tintOpacity, 0);
+      await settings.setPlayerGlassShade(10);
+      expect(settings.playerGlassShade, .5);
+      await settings.setPlayerGlassShade(-1);
+      expect(settings.playerGlassShade, 0);
+      await settings.setPlayerGlassShade(double.nan);
+      expect(settings.playerGlassShade, 0);
+      await settings.setPlayerNative(false);
+    });
+    await tester.pumpAndSettle();
+    expect(slider, findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(() async {
+      await settings.setPlayerGlassShade(
+        FrostedSettings.defaultPlayerGlassShade,
+      );
+    });
   });
   testWidgets('root navigator dialogs retain the player appearance scope', (
     tester,
