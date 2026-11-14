@@ -857,6 +857,43 @@ void main() {
       expect(source.resolved, ['A1']);
     });
   }
+  for (final broken in ['part.ts', 'init.mp4', 'enc.key', 'audio.m3u8']) {
+    test('offline HLS retry returns online when $broken is missing or empty', () async {
+      final playlist = await stored('A1', 0, 'A', 'index.m3u8');
+      final assets = playlist.parent.uri;
+      await playlist.writeAsString(
+        '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",URI="audio.m3u8"\n'
+        '#EXT-X-STREAM-INF:BANDWIDTH=100,AUDIO="a"\nvideo.m3u8\n',
+      );
+      await File.fromUri(assets.resolve('video.m3u8')).writeAsString(
+        '#EXTM3U\n#EXT-X-MAP:URI="init.mp4"\n'
+        '#EXT-X-KEY:METHOD=AES-128,URI="enc.key"\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n',
+      );
+      await File.fromUri(assets.resolve('audio.m3u8')).writeAsString(
+        '#EXTM3U\n#EXTINF:1,\naudio.aac\n#EXT-X-ENDLIST\n',
+      );
+      for (final name in ['audio.aac', 'init.mp4', 'enc.key']) {
+        await File.fromUri(assets.resolve(name)).writeAsBytes([1, 2, 3]);
+      }
+      final initial = (await downloads.completedPlayback('fixture', 'show', 'A1'))!;
+      addTearDown(initial.close);
+      await start(initialMedia: initial.media('下载'));
+      await progress(18);
+      final intact = (await request('retry'))['media'] as Map;
+      expect(Uri.parse(intact['sourceUrl'] as String).isScheme('http'), isTrue);
+      expect(source.resolved, isEmpty);
+      final missing = File.fromUri(assets.resolve(broken));
+      if (broken == 'part.ts') {
+        await missing.writeAsBytes([]);
+      } else {
+        await missing.delete();
+      }
+      final media = (await request('retry'))['media'] as Map;
+      expect(media['sourceUrl'], 'https://cdn.example/A1.m3u8?token=fresh');
+      expect(media['position'], 18);
+      expect(source.resolved, ['A1']);
+    });
+  }
   test('retry uses the original direct item URL when its download and resolver are unavailable', () async {
     const url = 'https://cdn.example/direct.mp4';
     final file = File.fromUri(directory.uri.resolve('direct.mp4'));

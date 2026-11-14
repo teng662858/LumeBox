@@ -531,6 +531,12 @@ class NativeVideoSourceSession {
         chosen.id,
         section: library.section,
       );
+      final server = local?.server;
+      if (action == 'retry' && _media.isDownloaded && server != null &&
+          !await server.hasCompletePlaylist(local!.uri)) {
+        await local.close();
+        local = null;
+      }
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
       List<VideoQuality> nextQualities = const [];
       VideoQuality? choice;

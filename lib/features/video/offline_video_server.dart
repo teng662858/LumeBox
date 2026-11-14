@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:path/path.dart' as p;
 
 import '../../core/net/http_byte_range.dart';
+import '../../core/player/hls_attributes.dart';
 
 bool _isMp4Header(List<int> header) =>
     header.length >= 8 &&
@@ -73,6 +74,69 @@ class OfflineVideoServer {
     port: _server.port,
     path: '/$_token/index.m3u8',
   );
+  // Only called after playback fails. Keep ordinary startup independent of
+  // the segment count, but avoid reopening a broken package on every retry.
+  Future<bool> hasCompletePlaylist(Uri entry) async {
+    final root = Directory(_root).uri;
+    final segments = <String>{};
+    final verified = <Uri>{};
+    Future<bool> checkPlaylist(Uri playlist, int depth) async {
+      if (depth > 3) return false; // Same nesting limit as the downloader.
+      if (verified.contains(playlist)) return true;
+      final file = File.fromUri(playlist);
+      if (!p.isWithin(_root, await file.resolveSymbolicLinks())) return false;
+      final lines = await file.readAsLines();
+      if (lines.isEmpty || lines.first.trim() != '#EXTM3U') return false;
+      var hasMedia = false;
+      for (final raw in lines.skip(1)) {
+        var path = raw.trim();
+        if (path.isEmpty) continue;
+        if (path.startsWith('#')) {
+          if (!path.startsWith('#EXT-X-MEDIA:') &&
+              !path.startsWith('#EXT-X-KEY:') &&
+              !path.startsWith('#EXT-X-MAP:')) {
+            continue;
+          }
+          final attribute = hlsRawAttributes(path)['URI'];
+          if (attribute == null) continue;
+          path = hlsAttributeValue(attribute);
+        } else {
+          hasMedia = true;
+        }
+        final resource = playlist.resolve(path);
+        if (resource.scheme != 'file' || resource.authority != root.authority ||
+            !p.isWithin(_root, resource.toFilePath())) {
+          return false;
+        }
+        if (resource.path.endsWith('.m3u8')) {
+          if (!await checkPlaylist(resource, depth + 1)) return false;
+        } else {
+          segments.add(resource.toFilePath());
+        }
+      }
+      if (hasMedia) verified.add(playlist);
+      return hasMedia;
+    }
+
+    try {
+      if (!await checkPlaylist(root.resolve(Uri.encodeComponent(entry.pathSegments.last)), 0)) {
+        return false;
+      }
+      final paths = segments.toList();
+      for (var i = 0; i < paths.length; i += 32) {
+        final stats = await Future.wait(paths.getRange(i, min(i + 32, paths.length)).map(FileStat.stat));
+        if (stats.any((s) => s.type != FileSystemEntityType.file || s.size == 0)) return false;
+      }
+      return paths.isNotEmpty;
+    } on FileSystemException {
+      return false;
+    } on FormatException {
+      return false;
+    } on UnsupportedError {
+      return false;
+    }
+  }
+
   Future<void> close() => _server.close(force: true);
   Future<void> _serve(HttpRequest request) async {
     try {
