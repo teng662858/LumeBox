@@ -9,13 +9,18 @@ import '../net/http_byte_range.dart';
 const transportStreamProbeLength = 65536 + 188 * 3 + 4;
 const _pngHeader = [137, 80, 78, 71, 13, 10, 26, 10];
 
+bool couldStartWithPng(List<int> bytes) {
+  if (bytes.isEmpty) return false;
+  for (var i = 0; i < _pngHeader.length && i < bytes.length; i++) {
+    if (bytes[i] != _pngHeader[i]) return false;
+  }
+  return true;
+}
+
 /// A PNG prefix is removed only after four aligned, plaintext MPEG-TS packets
 /// have been confirmed. Encrypted segments and real images stay unchanged.
 int transportStreamImagePrefix(List<int> bytes) {
-  if (bytes.length < 8) return 0;
-  for (var i = 0; i < 8; i++) {
-    if (bytes[i] != _pngHeader[i]) return 0;
-  }
+  if (bytes.length < 8 || !couldStartWithPng(bytes)) return 0;
   final limit = (bytes.length - 188 * 3 - 4).clamp(0, 65536);
   for (var offset = 8; offset <= limit; offset++) {
     var valid = true;

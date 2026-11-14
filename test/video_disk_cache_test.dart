@@ -401,11 +401,17 @@ void main() {
         final range = RegExp(r'bytes=(\d+)-(\d*)')
             .firstMatch(request.headers.value('range') ?? '');
         final start = range == null ? 0 : int.parse(range[1]!);
-        final end =
+        var end =
             (range == null || range[2]!.isEmpty
                     ? pngTs.length - 1
                     : int.parse(range[2]!))
                 .clamp(start, pngTs.length - 1);
+        if (request.uri.queryParameters.containsKey('capped')) {
+          // The first read can contain even less than the PNG signature.
+          end = end.clamp(start, start == 0 ? 3 : start + 1023);
+          final changed = start > 0 && request.uri.queryParameters.containsKey('change');
+          request.response.headers.set('ETag', changed ? '"new"' : '"original"');
+        }
         request.response.statusCode = 206;
         request.response.headers.set('Content-Type', 'image/png');
         request.response.headers.set(
@@ -873,6 +879,27 @@ void main() {
     expect(tail.$2, ts.sublist(ts.length - 32));
     final cross = await get(wrapped.uri, 'bytes=1040000-1060000');
     expect(cross.$2, ts.sublist(1040000, 1060001));
+  });
+
+  test('cold HLS seeks and HEAD exclude an image prefix split across capped ranges', () async {
+    final wrapped = await cache.wrap(PlayerMedia(uri: upstream.resolve('/png-segment.ts?capped')));
+    final head = await client.headUrl(wrapped.uri);
+    final metadata = await head.close();
+    await metadata.drain<void>();
+    expect(metadata.contentLength, ts.length);
+    for (final (range, start, end) in [('bytes=0-31', 0, 32), ('bytes=-16', ts.length - 16, ts.length)]) {
+      final (response, bytes) = await get(wrapped.uri, range);
+      expect(response.statusCode, 206);
+      expect(response.headers.value('Content-Range'), 'bytes $start-${end - 1}/${ts.length}');
+      expect(bytes, ts.sublist(start, end));
+    }
+  });
+
+  test('a changed HLS segment cannot supply the remainder of an image prefix', () async {
+    final wrapped = await cache.wrap(PlayerMedia(uri: upstream.resolve('/png-segment.ts?capped&change')));
+    final (response, bytes) = await get(wrapped.uri, 'bytes=0-31');
+    expect(response.statusCode, 502);
+    expect(bytes, isEmpty);
   });
 
   test('无后缀且 MIME 错报 MP4 的 MKV 在 Apple 内核前识别并可交 MPV', () async {

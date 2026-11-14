@@ -944,6 +944,41 @@ class VideoDiskCache extends ChangeNotifier {
           .trimLeft()
           .startsWith('#EXTM3U');
 
+  Future<_Block> _probeTsPrefix(PlayerMedia media, _Block first) async {
+    final limit = min(first.total, transportStreamProbeLength);
+    if (first.encoding != null || first.data.length >= limit ||
+        !couldStartWithPng(first.data) || transportStreamImagePrefix(first.data) > 0) {
+      return first;
+    }
+    // Some origins return only a few bytes per range. Assemble enough of the
+    // same representation to establish the logical offsets before sending headers.
+    final bytes = Uint8List(limit)..setRange(0, first.data.length, first.data);
+    var filled = first.data.length;
+    var nextCheck = max(1024, filled * 2);
+    var validator = first.validator;
+    while (filled < limit) {
+      final part = await _read(media, filled);
+      if (!first.sameRepresentation(part, validator)) {
+        await _discardChangedMedia(media);
+        throw const HttpException('媒体已变化，请重新加载');
+      }
+      validator ??= part.validator;
+      final offset = filled - part.start;
+      final length = min(limit - filled, part.data.length - offset);
+      if (offset < 0 || length <= 0) throw const HttpException('媒体分片前缀不完整');
+      bytes.setRange(filled, filled + length, part.data, offset);
+      filled += length;
+      final prefix = Uint8List.sublistView(bytes, 0, filled);
+      if (!couldStartWithPng(prefix)) break;
+      if (filled >= nextCheck) {
+        if (transportStreamImagePrefix(prefix) > 0) break;
+        nextCheck = filled * 2;
+      }
+    }
+    return _Block(Uint8List.sublistView(bytes, 0, filled), 0, first.total,
+        first.mime, validator, first.base, first.encoding);
+  }
+
   Stream<List<int>> _completeBody(_MediaResponse first, {void Function(_MediaResponse)? playlistPart}) async* {
     if (first.statusCode == 200) {
       yield* first;
@@ -1215,13 +1250,12 @@ class VideoDiskCache extends ChangeNotifier {
       if (segment && upstream.header('content-encoding') == null) {
         // Normal TS/encrypted bytes pass after a short prefix. A PNG wrapper needs
         // four aligned TS packets; inspect only the bounded prefix, not EOF.
-        const png = [137, 80, 78, 71, 13, 10, 26, 10];
         while (await chunks.moveNext()) {
           capture(chunks.current);
           prefix.add(chunks.current);
           if (prefix.length < 80) continue;
           final bytes = prefix.toBytes();
-          if (!listEquals(bytes.take(8).toList(), png)) break;
+          if (!couldStartWithPng(bytes)) break;
           skipped = transportStreamImagePrefix(bytes);
           if (skipped > 0 || prefix.length >= transportStreamProbeLength) break;
         }
@@ -1693,7 +1727,8 @@ class VideoDiskCache extends ChangeNotifier {
         serveHttpBytes(request, body, 'application/vnd.apple.mpegurl');
         return;
       }
-      final prefixBytes = segment ? transportStreamImagePrefix(block.data) : 0;
+      if (segment) block = await _probeTsPrefix(media, block);
+      final prefixBytes = segment && block.encoding == null ? transportStreamImagePrefix(block.data) : 0;
       final mediaTotal = block.total - prefixBytes;
       final offsets = rawRange == null
           ? null
@@ -1716,21 +1751,15 @@ class VideoDiskCache extends ChangeNotifier {
       }
       response.contentLength = end - start + 1;
       if (request.method == 'HEAD') return;
-      final total = block.total;
-      final resource = block.base.removeFragment();
+      final first = block;
       var validator = block.validator;
-      final encoding = block.encoding;
       start += prefixBytes;
       final physicalEnd = end + prefixBytes;
       if (start < block.start || start >= block.start + block.data.length) {
         block = await _read(media, start);
       }
       while (start <= physicalEnd) {
-        if (block.base.removeFragment() != resource ||
-            block.total != total || block.encoding != encoding ||
-            (validator != null &&
-                block.validator != null &&
-                validator != block.validator)) {
+        if (!first.sameRepresentation(block, validator)) {
           await _discardChangedMedia(media);
           throw const HttpException('媒体已变化，请重新加载');
         }
@@ -1742,7 +1771,7 @@ class VideoDiskCache extends ChangeNotifier {
         streaming = true;
         await response.flush();
         start += length;
-        _positions[media.uri] = (next: start, total: total);
+        _positions[media.uri] = (next: start, total: first.total);
         while (_positions.length > 128) {
           _positions.remove(_positions.keys.first);
         }
@@ -1879,6 +1908,10 @@ class _Block {
   final Uri base;
   final String? encoding;
   final bool keepOriginHeaders;
+  bool sameRepresentation(_Block other, String? knownValidator) =>
+      base.removeFragment() == other.base.removeFragment() &&
+      total == other.total && encoding == other.encoding &&
+      (knownValidator == null || other.validator == null || knownValidator == other.validator);
   _Block withData(Uint8List data) =>
       _Block(data, start, total, mime, validator, base, encoding, keepOriginHeaders: keepOriginHeaders);
 }
