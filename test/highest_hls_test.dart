@@ -88,6 +88,23 @@ void main() {
     expect(requests, 1);
   });
 
+  test('audio fallback does not hide the orientation of the video variants', () {
+    const audio = '#EXT-X-STREAM-INF:BANDWIDTH=400000,CODECS="mp4a.40.2"\naudio.m3u8';
+    const unknown = '#EXT-X-STREAM-INF:BANDWIDTH=500000\nunknown.m3u8';
+    const portrait = '#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=720x1280\nvideo.m3u8';
+    expect(HighestHls.manifestIsPortrait('#EXTM3U\n$audio\n$portrait'), isTrue);
+    expect(HighestHls.manifestIsPortrait('#EXTM3U\n$portrait\n$audio\n$unknown'), isNull);
+    expect(HighestHls.manifestIsPortrait('#EXTM3U\n$audio'), isNull);
+  });
+
+  test('video selection keeps an unlabelled variant over an explicit audio fallback', () {
+    const master = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000,CODECS="mp4a.40.2"\naudio.m3u8\n'
+        '#EXT-X-STREAM-INF:BANDWIDTH=600000\nmovie.m3u8';
+    final chosen = HighestHls.singleRendition(master, Uri.parse('https://cdn.example/master.m3u8'));
+    expect(chosen, contains('/movie.m3u8'));
+    expect(chosen, isNot(contains('/audio.m3u8')));
+  });
+
   test('起播前固定最高分辨率，保留独立音频、字幕和会话密钥', () {
     final result = HighestHls.singleRendition('''#EXTM3U
 #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="sound",URI="audio/main.m3u8"

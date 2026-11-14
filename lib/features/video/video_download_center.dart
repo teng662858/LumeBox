@@ -1288,7 +1288,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       throw StateError('播放清单缺少画质线路地址');
     }
     if (variants.isNotEmpty) {
-      if (variants.any((v) => v.hasVideo == true)) {
+      if (variants.any((v) => v.hasVideo != false)) {
         variants.removeWhere((v) => v.hasVideo == false);
       }
       variants.sort((a, b) => compareHlsQuality(a.quality, b.quality));

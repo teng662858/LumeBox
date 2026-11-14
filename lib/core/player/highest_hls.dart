@@ -50,7 +50,7 @@ class HighestHls {
       ));
     }
     if (variants.length < 2) return null;
-    if (variants.any((v) => v.hasVideo == true)) {
+    if (variants.any((v) => v.hasVideo != false)) {
       variants.removeWhere((v) => v.hasVideo == false);
     }
     final p = presentation;
@@ -199,11 +199,13 @@ class HighestHls {
 
   static bool? manifestIsPortrait(String manifest) {
     bool? portrait;
-    final resolution = RegExp(r'(?:[:,])RESOLUTION=(\d+)x(\d+)(?:,|$)');
+    final resolution = RegExp(r'^(\d+)x(\d+)$');
     for (final raw in manifest.split('\n')) {
       final line = raw.trim();
       if (!line.startsWith('#EXT-X-STREAM-INF:')) continue;
-      final size = resolution.firstMatch(line);
+      final attributes = hlsRawAttributes(line);
+      if (hlsVariantHasVideo(attributes) == false) continue;
+      final size = resolution.firstMatch(attributes['RESOLUTION'] ?? '');
       final width = int.tryParse(size?.group(1) ?? '');
       final height = int.tryParse(size?.group(2) ?? '');
       if (width == null || height == null || width <= 0 || height <= 0) {

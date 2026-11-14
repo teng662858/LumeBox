@@ -118,6 +118,11 @@ void main() {
                 '#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="hd",NAME="Original",DEFAULT=YES,URI="video/index.m3u8"\n'
                 '#EXT-X-STREAM-INF:BANDWIDTH=950000,RESOLUTION=48x32\nlow.m3u8\n'
                 '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=96x64,VIDEO="hd"\naudio/index.m3u8\n');
+          } else if (r.uri.path == '/unlabelled.m3u8') {
+            r.response.write('#EXTM3U\n'
+                '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="sound",NAME="Original",DEFAULT=YES,URI="audio/index.m3u8"\n'
+                '#EXT-X-STREAM-INF:BANDWIDTH=950000,CODECS="mp4a.40.2"\naudio/index.m3u8\n'
+                '#EXT-X-STREAM-INF:BANDWIDTH=800000,AUDIO="sound"\nvideo/index.m3u8\n');
           } else {
             final file = File.fromUri(directory.uri.resolve(r.uri.path.substring(1)));
             if (await file.exists()) {
@@ -130,25 +135,33 @@ void main() {
         });
         final remote = VideoDownloadCenter(
           directory: () async => Directory('${root.path}/remote'),
-          resolve: (_) async => VideoContent(url: Uri.parse('http://127.0.0.1:${origin.port}/master.m3u8')),
+          resolve: (task) async => VideoContent(url: Uri.parse('http://127.0.0.1:${origin.port}/${task.chapterId}.m3u8')),
         );
         try {
           await remote.enqueue(sourceId: 'source', itemId: 'movie', title: 'Movie',
-              chapters: const [SourceChapter(id: 'one', title: 'One')]);
-          await waitFor(() => ['done', 'failed', 'merge_failed', 'paused'].contains(remote.tasks.single.state));
+              chapters: const [
+                SourceChapter(id: 'master', title: 'Separate video'),
+                SourceChapter(id: 'unlabelled', title: 'Unlabelled video'),
+              ]);
+          await waitFor(() => remote.tasks.every((t) => ['done', 'failed', 'merge_failed', 'paused'].contains(t.state)));
           await remote.flush();
-          expect(remote.tasks.single.state, 'done', reason: remote.tasks.single.error);
+          for (final task in remote.tasks) {
+            expect(task.state, 'done', reason: '${task.chapterId}: ${task.error}');
+          }
         } finally {
           await origin.close(force: true);
         }
         expect(requests, containsAll(['/video/index.m3u8', '/audio/index.m3u8']));
         expect(requests, isNot(contains('/low.m3u8')));
-        final downloaded = remote.localFile(remote.tasks.single);
-        expect(await frameHashes(downloaded.path), original);
         Future<String> audioHash(String path) => ffmpeg([
           '-i', path, '-map', '0:a:0', '-c:a', 'pcm_s16le', '-f', 'hash', '-',
         ]);
-        expect(await audioHash(downloaded.path), await audioHash('${directory.path}/audio/index.m3u8'));
+        final originalAudio = await audioHash('${directory.path}/audio/index.m3u8');
+        for (final task in remote.tasks) {
+          final downloaded = remote.localFile(task);
+          expect(await frameHashes(downloaded.path), original);
+          expect(await audioHash(downloaded.path), originalAudio);
+        }
         await center.resume(task);
         await waitFor(
           () => task.state == 'done' || task.state == 'merge_failed',
