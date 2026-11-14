@@ -1470,13 +1470,69 @@ void main() {
     cache = VideoDiskCache(ipHttpsClient: native);
     await cache.boot(directory: root);
     final media = await cache.wrap(PlayerMedia(uri: Uri.parse('https://192.0.2.1/eof.mp4')));
-    for (final range in ['bytes=-16', 'bytes=2499968-', 'bytes=2499990-2500010', 'bytes=2500000-']) {
+    for (final range in [
+      'bytes=-16', 'bytes=-1048577', 'bytes=-99999999999999999999',
+      'bytes=2499968-', 'bytes=2499990-2500010', 'bytes=2500000-',
+      'bytes=99999999999999999999-', 'bytes=10-9', 'bytes=-0',
+    ]) {
       final offsets = parseHttpByteRange(range, data.length);
       final (reply, body) = await get(media.uri, range);
       expect(reply.statusCode, offsets == null ? 416 : 206, reason: range);
       expect(reply.headers.value('content-range'), offsets == null
           ? 'bytes */2500000' : 'bytes ${offsets.start}-${offsets.end}/2500000');
       expect(body, offsets == null ? isEmpty : data.sublist(offsets.start, offsets.end + 1));
+    }
+  });
+
+  test('a suffix split across several chunk boundaries stays in playback order', () async {
+    final native = MockClient.streaming((request, outgoing) async =>
+        http.StreamedResponse(Stream.fromIterable([
+          data.sublist(0, 19), data.sublist(19, 23), data.sublist(23, 29),
+        ]), 200));
+    await cache.close();
+    cache = VideoDiskCache(ipHttpsClient: native);
+    await cache.boot(directory: root);
+    final media = await cache.wrap(PlayerMedia(uri: Uri.parse('https://192.0.2.1/tail.mp4')));
+    for (final length in [1, 8, 13, 29, 31]) {
+      final (reply, bytes) = await get(media.uri, 'bytes=-$length');
+      final start = (29 - length).clamp(0, 29);
+      expect(reply.headers.value('content-range'), 'bytes $start-28/29');
+      expect(bytes, data.sublist(start, 29));
+    }
+  });
+
+  test('a multi-block video seek completes while the chunked origin still has an unread tail', () async {
+    final gate = Completer<void>();
+    final start = VideoDiskCache.blockBytes;
+    final end = start * 2 + 54;
+    Stream<List<int>> body() async* {
+      yield data.sublist(0, start + 5);
+      yield data.sublist(start + 5, end);
+      yield data.sublist(end, end + 7);
+      await gate.future;
+      yield data.sublist(end + 7);
+    }
+    final native = MockClient.streaming((request, outgoing) async =>
+        http.StreamedResponse(body(), 200));
+    await cache.close();
+    cache = VideoDiskCache(ipHttpsClient: native);
+    await cache.boot(directory: root);
+    final media = await cache.wrap(PlayerMedia(uri: Uri.parse('https://192.0.2.1/seek.mp4')));
+    try {
+      final head = await client.headUrl(media.uri);
+      head.headers.set('Range', 'bytes=$start-$end');
+      final meta = await head.close().timeout(const Duration(seconds: 3));
+      expect(meta.statusCode, 206);
+      expect(meta.contentLength, end - start + 1);
+      expect(meta.headers.value('content-range'), 'bytes $start-$end/*');
+      expect(await meta.expand((chunk) => chunk).toList(), isEmpty);
+      final (reply, bytes) = await get(media.uri, 'bytes=$start-$end').timeout(const Duration(seconds: 3));
+      expect(reply.statusCode, 206);
+      expect(reply.headers.value('content-range'), 'bytes $start-$end/*');
+      expect(reply.contentLength, end - start + 1);
+      expect(bytes, data.sublist(start, end + 1));
+    } finally {
+      gate.complete();
     }
   });
 

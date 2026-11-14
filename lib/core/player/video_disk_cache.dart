@@ -1262,45 +1262,15 @@ class VideoDiskCache extends ChangeNotifier {
       final mime = _responseType(request.uri.path, upstream.header('content-type'));
       if (!partial && length == null && rangeHeader != null && skipped == 0 &&
           rangeHeader.trim().toLowerCase() != 'bytes=0-') {
-        // A complete chunked response has no offsets of its own. A bounded
-        // probe only needs its requested bytes; suffixes also need EOF.
-        final first = prefix.takeBytes();
         Stream<List<int>> body() async* {
-          yield first;
+          yield prefix.takeBytes();
           while (await chunks.moveNext()) {
             downloadedBytes += chunks.current.length;
             yield chunks.current;
           }
         }
-        final bounds = rangeHeader.trim().substring(6).split('-');
-        final firstByte = int.tryParse(bounds.first);
-        final lastByte = int.tryParse(bounds.last);
-        if (firstByte != null && lastByte != null && lastByte >= firstByte &&
-            lastByte - firstByte < blockBytes) {
-          final selected = BytesBuilder(copy: false);
-          var position = 0;
-          await for (final chunk in body()) {
-            final from = (firstByte - position).clamp(0, chunk.length);
-            final to = lastByte - position >= chunk.length
-                ? chunk.length : lastByte - position + 1;
-            if (from < to) selected.add(chunk.sublist(from, to));
-            position += chunk.length;
-            if (position > lastByte) break;
-          }
-          final offsets = prepareHttpByteResponse(request, position, mime);
-          if (offsets != null) {
-            if (position > lastByte) {
-              response.headers.set('Content-Range', 'bytes $firstByte-$lastByte/*');
-            }
-            final encoding = upstream.header('content-encoding');
-            if (encoding != null) response.headers.set('Content-Encoding', encoding);
-            if (request.method != 'HEAD') response.add(selected.takeBytes());
-          }
-        } else {
-          final replay = MediaRangeResponse(body(), 200, upstream.uri,
-              upstream.header, upstream.requestHeaders);
-          await _serveMeasuredMedia(request, media, replay, generation, countDownload: false);
-        }
+        await _serveChunkedRange(request, rangeHeader, body(), mime,
+            upstream.header('content-encoding'));
         return true;
       }
       if (!partial && rangeHeader != null && length != null && skipped == 0) {
@@ -1370,6 +1340,67 @@ class VideoDiskCache extends ChangeNotifier {
     }
   }
 
+  // With no upstream length, the final byte in Content-Range must still
+  // match the bytes actually served. Stage only the requested interval.
+  Future<void> _serveChunkedRange(HttpRequest request, String range,
+      Stream<List<int>> body, String mime, String? encoding) async {
+    final bounds = range.trim().substring(6).split('-');
+    final suffix = bounds.first.isEmpty;
+    final start = suffix ? 0 : int.tryParse(bounds.first);
+    final end = suffix ? null : int.tryParse(bounds.last);
+    final count = suffix ? int.tryParse(bounds.last) : null;
+    final head = request.method == 'HEAD';
+    // Common suffix probes only need the last few bytes. For a large or
+    // unrepresentable suffix, retain the body on disk and seek after EOF.
+    final tail = !head && count != null && count > 0 && count <= blockBytes
+        ? Uint8List(count) : null;
+    final staged = _MediaStagingBuffer();
+    var position = 0;
+    var reachedEnd = false;
+    try {
+      await for (final chunk in body) {
+        final previous = position;
+        position += chunk.length;
+        if (start == null || start >= position || end != null && end < start || count == 0) continue;
+        if (!head && tail != null) {
+          final kept = min(chunk.length, tail.length);
+          final slot = (position - kept) % tail.length;
+          final first = min(kept, tail.length - slot);
+          tail.setRange(slot, slot + first, chunk, chunk.length - kept);
+          tail.setRange(0, kept - first, chunk, chunk.length - kept + first);
+        } else if (!head) {
+          final from = max(0, start - previous);
+          final to = end == null || end >= position ? chunk.length : end - previous + 1;
+          await staged.add(chunk, from, to);
+        }
+        if (end != null && position > end) {
+          reachedEnd = true;
+          break;
+        }
+      }
+      final offsets = prepareHttpByteResponse(request, position, mime);
+      if (offsets == null) return;
+      final response = request.response;
+      if (encoding != null) response.headers.set('Content-Encoding', encoding);
+      if (reachedEnd) {
+        response.headers.set('Content-Range', 'bytes ${offsets.start}-${offsets.end}/*');
+      }
+      if (head) return;
+      final length = offsets.end - offsets.start + 1;
+      if (tail != null) {
+        final slot = offsets.start % tail.length;
+        final first = min(length, tail.length - slot);
+        response.add(Uint8List.sublistView(tail, slot, slot + first));
+        if (first < length) response.add(Uint8List.sublistView(tail, 0, length - first));
+      } else {
+        final from = suffix ? offsets.start : 0;
+        await staged.send(response, from, from + length);
+      }
+    } finally {
+      await staged.close();
+    }
+  }
+
   // Some demuxers report an I/O error at a chunked EOF even after decoding
   // all frames. A playlist segment is finite, so measure it before serving it.
   Future<void> _serveMeasuredMedia(
@@ -1378,12 +1409,8 @@ class VideoDiskCache extends ChangeNotifier {
     MediaRangeResponse upstream,
     int generation, {
     bool subtitle = false,
-    bool countDownload = true,
   }) async {
-    final buffer = BytesBuilder(copy: false);
-    Directory? directory;
-    File? overflow;
-    RandomAccessFile? writer;
+    final staged = _MediaStagingBuffer();
     var length = 0;
     final prefix = <int>[];
     try {
@@ -1399,42 +1426,26 @@ class VideoDiskCache extends ChangeNotifier {
           _rejectHtml(prefix);
         }
         length += chunk.length;
-        if (countDownload) downloadedBytes += chunk.length;
-        if (writer == null && length > blockBytes) {
-          directory = await Directory.systemTemp.createTemp('lume-hls-');
-          overflow = File('${directory.path}/segment');
-          writer = await overflow.open(mode: FileMode.write);
-          await writer.writeFrom(buffer.takeBytes());
-        }
-        if (writer == null) {
-          buffer.add(chunk);
-        } else {
-          await writer.writeFrom(chunk);
-        }
+        downloadedBytes += chunk.length;
+        await staged.add(chunk, 0, chunk.length);
       }
       final mime = _responseType(request.uri.path, upstream.header('content-type'));
       if (encoding != null && !subtitle) request.response.headers.set('Content-Encoding', encoding);
-      if (overflow == null) {
-        final bytes = buffer.takeBytes();
+      if (staged.inMemory) {
+        final bytes = staged.takeBytes();
         final key = _key(media, 0);
         await _store(subtitle ? '$key-vtt' : key, _Block(bytes, 0, length, mime,
             upstream.header('etag') ?? upstream.header('last-modified'),
             upstream.uri, subtitle ? null : encoding), generation);
         serveHttpBytes(request, bytes, mime);
       } else {
-        await writer!.close();
-        writer = null;
         final offsets = prepareHttpByteResponse(request, length, mime);
         if (offsets != null && request.method != 'HEAD') {
-          await request.response.addStream(overflow.openRead(offsets.start, offsets.end + 1));
+          await staged.send(request.response, offsets.start, offsets.end + 1);
         }
       }
     } finally {
-      try {
-        await writer?.close();
-      } finally {
-        await directory?.delete(recursive: true);
-      }
+      await staged.close();
     }
   }
 
@@ -1982,6 +1993,50 @@ class VideoDiskCache extends ChangeNotifier {
     _progressNotice = null;
     _tickets.clear();
     _positions.clear();
+  }
+}
+
+/// Stage a single response in memory, spilling to a private temporary file
+/// when the requested bytes exceed one cache block.
+class _MediaStagingBuffer {
+  final _memory = BytesBuilder(copy: false);
+  Directory? _directory;
+  File? _file;
+  RandomAccessFile? _writer;
+
+  bool get inMemory => _file == null;
+  Uint8List takeBytes() => _memory.takeBytes();
+
+  Future<void> add(List<int> bytes, int from, int to) async {
+    if (inMemory && to - from > VideoDiskCache.blockBytes - _memory.length) {
+      _directory = await Directory.systemTemp.createTemp('lume-media-');
+      _file = File('${_directory!.path}/bytes');
+      _writer = await _file!.open(mode: FileMode.write);
+      await _writer!.writeFrom(takeBytes());
+    }
+    if (inMemory) {
+      _memory.add(from == 0 && to == bytes.length ? bytes : bytes.sublist(from, to));
+    } else {
+      await _writer!.writeFrom(bytes, from, to);
+    }
+  }
+
+  Future<void> send(HttpResponse response, int from, int to) async {
+    if (inMemory) {
+      response.add(Uint8List.sublistView(takeBytes(), from, to));
+    } else {
+      await _writer!.close();
+      _writer = null;
+      await response.addStream(_file!.openRead(from, to));
+    }
+  }
+
+  Future<void> close() async {
+    try {
+      await _writer?.close();
+    } finally {
+      await _directory?.delete(recursive: true);
+    }
   }
 }
 
