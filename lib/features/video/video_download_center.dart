@@ -8,6 +8,7 @@ import '../../core/media/playback_focus.dart';
 import '../../core/net/lume_net.dart';
 import '../../core/net/lume_http.dart';
 import '../../core/net/http_header_scope.dart';
+import '../../core/net/media_range_response.dart' show mediaContentRange;
 
 import 'dart:async';
 import 'dart:convert';
@@ -810,6 +811,15 @@ class VideoDownloadCenter extends ChangeNotifier {
     throw StateError('下载重定向过多');
   }
 
+  Future<(HttpClientResponse, Uri)> _openFromStart(
+    VideoDownloadTask task, Uri uri, Uri origin, Map<String, String> headers,
+  ) async {
+    final (response, finalUri) = await _open(task, uri, origin, headers);
+    if (!const [400, 403, 405, 416].contains(response.statusCode)) return (response, finalUri);
+    await response.listen(null).cancel();
+    return _open(task, finalUri, origin, headers, extra: const {'Range': 'bytes=0-'});
+  }
+
   Stream<List<int>> _downloadBody(
     VideoDownloadTask task,
     Uri uri,
@@ -926,10 +936,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       }
       if (response.statusCode != 206) throw StateError('服务器未继续返回分段内容，请重试');
       if (_encoding(response) != encoding) throw StateError('下载中途内容编码发生变化');
-      final range = RegExp(
-        r'^bytes (\d+)-(\d+)/(\d+|\*)$',
-        caseSensitive: false,
-      ).firstMatch(response.headers.value('content-range') ?? '');
+      final range = mediaContentRange.firstMatch(response.headers.value('content-range') ?? '');
       final start = int.tryParse(range?[1] ?? '');
       final end = int.tryParse(range?[2] ?? '');
       final length = int.tryParse(range?[3] ?? '');
@@ -1021,24 +1028,19 @@ class VideoDownloadCenter extends ChangeNotifier {
     } catch (_) {}
     final previousValidator = old['validator'];
     final previousIfRange = _ifRange(previousValidator, old['validatorDate']);
-    if ((old['signature'] != signature || old['encoded'] == true ||
-            previousValidator != null && previousIfRange == null) &&
-        await partial.exists()) {
-      await partial.delete();
-    }
-    var offset = await partial.exists() ? await partial.length() : 0;
+    // A stable URL and file length cannot identify the version that was
+    // interrupted. Keep the old bytes until a fresh response can replace them.
+    final canResume = old['signature'] == signature &&
+        old['encoded'] != true && previousIfRange != null;
+    var offset = canResume && await partial.exists() ? await partial.length() : 0;
     final extra = <String, String>{
       if (offset > 0) 'Range': 'bytes=$offset-',
       if (offset > 0) 'If-Range': ?previousIfRange,
     };
     var scopedHeaders = Map.of(headers);
-    var (response, finalUri) = await _open(
-      task,
-      uri,
-      uri,
-      scopedHeaders,
-      extra: extra,
-    );
+    var (response, finalUri) = offset == 0
+        ? await _openFromStart(task, uri, uri, scopedHeaders)
+        : await _open(task, uri, uri, scopedHeaders, extra: extra);
     final responseValidator = _validator(response);
     final changed =
         previousValidator != null &&
@@ -1054,6 +1056,7 @@ class VideoDownloadCenter extends ChangeNotifier {
     final previousLength = old['length'] is int ? old['length'] as int : null;
     final range = response.headers.value('content-range');
     final responseTotal = int.tryParse(range?.split('/').last ?? '');
+    final returnedStart = int.tryParse(mediaContentRange.firstMatch(range ?? '')?[1] ?? '');
     final restart =
         changed ||
         !sameResource ||
@@ -1062,8 +1065,9 @@ class VideoDownloadCenter extends ChangeNotifier {
             responseTotal != null &&
             previousLength != responseTotal);
     if (offset > 0 &&
-        (response.statusCode == 206 &&
-                (_encoding(response) != 'identity' || restart) ||
+        (const [400, 403, 405, 412].contains(response.statusCode) ||
+            response.statusCode == 206 &&
+                (returnedStart != offset || _encoding(response) != 'identity' || restart) ||
             response.statusCode == 416 &&
                 (restart ||
                     response.headers.value('content-range') !=
@@ -1071,7 +1075,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       await response.listen(null).cancel();
       offset = 0;
       scopedHeaders = Map.of(headers);
-      (response, finalUri) = await _open(task, uri, uri, scopedHeaders);
+      (response, finalUri) = await _openFromStart(task, uri, uri, scopedHeaders);
     }
     if (response.statusCode == 416 &&
         offset > 0 &&
@@ -1082,6 +1086,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       return;
     }
     if (response.statusCode != 200 && response.statusCode != 206) {
+      await response.listen(null).cancel();
       throw StateError('下载请求失败：HTTP ${response.statusCode}');
     }
     if (response.headers.contentType?.mimeType == 'application/dash+xml') {
@@ -1230,8 +1235,9 @@ class VideoDownloadCenter extends ChangeNotifier {
   ) async {
     await _policyCheckpoint(task);
     final scopedHeaders = Map.of(headers);
-    final (r, finalUri) = await _open(task, uri, origin, scopedHeaders);
+    final (r, finalUri) = await _openFromStart(task, uri, origin, scopedHeaders);
     if (r.statusCode != 200 && r.statusCode != 206) {
+      await r.listen(null).cancel();
       throw StateError('播放清单不可用：HTTP ${r.statusCode}');
     }
     return (
@@ -1492,8 +1498,9 @@ class VideoDownloadCenter extends ChangeNotifier {
       return;
     }
     final scopedHeaders = Map.of(headers);
-    final (r, finalUri) = await _open(task, uri, origin, scopedHeaders);
+    final (r, finalUri) = await _openFromStart(task, uri, origin, scopedHeaders);
     if (r.statusCode != 200 && r.statusCode != 206) {
+      await r.listen(null).cancel();
       throw StateError('分片下载失败：HTTP ${r.statusCode}');
     }
     final temporary = File('${file.path}.part');

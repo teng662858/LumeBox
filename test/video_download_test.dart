@@ -752,6 +752,7 @@ void main() {
       var requests = 0;
       server.listen((r) async {
         requests++;
+        r.response.headers.set('ETag', '"stable"');
         if (requests == 1) {
           r.response.statusCode = 206;
           r.response.headers.set('Content-Range', 'bytes 0-31/*');
@@ -1035,6 +1036,42 @@ void main() {
     });
   }
 
+  test('range-only HLS downloads the master, track, key and complete segment', () async {
+    final segment = List<int>.generate(188, (i) => i);
+    final key = List<int>.filled(16, 42);
+    final fetched = <String>{};
+    server.listen((r) async {
+      final range = r.headers.value('range');
+      if (range == null || r.headers.value('authorization') != 'Bearer fixture') {
+        r.response.statusCode = 403;
+      } else {
+        fetched.add(r.uri.path);
+        final bytes = switch (r.uri.path) {
+          '/play' => utf8.encode('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\ntrack\n'),
+          '/track' => utf8.encode('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key"\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n'),
+          '/key' => key,
+          _ => segment,
+        };
+        final start = int.parse(range.substring(6).split('-').first);
+        final end = (start + 24).clamp(0, bytes.length);
+        r.response.statusCode = 206;
+        r.response.headers.set('Content-Range', 'bytes $start-${end - 1}/${bytes.length}');
+        r.response.add(bytes.sublist(start, end));
+      }
+      await r.response.close();
+    });
+    final c = await center('play', headers: {'Authorization': 'Bearer fixture'});
+    await enqueue(c);
+    final task = c.tasks.single;
+    await until(() => ['done', 'failed', 'merge_failed'].contains(task.state));
+    await c.flush();
+    expect(task.fileName, 'index.m3u8', reason: task.error);
+    expect(fetched, containsAll(['/play', '/track', '/key', '/part.ts']));
+    final files = await Directory(c.folder(task)).list(recursive: true).where((f) => f is File).cast<File>().toList();
+    expect(await files.singleWhere((f) => f.path.endsWith('.key')).readAsBytes(), key);
+    expect(await files.singleWhere((f) => f.path.endsWith('.ts')).readAsBytes(), segment);
+  });
+
   test('downloads compressed HLS manifests, keys and segments as playable bytes', () async {
     final paths = <String>[];
     final segment = List<int>.generate(188, (i) => i);
@@ -1161,7 +1198,7 @@ void main() {
       await c.flush();
       expect(task.state, 'done', reason: task.error);
       expect(await c.localFile(task).readAsBytes(), newBytes);
-      expect(resumedRanges, ['bytes=32-', if (!sameTag || change != 'header') null]);
+      expect(resumedRanges, [if (sameTag) 'bytes=32-', if (!sameTag || change != 'header') null]);
     });
   }
 
@@ -1198,6 +1235,7 @@ void main() {
       server.listen((r) async {
         final range = r.headers.value('range');
         ranges.add(range);
+        r.response.headers.set('ETag', '"stable"');
         switch (ranges.length) {
           case 1:
           case 2:
@@ -1301,6 +1339,54 @@ void main() {
     expect(await c.localFile(task).readAsBytes(), next);
     expect(ranges, [null, 'bytes=32-', 'bytes=32-', null]);
   });
+
+  for (final mode in ['unversioned', 'unversioned-eof', 'range-denied', 'wrong-offset']) {
+    test('resume recovers the complete current file after $mode', () async {
+      final replacement = List.generate(mode == 'unversioned-eof' ? 32 : 64, (i) => i);
+      var retry = false;
+      final requests = <String?>[];
+      server.listen((r) async {
+        final range = r.headers.value('range');
+        if (!mode.startsWith('unversioned')) r.response.headers.set('ETag', '"stable"');
+        if (!retry && range == null) {
+          r.response.statusCode = 206;
+          r.response.headers.set('Content-Range', 'bytes 0-31/${mode == 'unversioned-eof' ? '*' : 64}');
+          r.response.add(mode.startsWith('unversioned') ? List.filled(32, 255) : replacement.sublist(0, 32));
+        } else if (!retry) {
+          r.response.statusCode = 503;
+        } else {
+          requests.add(range);
+          if (range == null) {
+            r.response.add(replacement);
+          } else if (mode == 'range-denied') {
+            r.response.statusCode = 403;
+          } else if (mode == 'unversioned-eof') {
+            r.response.statusCode = 416;
+            r.response.headers.set('Content-Range', 'bytes */32');
+          } else {
+            final start = mode == 'wrong-offset' ? 0 : 32;
+            r.response.statusCode = 206;
+            r.response.headers.set('Content-Range', 'bytes $start-${start + 31}/64');
+            r.response.add(replacement.sublist(start, start + 32));
+          }
+        }
+        await r.response.close();
+      });
+      final initial = await center('same.mp4');
+      await enqueue(initial);
+      await until(() => initial.tasks.single.state == 'failed');
+      await initial.flush();
+      retry = true;
+      final restored = await center('same.mp4');
+      final task = restored.tasks.single;
+      await restored.resume(task);
+      await until(() => ['done', 'failed'].contains(task.state));
+      await restored.flush();
+      expect(task.state, 'done', reason: task.error);
+      expect(await restored.localFile(task).readAsBytes(), replacement);
+      expect(requests.last, isNull);
+    });
+  }
 
   test(
     'a capped HLS segment is stored in full before it becomes playable offline',
