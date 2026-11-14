@@ -98,7 +98,8 @@ import UniformTypeIdentifiers
   private var subtitlePickerGeneration: Int?
   private var danmaku: [(Double, String)] = []
   private var danmakuIndex = 0, danmakuRow = 0
-  private var danmakuPosition = 0.0, danmakuEnabled = false, danmakuPaused = false
+  private var danmakuPosition: Double?
+  private var danmakuRevision = 0, danmakuEnabled = false, danmakuPaused = false
   private let picture = UIView(), bullets = UIView(), chrome = UIView()
   private let top = UIStackView(), bottom = UIStackView(), progressRow = UIStackView(), buttons = UIStackView()
   private let titleLabel = UILabel(), statusLabel = UILabel(), caption = UILabel(), elapsed = UILabel(), duration = UILabel()
@@ -360,13 +361,14 @@ import UniformTypeIdentifiers
     seekRevision += 1
     let seek = seekRevision
     pendingSeek = target
+    danmakuPosition = nil; bullets.subviews.forEach { $0.removeFromSuperview() }
     engine.seek(target) { [weak self] finished in
       defer { completion() }
       guard let self, self.generation == revision, self.seekRevision == seek else { return }
       self.pendingSeek = nil
+      self.updateDanmaku()
       if finished { self.emit("seek") }
     }
-    danmakuPosition = -100; bullets.subviews.forEach { $0.removeFromSuperview() }
   }
   @objc private func scrubBegin() { guard !locked else { return }; scrubbing = true; autoHide?.invalidate() }
   @objc private func scrubPreview() { elapsed.text = Self.clock(Double(slider.value)) }
@@ -472,7 +474,11 @@ import UniformTypeIdentifiers
         self.present(picker, animated: true)
       case "lines": self.choices("lines")
       case "qualities": self.choices("qualities")
-      case "danmaku": self.danmakuEnabled.toggle(); self.bullets.subviews.forEach { $0.removeFromSuperview() }; if self.danmakuEnabled { self.loadDanmaku() }
+      case "danmaku":
+        self.danmakuEnabled.toggle()
+        self.bullets.subviews.forEach { $0.removeFromSuperview() }
+        self.danmaku = []
+        if self.danmakuEnabled { self.loadDanmaku() }
       case "aspect": self.fill.toggle(); self.engine?.aspect(self.fill)
       case "autoNext": self.autoNext.toggle(); self.emit("settings", extra: ["autoNext": self.autoNext])
       case "hardware": self.hardware.toggle(); if self.kernel == "mpv" { self.switchEngine("mpv") }; self.emit("settings", extra: ["hardwareDecoding": self.hardware])
@@ -731,18 +737,20 @@ import UniformTypeIdentifiers
   }
   private func loadDanmaku() {
     let identity = item.identity
+    danmakuRevision += 1; let revision = danmakuRevision
     request?("danmaku", [:]) { [weak self] reply in
-      guard let self, !self.closing, self.item.identity == identity else { return }
+      guard let self, !self.closing, self.danmakuEnabled, self.item.identity == identity,
+            self.danmakuRevision == revision else { return }
       self.danmaku = (reply?["items"] as? [[String: Any]] ?? []).compactMap { row in
         guard let text = row["text"] as? String, !text.isEmpty, let time = row["time"] as? Double, time.isFinite else { return nil }
         return (max(0, time), String(text.prefix(180)))
       }.sorted { $0.0 < $1.0 }
-      self.danmakuPosition = -100
+      self.danmakuPosition = nil
       if self.danmaku.isEmpty { self.toast("本集暂未提供弹幕") }
     }
   }
   private func updateDanmaku() {
-    guard danmakuEnabled else { return }
+    guard danmakuEnabled, pendingSeek == nil else { return }
     if state.playing == danmakuPaused {
       let layer = bullets.layer
       if state.playing {
@@ -751,22 +759,35 @@ import UniformTypeIdentifiers
       } else { let at = layer.convertTime(CACurrentMediaTime(), from: nil); layer.speed = 0; layer.timeOffset = at }
       danmakuPaused = !state.playing
     }
-    if abs(state.position - danmakuPosition) > 2 {
+    let position = state.position
+    if danmakuPosition.map({ position < $0 || position - $0 > 2 }) ?? true {
       bullets.subviews.forEach { $0.removeFromSuperview() }
-      danmakuIndex = danmaku.firstIndex { $0.0 >= state.position } ?? danmaku.count
+      danmakuIndex = danmakuBoundary { $0 < position }
     }
-    danmakuPosition = state.position
+    danmakuPosition = position
     guard state.playing else { return }
-    var emitted = 0
-    while danmakuIndex < danmaku.count && danmaku[danmakuIndex].0 <= state.position && emitted < 6 {
-      let text = danmaku[danmakuIndex].1; danmakuIndex += 1; emitted += 1
-      guard bullets.subviews.count < 40 else { continue }
+    guard danmakuIndex < danmaku.count, danmaku[danmakuIndex].0 <= position else { return }
+    let end = danmakuBoundary { $0 <= position }
+    let capacity = min(6, max(0, 40 - bullets.subviews.count))
+    let start = max(danmakuIndex, end - capacity)
+    danmakuIndex = end
+    for index in start..<end {
+      let text = danmaku[index].1
       let label = UILabel(); label.text = text; label.textColor = .white; label.font = .systemFont(ofSize: 19, weight: .medium)
       label.layer.shadowColor = UIColor.black.cgColor; label.layer.shadowOpacity = 1; label.layer.shadowRadius = 1
       label.sizeToFit(); label.frame.origin = CGPoint(x: bullets.bounds.width, y: CGFloat(danmakuRow % 6) * 28 + 56); danmakuRow += 1
       bullets.addSubview(label)
       UIView.animate(withDuration: 8, delay: 0, options: .curveLinear) { label.frame.origin.x = -label.bounds.width } completion: { _ in label.removeFromSuperview() }
     }
+  }
+  // The track is sorted. Skip a dense burst in logarithmic time on the UI thread.
+  private func danmakuBoundary(while precedes: (Double) -> Bool) -> Int {
+    var lower = 0, upper = danmaku.count
+    while lower < upper {
+      let mid = (lower + upper) / 2
+      if precedes(danmaku[mid].0) { lower = mid + 1 } else { upper = mid }
+    }
+    return lower
   }
   private func toast(_ text: String) {
     toastTimer?.invalidate()

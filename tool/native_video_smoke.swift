@@ -9,6 +9,37 @@ extension NativeVideoScreen {
   fileprivate var displayedStatus: String? { statusLabel.text }
   fileprivate func retryTestMedia() { resolve("retry") }
   fileprivate func pauseTestPlayback() { setPlaying(false) }
+  fileprivate static func checkDanmakuTiming(_ item: NativeVideoItem) {
+    let screen = NativeVideoScreen(session: "danmaku-check", item: item, options: [:])
+    var replies: [([String: Any]?) -> Void] = []
+    screen.request = { _, _, reply in replies.append(reply) }
+    screen.danmakuEnabled = true
+    screen.loadDanmaku()
+    screen.loadDanmaku()
+    var rows: [[String: Any]] = Array(repeating: ["time": 1.0, "text": "burst"], count: 240)
+    rows.append(["time": 2.0, "text": "on time"])
+    replies[1](["items": rows])
+    replies[0](["items": []])
+    precondition(screen.danmaku.count == 241)
+    screen.state.playing = true
+    func sample(_ position: Double) -> [String] {
+      screen.state.position = position
+      screen.updateDanmaku()
+      return screen.bullets.subviews.compactMap { ($0 as? UILabel)?.text }
+    }
+    _ = sample(0)
+    _ = sample(1)
+    precondition(screen.danmakuIndex == 240)
+    precondition(sample(2).contains("on time"))
+    screen.state.playing = false
+    precondition(sample(0.75).isEmpty)
+    screen.pendingSeek = 2
+    screen.danmakuPosition = nil
+    screen.state.playing = true
+    precondition(sample(1).isEmpty)
+    screen.pendingSeek = nil
+    precondition(sample(2) == ["on time"])
+  }
 }
 
 @main @MainActor final class NativeVideoSmokeApp: UIResponder, UIApplicationDelegate {
@@ -42,6 +73,7 @@ extension NativeVideoScreen {
     let test = cases[caseIndex]; phase = 0; swaps = 0; nextRequests = 0; started = Date()
     do {
       let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)"])
+      if caseIndex == 0 { NativeVideoScreen.checkDanmakuTiming(item) }
       let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": test.1 == "smoke.mp4", "headlessAudio": true])
       view.event = { [weak self] data in
         if data["type"] as? String == "seek", let position = data["position"] as? Double {
