@@ -5,6 +5,7 @@
   private var screen: NativeVideoScreen?
   private var timer: Timer?
   private var caseIndex = 0, phase = 0, swaps = 0
+  private var nextRequests = 0
   private var started = Date(), pausedAt = Date(), pausedPosition = 0.0
   private let cases = [("avplayer", "smoke.mp4"), ("avplayer", "smoke.m3u8"), ("mpv", "smoke.mp4"), ("mpv", "smoke.m3u8")]
 
@@ -19,15 +20,21 @@
   }
   private func next() {
     guard caseIndex < cases.count else { print("NATIVE_VIDEO_ALL_OK"); fflush(stdout); exit(0) }
-    let test = cases[caseIndex]; phase = 0; swaps = 0; started = Date()
+    let test = cases[caseIndex]; phase = 0; swaps = 0; nextRequests = 0; started = Date()
     do {
       let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)"])
-      let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": false, "headlessAudio": true])
-      view.request = { action, _, completion in
-        guard action == "next" else { completion([:]); return }
-        var next = item.payload
-        next["identity"] = "second-episode"
-        completion(["media": next, "kernel": "mpv", "speed": 1.75])
+      let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": test.1 == "smoke.mp4", "headlessAudio": true])
+      view.request = { [weak self] action, _, completion in
+        guard let self, action == "next" else { completion([:]); return }
+        if self.caseIndex == 0 && self.phase == 2 {
+          var next = item.payload
+          next["identity"] = "second-episode"
+          completion(["media": next, "kernel": "mpv", "speed": 1.75])
+          return
+        }
+        self.nextRequests += 1
+        self.check(self.nextRequests <= 2, "one next request per end of playback")
+        completion(self.nextRequests == 2 ? ["error": "fixture next unavailable"] : [:])
       }
       screen = view
       window?.rootViewController?.present(view, animated: false) {
@@ -73,7 +80,7 @@
         screen.debugAction(["action": "tap", "control": "next"])
         check((screen.debugState["loadElapsedMs"] as? Int ?? Int.max) < 1000, "kernel switch resets the load clock")
         phase = 3; swaps = 1
-      } else { complete() }
+      } else { checkEnding() }
     } else if phase == 3 && state["firstFrame"] as? Bool == true && state["switching"] as? Bool == false {
       if swaps == 1 {
         check(state["kernel"] as? String == "mpv", "switch to MPV")
@@ -81,9 +88,38 @@
         screen.debugAction(["action": "kernel", "kernel": "avplayer"]); swaps = 2
       } else {
         check(state["kernel"] as? String == "avplayer", "switch back to AVPlayer")
-        print("NATIVE_VIDEO_SWITCH_OK"); complete()
+        print("NATIVE_VIDEO_SWITCH_OK"); checkEnding()
       }
+    } else if phase == 4 && state["ended"] as? Bool == true {
+      let enabled = cases[caseIndex].1 == "smoke.mp4"
+      check(nextRequests == (enabled ? 1 : 0), "next is requested only when enabled")
+      check(state["autoNext"] as? Bool == enabled, "catalog end preserves auto-next preference")
+      check(state["wantsPlay"] as? Bool == false, "finished video offers replay")
+      pausedAt = Date(); phase = 5
+    } else if phase == 5 && Date().timeIntervalSince(pausedAt) > 0.8 {
+      check(nextRequests == (cases[caseIndex].1 == "smoke.mp4" ? 1 : 0), "end notification is consumed once")
+      if cases[caseIndex].1 == "smoke.m3u8" {
+        phase = 9; screen.debugAction(["action": "seek", "position": 0.5]); return
+      }
+      screen.debugAction(["action": "tap", "control": "play"]); phase = 6
+    } else if phase == 9 && state["ended"] as? Bool == false && position < 2 {
+      pausedAt = Date(); pausedPosition = position; phase = 10
+    } else if phase == 10 && Date().timeIntervalSince(pausedAt) > 0.8 {
+      check(state["playing"] as? Bool == false && abs(position - pausedPosition) < 0.4, "seeking after EOF keeps the player paused")
+      screen.debugAction(["action": "tap", "control": "play"]); phase = 6
+    } else if phase == 6 && position > 0.2 && position < 2.5 && state["playing"] as? Bool == true {
+      if cases[caseIndex].1 != "smoke.mp4" { complete(); return }
+      phase = 7; screen.debugAction(["action": "seek", "position": 11.0])
+    } else if phase == 7 && nextRequests == 2 {
+      check(state["autoNext"] as? Bool == true, "failed next preserves preference")
+      check(state["ended"] as? Bool == true, "failed next preserves the current item for replay")
+      screen.debugAction(["action": "tap", "control": "play"]); phase = 8
+    } else if phase == 8 && position > 0.2 && position < 2.5 && state["playing"] as? Bool == true {
+      print("NATIVE_VIDEO_REPLAY_OK \(cases[caseIndex].0)"); complete()
     }
+  }
+  private func checkEnding() {
+    phase = 4; screen?.debugAction(["action": "seek", "position": 11.0])
   }
   private func complete() {
     timer?.invalidate(); timer = nil

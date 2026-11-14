@@ -254,7 +254,9 @@ struct NativeVideoState {
       self.state.ready = data["ready"] as? Bool ?? false
       self.state.playing = data["playing"] as? Bool ?? false
       self.state.buffering = data["buffering"] as? Bool ?? false
-      self.state.ended = data["ended"] as? Bool ?? false
+      let ended = data["ended"] as? Bool ?? false
+      if ended && !self.state.ended { self.desiredPlay = false }
+      self.state.ended = ended
       self.state.width = (data["width"] as? NSNumber)?.intValue ?? 0
       self.state.height = (data["height"] as? NSNumber)?.intValue ?? 0
       self.state.tracks = data["tracks"] as? [[String: Any]] ?? []
