@@ -305,6 +305,11 @@ class VideoDownloadCenter extends ChangeNotifier {
     return file;
   }
 
+  Future<bool> _hasMergeInputs(VideoDownloadTask task) {
+    final playlist = localFile(task);
+    return OfflineVideoServer.isCompletePlaylist(playlist.parent, p.basename(playlist.path));
+  }
+
   VideoDownloadTask? _find(Section section, String source, String item, String chapter) =>
       tasks.where((t) => t.section == section && t.sourceId == source &&
           t.itemId == item && t.chapterId == chapter).firstOrNull;
@@ -405,8 +410,11 @@ class VideoDownloadCenter extends ChangeNotifier {
       if (existing != null) {
         if (encrypted != null) existing.encryptedCapture = encrypted;
         existing.chapterIndex = chapterIndices[chapter.id] ?? existing.chapterIndex;
-        if (!existing.running &&
-            (existing.state != 'done' || await checkedLocalFile(existing) == null)) {
+        final needsDownload = existing.state != 'done' ||
+            (existing.hasLocalPlaylist
+                ? !await _hasMergeInputs(existing)
+                : await checkedLocalFile(existing) == null);
+        if (!existing.running && needsDownload && tasks.contains(existing)) {
           existing.state = 'queued';
         }
         continue;
@@ -516,7 +524,8 @@ class VideoDownloadCenter extends ChangeNotifier {
       while (true) {
         final task = tasks.where((t) => t.state == 'queued').firstOrNull;
         if (task == null) break;
-        final localMerge = task.hasLocalPlaylist && await checkedLocalFile(task) != null;
+        final localMerge = task.hasLocalPlaylist &&
+            (await _hasMergeInputs(task) || await _isMp4(File(p.join(folder(task), 'merged.mp4'))));
         final blocked = await OfflinePolicy.blocked(needsNetwork: !localMerge);
         if (task.state != 'queued') continue;
         if (!localMerge) task.fileName = '';
@@ -722,9 +731,9 @@ class VideoDownloadCenter extends ChangeNotifier {
   }
 
   static Future<bool> _isMp4(File file) async {
-    if (!await file.exists()) return false;
-    final input = await file.open();
+    RandomAccessFile? input;
     try {
+      input = await file.open();
       // Check the remuxer's top-level boxes before deleting the source HLS.
       // Seek over payloads so a large movie never needs to be read into memory.
       final length = await input.length();
@@ -751,8 +760,10 @@ class VideoDownloadCenter extends ChangeNotifier {
         offset += size;
       }
       return hasMovie && hasMedia;
+    } on FileSystemException {
+      return false;
     } finally {
-      await input.close();
+      await input?.close();
     }
   }
 

@@ -77,10 +77,19 @@ class OfflineVideoServer {
     port: _server.port,
     path: '/$_token/index.m3u8',
   );
-  // Only called after playback fails. Keep ordinary startup independent of
-  // the segment count, but avoid reopening a broken package on every retry.
-  Future<bool> hasCompletePlaylist(Uri entry) async {
-    final root = Directory(_root).uri;
+  // Playback startup only needs the entry point. Check the complete package
+  // on retry and before reusing downloaded inputs for a merge.
+  Future<bool> hasCompletePlaylist(Uri entry) =>
+      isCompletePlaylist(Directory(_root), entry.pathSegments.last);
+
+  static Future<bool> isCompletePlaylist(Directory directory, String entryName) async {
+    final String rootPath;
+    try {
+      rootPath = await directory.resolveSymbolicLinks();
+    } on FileSystemException {
+      return false;
+    }
+    final root = Directory(rootPath).uri;
     final segments = <String>{};
     final keys = <String>{};
     final verified = <Uri>{};
@@ -88,7 +97,7 @@ class OfflineVideoServer {
       if (depth > 3) return false; // Same nesting limit as the downloader.
       if (verified.contains(playlist)) return true;
       final file = File.fromUri(playlist);
-      if (!p.isWithin(_root, await file.resolveSymbolicLinks())) return false;
+      if (!p.isWithin(rootPath, await file.resolveSymbolicLinks())) return false;
       final lines = await file.readAsLines();
       if (lines.isEmpty || lines.first.trim() != '#EXTM3U') return false;
       var hasMedia = false;
@@ -121,7 +130,7 @@ class OfflineVideoServer {
         }
         final resource = playlist.resolve(path);
         if (resource.scheme != 'file' || resource.authority != root.authority ||
-            !p.isWithin(_root, resource.toFilePath())) {
+            !p.isWithin(rootPath, resource.toFilePath())) {
           return false;
         }
         final name = resource.toFilePath();
@@ -141,7 +150,7 @@ class OfflineVideoServer {
     }
 
     try {
-      if (!await checkPlaylist(root.resolve(Uri.encodeComponent(entry.pathSegments.last)), 0)) {
+      if (!await checkPlaylist(root.resolve(Uri.encodeComponent(entryName)), 0)) {
         return false;
       }
       final paths = segments.toList();
@@ -149,7 +158,7 @@ class OfflineVideoServer {
         final batch = paths.getRange(i, min(i + 32, paths.length));
         final valid = await Future.wait(batch.map((path) async {
           final file = File(path);
-          if (!p.isWithin(_root, await file.resolveSymbolicLinks())) return false;
+          if (!p.isWithin(rootPath, await file.resolveSymbolicLinks())) return false;
           final stat = await file.stat();
           return stat.type == FileSystemEntityType.file &&
               (keys.contains(path) ? stat.size == 16 : stat.size > 0);

@@ -288,12 +288,104 @@ void main() {
     );
     final task = await downloaded(center, state: 'paused');
     await File('${center.folder(task)}/merged.mp4').writeAsBytes(mp4);
+    await File('${center.folder(task)}/a.ts').delete();
     await center.resume(task);
     await waitFor(() => task.state == 'done');
     await center.flush();
     await waitFor(() => !File('${center.folder(task)}/a.ts').existsSync());
     expect(task.fileName, 'merged.mp4');
   });
+
+  test('repairing a damaged encrypted download reuses valid segments and replaces the key', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final requests = <String>[];
+    server.listen((r) async {
+      requests.add(r.uri.path);
+      if (r.uri.path == '/vod.m3u8') {
+        r.response.write('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="enc.key"\n'
+            '#EXTINF:1,\none.ts\n#EXTINF:1,\ntwo.ts\n#EXT-X-ENDLIST\n');
+      } else {
+        r.response.add(List.filled(16, r.uri.path == '/two.ts' ? 2 : 1));
+      }
+      await r.response.close();
+    });
+    var merges = 0;
+    final center = VideoDownloadCenter(
+      directory: () async => root,
+      resolve: (_) async => VideoContent(url: Uri.parse('http://127.0.0.1:${server.port}/vod.m3u8')),
+      merge: (_, output, _) async {
+        if (++merges == 1) throw StateError('Keep local inputs');
+        await output.writeAsBytes(mp4);
+      },
+    );
+    await center.enqueue(sourceId: 'source', itemId: 'movie', title: 'Movie',
+        chapters: const [SourceChapter(id: 'one', title: 'One')]);
+    final task = center.tasks.single;
+    await waitFor(() => task.state == 'merge_failed');
+    final lines = await center.localFile(task).readAsLines();
+    final keyPath = RegExp('URI="([^"]+)"').firstMatch(lines.join('\n'))![1]!;
+    final base = center.localFile(task).uri;
+    final second = lines.where((line) => !line.startsWith('#') && line.isNotEmpty).last;
+    await File.fromUri(base.resolve(keyPath)).writeAsBytes([0]);
+    await File.fromUri(base.resolve(second)).delete();
+    requests.clear();
+    await center.resume(task);
+    await waitFor(() => ['done', 'failed', 'merge_failed'].contains(task.state));
+    await center.flush();
+    expect(requests, ['/vod.m3u8', '/enc.key', '/two.ts']);
+    expect(task.state, 'done', reason: task.error);
+    expect(await center.localFile(task).readAsBytes(), mp4);
+  });
+
+  for (final state in ['done', 'merge_failed']) {
+    test('a damaged $state HLS download fetches its missing segment before merging', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final requests = <String>[];
+      server.listen((r) async {
+        requests.add(r.uri.path);
+        if (r.uri.path == '/index.m3u8') {
+          r.response.write('#EXTM3U\n#EXTINF:1,\nvideo.ts\n#EXT-X-ENDLIST\n');
+        } else {
+          r.response.add([11, 22, 33]);
+        }
+        await r.response.close();
+      });
+      var resolutions = 0, merges = 0;
+      final center = VideoDownloadCenter(
+        directory: () async => root,
+        resolve: (_) async {
+          resolutions++;
+          return VideoContent(url: Uri.parse('http://127.0.0.1:${server.port}/index.m3u8'));
+        },
+        merge: (directory, output, _) async {
+          merges++;
+          final lines = await File('${directory.path}/index.m3u8').readAsLines();
+          final segment = lines.singleWhere((line) => line.isNotEmpty && !line.startsWith('#'));
+          final bytes = await File.fromUri(directory.uri.resolve(segment)).readAsBytes();
+          if (bytes.join(',') != '11,22,33') throw StateError('Bad segment bytes');
+          await output.writeAsBytes(mp4);
+        },
+      );
+      final task = await downloaded(center, state: state);
+      await File('${center.folder(task)}/a.ts').delete();
+      if (state == 'done') {
+        await center.enqueue(sourceId: 'source', itemId: 'movie', title: 'Movie',
+            chapters: const [SourceChapter(id: 'one', title: 'One')]);
+      } else {
+        await center.resume(task);
+      }
+      await waitFor(() => ['done', 'failed', 'merge_failed', 'paused'].contains(task.state));
+      await center.flush();
+      expect(resolutions, 1);
+      expect(requests, ['/index.m3u8', '/video.ts']);
+      expect(merges, 1);
+      expect(task.state, 'done', reason: task.error);
+      expect(task.fileName, 'merged.mp4');
+      expect(await center.localFile(task).readAsBytes(), mp4);
+    });
+  }
 
   test('local merge without Wi-Fi respects reserved disk space and never resolves the source', () async {
     final settings = ContentCenter.instance.data;
@@ -328,7 +420,7 @@ void main() {
     await center.flush();
     expect(task.state, 'done', reason: task.error);
     final missing = await downloaded(center, chapter: 'missing');
-    await center.localFile(missing).delete();
+    await File('${center.folder(missing)}/a.ts').delete();
     await center.resume(missing);
     await waitFor(() => ['paused', 'failed', 'merge_failed'].contains(missing.state));
     await center.flush();
