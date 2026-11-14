@@ -148,7 +148,8 @@ void main() {
       messenger.setMockMethodCallHandler(paths, null);
       root.deleteSync(recursive: true);
     });
-    const subtitle = 'WEBVTT\r\r00:01.000 --> 00:02.000\r你好\r';
+    const subtitle = 'WEBVTT\r\rNOTE\r00:01.000 --> 00:02.000\r注释示例\r\r'
+        '00:01.000 --> 00:02.000\r你好\r';
     final bytes = [
       0xfe, 0xff,
       for (final c in subtitle.codeUnits) ...[c >> 8, c & 255],
@@ -167,7 +168,21 @@ void main() {
     final file = await service.download(123);
     expect(file.path, endsWith('.vtt'));
     expect(await file.readAsBytes(), utf8.encode(subtitle));
-    expect((await TextSubtitles.load(file.path))!.at(const Duration(seconds: 1)), '你好');
+    final imported = (await TextSubtitles.load(file.path))!;
+    expect(imported.at(const Duration(seconds: 1)), '你好');
+    final bilingual = TextSubtitles.parse(SubtitleService.bilingual(imported,
+        TextSubtitles.parse('00:01.000 --> 00:02.000\nHello\n')));
+    expect(bilingual.at(const Duration(seconds: 1)), '你好\nHello');
+  });
+  test('a subtitle download containing only a VTT comment is rejected', () async {
+    final service = SubtitleService(
+      const SubtitleAccount('api', 'token'),
+      client: MockClient((r) async => r.method == 'POST'
+          ? http.Response('{"link":"https://cdn.example/caption"}', 200)
+          : http.Response.bytes(utf8.encode('WEBVTT\n\nNOTE\n00:01.000 --> 00:02.000\n注释\n'), 200)),
+    );
+    addTearDown(service.close);
+    await expectLater(service.download(456), throwsA(isA<FormatException>()));
   });
   test('双语字幕导出后保留可见的尖括号和实体文本', () {
     final original = TextSubtitles.parse(

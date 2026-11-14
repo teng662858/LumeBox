@@ -124,6 +124,8 @@ dv.m3u8
       'WEBVTT\r\r00:01.000 --> 00:02.000\r第一行\r第二行\r',
     );
     expect(crOnly.at(const Duration(seconds: 1)), '第一行\n第二行');
+    expect(TextSubtitles.parse('\ufeff00:01.000 --> 00:02.000\n带 BOM 的字幕\n')
+        .at(const Duration(seconds: 1)), '带 BOM 的字幕');
     expect(TextSubtitles.parse('<html>Error</html>').cues, isEmpty);
   });
   test(
@@ -148,6 +150,28 @@ dv.m3u8
       expect(await TextSubtitles.load(file.path), isNull);
     },
   );
+  test('VTT comments and metadata never become visible dialogue', () {
+    final subtitles = TextSubtitles.parse(
+      'WEBVTT\n\nNOTE timing example\n00:01.000 --> 00:03.000\n不要播放这条注释\n\n'
+      'STYLE\n00:01.000 --> 00:03.000\n不要播放样式\n\n'
+      'REGION\n00:01.000 --> 00:03.000\n不要播放区域\n\n'
+      'NOTEworthy\n00:01.000 --> 00:03.000\n真实对白\n',
+    );
+    expect(subtitles.at(const Duration(seconds: 2)), '真实对白');
+    expect(TextSubtitles.parse('WEBVTT\n\nNOTE\n00:01.000 --> 00:02.000\n注释\n').cues, isEmpty);
+  });
+  test('invalid subtitle timestamps cannot poison the remaining cues', () {
+    final huge = '9' * 400;
+    final subtitles = TextSubtitles.parse(
+      '1\n$huge:00:01.000 --> $huge:00:02.000\n溢出\n\n'
+      '2\n-00:01.000 --> 00:03.000\n负数\n\n'
+      '3\n00:61.000 --> 00:62.000\n越界\n\n'
+      '4\n00:01.000 --> 00:03.000broken\n错误时间\n\n'
+      '5\n00:01.000 --> 00:03.000\n正常字幕\n',
+    );
+    expect(subtitles.cues, hasLength(1));
+    expect(subtitles.at(const Duration(seconds: 2)), '正常字幕');
+  });
   test('native channel addresses one player and tolerates a missing platform implementation', () async {
     final calls = <MethodCall>[];
     final messenger =
