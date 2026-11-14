@@ -62,7 +62,7 @@ import UniformTypeIdentifiers
 }
 
 @MainActor private final class NativeVideoScreen: UIViewController, @preconcurrency AVPictureInPictureControllerDelegate,
-  @preconcurrency AVPictureInPictureSampleBufferPlaybackDelegate, UIDocumentPickerDelegate {
+  @preconcurrency AVPictureInPictureSampleBufferPlaybackDelegate, UIDocumentPickerDelegate, UIViewControllerTransitioningDelegate {
   let session: String
   private var mediaOwner: String { "native-video:\(session)" }
   private var item: NativeVideoItem
@@ -187,7 +187,7 @@ import UniformTypeIdentifiers
     transport.addArrangedSubview(button("play", "pause.fill", "播放或暂停") { [weak self] in self?.togglePlay() })
     transport.addArrangedSubview(button("next", "forward.end.fill", "下一集") { [weak self] in self?.resolve("next") })
     transport.addArrangedSubview(textButton("skip", "跳转", "快进、后退与上一集") { [weak self] in self?.skipOptions() })
-    playbackOptions.addArrangedSubview(textButton("danmaku", "弹幕", "弹幕开关") { [weak self] in self?.toggleDanmaku() })
+    playbackOptions.addArrangedSubview(textButton("danmaku", "弹幕", "弹幕开关") { [weak self] in self?.danmakuOptions() })
     playbackOptions.addArrangedSubview(textButton("speed", "1×", "播放速度") { [weak self] in self?.chooseSpeed() })
     playbackOptions.addArrangedSubview(textButton("episodes", "选集", "选集与线路") { [weak self] in self?.episodeOptions() })
     playbackOptions.addArrangedSubview(button("rotate", "rotate.right", "旋转画面") { [weak self] in self?.rotate() })
@@ -591,7 +591,7 @@ import UniformTypeIdentifiers
         self.present(picker, animated: true)
       case "lines": self.choices("lines")
       case "qualities": self.choices("qualities")
-      case "danmaku": self.toggleDanmaku()
+      case "danmaku": self.danmakuOptions()
       case "aspect": self.fill.toggle(); self.engine?.aspect(self.fill)
       case "autoNext": self.autoNext.toggle(); self.emit("settings", extra: ["autoNext": self.autoNext])
       case "hardware": self.hardware.toggle(); if self.kernel == "mpv" { self.switchEngine("mpv") }; self.emit("settings", extra: ["hardwareDecoding": self.hardware])
@@ -638,8 +638,66 @@ import UniformTypeIdentifiers
     let list = NativeVideoChoices(title: title, rows: rows, selected: selected)
     let navigation = UINavigationController(rootViewController: list)
     navigation.overrideUserInterfaceStyle = .dark
-    if let sheet = navigation.sheetPresentationController { sheet.detents = [.medium(), .large()]; sheet.prefersGrabberVisible = true }
+    if view.bounds.width > view.bounds.height {
+      navigation.modalPresentationStyle = .custom
+      navigation.transitioningDelegate = self
+    } else if let sheet = navigation.sheetPresentationController {
+      sheet.detents = [.medium(), .large()]; sheet.prefersGrabberVisible = true
+    }
     present(navigation, animated: true)
+  }
+  func presentationController(forPresented presented: UIViewController, presenting: UIViewController?, source: UIViewController) -> UIPresentationController? {
+    NativeVideoPanel(presentedViewController: presented, presenting: presenting)
+  }
+  private func danmakuOptions() {
+    showList("弹幕", rows: [
+      ["title": "显示弹幕 · \(danmakuEnabled ? "开" : "关")", "id": "toggle"],
+      ["title": "搜索并匹配本集弹幕", "id": "match"],
+      ["title": "重新加载源弹幕", "id": "reload"]
+    ]) { [weak self] row in
+      guard let self else { return }
+      switch row["id"] as? String {
+      case "toggle": self.toggleDanmaku()
+      case "match": self.searchDanmaku()
+      case "reload": self.danmakuEnabled = true; self.loadDanmaku(); self.renderState()
+      default: break
+      }
+    }
+  }
+  private func searchDanmaku() {
+    let alert = UIAlertController(title: "匹配弹幕", message: "核对片名和集数后搜索", preferredStyle: .alert)
+    alert.addTextField { $0.text = self.item.title; $0.placeholder = "片名" }
+    alert.addTextField { $0.text = "1"; $0.placeholder = "集数"; $0.keyboardType = .numberPad }
+    alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+    alert.addAction(UIAlertAction(title: "搜索", style: .default) { [weak self, weak alert] _ in
+      guard let self, let fields = alert?.textFields else { return }
+      let identity = self.item.identity
+      self.toast("正在搜索弹幕…")
+      self.request?("danmaku-search", ["title": fields[0].text ?? "", "episode": Int(fields[1].text ?? "") ?? 1]) { [weak self] reply in
+        guard let self, !self.closing, self.item.identity == identity else { return }
+        if let error = reply?["error"] as? String { self.toast(error); return }
+        let rows = reply?["items"] as? [[String: Any]] ?? []
+        guard !rows.isEmpty else { self.toast("未找到匹配弹幕，请修改片名或集数"); return }
+        self.showList("选择弹幕", rows: rows) { [weak self] row in
+          guard let self, self.item.identity == identity else { return }
+          self.danmakuRevision += 1; let revision = self.danmakuRevision
+          self.request?("danmaku-select", row) { [weak self] result in
+            guard let self, !self.closing, self.item.identity == identity, self.danmakuRevision == revision else { return }
+            if let error = result?["error"] as? String { self.toast(error); return }
+            self.danmakuEnabled = true; self.applyDanmaku(result); self.renderState()
+          }
+        }
+      }
+    })
+    present(alert, animated: true)
+  }
+  private func applyDanmaku(_ reply: [String: Any]?) {
+    danmaku = (reply?["items"] as? [[String: Any]] ?? []).compactMap { row in
+      guard let text = row["text"] as? String, !text.isEmpty, let time = row["time"] as? Double, time.isFinite else { return nil }
+      return (max(0, time), String(text.prefix(180)))
+    }.sorted { $0.0 < $1.0 }
+    bullets.subviews.forEach { $0.removeFromSuperview() }; danmakuPosition = nil
+    if danmaku.isEmpty { toast("本集暂未提供弹幕") }
   }
   private func sleepOptions() {
     showList("定时暂停", rows: [0, 15, 30, 60, 90].map { ["title": $0 == 0 ? "取消定时" : "\($0) 分钟后暂停", "value": $0] }) { [weak self] row in
@@ -916,12 +974,8 @@ import UniformTypeIdentifiers
     request?("danmaku", [:]) { [weak self] reply in
       guard let self, !self.closing, self.danmakuEnabled, self.item.identity == identity,
             self.danmakuRevision == revision else { return }
-      self.danmaku = (reply?["items"] as? [[String: Any]] ?? []).compactMap { row in
-        guard let text = row["text"] as? String, !text.isEmpty, let time = row["time"] as? Double, time.isFinite else { return nil }
-        return (max(0, time), String(text.prefix(180)))
-      }.sorted { $0.0 < $1.0 }
-      self.danmakuPosition = nil
-      if self.danmaku.isEmpty { self.toast("本集暂未提供弹幕") }
+      if let error = reply?["error"] as? String { self.toast(error); return }
+      self.applyDanmaku(reply)
     }
   }
   private func updateDanmaku() {
@@ -995,7 +1049,13 @@ import UniformTypeIdentifiers
       completion()
     }
     // Dismiss promptly; asynchronous decoder teardown must never freeze navigation.
-    if dismiss && presentingViewController != nil { self.dismiss(animated: false) }
+    if dismiss && presentingViewController != nil {
+      let scene = view.window?.windowScene
+      self.dismiss(animated: false) {
+        scene?.windows.first(where: { $0.isKeyWindow })?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        scene?.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { _ in }
+      }
+    }
     if let previous { previous.dispose(done) } else { done() }
   }
   #if DEBUG
@@ -1049,6 +1109,31 @@ extension NativeVideoScreen: UIGestureRecognizerDelegate {
     }
     return true
   }
+}
+
+/// Playback subpages stay at the right edge in landscape, preserving the picture.
+@MainActor private final class NativeVideoPanel: UIPresentationController {
+  private let shade = UIView()
+  override var frameOfPresentedViewInContainerView: CGRect {
+    guard let bounds = containerView?.bounds else { return .zero }
+    return Self.frame(in: bounds)
+  }
+  static func frame(in bounds: CGRect) -> CGRect {
+    let width = min(bounds.width, min(360, max(280, bounds.width * 0.4)))
+    return CGRect(x: bounds.maxX - width, y: bounds.minY, width: width, height: bounds.height)
+  }
+  override func presentationTransitionWillBegin() {
+    guard let containerView else { return }
+    shade.backgroundColor = UIColor.black.withAlphaComponent(0.22)
+    shade.frame = containerView.bounds; shade.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    shade.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(closePanel)))
+    containerView.insertSubview(shade, at: 0)
+  }
+  override func containerViewWillLayoutSubviews() {
+    super.containerViewWillLayoutSubviews(); presentedView?.frame = frameOfPresentedViewInContainerView
+  }
+  override func dismissalTransitionDidEnd(_ completed: Bool) { if completed { shade.removeFromSuperview() } }
+  @objc private func closePanel() { presentedViewController.dismiss(animated: true) }
 }
 
 @MainActor private final class NativeVideoChoices: UITableViewController {

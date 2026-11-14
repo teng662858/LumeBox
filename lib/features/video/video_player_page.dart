@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/player/abstract_player.dart';
 import '../../core/player/brightness.dart';
@@ -122,6 +123,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       if (mounted) setState(() => _presented = true);
       await session.finished;
       await session.close();
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
       if (!mounted || _disposed) return;
       if (widget.media != null && ModalRoute.of(context)?.isCurrent == true) {
         await Navigator.of(context).maybePop();

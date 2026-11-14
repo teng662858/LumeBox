@@ -25,6 +25,7 @@ import 'video_download_center.dart';
 import 'video_play_target.dart';
 import 'video_player_settings.dart';
 import 'danmaku/danmaku_models.dart';
+import 'danmaku/dandanplay_client.dart';
 
 typedef _EpisodeCatalog = ({
   List<SourceChapter> chapters,
@@ -45,6 +46,7 @@ class NativeVideoSourceSession {
     this.qualities = const [],
     NativeVideoBridge? bridge,
     this.prepareMedia,
+    this.danmakuClient,
     VideoDownloadCenter? downloads,
     // Public parameter name is part of the route API.
     // ignore: prefer_initializing_formals
@@ -52,6 +54,12 @@ class NativeVideoSourceSession {
        _downloads = downloads ?? VideoDownloadCenter.instance,
        _bridge = bridge ?? NativeVideoBridge.shared;
 
+  final Future<DandanplayClient> Function()? danmakuClient;
+  Future<DandanplayClient> _commentClient() async => danmakuClient != null
+      ? await danmakuClient!()
+      : DandanplayClient(credentials: await DandanplayCredentials.load());
+  String get _danmakuKey =>
+      "video.native.danmaku.${Uri.encodeComponent(_identity)}";
   final ReadingLibrary library;
   final Duration? initialPosition;
   final DataSource? source;
@@ -100,7 +108,9 @@ class NativeVideoSourceSession {
       for (final quality in sameUrl)
         if (mapEquals(headerNamesToLower(quality.headers), headers)) quality,
     ];
-    _activeQuality = PlaybackQualityPreference.select(sameRequest, _settings) ?? sameUrl.singleOrNull;
+    _activeQuality =
+        PlaybackQualityPreference.select(sameRequest, _settings) ??
+        sameUrl.singleOrNull;
     if (_settings.kernel != PlayerKernel.avplayer &&
         _settings.kernel != PlayerKernel.mpv) {
       _settings = _settings.copyWith(kernel: PlayerKernel.mpv);
@@ -163,8 +173,11 @@ class NativeVideoSourceSession {
     VideoPlayTarget? targetOverride,
   }) async {
     Future<Map<String, Object?>> prepare(PlayerKernel kernel) => _payload(
-      media, position: position, resumeIdentity: resumeIdentity,
-      targetOverride: targetOverride, kernelOverride: kernel,
+      media,
+      position: position,
+      resumeIdentity: resumeIdentity,
+      targetOverride: targetOverride,
+      kernelOverride: kernel,
     );
     // A fallback belongs to the media that required it. A replacement URL
     // can have a different container even on the same episode or quality.
@@ -184,11 +197,17 @@ class NativeVideoSourceSession {
         ? null
         : _settings.kernel;
     _settings = _settings.copyWith(kernel: prepared.kernel);
-    return {'media': prepared.media, 'kernel': prepared.kernel.name, 'speed': _settings.speed};
+    return {
+      'media': prepared.media,
+      'kernel': prepared.kernel.name,
+      'speed': _settings.speed,
+    };
   }
 
   Future<bool> _requiresMpv(PlayerMedia media) async {
-    if (VideoDiskCache.mpvFormats.any(media.uri.path.toLowerCase().endsWith)) return true;
+    if (VideoDiskCache.mpvFormats.any(media.uri.path.toLowerCase().endsWith)) {
+      return true;
+    }
     // Older downloads used media.mp4 for extensionless URLs.
     if (!media.isDownloaded ||
         media.uri.scheme != 'file' ||
@@ -196,7 +215,9 @@ class NativeVideoSourceSession {
       return false;
     }
     try {
-      return VideoDiskCache.mpvFormats.contains(await VideoDiskCache.detectFileFormat(File.fromUri(media.uri)));
+      return VideoDiskCache.mpvFormats.contains(
+        await VideoDiskCache.detectFileFormat(File.fromUri(media.uri)),
+      );
     } on FileSystemException {
       return false;
     }
@@ -266,7 +287,9 @@ class NativeVideoSourceSession {
     }
   }
 
-  Future<List<VideoDownloadTask>> _downloadedChapters(VideoPlayTarget current) async {
+  Future<List<VideoDownloadTask>> _downloadedChapters(
+    VideoPlayTarget current,
+  ) async {
     await _downloads.boot();
     return [
       for (final task in _downloads.tasks.toList())
@@ -282,15 +305,23 @@ class NativeVideoSourceSession {
   Future<_EpisodeCatalog> _catalog(String action, Object? id) async {
     final current = target;
     if (current == null) {
-      return (chapters: const <SourceChapter>[], indices: const <String, int>{});
+      return (
+        chapters: const <SourceChapter>[],
+        indices: const <String, int>{},
+      );
     }
     List<VideoDownloadTask> local = [];
     try {
       local = await _downloadedChapters(current);
     } on Exception {
-      PlaybackDiagnostics.record('offline-lookup-failed', source: current.sourceId);
+      PlaybackDiagnostics.record(
+        'offline-lookup-failed',
+        source: current.sourceId,
+      );
     }
-    final here = local.where((t) => t.chapterId == current.chapterId).firstOrNull;
+    final here = local
+        .where((t) => t.chapterId == current.chapterId)
+        .firstOrNull;
     final offline = (
       chapters: [
         for (final t in local)
@@ -304,16 +335,23 @@ class NativeVideoSourceSession {
         : _loadingChapters ??= _remoteChapters(current);
     var available = online;
     if (remote == null && _media.isDownloaded && here != null) {
-      final line = VideoEpisodeCatalog.forChapter(offline.chapters, here.chapterId);
+      final line = VideoEpisodeCatalog.forChapter(
+        offline.chapters,
+        here.chapterId,
+      );
       final adjacent = here.chapterIndex + (action == 'next' ? 1 : -1);
       final localAction = switch (action) {
         'episode' => offline.indices.containsKey(id),
         'next' || 'previous' =>
           line.where((c) => offline.indices[c.id] == adjacent).length == 1,
-        'line' => VideoEpisodeCatalog.matchingIndex(
-          line.firstWhere((c) => c.id == here.chapterId),
-          offline.chapters.where((c) => VideoEpisodeCatalog.lineOf(c) == id).toList(),
-        ) >= 0,
+        'line' =>
+          VideoEpisodeCatalog.matchingIndex(
+                line.firstWhere((c) => c.id == here.chapterId),
+                offline.chapters
+                    .where((c) => VideoEpisodeCatalog.lineOf(c) == id)
+                    .toList(),
+              ) >=
+              0,
         _ => false,
       };
       if (localAction) {
@@ -323,7 +361,10 @@ class NativeVideoSourceSession {
       if (action == 'episodes' || action == 'lines') {
         // Include online choices when ready, without holding a local menu
         // until the source's full network timeout.
-        available = online.timeout(const Duration(milliseconds: 250), onTimeout: () => []);
+        available = online.timeout(
+          const Duration(milliseconds: 250),
+          onTimeout: () => [],
+        );
       }
     }
     final List<SourceChapter> chapters;
@@ -336,7 +377,9 @@ class NativeVideoSourceSession {
     if (chapters.isEmpty) return offline;
     final ids = chapters.map((c) => c.id).toSet();
     final missing = offline.chapters.where((c) => !ids.contains(c.id)).toList();
-    if (missing.isEmpty) return (chapters: chapters, indices: const <String, int>{});
+    if (missing.isEmpty) {
+      return (chapters: chapters, indices: const <String, int>{});
+    }
     final lines = VideoEpisodeCatalog.group(chapters);
     final indices = {
       for (final line in lines.values)
@@ -356,7 +399,10 @@ class NativeVideoSourceSession {
         return a.id.compareTo(b.id);
       });
     }
-    return (chapters: lines.values.expand((line) => line).toList(), indices: indices);
+    return (
+      chapters: lines.values.expand((line) => line).toList(),
+      indices: indices,
+    );
   }
 
   Future<Map<String, Object?>> _request(
@@ -398,19 +444,56 @@ class NativeVideoSourceSession {
         kernelOverride: kernel,
       );
       if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-      return {'media': payload, 'speed': _settings.copyWith(kernel: kernel).speed};
+      return {
+        'media': payload,
+        'speed': _settings.copyWith(kernel: kernel).speed,
+      };
+    }
+    if (action == 'danmaku-search') {
+      final client = await _commentClient();
+      try {
+        final entries = await client.search(
+          '${arguments['title'] ?? target?.title ?? _media.title ?? ''}',
+          episode:
+              (arguments['episode'] as num?)?.toInt() ??
+              (target?.chapterIndex ?? 0) + 1,
+        );
+        return {
+          'items': [
+            for (final entry in entries)
+              {
+                'id': entry.id,
+                'title': '${entry.title} · ${entry.episode}',
+                'line': entry.details,
+              },
+          ],
+        };
+      } finally {
+        client.close();
+      }
+    }
+    if (action == 'danmaku-select') {
+      final identity = _identity, key = _danmakuKey;
+      final client = await _commentClient();
+      try {
+        final id = '${arguments['id'] ?? ''}';
+        final track = await client.comments(id);
+        if (_closed || identity != _identity) return {'error': '播放内容已改变，请重新匹配'};
+        if (track.items.isNotEmpty) library.setSetting(key, id);
+        return _commentPayload(track);
+      } finally {
+        client.close();
+      }
     }
     if (action == 'danmaku') return _danmaku();
     if (action == 'qualities') {
-      final selected = qualities.indexWhere((quality) => identical(quality, _activeQuality));
+      final selected = qualities.indexWhere(
+        (quality) => identical(quality, _activeQuality),
+      );
       return {
         'items': [
           for (var i = 0; i < qualities.length; i++)
-            {
-              'id': i,
-              'title': qualities[i].label,
-              'selected': i == selected,
-            },
+            {'id': i, 'title': qualities[i].label, 'selected': i == selected},
         ],
       };
     }
@@ -505,14 +588,17 @@ class NativeVideoSourceSession {
       final index = line.indexWhere((c) => c.id == current.chapterId);
       final next = index + (action == 'next' ? 1 : -1);
       if (catalog.indices.isNotEmpty && selected != null) {
-        final desired = catalog.indices[selected.id]! + (action == 'next' ? 1 : -1);
+        final desired =
+            catalog.indices[selected.id]! + (action == 'next' ? 1 : -1);
         final adjacent = line
             .where((c) => catalog.indices[c.id] == desired)
             .toList();
         chosen = adjacent.singleOrNull;
         if (chosen == null && adjacent.isNotEmpty) {
           final remoteIds = _chapters?.map((c) => c.id).toSet();
-          chosen = adjacent.where((c) => remoteIds?.contains(c.id) == true).singleOrNull;
+          chosen = adjacent
+              .where((c) => remoteIds?.contains(c.id) == true)
+              .singleOrNull;
         }
       } else if (index >= 0 && next >= 0 && next < line.length) {
         chosen = line[next];
@@ -551,7 +637,8 @@ class NativeVideoSourceSession {
         section: library.section,
       );
       final server = local?.server;
-      if (action == 'retry' && server != null &&
+      if (action == 'retry' &&
+          server != null &&
           !await server.hasCompletePlaylist(local!.uri)) {
         await local.close();
         local = null;
@@ -568,13 +655,16 @@ class NativeVideoSourceSession {
         final direct = action == 'retry' && current.chapterId == current.itemId
             ? SourcePlayback.itemAddress(current.itemId)
             : null;
-        final directRetry = direct != null && (direct == _media.uri || _media.isDownloaded);
+        final directRetry =
+            direct != null && (direct == _media.uri || _media.isDownloaded);
         DataSource? dataSource;
         ChapterContent? content;
         try {
           dataSource = await _source();
           if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-          if (dataSource == null && !directRetry) return {'error': '源不可用，请返回更新订阅后重试'};
+          if (dataSource == null && !directRetry) {
+            return {'error': '源不可用，请返回更新订阅后重试'};
+          }
           content = await dataSource
               ?.content(itemId: current.itemId, chapterId: chosen.id)
               .timeout(const Duration(seconds: 15));
@@ -596,7 +686,9 @@ class NativeVideoSourceSession {
         choice = PlaybackQualityPreference.select(
           nextQualities,
           _settings,
-          currentQuality: action == 'retry' ? _activeQuality ?? _manualQuality : _manualQuality,
+          currentQuality: action == 'retry'
+              ? _activeQuality ?? _manualQuality
+              : _manualQuality,
         );
         nextMedia = PlayerMedia(
           uri: choice?.url ?? SourcePlayback.contentAddress(content)!,
@@ -637,7 +729,22 @@ class NativeVideoSourceSession {
     return _acceptVideo(prepared);
   }
 
+  Map<String, Object?> _commentPayload(DanmakuTrack track) => {
+    'items': [
+      for (final entry in track.items)
+        {'time': entry.time.inMilliseconds / 1000, 'text': entry.text},
+    ],
+  };
   Future<Map<String, Object?>> _danmaku() async {
+    final matched = library.setting(_danmakuKey);
+    if (matched != null && matched.isNotEmpty) {
+      final client = await _commentClient();
+      try {
+        return _commentPayload(await client.comments(matched));
+      } finally {
+        client.close();
+      }
+    }
     final dataSource = await _source(), current = target;
     if (dataSource is! DanmakuCapable || current == null) {
       return {'items': <Object?>[]};
@@ -670,8 +777,8 @@ class NativeVideoSourceSession {
       // carry across engines. A speed selection sends a separate rate event.
       final loadSnapshot =
           data.containsKey('hardwareDecoding') && data.containsKey('autoNext');
-      final changedAutoNext = data['autoNext'] is bool &&
-          data['autoNext'] != _settings.autoNext;
+      final changedAutoNext =
+          data['autoNext'] is bool && data['autoNext'] != _settings.autoNext;
       if (kernel != _settings.kernel) _preferredBeforeFallback = null;
       _settings = _settings.copyWith(
         kernel: kernel,
@@ -692,7 +799,10 @@ class NativeVideoSourceSession {
         // Auto-next is shared by all sources, including those with custom
         // kernel settings. Native also echoes it when opening an engine.
         if (changedAutoNext) {
-          library.setSetting(VideoPlayerSettingsStore.keyAutoNext, _settings.autoNext.toString());
+          library.setSetting(
+            VideoPlayerSettingsStore.keyAutoNext,
+            _settings.autoNext.toString(),
+          );
         }
       } else {
         VideoPlayerSettingsStore(library).save(saved);
@@ -750,12 +860,14 @@ class NativeVideoSourceSession {
               duration > 0 &&
               duration <= 365 * 86400
           ? Duration(milliseconds: (duration * 1000).round())
-          : library.videoEpisodeProgress(
-                current.itemId,
-                current.chapterId,
-                sourceId: current.sourceId,
-              )?.duration ??
-              Duration.zero,
+          : library
+                    .videoEpisodeProgress(
+                      current.itemId,
+                      current.chapterId,
+                      sourceId: current.sourceId,
+                    )
+                    ?.duration ??
+                Duration.zero,
     );
     if (!active) {
       library.saveVideoEpisodeProgress(progress);

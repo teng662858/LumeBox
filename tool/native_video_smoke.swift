@@ -9,6 +9,11 @@ extension NativeVideoScreen {
       }
       try? preview.pngData()?.write(to: directory.appendingPathComponent("player-\(Int(view.bounds.width))x\(Int(view.bounds.height)).png"))
     }
+    let panel = NativeVideoPanel.frame(in: view.bounds)
+    precondition(panel.maxX == view.bounds.maxX && panel.height == view.bounds.height, "subpage stays at right edge")
+    if view.bounds.width > view.bounds.height {
+      precondition(panel.width <= 360 && panel.width < view.bounds.width / 2, "landscape subpage preserves the picture")
+    }
     let safe = view.safeAreaLayoutGuide.layoutFrame
     for (id, button) in controls {
       let rect = button.convert(button.bounds, to: view)
