@@ -13,6 +13,7 @@ import 'package:lume_box/features/shell/shell_dock.dart';
 import 'package:lume_box/features/shell/shell_dock_bar.dart';
 import 'package:lume_box/features/reading/compact_browse_header.dart';
 import 'package:lume_box/shared/widgets/dock_handle_button.dart';
+import 'package:lume_box/shared/widgets/glass_card.dart';
 
 /// 主导航壳的验证：三页签的顺序与文案、移动端 Dock / 桌面端 NavigationRail
 /// 两种排布、切页签保留页面状态，以及全屏页压栈时自动隐藏 Dock、出栈恢复。
@@ -44,13 +45,13 @@ void main() {
     matching: find.text(text),
   );
 
-  testWidgets('移动端：底部 Dock 四项，顺序为 漫画 / 视频 / 设置 / 搜索', (tester) async {
+  testWidgets('移动端：底部 Dock 四项，顺序为 漫画 / 视频 / 音乐 / 设置', (tester) async {
     await pumpShell(tester, desktopRail: false);
 
     expect(find.byKey(AppShell.dockKey), findsOneWidget);
     expect(find.byKey(AppShell.railKey), findsNothing);
 
-    const expected = <String>['漫画', '视频', '设置', '搜索'];
+    const expected = <String>['漫画', '视频', '音乐', '设置'];
     for (final label in expected) {
       expect(inDock(label), findsOneWidget, reason: 'Dock 缺少页签：$label');
     }
@@ -68,54 +69,34 @@ void main() {
     }
   });
 
-  testWidgets('胶囊搜索保留当前页面，设置页可选择漫画或视频并交接搜索', (tester) async {
-    final searches = <String>[];
+  testWidgets('各板块右上角打开同一个全局搜索，返回后保留原页面', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: AppShell(
           controller: controller,
           desktopRail: false,
-          pageBuilder: (id) => Stack(
-            fit: StackFit.expand,
-            children: [
-              Text('content-$id'),
-              if (id != 'settings')
-                BrowseSearchButton(onPressed: () => searches.add(id)),
-            ],
-          ),
+          pageBuilder: (id) =>
+              GlassScaffold(title: id, child: Text('content-$id')),
         ),
       ),
     );
     await tester.pumpAndSettle();
     final comic = tester.element(find.text('content-comic'));
-    final pill = tester.getRect(find.byKey(ShellDockBar.selectionPillKey));
-    await tester.tap(inDock('搜索'));
+    expect(inDock('搜索'), findsNothing);
+    for (final label in ['漫画', '视频', '音乐', '设置']) {
+      await tester.tap(inDock(label));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('global-search-button')));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(AppBar, '全局搜索'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, '全部'), findsOneWidget);
+      tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(inDock('漫画'));
     await tester.pumpAndSettle();
-    expect(searches, ['comic']);
     expect(tester.element(find.text('content-comic')), same(comic));
-    expect(
-      tester.getRect(find.byKey(ShellDockBar.selectionPillKey)).center.dx,
-      closeTo(pill.center.dx, .1),
-    );
-    expect(find.byKey(const ValueKey('browse-search-surface')), findsNothing);
-    await tester.tap(inDock('视频'));
-    await tester.pumpAndSettle();
-    await tester.tap(inDock('搜索'));
-    await tester.pumpAndSettle();
-    expect(searches, ['comic', 'video']);
-    await tester.tap(inDock('设置'));
-    await tester.pumpAndSettle();
-    await tester.tap(inDock('搜索'));
-    await tester.pumpAndSettle();
-    expect(find.text('搜索漫画'), findsOneWidget);
-    expect(find.text('搜索视频'), findsOneWidget);
-    await tester.tap(find.text('搜索漫画'));
-    await tester.pumpAndSettle();
-    expect(searches, ['comic', 'video', 'comic']);
-    expect(find.text('content-comic'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
-    controller.requestSearch();
-    expect(searches, ['comic', 'video', 'comic']);
   });
 
   testWidgets('只把搜索交给当前可见的视频面，等待加载时可暂存一次搜索', (tester) async {
@@ -283,7 +264,7 @@ void main() {
 
     expect(find.byKey(AppShell.railKey), findsOneWidget);
     expect(find.byKey(AppShell.dockKey), findsNothing);
-    for (final label in <String>['漫画', '视频', '设置']) {
+    for (final label in <String>['漫画', '视频', '音乐', '设置']) {
       expect(
         find.descendant(
           of: find.byKey(AppShell.railKey),

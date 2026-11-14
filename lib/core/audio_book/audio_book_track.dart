@@ -23,11 +23,14 @@ class AudioBookTrack {
     required this.episode,
     required this.album,
     this.cover,
+    this.artist,
+    this.music = false,
     this.resolve,
     this.initialMedia,
   });
   final String id, album;
-  final String? cover;
+  final String? cover, artist;
+  final bool music;
   final ResourceEpisode episode;
   final Future<ResolvedAudio> Function()? resolve;
   final ResolvedAudio? initialMedia;
@@ -38,6 +41,8 @@ class AudioBookTrack {
     return id == next.id &&
         album == next.album &&
         cover == next.cover &&
+        artist == next.artist &&
+        music == next.music &&
         episode.title == next.episode.title &&
         episode.url == next.episode.url &&
         mapEquals(episode.headers, next.episode.headers) &&

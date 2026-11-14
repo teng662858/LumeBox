@@ -1,0 +1,8 @@
+{
+  "name": "lumebox-music-compat-vendor",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {"build": "node build.mjs"},
+  "dependencies": {"crypto-js": "4.2.0", "cheerio": "1.0.0", "big-integer": "1.6.52", "pako": "2.1.0"},
+  "devDependencies": {"esbuild": "0.25.12"}
+}

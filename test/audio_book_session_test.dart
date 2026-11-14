@@ -71,6 +71,44 @@ void main() {
     await player.close();
     await root.delete(recursive: true);
   });
+  test(
+    'music uses normal speed and does not inherit book sleep settings',
+    () async {
+      settings.speed = 1.75;
+      settings.sleepMinutes = 30;
+      final musicTracks = [
+        AudioBookTrack(
+          id: 'song',
+          album: 'Album',
+          artist: 'Artist',
+          music: true,
+          episode: ResourceEpisode(
+            id: 'song',
+            title: 'Song',
+            url: Uri.parse('https://example.com/song.mp3'),
+          ),
+        ),
+      ];
+      await session.load(
+        MediaResource(
+          id: 'music',
+          title: 'Music',
+          kind: ResourceKind.audioBook,
+          destination: Section.video,
+          episodes: musicTracks.map((t) => t.episode).toList(),
+        ),
+        musicTracks,
+      );
+      expect(player.rate, 1);
+      expect(session.sleepAt, isNull);
+      expect(settings.speed, 1.75);
+      expect(settings.sleepMinutes, 30);
+      expect(player.lastTracks.single.artist, 'Artist');
+      await session.load(resource, tracks);
+      expect(player.rate, 1.75);
+      expect(session.sleepAt, isNotNull);
+    },
+  );
   test('one facade supports queue, seek, speed, pause/resume and persisted progress', () async {
     await session.load(resource, tracks, index: 1);
     await session.play();

@@ -64,10 +64,11 @@ void main() {
   group('模型 · 逐项开关', () {
     test('默认全部显示、顺序为规范顺序', () {
       const settings = ShellSettings();
-      expect(settings.visibleCount, 3);
+      expect(settings.visibleCount, 4);
       expect(settings.tabs.map((tab) => tab.id).toList(), <String>[
         'comic',
         'video',
+        'music',
         'settings',
       ]);
     });
@@ -78,11 +79,12 @@ void main() {
       expect(next.isVisible('comic'), isFalse);
       expect(next.isVisible('video'), isTrue);
       expect(next.isVisible('settings'), isTrue);
-      expect(next.visibleCount, 2);
+      expect(next.visibleCount, 3);
       // 顺序不变（隐藏不等于移除）。
       expect(next.tabs.map((tab) => tab.id).toList(), <String>[
         'comic',
         'video',
+        'music',
         'settings',
       ]);
     });
@@ -198,7 +200,7 @@ void main() {
       expect(controller.appearance.safeGap, 10);
 
       await controller.restoreDefaults();
-      expect(controller.settings.visibleCount, 3);
+      expect(controller.settings.visibleCount, 4);
       expect(controller.appearance.height, 60, reason: '恢复页签默认应保留外观');
     });
   });
@@ -206,10 +208,10 @@ void main() {
   group('模型 · 至少保留 1 个页签（硬约束）', () {
     test('关到只剩 1 个：允许', () {
       var settings = const ShellSettings();
-      for (final id in <String>['video']) {
+      for (final id in <String>['video', 'music']) {
         settings = settings.withVisible(id, false)!;
       }
-      expect(settings.visibleCount, 2); // novel + settings
+      expect(settings.visibleCount, 2); // comic + settings
       settings = settings.withVisible('settings', false)!;
       expect(settings.visibleCount, 1);
       expect(settings.isVisible('comic'), isTrue);
@@ -217,7 +219,7 @@ void main() {
 
     test('关最后一个：被拒绝，且配置一字未改', () {
       var settings = const ShellSettings();
-      for (final id in <String>['video', 'settings']) {
+      for (final id in <String>['video', 'music', 'settings']) {
         settings = settings.withVisible(id, false)!;
       }
       expect(settings.visibleCount, 1);
@@ -232,7 +234,7 @@ void main() {
       var settings = const ShellSettings();
       expect(settings.canHide('comic'), isTrue, reason: '还有 5 个，随便关');
 
-      for (final id in <String>['video']) {
+      for (final id in <String>['video', 'music']) {
         settings = settings.withVisible(id, false)!;
       }
       expect(settings.canHide('settings'), isTrue, reason: '还有 2 个');
@@ -255,6 +257,7 @@ void main() {
       expect(moved.tabs.map((tab) => tab.id).toList(), <String>[
         'video',
         'comic',
+        'music',
         'settings',
       ]);
     });
@@ -264,6 +267,7 @@ void main() {
       final moved = settings.withMove(0, 4);
       expect(moved.tabs.map((tab) => tab.id).toList(), <String>[
         'video',
+        'music',
         'settings',
         'comic',
       ]);
@@ -271,11 +275,12 @@ void main() {
 
     test('向上拖：把设置挪到第 1 位', () {
       const settings = ShellSettings();
-      final moved = settings.withMove(2, 0);
+      final moved = settings.withMove(3, 0);
       expect(moved.tabs.map((tab) => tab.id).toList(), <String>[
         'settings',
         'comic',
         'video',
+        'music',
       ]);
     });
 
@@ -284,10 +289,10 @@ void main() {
       expect(settings.withMove(2, 2), settings, reason: '拖到原位应无变化');
 
       final clamped = settings.withMove(0, 99);
-      expect(clamped.visibleCount, 3);
+      expect(clamped.visibleCount, 4);
       expect(clamped.tabs.last.id, 'comic', reason: '越界夹到最后一位');
 
-      final negative = settings.withMove(2, -5);
+      final negative = settings.withMove(3, -5);
       expect(negative.tabs.first.id, 'settings', reason: '越界夹到第一位');
 
       expect(settings.withMove(99, 0), settings, reason: '来源越界应无变化');
@@ -297,12 +302,12 @@ void main() {
       final settings = const ShellSettings().withVisible('comic', false)!;
       final moved = settings.withMove(0, 3);
       expect(moved.isVisible('comic'), isFalse, reason: '排序不该把隐藏的项显出来');
-      expect(moved.visibleCount, 2);
+      expect(moved.visibleCount, 3);
     });
 
     test('隐藏的页签也能拖（顺序对以后重新显示有意义）', () {
       final settings = const ShellSettings().withVisible('settings', false)!;
-      final moved = settings.withMove(2, 0);
+      final moved = settings.withMove(3, 0);
       expect(moved.tabs.first.id, 'settings');
       expect(moved.isVisible('settings'), isFalse);
       final shown = moved.withVisible('settings', true)!;
@@ -314,7 +319,7 @@ void main() {
     test('落盘往返：顺序与可见性都保住', () async {
       final settings = const ShellSettings()
           .withVisible('comic', false)!
-          .withMove(2, 0);
+          .withMove(3, 0);
       final store = await ShellSettingsStore.open();
       store.save(settings);
 
@@ -328,7 +333,7 @@ void main() {
       final parsed = ShellSettings.fromJson(<String, Object?>{
         'dockEnabled': false,
       });
-      expect(parsed.visibleCount, 3, reason: '读不懂就回默认（全部显示）');
+      expect(parsed.visibleCount, 4, reason: '读不懂就回默认（全部显示）');
     });
 
     test('损坏 JSON / 缺字段 / 空列表：一律回退默认', () {
@@ -350,7 +355,7 @@ void main() {
             <String, Object?>{'id': tab.id, 'visible': false},
         ],
       });
-      expect(parsed.visibleCount, 3, reason: '「至少保留 1 个」是硬约束，坏配置也不能绕过它');
+      expect(parsed.visibleCount, 4, reason: '「至少保留 1 个」是硬约束，坏配置也不能绕过它');
     });
 
     test('未知 id 被过滤，缺失的页签被补全，重复项去重', () {
@@ -364,7 +369,7 @@ void main() {
       final ids = parsed.tabs.map((tab) => tab.id).toList();
       expect(ids, isNot(contains('unknown-tab')), reason: '陌生 id 要忽略');
       expect(ids.toSet().length, ids.length, reason: '重复 id 要去重');
-      expect(ids, containsAll(<String>['video', 'settings']));
+      expect(ids, containsAll(<String>['video', 'music', 'settings']));
       expect(parsed.isVisible('comic'), isTrue, reason: '重复项认第一次出现');
     });
 
@@ -402,7 +407,7 @@ void main() {
       final controller = ShellSettingsController.instance;
       // 隐藏漫画、把设置拖到最前。
       await controller.setVisible('comic', false);
-      await controller.move(2, 0);
+      await controller.move(3, 0);
 
       // 模拟进程重启：丢掉内存态与 store 实例缓存（磁盘文件保留）。
       controller.resetForTesting();
@@ -419,7 +424,12 @@ void main() {
         ShellSettings.defaults,
         reason: '退休的排序与隐藏配置应恢复默认，保留原生导航和液态参数',
       );
-      expect(controller.visibleTabIds, <String>['comic', 'video', 'settings']);
+      expect(controller.visibleTabIds, <String>[
+        'comic',
+        'video',
+        'music',
+        'settings',
+      ]);
     });
 
     test('boot() 读不到文件：回默认，不抛异常', () async {
@@ -511,7 +521,7 @@ void main() {
 
     testWidgets('默认四项导航都在', (tester) async {
       await pumpShell(tester);
-      expect(dockLabels(tester), <String>['漫画', '视频', '设置', '搜索']);
+      expect(dockLabels(tester), <String>['漫画', '视频', '音乐', '设置']);
     });
 
     testWidgets('隐藏一个页签：底部立刻少一个（实时生效，无需重启）', (tester) async {
@@ -522,8 +532,8 @@ void main() {
 
       expect(dockLabels(tester), <String>[
         '视频',
+        '音乐',
         '设置',
-        '搜索',
       ], reason: '隐藏后底部不该还有「漫画」');
     });
 
@@ -531,7 +541,7 @@ void main() {
       await pumpShell(tester);
 
       // 把「设置」拖到最前。
-      await ShellSettingsController.instance.move(2, 0);
+      await ShellSettingsController.instance.move(3, 0);
       await tester.pumpAndSettle();
 
       expect(dockLabels(tester).first, '设置', reason: '设置应排到第一位');
@@ -629,13 +639,13 @@ void main() {
 
     testWidgets('只剩 1 个页签：导航栏仍显示那一项，不空也不消失', (tester) async {
       await pumpShell(tester);
-      for (final id in <String>['video', 'settings']) {
+      for (final id in <String>['video', 'music', 'settings']) {
         await ShellSettingsController.instance.setVisible(id, false);
       }
       await tester.pumpAndSettle();
 
       expect(find.byKey(AppShell.dockKey), findsOneWidget);
-      expect(dockLabels(tester), <String>['漫画', '搜索']);
+      expect(dockLabels(tester), <String>['漫画']);
     });
 
     testWidgets('隐藏设置 → 走恢复入口 → 在设置页里改配置：不被弹出去', (tester) async {
@@ -684,13 +694,13 @@ void main() {
     testWidgets('恢复默认：隐藏的全部回来、顺序复原', (tester) async {
       await pumpShell(tester);
       await ShellSettingsController.instance.setVisible('video', false);
-      await ShellSettingsController.instance.move(2, 0);
+      await ShellSettingsController.instance.move(3, 0);
       await tester.pumpAndSettle();
 
       await ShellSettingsController.instance.restoreDefaults();
       await tester.pumpAndSettle();
 
-      expect(dockLabels(tester), <String>['漫画', '视频', '设置', '搜索']);
+      expect(dockLabels(tester), <String>['漫画', '视频', '音乐', '设置']);
     });
   });
 
@@ -770,16 +780,16 @@ void main() {
         .whereType<String>()
         .toList();
 
-    testWidgets('隐藏页签后：左侧栏仍显示全部 3 个（不跟随隐藏）', (tester) async {
+    testWidgets('隐藏页签后：左侧栏仍显示全部 4 个（不跟随隐藏）', (tester) async {
       await pumpRail(tester);
-      expect(railLabels(tester), <String>['漫画', '视频', '设置']);
+      expect(railLabels(tester), <String>['漫画', '视频', '音乐', '设置']);
 
       await ShellSettingsController.instance.setVisible('comic', false);
       await tester.pumpAndSettle();
 
       expect(
         railLabels(tester),
-        <String>['漫画', '视频', '设置'],
+        <String>['漫画', '视频', '音乐', '设置'],
         reason:
             '桌面端是左侧栏的标准布局，隐藏是移动端 Dock 的概念；'
             'Rail 上少了页签会让人以为界面坏了',
@@ -812,7 +822,7 @@ void main() {
 
     testWidgets('顺序跟随配置：拖拽后左侧栏顺序跟着变', (tester) async {
       await pumpRail(tester);
-      await ShellSettingsController.instance.move(2, 0);
+      await ShellSettingsController.instance.move(3, 0);
       await tester.pumpAndSettle();
 
       expect(railLabels(tester).first, '设置');

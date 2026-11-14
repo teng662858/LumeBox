@@ -166,7 +166,7 @@ void main() {
     }
   });
 
-  testWidgets('四项导航共用胶囊，搜索随尺寸和位移同步且可点击', (tester) async {
+  testWidgets('音乐替代底栏搜索，顶栏全局搜索不随 Dock 尺寸移动', (tester) async {
     await pumpShell(tester);
     await tester.pumpWidget(
       MaterialApp(
@@ -180,60 +180,25 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final search = find
-        .ancestor(
-          of: find.descendant(
-            of: find.byKey(AppShell.dockKey),
-            matching: find.text('搜索'),
-          ),
-          matching: find.byType(InkWell),
-        )
-        .first;
-    var nav = tester.getRect(dockCapsule());
-    var button = tester.getRect(search);
-    expect(button.height, closeTo(nav.height, .01));
-    expect(button.center.dy, closeTo(nav.center.dy, .01));
-    expect(nav.contains(button.center), true);
-    expect(find.byKey(const ValueKey('browse-search-surface')), findsNothing);
+    final search = find.byKey(const ValueKey('global-search-button'));
+    final initial = tester.getCenter(search);
+    expect(tester.getRect(dockCapsule()).contains(initial), false);
     expect(
       tester
           .widget<ShellDockBar>(find.byType(ShellDockBar))
           .entries
           .map((e) => e.id),
-      ['comic', 'video', 'settings', 'search'],
+      ['comic', 'video', 'music', 'settings'],
     );
+    expect(find.byKey(const ValueKey('browse-search-surface')), findsNothing);
     await ShellSettingsController.instance.setAppearance(
       const DockAppearance(height: 78, safeGap: 14, horizontalMargin: 18),
     );
-    FloatingModules.instance.set(
-      FloatingModule.dock,
-      FloatingModules.instance.style(FloatingModule.dock).copyWith(x: 3, y: -5),
-    );
-    addTearDown(() => FloatingModules.instance.reset(FloatingModule.dock));
     await tester.pumpAndSettle();
-    nav = tester.getRect(dockCapsule());
-    button = tester.getRect(search);
-    expect(button.height, closeTo(78, .01));
-    expect(button.center.dy, closeTo(nav.center.dy, .01));
-    expect(nav.contains(button.center), true);
-    final tab = find
-        .descendant(of: find.byKey(AppShell.dockKey), matching: find.text('视频'))
-        .first;
-    final gesture = await tester.startGesture(tester.getCenter(tab));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 700));
-    var held = tester.getRect(dockCapsule());
-    button = tester.getRect(search);
-    expect(held.contains(button.center), true);
-    await gesture.up();
-    await tester.pumpAndSettle();
-    expect(
-      tester.getRect(dockCapsule()).contains(tester.getCenter(search)),
-      true,
-    );
+    expect(tester.getCenter(search), initial);
     await tester.tap(search);
     await tester.pumpAndSettle();
-    expect(find.text('搜索范围'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, '全局搜索'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

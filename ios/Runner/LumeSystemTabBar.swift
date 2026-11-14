@@ -157,10 +157,11 @@ private final class LumeSystemTabBarView: NSObject, FlutterPlatformView, UITabBa
         switch spec.id {
         case "comic": symbol = "book"
         case "video": symbol = "play.circle"
+        case "music": symbol = "music.note"
         case "search": symbol = "magnifyingglass"
         default: symbol = "gearshape"
         }
-        let filled = spec.id == "search" ? symbol : symbol + ".fill"
+        let filled = (spec.id == "search" || spec.id == "music") ? symbol : symbol + ".fill"
         let item = UITabBarItem(
           title: labels ? spec.label : nil,
           image: UIImage(systemName: solid ? filled : symbol, withConfiguration: configuration),

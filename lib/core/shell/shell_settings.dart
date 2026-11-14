@@ -30,6 +30,7 @@ class ShellTab {
   static const List<ShellTab> all = <ShellTab>[
     ShellTab('comic', '漫画'),
     ShellTab('video', '视频'),
+    ShellTab('music', '音乐'),
     ShellTab('settings', '设置'),
   ];
 
@@ -359,6 +360,7 @@ class ShellSettings {
   static const List<ShellTabConfig> _defaultTabs = <ShellTabConfig>[
     ShellTabConfig(id: 'comic'),
     ShellTabConfig(id: 'video'),
+    ShellTabConfig(id: 'music'),
     ShellTabConfig(id: 'settings'),
   ];
 
@@ -533,7 +535,14 @@ class ShellSettings {
     // 补全：规范表里有、配置里没有的页签，按规范顺序追加到末尾（默认显示）。
     for (final tab in ShellTab.all) {
       if (parsed.any((existing) => existing.id == tab.id)) continue;
-      parsed.add(ShellTabConfig(id: tab.id));
+      final settingsIndex = parsed.indexWhere(
+        (entry) => entry.id == ShellTab.settingsId,
+      );
+      if (tab.id == 'music' && settingsIndex >= 0) {
+        parsed.insert(settingsIndex, ShellTabConfig(id: tab.id));
+      } else {
+        parsed.add(ShellTabConfig(id: tab.id));
+      }
     }
 
     if (parsed.every((tab) => !tab.visible)) return defaults;

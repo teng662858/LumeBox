@@ -1,3 +1,4 @@
+import 'package:lume_box/shared/widgets/glass_card.dart';
 import 'package:lume_box/shared/widgets/native_glass_controls.dart';
 
 import 'dart:async';
@@ -527,12 +528,12 @@ void main() {
     expect(barRect.width, closeTo(358, .1));
     expect(
       (harness.updates.last['entries'] as List).map((e) => (e as Map)['id']),
-      ['comic', 'video', 'settings', 'search'],
+      ['comic', 'video', 'music', 'settings'],
     );
     expect(find.byKey(const ValueKey('browse-search-surface')), findsNothing);
-    await harness.event('selected', 'search');
+    // Search is no longer a native tab item.
     await tester.pumpAndSettle();
-    expect(searches, 1);
+    expect(searches, 0);
     UserScrollNotification(
       metrics: FixedScrollMetrics(
         minScrollExtent: 0,
@@ -572,9 +573,9 @@ void main() {
       ),
       findsOneWidget,
     );
-    await harness.event('selected', 'search');
+    // Search is no longer a native tab item.
     await tester.pumpAndSettle();
-    expect(searches, 2);
+    expect(searches, 0);
     final hideToken = Object();
     controller.hide(hideToken);
     await tester.pumpAndSettle();
@@ -583,8 +584,8 @@ void main() {
     controller.show(hideToken);
     await tester.pumpAndSettle();
     expect((harness.updates.last['entries'] as List).last, {
-      'id': 'search',
-      'label': '搜索',
+      'id': 'settings',
+      'label': '设置',
     });
     expect(
       find.byWidgetPredicate(
@@ -613,8 +614,8 @@ void main() {
       findsOneWidget,
     );
     expect((harness.updates.last['entries'] as List).last, {
-      'id': 'search',
-      'label': '搜索',
+      'id': 'settings',
+      'label': '设置',
     });
     keyBottom = 320;
     await tester.pumpWidget(scene());
@@ -638,7 +639,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       (harness.updates.last['entries'] as List).map((e) => (e as Map)['id']),
-      ['video', 'settings', 'comic', 'search'],
+      ['video', 'music', 'comic', 'settings'],
     );
     expect(find.text('page-settings'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -646,44 +647,40 @@ void main() {
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-  testWidgets('旧系统回退 Dock 时，搜索位于胶囊内并一起收起、隐藏', (tester) async {
-    NativeHarness(tester).install(supported: false);
+  testWidgets('旧系统回退 Dock 仍保留音乐，全局搜索位于顶栏', (tester) async {
+    final harness = NativeHarness(tester);
+    harness.install(supported: false);
     final controller = ShellDockController();
     addTearDown(controller.dispose);
-    await tester.binding.setSurfaceSize(const Size(320, 720));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       MaterialApp(
+        theme: LumeTheme.build(),
         home: AppShell(
           controller: controller,
           desktopRail: false,
-          pageBuilder: (id) => Stack(
-            fit: StackFit.expand,
-            children: [
-              Text('fallback-$id'),
-              BrowseSearchButton(onPressed: () {}),
-            ],
-          ),
+          pageBuilder: (id) =>
+              GlassScaffold(title: id, child: Text('page-$id')),
         ),
       ),
     );
     await tester.pumpAndSettle();
     expect(find.byType(ShellDockBar), findsOneWidget);
+    final capsule = tester.getRect(find.byKey(ShellDockBar.capsuleSurfaceKey));
+    final search = find.byKey(const ValueKey('global-search-button'));
+    expect(capsule.contains(tester.getCenter(search)), false);
     expect(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is UiKitView && widget.viewType == SystemDockBar.viewType,
+      find.descendant(
+        of: find.byKey(AppShell.dockKey),
+        matching: find.text('音乐'),
       ),
-      findsNothing,
+      findsOneWidget,
     );
-    final capsule = tester.getRect(find.byKey(ShellDockBar.capsuleFilterKey));
-    expect(capsule.contains(tester.getCenter(find.text('搜索'))), true);
-    final page = tester.element(find.text('fallback-comic'));
+    final page = tester.element(find.text('page-comic'));
     UserScrollNotification(
       metrics: FixedScrollMetrics(
         minScrollExtent: 0,
         maxScrollExtent: 1000,
-        pixels: 200,
+        pixels: 100,
         viewportDimension: 600,
         axisDirection: AxisDirection.down,
         devicePixelRatio: 1,
@@ -693,15 +690,7 @@ void main() {
     ).dispatch(page);
     await tester.pumpAndSettle();
     expect(find.byType(DockHandleButton), findsOneWidget);
-    expect(find.text('搜索'), findsNothing);
-    final token = Object();
-    controller.hide(token);
-    await tester.pumpAndSettle();
-    expect(find.byType(DockHandleButton), findsNothing);
-    expect(find.byTooltip('搜索'), findsNothing);
-    controller.show(token);
-    await tester.pumpAndSettle();
-    expect(find.text('搜索'), findsOneWidget);
+    expect(search, findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 

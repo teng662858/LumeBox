@@ -142,7 +142,8 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   JustAudioBookPlayer({
     ja.AudioPlayer? player,
     Future<void> Function()? configureSession,
-  }) : _configureSession = configureSession ?? _configureAudioSession,
+  // ignore: prefer_initializing_formals
+  }) : _configureSession = configureSession,
        _player =
            player ??
            ja.AudioPlayer(
@@ -167,10 +168,12 @@ class JustAudioBookPlayer implements AudioBookPlayer {
              ),
            );
   final ja.AudioPlayer _player;
-  final Future<void> Function() _configureSession;
-  static Future<void> _configureAudioSession() async {
+  final Future<void> Function()? _configureSession;
+  static Future<void> _configureAudioSession(bool music) async {
     final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.speech());
+    await session.configure(music
+        ? const AudioSessionConfiguration.music()
+        : const AudioSessionConfiguration.speech());
   }
 
   final _proxy = AudioBookProxy();
@@ -247,7 +250,11 @@ class JustAudioBookPlayer implements AudioBookPlayer {
     final queueRequest = ++_queueRequest;
     _playRequest++;
     _chapterRequest++;
-    await _configureSession();
+    if (_configureSession != null) {
+      await _configureSession();
+    } else {
+      await _configureAudioSession(sources.isNotEmpty && sources.first.music);
+    }
     // Releasing focus or loading another book can supersede system setup.
     if (queueRequest != _queueRequest) return;
     final urls = await _proxy.prepare(sources);
@@ -288,6 +295,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
               id: sources[i].id,
               title: sources[i].episode.title,
               album: sources[i].album,
+              artist: sources[i].artist,
               artUri: sources[i].cover == null
                   ? null
                   : Uri.tryParse(sources[i].cover!),
@@ -694,6 +702,8 @@ class AudioBookSession extends ChangeNotifier {
                 episode: track.episode,
                 album: track.album,
                 cover: track.cover,
+                artist: track.artist,
+                music: track.music,
                 resolve: () async {
                   if (generation == _generation && loading) {
                     loadingMessage = '正在解析音频地址…';
@@ -718,10 +728,10 @@ class AudioBookSession extends ChangeNotifier {
         return;
       }
       _syncPlayhead();
-      await _player!.speed(settings.speed);
+      await _player!.speed(sources.first.music ? 1 : settings.speed);
       if (generation != _generation) return;
       _readyGeneration = generation;
-      setSleep(settings.sleepMinutes);
+      setSleep(sources.first.music ? 0 : settings.sleepMinutes);
     } catch (failure, stack) {
       LumeLog.error('[audioBook] 加载失败: $failure', stack);
       if (generation == _generation) {
