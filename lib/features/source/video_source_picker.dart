@@ -938,45 +938,80 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
     );
   }
 
-  Widget grid(List<Widget> cards) => Column(
-    children: [
-      for (var i = 0; i < cards.length; i += 2)
-        Padding(
-          padding: const EdgeInsets.only(bottom: SourceCardMetrics.rowGap),
+  Widget grid<T>(List<T> entries, Widget Function(T) buildCard) =>
+      SliverFixedExtentList.builder(
+        itemExtent: SourceCardMetrics.height + SourceCardMetrics.rowGap,
+        itemCount: (entries.length + 1) ~/ 2,
+        itemBuilder: (context, row) {
+          final i = row * 2;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: SourceCardMetrics.rowGap),
+            child: Row(
+              children: [
+                Expanded(child: buildCard(entries[i])),
+                const SizedBox(width: SourceCardMetrics.columnGap),
+                Expanded(
+                  child: i + 1 < entries.length
+                      ? buildCard(entries[i + 1])
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+  Widget heading(String title, int count, {Widget? trailing}) =>
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 14, 10, 10),
           child: Row(
             children: [
-              Expanded(child: cards[i]),
-              const SizedBox(width: SourceCardMetrics.columnGap),
               Expanded(
-                child: i + 1 < cards.length
-                    ? cards[i + 1]
-                    : const SizedBox.shrink(),
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
+              Text(
+                '$count',
+                style: TextStyle(fontSize: 12, color: LumeTheme.muted),
+              ),
+              ?trailing,
             ],
           ),
         ),
-    ],
-  );
-
-  Widget heading(String title, int count, {Widget? trailing}) => Padding(
-    padding: const EdgeInsets.fromLTRB(10, 14, 10, 10),
-    child: Row(
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-        ),
-        Text('$count', style: TextStyle(fontSize: 12, color: LumeTheme.muted)),
-        ?trailing,
-      ],
-    ),
-  );
+      );
 
   @override
   Widget build(BuildContext context) {
-    final ordinary = sources
+    final showOrdinary = [
+      VideoSourceType.all,
+      VideoSourceType.ordinary,
+      VideoSourceType.python,
+      VideoSourceType.tvbox,
+      VideoSourceType.module,
+      VideoSourceType.kazumi,
+      VideoSourceType.audio,
+    ].contains(type);
+    final showCat =
+        SourceContentVisibility.instance.isVisible('cat') &&
+        [
+          VideoSourceType.all,
+          VideoSourceType.cat,
+          VideoSourceType.audio,
+        ].contains(type);
+    final showWeb =
+        SourceContentVisibility.instance.isVisible('web') &&
+        [
+          VideoSourceType.all,
+          VideoSourceType.web,
+          VideoSourceType.audio,
+        ].contains(type);
+    final ordinary = (showOrdinary ? sources : const <SourceDescriptor>[])
         .where(
           (s) =>
               s.enabled &&
@@ -1016,7 +1051,9 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
       final pb = pinned[b.id]!;
       return pa != pb ? (pa ? -1 : 1) : compareOrder(a.id, b.id);
     });
-    final records = service.subscriptions.where((s) => s.enabled).toList();
+    final records = showCat
+        ? service.subscriptions.where((s) => s.enabled).toList()
+        : const <CatSubscription>[];
     final groups = <(CatSubscription, List<CatSite>)>[];
     for (final record in records) {
       final sites = record.sites
@@ -1042,7 +1079,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
         groups.add((record, sites));
       }
     }
-    final filteredWeb = webHomes
+    final filteredWeb = (showWeb ? webHomes : const <WebHomeSource>[])
         .where(
           (home) =>
               (type == VideoSourceType.all ||
@@ -1051,29 +1088,6 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
               matches('${home.name} ${home.url}'),
         )
         .toList();
-    final showOrdinary = [
-      VideoSourceType.all,
-      VideoSourceType.ordinary,
-      VideoSourceType.python,
-      VideoSourceType.tvbox,
-      VideoSourceType.module,
-      VideoSourceType.kazumi,
-      VideoSourceType.audio,
-    ].contains(type);
-    final showCat =
-        SourceContentVisibility.instance.isVisible('cat') &&
-        [
-          VideoSourceType.all,
-          VideoSourceType.cat,
-          VideoSourceType.audio,
-        ].contains(type);
-    final showWeb =
-        SourceContentVisibility.instance.isVisible('web') &&
-        [
-          VideoSourceType.all,
-          VideoSourceType.web,
-          VideoSourceType.audio,
-        ].contains(type);
     var initialOffset = 0.0;
     bool hasFocus = false;
     if ([VideoSourceType.cat, VideoSourceType.audio].contains(type) &&
@@ -1121,61 +1135,61 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
         (!showCat || groups.isEmpty) &&
         (!showWeb || filteredWeb.isEmpty);
     Widget sourceGrid(List<SourceDescriptor> entries, VideoSourceType kind) =>
-        grid([
-          for (final s in entries)
-            SourceDragTile(
-              key: ValueKey('video-picker-drag-${s.id}'),
+        grid(
+          entries,
+          (s) => SourceDragTile(
+            key: ValueKey('video-picker-drag-${s.id}'),
+            id: s.id,
+            name: s.name,
+            accepts: (id) => entries.any((s) => s.id == id),
+            onMove: (from, to) async {
+              final ids = entries.map((s) => s.id).toList();
+              await SourceOrder.move(
+                Section.video,
+                originalOrder,
+                ids,
+                ids.indexOf(from),
+                ids.indexOf(to),
+              );
+              changed();
+            },
+            child: card(
               id: s.id,
               name: s.name,
-              accepts: (id) => entries.any((s) => s.id == id),
-              onMove: (from, to) async {
-                final ids = entries.map((s) => s.id).toList();
-                await SourceOrder.move(
-                  Section.video,
-                  originalOrder,
-                  ids,
-                  ids.indexOf(from),
-                  ids.indexOf(to),
-                );
-                changed();
-              },
-              child: card(
-                id: s.id,
-                name: s.name,
-                subtitle: _ordinarySelected(s.id)
-                    ? '当前使用'
-                    : kind == VideoSourceType.ordinary
-                    ? (SourcePreferences.read(Section.video, s.id).pinned
-                          ? '已置顶'
-                          : SourceContentCategories.forSource(s).label)
-                    : '${s.isAudio
-                          ? '音频'
-                          : s.isKazumi
-                          ? 'Kazumi'
-                          : s.runtimeKind == 'python'
-                          ? 'PY'
-                          : s.runtimeKind == 'module'
-                          ? '模块'
-                          : 'JS'} · ${s.version}',
+              subtitle: _ordinarySelected(s.id)
+                  ? '当前使用'
+                  : kind == VideoSourceType.ordinary
+                  ? (SourcePreferences.read(Section.video, s.id).pinned
+                        ? '已置顶'
+                        : SourceContentCategories.forSource(s).label)
+                  : '${s.isAudio
+                        ? '音频'
+                        : s.isKazumi
+                        ? 'Kazumi'
+                        : s.runtimeKind == 'python'
+                        ? 'PY'
+                        : s.runtimeKind == 'module'
+                        ? '模块'
+                        : 'JS'} · ${s.version}',
+              descriptor: s,
+              selected: _ordinarySelected(s.id),
+              onTap: () =>
+                  Navigator.pop(context, VideoSourceChoice.ordinary(s.id)),
+              onDelete: () => _deleteOrdinary(s),
+              onMore: () => edit(
+                Section.video,
+                s.id,
+                s.name,
+                s.siteUrl,
+                widgetParameters: s.runtimeKind == 'module',
                 descriptor: s,
-                selected: _ordinarySelected(s.id),
-                onTap: () =>
-                    Navigator.pop(context, VideoSourceChoice.ordinary(s.id)),
-                onDelete: () => _deleteOrdinary(s),
-                onMore: () => edit(
-                  Section.video,
-                  s.id,
-                  s.name,
-                  s.siteUrl,
-                  widgetParameters: s.runtimeKind == 'module',
-                  descriptor: s,
-                ),
               ),
             ),
-        ]);
+          ),
+        );
     Widget runtimeGroup(VideoSourceType kind) {
       final entries = ordinary.where((source) => kind.accepts(source)).toList();
-      if (entries.isEmpty) return const SizedBox.shrink();
+      if (entries.isEmpty) return const SliverToBoxAdapter();
       final title = switch (kind) {
         VideoSourceType.python => 'PY · Python 源',
         VideoSourceType.tvbox => 'TVBOX · 聚合配置源',
@@ -1184,9 +1198,9 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
         VideoSourceType.audio => '有声小说 · 音频源',
         _ => 'JS 源',
       };
-      return Column(
+      return SliverMainAxisGroup(
         key: ValueKey('video-source-group-${kind.name}'),
-        children: kind != VideoSourceType.ordinary
+        slivers: kind != VideoSourceType.ordinary
             ? [heading(title, entries.length), sourceGrid(entries, kind)]
             : [
                 if (type == VideoSourceType.all) heading(title, entries.length),
@@ -1463,32 +1477,34 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                                   SourceCardMetrics.horizontalPadding,
                                   24,
                                 ),
-                                children: [
+                                slivers: [
                                   if (empty)
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 48,
-                                      ),
-                                      child: Column(
-                                        children: [
-                                          Text(
-                                            query.isNotEmpty
-                                                ? '没有匹配的源'
-                                                : type ==
-                                                          VideoSourceType
-                                                              .ordinary &&
-                                                      content !=
-                                                          SourceContentCategory
-                                                              .all
-                                                ? '「${content.label}」里还没有源'
-                                                : '还没有可用的源',
-                                          ),
-                                          if (query.isEmpty)
-                                            TextButton(
-                                              onPressed: add,
-                                              child: const Text('添加源'),
+                                    SliverToBoxAdapter(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 48,
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            Text(
+                                              query.isNotEmpty
+                                                  ? '没有匹配的源'
+                                                  : type ==
+                                                            VideoSourceType
+                                                                .ordinary &&
+                                                        content !=
+                                                            SourceContentCategory
+                                                                .all
+                                                  ? '「${content.label}」里还没有源'
+                                                  : '还没有可用的源',
                                             ),
-                                        ],
+                                            if (query.isEmpty)
+                                              TextButton(
+                                                onPressed: add,
+                                                child: const Text('添加源'),
+                                              ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   if (showOrdinary &&
@@ -1543,66 +1559,68 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                                         ),
                                       ),
                                       if (sites.isEmpty)
-                                        TextButton(
-                                          onPressed: busy.contains(record.id)
-                                              ? null
-                                              : () => refresh(record),
-                                          child: const Text('加载包内站点'),
+                                        SliverToBoxAdapter(
+                                          child: TextButton(
+                                            onPressed: busy.contains(record.id)
+                                                ? null
+                                                : () => refresh(record),
+                                            child: const Text('加载包内站点'),
+                                          ),
                                         ),
-                                      grid([
-                                        for (final s in sites)
-                                          SourceDragTile(
-                                            key: ValueKey(
-                                              'video-picker-drag-${s.id}',
-                                            ),
+                                      grid(
+                                        sites,
+                                        (s) => SourceDragTile(
+                                          key: ValueKey(
+                                            'video-picker-drag-${s.id}',
+                                          ),
+                                          id: s.id,
+                                          name: s.name,
+                                          accepts: (id) =>
+                                              sites.any((s) => s.id == id),
+                                          onMove: (from, to) async {
+                                            final ids = sites
+                                                .map((s) => s.id)
+                                                .toList();
+                                            await SourceOrder.move(
+                                              Section.cat,
+                                              record.sites
+                                                  .map((s) => s.id)
+                                                  .toList(),
+                                              ids,
+                                              ids.indexOf(from),
+                                              ids.indexOf(to),
+                                            );
+                                            changed();
+                                          },
+                                          child: card(
                                             id: s.id,
                                             name: s.name,
-                                            accepts: (id) =>
-                                                sites.any((s) => s.id == id),
-                                            onMove: (from, to) async {
-                                              final ids = sites
-                                                  .map((s) => s.id)
-                                                  .toList();
-                                              await SourceOrder.move(
-                                                Section.cat,
-                                                record.sites
-                                                    .map((s) => s.id)
-                                                    .toList(),
-                                                ids,
-                                                ids.indexOf(from),
-                                                ids.indexOf(to),
-                                              );
-                                              changed();
-                                            },
-                                            child: card(
-                                              id: s.id,
-                                              name: s.name,
-                                              section: Section.cat,
-                                              siteUrl: s.siteUrl,
-                                              subtitle:
-                                                  widget.currentCatId == s.id
-                                                  ? '当前使用'
-                                                  : '猫源',
-                                              selected:
-                                                  widget.currentCatId == s.id,
-                                              onTap: () => Navigator.pop(
-                                                context,
-                                                VideoSourceChoice.cat(s),
-                                              ),
-                                              onDelete: () => _deleteEntry(
-                                                s.id,
-                                                s.name,
-                                                () => service.removeSite(s),
-                                              ),
-                                              onMore: () => edit(
-                                                Section.cat,
-                                                s.id,
-                                                s.name,
-                                                s.siteUrl,
-                                              ),
+                                            section: Section.cat,
+                                            siteUrl: s.siteUrl,
+                                            subtitle:
+                                                widget.currentCatId == s.id
+                                                ? '当前使用'
+                                                : '猫源',
+                                            selected:
+                                                widget.currentCatId == s.id,
+                                            onTap: () => Navigator.pop(
+                                              context,
+                                              VideoSourceChoice.cat(s),
+                                            ),
+                                            onDelete: () => _deleteEntry(
+                                              s.id,
+                                              s.name,
+                                              () => service.removeSite(s),
+                                            ),
+                                            onMore: () => edit(
+                                              Section.cat,
+                                              s.id,
+                                              s.name,
+                                              s.siteUrl,
                                             ),
                                           ),
-                                      ]),
+                                        ),
+                                      ),
                                     ],
                                   if (type == VideoSourceType.all) ...[
                                     runtimeGroup(VideoSourceType.python),
@@ -1647,66 +1665,68 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                                       ),
                                     ),
                                     if (filteredWeb.isEmpty)
-                                      TextButton.icon(
-                                        onPressed: _addWebHome,
-                                        icon: const LumeIcon(
-                                          Icons.language,
-                                          size: 20,
-                                          slot: 'video_source_picker.web_empty',
+                                      SliverToBoxAdapter(
+                                        child: TextButton.icon(
+                                          onPressed: _addWebHome,
+                                          icon: const LumeIcon(
+                                            Icons.language,
+                                            size: 20,
+                                            slot:
+                                                'video_source_picker.web_empty',
+                                          ),
+                                          label: const Text('添加网页主页 / HTML'),
                                         ),
-                                        label: const Text('添加网页主页 / HTML'),
                                       )
                                     else
-                                      grid([
-                                        for (final home in filteredWeb)
-                                          SourceDragTile(
-                                            key: ValueKey(
-                                              'web-picker-drag-${home.id}',
-                                            ),
+                                      grid(
+                                        filteredWeb,
+                                        (home) => SourceDragTile(
+                                          key: ValueKey(
+                                            'web-picker-drag-${home.id}',
+                                          ),
+                                          id: home.id,
+                                          name: home.name,
+                                          accepts: (id) => filteredWeb.any(
+                                            (row) => row.id == id,
+                                          ),
+                                          onMove: (from, to) async {
+                                            final store = _webStore;
+                                            if (store == null) return;
+                                            store.moveVisible(
+                                              filteredWeb
+                                                  .map((row) => row.id)
+                                                  .toList(),
+                                              from,
+                                              to,
+                                            );
+                                          },
+                                          child: card(
                                             id: home.id,
                                             name: home.name,
-                                            accepts: (id) => filteredWeb.any(
-                                              (row) => row.id == id,
+                                            siteUrl: home.url,
+                                            subtitle:
+                                                widget.currentWebId == home.id
+                                                ? '当前使用'
+                                                : home.isLocal
+                                                ? '本地 HTML'
+                                                : home.url,
+                                            selected:
+                                                widget.currentWebId == home.id,
+                                            onTap: () => Navigator.pop(
+                                              context,
+                                              VideoSourceChoice.web(home),
                                             ),
-                                            onMove: (from, to) async {
-                                              final store = _webStore;
-                                              if (store == null) return;
-                                              store.moveVisible(
-                                                filteredWeb
-                                                    .map((row) => row.id)
-                                                    .toList(),
-                                                from,
-                                                to,
-                                              );
-                                            },
-                                            child: card(
-                                              id: home.id,
-                                              name: home.name,
-                                              siteUrl: home.url,
-                                              subtitle:
-                                                  widget.currentWebId == home.id
-                                                  ? '当前使用'
-                                                  : home.isLocal
-                                                  ? '本地 HTML'
-                                                  : home.url,
-                                              selected:
-                                                  widget.currentWebId ==
-                                                  home.id,
-                                              onTap: () => Navigator.pop(
-                                                context,
-                                                VideoSourceChoice.web(home),
-                                              ),
-                                              onDelete: () => _deleteEntry(
-                                                home.id,
-                                                home.name,
-                                                () async {
-                                                  _webStore?.remove(home.id);
-                                                },
-                                              ),
-                                              onMore: () => _editWebHome(home),
+                                            onDelete: () => _deleteEntry(
+                                              home.id,
+                                              home.name,
+                                              () async {
+                                                _webStore?.remove(home.id);
+                                              },
                                             ),
+                                            onMore: () => _editWebHome(home),
                                           ),
-                                      ]),
+                                        ),
+                                      ),
                                   ],
                                 ],
                               ),

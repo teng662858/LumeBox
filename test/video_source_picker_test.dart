@@ -148,6 +148,79 @@ void main() {
     }
   }
 
+  for (final cat in [false, true]) {
+    for (final selectedIndex in [0, 999]) {
+      testWidgets(
+        '${cat ? "猫源订阅" : "普通视频源"}千条列表只构建可见卡片，定位 $selectedIndex 并支持搜索',
+        (tester) async {
+          if (cat) {
+            service.subscriptions.clear();
+            service.subscriptions.add(
+              CatSubscription(
+                id: 'large',
+                name: '千条订阅',
+                url: 'https://example.test/large',
+                sites: [
+                  for (var i = 0; i < 1000; i++)
+                    CatSite(
+                      subscriptionId: 'large',
+                      key: 'entry-$i',
+                      name: '测试站点$i',
+                      api: '/$i',
+                    ),
+                ],
+              ),
+            );
+          } else {
+            manager.sources.clear();
+            manager.sources.addAll([
+              for (var i = 0; i < 1000; i++)
+                SourceDescriptor(
+                  id: 'entry-$i',
+                  name: '测试站点$i',
+                  version: '1',
+                  enabled: true,
+                ),
+            ]);
+            manager.selected = 'entry-$selectedIndex';
+          }
+          final selected = cat
+              ? service.subscriptions.single.sites[selectedIndex].id
+              : manager.selected!;
+          await pump(
+            tester,
+            keepInitialType: true,
+            showingCat: cat,
+            currentCatId: cat ? selected : null,
+          );
+          expect(find.byType(SourcePickerCard).evaluate().length, lessThan(40));
+          final card = find.byKey(ValueKey('video-picker-source-$selected'));
+          expect(card, findsOneWidget);
+          expect(
+            tester.getTopLeft(card).dy,
+            closeTo(
+              tester.getTopLeft(find.byType(SourcePickerScrollList)).dy,
+              1,
+            ),
+          );
+          expect(manager.openedIds, isEmpty);
+          expect(manager.selectedIds, isEmpty);
+          await tester.enterText(find.byType(TextField), '测试站点555');
+          await tester.pumpAndSettle();
+          expect(
+            find.descendant(
+              of: find.byType(SourcePickerCard),
+              matching: find.text('测试站点555'),
+            ),
+            findsOneWidget,
+          );
+          expect(find.byType(SourcePickerCard), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
   testWidgets('视频源类型开关隐藏对应页签和全部分组，不删除站点', (tester) async {
     final visibility = SourceContentVisibility.instance;
     manager.sources.add(

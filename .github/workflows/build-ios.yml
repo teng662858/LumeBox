@@ -19,14 +19,39 @@ on:
         description: '只预计算并验证离线模型资源，不构建 App'
         type: boolean
         default: false
+      native_video_only:
+        description: '只验证原生播放器布局与播放，不运行其他原生检查、不构建 App'
+        type: boolean
+        default: false
       typecheck_only:
         description: '只检查 Swift 类型，不编译 App、不生成或上传安装包'
         type: boolean
         default: false
 
-run-name: ${{ inputs.remux_only && 'Offline MP4 remux check — no package' || inputs.typecheck_only && 'Swift typecheck only — no package' || 'Build unsigned IPA' }}
+run-name: ${{ inputs.native_video_only && 'Native video checks — no package' || inputs.remux_only && 'Offline MP4 remux check — no package' || inputs.typecheck_only && 'Swift typecheck only — no package' || 'Build unsigned IPA' }}
 
 jobs:
+  native-video:
+    if: ${{ inputs.native_video_only == true }}
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.5
+          channel: stable
+          cache: true
+      - name: Validate production player layout and playback
+        run: |
+          brew install ffmpeg
+          bash tool/check_native_video.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-video-check
+          path: out/native-video/
+
   remux:
     if: ${{ inputs.remux_only == true }}
     runs-on: macos-latest
@@ -72,7 +97,7 @@ jobs:
           if-no-files-found: error
   # 手动构建直接运行；全量分析与测试由 quality.yml 独立按需执行。
   build-ipa:
-    if: ${{ inputs.models_only != true && inputs.remux_only != true }}
+    if: ${{ inputs.models_only != true && inputs.remux_only != true && inputs.native_video_only != true }}
     name: ${{ inputs.typecheck_only && 'Swift and simulator checks (no IPA)' || 'Build unsigned IPA' }}
     runs-on: macos-latest
     timeout-minutes: 60

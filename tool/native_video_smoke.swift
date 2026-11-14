@@ -1,6 +1,37 @@
 // Appended to the production controller file for a standalone UIKit simulator
 // host. Exercises private production code, not a second player implementation.
 extension NativeVideoScreen {
+  fileprivate func checkControlLayout() {
+    let safe = view.safeAreaLayoutGuide.layoutFrame
+    for (id, button) in controls {
+      let rect = button.convert(button.bounds, to: view)
+      precondition(rect.width >= 44 && rect.height >= 44, "44pt control target: \(id)")
+      precondition(rect.minX >= safe.minX && rect.maxX <= safe.maxX + 0.5, "control inside safe width: \(id)")
+      precondition(!button.hasAmbiguousLayout, "unambiguous control: \(id)")
+    }
+    let left = transport.convert(transport.bounds, to: view)
+    let right = playbackOptions.convert(playbackOptions.bounds, to: view)
+    if buttons.axis == .horizontal {
+      precondition(left.maxX + 8 <= right.minX + 0.5, "transport and options must not overlap")
+      precondition(abs(left.midY - right.midY) < 0.5, "landscape groups share one row")
+    } else {
+      precondition(left.maxY + 8 <= right.minY + 0.5, "compact groups use separate rows")
+    }
+    precondition(slider.thumbImage(for: .normal)?.size.width == 12, "progress uses compact round thumb")
+    precondition(controls["kernel"]?.superview === top, "kernel remains in top bar")
+    precondition(topMaterial.effect != nil && bottomMaterial.effect != nil, "native materials installed")
+    #if compiler(>=6.2)
+    if #available(iOS 26.0, *), !UIAccessibility.isReduceTransparencyEnabled {
+      precondition(bottomMaterial.effect is UIGlassEffect, "iOS 26 uses actual Liquid Glass")
+    }
+    #endif
+    let wasVisible = chromeVisible
+    chromeVisible = false; renderState()
+    precondition(topMaterial.isHidden && bottomMaterial.isHidden, "materials hide with controls")
+    chromeVisible = wasVisible; renderState()
+  }
+  fileprivate func checkPreviousRequest() { resolve("previous") }
+
   fileprivate static func checkPausedPlaybackRate(_ item: NativeVideoItem) {
     let screen = NativeVideoScreen(session: "paused-rate", item: item, options: [:])
     let engine = NativeAVEngine()
@@ -236,7 +267,7 @@ extension NativeVideoScreen {
       check(state["playHitTest"] as? Bool == true, "UIKit play button hit test")
       check(state["closeHitTest"] as? Bool == true, "UIKit close button hit test")
       check(state["viewAttached"] as? Bool == true, "visible native picture")
-      screen.debugAction(["action": "tap", "control": "previous"])
+      screen.checkPreviousRequest()
       screen.debugAction([:]) // A decoder update redraws the controls.
       check(screen.debugState["error"] == nil && screen.debugState["wantsPlay"] as? Bool == true,
             "failed episode request keeps the current video playing")
@@ -248,6 +279,7 @@ extension NativeVideoScreen {
       for size in [CGSize(width: 320, height: 568), CGSize(width: 390, height: 844), CGSize(width: 844, height: 390)] {
         screen.view.frame = CGRect(origin: .zero, size: size)
         screen.view.setNeedsLayout(); screen.view.layoutIfNeeded()
+        screen.checkControlLayout()
         let layout = screen.debugState
         check((layout["closeWidth"] as? CGFloat ?? 0) == 44, "back button stays 44pt at \(size)")
         check(abs((layout["closeLeadingInset"] as? CGFloat ?? 0) - 16) < 1, "back button stays at leading edge at \(size)")
@@ -276,7 +308,7 @@ extension NativeVideoScreen {
     } else if phase == 1 && Date().timeIntervalSince(pausedAt) > 0.9 {
       check(abs(position - pausedPosition) < 0.6, "explicit pause must hold the clock")
       check(state["wantsPlay"] as? Bool == false, "pause intent")
-      screen.debugAction(["action": "tap", "control": "previous"])
+      screen.checkPreviousRequest()
       check(screen.debugState["error"] == nil && screen.debugState["wantsPlay"] as? Bool == false,
             "failed episode request keeps the current video paused")
       if caseIndex == 0 {

@@ -12,6 +12,7 @@ class SourcePickerScrollList extends StatefulWidget {
     this.children = const [],
     this.itemBuilder,
     this.itemCount,
+    this.slivers,
     this.focusKey,
     this.estimatedOffset = 0,
     this.padding = const EdgeInsets.only(bottom: 16),
@@ -20,6 +21,9 @@ class SourcePickerScrollList extends StatefulWidget {
   final List<Widget> children;
   final IndexedWidgetBuilder? itemBuilder;
   final int? itemCount;
+
+  /// Groups must supply lazy row slivers, never a box containing every card.
+  final List<Widget>? slivers;
   final GlobalKey? focusKey;
   final double estimatedOffset;
   final EdgeInsets padding;
@@ -100,15 +104,29 @@ class _SourcePickerScrollListState extends State<SourcePickerScrollList> {
             if (notification.dragDetails != null) _pending = false;
             return false;
           },
-          child: ListView.builder(
-            key: widget.storageKey,
-            controller: _controller,
-            primary: false,
-            physics: const BouncingScrollPhysics(),
-            padding: widget.padding.copyWith(bottom: bottom),
-            itemCount: widget.itemCount ?? widget.children.length,
-            itemBuilder: widget.itemBuilder ?? (_, i) => widget.children[i],
-          ),
+          child: widget.slivers != null
+              ? CustomScrollView(
+                  key: widget.storageKey,
+                  controller: _controller,
+                  primary: false,
+                  physics: const BouncingScrollPhysics(),
+                  slivers: [
+                    SliverPadding(
+                      padding: widget.padding.copyWith(bottom: bottom),
+                      sliver: SliverMainAxisGroup(slivers: widget.slivers!),
+                    ),
+                  ],
+                )
+              : ListView.builder(
+                  key: widget.storageKey,
+                  controller: _controller,
+                  primary: false,
+                  physics: const BouncingScrollPhysics(),
+                  padding: widget.padding.copyWith(bottom: bottom),
+                  itemCount: widget.itemCount ?? widget.children.length,
+                  itemBuilder:
+                      widget.itemBuilder ?? (_, i) => widget.children[i],
+                ),
         );
       },
     );

@@ -104,6 +104,8 @@ import UniformTypeIdentifiers
   private var danmakuRevision = 0, danmakuEnabled = false, danmakuPaused = false
   private let picture = UIView(), bullets = UIView(), chrome = UIView()
   private let top = UIStackView(), bottom = UIStackView(), progressRow = UIStackView(), buttons = UIStackView()
+  private let transport = UIStackView(), playbackOptions = UIStackView(), controlSpacer = UIView()
+  private let topMaterial = UIVisualEffectView(), bottomMaterial = UIVisualEffectView()
   private let titleLabel = UILabel(), statusLabel = UILabel(), caption = UILabel(), elapsed = UILabel(), duration = UILabel()
   private let slider = UISlider(), spinner = UIActivityIndicatorView(style: .large)
   private var controls: [String: UIButton] = [:]
@@ -134,10 +136,21 @@ import UniformTypeIdentifiers
     for child in [picture, bullets, caption, chrome, spinner, statusLabel, lockButton] {
       child.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(child)
     }
+    for surface in [topMaterial, bottomMaterial] {
+      surface.translatesAutoresizingMaskIntoConstraints = false
+      surface.isUserInteractionEnabled = false
+      surface.overrideUserInterfaceStyle = .dark
+      surface.layer.cornerRadius = 22; surface.layer.cornerCurve = .continuous
+      surface.clipsToBounds = true
+      #if compiler(>=6.2)
+      if #available(iOS 26.0, *) { surface.cornerConfiguration = .fixed(22) }
+      #endif
+      chrome.addSubview(surface)
+    }
+    updateControlMaterials()
     chrome.addSubview(top); chrome.addSubview(bottom)
     top.axis = .horizontal; top.alignment = .center; top.spacing = 8
-    bottom.axis = .vertical; bottom.spacing = 8; bottom.backgroundColor = UIColor.black.withAlphaComponent(0.55)
-    top.backgroundColor = UIColor.black.withAlphaComponent(0.45)
+    bottom.axis = .vertical; bottom.spacing = 4
     titleLabel.text = item.title; titleLabel.textColor = .white; titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
     titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
     titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -145,7 +158,8 @@ import UniformTypeIdentifiers
     top.addArrangedSubview(back); top.addArrangedSubview(titleLabel)
     let pipButton = button("pip", "pip.enter", "画中画") { [weak self] in self?.togglePip() }
     top.addArrangedSubview(pipButton)
-    let menu = button("settings", "gearshape", "播放设置") { [weak self] in self?.settings() }
+    top.addArrangedSubview(textButton("kernel", kernel == "mpv" ? "MPV" : "系统", "切换内核") { [weak self] in self?.chooseKernel() })
+    let menu = button("settings", "ellipsis", "播放设置") { [weak self] in self?.settings() }
     top.addArrangedSubview(menu)
     progressRow.axis = .horizontal; progressRow.spacing = 8; progressRow.alignment = .center
     for label in [elapsed, duration] {
@@ -153,20 +167,31 @@ import UniformTypeIdentifiers
       label.setContentHuggingPriority(.required, for: .horizontal)
     }
     elapsed.text = "00:00"; duration.text = "00:00"
+    // Keep the former compact progress handle instead of iOS 26's wide capsule.
+    let thumb = UIGraphicsImageRenderer(size: CGSize(width: 12, height: 12)).image { _ in
+      UIColor.white.setFill(); UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: 12, height: 12)).fill()
+    }
+    slider.setThumbImage(thumb, for: .normal); slider.setThumbImage(thumb, for: .highlighted)
+    slider.minimumTrackTintColor = .white; slider.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.3)
     slider.minimumValue = 0; slider.maximumValue = 1; slider.accessibilityIdentifier = "native-video-progress"
     slider.addTarget(self, action: #selector(scrubBegin), for: .touchDown)
     slider.addTarget(self, action: #selector(scrubPreview), for: .valueChanged)
     slider.addTarget(self, action: #selector(scrubEnd), for: [.touchUpInside, .touchUpOutside, .touchCancel])
     progressRow.addArrangedSubview(elapsed); progressRow.addArrangedSubview(slider); progressRow.addArrangedSubview(duration)
-    buttons.axis = .horizontal; buttons.distribution = .equalSpacing; buttons.alignment = .center
-    buttons.addArrangedSubview(button("previous", "backward.end", "上一集") { [weak self] in self?.resolve("previous") })
-    buttons.addArrangedSubview(button("back10", "gobackward.10", "后退十秒") { [weak self] in self?.seekBy(-10) })
-    buttons.addArrangedSubview(button("play", "pause.fill", "播放或暂停") { [weak self] in self?.togglePlay() })
-    buttons.addArrangedSubview(button("forward10", "goforward.10", "快进十秒") { [weak self] in self?.seekBy(10) })
-    buttons.addArrangedSubview(button("next", "forward.end", "下一集") { [weak self] in self?.resolve("next") })
-    buttons.addArrangedSubview(button("episodes", "list.bullet", "选集与线路") { [weak self] in self?.choices("episodes") })
-    buttons.addArrangedSubview(button("kernel", "arrow.triangle.2.circlepath", "切换内核") { [weak self] in self?.chooseKernel() })
-    buttons.addArrangedSubview(button("rotate", "rotate.right", "旋转画面") { [weak self] in self?.rotate() })
+    buttons.axis = .horizontal; buttons.alignment = .center; buttons.spacing = 8
+    for group in [transport, playbackOptions] {
+      group.axis = .horizontal; group.alignment = .center; group.spacing = 0
+    }
+    transport.accessibilityIdentifier = "native-video-transport"
+    playbackOptions.accessibilityIdentifier = "native-video-options"
+    transport.addArrangedSubview(button("play", "pause.fill", "播放或暂停") { [weak self] in self?.togglePlay() })
+    transport.addArrangedSubview(button("next", "forward.end.fill", "下一集") { [weak self] in self?.resolve("next") })
+    transport.addArrangedSubview(textButton("skip", "跳转", "快进、后退与上一集") { [weak self] in self?.skipOptions() })
+    playbackOptions.addArrangedSubview(textButton("danmaku", "弹幕", "弹幕开关") { [weak self] in self?.toggleDanmaku() })
+    playbackOptions.addArrangedSubview(textButton("speed", "1×", "播放速度") { [weak self] in self?.chooseSpeed() })
+    playbackOptions.addArrangedSubview(textButton("episodes", "选集", "选集与线路") { [weak self] in self?.episodeOptions() })
+    playbackOptions.addArrangedSubview(button("rotate", "rotate.right", "旋转画面") { [weak self] in self?.rotate() })
+    buttons.addArrangedSubview(transport); buttons.addArrangedSubview(controlSpacer); buttons.addArrangedSubview(playbackOptions)
     bottom.addArrangedSubview(progressRow); bottom.addArrangedSubview(buttons)
     for child in [top, bottom] { child.translatesAutoresizingMaskIntoConstraints = false; child.isLayoutMarginsRelativeArrangement = true; child.directionalLayoutMargins = .init(top: 4, leading: 8, bottom: 4, trailing: 8) }
     statusLabel.textColor = .white; statusLabel.font = .systemFont(ofSize: 14); statusLabel.textAlignment = .center
@@ -190,7 +215,7 @@ import UniformTypeIdentifiers
       top.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4), top.heightAnchor.constraint(equalToConstant: 48),
       bottom.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 8), bottom.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -8),
       bottom.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
-      buttons.heightAnchor.constraint(equalToConstant: 44), progressRow.heightAnchor.constraint(equalToConstant: 32),
+      progressRow.heightAnchor.constraint(equalToConstant: 28),
       spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor), spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor),
       statusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor), statusLabel.topAnchor.constraint(equalTo: spinner.bottomAnchor, constant: 12),
       statusLabel.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor, multiplier: 0.85),
@@ -199,6 +224,15 @@ import UniformTypeIdentifiers
       lockButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 8), lockButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
       lockButton.widthAnchor.constraint(equalToConstant: 44), lockButton.heightAnchor.constraint(equalToConstant: 44),
     ])
+    for (surface, stack) in [(topMaterial, top), (bottomMaterial, bottom)] {
+      NSLayoutConstraint.activate([
+        surface.leadingAnchor.constraint(equalTo: stack.leadingAnchor), surface.trailingAnchor.constraint(equalTo: stack.trailingAnchor),
+        surface.topAnchor.constraint(equalTo: stack.topAnchor), surface.bottomAnchor.constraint(equalTo: stack.bottomAnchor),
+      ])
+    }
+    notifications.append(NotificationCenter.default.addObserver(forName: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated { self?.updateControlMaterials() }
+    })
     // A transparent chrome container lets gestures outside controls reach the picture.
     chrome.isUserInteractionEnabled = true
     for child in [top, bottom] { child.isUserInteractionEnabled = true }
@@ -215,17 +249,49 @@ import UniformTypeIdentifiers
   }
 
   override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); engine?.view.frame = picture.bounds }
+  override func viewWillLayoutSubviews() {
+    super.viewWillLayoutSubviews()
+    // Keep all hit targets at 44pt. Small portrait windows get two rows;
+    // landscape preserves the original left transport / right options layout.
+    let compact = view.safeAreaLayoutGuide.layoutFrame.width - 32 < 7 * 44 + 8
+    let axis: NSLayoutConstraint.Axis = compact ? .vertical : .horizontal
+    if buttons.axis != axis {
+      buttons.axis = axis; buttons.alignment = compact ? .trailing : .center
+      controlSpacer.isHidden = compact
+    }
+  }
+
+  private func updateControlMaterials() {
+    for surface in [topMaterial, bottomMaterial] {
+      #if compiler(>=6.2)
+      if #available(iOS 26.0, *), !UIAccessibility.isReduceTransparencyEnabled {
+        let glass = UIGlassEffect(style: .clear)
+        glass.tintColor = UIColor.black.withAlphaComponent(0.12)
+        surface.effect = glass
+        continue
+      }
+      #endif
+      surface.effect = UIBlurEffect(style: UIAccessibility.isReduceTransparencyEnabled ? .systemThickMaterialDark : .systemThinMaterialDark)
+    }
+  }
+
+  private func textButton(_ id: String, _ title: String, _ label: String, action: @escaping () -> Void) -> UIButton {
+    let control = button(id, "", label, action: action)
+    control.setImage(nil, for: .normal); control.setTitle(title, for: .normal)
+    control.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+    return control
+  }
   override func viewDidDisappear(_ animated: Bool) {
     super.viewDidDisappear(animated)
     if isBeingDismissed || presentingViewController == nil { finish(dismiss: false) }
   }
   private func button(_ id: String, _ image: String, _ label: String, action: @escaping () -> Void) -> UIButton {
     let button = UIButton(type: .system); button.tintColor = .white
-    button.setImage(UIImage(systemName: image, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal)
+    if !image.isEmpty { button.setImage(UIImage(systemName: image, withConfiguration: UIImage.SymbolConfiguration(pointSize: 20)), for: .normal) }
     button.accessibilityIdentifier = "native-video-\(id)"; button.accessibilityLabel = label
     // The title absorbs spare width; a back button must never stretch across
     // the navigation bar and move its centered symbol towards the middle.
-    button.widthAnchor.constraint(equalToConstant: ["close", "pip", "settings"].contains(id) ? 44 : 36).isActive = true
+    button.widthAnchor.constraint(equalToConstant: 44).isActive = true
     button.heightAnchor.constraint(equalToConstant: 44).isActive = true
     button.addAction(UIAction { [weak self] _ in guard let self, !self.closing, !self.locked else { return }; action(); self.scheduleHide() }, for: .touchUpInside)
     controls[id] = button; return button
@@ -329,6 +395,10 @@ import UniformTypeIdentifiers
     else { spinner.stopAnimating(); statusLabel.text = toastMessage }
     // Controls are siblings of the native picture; no UIKit platform view can cover them.
     top.isHidden = !chromeVisible || locked; bottom.isHidden = !chromeVisible || locked
+    topMaterial.isHidden = top.isHidden; bottomMaterial.isHidden = bottom.isHidden
+    controls["speed"]?.setTitle(String(format: "%g×", speed), for: .normal)
+    controls["kernel"]?.setTitle(kernel == "mpv" ? "MPV" : "系统", for: .normal)
+    controls["danmaku"]?.accessibilityValue = danmakuEnabled ? "开" : "关"
     lockButton.isHidden = !chromeVisible && !locked
     let cue = subtitles.caption(at: state.position)
     if cue != caption.text { caption.text = cue }
@@ -470,6 +540,35 @@ import UniformTypeIdentifiers
       self.resolve("kernel", arguments: ["id": selected])
     }
   }
+  private func chooseSpeed() {
+    showList("播放速度", rows: [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map {
+      ["title": "\($0)×", "value": $0, "selected": $0 == speed]
+    }) { [weak self] row in
+      guard let rate = row["value"] as? Double else { return }
+      self?.setPlaybackSpeed(rate)
+    }
+  }
+  private func toggleDanmaku() {
+    danmakuEnabled.toggle(); bullets.subviews.forEach { $0.removeFromSuperview() }; danmaku = []
+    if danmakuEnabled { loadDanmaku() }
+    renderState()
+  }
+  private func skipOptions() {
+    showList("播放跳转", rows: [["title": "后退十秒", "id": "back10"],
+      ["title": "快进十秒", "id": "forward10"], ["title": "上一集", "id": "previous"]]) { [weak self] row in
+      switch row["id"] as? String {
+      case "back10": self?.seekBy(-10)
+      case "forward10": self?.seekBy(10)
+      case "previous": self?.resolve("previous")
+      default: break
+      }
+    }
+  }
+  private func episodeOptions() {
+    showList("选集与线路", rows: [["title": "选集", "id": "episodes"], ["title": "切换线路", "id": "lines"]]) { [weak self] row in
+      if let action = row["id"] as? String { self?.choices(action) }
+    }
+  }
   private func settings() {
     let rows: [[String: Any]] = [
       ["title": "倍速 · \(speed)×", "id": "speed"], ["title": "音轨与字幕", "id": "tracks"],
@@ -483,10 +582,7 @@ import UniformTypeIdentifiers
     showList("播放设置", rows: rows) { [weak self] row in
       guard let self else { return }
       switch row["id"] as? String {
-      case "speed": self.showList("播放速度", rows: [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map { ["title": "\($0)×", "value": $0] }) { [weak self] row in
-        guard let self, let rate = row["value"] as? Double else { return }
-        self.setPlaybackSpeed(rate)
-      }
+      case "speed": self.chooseSpeed()
       case "tracks": self.showTracks()
       case "subtitle":
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.plainText, .data], asCopy: true)
@@ -495,11 +591,7 @@ import UniformTypeIdentifiers
         self.present(picker, animated: true)
       case "lines": self.choices("lines")
       case "qualities": self.choices("qualities")
-      case "danmaku":
-        self.danmakuEnabled.toggle()
-        self.bullets.subviews.forEach { $0.removeFromSuperview() }
-        self.danmaku = []
-        if self.danmakuEnabled { self.loadDanmaku() }
+      case "danmaku": self.toggleDanmaku()
       case "aspect": self.fill.toggle(); self.engine?.aspect(self.fill)
       case "autoNext": self.autoNext.toggle(); self.emit("settings", extra: ["autoNext": self.autoNext])
       case "hardware": self.hardware.toggle(); if self.kernel == "mpv" { self.switchEngine("mpv") }; self.emit("settings", extra: ["hardwareDecoding": self.hardware])
@@ -777,6 +869,7 @@ import UniformTypeIdentifiers
   }
   private func setPlaybackSpeed(_ rate: Double) {
     speed = rate; engine?.setRate(rate)
+    controls["speed"]?.setTitle(String(format: "%g×", rate), for: .normal)
     emit("settings", extra: ["speed": rate])
   }
   private func holdState(_ phase: UIGestureRecognizer.State) {
