@@ -52,11 +52,25 @@ void main() {
           request.response.statusCode = 403;
         } else if (path == '/entry') {
           request.response.statusCode = 302;
-          request.response.headers.set('Location', '/final/movie.mpd');
+          request.response.headers.set('Location', '/final/movie.mpd${request.uri.hasQuery ? '?${request.uri.query}' : ''}');
         } else if (path.startsWith('/final/')) {
           final file = File('${root.path}/${request.uri.pathSegments.last}');
           if (await file.exists()) {
             final bytes = await file.readAsBytes();
+            if (path.endsWith('.mpd') && request.uri.queryParameters.containsKey('ranges')) {
+              final range = request.headers.value('range');
+              if (range == null) {
+                request.response.statusCode = 403;
+              } else {
+                final start = int.parse(range.substring(6).split('-').first);
+                final end = (start + 128).clamp(0, bytes.length);
+                request.response.statusCode = 206;
+                request.response.headers.set('Content-Range', 'bytes $start-${end - 1}/${bytes.length}');
+                request.response.add(bytes.sublist(start, end));
+              }
+              await request.response.close();
+              return;
+            }
             request.response.headers.set(
               'Content-Type',
               path.endsWith('.mpd') ? 'application/dash+xml' : 'video/mp4',
@@ -108,6 +122,15 @@ void main() {
         original,
         reason: paths.join(', '),
       );
+      final ranged = await cache.wrap(
+        PlayerMedia(
+          uri: Uri.parse('http://127.0.0.1:${server.port}/entry?sig=signed&ranges=1'),
+          headers: const {'Authorization': 'Bearer fixture'},
+        ),
+        inspect: true,
+      );
+      expect(ranged.uri.path, endsWith('.mpd'));
+      expect(await frames(ranged.uri.toString()), original);
       expect(
         paths,
         containsAll([

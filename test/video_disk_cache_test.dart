@@ -138,6 +138,52 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path == '/range-manifest') {
+        final dash = request.uri.queryParameters['format'] == 'mpd';
+        final bytes = utf8.encode(dash
+            ? '<MPD><Period><AdaptationSet><Representation id="1"><SegmentList>'
+                '<SegmentURL media="part.m4s"/></SegmentList></Representation></AdaptationSet></Period></MPD>'
+            : '#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n');
+        final range = request.headers.value('range');
+        if (range == null) {
+          request.response.statusCode = 403;
+        } else {
+          final start = int.parse(range.substring(6).split('-').first);
+          final end = (start + 18).clamp(0, bytes.length);
+          request.response.statusCode = 206;
+          request.response.headers.set('Content-Range', 'bytes $start-${end - 1}/${bytes.length}');
+          request.response.add(bytes.sublist(start, end));
+        }
+        await request.response.close();
+        return;
+      }
+      if (request.uri.path == '/paced-format') {
+        final format = request.uri.queryParameters['format'];
+        final bytes = switch (format) {
+          'mkv' => [0x1a, 0x45, 0xdf, 0xa3],
+          'm3u8' => utf8.encode('#EXTM3U\n'),
+          'mpd' => utf8.encode('<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash">'),
+          _ => utf8.encode('WEBVTT\n'),
+        };
+        final range = request.headers.value('range');
+        if (request.uri.queryParameters.containsKey('requireRange') && range == null) {
+          request.response.statusCode = 403;
+          await request.response.close();
+          return;
+        }
+        final start = range == null ? 0 : int.parse(range.substring(6).split('-').first);
+        if (start >= bytes.length) await slowBody.future;
+        final end = start == 0 ? (format == 'vtt' ? 6 : 2) : bytes.length;
+        if (start < end) {
+          request.response.statusCode = 206;
+          request.response.headers.set('Content-Range', 'bytes $start-${end - 1}/4096');
+          request.response.add(bytes.sublist(start, end));
+        } else {
+          request.response.statusCode = 416;
+        }
+        await request.response.close();
+        return;
+      }
       if (request.uri.path.startsWith('/dash/')) {
         if (request.headers.value('authorization') != 'Bearer fixture') {
           request.response.statusCode = 403;
@@ -929,7 +975,48 @@ void main() {
       VideoDiskCache.detectFormat(utf8.encode('<html>unavailable</html>')),
       '',
     );
+    expect(VideoDiskCache.detectFormat(ascii.encode('WEBVTT'), complete: false), '');
+    expect(VideoDiskCache.detectFormat(ascii.encode('WEBVTTX')), '');
+    expect(VideoDiskCache.detectFormat(ascii.encode('WEBVTT')), '.vtt');
   });
+  for (final format in ['mkv', 'm3u8', 'mpd', 'vtt']) {
+    test('recognize $format across two short ranges without waiting for the media body', () async {
+      final media = PlayerMedia(uri: upstream.resolve('/paced-format?format=$format'));
+      try {
+        final wrapped = await cache.wrap(media, inspect: true).timeout(const Duration(seconds: 2));
+        expect(wrapped.uri.path, endsWith('.$format'));
+        expect(paths.where((p) => p == '/paced-format'), hasLength(2));
+        if (format == 'mkv' || format == 'mpd') {
+          await expectLater(cache.wrap(media, inspect: true, appleHls: true), throwsUnsupportedError);
+          expect(paths.where((p) => p == '/paced-format'), hasLength(2));
+        }
+      } finally {
+        slowBody.complete();
+      }
+    });
+  }
+  test('a range-only origin can identify a signed MKV before choosing the engine', () async {
+    final media = PlayerMedia(uri: upstream.resolve('/paced-format?format=mkv&requireRange'));
+    try {
+      await expectLater(cache.wrap(media, inspect: true, appleHls: true), throwsUnsupportedError);
+      expect((await cache.wrap(media, inspect: true)).uri.path, endsWith('.mkv'));
+      expect(paths.where((p) => p == '/paced-format'), hasLength(3));
+    } finally {
+      slowBody.complete();
+    }
+  });
+  for (final format in ['m3u8', 'mpd']) {
+    test('read the full $format after detecting a range-only signed manifest', () async {
+      final media = PlayerMedia(uri: upstream.resolve('/range-manifest?format=$format'));
+      final local = await cache.wrap(media, inspect: true);
+      expect(local.uri.path, endsWith('.$format'));
+      final (response, bytes) = await get(local.uri);
+      expect(response.statusCode, 200);
+      final manifest = utf8.decode(bytes);
+      expect(manifest, contains('127.0.0.1'));
+      expect(manifest, contains(format == 'mpd' ? '</MPD>' : '#EXT-X-ENDLIST'));
+    });
+  }
 
   test('PNG 前缀只剥离确认的 TS，分段和后缀 Range 仍对应媒体字节', () async {
     expect(transportStreamImagePrefix(pngTs), 4096);

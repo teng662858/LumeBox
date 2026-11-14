@@ -191,7 +191,7 @@ class VideoDiskCache extends ChangeNotifier {
     final cached = _detectedFormats[key];
     if (cached != null) return cached;
     try {
-      final response = await _request(media, null);
+      final response = await _requestFromStart(media, range: 'bytes=0-1023');
       if (response.statusCode ~/ 100 != 2) {
         await response.listen(null).cancel();
         return '';
@@ -229,10 +229,19 @@ class VideoDiskCache extends ChangeNotifier {
   static Future<String> _inspectFormat(Stream<List<int>> body, String? encoding) async {
     final prefix = BytesBuilder();
     await for (final chunk in _decodedBody(body, encoding)) {
+      if (chunk.isEmpty) continue;
       prefix.add(chunk.take(1024 - prefix.length).toList());
-      if (prefix.length >= 1024) break;
+      final format = detectFormat(prefix.toBytes(), complete: false);
+      if (format.isNotEmpty || prefix.length >= 1024) return format;
     }
     return detectFormat(prefix.takeBytes());
+  }
+
+  Future<MediaRangeResponse> _requestFromStart(PlayerMedia media, {String range = 'bytes=0-'}) async {
+    final response = await _request(media, null);
+    if (!const [400, 403, 405, 416].contains(response.statusCode)) return response;
+    await response.listen(null).cancel();
+    return _request(media, range);
   }
 
   static Future<String> detectFileFormat(File file) async {
@@ -251,14 +260,14 @@ class VideoDiskCache extends ChangeNotifier {
       prefix[2] == 0xdf &&
       prefix[3] == 0xa3;
 
-  static String detectFormat(List<int> prefix) {
+  static String detectFormat(List<int> prefix, {bool complete = true}) {
     if (_matroskaPrefix(prefix)) return '.mkv';
     final text = utf8
         .decode(prefix, allowMalformed: true)
         .replaceFirst('\uFEFF', '')
         .trimLeft();
     if (text.startsWith('#EXTM3U')) return '.m3u8';
-    if (RegExp(r'^WEBVTT(?:[ \t\r\n]|$)').hasMatch(text)) return '.vtt';
+    if (RegExp(r'^WEBVTT[ \t\r\n]').hasMatch(text) || complete && text == 'WEBVTT') return '.vtt';
     if (text.startsWith('<') &&
         RegExp(r'<(?:[A-Za-z0-9_.-]+:)?MPD(?:\s|/?>)').hasMatch(text)) {
       return '.mpd';
@@ -682,12 +691,9 @@ class VideoDiskCache extends ChangeNotifier {
     bool playlist = false,
   }) async {
     for (var attempt = 0; attempt < 2; attempt++) {
-      var response = await _request(
-        media,
-        playlist || media.uri.path.toLowerCase().endsWith('.m3u8')
-            ? null
-            : 'bytes=$start-${start + blockBytes - 1}',
-      );
+      var response = playlist || media.uri.path.toLowerCase().endsWith('.m3u8')
+          ? await _requestFromStart(media)
+          : await _request(media, 'bytes=$start-${start + blockBytes - 1}');
       if (_packedAudio(media.uri.path.toLowerCase()) &&
           const [400, 403, 405, 416].contains(response.statusCode)) {
         await response.listen(null).cancel();
@@ -1352,7 +1358,7 @@ class VideoDiskCache extends ChangeNotifier {
   // Preserve the MPD's base directory while keeping the source's headers on
   // same-origin requests. MPV expands SegmentTemplate variables itself.
   Future<void> _serveDashManifest(HttpRequest request, PlayerMedia media) async {
-    final upstream = await _request(media, null);
+    final upstream = await _requestFromStart(media);
     if (upstream.statusCode != 200 && upstream.statusCode != 206) {
       await upstream.listen(null).cancel();
       throw _UpstreamStatus(upstream.statusCode);
@@ -1491,11 +1497,7 @@ class VideoDiskCache extends ChangeNotifier {
           serveHttpBytes(request, cached.data, 'text/vtt');
           return;
         }
-        var upstream = await _request(media, null);
-        if (const [400, 403, 405, 416].contains(upstream.statusCode)) {
-          await upstream.listen(null).cancel();
-          upstream = await _request(media, 'bytes=0-');
-        }
+        final upstream = await _requestFromStart(media);
         if (upstream.statusCode != 200 && upstream.statusCode != 206) {
           await upstream.listen(null).cancel();
           throw _UpstreamStatus(upstream.statusCode);
