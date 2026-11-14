@@ -167,7 +167,9 @@ class AudioBookProxy {
       if (!['http', 'https'].contains(uri.scheme)) {
         throw const FormatException('不支持的音频地址');
       }
-      final headers = Map<String, String>.from(resolved.headers);
+      final headers = Map<String, String>.from(resolved.headers)
+        ..removeWhere((key, _) =>
+            isMediaTransportHeader(key) && !isOriginBoundHttpHeader(key));
       var scoped = (raw == null || !path.last.startsWith('public')) &&
           uri.scheme == resolved.url.scheme && uri.origin == resolved.url.origin;
       if (!scoped) {

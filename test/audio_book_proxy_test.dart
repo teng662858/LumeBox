@@ -425,6 +425,32 @@ void main() {
     });
   }
 
+  test('chapter playback and seeking ignore stale ranges and validators from captured headers', () async {
+    final requests = <http.Request>[];
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((request) async {
+      requests.add(request);
+      if (request.headers.containsKey('if-none-match')) return http.Response('', 304);
+      return http.Response.bytes([10, 20, 30, 40], 200);
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final chapter = AudioBookTrack(
+      id: 'captured', album: 'Book', episode: const ResourceEpisode(id: 'e', title: 'E'),
+      resolve: () async => ResolvedAudio(Uri.parse('https://audio.test/episode.mp3'),
+          headers: const {'Range': 'bytes=20-', 'If-Range': '"old"', 'IF-NONE-MATCH': '"old"',
+            'If-Modified-Since': 'Mon, 01 Jan 2024 00:00:00 GMT', 'Cookie': 'session=valid'}),
+    );
+    final url = (await proxy.prepare([chapter])).single;
+    expect((await client.get(url)).bodyBytes, [10, 20, 30, 40]);
+    expect((await client.get(url, headers: {'Range': 'bytes=1-2'})).bodyBytes, [20, 30]);
+    expect(requests.map((r) => r.headers['range']), [null, 'bytes=1-2']);
+    for (final r in requests) {
+      expect(r.headers.containsKey('if-range'), isFalse);
+      expect(r.headers.containsKey('if-modified-since'), isFalse);
+      expect(r.headers['cookie'], 'session=valid');
+    }
+  });
+
   test('a cached chapter URL that expires during playback is refreshed on the same seek', () async {
     var resolutions = 0;
     var expired = false;
