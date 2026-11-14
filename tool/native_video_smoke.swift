@@ -87,6 +87,11 @@ extension NativeVideoScreen {
       let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)"])
       if caseIndex == 0 { NativeVideoScreen.checkDanmakuTiming(item) }
       let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": test.1 == "smoke.mp4", "headlessAudio": true])
+      // Speech disables scrubbing; stale audiobook actions must also be reset.
+      let remote = MPRemoteCommandCenter.shared()
+      remote.changePlaybackPositionCommand.isEnabled = false
+      remote.changeRepeatModeCommand.isEnabled = true
+      remote.stopCommand.isEnabled = true
       view.event = { [weak self] data in
         if data["type"] as? String == "seek", let position = data["position"] as? Double {
           self?.seekEvents.append(position)
@@ -126,6 +131,9 @@ extension NativeVideoScreen {
     if phase == 0 && state["firstFrame"] as? Bool == true && position > 0.5 {
       screen.debugAction([:])
       let state = screen.debugState
+      let remote = MPRemoteCommandCenter.shared()
+      check(remote.changePlaybackPositionCommand.isEnabled, "video re-enables lock-screen seeking after speech")
+      check(!remote.changeRepeatModeCommand.isEnabled && !remote.stopCommand.isEnabled, "video disables unsupported inherited remote actions")
       check(state["playHitTest"] as? Bool == true, "UIKit play button hit test")
       check(state["closeHitTest"] as? Bool == true, "UIKit close button hit test")
       check(state["viewAttached"] as? Bool == true, "visible native picture")

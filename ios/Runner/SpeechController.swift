@@ -215,7 +215,7 @@ final class SpeechController: NSObject {
 
     center.playCommand.isEnabled = true
     center.playCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-      guard let self else { return .commandFailed }
+      guard let self, UserDefaults.standard.string(forKey: "lumebox.mediaOwner") == "tts" else { return .commandFailed }
       if self.stream.active { self.stream.resume(); return .success }
       guard self.synthesizer.isPaused else { return .commandFailed }
       self.synthesizer.continueSpeaking()
@@ -224,7 +224,7 @@ final class SpeechController: NSObject {
 
     center.pauseCommand.isEnabled = true
     center.pauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-      guard let self else { return .commandFailed }
+      guard let self, UserDefaults.standard.string(forKey: "lumebox.mediaOwner") == "tts" else { return .commandFailed }
       if self.stream.active { self.stream.pause(); return .success }
       guard self.synthesizer.isSpeaking else { return .commandFailed }
       self.synthesizer.pauseSpeaking(at: .word)
@@ -234,7 +234,7 @@ final class SpeechController: NSObject {
     // 锁屏上的「停止」= 结束本次朗读（清队列），与 App 内的停止同口径。
     center.stopCommand.isEnabled = true
     center.stopCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-      guard let self else { return .commandFailed }
+      guard let self, UserDefaults.standard.string(forKey: "lumebox.mediaOwner") == "tts" else { return .commandFailed }
       self.stopSpeakingInternal()
       return .success
     }
@@ -242,7 +242,7 @@ final class SpeechController: NSObject {
     // 耳机线控 / 锁屏播放键：说的时候暂停，停的时候继续。
     center.togglePlayPauseCommand.isEnabled = true
     center.togglePlayPauseCommand.addTarget { [weak self] _ -> MPRemoteCommandHandlerStatus in
-      guard let self else { return .commandFailed }
+      guard let self, UserDefaults.standard.string(forKey: "lumebox.mediaOwner") == "tts" else { return .commandFailed }
       if self.stream.active {
         if self.stream.paused { self.stream.resume() } else { self.stream.pause() }
         return .success

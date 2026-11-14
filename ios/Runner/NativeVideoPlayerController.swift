@@ -656,9 +656,24 @@ import UniformTypeIdentifiers
   }
   private func installRemote() {
     let remote = MPRemoteCommandCenter.shared()
+    let owner = mediaOwner
+    // TTS and audiobooks share the same system command center. Reclaim both
+    // callbacks and enabled flags when the native video session takes over.
+    [remote.playCommand, remote.pauseCommand, remote.stopCommand, remote.togglePlayPauseCommand,
+     remote.nextTrackCommand, remote.previousTrackCommand, remote.skipForwardCommand, remote.skipBackwardCommand,
+     remote.changePlaybackPositionCommand, remote.changePlaybackRateCommand,
+     remote.seekForwardCommand, remote.seekBackwardCommand, remote.changeRepeatModeCommand, remote.changeShuffleModeCommand]
+      .forEach { $0.removeTarget(nil); $0.isEnabled = false }
     func bind(_ command: MPRemoteCommand, action: @escaping () -> Void) {
       command.isEnabled = true
-      let target = command.addTarget { _ in DispatchQueue.main.async(execute: action); return .success }
+      let target = command.addTarget { [weak self] _ in
+        guard UserDefaults.standard.string(forKey: "lumebox.mediaOwner") == owner else { return .commandFailed }
+        DispatchQueue.main.async {
+          guard let self, !self.closing, UserDefaults.standard.string(forKey: "lumebox.mediaOwner") == owner else { return }
+          action()
+        }
+        return .success
+      }
       remoteTargets.append((command, target))
     }
     bind(remote.playCommand) { [weak self] in self?.setPlaying(true) }
@@ -669,9 +684,15 @@ import UniformTypeIdentifiers
     remote.skipForwardCommand.preferredIntervals = [10]; remote.skipBackwardCommand.preferredIntervals = [10]
     bind(remote.skipForwardCommand) { [weak self] in self?.seekBy(10) }
     bind(remote.skipBackwardCommand) { [weak self] in self?.seekBy(-10) }
+    remote.changePlaybackPositionCommand.isEnabled = true
     let target = remote.changePlaybackPositionCommand.addTarget { [weak self] event in
-      guard let position = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-      DispatchQueue.main.async { self?.commitSeek(position.positionTime) }; return .success
+      guard let position = event as? MPChangePlaybackPositionCommandEvent,
+            UserDefaults.standard.string(forKey: "lumebox.mediaOwner") == owner else { return .commandFailed }
+      DispatchQueue.main.async {
+        guard let self, !self.closing, UserDefaults.standard.string(forKey: "lumebox.mediaOwner") == owner else { return }
+        self.commitSeek(position.positionTime)
+      }
+      return .success
     }
     remoteTargets.append((remote.changePlaybackPositionCommand, target))
   }
