@@ -6,7 +6,15 @@ import 'package:lume_box/shared/widgets/browse_side_drawer.dart';
 import 'package:lume_box/shared/widgets/drawer_geometry.dart';
 
 void main() {
-  for (final inset in [0.0, 24.0, 59.0, 62.0]) {
+  for (final entry in {
+    0.0: 0.0,
+    24.0: 24.0,
+    44.0: 44.0,
+    47.0: 47.0,
+    59.0: 49.0,
+    62.0: 52.0,
+  }.entries) {
+    final inset = entry.key, expectedTop = entry.value;
     for (final side in BrowseDrawerSide.values) {
       testWidgets(
         '${side.name} source/filter drawer follows system safe top $inset even inside SafeArea',
@@ -51,10 +59,13 @@ void main() {
           final bounds = tester.getRect(
             find.byKey(ValueKey('browse-${side.name}-drawer')),
           );
-          expect(bounds.top, 0);
+          expect(bounds.top, expectedTop);
           expect(bounds.bottom, 844);
-          expect(contentTop, inset + 4);
-          expect(tester.getTopLeft(find.text('drawer content')).dy, inset + 4);
+          expect(contentTop, expectedTop);
+          expect(
+            tester.getTopLeft(find.text('drawer content')).dy,
+            expectedTop,
+          );
           expect(tester.takeException(), isNull);
           Navigator.pop(page);
           await tester.pumpAndSettle();
@@ -93,12 +104,12 @@ void main() {
       );
       await tester.pump();
       final frame = find.byKey(const ValueKey('browse-right-drawer'));
-      expect(tester.getTopLeft(frame).dy, 0);
-      expect(tester.getTopLeft(find.text('preview')).dy, 63);
+      expect(tester.getTopLeft(frame).dy, 49);
+      expect(tester.getTopLeft(find.text('preview')).dy, 49);
       motion.settle(true);
       await tester.pumpAndSettle();
-      expect(tester.getTopLeft(frame).dy, 0);
-      expect(tester.getTopLeft(find.text('preview')).dy, 63);
+      expect(tester.getTopLeft(frame).dy, 49);
+      expect(tester.getTopLeft(find.text('preview')).dy, 49);
       Navigator.pop(page);
       await tester.pumpAndSettle();
       await result;

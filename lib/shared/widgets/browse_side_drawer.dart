@@ -105,7 +105,7 @@ Future<T?> _showBrowseSideDrawer<T>({
                       ),
                     ),
                     Positioned(
-                      top: 0,
+                      top: top,
                       bottom: 0,
                       width: width,
                       left: side == BrowseDrawerSide.left ? 0 : null,
@@ -121,16 +121,16 @@ Future<T?> _showBrowseSideDrawer<T>({
                           key: ValueKey('browse-${side.name}-drawer'),
                           color: Theme.of(context).colorScheme.surface,
                           elevation: 16,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(24),
+                          ),
                           clipBehavior: Clip.antiAlias,
-                          child: Padding(
-                            padding: EdgeInsets.only(top: top),
-                            child: SafeArea(
-                              top: false,
-                              bottom: false,
-                              child: BrowseDrawerGeometry(
-                                top: top,
-                                child: Builder(builder: builder),
-                              ),
+                          child: SafeArea(
+                            top: false,
+                            bottom: false,
+                            child: BrowseDrawerGeometry(
+                              top: top,
+                              child: Builder(builder: builder),
                             ),
                           ),
                         ),
@@ -276,16 +276,16 @@ class _BrowseDrawerRoute<T> extends PopupRoute<T> {
             child: Material(
               color: Theme.of(context).colorScheme.surface,
               elevation: 16,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
               clipBehavior: Clip.antiAlias,
-              child: Padding(
-                padding: EdgeInsets.only(top: top),
-                child: SafeArea(
-                  top: false,
-                  bottom: false,
-                  child: BrowseDrawerGeometry(
-                    top: top,
-                    child: Builder(builder: builder),
-                  ),
+              child: SafeArea(
+                top: false,
+                bottom: false,
+                child: BrowseDrawerGeometry(
+                  top: top,
+                  child: Builder(builder: builder),
                 ),
               ),
             ),
@@ -340,7 +340,7 @@ class _BrowseDrawerRoute<T> extends PopupRoute<T> {
                     ),
                   ),
                   Positioned(
-                    top: 0,
+                    top: top,
                     bottom: 0,
                     left: side == BrowseDrawerSide.left ? 0 : null,
                     right: side == BrowseDrawerSide.right ? 0 : null,

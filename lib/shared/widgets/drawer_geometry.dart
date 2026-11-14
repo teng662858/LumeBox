@@ -24,16 +24,18 @@ class DrawerGeometry {
   static double height(BuildContext context) =>
       math.max(0, MediaQuery.sizeOf(context).height - top(context));
 
-  /// SafeArea may have consumed the page's padding. The Flutter view still
-  /// reports the system cutout. Only the panel content is inset; its background
-  /// extends behind the status bar to the top of the screen.
+  /// SafeArea may have consumed the page's padding, so also read the view.
+  /// Island phones reserve about 10pt below the hardware in their safe inset;
+  /// remove that extra clearance so the panel meets the island's lower edge.
+  /// iOS does not expose the island's physical frame through MediaQuery.
   static double browseTop(BuildContext context) {
     final media = MediaQuery.of(context), view = View.of(context);
     final safeTop = math.max(
       media.viewPadding.top,
       view.viewPadding.top / view.devicePixelRatio,
     );
-    return (safeTop + 4).clamp(0.0, media.size.height);
+    final islandClearance = safeTop >= 54 ? 10.0 : 0.0;
+    return (safeTop - islandClearance).clamp(0.0, media.size.height);
   }
 }
 

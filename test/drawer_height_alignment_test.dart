@@ -63,7 +63,7 @@ void main() {
         final bounds = tester.getRect(
           find.byKey(const Key('classification-drawer-frame')),
         );
-        expect(bounds.top, 63);
+        expect(bounds.top, 49);
         Navigator.pop(page);
         await tester.pumpAndSettle();
         for (final tab in HistoryDrawerTab.values) {
