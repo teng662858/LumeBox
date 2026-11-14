@@ -1,10 +1,13 @@
 import 'dart:io';
 
+import 'package:lume_box/core/js/source_script.dart';
+
 /// 源脚本的本地缓存（脚本已搬到独立仓库）。
 ///
 /// 真机脚本**不随 App 仓库分发**：它们在
 /// [LumeBox-Sources](https://github.com/teng662858/LumeBox-Sources)，
-/// 按板块提供订阅清单。需要在真实 QuickJS 上跑真脚本的原生用例，先拉一份缓存：
+/// 这是私有仓库。先配置 GH_TOKEN/GITHUB_TOKEN 或执行 gh auth login，
+/// 再通过授权 GitHub API 拉取一份经过 SHA 校验的测试缓存：
 ///
 /// ```
 /// dart run tool/fetch_sources.dart
@@ -13,8 +16,7 @@ import 'dart:io';
 /// 缓存落在 `.sources-cache/<section>/`（已 gitignore）。没拉缓存时这些用例
 /// **整组跳过**，不是失败——它们验的是「脚本对得上站点真实结构」，
 /// 而不是 App 自身的行为。
-const String lumeSourcesRepo =
-    'https://github.com/teng662858/LumeBox-Sources';
+const String lumeSourcesRepo = 'https://github.com/teng662858/LumeBox-Sources';
 const String lumeSourcesRawBase =
     'https://raw.githubusercontent.com/teng662858/LumeBox-Sources/main';
 
@@ -26,14 +28,33 @@ Directory get sourceCacheDir => Directory('.sources-cache');
 /// 缓存由 `dart run tool/fetch_sources.dart` 从源仓库拉下来：
 /// `novel|comic|video/` 放脚本，`snapshots/` 放站点快照（写脚本时站点的样子，
 /// 校验解析规则对着它跑；站点改版后旧快照不适用，就该更新它）。
-String? sourceAssetPath(String name) {
-  if (!sourceCacheDir.existsSync()) return null;
-  for (final entity in sourceCacheDir.listSync(recursive: true)) {
+String? sourceAssetPath(String name, {Directory? cache}) {
+  final root = cache ?? sourceCacheDir;
+  if (!root.existsSync()) return null;
+  final aliases = <String>[];
+  for (final entity in root.listSync(recursive: true, followLinks: false)) {
     if (entity is File && entity.uri.pathSegments.last == name) {
       return entity.path;
     }
+    // Published filenames can change to Chinese display names. Older fixtures
+    // address the stable source ID; never duplicate scripts or match snapshots.
+    if (name.endsWith('.js') &&
+        entity is File &&
+        entity.path.endsWith('.js') &&
+        !entity.uri.pathSegments.contains('snapshots')) {
+      try {
+        if (SourceMetadata.parseHeader(entity.readAsStringSync())?.id ==
+            name.substring(0, name.length - 3)) {
+          aliases.add(entity.path);
+        }
+      } on FileSystemException {
+        // A disappearing cache entry cannot resolve an alias.
+      } on FormatException {
+        // Invalid scripts are reported by the contract audit itself.
+      }
+    }
   }
-  return null;
+  return aliases.singleOrNull;
 }
 
 /// 找一个源脚本的本地路径（语义别名）。
