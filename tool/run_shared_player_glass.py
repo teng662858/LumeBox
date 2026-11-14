@@ -15,7 +15,12 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     command = ['flutter', 'test', '--no-pub', '--verbose',
                'integration_test/shared_player_glass_test.dart', '-d', device,
-               '--timeout', '5m']
+               '--timeout', '5m', '--reporter', 'expanded']
+    recording_log = (output / 'recording.log').open('w')
+    recording_start = time.monotonic()
+    recorder = subprocess.Popen(['xcrun', 'simctl', 'io', device, 'recordVideo',
+                                 str(output / 'simulator.mp4')],
+                                stdout=recording_log, stderr=subprocess.STDOUT)
     process = subprocess.Popen(command, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, text=True,
                                start_new_session=True)
@@ -27,7 +32,7 @@ def main():
         lines.put(None)
 
     threading.Thread(target=read, daemon=True).start()
-    captured = set()
+    captures = {}
     passed = set()
     complete = False
     deadline = time.monotonic() + 1800
@@ -43,12 +48,8 @@ def main():
                 log.write(line)
                 log.flush()
                 match = re.search(r'PLAYER_GLASS_CAPTURE ([a-z-]+)', line)
-                if match and match[1] not in captured:
-                    name = match[1]
-                    subprocess.run(['xcrun', 'simctl', 'io', device, 'screenshot',
-                                    str(output / f'shared-{name}.png')],
-                                   check=True, timeout=20)
-                    captured.add(name)
+                if match and match[1] not in captures:
+                    captures[match[1]] = time.monotonic() - recording_start + .8
                 match = re.search(r'SHARED_PLAYER_OK (avplayer|mpv|aether)', line)
                 if match:
                     passed.add(match[1])
@@ -58,7 +59,7 @@ def main():
             else:
                 raise TimeoutError('Shared player simulator check timed out')
         code = process.wait(timeout=30)
-        if code or not complete or passed != {'avplayer', 'mpv', 'aether'} or len(captured) != 4:
+        if code or not complete or passed != {'avplayer', 'mpv', 'aether'} or len(captures) != 4:
             print((output / 'shared-player.log').read_text()[-20000:])
             return code or 1
         return 0
@@ -66,6 +67,21 @@ def main():
         if process.poll() is None:
             import os
             os.killpg(process.pid, signal.SIGTERM)
+        recorder.send_signal(signal.SIGINT)
+        try:
+            recorder.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            recorder.terminate()
+            recorder.wait(timeout=10)
+        recording_log.close()
+        # simctl screenshot can block while the display is being recorded.
+        # Extract the settled states from the system recording after it closes.
+        for name, seconds in captures.items():
+            subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error',
+                            '-ss', str(seconds), '-i', str(output / 'simulator.mp4'),
+                            '-vf', 'transpose=cclock', '-frames:v', '1', '-y',
+                            str(output / f'shared-{name}.png')],
+                           check=True, timeout=30)
 
 
 if __name__ == '__main__':

@@ -71,6 +71,9 @@ void main() {
       final deadline = DateTime.now().add(const Duration(seconds: 40));
       while ((player?.snapshot.value.position ?? Duration.zero) <
           const Duration(seconds: 1)) {
+        if (player?.snapshot.value.error != null) {
+          fail('${kernel.name}: ${player!.snapshot.value.error}');
+        }
         if (DateTime.now().isAfter(deadline)) {
           fail(
             '${kernel.name}: playback did not advance: ${player?.snapshot.value.error}',
@@ -84,6 +87,9 @@ void main() {
         reason: 'A fallback cannot count as a successful engine check',
       );
       expect(player!.snapshot.value.error, isNull);
+      debugPrint(
+        'SHARED_PLAYER_READY ${kernel.name} ${player!.snapshot.value.position}',
+      );
       await player!.pause();
       await frames();
       expect(
