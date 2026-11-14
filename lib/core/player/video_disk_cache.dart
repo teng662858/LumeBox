@@ -1495,8 +1495,8 @@ class VideoDiskCache extends ChangeNotifier {
     return PlayerMedia(uri: media.uri.replace(query: query), headers: media.headers);
   }
 
-  // Preserve the MPD's base directory while keeping the source's headers on
-  // same-origin requests. MPV expands SegmentTemplate variables itself.
+  // Preserve MPD base directories and transport headers across CDN references,
+  // without forwarding origin credentials. MPV expands template variables itself.
   Future<void> _serveDashManifest(HttpRequest request, PlayerMedia media) async {
     final upstream = await _requestFromStart(media);
     if (upstream.statusCode != 200 && upstream.statusCode != 206) {
@@ -1515,32 +1515,38 @@ class VideoDiskCache extends ChangeNotifier {
     final root = document.rootElement;
     if (root.name.local != 'MPD') throw const FormatException('DASH 清单无效');
     final origin = upstream.uri.origin;
-    final ticket = await _ticket(
-      PlayerMedia(uri: Uri.parse('$origin/'), headers: upstream.requestHeaders),
-      '.dash-base',
-    );
-    final localRoot = ticket.uri.toString();
-    String route(Uri url) {
+    final roots = <String, String>{};
+    Future<String> route(Uri url) async {
       if (!url.hasAuthority ||
-          !const {'http', 'https'}.contains(url.scheme) ||
-          url.origin != origin) {
+          !const {'http', 'https'}.contains(url.scheme)) {
         return url.toString();
+      }
+      var localRoot = roots[url.origin];
+      if (localRoot == null) {
+        final headers = Map<String, String>.of(upstream.requestHeaders);
+        if (url.origin != origin) headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
+        final ticket = await _ticket(
+          PlayerMedia(uri: Uri.parse('${url.origin}/'), headers: headers),
+          '.dash-base',
+        );
+        localRoot = ticket.uri.toString();
+        roots[url.origin] = localRoot;
       }
       return '$localRoot${url.path.isEmpty ? '/' : url.path}'
           '${url.hasQuery ? '?${url.query}' : ''}${url.hasFragment ? '#${url.fragment}' : ''}';
     }
 
-    // Absolute same-origin references otherwise bypass the proxy. A leading
+    // Absolute references otherwise bypass the proxy. A leading
     // slash resolves against the enclosing BaseURL, which can be a different CDN.
-    void rewriteReferences(XmlElement element, Set<Uri> parents) {
+    Future<void> rewriteReferences(XmlElement element, Set<Uri> parents) async {
       final bases = element.childElements.where((e) => e.name.local == 'BaseURL').toList();
       final resolved = <Uri>{};
-      String reference(String value, Iterable<Uri> bases) {
+      Future<String> reference(String value, Iterable<Uri> bases) async {
         final uri = Uri.parse(value);
         if (uri.hasScheme) return route(uri);
         if (!value.startsWith('/')) return value;
         final targets = bases.map((base) => base.resolveUri(uri)).toSet();
-        return targets.length == 1 ? route(targets.single) : value;
+        return targets.length == 1 ? await route(targets.single) : value;
       }
       for (final base in bases) {
         final value = base.innerText.trim();
@@ -1556,8 +1562,8 @@ class VideoDiskCache extends ChangeNotifier {
           }
         }
         base.innerText = identical(element, root)
-            ? route(upstream.uri.resolve(value))
-            : reference(value, parents);
+            ? await route(upstream.uri.resolve(value))
+            : await reference(value, parents);
       }
       final effective = bases.isEmpty ? parents : resolved;
       final attributes = switch (element.name.local) {
@@ -1568,13 +1574,13 @@ class VideoDiskCache extends ChangeNotifier {
       };
       for (final name in attributes) {
         final value = element.getAttribute(name);
-        if (value != null) element.setAttribute(name, reference(value, effective));
+        if (value != null) element.setAttribute(name, await reference(value, effective));
       }
       for (final child in element.childElements.where((e) => e.name.local != 'BaseURL')) {
-        rewriteReferences(child, effective);
+        await rewriteReferences(child, effective);
       }
     }
-    rewriteReferences(root, {Uri.parse(origin)});
+    await rewriteReferences(root, {Uri.parse(origin)});
     for (final location in root.childElements.where((e) => e.name.local == 'Location')) {
       final url = upstream.uri.resolve(location.innerText.trim());
       if (url.scheme != 'http' && url.scheme != 'https') continue;
@@ -1586,7 +1592,7 @@ class VideoDiskCache extends ChangeNotifier {
     if (bases.isEmpty) {
       final base = XmlElement(XmlName.parts('BaseURL',
           prefix: root.name.prefix, namespaceUri: root.name.namespaceUri));
-      base.innerText = route(upstream.uri);
+      base.innerText = await route(upstream.uri);
       root.children.insert(0, base);
     }
     serveHttpBytes(request, utf8.encode(document.toXmlString()), 'application/dash+xml');

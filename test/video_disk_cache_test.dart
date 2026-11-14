@@ -637,21 +637,32 @@ void main() {
     final origin = Uri.parse('http://127.0.0.1:${originServer.port}/');
     final foreign = Uri.parse('http://127.0.0.1:${cdn.port}/');
     final cdnHeaders = <String?>[];
+    final cdnRequests = <String>[];
     cdn.listen((r) async {
       cdnHeaders.add(r.headers.value('authorization'));
-      r.response.write(r.uri.path.endsWith('.mpd') ? '<MPD/>' : 'foreign');
+      cdnRequests.add(r.uri.toString());
+      expect(r.headers.value('cookie'), isNull);
+      if (r.headers.value('referer') != 'https://player.example/watch' ||
+          r.headers.value('user-agent') != 'LumeDASHFixture') {
+        r.response.statusCode = 403;
+      } else {
+        r.response.write(r.uri.path.endsWith('.mpd') ? '<MPD/>' : 'foreign');
+      }
       await r.response.close();
     });
     final requested = <String>[];
     originServer.listen((r) async {
       requested.add(r.uri.toString());
+      expect(r.headers.value('cookie'), 'session=origin');
       if (r.headers.value('authorization') != 'Bearer fixture') {
         r.response.statusCode = 403;
       } else if (r.uri.path == '/main.mpd') {
         r.response.write('<MPD><BaseURL>local/</BaseURL><Location>${foreign}live.mpd</Location>'
             '<Period><AdaptationSet><SegmentTemplate media="/chunks/\$Number%05d\$.m4s?sig=a%2Fb"/>'
             '<Representation><BaseURL>${foreign}other/</BaseURL>'
-            '<SegmentList><SegmentURL media="/foreign.m4s"/></SegmentList></Representation>'
+            '<SegmentList><Initialization sourceURL="${foreign}init.m4s?sig=a%2Fb"/>'
+            '<SegmentURL media="/foreign.m4s"/>'
+            '<SegmentURL media="../relative.m4s?sig=a%2Fb"/></SegmentList></Representation>'
             '</AdaptationSet></Period></MPD>');
       } else {
         r.response.write('local');
@@ -659,17 +670,26 @@ void main() {
       await r.response.close();
     });
     final wrapped = await cache.wrap(PlayerMedia(uri: origin.resolve('main.mpd'),
-        headers: const {'Authorization': 'Bearer fixture'}));
+        headers: const {
+          'Authorization': 'Bearer fixture', 'Cookie': 'session=origin',
+          'Referer': 'https://player.example/watch', 'User-Agent': 'LumeDASHFixture',
+        }));
     final root = XmlDocument.parse(utf8.decode((await get(wrapped.uri)).$2));
     final template = root.findAllElements('SegmentTemplate').single.getAttribute('media')!;
     final part = Uri.parse(template.replaceFirst(r'$Number%05d$', '00001'));
     expect(utf8.decode((await get(part)).$2), 'local');
     expect(requested, contains('/chunks/00001.m4s?sig=a%2Fb'));
-    final external = root.findAllElements('SegmentURL').single.getAttribute('media')!;
+    final segments = root.findAllElements('SegmentURL').toList();
+    final external = segments.first.getAttribute('media')!;
     expect(utf8.decode((await get(Uri.parse(external))).$2), 'foreign');
+    final base = Uri.parse(root.findAllElements('Representation').single.findElements('BaseURL').single.innerText);
+    expect(utf8.decode((await get(base.resolve(segments.last.getAttribute('media')!))).$2), 'foreign');
+    final init = Uri.parse(root.findAllElements('Initialization').single.getAttribute('sourceURL')!);
+    expect(utf8.decode((await get(init)).$2), 'foreign');
     final refresh = Uri.parse(root.findAllElements('Location').single.innerText);
     expect(utf8.decode((await get(refresh)).$2), contains('<MPD>'));
-    expect(cdnHeaders, [null, null]);
+    expect(cdnHeaders, [null, null, null, null]);
+    expect(cdnRequests, ['/foreign.m4s', '/relative.m4s?sig=a%2Fb', '/init.m4s?sig=a%2Fb', '/live.mpd']);
   });
 
   for (final apple in [true, false]) {
