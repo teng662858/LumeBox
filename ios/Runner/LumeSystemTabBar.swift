@@ -189,7 +189,7 @@ private final class LumeSystemTabBarView: NSObject, FlutterPlatformView, UITabBa
           !entries.isEmpty, entries.count <= 5 else { return false }
     var next: [LumeSystemTabSpec] = []
     for entry in entries {
-      guard let id = entry["id"] as? String, ["comic", "video", "settings", "search"].contains(id),
+      guard let id = entry["id"] as? String, ["comic", "video", "music", "settings", "search"].contains(id),
             let label = entry["label"] as? String, !label.isEmpty,
             !next.contains(where: { $0.id == id }) else { return false }
       next.append(LumeSystemTabSpec(id: id, label: label,

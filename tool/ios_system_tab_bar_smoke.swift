@@ -176,5 +176,9 @@ final class SystemTabBarSmoke: UIResponder, UIApplicationDelegate {
     configuration["iconSize"] = 24
     _ = messenger.update(configuration)
     view.layoutIfNeeded()
+    require(bar.items?.map { $0.accessibilityIdentifier ?? "" } == ["shell.tab.comic", "shell.tab.video", "shell.tab.music", "shell.tab.settings"],
+            "The native bar must accept and display all four production tabs")
+    require(bar.items?.allSatisfy { $0.image != nil && $0.selectedImage != nil } == true,
+            "Every production tab, including music, must have a native symbol")
   }
 }
