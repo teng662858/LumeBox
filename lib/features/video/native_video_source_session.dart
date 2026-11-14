@@ -465,7 +465,7 @@ class NativeVideoSourceSession {
       };
     }
     if (revision != _resolution) return {'error': '此次取址已经取消'};
-    if (current == null || (action == 'retry' && _media.isDownloaded)) {
+    if (current == null) {
       if (action != 'retry') return {'message': '此资源没有选集'};
       return _retryCurrentMedia(revision);
     }
@@ -540,10 +540,12 @@ class NativeVideoSourceSession {
       } else {
         // Detail pages can start a single direct item without a resolver.
         // Retry still prefers a fresh signed URL when the source supplies one.
-        final directRetry = action == 'retry' && current.chapterId == current.itemId &&
-            SourcePlayback.itemAddress(current.itemId) == _media.uri;
-        final DataSource? dataSource;
-        final ChapterContent? content;
+        final direct = action == 'retry' && current.chapterId == current.itemId
+            ? SourcePlayback.itemAddress(current.itemId)
+            : null;
+        final directRetry = direct != null && (direct == _media.uri || _media.isDownloaded);
+        DataSource? dataSource;
+        ChapterContent? content;
         try {
           dataSource = await _source();
           if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
@@ -555,10 +557,12 @@ class NativeVideoSourceSession {
           rethrow;
         } catch (_) {
           if (!directRetry) rethrow;
-          return await _retryCurrentMedia(revision);
         }
         if (_closed || revision != _resolution) return {'error': '此次取址已经取消'};
-        if (content == null && directRetry) return await _retryCurrentMedia(revision);
+        if (content == null && directRetry) {
+          if (!_media.isDownloaded) return await _retryCurrentMedia(revision);
+          content = VideoContent(url: direct);
+        }
         if (content is! VideoContent) return {'error': '源没有返回可播放的媒体地址'};
         nextQualities = SourcePlayback.contentQualities(
           content,

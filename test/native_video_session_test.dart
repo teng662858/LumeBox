@@ -733,7 +733,9 @@ void main() {
     expect(saved?.chapterIndex, 3);
     expect(saved?.position.inSeconds, 22);
     final retried = (await request('retry'))['media'] as Map;
-    expect(retried['url'], next['url']);
+    final reopened = Uri.parse(retried['url'] as String);
+    final segment = await (await client.getUrl(reopened.resolve('part.ts'))).close();
+    expect(await segment.expand((b) => b).toList(), [1, 2, 3]);
     expect(retried['position'], 22);
     expect(
       ((await request('previous'))['media'] as Map)['url'],
@@ -812,17 +814,23 @@ void main() {
     expect(((await request('episode', {'id': 'oldA2'}))['media'] as Map)['url'], old.uri.toString());
     expect(source.resolved, ['A2']);
   });
-  for (final uri in [
-    Uri.parse('file:///downloads/movie.mp4'),
-    Uri.parse('http://127.0.0.1:43002/session/index.m3u8'),
-  ]) {
+  for (final filename in ['media.mp4', 'index.m3u8']) {
     test(
-      'retrying a downloaded ${uri.scheme} episode keeps its offline address',
+      'retrying a downloaded $filename episode stays offline',
       () async {
-        await start(initialMedia: DownloadedVideoPlayback(uri).media('下载'));
+        final file = await stored('A1', 0, 'A', filename);
+        final initial = (await downloads.completedPlayback('fixture', 'show', 'A1'))!;
+        addTearDown(initial.close);
+        await start(initialMedia: initial.media('下载'));
         await progress(37);
         final media = (await request('retry'))['media'] as Map;
-        expect(media['sourceUrl'], uri.toString());
+        final address = Uri.parse(media['sourceUrl'] as String);
+        if (filename.endsWith('.mp4')) {
+          expect(address, file.uri);
+        } else {
+          expect(address.host, '127.0.0.1');
+          expect(address.path, endsWith('/index.m3u8'));
+        }
         expect(media['position'], 37);
         expect(source.resolved, isEmpty);
         await request('next');
@@ -831,6 +839,45 @@ void main() {
       },
     );
   }
+  for (final removed in [true, false]) {
+    test('retry resolves the same episode after a download is ${removed ? 'deleted' : 'truncated'}', () async {
+      final file = await stored('A1', 0, 'A', 'media.mp4');
+      downloads.tasks.single.bytes = await file.length();
+      await start(initialMedia: DownloadedVideoPlayback(file.uri).media('下载'));
+      await progress(37);
+      if (removed) {
+        await file.delete();
+      } else {
+        await file.writeAsBytes([4]);
+      }
+      final media = (await request('retry'))['media'] as Map;
+      expect(media['sourceUrl'], 'https://cdn.example/A1.m3u8?token=fresh');
+      expect(media['headers'], {'Referer': 'https://example/'});
+      expect(media['position'], 37);
+      expect(source.resolved, ['A1']);
+    });
+  }
+  test('retry uses the original direct item URL when its download and resolver are unavailable', () async {
+    const url = 'https://cdn.example/direct.mp4';
+    final file = File.fromUri(directory.uri.resolve('direct.mp4'));
+    await file.writeAsBytes([1, 2, 3]);
+    await start(
+      initialMedia: DownloadedVideoPlayback(file.uri).media('下载'),
+      target: const VideoPlayTarget(sourceId: 'fixture', itemId: url,
+        title: '电影', chapterIndex: 0, chapterId: url, chapterTitle: '正片'),
+    );
+    await progress(26);
+    await file.delete();
+    final resolver = source.blocked[url] = Completer<ChapterContent>();
+    final retry = request('retry');
+    while (!source.resolved.contains(url)) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    resolver.completeError(const SourceException(SourceErrorKind.callFailed, '无解析接口'));
+    final media = (await retry)['media'] as Map;
+    expect(media['sourceUrl'], url);
+    expect(media['position'], 26);
+  });
 
   test('shared quality URL selects one request and retains its height after token refresh', () async {
     final url = Uri.parse('https://cdn.example/shared.m3u8');
