@@ -479,7 +479,10 @@ class NativeVideoSourceSession {
         final id = '${arguments['id'] ?? ''}';
         final track = await client.comments(id);
         if (_closed || identity != _identity) return {'error': '播放内容已改变，请重新匹配'};
-        if (track.items.isNotEmpty) library.setSetting(key, id);
+        if (track.items.isEmpty) {
+          return {'error': '所选条目暂无弹幕，请选择其他版本'};
+        }
+        library.setSetting(key, id);
         return _commentPayload(track);
       } finally {
         client.close();
