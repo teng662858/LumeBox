@@ -1,6 +1,29 @@
 // Appended to the production controller file for a standalone UIKit simulator
 // host. Exercises private production code, not a second player implementation.
 extension NativeVideoScreen {
+  fileprivate static func checkPausedPlaybackRate(_ item: NativeVideoItem) {
+    let screen = NativeVideoScreen(session: "paused-rate", item: item, options: [:])
+    let engine = NativeAVEngine()
+    screen.engine = engine
+    screen.holdState(.began)
+    precondition(engine.player?.defaultRate == 2, "hold temporarily changes the engine rate")
+    screen.setPlaying(false)
+    precondition(engine.player?.defaultRate == 1, "pause must clear temporary speed before a system resume")
+    screen.holdState(.ended)
+    precondition(engine.player?.rate == 0 && !screen.wantsPlay, "ending a paused hold must not play")
+    screen.setPlaybackSpeed(1.5)
+    precondition(engine.player?.defaultRate == 1.5 && engine.player?.rate == 0, "paused speed selection must update the system resume rate")
+    screen.wantsPlay = true
+    screen.holdState(.began)
+    screen.locked = true
+    screen.holdState(.cancelled)
+    precondition(engine.player?.defaultRate == 1.5, "lock cannot strand a temporary hold rate")
+    screen.locked = false
+    screen.wantsPlay = false
+    screen.holdState(.began)
+    precondition(engine.player?.defaultRate == 1.5 && engine.player?.rate == 0, "a paused hold must neither accelerate nor play")
+    engine.dispose({})
+  }
   fileprivate static func checkStartupTimeout(_ item: NativeVideoItem) {
     let screen = NativeVideoScreen(session: "startup-timeout", item: item, options: [:])
     screen.armTimeout(screen.generation)
@@ -75,6 +98,8 @@ extension NativeVideoScreen {
   fileprivate var displayedStatus: String? { statusLabel.text }
   fileprivate func retryTestMedia() { resolve("retry") }
   fileprivate func pauseTestPlayback() { setPlaying(false) }
+  fileprivate func selectTestPlaybackSpeed(_ rate: Double) { setPlaybackSpeed(rate) }
+  fileprivate var systemPlaybackRate: Float? { engine?.player?.rate }
   fileprivate func systemTestPlayback(_ playing: Bool) {
     // AVPlayer-layer PiP changes the player directly, bypassing screen controls.
     if playing { engine?.player?.play() } else { engine?.player?.pause() }
@@ -154,6 +179,7 @@ extension NativeVideoScreen {
         NativeVideoScreen.checkDanmakuTiming(item)
         NativeVideoScreen.checkSubtitlePreference(item)
         NativeVideoScreen.checkStartupTimeout(item)
+        NativeVideoScreen.checkPausedPlaybackRate(item)
         NativeVideoScreen.checkBackgroundPlaybackPolicy(item)
       }
       let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": test.1 == "smoke.mp4", "headlessAudio": true])
@@ -262,16 +288,20 @@ extension NativeVideoScreen {
         } catch { check(false, "write invalid subtitle fixture: \(error)") }
       }
       if cases[caseIndex].0 == "avplayer" {
+        screen.selectTestPlaybackSpeed(1.5)
+        check(screen.systemPlaybackRate == 0, "speed selection must keep system playback paused")
         pausedPosition = position; screen.systemTestPlayback(true); phase = 16
       } else { checkPausedSeeks() }
     } else if phase == 16 && state["playing"] as? Bool == true && position > pausedPosition + 0.2 {
       check(state["wantsPlay"] as? Bool == true, "system play updates the screen intent")
+      check(screen.systemPlaybackRate == 1.5, "system resume uses the speed selected while paused")
       screen.systemTestPlayback(false)
       pausedAt = Date(); pausedPosition = position; phase = 17
     } else if phase == 17 && Date().timeIntervalSince(pausedAt) > 0.9 {
       check(state["wantsPlay"] as? Bool == false && state["playing"] as? Bool == false,
             "system pause updates the screen and stays paused")
       check(abs(position - pausedPosition) < 0.6, "buffer recovery must not undo system pause")
+      screen.selectTestPlaybackSpeed(1)
       checkPausedSeeks()
     } else if phase == 11 && !seekEvents.isEmpty {
       check(seekEvents.count == 1 && seekEvents[0] < 0.26, "only the final paused seek is saved, at the start")

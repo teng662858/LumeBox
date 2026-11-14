@@ -272,6 +272,7 @@ import UniformTypeIdentifiers
         self.playIntentRevision += 1
         self.resumeAfterInterruption = false
         self.wantsPlay = playing
+        if !playing { next.setRate(self.speed) }
         if playing { self.interrupted = false }
         self.armTimeout(self.generation)
         self.renderState(); self.emit("progress")
@@ -280,6 +281,7 @@ import UniformTypeIdentifiers
         var payload = self.item.payload; payload["position"] = at
         let media = try NativeVideoItem(payload)
         next.load(media)
+        next.setRate(self.speed)
         self.pendingEngineResume = nil
         if let url = self.externalSubtitleURL { self.loadExternalSubtitle(url) }
         if self.wantsPlay { next.play(rate: self.speed) }
@@ -369,7 +371,7 @@ import UniformTypeIdentifiers
       if state.error != nil { resolve("retry"); return }
       if state.ended { commitSeek(0) }
       engine?.play(rate: speed)
-    } else { engine?.pause() }
+    } else { engine?.pause(); engine?.setRate(speed) }
     renderState(); emit("progress")
   }
   private func seekBy(_ delta: Double) { commitSeek((pendingSeek ?? state.position) + delta) }
@@ -482,8 +484,8 @@ import UniformTypeIdentifiers
       guard let self else { return }
       switch row["id"] as? String {
       case "speed": self.showList("播放速度", rows: [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map { ["title": "\($0)×", "value": $0] }) { [weak self] row in
-        guard let self, let rate = row["value"] as? Double else { return }; self.speed = rate
-        if self.wantsPlay { self.engine?.play(rate: rate) }; self.emit("settings", extra: ["speed": rate])
+        guard let self, let rate = row["value"] as? Double else { return }
+        self.setPlaybackSpeed(rate)
       }
       case "tracks": self.showTracks()
       case "subtitle":
@@ -771,9 +773,19 @@ import UniformTypeIdentifiers
     if gesture.state == .ended || gesture.state == .cancelled { scrubbing = false; scheduleHide() }
   }
   @objc private func hold(_ gesture: UILongPressGestureRecognizer) {
-    guard !locked, wantsPlay else { return }
-    if gesture.state == .began { engine?.play(rate: max(2, speed)) }
-    if [.ended, .cancelled, .failed].contains(gesture.state) { engine?.play(rate: speed) }
+    holdState(gesture.state)
+  }
+  private func setPlaybackSpeed(_ rate: Double) {
+    speed = rate; engine?.setRate(rate)
+    emit("settings", extra: ["speed": rate])
+  }
+  private func holdState(_ phase: UIGestureRecognizer.State) {
+    guard !closing else { return }
+    // End/cancel must restore the stored rate even if pause or screen lock
+    // happened during the hold. Changing rate must never resume playback.
+    if [.ended, .cancelled, .failed].contains(phase) { engine?.setRate(speed); return }
+    guard !locked, wantsPlay, !switching else { return }
+    if phase == .began { engine?.setRate(max(2, speed)) }
   }
 
   func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {

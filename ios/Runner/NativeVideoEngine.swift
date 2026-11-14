@@ -70,6 +70,7 @@ struct NativeVideoState {
   var changed: ((NativeVideoState) -> Void)? { get set }
   func load(_ item: NativeVideoItem)
   func play(rate: Double)
+  func setRate(_ rate: Double)
   func pause()
   func seek(_ seconds: Double, completion: @escaping (Bool) -> Void)
   func volume(_ value: Double)
@@ -208,8 +209,11 @@ struct NativeVideoState {
     if intent && state.ready && !seeking && !disposed { player?.playImmediately(atRate: Float(speed)) }
   }
   func play(rate: Double) {
+    intent = true; state.ended = false; setRate(rate)
+  }
+  func setRate(_ rate: Double) {
     speed = rate; player?.defaultRate = Float(rate)
-    intent = true; state.ended = false; resume()
+    resume()
   }
   func pause() { intent = false; player?.pause(); tick() }
   func seek(_ seconds: Double, completion: @escaping (Bool) -> Void) {
@@ -372,9 +376,12 @@ struct NativeVideoState {
     bridge?.openURL(item.url.absoluteString, headers: item.headers, position: item.position)
   }
   func play(rate: Double) {
-    speed = rate; desiredPlay = true
-    bridge?.setProperty("speed", value: String(rate))
+    desiredPlay = true; setRate(rate)
     if state.ready { bridge?.setProperty("pause", value: "no") }
+  }
+  func setRate(_ rate: Double) {
+    speed = rate
+    bridge?.setProperty("speed", value: String(rate))
   }
   func pause() { desiredPlay = false; bridge?.setProperty("pause", value: "yes") }
   func seek(_ seconds: Double, completion: @escaping (Bool) -> Void) {
