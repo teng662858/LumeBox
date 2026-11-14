@@ -15,6 +15,7 @@ import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/features/video/video_player_settings.dart';
 import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
+import 'package:lume_box/core/source/source_subscription_sync.dart';
 import 'package:lume_box/core/session/configuration_backup.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/core/util/lume_log.dart';
@@ -452,6 +453,47 @@ void main() {
     expect(find.text('仓库维护'), findsNothing);
     expect(find.text('高级导入与仓库'), findsNothing);
     expect(find.text('一键同步全部订阅'), findsOneWidget);
+    final subscriptionCard = find.ancestor(
+      of: find.text('漫画订阅'),
+      matching: find.byType(GlassCard),
+    );
+    expect(subscriptionCard, findsOneWidget);
+    expect(
+      tester.widget(subscriptionCard),
+      same(
+        tester.widget(
+          find.ancestor(
+            of: find.text('视频订阅'),
+            matching: find.byType(GlassCard),
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester.widget(subscriptionCard),
+      same(
+        tester.widget(
+          find.ancestor(
+            of: find.text('一键导入全部订阅源'),
+            matching: find.byType(GlassCard),
+          ),
+        ),
+      ),
+    );
+    SourceSubscriptionSync.acknowledge(Section.comic);
+    SourceSubscriptionSync.recordChange(
+      Section.comic,
+      'test-update',
+      '测试源',
+      '已更新',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('有订阅更新'), findsOneWidget);
+    final badges = tester.widgetList<Badge>(
+      find.descendant(of: subscriptionCard, matching: find.byType(Badge)),
+    );
+    expect(badges.where((b) => b.isLabelVisible).single.label, isNull);
+    SourceSubscriptionSync.acknowledge(Section.comic);
     expect(find.text('私有 GitHub 订阅'), findsOneWidget);
     expect(find.text('总订阅导入导出'), findsOneWidget);
     expect(find.text('TVBox 聚合配置导入'), findsOneWidget);

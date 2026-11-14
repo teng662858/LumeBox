@@ -330,12 +330,14 @@ Future<bool> importSources(
       }
     }
     if (target != null) {
-      SourceSubscriptionSync.recordChange(
-        target,
-        descriptor.id,
-        descriptor.name,
-        existing.containsKey(descriptor.id) ? '已更新' : '已添加',
-      );
+      if (existing.containsKey(descriptor.id)) {
+        SourceSubscriptionSync.recordChange(
+          target,
+          descriptor.id,
+          descriptor.name,
+          '已更新',
+        );
+      }
       SourceSubscriptionSync.revision(target).value++;
       if (target != section) {
         importNotes.add(

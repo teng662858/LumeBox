@@ -30,7 +30,7 @@ ChoiceChip _filterChip(
   final idleBackground = scheme.surfaceContainerLow;
   final labelStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
     color: selected ? foreground : idleForeground,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
   );
   return ChoiceChip(
@@ -52,7 +52,7 @@ ChoiceChip _filterChip(
       color: selected ? fill.withValues(alpha: .45) : Colors.transparent,
     ),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
     labelPadding: const EdgeInsets.symmetric(horizontal: 4),
     visualDensity: VisualDensity.compact,
     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -302,7 +302,7 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
           String? selected,
           ValueChanged<String?> choose,
         ) => Padding(
-          padding: const EdgeInsets.only(top: 12, bottom: 4),
+          padding: const EdgeInsets.only(top: 16, bottom: 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -311,15 +311,15 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                 child: Text(
                   title,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
               Wrap(
-                spacing: 6,
-                runSpacing: 6,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   if (!options.any((o) => o.title == '全部'))
                     _filterChip(

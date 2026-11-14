@@ -69,6 +69,7 @@ void main() {
         ),
       );
       final revision = SourceSubscriptionSync.revision(Section.comic).value;
+      final notices = SourceSubscriptionSync.changeCount(Section.comic).value;
       final done = await importSources(
         context,
         manager: video,
@@ -82,6 +83,11 @@ void main() {
       );
       await tester.pump();
       expect(done, isTrue);
+      expect(
+        SourceSubscriptionSync.changeCount(Section.comic).value,
+        notices,
+        reason: '手动首次导入不产生订阅更新提醒',
+      );
       expect(video.imported, isEmpty);
       expect(comic.imported, hasLength(1));
       expect(comic.sources, hasLength(1));

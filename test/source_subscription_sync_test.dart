@@ -286,9 +286,12 @@ void main() {
       expect(result.errors, isEmpty);
       expect(version == 1 ? result.added : result.updated, 150);
       expect(reloads, version, reason: '每轮整批完成后只刷新一次');
-      expect(countChanges, 1, reason: '首次新增合并通知，已有未读变更不重复写入计数');
-      expect(count.value, 150);
-      expect(SourceSubscriptionSync.notices(Section.video), hasLength(150));
+      expect(countChanges, version - 1, reason: '首次导入不通知，后续更新合并通知');
+      expect(count.value, version == 1 ? 0 : 150);
+      expect(
+        SourceSubscriptionSync.notices(Section.video),
+        hasLength(version == 1 ? 0 : 150),
+      );
     }
     final saved = jsonDecode(
       File('${root.path}/notice.txt.json').readAsStringSync(),

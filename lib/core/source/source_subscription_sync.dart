@@ -471,6 +471,9 @@ class SourceSubscriptionSync {
           continue;
         }
         result.checked++;
+        // Installing the initial subscription is a baseline, not an update.
+        // Pending sources still notify because they require an installation choice.
+        final initialImport = record.members.isEmpty && record.pending.isEmpty;
         record.checkedAt = _clock();
         final previousErrors = result.errors.length;
         try {
@@ -581,12 +584,14 @@ class SourceSubscriptionSync {
                 });
               } else {
                 result.added++;
-                changes.add({
-                  'id': descriptor.id,
-                  'name': descriptor.name,
-                  'url': ref.url,
-                  'status': '已新增',
-                });
+                if (!initialImport) {
+                  changes.add({
+                    'id': descriptor.id,
+                    'name': descriptor.name,
+                    'url': ref.url,
+                    'status': '已新增',
+                  });
+                }
               }
             } catch (error) {
               complete = false;
