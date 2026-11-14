@@ -238,6 +238,29 @@ void main() {
     expect(result.bodyBytes, isEmpty);
   });
 
+  test('capped audio playlists tolerate an omitted ETag on continuation', () async {
+    const manifest = '#EXTM3U\n#EXTINF:1,\none.aac\n#EXT-X-ENDLIST\n';
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+      if (r.url.path.endsWith('.aac')) return http.Response.bytes([7, 8], 200);
+      final first = r.headers['range'] == null;
+      final start = first ? 0 : 8;
+      final end = first ? 8 : manifest.length;
+      return http.Response(manifest.substring(start, end), 206, headers: {
+        'content-range': 'bytes $start-${end - 1}/${manifest.length}',
+        if (first) 'etag': '"stable"',
+        'last-modified': 'Mon, 10 Nov 2025 10:00:00 GMT',
+      });
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final url = (await proxy.prepare([queueTrack('list.m3u8')])).single;
+    final reply = await client.get(url);
+    expect(reply.statusCode, 200);
+    expect(reply.body, contains('#EXT-X-ENDLIST'));
+    final segment = LineSplitter.split(reply.body).firstWhere((line) => line.startsWith('http'));
+    expect((await client.get(Uri.parse(segment))).bodyBytes, [7, 8]);
+  });
+
   for (final entry in ['book.m3u8', 'signed']) {
     test(
       'audio HLS HEAD and ranges use the rewritten playlist for $entry',

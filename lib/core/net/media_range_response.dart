@@ -36,7 +36,8 @@ Stream<List<int>> completeMediaBody(
   }
   final encoding = first.header('content-encoding');
   final resource = first.uri.removeFragment();
-  String? validator;
+  String? etag;
+  String? lastModified;
   var offset = 0;
   int? total;
   var part = first;
@@ -47,14 +48,21 @@ Stream<List<int>> completeMediaBody(
       await part.listen(null).cancel();
       throw const HttpException('媒体分片已变化');
     }
-    final nextValidator = part.header('etag') ?? part.header('last-modified');
-    if (validator != null &&
-        nextValidator != null &&
-        validator != nextValidator) {
+    final nextEtag = part.header('etag');
+    final nextModified = part.header('last-modified');
+    // Continuations may omit either header. Compare like validators, preferring
+    // ETag, and retain it across omissions to catch a later revision change.
+    final changed = etag != null && nextEtag != null
+        ? etag != nextEtag
+        : lastModified != null &&
+              nextModified != null &&
+              lastModified != nextModified;
+    if (changed) {
       await part.listen(null).cancel();
       throw const HttpException('媒体分片已变化');
     }
-    validator ??= nextValidator;
+    etag ??= nextEtag;
+    lastModified = nextModified ?? lastModified;
     if (offset > 0 &&
         part.statusCode == 416 &&
         total == null &&
