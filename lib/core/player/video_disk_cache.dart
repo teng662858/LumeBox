@@ -20,6 +20,7 @@ import 'playback_diagnostics.dart';
 import '../net/lume_net.dart';
 import '../net/http_byte_range.dart';
 import '../net/http_header_scope.dart';
+import '../net/media_range_response.dart';
 
 /// Bounded, session-only HTTP cache shared by all native playback kernels.
 /// Credentials stay in memory; local URLs expose only an unguessable ticket.
@@ -439,7 +440,7 @@ class VideoDiskCache extends ChangeNotifier {
     }());
   }
 
-  Future<_MediaResponse> _request(PlayerMedia media, String? range) async {
+  Future<MediaRangeResponse> _request(PlayerMedia media, String? range) async {
     var uri = media.uri;
     final headers =
         <String, String>{
@@ -453,7 +454,7 @@ class VideoDiskCache extends ChangeNotifier {
     }
     if (range != null) headers['range'] = range;
     for (var redirect = 0; redirect < 6; redirect++) {
-      final _MediaResponse response;
+      final MediaRangeResponse response;
       // Some CDNs terminate TLS if an IP literal is sent as the SNI name.
       // URLSession verifies the IP against the certificate's IP subjectAltName.
       if ((Platform.isIOS || Platform.isMacOS || _ipHttpsClient != null) &&
@@ -490,7 +491,7 @@ class VideoDiskCache extends ChangeNotifier {
           return native.headers[name];
         }
 
-        response = _MediaResponse(
+        response = MediaRangeResponse(
           native.stream,
           native.statusCode,
           uri,
@@ -504,7 +505,7 @@ class VideoDiskCache extends ChangeNotifier {
         request.followRedirects = false;
         headers.forEach(request.headers.set);
         final io = await request.close().timeout(const Duration(seconds: 30));
-        response = _MediaResponse(io, io.statusCode, uri, io.headers.value, headers);
+        response = MediaRangeResponse(io, io.statusCode, uri, io.headers.value, headers);
       }
       final location = response.header('location');
       if (![301, 302, 303, 307, 308].contains(response.statusCode) ||
@@ -633,17 +634,12 @@ class VideoDiskCache extends ChangeNotifier {
 
   // A partial response may omit the total. A one-byte suffix gives its
   // absolute final offset without transferring the entire video.
-  static final _contentRange = RegExp(
-    r'^bytes (\d+)-(\d+)/(\d+|\*)$',
-    caseSensitive: false,
-  );
-
   Future<int?> _rangeTotal(
-    _MediaResponse response,
+    MediaRangeResponse response,
     RegExpMatch range,
   ) async {
     if (range[3] != '*') return int.tryParse(range[3]!);
-    final probe = await _request(response.media, 'bytes=-1');
+    final probe = await _request(PlayerMedia(uri: response.uri, headers: response.requestHeaders), 'bytes=-1');
     try {
       if (probe.uri.removeFragment() != response.uri.removeFragment()) {
         throw const HttpException('媒体已变化，请重新加载');
@@ -660,7 +656,7 @@ class VideoDiskCache extends ChangeNotifier {
         return int.tryParse(probe.header('content-length') ?? '');
       }
       if (probe.statusCode != 206) return null;
-      final suffix = _contentRange.firstMatch(probe.header('content-range') ?? '');
+      final suffix = mediaContentRange.firstMatch(probe.header('content-range') ?? '');
       final end = int.tryParse(suffix?[2] ?? '');
       if (end == null ||
           end == 0x7fffffffffffffff ||
@@ -695,7 +691,7 @@ class VideoDiskCache extends ChangeNotifier {
         await response.listen(null).cancel();
         continue;
       }
-      final range = _contentRange.firstMatch(response.header('content-range') ?? '');
+      final range = mediaContentRange.firstMatch(response.header('content-range') ?? '');
       if (response.statusCode >= 400) {
         PlaybackDiagnostics.record(
           'cache-upstream-failed',
@@ -766,7 +762,7 @@ class VideoDiskCache extends ChangeNotifier {
       if (start == 0 && response.statusCode == 206 &&
           (playlist || media.uri.path.toLowerCase().endsWith('.m3u8') ||
               mime.contains('mpegurl') || _playlistSignature(data))) {
-        final first = _MediaResponse(
+        final first = MediaRangeResponse(
           Stream.value(data), 206, response.uri, response.header, response.requestHeaders,
         );
         final complete = BytesBuilder(copy: false);
@@ -980,65 +976,18 @@ class VideoDiskCache extends ChangeNotifier {
         first.mime, validator, first.base, first.encoding);
   }
 
-  Stream<List<int>> _completeBody(_MediaResponse first, {void Function(_MediaResponse)? playlistPart}) async* {
-    if (first.statusCode == 200) {
-      yield* first;
-      return;
-    }
-    final encoding = first.header('content-encoding');
-    final resource = first.uri.removeFragment();
-    String? validator;
-    var offset = 0;
-    int? total;
-    var part = first;
-    while (true) {
-      // Playlist origins may explicitly route their continuation ranges to a
-      // CDN. The rewriter scopes child credentials across every such hop.
-      if (playlistPart == null && part.uri.removeFragment() != resource) {
-        await part.listen(null).cancel();
-        throw const HttpException('视频分片已变化');
-      }
-      final nextValidator = part.header('etag') ?? part.header('last-modified');
-      if (validator != null && nextValidator != null && validator != nextValidator) {
-        await part.listen(null).cancel();
-        throw const HttpException('视频分片已变化');
-      }
-      validator ??= nextValidator;
-      if (offset > 0 && part.statusCode == 416 && total == null &&
-          part.header('content-range') == 'bytes */$offset') {
-        await part.listen(null).cancel();
-        return;
-      }
-      final range = _contentRange.firstMatch(part.header('content-range') ?? '');
-      final end = int.tryParse(range?[2] ?? '');
-      final size = int.tryParse(range?[3] ?? '');
-      if (part.statusCode != 206 ||
-          part.header('content-encoding') != encoding ||
-          int.tryParse(range?[1] ?? '') != offset ||
-          end == null || end < offset || end == 0x7fffffffffffffff ||
-          (size == null && range?[3] != '*') ||
-          (size != null && total != null && size != total)) {
-        await part.listen(null).cancel();
-        throw const HttpException('视频分片范围不匹配');
-      }
-      total ??= size;
-      if (total != null && end >= total) {
-        await part.listen(null).cancel();
-        throw const HttpException('视频分片长度无效');
-      }
-      playlistPart?.call(part);
-      await for (final bytes in part) {
-        if (bytes.length > end + 1 - offset) {
-          throw const HttpException('视频分片超过声明范围');
-        }
-        offset += bytes.length;
-        yield bytes;
-      }
-      if (offset != end + 1) throw const HttpException('视频分片不完整');
-      if (offset == total) return;
-      part = await _request(part.media, 'bytes=$offset-');
-    }
-  }
+  Stream<List<int>> _completeBody(
+    MediaRangeResponse first, {
+    void Function(MediaRangeResponse)? playlistPart,
+  }) => completeMediaBody(
+    first,
+    allowRedirects: playlistPart != null,
+    playlistPart: playlistPart,
+    next: (part, offset) => _request(
+      PlayerMedia(uri: part.uri, headers: part.requestHeaders),
+      'bytes=$offset-',
+    ),
+  );
 
   Future<Uint8List> _segmentBytes(
     PlayerMedia media,
@@ -1131,7 +1080,7 @@ class VideoDiskCache extends ChangeNotifier {
       await upstream.listen(null).cancel();
       throw _UpstreamStatus(upstream.statusCode);
     }
-    final range = _contentRange.firstMatch(upstream.header('content-range') ?? '');
+    final range = mediaContentRange.firstMatch(upstream.header('content-range') ?? '');
     final length = int.tryParse(upstream.header('content-length') ?? '');
     final partial = upstream.statusCode == 206;
     final start = partial ? int.tryParse(range?[1] ?? '') ?? -1 : 0;
@@ -1312,7 +1261,7 @@ class VideoDiskCache extends ChangeNotifier {
   Future<void> _serveCompleteAudioSegment(
     HttpRequest request,
     PlayerMedia media,
-    _MediaResponse upstream,
+    MediaRangeResponse upstream,
     int generation,
   ) async {
     final buffer = BytesBuilder(copy: false);
@@ -1883,16 +1832,6 @@ class VideoDiskCache extends ChangeNotifier {
     _tickets.clear();
     _positions.clear();
   }
-}
-
-class _MediaResponse extends StreamView<List<int>> {
-  _MediaResponse(super.stream, this.statusCode, this.uri, this.header, this.requestHeaders);
-  final int statusCode;
-  final Uri uri;
-  final String? Function(String name) header;
-  final Map<String, String> requestHeaders;
-  bool get hasOriginHeaders => requestHeaders.keys.any(isOriginBoundHttpHeader);
-  PlayerMedia get media => PlayerMedia(uri: uri, headers: requestHeaders);
 }
 
 class _UpstreamStatus implements Exception {

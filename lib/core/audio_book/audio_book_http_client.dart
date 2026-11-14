@@ -13,6 +13,11 @@ class AudioBookHttpClient extends http.BaseClient {
     : _client = client ?? _platformClient(),
       _ownsClient = closeClient ?? !(Platform.isIOS || Platform.isMacOS);
 
+  /// HTTP byte ranges refer to the encoded representation. Use this transport
+  /// when URLSession has already decoded a partial playlist response.
+  AudioBookHttpClient.encodedBytes()
+    : this(client: IOClient(HttpClient()..autoUncompress = false), closeClient: true);
+
   static http.Client? _appleClient;
   static http.Client _platformClient() {
     if (Platform.isIOS || Platform.isMacOS) {

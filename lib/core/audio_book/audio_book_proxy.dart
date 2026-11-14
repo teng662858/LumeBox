@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../net/http_byte_range.dart';
 import '../net/http_header_scope.dart';
+import '../net/media_range_response.dart';
 import 'audio_book_track.dart';
 import 'audio_book_http_client.dart';
 import '../util/lume_log.dart';
@@ -178,28 +179,26 @@ class AudioBookProxy {
       headers['Accept-Encoding'] = 'identity';
       final range = request.headers.value(HttpHeaders.rangeHeader);
       final playlistAsset = raw != null && path.last.endsWith('.m3u8');
-      client = _clientFactory();
-      _clients.add(client);
+      var transport = _clientFactory();
+      client = transport;
+      _clients.add(transport);
       http.StreamedResponse? response;
       var fetchPlaylist = playlistAsset || uri.path.toLowerCase().endsWith('.m3u8');
       var method = request.method;
       var ignoreRange = false;
       var redirects = 0;
-      while (true) {
-        final upstream = http.Request(fetchPlaylist ? 'GET' : method, uri)
-          ..headers.addAll(headers)
-          ..followRedirects = false;
-        if (fetchPlaylist || ignoreRange) {
-          upstream.headers.remove('range');
-        } else if (range != null) {
-          upstream.headers['range'] = range;
-        }
-        response = await client
+      Future<http.StreamedResponse> fetch(String verb, String? interval) async {
+        while (true) {
+          final upstream = http.Request(verb, uri)
+            ..headers.addAll(headers)
+            ..followRedirects = false;
+          if (interval != null) upstream.headers['range'] = interval;
+          final part = await transport
             .send(upstream)
             .timeout(const Duration(seconds: 20));
-        if ([301, 302, 303, 307, 308].contains(response.statusCode)) {
-          final location = response.headers['location'];
-          await response.stream.listen(null).cancel();
+          if (![301, 302, 303, 307, 308].contains(part.statusCode)) return part;
+          final location = part.headers['location'];
+          await part.stream.listen(null).cancel();
           if (++redirects > 5) throw const FormatException('音频重定向过多');
           if (location == null) throw const FormatException('无效音频重定向');
           final next = uri.resolve(location);
@@ -211,12 +210,19 @@ class AudioBookProxy {
             headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
           }
           uri = next;
-          fetchPlaylist = fetchPlaylist || uri.path.toLowerCase().endsWith('.m3u8');
-          continue;
+          if (!fetchPlaylist && uri.path.toLowerCase().endsWith('.m3u8')) {
+            fetchPlaylist = true;
+            verb = 'GET';
+            interval = null;
+          }
         }
+      }
+      while (true) {
+        final verb = fetchPlaylist ? 'GET' : method;
+        final interval = fetchPlaylist || ignoreRange ? null : range;
+        response = await fetch(verb, interval);
         if (!fetchPlaylist &&
-            (upstream.method == 'HEAD' ||
-                upstream.headers.containsKey('range')) &&
+            (verb == 'HEAD' || interval != null) &&
             (response.headers['content-type'] ?? '').toLowerCase().contains(
               'mpegurl',
             )) {
@@ -226,7 +232,7 @@ class AudioBookProxy {
         }
         // Some media servers allow playback but reject metadata-only probes.
         // Use GET for the upstream headers and keep the downstream HEAD body empty.
-        if (upstream.method == 'HEAD' &&
+        if (!fetchPlaylist && verb == 'HEAD' &&
             const [403, 405, 501].contains(response.statusCode)) {
           await response.stream.listen(null).cancel();
           method = 'GET';
@@ -239,11 +245,22 @@ class AudioBookProxy {
             .toLowerCase();
         final rejectedRange = const [400, 403, 405].contains(response.statusCode) ||
             response.statusCode == 416 && response.headers['content-range'] == null;
-        if (upstream.headers.containsKey('range') &&
+        if (!fetchPlaylist && interval != null &&
             (rejectedRange || [206, 416].contains(response.statusCode) &&
                 encoding != null && encoding != 'identity')) {
           await response.stream.listen(null).cancel();
           ignoreRange = true;
+          continue;
+        }
+        if (response.statusCode == 206 && encoding != null && encoding != 'identity' &&
+            (fetchPlaylist || (response.headers['content-type'] ?? '').toLowerCase().contains('mpegurl')) &&
+            transport is AudioBookHttpClient && transport.decodesContentEncoding) {
+          await response.stream.listen(null).cancel();
+          _clients.remove(transport);
+          transport.close();
+          client = transport = AudioBookHttpClient.encodedBytes();
+          _clients.add(transport);
+          fetchPlaylist = true;
           continue;
         }
         if (!fetchPlaylist && range != null && response.statusCode == 206 &&
@@ -276,8 +293,8 @@ class AudioBookProxy {
           if (identical(_resolved[track.id]?.audio, resolved)) {
             _resolved.remove(track.id);
           }
-          _clients.remove(client);
-          client.close();
+          _clients.remove(transport);
+          transport.close();
           client = null;
           await _serve(request, canRefresh: false);
           return;
@@ -297,12 +314,23 @@ class AudioBookProxy {
           .toLowerCase();
       final encoded = encoding != null && encoding != 'identity';
       Stream<List<int>> body = response.stream;
+      final manifestBase = uri;
+      if (hls && response.statusCode == 206) {
+        MediaRangeResponse part(http.StreamedResponse reply) => MediaRangeResponse(
+          reply.stream, reply.statusCode, uri, (name) => reply.headers[name], headers,
+        );
+        body = completeMediaBody(
+          part(response),
+          allowRedirects: true,
+          next: (_, offset) async => part(await fetch('GET', 'bytes=$offset-')),
+        );
+      }
       if (encoded) {
         final nativeDecoded =
             client is AudioBookHttpClient &&
             client.decodesContentEncoding &&
             const {'gzip', 'deflate', 'br'}.contains(encoding);
-        if (response.statusCode == 206) {
+        if (response.statusCode == 206 && (!hls || nativeDecoded)) {
           throw const FormatException('音频服务器未返回完整压缩响应');
         }
         if (!nativeDecoded) {
@@ -330,8 +358,8 @@ class AudioBookProxy {
           (line) => line.trimLeft().startsWith('#EXT-X-STREAM-INF:'),
         );
         String childUrl(String value, {required bool playlist}) {
-          final child = uri.resolve(value);
-          final sameOrigin = child.scheme == uri.scheme && child.origin == uri.origin;
+          final child = manifestBase.resolve(value);
+          final sameOrigin = child.scheme == manifestBase.scheme && child.origin == manifestBase.origin;
           return _asset(port, path[1], child, scoped: scoped && sameOrigin,
               playlist: playlist).toString();
         }
@@ -429,7 +457,7 @@ class AudioBookProxy {
   }
 
   static bool _matchesRange(http.StreamedResponse response, String requested) {
-    final match = RegExp(r'^bytes (\d+)-(\d+)/(\d+|\*)$', caseSensitive: false)
+    final match = mediaContentRange
         .firstMatch(response.headers['content-range']?.trim() ?? '');
     final start = int.tryParse(match?[1] ?? ''), end = int.tryParse(match?[2] ?? '');
     if (start == null || end == null || start > end) return false;

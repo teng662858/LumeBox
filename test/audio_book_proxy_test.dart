@@ -6,8 +6,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:lume_box/core/audio_book/audio_book_proxy.dart';
+import 'package:lume_box/core/audio_book/audio_book_http_client.dart';
 import 'package:lume_box/core/audio_book/audio_book_track.dart';
 import 'package:lume_box/core/media/media_library.dart';
+
+class _DecodedAudioClient extends AudioBookHttpClient {
+  _DecodedAudioClient(http.Client client) : super(client: client, closeClient: true);
+  @override
+  bool get decodesContentEncoding => true;
+}
 
 void main() {
   AudioBookTrack queueTrack(String path) => AudioBookTrack(
@@ -80,6 +87,113 @@ void main() {
       }
     },
   );
+  for (final compressed in [false, true]) {
+    test('a capped audiobook playlist retains its last segment (gzip=$compressed)', () async {
+      final manifest = utf8.encode('#EXTM3U\n#EXTINF:1,\none.aac\n#EXTINF:1,\n二.aac\n#EXT-X-ENDLIST\n');
+      final bytes = compressed ? gzip.encode(manifest) : manifest;
+      final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+        if (r.url.path.endsWith('.aac')) return http.Response.bytes([7, 8, 9], 200);
+        final range = r.headers['range'];
+        final start = range == null ? 0 : int.parse(range.substring(6, range.length - 1));
+        if (start == bytes.length) {
+          return http.Response('', 416, headers: {'content-range': 'bytes */$start'});
+        }
+        final end = (start + 13).clamp(0, bytes.length);
+        return http.Response.bytes(bytes.sublist(start, end), 206, headers: {
+          'content-range': 'bytes $start-${end - 1}/${compressed ? "*" : bytes.length}',
+          if (compressed) 'content-encoding': 'gzip',
+          'etag': '"one"',
+        });
+      }));
+      final client = http.Client();
+      addTearDown(() async { client.close(); await proxy.close(); });
+      final url = (await proxy.prepare([queueTrack('list.m3u8')])).single;
+      final result = await client.get(url);
+      expect(result.statusCode, 200);
+      expect(result.body, contains('#EXT-X-ENDLIST'));
+      final parts = LineSplitter.split(result.body).where((line) => line.startsWith('http')).toList();
+      expect(parts, hasLength(2));
+      expect((await client.get(Uri.parse(parts.last))).bodyBytes, [7, 8, 9]);
+      final tail = await client.get(url, headers: {'Range': 'bytes=-15'});
+      expect(tail.statusCode, 206);
+      expect(tail.bodyBytes, result.bodyBytes.sublist(result.bodyBytes.length - 15));
+    });
+  }
+
+  test('a natively decoded partial manifest is refetched in encoded bytes before assembly', () async {
+    final origin = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final bytes = gzip.encode(utf8.encode('#EXTM3U\n#EXTINF:1,\nchapter.aac\n#EXT-X-ENDLIST\n'));
+    final requests = <String?>[];
+    origin.listen((r) async {
+      final range = r.headers.value('range');
+      requests.add(range);
+      final start = range == null ? 0 : int.parse(range.substring(6, range.length - 1));
+      final end = (start + 16).clamp(0, bytes.length);
+      r.response.statusCode = 206;
+      r.response.headers.set('Content-Encoding', 'gzip');
+      r.response.headers.set('Content-Range', 'bytes $start-${end - 1}/${bytes.length}');
+      r.response.add(bytes.sublist(start, end));
+      await r.response.close();
+    });
+    final proxy = AudioBookProxy(clientFactory: () => _DecodedAudioClient(MockClient((_) async =>
+        http.Response('#EXTM3U\n', 206, headers: {'content-encoding': 'gzip', 'content-range': 'bytes 0-15/${bytes.length}'}))));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); await origin.close(force: true); });
+    final url = (await proxy.prepare([AudioBookTrack(id: 'e', album: 'Book',
+        episode: ResourceEpisode(id: 'e', title: 'E', url: Uri.parse('http://127.0.0.1:${origin.port}/list.m3u8')))])).single;
+    final result = await client.get(url);
+    expect(result.body, contains('#EXT-X-ENDLIST'));
+    expect(requests.take(2), [null, 'bytes=16-']);
+  });
+
+  test('an audio playlist continuation redirect keeps the original base and drops credentials', () async {
+    const first = '#EXTM3U\n';
+    const tail = '#EXTINF:1,\nlast.aac\n#EXT-X-ENDLIST\n';
+    final size = first.length + tail.length;
+    final seen = <(String, String?)>[];
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+      seen.add((r.url.toString(), r.headers['authorization']));
+      if (r.url.path.endsWith('.aac')) return http.Response.bytes([9], 200);
+      if (r.headers['range'] == null) {
+        return http.Response(first, 206, headers: {'content-range': 'bytes 0-7/$size'});
+      }
+      if (r.url.host == 'origin.test') {
+        return http.Response('', 302, headers: {'location': 'https://cdn.test/cache/tail'});
+      }
+      return http.Response(tail, 206, headers: {'content-range': 'bytes 8-${size - 1}/$size'});
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final url = (await proxy.prepare([AudioBookTrack(id: 'e', album: 'Book',
+        episode: ResourceEpisode(id: 'e', title: 'E', url: Uri.parse('https://origin.test/media/main.m3u8'),
+            headers: const {'Authorization': 'Bearer fixture'}))])).single;
+    final text = (await client.get(url)).body;
+    final segment = LineSplitter.split(text).firstWhere((line) => line.startsWith('http'));
+    expect((await client.get(Uri.parse(segment))).bodyBytes, [9]);
+    expect(seen, [
+      ('https://origin.test/media/main.m3u8', 'Bearer fixture'),
+      ('https://origin.test/media/main.m3u8', 'Bearer fixture'),
+      ('https://cdn.test/cache/tail', null),
+      ('https://origin.test/media/last.aac', null),
+    ]);
+  });
+
+  test('a changed audiobook playlist cannot serve mixed revisions', () async {
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+      final first = r.headers['range'] == null;
+      return http.Response(first ? '#EXTM3U\n' : 'one.aac\n', 206, headers: {
+        'content-range': first ? 'bytes 0-7/16' : 'bytes 8-15/16',
+        'etag': first ? '"old"' : '"new"',
+      });
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final url = (await proxy.prepare([queueTrack('list.m3u8')])).single;
+    final result = await client.get(url);
+    expect(result.statusCode, 502);
+    expect(result.bodyBytes, isEmpty);
+  });
+
   for (final entry in ['book.m3u8', 'signed']) {
     test(
       'audio HLS HEAD and ranges use the rewritten playlist for $entry',
