@@ -280,7 +280,10 @@ class JsDataSource
       };
     }
     // Cache identity includes category, keyword, page and all filters.
-    return parseSourceList(await _invoke(JsSourceContract.list, argument));
+    return parseSourceList(
+      await _invoke(JsSourceContract.list, argument),
+      page: page < 1 ? 1 : page,
+    );
   }
 
   @override
@@ -573,12 +576,19 @@ class JsDataSource
 /// `list` 是函数式脚本（顶层 `getList(page)`）的常见写法——它与 `items` 同义，
 /// 引擎的桥接层不做改写，宽容解析统一落在这一层。
 /// 与其余集合解析一致保持宽容：无法识别时返回空列表，而不是抛错。
-SourceList parseSourceList(Object? json) {
-  if (json is List) return SourceList(items: parseItems(json));
-  if (json is Map) {
+SourceList parseSourceList(Object? json, {int page = 1}) {
+  if (json is List) {
+    final items = parseItems(json);
     return SourceList(
-      items: parseItems(json['items'] ?? json['list']),
-      hasMore: json['hasMore'] == true,
+      items: items,
+      hasMore: sourceHasMore(json, page: page, itemCount: items.length),
+    );
+  }
+  if (json is Map) {
+    final items = parseItems(json['items'] ?? json['list']);
+    return SourceList(
+      items: items,
+      hasMore: sourceHasMore(json, page: page, itemCount: items.length),
     );
   }
   return const SourceList();

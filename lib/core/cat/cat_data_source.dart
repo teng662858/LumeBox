@@ -50,6 +50,9 @@ class CatDataSource
   final CatSite site;
   final String? chapterFlag;
   String? _homeCategoryId;
+  final _homePages = <String, int>{};
+  final _homeSeen = <String, Set<String>>{};
+  int _homeCursor = 0, _homeGeneration = 0;
   final _folders = <String>{};
   bool isFolder(String itemId) => _folders.contains(itemId);
   @override
@@ -73,7 +76,9 @@ class CatDataSource
   Future<bool> supportsFilters() async => true;
   @override
   Future<List<SourceCategory>> categories() async =>
-      catMaps((await homeData())['class'])
+      _categories(await homeData());
+  List<SourceCategory> _categories(Map<String, dynamic> data) =>
+      catMaps(data['class'])
           .map(
             (raw) => SourceCategory(
               id: catText(raw['type_id'] ?? raw['id']),
@@ -190,8 +195,19 @@ class CatDataSource
     return SourceHome(items: (await homeList()).items);
   }
 
-  Future<SourceList> homeList() async {
+  Future<SourceList> homeList({int page = 1}) async {
+    if (page > 1) return _nextHomeCategory();
+    final generation = ++_homeGeneration;
+    _homeCursor = 0;
+    _homePages.clear();
+    _homeSeen.clear();
+    _homeCategoryId = null;
     final data = await homeData();
+    final available = _categories(data);
+    if (generation != _homeGeneration) return const SourceList();
+    for (final category in available) {
+      _homePages[category.id] = 1;
+    }
     var found = items(data);
     if (found.isEmpty) {
       for (final endpoint in ['homeVod', 'homeVideo']) {
@@ -206,19 +222,51 @@ class CatDataSource
         if (found.isNotEmpty) break;
       }
     }
+    if (generation != _homeGeneration) return const SourceList();
     if (found.isEmpty) {
-      final available = await categories();
       if (available.isEmpty) return const SourceList(items: [], hasMore: false);
       for (final category in available.take(3)) {
         final result = await list(categoryId: category.id);
+        if (generation != _homeGeneration) return const SourceList();
         if (result.items.isNotEmpty) {
           _homeCategoryId = category.id;
-          return result;
+          _homeSeen[category.id] = result.items.map((item) => item.id).toSet();
+          if (result.hasMore) {
+            _homePages[category.id] = 2;
+          } else {
+            _homePages.remove(category.id);
+          }
+          return SourceList(
+            items: result.items,
+            hasMore: _homePages.isNotEmpty,
+          );
         }
+        _homePages.remove(category.id);
       }
       return const SourceList(items: [], hasMore: false);
     }
-    return SourceList(items: found, hasMore: false);
+    return SourceList(items: found, hasMore: _homePages.isNotEmpty);
+  }
+
+  /// Recommendations are finite. Continue through the site's actual categories,
+  /// retaining a separate page cursor for each instead of skipping to page two.
+  Future<SourceList> _nextHomeCategory() async {
+    if (_homePages.isEmpty) return const SourceList();
+    final generation = _homeGeneration;
+    final ids = _homePages.keys.toList();
+    final category = ids[_homeCursor % ids.length];
+    final page = _homePages[category]!;
+    final result = await list(categoryId: category, page: page);
+    if (generation != _homeGeneration) return const SourceList();
+    final seen = _homeSeen.putIfAbsent(category, () => {});
+    final fresh = result.items.where((item) => seen.add(item.id)).toList();
+    if (result.hasMore && fresh.isNotEmpty) {
+      _homePages[category] = page + 1;
+    } else {
+      _homePages.remove(category);
+    }
+    _homeCursor++;
+    return SourceList(items: fresh, hasMore: _homePages.isNotEmpty);
   }
 
   @override
@@ -255,12 +303,9 @@ class CatDataSource
     }
     final payload = catPayload(data);
     final found = items(payload);
-    final pages = int.tryParse(
-      catText(payload['pagecount'] ?? payload['pageCount']),
-    );
     return SourceList(
       items: found,
-      hasMore: pages == null ? found.length >= 20 : page < pages,
+      hasMore: sourceHasMore(payload, page: page, itemCount: found.length),
     );
   }
 
@@ -430,7 +475,10 @@ class CatDataSource
     final webPlayer = data['webPlayer'] == true;
     if (webPlayer || data['parse'] == 1 || data['parse'] == '1') {
       final page = address(rawUrl);
-      if (webPlayer && (page == null || !['http', 'https'].contains(page.scheme) || page.userInfo.isNotEmpty)) {
+      if (webPlayer &&
+          (page == null ||
+              !['http', 'https'].contains(page.scheme) ||
+              page.userInfo.isNotEmpty)) {
         throw StateError('站点返回了无效的网页播放地址');
       }
       if (page == null) throw StateError('站点返回了无效的网页解析地址');
@@ -438,11 +486,13 @@ class CatDataSource
     }
     Uri? playableAddress(String raw) {
       final candidate = address(raw);
-      return candidate != null && candidate.host.isNotEmpty &&
+      return candidate != null &&
+              candidate.host.isNotEmpty &&
               const {'http', 'https', 'rtmp', 'rtsp'}.contains(candidate.scheme)
           ? candidate
           : null;
     }
+
     return VideoContent.fromSource(
           {...data, 'url': rawUrl, 'headers': requestHeaders},
           audioOnly: const {'audio', 'audiobook', 'audio-book'}.contains(kind),
@@ -461,8 +511,11 @@ class CatAggregateSourceManager implements SourceManager {
   Iterable<CatSite> get _enabledSites => service.subscriptions
       .where((record) => record.enabled)
       .expand((record) => record.sites)
-      .where((site) => (kind == null || site.kind == kind) &&
-          PrivacySettings.instance.allowsSource(site.id, site.name));
+      .where(
+        (site) =>
+            (kind == null || site.kind == kind) &&
+            PrivacySettings.instance.allowsSource(site.id, site.name),
+      );
 
   Iterable<CatSite> get sites => _enabledSites.where((site) => site.searchable);
 
@@ -491,6 +544,7 @@ class CatAggregateSourceManager implements SourceManager {
         ),
     ];
   }
+
   @override
   Future<SourceDescriptor?> current() async => (await list())
       .where((site) => site.id == service.selectedSiteId)

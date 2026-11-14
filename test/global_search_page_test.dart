@@ -7,8 +7,6 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/reading/section_toolbar.dart';
 import 'package:lume_box/features/search/global_search_page.dart';
-import 'package:lume_box/shared/widgets/glass_card.dart';
-import 'package:lume_box/shared/widgets/global_search_scope.dart';
 
 void main() {
   const results = GlobalSearchResults(
@@ -114,44 +112,4 @@ void main() {
     expect(find.text('Comic result'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
-  testWidgets(
-    'top-right global action coexists with page actions and is absent on pushed pages',
-    (tester) async {
-      var opened = 0;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
-            builder: (context) => GlobalSearchScope(
-              onSearch: () {
-                opened++;
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) =>
-                        const GlassScaffold(title: 'Search', child: SizedBox()),
-                  ),
-                );
-              },
-              child: const GlassScaffold(
-                title: 'Root',
-                actions: [Icon(Icons.add)],
-                child: SizedBox(),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final search = find.byKey(const ValueKey('global-search-button'));
-      expect(search, findsOneWidget);
-      expect(
-        tester.getCenter(search).dx,
-        greaterThan(tester.getCenter(find.byIcon(Icons.add)).dx),
-      );
-      await tester.tap(search);
-      await tester.pumpAndSettle();
-      expect(opened, 1);
-      expect(search, findsNothing);
-      expect(find.text('Search'), findsOneWidget);
-    },
-  );
 }

@@ -13,6 +13,7 @@ final class LumeSystemTabBarFactory: NSObject, FlutterPlatformViewFactory {
   static func register(with registrar: FlutterPluginRegistrar) {
     let messenger = registrar.messenger()
     registrar.register(LumeSystemTabBarFactory(messenger: messenger), withId: "lumebox/system_tab_bar")
+    registrar.register(LumeSystemSearchFactory(messenger: messenger), withId: "lumebox/system_search_button")
     FlutterMethodChannel(name: "lumebox/system_tab_bar", binaryMessenger: messenger)
       .setMethodCallHandler { call, result in
         guard call.method == "capabilities" else {
@@ -34,6 +35,61 @@ final class LumeSystemTabBarFactory: NSObject, FlutterPlatformViewFactory {
 
   func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
     LumeSystemTabBarView(frame: frame, viewId: viewId, args: args, messenger: messenger)
+  }
+}
+
+/// A real UIKit glass button: the OS owns its material and press interaction.
+final class LumeSystemSearchFactory: NSObject, FlutterPlatformViewFactory {
+  let messenger: FlutterBinaryMessenger
+  init(messenger: FlutterBinaryMessenger) { self.messenger = messenger }
+  func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol { FlutterStandardMessageCodec.sharedInstance() }
+  func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
+    LumeSystemSearchView(frame: frame, viewId: viewId, args: args, messenger: messenger)
+  }
+}
+
+private final class LumeSystemSearchView: NSObject, FlutterPlatformView {
+  let button: UIButton
+  let channel: FlutterMethodChannel
+  init(frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger) {
+    button = UIButton(type: .system)
+    button.frame = frame
+    channel = FlutterMethodChannel(name: "lumebox/system_search_button_\(viewId)", binaryMessenger: messenger)
+    super.init()
+    button.accessibilityLabel = "全局搜索"
+    button.accessibilityIdentifier = "global-search-button"
+    button.addTarget(self, action: #selector(pressed), for: .touchUpInside)
+    update(args)
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "update" else { result(FlutterMethodNotImplemented); return }
+      self?.update(call.arguments)
+      result(nil)
+    }
+  }
+  deinit { channel.setMethodCallHandler(nil) }
+  func view() -> UIView { button }
+  @objc private func pressed() { channel.invokeMethod("pressed", arguments: nil) }
+  private func update(_ arguments: Any?) {
+    let values = arguments as? [String: Any] ?? [:]
+    var configuration: UIButton.Configuration
+    if #available(iOS 26.0, *) { configuration = .glass() }
+    else { configuration = .bordered() }
+    configuration.cornerStyle = .capsule
+    configuration.contentInsets = .zero
+    configuration.image = UIImage(systemName: "magnifyingglass")
+    configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 24, weight: .regular)
+    if let tint = values["tintColor"] as? NSNumber {
+      let argb = tint.uint32Value
+      configuration.baseForegroundColor = UIColor(red: CGFloat((argb >> 16) & 255) / 255,
+        green: CGFloat((argb >> 8) & 255) / 255, blue: CGFloat(argb & 255) / 255, alpha: 1)
+    }
+    let rawDensity = (values["materialOpacity"] as? NSNumber)?.doubleValue ?? 0.6
+    let density = CGFloat(rawDensity.isFinite ? min(1, max(0, rawDensity)) : 0.6)
+    configuration.background.backgroundColor = UIColor.systemBackground.withAlphaComponent(
+      values["opaqueBackground"] as? Bool == true ? 1 : density)
+    button.configuration = configuration
+    button.overrideUserInterfaceStyle = values["brightness"] as? String == "dark" ? .dark : .light
+    button.isEnabled = values["enabled"] as? Bool != false
   }
 }
 

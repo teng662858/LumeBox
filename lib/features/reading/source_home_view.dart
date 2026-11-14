@@ -94,6 +94,96 @@ class _SourceHomeViewState extends State<SourceHomeView>
   int _seq = 0;
   bool _refreshing = false;
   bool _browseVisible = true;
+  final _scroll = ScrollController();
+  final _catalog = <SourceItem>[];
+  final _catalogSeen = <String>{};
+  int _catalogPage = 0;
+  bool _catalogMore = true, _catalogLoading = false, _catalogStarted = false;
+  Object? _catalogError;
+  bool get _canContinue => widget.browseMode == null;
+
+  Future<void> _loadCatalog({bool retry = false}) async {
+    if (!_canContinue ||
+        !_browseVisible ||
+        _catalogLoading ||
+        !_catalogMore ||
+        _catalogError != null && !retry) {
+      return;
+    }
+    final seq = _seq, source = widget.source, page = _catalogPage + 1;
+    setState(() {
+      _catalogLoading = true;
+      _catalogStarted = true;
+      _catalogError = null;
+    });
+    var succeeded = false;
+    try {
+      final result = await networkRequests.run(
+        'home-catalog',
+        () => source.list(page: page),
+        timeout: const Duration(seconds: 20),
+      );
+      if (!mounted || seq != _seq) return;
+      final fresh = result.items
+          .where((item) => _catalogSeen.add(item.id))
+          .toList();
+      setState(() {
+        _catalogPage = page;
+        _catalog.addAll(fresh);
+        _catalogMore =
+            result.hasMore && result.items.isNotEmpty && fresh.isNotEmpty;
+      });
+      _preloadFirstScreen(SourceHome(items: fresh));
+      succeeded = true;
+    } catch (error) {
+      if (mounted && seq == _seq) setState(() => _catalogError = error);
+    } finally {
+      if (mounted && seq == _seq) {
+        setState(() => _catalogLoading = false);
+        if (succeeded) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted &&
+                _scroll.hasClients &&
+                _scroll.position.extentAfter < 400) {
+              unawaited(_loadCatalog());
+            }
+          });
+        }
+      }
+    }
+  }
+
+  Widget _catalogFooter() {
+    if (_catalogLoading) {
+      return const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    if (_catalogError != null) {
+      return Center(
+        child: TextButton(
+          onPressed: () => _loadCatalog(retry: true),
+          child: const Text('加载更多失败，点击重试'),
+        ),
+      );
+    }
+    if (!_catalogMore) {
+      return const Center(
+        child: Text('已显示本源返回的内容', textAlign: TextAlign.center),
+      );
+    }
+    return Center(
+      child: TextButton(
+        onPressed: () => _loadCatalog(),
+        child: Text(_catalogStarted ? '继续加载' : '继续浏览站点内容'),
+      ),
+    );
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -151,7 +241,8 @@ class _SourceHomeViewState extends State<SourceHomeView>
     if (!mounted || _home == null) return;
     final next = _filterHome(_home!);
     if (_visibleHome != null &&
-        _visibleIds(next) == _visibleIds(_visibleHome!)) {
+        _visibleIds(next) == _visibleIds(_visibleHome!) &&
+        _catalog.isEmpty) {
       return;
     }
     setState(() {
@@ -162,6 +253,7 @@ class _SourceHomeViewState extends State<SourceHomeView>
 
   @override
   void dispose() {
+    _scroll.dispose();
     MediaLibrary.instance.removeListener(_mediaChanged);
     BrowseLayoutSettings.instance.removeListener(_layoutChanged);
     super.dispose();
@@ -209,6 +301,14 @@ class _SourceHomeViewState extends State<SourceHomeView>
     final source = widget.source;
     if (!force && _loadingSourceId == source.id) return;
     final seq = ++_seq;
+    networkRequests.cancel('home-catalog');
+    _catalog.clear();
+    _catalogSeen.clear();
+    _catalogPage = 0;
+    _catalogMore = true;
+    _catalogLoading = false;
+    _catalogStarted = false;
+    _catalogError = null;
     _loadingSourceId = source.id;
     networkRequests.cancel('home');
     final cached = !force && MediaPreload.instance.pages
@@ -524,7 +624,12 @@ class _SourceHomeViewState extends State<SourceHomeView>
             }.values.toList()
           : home.items;
     }
-    final items = _flatItems!;
+    final ids = _flatItems!.map((item) => item.id).toSet();
+    final items = [
+      ..._flatItems!,
+      if (_canContinue)
+        ..._catalog.where((item) => _visible(item) && ids.add(item.id)),
+    ];
     return AdaptiveCoverSurface(
       pipeline: widget.pipeline,
       item: items.isEmpty ? null : items.first,
@@ -550,10 +655,22 @@ class _SourceHomeViewState extends State<SourceHomeView>
               children: [
                 RefreshIndicator(
                   onRefresh: _retry,
-                  child: CoverViewport(
-                    child: _buildFlat(
-                      items,
-                      topInset: error != null ? 8 : widget.topInset,
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      if (notification.depth == 0 &&
+                          notification.metrics.axis == Axis.vertical &&
+                          notification.metrics.extentAfter < 400 &&
+                          (notification is ScrollUpdateNotification ||
+                              notification is OverscrollNotification)) {
+                        unawaited(_loadCatalog());
+                      }
+                      return false;
+                    },
+                    child: CoverViewport(
+                      child: _buildFlat(
+                        items,
+                        topInset: error != null ? 8 : widget.topInset,
+                      ),
                     ),
                   ),
                 ),
@@ -579,15 +696,19 @@ class _SourceHomeViewState extends State<SourceHomeView>
         BrowseLayoutMode.grid3;
     if (mode == BrowseLayoutMode.list) {
       return ListView.separated(
+        controller: _scroll,
         key: PageStorageKey(
           'home:${widget.source.id}:${widget.browseMode}:list',
         ),
         scrollCacheExtent: const ScrollCacheExtent.viewport(1),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(16, topInset, 16, 16 + widget.bottomInset),
-        itemCount: items.length,
+        itemCount: items.length + (_canContinue ? 1 : 0),
         separatorBuilder: (_, _) => const Divider(height: 1, thickness: 1),
         itemBuilder: (context, index) {
+          if (index == items.length) {
+            return SizedBox(height: 80, child: _catalogFooter());
+          }
           final item = items[index];
           return CompactSourceItemTile(
             item: item,
@@ -611,6 +732,7 @@ class _SourceHomeViewState extends State<SourceHomeView>
         : TwoColumnSourceLayout.spacing;
     return LayoutBuilder(
       builder: (context, constraints) => GridView.builder(
+        controller: _scroll,
         key: PageStorageKey(
           'home:${widget.source.id}:${widget.browseMode}:${mode.name}',
         ),
@@ -640,8 +762,10 @@ class _SourceHomeViewState extends State<SourceHomeView>
               ? 1
               : mode.tileAspectRatio,
         ),
-        itemCount: items.length,
-        itemBuilder: (context, index) => mode == BrowseLayoutMode.list2
+        itemCount: items.length + (_canContinue ? 1 : 0),
+        itemBuilder: (context, index) => index == items.length
+            ? _catalogFooter()
+            : mode == BrowseLayoutMode.list2
             ? TwoColumnSourceItemTile(
                 item: items[index],
                 pipeline: widget.pipeline,
@@ -770,8 +894,10 @@ class _SourceHomeMorePageState extends State<SourceHomeMorePage>
       if (!mounted) return;
       setState(() {
         _page = page;
-        _hasMore = result.hasMore;
-        _items.addAll(result.items);
+        final ids = _items.map((item) => item.id).toSet();
+        final fresh = result.items.where((item) => ids.add(item.id)).toList();
+        _hasMore = result.hasMore && fresh.isNotEmpty;
+        _items.addAll(fresh);
         _loading = false;
       });
       _preload(result.items, more: page > 1);

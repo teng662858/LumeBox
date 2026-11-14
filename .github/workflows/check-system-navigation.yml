@@ -1,0 +1,25 @@
+name: System navigation checks
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  system-navigation:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.5
+          channel: stable
+          cache: true
+      - name: Prepare the iOS Flutter framework
+        run: flutter precache --ios
+      - name: Compile and exercise system navigation only
+        run: bash tool/check_ios_system_tab_bar.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: system-navigation-preview
+          path: out/system-tab-bar/

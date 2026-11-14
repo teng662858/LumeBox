@@ -347,6 +347,7 @@ class _CatPageState extends State<CatPage>
     final token = ++sequence;
     setState(() {
       loading = true;
+      loadingMore = false;
       error = null;
     });
     try {
@@ -415,6 +416,7 @@ class _CatPageState extends State<CatPage>
   }
 
   Future<void> nextPage() async {
+    if (loadingMore || !more) return;
     try {
       await networkRequests.run('more', nextPageOwned);
     } on NetworkCancelled {
@@ -424,19 +426,28 @@ class _CatPageState extends State<CatPage>
 
   Future<void> nextPageOwned() async {
     final current = source;
-    if (current == null) return;
+    if (current == null || loadingMore || !more) return;
     final token = sequence;
     setState(() => loadingMore = true);
+    var succeeded = false;
     try {
-      final result = await current.list(
-        categoryId: category,
-        keyword: SearchSettings.instance.prepare(query),
-        filters: filters,
-        page: page + 1,
-      );
+      final home =
+          query.isEmpty &&
+          category == null &&
+          filters.isEmpty &&
+          browseMode == null;
+      final result = home
+          ? await current.homeList(page: page + 1)
+          : await current.list(
+              categoryId: category,
+              keyword: SearchSettings.instance.prepare(query),
+              filters: filters,
+              page: page + 1,
+            );
       if (!mounted || token != sequence) return;
       setState(() {
         final ids = items.map((item) => item.id).toSet();
+        final previousCount = items.length;
         items.addAll(
           result.items.where(
             (item) =>
@@ -445,8 +456,9 @@ class _CatPageState extends State<CatPage>
           ),
         );
         page++;
-        more = result.hasMore;
+        more = result.hasMore && (home || items.length > previousCount);
       });
+      succeeded = true;
     } catch (failure) {
       if (!(NetworkCancellation.current?.isCancelled ?? false) &&
           mounted &&
@@ -454,7 +466,14 @@ class _CatPageState extends State<CatPage>
         toast('$failure');
       }
     } finally {
-      if (mounted) setState(() => loadingMore = false);
+      if (mounted && token == sequence) {
+        setState(() => loadingMore = false);
+        if (succeeded) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) loadMore();
+          });
+        }
+      }
     }
   }
 
@@ -883,7 +902,10 @@ class _CatPageState extends State<CatPage>
               item: item,
               library: lib,
               manager: manager,
-              searchManager: CatAggregateSourceManager(service, kind: selected.kind),
+              searchManager: CatAggregateSourceManager(
+                service,
+                kind: selected.kind,
+              ),
               onPlay: (origin, media, target, qualities, prelaunch) async {
                 service.playInfo = {
                   'name': target.title,
@@ -1596,6 +1618,12 @@ class _CatPageState extends State<CatPage>
           children: [
             NotificationListener<ScrollNotification>(
               onNotification: (notification) {
+                if (notification.depth == 0 &&
+                    notification.metrics.axis == Axis.vertical &&
+                    (notification is ScrollUpdateNotification ||
+                        notification is OverscrollNotification)) {
+                  loadMore();
+                }
                 final hidden = BrowseHeaderScroll.hiddenAfter(
                   notification,
                   _headerHidden,
@@ -1746,6 +1774,24 @@ class _CatPageState extends State<CatPage>
                       if (loadingMore)
                         const SliverToBoxAdapter(
                           child: Center(child: CircularProgressIndicator()),
+                        ),
+                      if (!loading && !loadingMore && source != null && more)
+                        SliverToBoxAdapter(
+                          child: Center(
+                            child: TextButton(
+                              onPressed: nextPage,
+                              child: const Text('继续浏览站点内容'),
+                            ),
+                          ),
+                        ),
+                      if (!loading && !loadingMore && items.isNotEmpty && !more)
+                        const SliverToBoxAdapter(
+                          child: Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Text('已显示本源返回的内容'),
+                            ),
+                          ),
                         ),
                       SliverToBoxAdapter(
                         child: SizedBox(

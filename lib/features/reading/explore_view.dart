@@ -1153,11 +1153,12 @@ class _ExploreViewState extends State<ExploreView>
       }
       setState(() {
         _page = page;
-        _hasMore = repeated ? false : result.hasMore;
+        _hasMore = !repeated && result.items.isNotEmpty && result.hasMore;
         _loadingMore = false;
         _loadingFirst = false;
         if (more) {
-          _items.addAll(result.items);
+          final ids = _items.map((item) => item.id).toSet();
+          _items.addAll(result.items.where((item) => ids.add(item.id)));
         } else {
           _items
             ..clear()

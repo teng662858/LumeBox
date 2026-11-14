@@ -41,12 +41,12 @@ import 'shell_dock_bar.dart';
 import 'system_dock_bar.dart';
 import '../../core/source/source_subscription_sync.dart';
 import '../../shared/widgets/dock_handle_button.dart';
-import '../../shared/widgets/global_search_scope.dart';
+import 'system_search_button.dart';
 import '../../core/music/music_session.dart';
 import '../music/music_page.dart';
 import '../search/global_search_page.dart';
 
-/// 主导航：漫画 / 视频 / 音乐 / 设置，右上角进入跨板块全局搜索。
+/// 主导航：漫画 / 视频 / 音乐 / 设置，底部右侧圆按钮进入全局搜索。
 ///
 /// 移动端是底部悬浮 Dock（毛玻璃胶囊）；桌面端（Windows / macOS / Linux）
 /// 自动换成左侧 NavigationRail —— 同一套页签，两种排布，页签内容不变。
@@ -128,6 +128,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           _systemNavigationHeight,
         )
       : _dockHeight;
+  double get _searchSize => _navigationHeight.clamp(44.0, 60.0);
+  double get _searchTrailingWidth => _searchSize + 10;
 
   double _navigationBottom(BuildContext context) => _usesSystemNavigation
       ? _shellSettings.settings.nativeNavigation.bottomFor(
@@ -578,11 +580,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 entryCount: _visibleTabs.length,
                 requested:
                     _shellSettings.settings.nativeNavigation.horizontalMargin,
-                trailingWidth: 0,
+                trailingWidth: _searchTrailingWidth,
               )
             : null,
         safePadding: MediaQuery.viewPaddingOf(context),
         integratedSearch: true,
+        searchBesideDock: true,
         child: rail ? _buildRail() : _buildDock(),
       ),
     );
@@ -718,6 +721,47 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                     MediaQuery.viewInsetsOf(context).bottom == 0,
               ),
             ),
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              if (!_controller.visible ||
+                  MediaQuery.viewInsetsOf(context).bottom > 0) {
+                return const SizedBox.shrink();
+              }
+              final safe = MediaQuery.viewPaddingOf(this.context);
+              final width =
+                  MediaQuery.sizeOf(this.context).width - safe.horizontal;
+              final margin = _usesSystemNavigation
+                  ? SystemDockBar.marginFor(
+                      width: width,
+                      entryCount: tabs.length,
+                      requested: _shellSettings
+                          .settings
+                          .nativeNavigation
+                          .horizontalMargin,
+                      trailingWidth: _searchTrailingWidth,
+                    )
+                  : _dockAppearance
+                            .layoutFor(
+                              width,
+                              trailingWidth: _searchTrailingWidth,
+                            )
+                            .right -
+                        _searchTrailingWidth;
+              return Positioned(
+                right: safe.right + margin,
+                bottom:
+                    _navigationBottom(this.context) +
+                    (_navigationHeight - _searchSize) / 2,
+                child: SystemSearchButton(
+                  key: const ValueKey('global-search-button'),
+                  size: _searchSize,
+                  useNative: _systemNavigationAvailable,
+                  onPressed: () => unawaited(_searchFromNavigation()),
+                ),
+              );
+            },
+          ),
         ],
       ),
       bottomNavigationBar: AnimatedBuilder(
@@ -785,6 +829,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 )
               : _usesSystemNavigation
               ? SystemDockBar(
+                  trailingWidth: _searchTrailingWidth,
                   key: AppShell.dockKey,
                   entries: [
                     for (final tab in tabs)
@@ -808,6 +853,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   onUnavailable: _systemNavigationUnavailable,
                 )
               : ShellDockBar(
+                  trailingWidth: _searchTrailingWidth,
                   key: AppShell.dockKey,
                   entries: <ShellDockEntry>[
                     for (final tab in tabs)
@@ -851,6 +897,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       body: Row(
         children: <Widget>[
           NavigationRail(
+            trailingAtBottom: true,
+            trailing: IconButton(
+              key: const ValueKey('global-search-button'),
+              tooltip: '全局搜索',
+              onPressed: () => unawaited(_searchFromNavigation()),
+              icon: const Icon(Icons.search),
+            ),
             key: AppShell.railKey,
             selectedIndex: activeIndex < 0 ? 0 : activeIndex,
             onDestinationSelected: (index) => _select(tabs[index].id),
@@ -889,30 +942,27 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   /// 首次访问时创建页面，切走时保留状态并停止其动画。
   ///
   /// Stable tab identity keeps scroll positions and in-flight work across themes.
-  Widget _buildPage() => GlobalSearchScope(
-    onSearch: () => unawaited(_searchFromNavigation()),
-    child: Stack(
-      fit: StackFit.expand,
-      children: [
-        for (final tab in _pageCatalog.where(
-          (tab) => _visitedPages.contains(tab.id),
-        ))
-          Offstage(
-            key: ValueKey('shell-page-${tab.id}'),
-            offstage: tab.id != _activeId,
-            child: TickerMode(
-              enabled: tab.id == _activeId,
-              child: KeyedSubtree(
-                key: ValueKey<String>('shell-content-${tab.id}'),
-                child: ModuleGlassScope(
-                  module: GlassModule.fromId(tab.id),
-                  child: widget.pageBuilder?.call(tab.id) ?? tab.builder(),
-                ),
+  Widget _buildPage() => Stack(
+    fit: StackFit.expand,
+    children: [
+      for (final tab in _pageCatalog.where(
+        (tab) => _visitedPages.contains(tab.id),
+      ))
+        Offstage(
+          key: ValueKey('shell-page-${tab.id}'),
+          offstage: tab.id != _activeId,
+          child: TickerMode(
+            enabled: tab.id == _activeId,
+            child: KeyedSubtree(
+              key: ValueKey<String>('shell-content-${tab.id}'),
+              child: ModuleGlassScope(
+                module: GlassModule.fromId(tab.id),
+                child: widget.pageBuilder?.call(tab.id) ?? tab.builder(),
               ),
             ),
           ),
-      ],
-    ),
+        ),
+    ],
   );
 }
 

@@ -157,7 +157,7 @@ class _BrowseSearchButtonState extends State<BrowseSearchButton> {
         tween: Tween(end: size),
         duration: const Duration(milliseconds: 240),
         curve: Curves.easeOutCubic,
-        builder: (context, value, _) => _SearchGlassButton(
+        builder: (context, value, _) => DockSearchGlassButton(
           size: value,
           appearance: appearance,
           onPressed: widget.onPressed,
@@ -168,8 +168,11 @@ class _BrowseSearchButtonState extends State<BrowseSearchButton> {
   }
 }
 
-class _SearchGlassButton extends StatefulWidget {
-  const _SearchGlassButton({
+class DockSearchGlassButton extends StatefulWidget {
+  const DockSearchGlassButton({
+    super.key,
+    this.tooltip = '搜索',
+    this.surfaceKey = const ValueKey('browse-search-surface'),
     required this.size,
     required this.appearance,
     required this.onPressed,
@@ -179,11 +182,13 @@ class _SearchGlassButton extends StatefulWidget {
   final DockAppearance appearance;
   final VoidCallback? onPressed;
   final bool beside;
+  final String tooltip;
+  final Key surfaceKey;
   @override
-  State<_SearchGlassButton> createState() => _SearchGlassButtonState();
+  State<DockSearchGlassButton> createState() => _SearchGlassButtonState();
 }
 
-class _SearchGlassButtonState extends State<_SearchGlassButton> {
+class _SearchGlassButtonState extends State<DockSearchGlassButton> {
   bool _pressed = false;
   final _surfaceKey = GlobalKey();
   Offset _origin() {
@@ -246,7 +251,7 @@ class _SearchGlassButtonState extends State<_SearchGlassButton> {
                   ),
                 if (!native)
                   DockLiquidSurface(
-                    filterKey: const ValueKey('browse-search-surface'),
+                    filterKey: widget.surfaceKey,
                     borderRadius: BorderRadius.circular(size / 2),
                     blurSigma: style.blur,
                     fallbackSigma:
@@ -306,7 +311,7 @@ class _SearchGlassButtonState extends State<_SearchGlassButton> {
                     onPointerUp: (_) => setState(() => _pressed = false),
                     onPointerCancel: (_) => setState(() => _pressed = false),
                     child: IconButton(
-                      tooltip: '搜索',
+                      tooltip: widget.tooltip,
                       onPressed: widget.onPressed,
                       constraints: BoxConstraints.tightFor(
                         width: size,

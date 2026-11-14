@@ -1,5 +1,4 @@
 import 'network_waiting_view.dart';
-import 'global_search_scope.dart';
 import 'module_glass_scope.dart';
 export 'module_glass_scope.dart' show GlassModule, GlassPart, ModuleGlassScope;
 
@@ -583,12 +582,6 @@ class GlassScaffold extends StatelessWidget {
 
   Widget _legacyBuild(BuildContext context) {
     // 顶栏内容要让出的高度：**避让后的**状态栏 + 工具栏 + 页签条。
-    final globalSearch = GlobalSearchScope.maybeOf(context);
-    final actions = <Widget>[
-      ...?this.actions,
-      if (globalSearch != null)
-        GlobalSearchButton(onPressed: globalSearch.onSearch),
-    ];
     // 用壳自己的 context 读（此时还没被 Scaffold 注入顶栏高度）。
     final statusInset = MediaQuery.paddingOf(context).top;
     final height =
@@ -608,8 +601,8 @@ class GlassScaffold extends StatelessWidget {
         appBar: merge
             ? null
             : (unusedInset <= 0
-                  ? _buildBar(actions)
-                  : _ShiftedAppBar(dy: unusedInset, child: _buildBar(actions))),
+                  ? _buildBar()
+                  : _ShiftedAppBar(dy: unusedInset, child: _buildBar())),
         floatingActionButton: floatingActionButton,
         bottomNavigationBar: bottomNavigationBar,
         body: _SettingsBackplane(
@@ -648,7 +641,7 @@ class GlassScaffold extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              if (actions.isNotEmpty)
+                              if (actions != null)
                                 IconButtonTheme(
                                   data: IconButtonThemeData(
                                     style: IconButton.styleFrom(
@@ -661,7 +654,7 @@ class GlassScaffold extends StatelessWidget {
                                   ),
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
-                                    children: actions,
+                                    children: actions!,
                                   ),
                                 ),
                             ],
@@ -696,7 +689,7 @@ class GlassScaffold extends StatelessWidget {
   double get bottomExtra => bottom?.preferredSize.height ?? 0;
 
   /// 顶栏本体（外框是否整体上移由 [build] 决定）。
-  GlassAppBar _buildBar(List<Widget> actions) => GlassAppBar(
+  GlassAppBar _buildBar() => GlassAppBar(
     title: Text(title ?? LumeTheme.appName),
     actions: actions,
     bottom: bottom,

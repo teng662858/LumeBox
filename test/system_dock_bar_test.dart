@@ -1,3 +1,4 @@
+import 'package:lume_box/features/shell/system_search_button.dart';
 import 'package:lume_box/shared/widgets/glass_card.dart';
 import 'package:lume_box/shared/widgets/native_glass_controls.dart';
 
@@ -47,6 +48,9 @@ class NativeHarness {
   final updates = <Map<Object?, Object?>>[];
   final created = <Map<Object?, Object?>>[];
   final channels = <MethodChannel>[];
+  final searchChannels = <MethodChannel>[];
+  final searchCreated = <Map<Object?, Object?>>[];
+  final searchUpdates = <Map<Object?, Object?>>[];
   final disposed = <int>[];
   Completer<void>? creationGate;
   bool failUpdates = false;
@@ -62,6 +66,24 @@ class NativeHarness {
     ) async {
       if (call.method == 'create') {
         final args = call.arguments as Map;
+        if (args['viewType'] == SystemSearchButton.viewType) {
+          searchCreated.add(
+            const StandardMessageCodec().decodeMessage(
+              ByteData.sublistView(args['params'] as Uint8List),
+            ) as Map<Object?, Object?>,
+          );
+          final searchChannel = MethodChannel(
+            '${SystemSearchButton.viewType}_${args['id']}',
+          );
+          searchChannels.add(searchChannel);
+          messenger.setMockMethodCallHandler(searchChannel, (call) async {
+            searchUpdates.add(
+              Map<Object?, Object?>.from(call.arguments as Map),
+            );
+            return null;
+          });
+          return null;
+        }
         created.add(
           const StandardMessageCodec().decodeMessage(
             ByteData.sublistView(args['params'] as Uint8List),
@@ -88,16 +110,16 @@ class NativeHarness {
         SystemTabBarCapabilities.channel,
         null,
       );
-      for (final channel in channels) {
+      for (final channel in [...channels, ...searchChannels]) {
         messenger.setMockMethodCallHandler(channel, null);
       }
     });
   }
 
-  Future<void> event(String method, Object? args) async {
+  Future<void> event(String method, Object? args, {bool search = false}) async {
     final done = Completer<void>();
     tester.binding.channelBuffers.push(
-      channels.last.name,
+      search ? searchChannels.last.name : channels.last.name,
       const StandardMethodCodec().encodeMethodCall(MethodCall(method, args)),
       (_) => done.complete(),
     );
@@ -128,6 +150,35 @@ void main() {
     directory.deleteSync(recursive: true);
   });
 
+  testWidgets('圆形搜索使用独立 UIKit 视图并保留系统交互和主题更新', (tester) async {
+    final harness = NativeHarness(tester)..install();
+    var presses = 0;
+    Widget scene(Brightness brightness) => MaterialApp(
+      theme: LumeTheme.build(brightness: brightness),
+      themeAnimationDuration: Duration.zero,
+      home: Center(
+        child: SystemSearchButton(
+          size: 60,
+          useNative: true,
+          onPressed: () => presses++,
+        ),
+      ),
+    );
+    await tester.pumpWidget(scene(Brightness.light));
+    await tester.pumpAndSettle();
+    expect(harness.searchCreated, hasLength(1));
+    expect(harness.created, isEmpty);
+    expect(tester.getSize(find.byType(SystemSearchButton)), const Size(60, 60));
+    await harness.event('pressed', null, search: true);
+    expect(presses, 1);
+    await tester.pumpWidget(scene(Brightness.dark));
+    await tester.pumpAndSettle();
+    expect(harness.searchCreated, hasLength(1));
+    expect(harness.searchUpdates.last['brightness'], 'dark');
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    expect(find.byType(UiKitView), findsNothing);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
   testWidgets('原生实心图标选中时跟随主题色', (tester) async {
     final harness = NativeHarness(tester)..install();
     var badge = 7;
@@ -525,7 +576,7 @@ void main() {
             widget is UiKitView && widget.viewType == SystemDockBar.viewType,
       ),
     );
-    expect(barRect.width, closeTo(358, .1));
+    expect(barRect.width, closeTo(288, .1));
     expect(
       (harness.updates.last['entries'] as List).map((e) => (e as Map)['id']),
       ['comic', 'video', 'music', 'settings'],
@@ -647,7 +698,7 @@ void main() {
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-  testWidgets('旧系统回退 Dock 仍保留音乐，全局搜索位于顶栏', (tester) async {
+  testWidgets('旧系统回退 Dock 仍保留音乐，全局搜索位于底部右侧', (tester) async {
     final harness = NativeHarness(tester);
     harness.install(supported: false);
     final controller = ShellDockController();

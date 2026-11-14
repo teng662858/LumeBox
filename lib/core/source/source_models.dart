@@ -14,6 +14,47 @@ import '../player/video_preview.dart';
 import 'package:flutter/foundation.dart';
 import 'package:html/parser.dart' as html;
 
+/// Legacy lists often omit hasMore. Probe another nonempty page, while callers
+/// stop repeated pages by ID. An explicit end marker always takes precedence.
+bool sourceHasMore(
+  Object? payload, {
+  required int page,
+  required int itemCount,
+}) {
+  if (itemCount == 0) return false;
+  if (payload is Map) {
+    final explicit = payload['hasMore'] ?? payload['has_more'];
+    if (explicit is bool) return explicit;
+    if (explicit == 0 || explicit == '0' || explicit == 'false') return false;
+    if (explicit == 1 || explicit == '1' || explicit == 'true') return true;
+    int? integer(Object? value) =>
+        value is num ? value.toInt() : int.tryParse('$value');
+    final pages = integer(
+      payload['pagecount'] ??
+          payload['pageCount'] ??
+          payload['totalPages'] ??
+          payload['pages'],
+    );
+    final current =
+        integer(
+          payload['page'] ?? payload['pageNo'] ?? payload['currentPage'],
+        ) ??
+        page;
+    if (pages != null && pages > 0) return current < pages;
+    final total = integer(payload['total'] ?? payload['totalCount']);
+    final size = integer(
+      payload['pageSize'] ??
+          payload['pagesize'] ??
+          payload['limit'] ??
+          payload['perPage'],
+    );
+    if (total != null && total > 0 && size != null && size > 0) {
+      return current * size < total;
+    }
+  }
+  return true;
+}
+
 /// 可选能力：**搜索联想词**（图源提供 `suggest` 时用服务端的，没有就用本地历史）。
 ///
 /// 与弹幕能力同一套做法：能力做成接口，图源实现了就用，没实现就降级——
@@ -693,9 +734,14 @@ final class VideoContent extends ChapterContent {
     required bool audioOnly,
     Uri? Function(String) resolveAddress = Uri.tryParse,
   }) {
-    final qualities = _qualityList(json['qualities'] ?? json['levels'], resolveAddress);
+    final qualities = _qualityList(
+      json['qualities'] ?? json['levels'],
+      resolveAddress,
+    );
     final main = resolveAddress('${json['url'] ?? ''}'.trim());
-    final fallback = main == null || !main.hasScheme ? qualities.firstOrNull : null;
+    final fallback = main == null || !main.hasScheme
+        ? qualities.firstOrNull
+        : null;
     final url = fallback?.url ?? main;
     if (url == null || !url.hasScheme) return null;
     return VideoContent(
@@ -810,7 +856,10 @@ class VideoQuality {
 /// - 地址取 `url` / `playUrl` / `src`；
 /// - 条目非法（没有地址）就跳过，不影响其余线路；
 /// - 标签缺失时用 `线路 N` 兜底——**不编造分辨率**（播放器不知道它是不是 1080P）。
-List<VideoQuality> _qualityList(Object? value, Uri? Function(String) resolveAddress) {
+List<VideoQuality> _qualityList(
+  Object? value,
+  Uri? Function(String) resolveAddress,
+) {
   if (value is! List) return const <VideoQuality>[];
   final qualities = <VideoQuality>[];
   for (final entry in value) {
@@ -836,7 +885,9 @@ List<VideoQuality> _qualityList(Object? value, Uri? Function(String) resolveAddr
         label: label,
         url: uri,
         headers: _stringMap(entry['headers']),
-        height: height != null && height.isFinite && height > 0 ? height.toInt() : 0,
+        height: height != null && height.isFinite && height > 0
+            ? height.toInt()
+            : 0,
       ),
     );
   }

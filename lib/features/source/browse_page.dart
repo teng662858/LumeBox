@@ -237,8 +237,10 @@ class _BrowseViewState extends State<BrowseView> {
       if (!mounted || seq != _requestSeq) return;
       setState(() {
         _page = next;
-        _hasMore = result.hasMore;
-        _items.addAll(result.items);
+        final ids = _items.map((item) => item.id).toSet();
+        final fresh = result.items.where((item) => ids.add(item.id)).toList();
+        _hasMore = result.hasMore && fresh.isNotEmpty;
+        _items.addAll(fresh);
         _loadingMore = false;
       });
       _preloadCovers(result.items);

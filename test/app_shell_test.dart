@@ -69,7 +69,7 @@ void main() {
     }
   });
 
-  testWidgets('各板块右上角打开同一个全局搜索，返回后保留原页面', (tester) async {
+  testWidgets('各板块底部右侧打开同一个全局搜索，返回后保留原页面', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: AppShell(

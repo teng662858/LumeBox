@@ -502,7 +502,7 @@ void main() {
 
       final capsule = tester.getRect(dockCapsule());
       expect(capsule.left, closeTo(32, .01));
-      expect(capsule.width, closeTo(390 - 64, .01));
+      expect(capsule.width, closeTo(390 - 64 - 70, .01));
       expect(capsule.height, closeTo(60, .01));
       expect(844 - capsule.bottom, closeTo(10, .01));
 

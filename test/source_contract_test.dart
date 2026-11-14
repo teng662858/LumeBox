@@ -103,7 +103,7 @@ void main() {
         <String, Object?>{'id': 'b', 'title': '条目 B'},
       ]);
       expect(bare.items.single.id, 'b');
-      expect(bare.hasMore, isFalse);
+      expect(bare.hasMore, isTrue,reason:'旧源省略分页标记时，允许继续探测下一页');
     });
 
     test('接受函数式脚本的 list 信封', () {
