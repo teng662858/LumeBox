@@ -551,7 +551,7 @@ class NativeVideoSourceSession {
         section: library.section,
       );
       final server = local?.server;
-      if (action == 'retry' && _media.isDownloaded && server != null &&
+      if (action == 'retry' && server != null &&
           !await server.hasCompletePlaylist(local!.uri)) {
         await local.close();
         local = null;

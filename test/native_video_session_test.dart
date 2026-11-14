@@ -1002,8 +1002,11 @@ void main() {
       expect(source.resolved, ['A1']);
     });
   }
-  for (final broken in ['part.ts', 'init.mp4', 'enc.key', 'audio.m3u8']) {
-    test('offline HLS retry returns online when $broken is missing or empty', () async {
+  for (final broken in [
+    'part.ts', 'init.mp4', 'enc.key', 'audio.m3u8', 'short key', 'long key',
+    'missing key URI', 'missing map URI', 'unsupported segment file', 'unfinished audio playlist',
+  ]) {
+    test('offline HLS retry stays online while the package is damaged: $broken', () async {
       final playlist = await stored('A1', 0, 'A', 'index.m3u8');
       final assets = playlist.parent.uri;
       await playlist.writeAsString(
@@ -1017,9 +1020,11 @@ void main() {
       await File.fromUri(assets.resolve('audio.m3u8')).writeAsString(
         '#EXTM3U\n#EXTINF:1,\naudio.aac\n#EXT-X-ENDLIST\n',
       );
-      for (final name in ['audio.aac', 'init.mp4', 'enc.key']) {
+      for (final name in ['audio.aac', 'init.mp4']) {
         await File.fromUri(assets.resolve(name)).writeAsBytes([1, 2, 3]);
       }
+      final key = File.fromUri(assets.resolve('enc.key'));
+      await key.writeAsBytes(List.filled(16, 1));
       final initial = (await downloads.completedPlayback('fixture', 'show', 'A1'))!;
       addTearDown(initial.close);
       await start(initialMedia: initial.media('下载'));
@@ -1027,16 +1032,37 @@ void main() {
       final intact = (await request('retry'))['media'] as Map;
       expect(Uri.parse(intact['sourceUrl'] as String).isScheme('http'), isTrue);
       expect(source.resolved, isEmpty);
-      final missing = File.fromUri(assets.resolve(broken));
       if (broken == 'part.ts') {
-        await missing.writeAsBytes([]);
+        await File.fromUri(assets.resolve(broken)).writeAsBytes([]);
+      } else if (broken == 'short key' || broken == 'long key') {
+        await key.writeAsBytes(List.filled(broken == 'short key' ? 15 : 17, 1));
+      } else if (broken == 'unfinished audio playlist') {
+        await File.fromUri(assets.resolve('audio.m3u8')).writeAsString('#EXTM3U\n#EXTINF:1,\naudio.aac\n');
+      } else if (broken == 'missing key URI' || broken == 'missing map URI') {
+        final video = File.fromUri(assets.resolve('video.m3u8'));
+        final attribute = broken == 'missing key URI' ? ',URI="enc.key"' : 'URI="init.mp4"';
+        await video.writeAsString((await video.readAsString()).replaceFirst(attribute, ''));
+      } else if (broken == 'unsupported segment file') {
+        await File.fromUri(assets.resolve('part.ts')).rename(File.fromUri(assets.resolve('part.tmp')).path);
+        final video = File.fromUri(assets.resolve('video.m3u8'));
+        await video.writeAsString((await video.readAsString()).replaceFirst('part.ts', 'part.tmp'));
       } else {
-        await missing.delete();
+        await File.fromUri(assets.resolve(broken)).delete();
       }
       final media = (await request('retry'))['media'] as Map;
       expect(media['sourceUrl'], 'https://cdn.example/A1.m3u8?token=fresh');
       expect(media['position'], 18);
       expect(source.resolved, ['A1']);
+      final again = (await request('retry'))['media'] as Map;
+      expect(again['sourceUrl'], media['sourceUrl']);
+      expect(again['position'], 18);
+      expect(source.resolved, ['A1', 'A1']);
+      if (broken == 'short key') {
+        await key.writeAsBytes(List.filled(16, 2));
+        final repaired = (await request('retry'))['media'] as Map;
+        expect(Uri.parse(repaired['sourceUrl'] as String).host, '127.0.0.1');
+        expect(repaired['position'], 18);
+      }
     });
   }
   test('retry uses the original direct item URL when its download and resolver are unavailable', () async {

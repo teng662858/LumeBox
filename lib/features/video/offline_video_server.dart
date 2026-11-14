@@ -55,6 +55,9 @@ class OfflineVideoServer {
   OfflineVideoServer._(this._server, this._root, this._token);
   final HttpServer _server;
   final String _root, _token;
+  static const _extensions = {
+    '.m3u8', '.ts', '.m4s', '.mp4', '.key', '.aac', '.ac3', '.ec3', '.eac3', '.mp3',
+  };
   static Future<OfflineVideoServer> open(Directory directory) async {
     final root = await directory.resolveSymbolicLinks();
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -79,6 +82,7 @@ class OfflineVideoServer {
   Future<bool> hasCompletePlaylist(Uri entry) async {
     final root = Directory(_root).uri;
     final segments = <String>{};
+    final keys = <String>{};
     final verified = <Uri>{};
     Future<bool> checkPlaylist(Uri playlist, int depth) async {
       if (depth > 3) return false; // Same nesting limit as the downloader.
@@ -88,16 +92,28 @@ class OfflineVideoServer {
       final lines = await file.readAsLines();
       if (lines.isEmpty || lines.first.trim() != '#EXTM3U') return false;
       var hasMedia = false;
+      var master = false;
+      var ended = false;
       for (final raw in lines.skip(1)) {
         var path = raw.trim();
         if (path.isEmpty) continue;
+        var key = false;
         if (path.startsWith('#')) {
-          if (!path.startsWith('#EXT-X-MEDIA:') &&
-              !path.startsWith('#EXT-X-KEY:') &&
-              !path.startsWith('#EXT-X-MAP:')) {
+          if (path.startsWith('#EXT-X-STREAM-INF:')) master = true;
+          if (path == '#EXT-X-ENDLIST') ended = true;
+          key = path.startsWith('#EXT-X-KEY:');
+          final map = path.startsWith('#EXT-X-MAP:');
+          if (!path.startsWith('#EXT-X-MEDIA:') && !key && !map) {
             continue;
           }
-          final attribute = hlsRawAttributes(path)['URI'];
+          final attributes = hlsRawAttributes(path);
+          if (key && attributes['METHOD'] == 'NONE') continue;
+          if (key && (attributes['METHOD'] != 'AES-128' ||
+              hlsAttributeValue(attributes['KEYFORMAT'] ?? 'identity') != 'identity')) {
+            return false;
+          }
+          final attribute = attributes['URI'];
+          if ((key || map) && hlsAttributeValue(attribute ?? '').trim().isEmpty) return false;
           if (attribute == null) continue;
           path = hlsAttributeValue(attribute);
         } else {
@@ -108,14 +124,20 @@ class OfflineVideoServer {
             !p.isWithin(_root, resource.toFilePath())) {
           return false;
         }
-        if (resource.path.endsWith('.m3u8')) {
+        final name = resource.toFilePath();
+        final extension = p.extension(name);
+        if (!_extensions.contains(extension)) return false;
+        if (extension == '.m3u8') {
+          if (key) return false;
           if (!await checkPlaylist(resource, depth + 1)) return false;
         } else {
-          segments.add(resource.toFilePath());
+          segments.add(name);
+          if (key) keys.add(name);
         }
       }
-      if (hasMedia) verified.add(playlist);
-      return hasMedia;
+      if (!hasMedia || !master && !ended) return false;
+      verified.add(playlist);
+      return true;
     }
 
     try {
@@ -124,8 +146,15 @@ class OfflineVideoServer {
       }
       final paths = segments.toList();
       for (var i = 0; i < paths.length; i += 32) {
-        final stats = await Future.wait(paths.getRange(i, min(i + 32, paths.length)).map(FileStat.stat));
-        if (stats.any((s) => s.type != FileSystemEntityType.file || s.size == 0)) return false;
+        final batch = paths.getRange(i, min(i + 32, paths.length));
+        final valid = await Future.wait(batch.map((path) async {
+          final file = File(path);
+          if (!p.isWithin(_root, await file.resolveSymbolicLinks())) return false;
+          final stat = await file.stat();
+          return stat.type == FileSystemEntityType.file &&
+              (keys.contains(path) ? stat.size == 16 : stat.size > 0);
+        }));
+        if (valid.contains(false)) return false;
       }
       return paths.isNotEmpty;
     } on FileSystemException {
@@ -148,19 +177,7 @@ class OfflineVideoServer {
         return;
       }
       final path = p.normalize(p.joinAll([_root, ...parts.skip(1)]));
-      if (!p.isWithin(_root, path) ||
-          ![
-            '.m3u8',
-            '.ts',
-            '.m4s',
-            '.mp4',
-            '.key',
-            '.aac',
-            '.ac3',
-            '.ec3',
-            '.eac3',
-            '.mp3',
-          ].contains(p.extension(path))) {
+      if (!p.isWithin(_root, path) || !_extensions.contains(p.extension(path))) {
         request.response.statusCode = 403;
         return;
       }
