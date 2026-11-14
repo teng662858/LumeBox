@@ -1,6 +1,20 @@
 // Appended to the production controller file for a standalone UIKit simulator
 // host. Exercises private production code, not a second player implementation.
 extension NativeVideoScreen {
+  fileprivate static func checkBackgroundPlaybackPolicy(_ item: NativeVideoItem) {
+    let screen = NativeVideoScreen(session: "background-policy", item: item, options: ["backgroundPlayback": false])
+    screen.applyBackgroundPlaybackPolicy(inPip: true)
+    precondition(screen.wantsPlay, "active/starting PiP may continue in background")
+    screen.applyBackgroundPlaybackPolicy(inPip: false)
+    precondition(!screen.wantsPlay, "losing PiP must restore the disabled background policy")
+    screen.options["backgroundPlayback"] = true
+    screen.wantsPlay = true
+    screen.applyBackgroundPlaybackPolicy(inPip: false)
+    precondition(screen.wantsPlay, "enabled background audio must keep playing")
+    screen.wantsPlay = false
+    screen.applyBackgroundPlaybackPolicy(inPip: true)
+    precondition(!screen.wantsPlay, "PiP must not resume an explicit pause")
+  }
   fileprivate static func checkSubtitlePreference(_ item: NativeVideoItem) {
     let screen = NativeVideoScreen(session: "subtitle-preference", item: item, options: ["subtitlesEnabled": true])
     screen.selectPlaybackTrack(["type": "sub", "id": "no"])
@@ -114,6 +128,7 @@ extension NativeVideoScreen {
       if caseIndex == 0 {
         NativeVideoScreen.checkDanmakuTiming(item)
         NativeVideoScreen.checkSubtitlePreference(item)
+        NativeVideoScreen.checkBackgroundPlaybackPolicy(item)
       }
       let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": test.1 == "smoke.mp4", "headlessAudio": true])
       // Speech disables scrubbing; stale audiobook actions must also be reset.

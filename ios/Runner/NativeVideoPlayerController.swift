@@ -582,10 +582,16 @@ import UniformTypeIdentifiers
     pipStarting = false; engine?.rendering(true); emit("pip", extra: ["active": true])
   }
   func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-    pipStarting = false; emit("pip", extra: ["active": false])
+    guard !closing, pip === pictureInPictureController else { return }
+    pipStarting = false
+    if UIApplication.shared.applicationState == .background { applyBackgroundPlaybackPolicy(inPip: false) }
+    emit("pip", extra: ["active": false])
   }
   func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
-    pipStarting = false; toast(error.localizedDescription)
+    guard !closing, pip === pictureInPictureController else { return }
+    pipStarting = false
+    if UIApplication.shared.applicationState == .background { applyBackgroundPlaybackPolicy(inPip: false) }
+    toast(error.localizedDescription)
   }
   func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) { completionHandler(!closing) }
   func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {
@@ -598,6 +604,14 @@ import UniformTypeIdentifiers
   func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
   func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
     commitSeek((pendingSeek ?? state.position) + skipInterval.seconds, completion: completionHandler)
+  }
+
+  private func applyBackgroundPlaybackPolicy(inPip: Bool) {
+    guard !closing else { return }
+    if !inPip && options["backgroundPlayback"] as? Bool == false {
+      setPlaying(false)
+    } else { emit("progress") }
+    engine?.rendering(inPip)
   }
 
   private func installLifecycle() {
@@ -623,10 +637,7 @@ import UniformTypeIdentifiers
       MainActor.assumeIsolated {
         guard let self else { return }
         let inPip = self.pip?.isPictureInPictureActive == true || self.pipStarting
-        if !inPip && self.options["backgroundPlayback"] as? Bool == false {
-          self.setPlaying(false)
-        } else { self.emit("progress") }
-        self.engine?.rendering(inPip)
+        self.applyBackgroundPlaybackPolicy(inPip: inPip)
       }
     })
     notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
