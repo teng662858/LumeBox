@@ -8,6 +8,7 @@ extension NativeVideoScreen {
   fileprivate var displayedSubtitle: String? { caption.text }
   fileprivate var displayedStatus: String? { statusLabel.text }
   fileprivate func retryTestMedia() { resolve("retry") }
+  fileprivate func pauseTestPlayback() { setPlaying(false) }
 }
 
 @main @MainActor final class NativeVideoSmokeApp: UIResponder, UIApplicationDelegate {
@@ -30,6 +31,11 @@ extension NativeVideoScreen {
   }
   private func check(_ condition: Bool, _ message: String) {
     if !condition { print("NATIVE_VIDEO_FAIL \(message)"); fflush(stdout); exit(1) }
+  }
+  private func interruptAudio(_ type: AVAudioSession.InterruptionType, mayResume: Bool = false) {
+    NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance(),
+      userInfo: [AVAudioSessionInterruptionTypeKey: type.rawValue,
+                 AVAudioSessionInterruptionOptionKey: mayResume ? AVAudioSession.InterruptionOptions.shouldResume.rawValue : 0])
   }
   private func next() {
     guard caseIndex < cases.count else { print("NATIVE_VIDEO_ALL_OK"); fflush(stdout); exit(0) }
@@ -96,7 +102,19 @@ extension NativeVideoScreen {
         check(abs((layout["closeLeadingInset"] as? CGFloat ?? 0) - 16) < 1, "back button stays at leading edge at \(size)")
       }
       screen.view.frame = original; screen.view.setNeedsLayout(); screen.view.layoutIfNeeded()
+      interruptAudio(.began)
+      check(screen.debugState["wantsPlay"] as? Bool == false, "interruption pauses playback controls")
+      interruptAudio(.began)
+      interruptAudio(.ended, mayResume: true)
+      check(screen.debugState["wantsPlay"] as? Bool == true, "permitted end resumes a previously playing video once")
+      interruptAudio(.began)
+      screen.pauseTestPlayback()
+      interruptAudio(.ended, mayResume: true)
+      check(screen.debugState["wantsPlay"] as? Bool == false, "explicit pause during interruption cancels auto-resume")
       screen.debugAction(["action": "tap", "control": "play"])
+      interruptAudio(.began)
+      interruptAudio(.ended)
+      check(screen.debugState["wantsPlay"] as? Bool == false, "no resume hint leaves the play button ready")
       if caseIndex == 0 {
         do {
           try "WEBVTT\n\n00:00.000 --> 00:12.000\n&lt;captions&gt;".write(to: captionURL, atomically: true, encoding: .utf8)

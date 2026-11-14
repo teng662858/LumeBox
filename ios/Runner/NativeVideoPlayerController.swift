@@ -78,6 +78,7 @@ import UniformTypeIdentifiers
   private var pendingSeek: Double?
   private var seekRevision = 0
   private var wantsPlay = true, closing = false, switching = false, resolving = false
+  private var playIntentRevision = 0
   private var handledEnd = false
   private var speed = 1.0, volume = 1.0, fill = false, locked = false, scrubbing = false
   private var hardware = true, autoNext = true, interrupted = false, resumeAfterInterruption = false
@@ -334,6 +335,14 @@ import UniformTypeIdentifiers
   }
   private func setPlaying(_ playing: Bool) {
     guard !closing else { return }
+    playIntentRevision += 1
+    resumeAfterInterruption = false
+    if playing && !wantsPlay {
+      // An interruption need not deliver an end notification. An explicit
+      // play can resume once the system lets us reactivate the session.
+      guard activateAudio() else { return }
+      interrupted = false
+    }
     wantsPlay = playing
     if switching { return }
     if wantsPlay {
@@ -368,6 +377,8 @@ import UniformTypeIdentifiers
     guard !closing, let request else { return }
     guard !switching else { toast("正在切换播放内核，请稍候"); return }
     requestGeneration += 1; let revision = requestGeneration
+    let intentAtRequest = playIntentRevision
+    let startsEpisode = !interrupted && (automatic || ["episode", "next", "previous"].contains(action))
     let seekAtRequest = seekRevision, wasSeeking = pendingSeek != nil
     toastMessage = nil
     resolving = true; chromeVisible = true; emit("progress"); renderState()
@@ -396,7 +407,9 @@ import UniformTypeIdentifiers
            rate.isFinite, (0.25...4).contains(rate) {
           self.speed = rate
         }
-        self.wantsPlay = automatic || action == "episode" || action == "next" || action == "previous" ? true : self.wantsPlay
+        if startsEpisode && intentAtRequest == self.playIntentRevision {
+          self.wantsPlay = self.wantsPlay || self.activateAudio()
+        }
         let carriesPosition = ["retry", "quality", "line", "kernel"].contains(action)
         var resume = next.position
         if carriesPosition && (wasSeeking || self.seekRevision != seekAtRequest || self.pendingSeek != nil) {
@@ -511,7 +524,7 @@ import UniformTypeIdentifiers
       if minutes > 0 {
         self.sleepTimer = Timer.scheduledTimer(withTimeInterval: Double(minutes * 60), repeats: false) { [weak self] _ in
       MainActor.assumeIsolated {
-          self?.wantsPlay = false; self?.engine?.pause(); self?.chromeVisible = true; self?.renderState()
+          self?.chromeVisible = true; self?.setPlaying(false)
               }
     }
       }
@@ -584,13 +597,13 @@ import UniformTypeIdentifiers
     })
     notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
       MainActor.assumeIsolated {
-      guard let self else { return }
-      let inPip = self.pip?.isPictureInPictureActive == true || self.pipStarting
-      if !inPip && self.options["backgroundPlayback"] as? Bool == false {
-        self.wantsPlay = false; self.engine?.pause()
+        guard let self else { return }
+        let inPip = self.pip?.isPictureInPictureActive == true || self.pipStarting
+        if !inPip && self.options["backgroundPlayback"] as? Bool == false {
+          self.setPlaying(false)
+        } else { self.emit("progress") }
+        self.engine?.rendering(inPip)
       }
-      self.emit("progress"); self.engine?.rendering(inPip)
-          }
     })
     notifications.append(NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
       MainActor.assumeIsolated {
@@ -599,25 +612,36 @@ import UniformTypeIdentifiers
     })
     notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
       MainActor.assumeIsolated {
-      guard let self, let type = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
-      if type == AVAudioSession.InterruptionType.began.rawValue {
-        self.interrupted = true; self.resumeAfterInterruption = self.wantsPlay; self.engine?.pause()
-      } else {
-        self.interrupted = false
+        guard let type = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
         let flags = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
-        if self.resumeAfterInterruption && self.wantsPlay && AVAudioSession.InterruptionOptions(rawValue: flags).contains(.shouldResume) {
-          try? audio.setActive(true); self.engine?.play(rate: self.speed)
-        }
+        self?.handleInterruption(type, options: AVAudioSession.InterruptionOptions(rawValue: flags))
       }
-          }
     })
     notifications.append(NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in
       MainActor.assumeIsolated {
-      if (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue {
-        self?.wantsPlay = false; self?.engine?.pause()
+        if (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue {
+          self?.setPlaying(false)
+        }
       }
-          }
     })
+  }
+  private func activateAudio() -> Bool {
+    do { try AVAudioSession.sharedInstance().setActive(true); return true }
+    catch { toast("音频会话未激活：\(error.localizedDescription)"); return false }
+  }
+  private func handleInterruption(_ type: UInt, options: AVAudioSession.InterruptionOptions) {
+    guard !closing else { return }
+    if type == AVAudioSession.InterruptionType.began.rawValue {
+      guard !interrupted else { return }
+      let wasPlaying = wantsPlay
+      interrupted = true
+      setPlaying(false)
+      resumeAfterInterruption = wasPlaying
+    } else if type == AVAudioSession.InterruptionType.ended.rawValue && interrupted {
+      let shouldResume = resumeAfterInterruption && options.contains(.shouldResume)
+      resumeAfterInterruption = false
+      if shouldResume { setPlaying(true) } else { interrupted = false }
+    }
   }
   private func installRemote() {
     let remote = MPRemoteCommandCenter.shared()
