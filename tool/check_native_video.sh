@@ -30,7 +30,7 @@ xcrun clang -fobjc-arc -fmodules -Wno-deprecated-declarations -isysroot "$SDK" \
 cat ios/Runner/NativeVideoPlayerController.swift tool/native_video_smoke.swift > "$CHECK/NativeVideoCheck.swift"
 xcrun swiftc -D DEBUG -sdk "$SDK" -target arm64-apple-ios18.0-simulator \
   -F "$CHECK/NativeVideoCheck.app/Frameworks" -import-objc-header ios/Runner/NativeMPVBridge.h \
-  ios/Runner/NativeVideoEngine.swift tool/native_subtitle_check.swift "$CHECK/NativeVideoCheck.swift" "$CHECK/NativeMPVBridge.o" \
+  ios/Runner/NativeVideoEngine.swift tool/native_subtitle_check.swift tool/native_mpv_state_check.swift "$CHECK/NativeVideoCheck.swift" "$CHECK/NativeMPVBridge.o" \
   -framework Flutter -framework Mpv -framework OpenGLES -framework QuartzCore -framework CoreVideo -framework CoreMedia \
   -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$CHECK/NativeVideoCheck.app/NativeVideoCheck"
 cat > "$CHECK/NativeVideoCheck.app/Info.plist" <<'PLIST'

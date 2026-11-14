@@ -32,6 +32,25 @@ struct NativeVideoState {
   var width = 0, height = 0
   var error: String?
   var tracks: [[String: Any]] = []
+  mutating func updateFromMPV(_ data: [String: Any]) {
+    if let message = data["error"] as? String {
+      // Failure notifications may contain no timing fields, or zeroed fields
+      // after libmpv unloads the file. Keep the last usable resume position.
+      error = message; ready = false; playing = false; buffering = false
+      return
+    }
+    error = nil
+    position = (data["position"] as? NSNumber)?.doubleValue ?? 0
+    duration = (data["duration"] as? NSNumber)?.doubleValue ?? 0
+    buffered = (data["buffered"] as? NSNumber)?.doubleValue ?? 0
+    ready = data["ready"] as? Bool ?? false
+    buffering = data["buffering"] as? Bool ?? false
+    ended = data["ended"] as? Bool ?? false
+    playing = data["playing"] as? Bool == true && ready && !buffering && !ended
+    width = (data["width"] as? NSNumber)?.intValue ?? 0
+    height = (data["height"] as? NSNumber)?.intValue ?? 0
+    tracks = data["tracks"] as? [[String: Any]] ?? []
+  }
   var dictionary: [String: Any] {
     var data: [String: Any] = ["position": position, "duration": duration, "buffered": buffered,
       "ready": ready, "playing": playing, "buffering": buffering, "ended": ended,
@@ -287,19 +306,15 @@ struct NativeVideoState {
     surface.backgroundColor = .black; surface.isUserInteractionEnabled = false
     bridge = NativeMPVBridge(options: options, state: { [weak self] data in
       guard let self, !self.disposed else { return }
-      self.state.position = (data["position"] as? NSNumber)?.doubleValue ?? 0
-      self.state.duration = (data["duration"] as? NSNumber)?.doubleValue ?? 0
-      self.state.buffered = (data["buffered"] as? NSNumber)?.doubleValue ?? 0
-      self.state.ready = data["ready"] as? Bool ?? false
-      self.state.playing = data["playing"] as? Bool ?? false
-      self.state.buffering = data["buffering"] as? Bool ?? false
-      let ended = data["ended"] as? Bool ?? false
-      if ended && !self.state.ended { self.desiredPlay = false }
-      self.state.ended = ended
-      self.state.width = (data["width"] as? NSNumber)?.intValue ?? 0
-      self.state.height = (data["height"] as? NSNumber)?.intValue ?? 0
-      self.state.tracks = data["tracks"] as? [[String: Any]] ?? []
-      self.state.error = data["error"] as? String
+      let wasEnded = self.state.ended
+      self.state.updateFromMPV(data)
+      if self.state.error != nil {
+        let complete = self.seekCompletion; self.seekCompletion = nil
+        self.changed?(self.state)
+        complete?(false)
+        return
+      }
+      if self.state.ended && !wasEnded { self.desiredPlay = false }
       if self.state.ready, self.state.error == nil, let url = self.pendingSubtitle {
         self.subtitle(url)
       }
@@ -307,7 +322,7 @@ struct NativeVideoState {
         let target = self.pendingResume; self.pendingResume = 0
         self.bridge?.command(["seek", String(target), "absolute+exact"])
       }
-      if self.state.ready && self.desiredPlay && !self.state.playing && self.state.error == nil && !self.state.ended {
+      if self.state.ready && self.desiredPlay && !self.state.playing && !self.state.buffering && !self.state.ended {
         self.bridge?.setProperty("pause", value: "no")
       }
       self.changed?(self.state)

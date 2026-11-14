@@ -70,6 +70,7 @@ extension NativeVideoScreen {
   private let cases = [("avplayer", "smoke.mp4"), ("avplayer", "smoke.m3u8"), ("mpv", "smoke.mp4"), ("mpv", "smoke.m3u8")]
 
   func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    checkNativeMPVState()
     do { try checkNativeSubtitles() } catch { check(false, "subtitle fixture: \(error)") }
     let host = UIWindow(frame: UIScreen.main.bounds); host.rootViewController = UIViewController()
     host.makeKeyAndVisible(); window = host

@@ -153,7 +153,11 @@ static void *NativeMPVProc(void *context, const char *name) { return dlsym(RTLD_
     if (event->event_id == MPV_EVENT_FILE_LOADED) _fileLoaded = YES;
     if (event->event_id == MPV_EVENT_END_FILE) {
       mpv_event_end_file *end = event->data;
-      if (end->reason == MPV_END_FILE_REASON_ERROR) [self fail:@(mpv_error_string(end->error))];
+      if (end->reason == MPV_END_FILE_REASON_ERROR) {
+        // Already on the control queue: latch the error before publishing the
+        // unloaded file's zero timing values in this poll.
+        _error = @(mpv_error_string(end->error)); _fileLoaded = NO;
+      }
       if (end->reason == MPV_END_FILE_REASON_EOF) _ended = YES;
     }
   }
@@ -170,7 +174,7 @@ static void *NativeMPVProc(void *context, const char *name) { return dlsym(RTLD_
   BOOL paused = [self number:"pause"] != 0, buffering = [self number:"paused-for-cache"] != 0 || !_fileLoaded;
   BOOL seekFinished = _seekRevision && (!_seekAccepted || _error || !_fileLoaded || ![self number:"seeking"]);
   NSMutableDictionary *snapshot = [@{@"position": @([self number:"time-pos"]), @"duration": @([self number:"duration"]),
-    @"playing": @(!paused && !_ended && _fileLoaded), @"buffering": @(buffering), @"ready": @(_fileLoaded),
+    @"playing": @(!paused && !buffering && !_ended && !_error && _fileLoaded), @"buffering": @(buffering && !_error), @"ready": @(_fileLoaded),
     @"ended": @(_ended), @"width": @(width), @"height": @(height),
     @"buffered": @([self number:"demuxer-cache-duration"]), @"tracks": [self property:"track-list"] ?: @[]} mutableCopy];
   if (_error) snapshot[@"error"] = _error;
