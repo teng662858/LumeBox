@@ -342,7 +342,7 @@ extension NativeVideoScreen {
       screen.selectTestPlaybackSpeed(1)
       checkPausedSeeks()
     } else if phase == 11 && !seekEvents.isEmpty {
-      check(seekEvents.count == 1 && seekEvents[0] < 0.26, "only the final paused seek is saved, at the start")
+      check(seekEvents.count == 1 && seekEvents[0] < 0.26, "only the final paused seek is saved, at the start: \(seekEvents), clock=\(position)")
       check(position < 0.26 && state["wantsPlay"] as? Bool == false, "paused seek updates the decoder clock")
       if caseIndex == 0 {
         check(screen.rememberedSubtitle == captionURL, "invalid import preserves the selected file")

@@ -43,7 +43,7 @@ static id NativeMPVNode(mpv_node *node) {
   int _width, _height, _poolWidth, _poolHeight;
   BOOL _software, _ready, _fileLoaded, _ended;
   NSInteger _seekRevision;
-  BOOL _seekAccepted;
+  BOOL _seekAccepted, _seekRestarted;
   atomic_bool _closing, _framePending, _renderEnabled, _initialized;
   atomic_uintptr_t _publishedCore;
   NSString *_error;
@@ -150,6 +150,8 @@ static void *NativeMPVProc(void *context, const char *name) { return dlsym(RTLD_
   for (int i = 0; i < 100; i++) {
     mpv_event *event = mpv_wait_event(_mpv, 0);
     if (!event || event->event_id == MPV_EVENT_NONE) break;
+    if (_seekRevision && event->event_id == MPV_EVENT_SEEK) _seekRestarted = NO;
+    if (_seekRevision && event->event_id == MPV_EVENT_PLAYBACK_RESTART) _seekRestarted = YES;
     if (event->event_id == MPV_EVENT_FILE_LOADED) _fileLoaded = YES;
     if (event->event_id == MPV_EVENT_END_FILE) {
       mpv_event_end_file *end = event->data;
@@ -172,7 +174,10 @@ static void *NativeMPVProc(void *context, const char *name) { return dlsym(RTLD_
   id eof = [self property:"eof-reached"];
   if ([eof isKindOfClass:NSNumber.class]) _ended = [eof boolValue];
   BOOL paused = [self number:"pause"] != 0, buffering = [self number:"paused-for-cache"] != 0 || !_fileLoaded;
-  BOOL seekFinished = _seekRevision && (!_seekAccepted || _error || !_fileLoaded || ![self number:"seeking"]);
+  // Command acceptance precedes the actual seek. `seeking` can still be false
+  // with the old clock until the core starts processing the request. Wait for
+  // its playback-restart event before publishing a successful completion.
+  BOOL seekFinished = _seekRevision && (!_seekAccepted || _error || !_fileLoaded || (_seekRestarted && ![self number:"seeking"]));
   NSMutableDictionary *snapshot = [@{@"position": @([self number:"time-pos"]), @"duration": @([self number:"duration"]),
     @"playing": @(!paused && !buffering && !_ended && !_error && _fileLoaded), @"buffering": @(buffering && !_error), @"ready": @(_fileLoaded),
     @"ended": @(_ended), @"width": @(width), @"height": @(height),
@@ -188,6 +193,9 @@ static void *NativeMPVProc(void *context, const char *name) { return dlsym(RTLD_
 - (void)seekTo:(double)seconds revision:(NSInteger)revision {
   dispatch_async(_control, ^{
     if (atomic_load(&self->_closing) || !self->_mpv) return;
+    // Drain previous restart events before associating events with this seek.
+    [self poll];
+    self->_seekRestarted = NO;
     NSString *position = [@(seconds) stringValue];
     const char *args[] = {"seek", position.UTF8String, "absolute+exact", NULL};
     // Execute on the control queue so an older queued snapshot cannot
