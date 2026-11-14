@@ -129,13 +129,15 @@ class SubtitleService {
         throw const FormatException('字幕文件过大');
       }
     }
-    if (TextSubtitles.parse(utf8.decode(bytes)).cues.isEmpty) {
+    final text = TextSubtitles.decode(bytes);
+    if (TextSubtitles.parse(text).cues.isEmpty) {
       throw const FormatException('不是有效 SRT/VTT 字幕');
     }
+    final extension = RegExp(r'^WEBVTT(?:\s|$)').hasMatch(text) ? 'vtt' : 'srt';
     final file = File(
-      '${(await getTemporaryDirectory()).path}/subtitle-$id.srt',
+      '${(await getTemporaryDirectory()).path}/subtitle-$id.$extension',
     );
-    await file.writeAsBytes(bytes, flush: true);
+    await file.writeAsString(text, flush: true);
     return file;
   }
 
@@ -149,15 +151,18 @@ class SubtitleService {
     }.toList()..sort();
     if (boundaries.length > 50000) throw const FormatException('双语字幕条目过多');
     String timestamp(int ms) =>
-        '${(ms ~/ 3600000).toString().padLeft(2, '0')}:${(ms ~/ 60000 % 60).toString().padLeft(2, '0')}:${(ms ~/ 1000 % 60).toString().padLeft(2, '0')},${(ms % 1000).toString().padLeft(3, '0')}';
-    final out = StringBuffer();
-    int index = 0;
+        '${(ms ~/ 3600000).toString().padLeft(2, '0')}:${(ms ~/ 60000 % 60).toString().padLeft(2, '0')}:${(ms ~/ 1000 % 60).toString().padLeft(2, '0')}.${(ms % 1000).toString().padLeft(3, '0')}';
+    final out = StringBuffer('WEBVTT\n\n');
     for (var i = 0; i + 1 < boundaries.length; i++) {
       final at = Duration(milliseconds: boundaries[i]);
       final text = {first.at(at), second.at(at)}..remove('');
       if (text.isEmpty) continue;
+      final escaped = text.join('\n')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;');
       out.writeln(
-        '${++index}\n${timestamp(boundaries[i])} --> ${timestamp(boundaries[i + 1])}\n${text.join('\n')}\n',
+        '${timestamp(boundaries[i])} --> ${timestamp(boundaries[i + 1])}\n$escaped\n',
       );
     }
     return out.toString();

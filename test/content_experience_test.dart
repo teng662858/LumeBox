@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -11,6 +13,7 @@ import 'package:lume_box/core/session/app_preferences.dart';
 import 'package:lume_box/core/session/section.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   final center = ContentCenter.instance;
   const first = ContentRef(Section.video, 'a', '1', '电影');
   const second = ContentRef(Section.comic, 'b', '1', '原著');
@@ -135,5 +138,43 @@ void main() {
     expect(merged.at(const Duration(milliseconds: 2500)), contains('Hello'));
     expect(merged.at(const Duration(milliseconds: 3500)), 'Hello');
     expect(merged.at(Duration.zero), '');
+  });
+  test('下载的 UTF-16 WebVTT 以 UTF-8 保存并保留扩展名', () async {
+    final root = Directory.systemTemp.createTempSync('subtitle-download-');
+    const paths = MethodChannel('plugins.flutter.io/path_provider');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(paths, (_) async => root.path);
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(paths, null);
+      root.deleteSync(recursive: true);
+    });
+    const subtitle = 'WEBVTT\r\r00:01.000 --> 00:02.000\r你好\r';
+    final bytes = [
+      0xfe, 0xff,
+      for (final c in subtitle.codeUnits) ...[c >> 8, c & 255],
+    ];
+    final service = SubtitleService(
+      const SubtitleAccount('api', 'token'),
+      client: MockClient((r) async {
+        if (r.method == 'POST') {
+          return http.Response('{"link":"https://cdn.example/caption"}', 200);
+        }
+        expect(r.headers.containsKey('Authorization'), false);
+        return http.Response.bytes(bytes, 200);
+      }),
+    );
+    addTearDown(service.close);
+    final file = await service.download(123);
+    expect(file.path, endsWith('.vtt'));
+    expect(await file.readAsBytes(), utf8.encode(subtitle));
+    expect((await TextSubtitles.load(file.path))!.at(const Duration(seconds: 1)), '你好');
+  });
+  test('双语字幕导出后保留可见的尖括号和实体文本', () {
+    final original = TextSubtitles.parse(
+      'WEBVTT\n\n00:01.000 --> 00:03.000\n&lt;角色&gt; A &amp; B &amp;lt; &amp;nbsp;\n',
+    );
+    final merged = SubtitleService.bilingual(original, TextSubtitles([]));
+    expect(TextSubtitles.parse(merged).at(const Duration(seconds: 1)),
+        '<角色> A & B &lt; &nbsp;');
   });
 }

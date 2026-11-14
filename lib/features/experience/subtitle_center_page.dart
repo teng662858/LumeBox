@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/experience/subtitle_service.dart';
 import '../../core/experience/content_center.dart';
 import '../../core/player/text_subtitles.dart';
+import '../download/local_download_export.dart';
 
 class SubtitleCenterPage extends StatefulWidget {
   const SubtitleCenterPage({super.key, this.title = ''});
@@ -93,21 +94,31 @@ class _SubtitleCenterPageState extends State<SubtitleCenterPage> {
   }
 
   Future<void> merge() async {
-    const group = XTypeGroup(label: '字幕', extensions: ['srt', 'vtt']);
+    const group = XTypeGroup(
+      label: '字幕',
+      extensions: ['srt', 'vtt'],
+      uniformTypeIdentifiers: ['public.data'],
+    );
     final files = await openFiles(acceptedTypeGroups: [group]);
+    if (files.isEmpty) return;
     if (files.length != 2) throw StateError('请选择两个字幕文件');
     final first = await TextSubtitles.load(files.first.path),
         second = await TextSubtitles.load(files.last.path);
     if (first == null || second == null) throw StateError('无法解析字幕');
     final file = File(
-      '${(await getTemporaryDirectory()).path}/lumebox-bilingual.srt',
+      '${(await getTemporaryDirectory()).path}/lumebox-bilingual.vtt',
     );
     await file.writeAsString(
       SubtitleService.bilingual(first, second),
       flush: true,
     );
+    await exportSubtitle(file);
+  }
+
+  Future<void> exportSubtitle(File file) async {
     if (!mounted) return;
-    Navigator.pop(context, file.path);
+    final saved = await LocalDownloadExport.file(file);
+    if (mounted) setState(() => status = saved ? '字幕已导出' : '已取消导出');
   }
 
   @override
@@ -168,7 +179,7 @@ class _SubtitleCenterPageState extends State<SubtitleCenterPage> {
                 ? null
                 : () => run(() async {
                     final file = await service!.download(result.id);
-                    if (context.mounted) Navigator.pop(context, file.path);
+                    await exportSubtitle(file);
                   }),
           ),
       ],

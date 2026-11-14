@@ -38,27 +38,25 @@ class TextSubtitles {
       if (await file.length() > maxBytes) return null;
       bytes = await file.readAsBytes();
     }
-    var content = '';
+    final result = parse(decode(bytes));
+    return result.cues.isEmpty ? null : result;
+  }
+
+  static String decode(List<int> bytes) {
     if (bytes.length >= 2 &&
         ((bytes[0] == 255 && bytes[1] == 254) ||
             (bytes[0] == 254 && bytes[1] == 255))) {
       final little = bytes[0] == 255;
-      content = String.fromCharCodes([
+      return String.fromCharCodes([
         for (var i = 2; i + 1 < bytes.length; i += 2)
           little ? bytes[i] | bytes[i + 1] << 8 : bytes[i] << 8 | bytes[i + 1],
       ]);
-    } else {
-      content = utf8.decode(bytes);
     }
-    final result = parse(content);
-    return result.cues.isEmpty ? null : result;
+    return utf8.decode(bytes);
   }
 
   static TextSubtitles parse(String text) {
-    final lines = text
-        .replaceAll('\r', '')
-        .replaceAll('\uFEFF', '')
-        .split('\n');
+    final lines = const LineSplitter().convert(text);
     final cues = <SubtitleCue>[];
     final timing = RegExp(
       r'((?:\d+:)?\d{2}:\d{2}[,.]\d{3})\s*-->\s*((?:\d+:)?\d{2}:\d{2}[,.]\d{3})',
@@ -85,8 +83,8 @@ class TextSubtitles {
           .replaceAll(RegExp(r'<[^>]*>'), '')
           .replaceAll('&lt;', '<')
           .replaceAll('&gt;', '>')
-          .replaceAll('&amp;', '&')
-          .replaceAll('&nbsp;', ' ');
+          .replaceAll('&nbsp;', ' ')
+          .replaceAll('&amp;', '&');
       if (end > start && value.trim().isNotEmpty) {
         cues.add(SubtitleCue(start, end, value));
       }

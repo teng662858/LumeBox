@@ -120,6 +120,10 @@ dv.m3u8
       'WEBVTT\n\ncue\n01:02.000 --> 01:04.000 align:start\nA &amp; B\n',
     );
     expect(vtt.at(const Duration(seconds: 63)), 'A & B');
+    final crOnly = TextSubtitles.parse(
+      'WEBVTT\r\r00:01.000 --> 00:02.000\r第一行\r第二行\r',
+    );
+    expect(crOnly.at(const Duration(seconds: 1)), '第一行\n第二行');
     expect(TextSubtitles.parse('<html>Error</html>').cues, isEmpty);
   });
   test(

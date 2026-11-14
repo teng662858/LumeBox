@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lume_box/core/session/app_preferences.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
@@ -7,6 +10,49 @@ import 'package:lume_box/features/experience/subtitle_center_page.dart';
 import 'package:lume_box/shared/widgets/glass_card.dart';
 
 void main() {
+  testWidgets('字幕中心合并后可以保存文件，取消保存仍留在字幕中心', (tester) async {
+    final dir = Directory.systemTemp.createTempSync('subtitle-export-');
+    final captions = [
+      for (final name in ['甲', '乙'])
+        File('${dir.path}/$name.srt')
+          ..writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\n$name\n'),
+    ];
+    final destination = File('${dir.path}/saved.vtt');
+    const paths = MethodChannel('plugins.flutter.io/path_provider');
+    const picker = MethodChannel('plugins.flutter.io/file_selector');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    var cancelSave = false;
+    messenger.setMockMethodCallHandler(paths, (_) async => dir.path);
+    messenger.setMockMethodCallHandler(picker, (call) async {
+      if (call.method == 'openFile') {
+        expect(call.arguments['multiple'], true);
+        expect(call.arguments['acceptedTypeGroups'].single['uniformTypeIdentifiers'],
+            contains('public.data'));
+        return captions.map((f) => f.path).toList();
+      }
+      expect(call.method, 'getSavePath');
+      expect(call.arguments['suggestedName'], 'lumebox-bilingual.vtt');
+      return cancelSave ? null : destination.path;
+    });
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(paths, null);
+      messenger.setMockMethodCallHandler(picker, null);
+      dir.deleteSync(recursive: true);
+    });
+    await tester.pumpWidget(const MaterialApp(home: SubtitleCenterPage()));
+    for (final cancel in [false, true]) {
+      cancelSave = cancel;
+      final status = find.text(cancel ? '已取消导出' : '字幕已导出');
+      await tester.runAsync(() => tester.tap(find.text('选择两个本地字幕合成双语')));
+      final timeout = Stopwatch()..start();
+      while (status.evaluate().isEmpty && timeout.elapsed < const Duration(seconds: 3)) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump();
+      }
+      expect(status, findsOneWidget);
+    }
+    expect(destination.readAsStringSync(), contains('甲\n乙'));
+  });
   for (final brightness in Brightness.values) {
     testWidgets('输入框只有一层卡面，聚焦有提示，实心按钮不再套卡片 $brightness', (tester) async {
       await tester.pumpWidget(
