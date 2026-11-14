@@ -123,6 +123,12 @@ void main() {
                 '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="sound",NAME="Original",DEFAULT=YES,URI="audio/index.m3u8"\n'
                 '#EXT-X-STREAM-INF:BANDWIDTH=950000,CODECS="mp4a.40.2"\naudio/index.m3u8\n'
                 '#EXT-X-STREAM-INF:BANDWIDTH=800000,AUDIO="sound"\nvideo/index.m3u8\n');
+          } else if (r.uri.path == '/nested.m3u8') {
+            r.response.write('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000\nindex.m3u8\n');
+          } else if (r.uri.path == '/nested-audio.m3u8') {
+            r.response.write('#EXTM3U\n'
+                '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="outer",NAME="Original",DEFAULT=YES,URI="master.m3u8"\n'
+                '#EXT-X-STREAM-INF:BANDWIDTH=800000,AUDIO="outer"\nvideo/index.m3u8\n');
           } else {
             final file = File.fromUri(directory.uri.resolve(r.uri.path.substring(1)));
             if (await file.exists()) {
@@ -142,6 +148,8 @@ void main() {
               chapters: const [
                 SourceChapter(id: 'master', title: 'Separate video'),
                 SourceChapter(id: 'unlabelled', title: 'Unlabelled video'),
+                SourceChapter(id: 'nested', title: 'Nested master'),
+                SourceChapter(id: 'nested-audio', title: 'Nested audio rendition'),
               ]);
           await waitFor(() => remote.tasks.every((t) => ['done', 'failed', 'merge_failed', 'paused'].contains(t.state)));
           await remote.flush();
@@ -162,6 +170,11 @@ void main() {
           expect(await frameHashes(downloaded.path), original);
           expect(await audioHash(downloaded.path), originalAudio);
         }
+        // Earlier downloads can also contain an already-written nested master.
+        await File('${directory.path}/index.m3u8').rename('${directory.path}/inner.m3u8');
+        await File('${directory.path}/index.m3u8').writeAsString(
+          '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=220000\ninner.m3u8\n',
+        );
         await center.resume(task);
         await waitFor(
           () => task.state == 'done' || task.state == 'merge_failed',

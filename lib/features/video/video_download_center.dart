@@ -34,6 +34,7 @@ import '../../core/player/hls_variants.dart';
 import '../../core/player/video_disk_cache.dart';
 import 'video_download_merger.dart';
 import 'offline_video_server.dart';
+import 'offline_hls_master.dart';
 
 class DownloadedVideoPlayback {
   DownloadedVideoPlayback(this.uri, [this.server, this._onClose]);
@@ -687,6 +688,7 @@ class VideoDownloadCenter extends ChangeNotifier {
       // A crash after atomic rename but before manifest update can reuse the result.
       if (!await _isMp4(output)) {
         if (await part.exists()) await part.delete();
+        await flattenOfflineHlsMaster(File(p.join(dir.path, 'index.m3u8')));
         _check(task);
         await (merge ?? _merger.merge)(dir, part, task.id);
         _check(task);

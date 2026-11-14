@@ -7,6 +7,7 @@ import 'package:lume_box/core/experience/content_center.dart';
 import 'package:lume_box/core/experience/offline_policy.dart';
 import 'package:lume_box/core/source/source.dart';
 import 'package:lume_box/features/video/video_download_center.dart';
+import 'package:lume_box/features/video/offline_hls_master.dart';
 
 Future<void> waitFor(bool Function() ready) async {
   final watch = Stopwatch()..start();
@@ -85,6 +86,27 @@ void main() {
     await restored.boot();
     expect(restored.tasks.single.fileName, 'merged.mp4');
     expect(restored.tasks.single.state, 'done');
+  });
+
+  test('flattening a nested master keeps relative track paths and leaves incomplete inputs intact', () async {
+    final nested = await Directory('${root.path}/nested').create();
+    final entry = File('${root.path}/index.m3u8');
+    const original = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=300\nnested/inner.m3u8\n';
+    await entry.writeAsString(original);
+    await File('${nested.path}/inner.m3u8').writeAsString('#EXTM3U\n'
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Dub",URI="dub.m3u8"\n'
+        '#EXT-X-STREAM-INF:BANDWIDTH=200,AUDIO="a"\nvideo.m3u8\n');
+    const media = '#EXTM3U\n#EXTINF:1,\npart.ts\n#EXT-X-ENDLIST\n';
+    await File('${nested.path}/video.m3u8').writeAsString(media);
+    await expectLater(flattenOfflineHlsMaster(entry), throwsA(isA<FileSystemException>()));
+    expect(await entry.readAsString(), original);
+    await File('${nested.path}/dub.m3u8').writeAsString(media);
+    await flattenOfflineHlsMaster(entry);
+    final flat = await entry.readAsString();
+    expect(flat, contains('URI="nested/dub.m3u8"'));
+    expect(flat, endsWith('\nnested/video.m3u8\n'));
+    await flattenOfflineHlsMaster(entry);
+    expect(await entry.readAsString(), flat);
   });
 
   test('failed merge removes partial output, keeps all source files and retries without a source call', () async {
