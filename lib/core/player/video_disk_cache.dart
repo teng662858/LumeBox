@@ -820,6 +820,11 @@ class VideoDiskCache extends ChangeNotifier {
           response.uri, response.header('content-encoding'),
         );
       }
+      if (response.statusCode == 200 && start > 0 &&
+          (mime.contains('mpegurl') || _playlistSignature(data))) {
+        return _Block(data, 0, data.length, mime, null, response.uri,
+            response.header('content-encoding'), keepOriginHeaders: response.hasOriginHeaders);
+      }
       if (response.statusCode == 200 && start != 0) throw const _Passthrough();
       if (response.statusCode == 206 &&
           (range == null || int.parse(range[1]!) != start)) {
@@ -1086,11 +1091,12 @@ class VideoDiskCache extends ChangeNotifier {
   Future<bool> _streamMedia(
     HttpRequest request,
     PlayerMedia media,
-    bool segment,
-  ) async {
+    bool segment, {
+    MediaRangeResponse? fullResponse,
+  }) async {
     final generation = _generation;
     final rangeHeader = request.headers.value('range');
-    var upstream = await _request(media, rangeHeader);
+    var upstream = fullResponse ?? await _request(media, rangeHeader);
     if ([502, 503, 504].contains(upstream.statusCode)) {
       await upstream.listen(null).cancel();
       upstream = await _request(media, rangeHeader);
@@ -1149,7 +1155,7 @@ class VideoDiskCache extends ChangeNotifier {
     }
     if (!partial && (length == null || rangeHeader != null) &&
         _isHlsAudioSegment(request.uri.path)) {
-      await _serveCompleteSegment(request, media, upstream, generation);
+      await _serveMeasuredMedia(request, media, upstream, generation);
       return true;
     }
     final chunks = StreamIterator(
@@ -1215,6 +1221,14 @@ class VideoDiskCache extends ChangeNotifier {
         while (prefix.length < 80 && await chunks.moveNext()) {
           capture(chunks.current);
           prefix.add(chunks.current);
+          if (prefix.isNotEmpty && prefix.length < 80) {
+            final bytes = prefix.toBytes();
+            final text = utf8.decode(bytes, allowMalformed: true).trimLeft().toLowerCase();
+            if ((bytes.first != 0xef || bytes.length >= 3) && text.isNotEmpty &&
+                !['#extm3u', '<!doctype html', '<html'].any((signature) => signature.startsWith(text))) {
+              break;
+            }
+          }
         }
         if (_playlist(
           _Block(
@@ -1245,11 +1259,79 @@ class VideoDiskCache extends ChangeNotifier {
       }
       if (start == 0) _rejectHtml(prefix.toBytes());
       final response = request.response;
+      final mime = _responseType(request.uri.path, upstream.header('content-type'));
+      if (!partial && length == null && rangeHeader != null && skipped == 0 &&
+          rangeHeader.trim().toLowerCase() != 'bytes=0-') {
+        // A complete chunked response has no offsets of its own. A bounded
+        // probe only needs its requested bytes; suffixes also need EOF.
+        final first = prefix.takeBytes();
+        Stream<List<int>> body() async* {
+          yield first;
+          while (await chunks.moveNext()) {
+            downloadedBytes += chunks.current.length;
+            yield chunks.current;
+          }
+        }
+        final bounds = rangeHeader.trim().substring(6).split('-');
+        final firstByte = int.tryParse(bounds.first);
+        final lastByte = int.tryParse(bounds.last);
+        if (firstByte != null && lastByte != null && lastByte >= firstByte &&
+            lastByte - firstByte < blockBytes) {
+          final selected = BytesBuilder(copy: false);
+          var position = 0;
+          await for (final chunk in body()) {
+            final from = (firstByte - position).clamp(0, chunk.length);
+            final to = lastByte - position >= chunk.length
+                ? chunk.length : lastByte - position + 1;
+            if (from < to) selected.add(chunk.sublist(from, to));
+            position += chunk.length;
+            if (position > lastByte) break;
+          }
+          final offsets = prepareHttpByteResponse(request, position, mime);
+          if (offsets != null) {
+            if (position > lastByte) {
+              response.headers.set('Content-Range', 'bytes $firstByte-$lastByte/*');
+            }
+            final encoding = upstream.header('content-encoding');
+            if (encoding != null) response.headers.set('Content-Encoding', encoding);
+            if (request.method != 'HEAD') response.add(selected.takeBytes());
+          }
+        } else {
+          final replay = MediaRangeResponse(body(), 200, upstream.uri,
+              upstream.header, upstream.requestHeaders);
+          await _serveMeasuredMedia(request, media, replay, generation, countDownload: false);
+        }
+        return true;
+      }
+      if (!partial && rangeHeader != null && length != null && skipped == 0) {
+        final encoding = upstream.header('content-encoding');
+        if (encoding != null) response.headers.set('Content-Encoding', encoding);
+        final offsets = prepareHttpByteResponse(request, length, mime);
+        if (offsets == null || request.method == 'HEAD') return true;
+        response.bufferOutput = false;
+        var position = 0;
+        Future<void> forward(List<int> bytes) async {
+          final from = max(0, offsets.start - position);
+          final to = min(bytes.length, offsets.end - position + 1);
+          if (from < to) {
+            response.add(bytes.sublist(from, to));
+            await response.flush();
+          }
+          position += bytes.length;
+          await persist(bytes);
+        }
+
+        await forward(prefix.takeBytes());
+        while (position <= offsets.end && await chunks.moveNext()) {
+          capture(chunks.current);
+          await forward(chunks.current);
+        }
+        if (position <= offsets.end) throw const HttpException('媒体流长度不完整');
+        if (position == length && cached.isNotEmpty) await storeCaptured();
+        return true;
+      }
       response.statusCode = rangeHeader == null ? 200 : upstream.statusCode;
-      response.headers.set(
-        'Content-Type',
-        _responseType(request.uri.path, upstream.header('content-type')),
-      );
+      response.headers.set('Content-Type', mime);
       for (final name in ['content-encoding', 'accept-ranges']) {
         final value = upstream.header(name);
         if (value != null) response.headers.set(name, value);
@@ -1262,6 +1344,7 @@ class VideoDiskCache extends ChangeNotifier {
       }
       final bodyLength = partial ? end! - start + 1 : length;
       if (bodyLength != null) response.contentLength = bodyLength - skipped;
+      if (request.method == 'HEAD') return true;
       response.bufferOutput = false;
       if (prefix.isNotEmpty) {
         final bytes = prefix.takeBytes();
@@ -1289,12 +1372,13 @@ class VideoDiskCache extends ChangeNotifier {
 
   // Some demuxers report an I/O error at a chunked EOF even after decoding
   // all frames. A playlist segment is finite, so measure it before serving it.
-  Future<void> _serveCompleteSegment(
+  Future<void> _serveMeasuredMedia(
     HttpRequest request,
     PlayerMedia media,
     MediaRangeResponse upstream,
     int generation, {
     bool subtitle = false,
+    bool countDownload = true,
   }) async {
     final buffer = BytesBuilder(copy: false);
     Directory? directory;
@@ -1315,7 +1399,7 @@ class VideoDiskCache extends ChangeNotifier {
           _rejectHtml(prefix);
         }
         length += chunk.length;
-        downloadedBytes += chunk.length;
+        if (countDownload) downloadedBytes += chunk.length;
         if (writer == null && length > blockBytes) {
           directory = await Directory.systemTemp.createTemp('lume-hls-');
           overflow = File('${directory.path}/segment');
@@ -1521,7 +1605,7 @@ class VideoDiskCache extends ChangeNotifier {
           await upstream.listen(null).cancel();
           throw _UpstreamStatus(upstream.statusCode);
         }
-        await _serveCompleteSegment(request, media, upstream, generation, subtitle: true);
+        await _serveMeasuredMedia(request, media, upstream, generation, subtitle: true);
         return;
       }
       if (slash < 0 && (path.endsWith('.init.mp4') || path.endsWith('.frag.m4s'))) {
@@ -1574,9 +1658,9 @@ class VideoDiskCache extends ChangeNotifier {
           ].any(path.endsWith) ||
           _packedAudio(path);
       final cached = _files[_key(media, start ~/ blockBytes * blockBytes)];
-      if (request.method == 'GET' &&
-          canStream &&
-          (rawRange == null || _isHlsAudioSegment(path) || !segment && !_loopback(media.uri)) &&
+      final remoteSeek = rawRange != null && !segment && !_loopback(media.uri);
+      if (canStream &&
+          (remoteSeek || request.method == 'GET' && (rawRange == null || _isHlsAudioSegment(path))) &&
           !(enabled &&
               (cached?.bytes ?? 0) >=
                   min(
@@ -1811,6 +1895,12 @@ class VideoDiskCache extends ChangeNotifier {
       }
       // Non-seekable/large responses remain playable without a disk promise.
       final upstream = await _request(media, request.headers.value('range'));
+      if (upstream.statusCode == 200 && request.headers.value('range') != null &&
+          !request.uri.path.endsWith('.ts')) {
+        if (await _streamMedia(request, media, false, fullResponse: upstream)) return;
+        response.statusCode = 502;
+        return;
+      }
       response.statusCode = upstream.statusCode;
       for (final name in [
         'content-type',

@@ -1111,6 +1111,16 @@ void main() {
     }
   });
 
+  test('a cold local nonseekable video serves only the requested tail interval', () async {
+    final media = await cache.wrap(PlayerMedia(uri: upstream.resolve('/large-nonseekable.mp4')));
+    final offset = VideoDiskCache.blockBytes * 8;
+    final (reply, bytes) = await get(media.uri, 'bytes=$offset-${offset + 7}');
+    expect(reply.statusCode, 206);
+    expect(reply.headers.value('content-range'),
+        'bytes $offset-${offset + 7}/${VideoDiskCache.blockBytes * 9}');
+    expect(bytes, List.filled(8, 0));
+  });
+
   for (final path in ['/expires.mp4', '/changes.mp4']) {
     test('首块已发送后上游失败不再修改响应头：$path', () async {
       final wrapped = await cache.wrap(
@@ -1385,6 +1395,90 @@ void main() {
       );
     },
   );
+
+  test('seeks slice a full length-delimited response when the origin ignores Range', () async {
+    final bytes = data.sublist(0, 4096);
+    final native = MockClient((request) async => http.Response.bytes(
+      bytes, 200, headers: {'content-length': '${bytes.length}'},
+    ));
+    await cache.close();
+    cache = VideoDiskCache(ipHttpsClient: native);
+    await cache.boot(directory: root);
+    final media = await cache.wrap(PlayerMedia(uri: Uri.parse('https://192.0.2.1/full.mp4')));
+    final head = await client.headUrl(media.uri);
+    head.headers.set('Range', 'bytes=1050000-');
+    final meta = await head.close();
+    expect(meta.statusCode, 416);
+    expect(meta.headers.value('content-range'), 'bytes */4096');
+    await meta.drain<void>();
+    for (final range in ['bytes=123-156', 'bytes=-16', 'bytes=4050-', 'bytes=5000-']) {
+      final (reply, body) = await get(media.uri, range);
+      final wanted = parseHttpByteRange(range, bytes.length);
+      expect(reply.statusCode, wanted == null ? 416 : 206, reason: range);
+      expect(reply.headers.value('content-range'), wanted == null
+          ? 'bytes */4096' : 'bytes ${wanted.start}-${wanted.end}/4096');
+      expect(body, wanted == null ? isEmpty : bytes.sublist(wanted.start, wanted.end + 1));
+    }
+  });
+
+  test('a cold out-of-range seek measures the rewritten MP4-labelled playlist', () async {
+    final native = MockClient((request) async => http.Response(
+        '#EXTM3U\n#EXTINF:4,\npart.ts\n#EXT-X-ENDLIST\n', 200));
+    await cache.close();
+    cache = VideoDiskCache(ipHttpsClient: native);
+    await cache.boot(directory: root);
+    final media = await cache.wrap(PlayerMedia(uri: Uri.parse('https://192.0.2.1/list.mp4')));
+    final (outside, _) = await get(media.uri, 'bytes=2000000-');
+    final (playlist, bytes) = await get(media.uri);
+    expect(playlist.statusCode, 200);
+    expect(utf8.decode(bytes), contains('http://127.0.0.1:'));
+    expect(outside.statusCode, 416);
+    expect(outside.headers.value('content-range'), 'bytes */${bytes.length}');
+  });
+
+  for (final sized in [true, false]) {
+    test('full upstream answers a short video probe without waiting for EOF (sized=$sized)', () async {
+      final done = Completer<void>();
+      Stream<List<int>> body() async* {
+        yield data.sublist(0, 24);
+        await done.future;
+        yield data.sublist(24, 256);
+      }
+      final native = MockClient.streaming((request, outgoing) async =>
+          http.StreamedResponse(body(), 200, headers: {if (sized) 'content-length': '256'}));
+      await cache.close();
+      cache = VideoDiskCache(ipHttpsClient: native);
+      await cache.boot(directory: root);
+      final media = await cache.wrap(PlayerMedia(uri: Uri.parse('https://192.0.2.1/probe.mp4')));
+      try {
+        final (reply, bytes) = await get(media.uri, 'bytes=8-23').timeout(const Duration(seconds: 2));
+        expect(reply.statusCode, 206);
+        expect(reply.headers.value('content-range'), sized ? 'bytes 8-23/256' : 'bytes 8-23/*');
+        expect(bytes, data.sublist(8, 24));
+      } finally {
+        done.complete();
+      }
+    });
+  }
+
+  test('chunked full responses measure EOF for suffix and open-ended video seeks', () async {
+    final native = MockClient.streaming((request, outgoing) async =>
+        http.StreamedResponse(Stream.fromIterable([
+          data.sublist(0, VideoDiskCache.blockBytes), data.sublist(VideoDiskCache.blockBytes),
+        ]), 200));
+    await cache.close();
+    cache = VideoDiskCache(ipHttpsClient: native);
+    await cache.boot(directory: root);
+    final media = await cache.wrap(PlayerMedia(uri: Uri.parse('https://192.0.2.1/eof.mp4')));
+    for (final range in ['bytes=-16', 'bytes=2499968-', 'bytes=2499990-2500010', 'bytes=2500000-']) {
+      final offsets = parseHttpByteRange(range, data.length);
+      final (reply, body) = await get(media.uri, range);
+      expect(reply.statusCode, offsets == null ? 416 : 206, reason: range);
+      expect(reply.headers.value('content-range'), offsets == null
+          ? 'bytes */2500000' : 'bytes ${offsets.start}-${offsets.end}/2500000');
+      expect(body, offsets == null ? isEmpty : data.sublist(offsets.start, offsets.end + 1));
+    }
+  });
 
   test('IP HTTPS playlists use native transport, retain scoped headers and rewrite segments', () async {
     final requests = <http.Request>[];
