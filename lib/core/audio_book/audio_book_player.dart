@@ -177,6 +177,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   List<ja.AudioSource> _playlist = [];
   bool _singleMode = false;
   Future<void>? _singleLoad;
+  int _queueRequest = 0;
   int _chapterRequest = 0;
   int _playRequest = 0;
   int _offset = 0;
@@ -243,10 +244,14 @@ class JustAudioBookPlayer implements AudioBookPlayer {
     int index = 0,
     Duration position = Duration.zero,
   }) async {
+    final queueRequest = ++_queueRequest;
     _playRequest++;
     _chapterRequest++;
     await _configureSession();
+    // Releasing focus or loading another book can supersede system setup.
+    if (queueRequest != _queueRequest) return;
     final urls = await _proxy.prepare(sources);
+    if (queueRequest != _queueRequest) return;
     // Huge native queues serialize thousands of MediaItems on route entry.
     // Keep the Dart catalog intact and load chapters on demand instead.
     _singleMode = !MediaPreload.instance.audio || sources.length > 200;
@@ -383,6 +388,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   Future<void> speed(double value) => _player.setSpeed(value);
   @override
   Future<void> release() async {
+    _queueRequest++;
     _playRequest++;
     _chapterRequest++;
     _playlist = [];
@@ -396,6 +402,7 @@ class JustAudioBookPlayer implements AudioBookPlayer {
   }
 
   Future<void> disposeNative() async {
+    _queueRequest++;
     await _chapterErrors.close();
     await _singleIndex.close();
     await _proxy.close();

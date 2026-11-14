@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart' as ja;
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:lume_box/core/audio_book/audio_book_player.dart';
 import 'package:lume_box/core/audio_book/audio_book_track.dart';
 import 'package:lume_box/core/cache/media_preload.dart';
@@ -24,9 +25,11 @@ void main() {
   ];
   late _NativeAudio native;
   late JustAudioBookPlayer player;
+  late Future<void> Function() configureSession;
   setUp(() {
     native = _NativeAudio();
-    player = JustAudioBookPlayer(player: native, configureSession: () async {});
+    configureSession = () async {};
+    player = JustAudioBookPlayer(player: native, configureSession: () => configureSession());
   });
   tearDown(() async {
     await player.release();
@@ -36,6 +39,39 @@ void main() {
     await native.errors.close();
     MediaPreload.instance.update(audio: true);
   });
+
+  for (final preload in [true, false]) {
+    test('释放时仍在配置音频会话，晚到的装载不能重建队列（预载 $preload）', () async {
+      MediaPreload.instance.update(audio: preload);
+      final gate = Completer<void>();
+      configureSession = () => gate.future;
+      final loading = player.load(tracks, index: 1);
+      await player.release();
+      gate.complete();
+      await loading;
+      expect(native.singles, isEmpty);
+      expect(native.batches, isEmpty);
+      await MediaPreload.instance.clear();
+      expect(native.singles, isEmpty, reason: '已释放的装载不能重新注册缓存清理回调');
+    });
+
+    test('较早的会话配置晚完成时不能替换新书队列（预载 $preload）', () async {
+      MediaPreload.instance.update(audio: preload);
+      final gate = Completer<void>();
+      configureSession = () => gate.future;
+      final old = player.load(tracks, index: 1);
+      configureSession = () async {};
+      await player.load([tracks.last]);
+      gate.complete();
+      await old;
+      final sources = preload ? native.batches.single : native.singles;
+      expect(sources, hasLength(1));
+      final source = sources.single as ja.UriAudioSource;
+      final tag = source.tag as MediaItem;
+      expect(tag.id, tracks.last.id);
+      expect(player.playhead.index, 0);
+    });
+  }
 
   test('音频关闭预载后只提交当前集，手动和自动切集保持全局集数', () async {
     MediaPreload.instance.update(audio: false);
