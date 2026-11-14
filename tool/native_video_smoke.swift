@@ -1,12 +1,14 @@
 // Appended to the production controller file for a standalone UIKit simulator
 // host. Exercises private production code, not a second player implementation.
 extension NativeVideoScreen {
-  fileprivate func checkControlLayout() {
-    let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    let preview = UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
-      view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
+  fileprivate func checkControlLayout(capture: Bool = false) {
+    if capture {
+      let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+      let preview = UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
+        view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
+      }
+      try? preview.pngData()?.write(to: directory.appendingPathComponent("player-\(Int(view.bounds.width))x\(Int(view.bounds.height)).png"))
     }
-    try? preview.pngData()?.write(to: directory.appendingPathComponent("player-\(Int(view.bounds.width))x\(Int(view.bounds.height)).png"))
     let safe = view.safeAreaLayoutGuide.layoutFrame
     for (id, button) in controls {
       let rect = button.convert(button.bounds, to: view)
@@ -310,10 +312,21 @@ extension NativeVideoScreen {
           screen.importTestSubtitle(captionURL)
         } catch { check(false, "write subtitle fixture: \(error)") }
       }
-      pausedAt = Date(); pausedPosition = position; phase = 1
+      pausedAt = Date(); pausedPosition = (screen.debugState["position"] as? NSNumber)?.doubleValue ?? position; phase = 1
     } else if phase == 1 && Date().timeIntervalSince(pausedAt) > 0.9 {
-      check(abs(position - pausedPosition) < 0.6, "explicit pause must hold the clock")
+      check(abs(position - pausedPosition) < 0.6, "explicit pause must hold the clock: \(pausedPosition) -> \(position)")
       check(state["wantsPlay"] as? Bool == false, "pause intent")
+      // Snapshot rendering can block the main run loop while decoders keep
+      // playing. Capture only after pause has settled, outside timing checks.
+      if caseIndex == 0 {
+        let original = screen.view.frame
+        for size in [CGSize(width: 320, height: 568), CGSize(width: 390, height: 844), CGSize(width: 844, height: 390)] {
+          screen.view.frame = CGRect(origin: .zero, size: size)
+          screen.view.setNeedsLayout(); screen.view.layoutIfNeeded()
+          screen.checkControlLayout(capture: true)
+        }
+        screen.view.frame = original; screen.view.setNeedsLayout(); screen.view.layoutIfNeeded()
+      }
       screen.checkPreviousRequest()
       check(screen.debugState["error"] == nil && screen.debugState["wantsPlay"] as? Bool == false,
             "failed episode request keeps the current video paused")
