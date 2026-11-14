@@ -59,6 +59,17 @@ void main() {
       PlayerKernel.avplayer,
     );
   });
+  test('legacy MDK source overrides migrate to AVPlayer without losing active preferences', () {
+    final profiles = SourcePlaybackProfiles(library);
+    final legacy = const PlayerSettings(kernel: PlayerKernel.mdk)
+        .copyWith(speed: 1.75, zoom: ZoomMode.fill);
+    profiles.save('legacy-mdk', legacy, 30);
+    final loaded = profiles.load('legacy-mdk', const PlayerSettings());
+    expect(loaded.kernel, PlayerKernel.avplayer);
+    expect(loaded.speed, 1.75);
+    expect(loaded.zoom, ZoomMode.fill);
+    expect(profiles.bufferSeconds('legacy-mdk', 0), 30);
+  });
   test('源名隔离与坏配置回退，缓冲值有界', () {
     final profiles = SourcePlaybackProfiles(library);
     profiles.save('a/b', const PlayerSettings(), 999999);

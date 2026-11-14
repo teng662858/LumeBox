@@ -23,9 +23,12 @@ class SourcePlaybackProfiles {
   PlayerSettings load(String? id, PlayerSettings defaults) {
     final data = _read(id);
     if (data == null) return defaults;
-    final kernel =
+    final storedKernel =
         PlayerKernel.values.where((k) => k.id == data['kernel']).firstOrNull ??
         defaults.kernel;
+    final kernel = storedKernel == PlayerKernel.mdk
+        ? PlayerKernel.avplayer
+        : storedKernel;
     final prefs = {...defaults.prefs};
     final rawPrefs = data['prefs'];
     if (rawPrefs is Map) {
@@ -34,6 +37,9 @@ class SourcePlaybackProfiles {
           prefs[key] = KernelPrefs.fromJson(rawPrefs[key.id]);
         }
       }
+    }
+    if (storedKernel == PlayerKernel.mdk && prefs[PlayerKernel.mdk] != null) {
+      prefs[PlayerKernel.avplayer] = prefs[PlayerKernel.mdk]!;
     }
     return defaults.copyWith(
       kernel: kernel,
