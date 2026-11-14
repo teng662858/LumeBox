@@ -268,6 +268,48 @@ clear.ts
       );
     }
   });
+  test('a byte range can inherit only the preceding segment of the same file', () {
+    final base = Uri.parse('https://origin.test/list.m3u8');
+    for (final gap in ['other.ts\n', 'audio.ts\n', '#EXT-X-BYTERANGE:4@0\nother.ts\n']) {
+      expect(() => SourceMediaRuntime.parseM3u8(
+        '#EXTM3U\n#EXT-X-BYTERANGE:4@0\naudio.ts\n$gap#EXT-X-BYTERANGE:4\naudio.ts\n',
+        base,
+      ), throwsFormatException);
+    }
+    for (final invalid in ['4@-1', '4@0@2', '4@9223372036854775806']) {
+      expect(() => SourceMediaRuntime.parseM3u8(
+        '#EXTM3U\n#EXT-X-BYTERANGE:$invalid\naudio.ts\n', base,
+      ), throwsFormatException);
+    }
+  });
+
+  test('a ranged HLS segment must match the requested offset as well as length', () async {
+    var reply = 'bytes 0-3/16';
+    final transport = LumeHttp(client: MockClient((request) async {
+      if (request.url.path.endsWith('.m3u8')) {
+        return http.Response('#EXTM3U\n#EXT-X-BYTERANGE:4@8\naudio.ts\n#EXT-X-ENDLIST', 200);
+      }
+      expect(request.headers['range'], 'bytes=8-11');
+      return http.Response.bytes([8, 9, 10, 11], 206,
+          headers: {if (reply.isNotEmpty) 'content-range': reply});
+    }));
+    addTearDown(transport.dispose);
+    final media = SourceMediaRuntime(transport);
+    addTearDown(media.dispose);
+    Future<Object?> segment() => media.invoke({
+      'operation': 'segment', 'url': 'https://origin.test/list.m3u8', 'index': 0,
+    });
+    for (final invalid in ['bytes 0-3/16', 'bytes 8-12/16', 'bytes 8-11/11', '']) {
+      reply = invalid;
+      await expectLater(segment(), throwsFormatException);
+    }
+    for (final valid in ['bytes 8-11/16', 'bytes 8-11/*']) {
+      reply = valid;
+      final result = await segment() as Map;
+      expect(base64Decode(result['data'] as String), [8, 9, 10, 11]);
+    }
+  });
+
   test('segment retries, AES-128 key auto fetch/cache, and origin Referer reach CDN', () async {
     var keys = 0;
     var chunks = 0;

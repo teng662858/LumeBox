@@ -45,7 +45,8 @@ class SourceMediaRuntime {
     Map<String, String>? variant;
     String? range;
     var endList = false;
-    final rangeEnds = <String, int>{};
+    String? previousRangeUrl;
+    int? previousRangeEnd;
     for (final line in text.split('\n').map((x) => x.trim())) {
       if (line.isEmpty) continue;
       if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
@@ -102,17 +103,23 @@ class SourceMediaRuntime {
         }
         Map<String, int>? byteRange;
         if (range != null) {
-          final parts = range.split('@');
-          final length = int.parse(parts.first);
-          final start = parts.length == 2
-              ? int.parse(parts.last)
-              : rangeEnds[url];
-          if (length <= 0 || start == null || start < 0) {
+          final spec = RegExp(r'^(\d+)(?:@(\d+))?$').firstMatch(range);
+          final length = int.tryParse(spec?[1] ?? '');
+          final explicit = spec?[2];
+          final start = explicit != null ? int.tryParse(explicit) :
+              url == previousRangeUrl ? previousRangeEnd : null;
+          if (length == null || length <= 0 || start == null ||
+              start > 0x7fffffffffffffff - (length - 1)) {
             throw const FormatException('分片字节范围无效');
           }
           byteRange = {'start': start, 'length': length};
-          rangeEnds[url] = start + length;
+          final end = start + (length - 1);
+          previousRangeEnd = end < 0x7fffffffffffffff ? end + 1 : null;
+          previousRangeUrl = url;
           range = null;
+        } else {
+          previousRangeUrl = null;
+          previousRangeEnd = null;
         }
         final number = sequence + segments.length;
         final rawIV = '${key?['iv'] ?? number.toRadixString(16)}'.replaceFirst(
@@ -227,8 +234,9 @@ class SourceMediaRuntime {
     );
     final range = segment['byteRange'] as Map?;
     if (range != null) {
-      outgoing['Range'] =
-          'bytes=${range['start']}-${(range['start'] as int) + (range['length'] as int) - 1}';
+      final start = range['start'] as int;
+      final end = start + ((range['length'] as int) - 1);
+      outgoing['Range'] = 'bytes=$start-$end';
     }
     final data = await http.send(
       url: segmentURL.toString(),
@@ -239,9 +247,18 @@ class SourceMediaRuntime {
         data.body.length > 16 * 1024 * 1024) {
       throw StateError('分片加载失败 HTTP ${data.statusCode}');
     }
-    if (range != null &&
-        (data.statusCode != 206 || data.body.length != range['length'])) {
-      throw const FormatException('服务器未遵守分片 Range');
+    if (range != null) {
+      final value = data.headers.entries.where((e) => e.key.toLowerCase() == 'content-range').firstOrNull?.value;
+      final match = RegExp(r'^bytes (\d+)-(\d+)/(\d+|\*)$', caseSensitive: false)
+          .firstMatch(value?.trim() ?? '');
+      final start = range['start'] as int;
+      final length = range['length'] as int;
+      final end = start + (length - 1);
+      if (data.statusCode != 206 || data.body.length != length || match == null ||
+          int.tryParse(match[1]!) != start || int.tryParse(match[2]!) != end ||
+          match[3] != '*' && (int.tryParse(match[3]!) ?? 0) <= end) {
+        throw const FormatException('服务器未遵守分片 Range');
+      }
     }
     var output = data.body;
     if (segment['key'] is Map) {
