@@ -877,6 +877,55 @@ void main() {
       }
     },
   );
+  test('audio HLS preserves inline keys, maps and segments without proxying them', () async {
+    const key = 'data:application/octet-stream;base64,BwcHBwcHBwcHBwcHBwcHBw==';
+    const media = 'data:audio/aac;base64,AQIDBA==';
+    const manifest = '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="$key"\n'
+        '#EXT-X-MAP:URI="$media"\n#EXTINF:1,\n$media\n#EXT-X-ENDLIST\n';
+    var requests = 0;
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+      requests++;
+      return http.Response(manifest, 200);
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final url = (await proxy.prepare([queueTrack('inline.m3u8')])).single;
+    final response = await client.get(url);
+    expect(response.statusCode, 200);
+    expect(response.body, manifest);
+    expect(requests, 1);
+  });
+
+  test('audio HLS rewrites actual URI attributes and preserves comments and quoted metadata', () async {
+    const comment = '# A comment with URI="keep-this"';
+    const metadata = 'X-LABEL="text,URI=not-a-url"';
+    const manifest = '#EXTM3U\n$comment\n'
+        '  #EXT-X-DATERANGE:ID="break",$metadata,X-ASSET-URI="break,a.json",X-ALT-URI="break,b.json"\n'
+        '#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXTINF:1,\none.aac\n';
+    final seen = <String>[];
+    final proxy = AudioBookProxy(clientFactory: () => MockClient((r) async {
+      seen.add(r.url.path);
+      return r.url.path.endsWith('.m3u8')
+          ? http.Response(manifest, 200) : http.Response.bytes([7, 8], 200);
+    }));
+    final client = http.Client();
+    addTearDown(() async { client.close(); await proxy.close(); });
+    final url = (await proxy.prepare([queueTrack('book/list.m3u8')])).single;
+    final response = await client.get(url);
+    expect(response.statusCode, 200);
+    expect(response.body, contains(comment));
+    expect(response.body, contains(metadata));
+    final attributes = RegExp(r'(?:X-ASSET-URI|X-ALT-URI|,URI)="([^"]+)"')
+        .allMatches(response.body).toList();
+    expect(attributes, hasLength(3));
+    for (final match in attributes) {
+      final asset = Uri.parse(match[1]!);
+      expect(asset.host, '127.0.0.1');
+      expect((await client.get(asset)).bodyBytes, [7, 8]);
+    }
+    expect(seen, ['/book/list.m3u8', '/book/break,a.json', '/book/break,b.json', '/book/key.bin']);
+  });
+
   test('audio HLS playlists rewrite segment and encryption-key URLs while preserving bytes', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final seen = <String>[];

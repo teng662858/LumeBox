@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../net/http_byte_range.dart';
 import '../net/http_header_scope.dart';
 import '../net/media_range_response.dart';
+import '../player/hls_attributes.dart';
 import 'audio_book_track.dart';
 import 'audio_book_http_client.dart';
 import '../util/lume_log.dart';
@@ -419,6 +420,8 @@ class AudioBookProxy {
         );
         String childUrl(String value, {required bool playlist}) {
           final child = manifestBase.resolve(value);
+          // Inline data and native key schemes are not HTTP relay resources.
+          if (!['http', 'https'].contains(child.scheme)) return value;
           final sameOrigin = child.scheme == manifestBase.scheme && child.origin == manifestBase.origin;
           return _asset(port, path[1], child, scoped: scoped && sameOrigin,
               playlist: playlist).toString();
@@ -434,11 +437,15 @@ class AudioBookProxy {
                   '#EXT-X-I-FRAME-STREAM-INF',
                   '#EXT-X-RENDITION-REPORT',
                 }.contains(tag);
-                return line.replaceAllMapped(
-                  RegExp(r'URI="([^"]+)"'),
-                  (match) =>
-                      'URI="${childUrl(match[1]!, playlist: playlistUri)}"',
-                );
+                var rewritten = line;
+                final leading = line.length - line.trimLeft().length;
+                for (final ref in hlsUriAttributes(line.trimLeft()).toList().reversed) {
+                  rewritten = rewritten.replaceRange(
+                    leading + ref.start, leading + ref.end,
+                    childUrl(ref.value, playlist: playlistUri),
+                  );
+                }
+                return rewritten;
               }
               return childUrl(value, playlist: master);
             })
