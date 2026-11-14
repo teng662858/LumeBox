@@ -6,6 +6,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/cat/cat_web_parse.dart';
 import '../../core/js/source_web_runtime.dart';
+import '../../core/media/playback_focus.dart';
 import '../../core/net/site_session_pool.dart';
 import '../../core/source/web_player_episode.dart';
 
@@ -37,6 +38,29 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
   bool _selecting = false;
   bool _foreground = true;
   bool _episodePending = false;
+  bool _ownsFocus = false;
+  int _loadRevision = 0;
+  static const _focusOwner = 'web_video';
+
+  Future<void> _releasePlayback() async {
+    _loadRevision++;
+    _booting = false;
+    _ownsFocus = false;
+    _stopSelection();
+    _episodePending = false;
+    PlaybackFocus.unregister(_focusOwner, _releasePlayback);
+    if (mounted) {
+      setState(() {
+        _ready = false;
+        _error = '其他播放器已接管，已停止网页播放。点击刷新可重新打开。';
+      });
+    }
+    // Navigating away also stops players inside cross-origin frames.
+    await _controller
+        .loadRequest(Uri.parse('about:blank'))
+        .timeout(const Duration(seconds: 3))
+        .catchError((_) {});
+  }
 
   void _stopSelection() {
     _document++;
@@ -46,6 +70,7 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
   }
 
   void _selectEpisode(String url) {
+    if (!_ownsFocus) return;
     final selector = widget.request.episodeSelector;
     final loaded = Uri.tryParse(url);
     if (selector == null ||
@@ -100,6 +125,11 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
   Future<void> _boot() async {
     if (_booting) return;
     _booting = true;
+    if (_error != null) setState(() => _error = null);
+    final revision = ++_loadRevision;
+    bool current() => mounted && revision == _loadRevision;
+    bool wanted() =>
+        current() && _foreground && ModalRoute.of(context)?.isCurrent != false;
     try {
       final uri = widget.request.page;
       if (!['http', 'https'].contains(uri.scheme) ||
@@ -111,14 +141,18 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
         uri.toString(),
         widget.request.headers,
       );
-      if (!mounted) return;
+      if (!current()) return;
       await _controller.setJavaScriptMode(JavaScriptMode.unrestricted);
       final ua = SiteSessionPool.shared.userAgentFor(uri.toString());
       if (ua != null) await _controller.setUserAgent(ua);
       await _controller.setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (_) => _stopSelection(),
-          onPageFinished: _selectEpisode,
+          onPageStarted: (_) {
+            if (current() && _ownsFocus) _stopSelection();
+          },
+          onPageFinished: (url) {
+            if (current()) _selectEpisode(url);
+          },
           onNavigationRequest: (request) {
             final url = Uri.tryParse(request.url);
             if (url == null ||
@@ -133,19 +167,37 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
             return NavigationDecision.navigate;
           },
           onWebResourceError: (error) {
-            if (mounted && error.isForMainFrame == true) {
+            if (current() && _ownsFocus && error.isForMainFrame == true) {
               setState(() => _error = '网页播放加载失败，请重试或在浏览器打开');
             }
           },
         ),
       );
-      if (!mounted) return;
+      if (!wanted()) return;
+      await PlaybackFocus.acquire(
+        _focusOwner,
+        onRelease: _releasePlayback,
+        stillWanted: wanted,
+      );
+      if (!wanted()) {
+        PlaybackFocus.unregister(_focusOwner, _releasePlayback);
+        return;
+      }
+      _ownsFocus = true;
       await _controller.loadRequest(uri, headers: headers);
-      if (mounted) setState(() => _ready = true);
+      if (current()) {
+        setState(() {
+          _ready = true;
+        });
+      }
     } catch (_) {
-      if (mounted) setState(() => _error = '网页播放初始化失败，请检查网络或更换线路');
+      if (current()) {
+        _ownsFocus = false;
+        PlaybackFocus.unregister(_focusOwner, _releasePlayback);
+        setState(() => _error = '网页播放初始化失败，请检查网络或更换线路');
+      }
     } finally {
-      _booting = false;
+      if (revision == _loadRevision) _booting = false;
     }
   }
 
@@ -190,6 +242,9 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
 
   @override
   void dispose() {
+    _loadRevision++;
+    _ownsFocus = false;
+    PlaybackFocus.unregister(_focusOwner, _releasePlayback);
     _stopSelection();
     WidgetsBinding.instance.removeObserver(this);
     unawaited(
@@ -232,7 +287,7 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
             ),
           if (_error != null)
             Padding(padding: const EdgeInsets.all(8), child: Text(_error!)),
-          if (_error != null && widget.request.episodeSelector != null)
+          if (_ready && _error != null && widget.request.episodeSelector != null)
             TextButton(
               onPressed: () => _selectEpisode(widget.request.page.toString()),
               child: const Text('重试选集'),
@@ -243,7 +298,7 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
               children: [
                 if (_ready)
                   Positioned.fill(child: WebViewWidget(controller: _controller))
-                else
+                else if (_error == null)
                   const Center(child: CircularProgressIndicator()),
                 if (_fullScreen)
                   Positioned(

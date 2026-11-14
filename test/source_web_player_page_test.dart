@@ -1,19 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 import 'package:lume_box/core/cat/cat_web_parse.dart';
+import 'package:lume_box/core/media/playback_focus.dart';
 import 'package:lume_box/features/video/source_web_player_page.dart';
 
 class _Platform extends WebViewPlatform {
   late _Controller controller;
   late _Delegate delegate;
   int created = 0, views = 0, disposedViews = 0;
+  Future<void>? loadBarrier;
   @override
   PlatformWebViewController createPlatformWebViewController(
     PlatformWebViewControllerCreationParams params,
   ) {
     created++;
-    return controller = _Controller(params);
+    return controller = _Controller(params, loadBarrier: loadBarrier);
   }
 
   @override
@@ -27,7 +32,8 @@ class _Platform extends WebViewPlatform {
 }
 
 class _Controller extends PlatformWebViewController {
-  _Controller(super.params) : super.implementation();
+  _Controller(super.params, {this.loadBarrier}) : super.implementation();
+  final Future<void>? loadBarrier;
   final loads = <Uri>[];
   final scripts = <String>[];
   int reloads = 0;
@@ -35,6 +41,7 @@ class _Controller extends PlatformWebViewController {
   @override
   Future<void> loadRequest(LoadRequestParams params) async {
     loads.add(params.uri);
+    if (params.uri.scheme != 'about') await loadBarrier;
   }
 
   @override
@@ -119,10 +126,16 @@ class _TrackingViewState extends State<_TrackingView> {
 void main() {
   late _Platform platform;
   setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('lumebox/mediaTracks'), (_) async => null);
     platform = _Platform();
     WebViewPlatform.instance = platform;
   });
-  Future<void> open(WidgetTester tester, {String? selector}) async {
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('lumebox/mediaTracks'), null);
+  });
+  Future<void> open(WidgetTester tester, {String? selector, bool settle = true}) async {
     await tester.pumpWidget(
       MaterialApp(
         home: SourceWebPlayerPage(
@@ -135,8 +148,75 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+    }
   }
+
+  testWidgets('网页加载前等待其他播放器停止，关闭后不会接管焦点', (tester) async {
+    final stopped = Completer<void>();
+    var releases = 0;
+    Future<void> stopAudio() async {
+      releases++;
+      await stopped.future;
+    }
+    await PlaybackFocus.acquire('web-test-audio', onRelease: stopAudio);
+    addTearDown(() {
+      if (!stopped.isCompleted) stopped.complete();
+      PlaybackFocus.unregister('web-test-audio', stopAudio);
+    });
+    await open(tester, settle: false);
+    expect(releases, 1);
+    expect(platform.controller.loads, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+    stopped.complete();
+    await tester.pumpAndSettle();
+    expect(platform.controller.loads.map((u) => u.toString()), ['about:blank']);
+    expect(PlaybackFocus.owner, isNot('web_video'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('其他播放器接管时停止网页，刷新后才重新取得播放焦点', (tester) async {
+    await open(tester);
+    expect(PlaybackFocus.owner, 'web_video');
+    var releases = 0;
+    Future<void> stopAudio() async { releases++; }
+    await PlaybackFocus.acquire('web-test-audio', onRelease: stopAudio);
+    addTearDown(() => PlaybackFocus.unregister('web-test-audio', stopAudio));
+    await tester.pumpAndSettle();
+    expect(platform.controller.loads.last.toString(), 'about:blank');
+    expect(find.textContaining('已停止网页播放'), findsOneWidget);
+    await tester.tap(find.byTooltip('刷新'));
+    await tester.pumpAndSettle();
+    expect(releases, 1);
+    expect(PlaybackFocus.owner, 'web_video');
+    expect(platform.controller.loads.last.toString(), 'https://play.example/watch/1');
+    expect(find.textContaining('已停止网页播放'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    final loadCount = platform.controller.loads.length;
+    await PlaybackFocus.acquire('web-test-after-close');
+    expect(platform.controller.loads.length, loadCount);
+  });
+
+  testWidgets('网页加载完成前被接管，迟到的加载与选集回调不能恢复页面', (tester) async {
+    final loaded = Completer<void>();
+    platform.loadBarrier = loaded.future;
+    await open(tester, settle: false, selector: 'button.playbtn[data-id="74596"]');
+    expect(PlaybackFocus.owner, 'web_video');
+    await PlaybackFocus.acquire('web-test-new-player');
+    await tester.pumpAndSettle();
+    loaded.complete();
+    platform.delegate.finished('https://play.example/watch/1');
+    await tester.pumpAndSettle();
+    expect(platform.controller.loads.last.toString(), 'about:blank');
+    expect(platform.controller.scripts, isEmpty);
+    expect(platform.views, 0);
+    expect(find.textContaining('已停止网页播放'), findsOneWidget);
+    expect(find.text('重试选集'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('指定集数加载后选择一次，刷新后重新选择，跨站页面不执行', (tester) async {
     await open(tester, selector: 'button.playbtn[data-id="74596"]');
