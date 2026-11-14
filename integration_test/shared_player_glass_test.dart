@@ -39,7 +39,9 @@ void main() {
     }
 
     Future<void> capture(String name) async {
-      debugPrint('PLAYER_GLASS_CAPTURE $name');
+      debugPrint(
+        'PLAYER_GLASS_CAPTURE $name ${DateTime.now().toUtc().microsecondsSinceEpoch}',
+      );
       await Future<void>.delayed(const Duration(seconds: 3));
     }
 

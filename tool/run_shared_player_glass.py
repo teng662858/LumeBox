@@ -17,7 +17,7 @@ def main():
                'integration_test/shared_player_glass_test.dart', '-d', device,
                '--timeout', '5m', '--reporter', 'expanded']
     recording_log = (output / 'recording.log').open('w')
-    recording_start = time.monotonic()
+    recording_start = time.time()
     recorder = subprocess.Popen(['xcrun', 'simctl', 'io', device, 'recordVideo',
                                  str(output / 'simulator.mp4')],
                                 stdout=recording_log, stderr=subprocess.STDOUT)
@@ -47,9 +47,11 @@ def main():
                     break
                 log.write(line)
                 log.flush()
-                match = re.search(r'PLAYER_GLASS_CAPTURE ([a-z-]+)', line)
+                match = re.search(r'PLAYER_GLASS_CAPTURE ([a-z-]+) ([0-9]+)', line)
                 if match and match[1] not in captures:
-                    captures[match[1]] = time.monotonic() - recording_start + .8
+                    # Flutter may flush test stdout in batches. Use the time
+                    # inside the simulator, not when the host receives a line.
+                    captures[match[1]] = max(0, int(match[2]) / 1_000_000 - recording_start + .8)
                 match = re.search(r'SHARED_PLAYER_OK (avplayer|mpv|aether)', line)
                 if match:
                     passed.add(match[1])
