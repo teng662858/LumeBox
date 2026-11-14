@@ -51,7 +51,8 @@ void main() {
           final finder = find.widgetWithText(ChoiceChip, label);
           await tester.ensureVisible(finder);
           final idle = tester.widget<ChoiceChip>(finder);
-          expect(idle.labelStyle!.color, const Color(0xFF333333));
+          final scheme = Theme.of(tester.element(finder)).colorScheme;
+          expect(idle.labelStyle!.color, scheme.onSurface);
           expect(
             tester
                 .widget<Text>(
@@ -59,16 +60,22 @@ void main() {
                 )
                 .style!
                 .color,
-            const Color(0xFF333333),
+            scheme.onSurface,
           );
-          expect(idle.backgroundColor, const Color(0xFFF2F2F7));
+          expect(idle.backgroundColor, scheme.surfaceContainerLow);
           await tester.tap(finder);
           await tester.pumpAndSettle();
           final selected = tester.widget<ChoiceChip>(finder);
           expect(selected.selected, isTrue);
-          expect(selected.labelStyle!.color, Colors.white);
-          expect(selected.selectedColor, const Color(0xFFFF2D55));
-          expect(selected.checkmarkColor, Colors.white);
+          expect(
+            LumeTheme.contrast(
+              selected.labelStyle!.color!,
+              selected.selectedColor!,
+            ),
+            greaterThanOrEqualTo(4.5),
+          );
+          expect(selected.selectedColor, isNot(const Color(0xFFFF2D55)));
+          expect(selected.checkmarkColor, selected.labelStyle!.color);
         }
         expect(tester.takeException(), isNull);
       },

@@ -20,19 +20,42 @@ ChoiceChip _filterChip(
   required ValueChanged<bool> onSelected,
 }) {
   final fill = LumeTheme.accentFillOf(context);
-  final foreground = LumeTheme.onAccentFillOf(context);
+  final scheme = Theme.of(context).colorScheme;
+  final selectedBackground = Color.alphaBlend(
+    fill.withValues(alpha: .12),
+    scheme.surface,
+  );
+  final foreground = LumeTheme.readableForeground(fill, selectedBackground);
+  final idleForeground = scheme.onSurface;
+  final idleBackground = scheme.surfaceContainerLow;
+  final labelStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
+    color: selected ? foreground : idleForeground,
+    fontSize: 13,
+    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+  );
   return ChoiceChip(
     label: SourceText(
       label,
-      style: TextStyle(color: selected ? foreground : _filterIdleForeground),
+      style: labelStyle,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
     ),
-    labelStyle: TextStyle(color: selected ? foreground : _filterIdleForeground),
-    backgroundColor: _filterIdleBackground,
-    selectedColor: fill,
+    labelStyle: labelStyle,
+    backgroundColor: idleBackground,
+    selectedColor: selectedBackground,
     color: WidgetStateProperty.resolveWith(
-      (states) =>
-          states.contains(WidgetState.selected) ? fill : _filterIdleBackground,
+      (states) => states.contains(WidgetState.selected)
+          ? selectedBackground
+          : idleBackground,
     ),
+    side: BorderSide(
+      color: selected ? fill.withValues(alpha: .45) : Colors.transparent,
+    ),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+    labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+    visualDensity: VisualDensity.compact,
+    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     checkmarkColor: foreground,
     showCheckmark: true,
     selected: selected,
@@ -278,41 +301,48 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
           List<SourceCategory> options,
           String? selected,
           ValueChanged<String?> choose,
-        ) => Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.w600),
+        ) => Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
-            ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                if (!options.any((o) => o.title == '全部'))
-                  _filterChip(
-                    context,
-                    label: '全部',
-                    selected: selected == null,
-                    onSelected: (_) => setPanelState(() => choose(null)),
-                  ),
-                for (final option in options.where(
-                  (o) => '${o.title} ${sourceLabel(o.title)}'
-                      .toLowerCase()
-                      .contains(query.toLowerCase()),
-                ))
-                  _filterChip(
-                    context,
-                    label: sourceLabel(option.title),
-                    selected: selected == option.id,
-                    onSelected: (_) => setPanelState(() => choose(option.id)),
-                  ),
-              ],
-            ),
-          ],
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  if (!options.any((o) => o.title == '全部'))
+                    _filterChip(
+                      context,
+                      label: '全部',
+                      selected: selected == null,
+                      onSelected: (_) => setPanelState(() => choose(null)),
+                    ),
+                  for (final option in options.where(
+                    (o) => '${o.title} ${sourceLabel(o.title)}'
+                        .toLowerCase()
+                        .contains(query.toLowerCase()),
+                  ))
+                    _filterChip(
+                      context,
+                      label: sourceLabel(option.title),
+                      selected: selected == option.id,
+                      onSelected: (_) => setPanelState(() => choose(option.id)),
+                    ),
+                ],
+              ),
+            ],
+          ),
         );
         final media = MediaQuery.of(context);
         final keyboard = media.viewInsets.bottom;
@@ -353,7 +383,7 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                             child: Text(
                               '分类与筛选',
                               style: TextStyle(
-                                fontSize: LumeTypography.pageTitleSize,
+                                fontSize: 20,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -370,11 +400,30 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                       ),
                       TextField(
                         onChanged: (s) => setPanelState(() => query = s.trim()),
-                        decoration: const InputDecoration(
+                        style: const TextStyle(fontSize: 14),
+                        decoration: InputDecoration(
                           hintText: '搜索分类或筛选项',
-                          prefixIcon: LumeIcon(
+                          isDense: true,
+                          filled: true,
+                          fillColor: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerLow,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          prefixIcon: const LumeIcon(
                             Icons.search,
                             slot: 'browse_choice_access.5',
+                            size: 20,
                           ),
                         ),
                       ),
@@ -432,10 +481,16 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                         minimum: const EdgeInsets.only(bottom: 24),
                         child: DecoratedBox(
                           key: const Key('filter-footer'),
-                          decoration: LumeTheme.cardDecoration(radius: 18)
-                              .copyWith(
-                                border: Border.all(color: LumeTheme.hairline),
-                              ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant
+                                  .withValues(alpha: .5),
+                            ),
+                          ),
                           child: Padding(
                             padding: const EdgeInsets.all(8),
                             child: SizedBox(
@@ -444,31 +499,43 @@ Future<({String? category, Map<String, String> filters})?> showBrowseFilters({
                                 key: const Key('filter-actions'),
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  TextButton(
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: _filterIdleForeground,
+                                  Expanded(
+                                    child: TextButton(
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
+                                      onPressed: () => setPanelState(() {
+                                        chosenCategory = null;
+                                        chosenFilters.clear();
+                                      }),
+                                      child: const Text('重置'),
                                     ),
-                                    onPressed: () => setPanelState(() {
-                                      chosenCategory = null;
-                                      chosenFilters.clear();
-                                    }),
-                                    child: const Text('重置'),
                                   ),
-                                  const Spacer(),
-                                  FilledButton(
-                                    style: FilledButton.styleFrom(
-                                      backgroundColor: LumeTheme.accentFillOf(
-                                        context,
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    flex: 2,
+                                    child: FilledButton(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: LumeTheme.accentFillOf(
+                                          context,
+                                        ),
+                                        foregroundColor:
+                                            LumeTheme.onAccentFillOf(context),
+                                        minimumSize: const Size.fromHeight(48),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
                                       ),
-                                      foregroundColor: LumeTheme.onAccentFillOf(
-                                        context,
-                                      ),
+                                      onPressed: () => Navigator.pop(context, (
+                                        category: chosenCategory,
+                                        filters: chosenFilters,
+                                      )),
+                                      child: const Text('应用筛选'),
                                     ),
-                                    onPressed: () => Navigator.pop(context, (
-                                      category: chosenCategory,
-                                      filters: chosenFilters,
-                                    )),
-                                    child: const Text('应用筛选'),
                                   ),
                                 ],
                               ),
