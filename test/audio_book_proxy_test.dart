@@ -66,6 +66,48 @@ void main() {
     }
   });
 
+  for (final lateFailure in [false, true]) {
+    test('a timed-out chapter resolution can retry without reloading the queue (lateFailure=$lateFailure)', () async {
+      final stale = Completer<ResolvedAudio>();
+      var resolutions = 0;
+      final proxy = AudioBookProxy(
+        resolutionTimeout: const Duration(milliseconds: 100),
+        clientFactory: () => MockClient((r) async => http.Response(r.url.path, 200)),
+      );
+      final client = http.Client();
+      try {
+        final local = (await proxy.prepare([
+          AudioBookTrack(
+            id: 'retry-chapter', album: 'Book',
+            episode: const ResourceEpisode(id: 'retry', title: 'Retry'),
+            resolve: () {
+              resolutions++;
+              return resolutions == 1 ? stale.future :
+                  Future.value(ResolvedAudio(Uri.parse('https://audio.test/current.mp3')));
+            },
+          ),
+        ])).single;
+        expect((await client.get(local)).statusCode, 502);
+        final recovered = await client.get(local);
+        expect(recovered.statusCode, 200);
+        expect(recovered.body, '/current.mp3');
+        expect(resolutions, 2);
+        if (lateFailure) {
+          stale.completeError(StateError('old resolver failed late'));
+        } else {
+          stale.complete(ResolvedAudio(Uri.parse('https://audio.test/stale.mp3')));
+        }
+        await Future<void>.delayed(Duration.zero);
+        expect((await client.get(local)).body, '/current.mp3');
+        expect(resolutions, 2, reason: 'the late old result cannot replace the fresh cached address');
+      } finally {
+        if (!stale.isCompleted) stale.complete(ResolvedAudio(Uri.parse('https://audio.test/stale.mp3')));
+        client.close();
+        await proxy.close();
+      }
+    });
+  }
+
   test(
     'closing during initial bind cancels preparation and permits a fresh queue',
     () async {

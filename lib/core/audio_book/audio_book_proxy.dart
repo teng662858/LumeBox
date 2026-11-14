@@ -18,10 +18,15 @@ import '../util/lume_log.dart';
 /// source chapters and preserves Range requests, including audio HLS playlists.
 /// HTTP content codings are removed before relaying playable audio bytes.
 class AudioBookProxy {
-  AudioBookProxy({http.Client Function()? clientFactory})
+  AudioBookProxy({
+    http.Client Function()? clientFactory,
+    this.resolutionTimeout = const Duration(seconds: 20),
+  })
     : _clientFactory = clientFactory ?? AudioBookHttpClient.new;
 
   final http.Client Function() _clientFactory;
+  /// Bounds the shared source lookup, so later requests can retry after a timeout.
+  final Duration resolutionTimeout;
 
   String? lastError;
   Future<HttpServer>? _binding;
@@ -109,7 +114,7 @@ class AudioBookProxy {
     final generation = _generation;
     final job = () async {
       final audio = track.resolve != null
-          ? await track.resolve!()
+          ? await track.resolve!().timeout(resolutionTimeout)
           : track.episode.url != null
           ? ResolvedAudio(track.episode.url!, headers: track.episode.headers)
           : throw const FormatException('音频地址不可用');
@@ -157,8 +162,7 @@ class AudioBookProxy {
       }
       final generation = _generation;
       final track = _tracks[path[1]]!;
-      final resolved = await _resolve(track)
-          .timeout(const Duration(seconds: 20));
+      final resolved = await _resolve(track);
       if (generation != _generation) throw const HttpException('播放列表已更换');
       var uri = raw == null
           ? resolved.url
