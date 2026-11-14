@@ -335,6 +335,45 @@ void main() {
       return created;
     }
 
+    testWidgets('原生玻璃不叠加经典整屏深色渐变，切回经典恢复', (tester) async {
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        SystemChannels.platform_views,
+        (_) async => null,
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(
+          SystemChannels.platform_views,
+          null,
+        ),
+      );
+      await tester.runAsync(
+        () => FrostedSettings.instance.boot(directory: root),
+      );
+      final players = await pump(tester, fullscreenOnly: true);
+      final loads = players.single.loads;
+      final scrim = find
+          .ancestor(
+            of: find.byKey(const Key('fullscreen-control-gradient')),
+            matching: find.byType(AnimatedOpacity),
+          )
+          .first;
+      expect(tester.widget<AnimatedOpacity>(scrim).opacity, 1);
+      await tester.runAsync(
+        () => FrostedSettings.instance.setPlayerNative(true),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedOpacity>(scrim).opacity, 0);
+      expect(players.single.loads, loads);
+      await tester.runAsync(
+        () => FrostedSettings.instance.setPlayerNative(false),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedOpacity>(scrim).opacity, 1);
+      expect(players.single.loads, loads);
+      expect(tester.takeException(), isNull);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
     testWidgets('切换经典与原生玻璃外观保留播放器实例、进度和暂停状态', (tester) async {
       final player = _FakePlayer(kernel: PlayerKernel.avplayer);
       await tester.runAsync(
@@ -1136,7 +1175,8 @@ void main() {
       expect(find.byTooltip('线路 / 选集'), findsOneWidget);
       await tester.tap(find.byTooltip('播放器设置'));
       await tester.pumpAndSettle();
-      expect(find.byType(BottomSheet), findsWidgets);
+      expect(find.byKey(const ValueKey('danmaku-panel-frame')), findsOneWidget);
+      expect(find.byType(PlayerSettingsSheet), findsOneWidget);
     });
 
     test('画面适配只有三项，旧倍率回落原比例', () {
@@ -2880,6 +2920,40 @@ void main() {
       await tester.tap(find.byType(Scaffold).first);
       await tester.pumpAndSettle();
       expect(find.byType(Slider), findsOneWidget, reason: '点屏幕再显示');
+    });
+
+    testWidgets('抽屉打开时播放状态变化不收起控制条，关闭后重新计时', (tester) async {
+      final players = await pump(tester, fullscreenOnly: true);
+      await tester.tap(find.byTooltip('播放器设置'));
+      await tester.pumpAndSettle();
+      players.single.emit(
+        playing: false,
+        duration: const Duration(minutes: 10),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 6));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('fullscreen-visible-controls')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byTooltip('关闭'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('fullscreen-visible-controls')),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 4));
+      expect(
+        find.byKey(const Key('fullscreen-visible-controls')),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('fullscreen-visible-controls')),
+        findsNothing,
+      );
     });
 
     testWidgets('无障碍导航：播放中全屏控制栏保持可访问', (tester) async {

@@ -127,6 +127,7 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
 
   Future<void> _select(int index, {bool quality = false, String? line}) async {
     if (_busy) return;
+    final route = ModalRoute.of(context);
     setState(() {
       _busy = true;
       _pending = quality ? null : index;
@@ -142,7 +143,9 @@ class _PlayerSourceSheetState extends State<PlayerSourceSheet> {
       } else {
         ok = await widget.onSelectEpisode?.call(index) ?? false;
       }
-      if (!mounted) return;
+      // A dismissed drawer remains mounted during its exit animation. A late
+      // selection must not pop the player or a newer popup beneath/above it.
+      if (!mounted || route?.isCurrent == false) return;
       if (ok) {
         Navigator.of(context).pop();
         return;

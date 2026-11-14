@@ -10,12 +10,12 @@ import 'package:lume_box/core/session/section.dart';
 import 'package:lume_box/core/session/section_scope.dart';
 import 'package:lume_box/core/theme/lume_theme.dart';
 import 'package:lume_box/features/settings/settings_page.dart';
-import 'package:lume_box/features/video/native_video_settings_page.dart';
+import 'package:lume_box/features/video/player_settings_page.dart';
 import 'package:lume_box/features/video/player_settings_sheet.dart';
 import 'package:lume_box/core/player/player_capabilities.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 
-/// 兼容旧面板的方向偏好，并验证正式设置入口只展示原生播放器使用的参数。
+/// 方向偏好落库，且全局与播放页共用播放器设置与方向控件。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -108,11 +108,23 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('进入原生播放器设置时不显示旧版方向控件', (tester) async {
+    testWidgets('全局进入共用播放器设置，可在画面分类修改方向', (tester) async {
       await pumpSettings(tester);
-      expect(find.byType(NativeVideoSettingsPage), findsOneWidget);
+      expect(find.byType(PlayerSettingsPage), findsOneWidget);
       expect(find.text('默认播放内核'), findsOneWidget);
-      expect(find.text('画面与显示'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('global-player-category-picture')),
+      );
+      await tester.pumpAndSettle();
+      final landscape = find.widgetWithText(ChoiceChip, '强制横屏');
+      await tester.ensureVisible(landscape);
+      await tester.pumpAndSettle();
+      await tester.tap(landscape);
+      await tester.pumpAndSettle();
+      expect(
+        PlaybackOrientationController.instance.orientation,
+        PlaybackOrientation.landscape,
+      );
       expect(find.text('横屏播放'), findsNothing);
     });
   });

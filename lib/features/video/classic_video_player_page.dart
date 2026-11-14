@@ -33,6 +33,7 @@ import 'video_episode_catalog.dart';
 import 'player_settings_panel.dart';
 import '../../core/net/network_cancellation.dart';
 import '../../shared/widgets/native_glass_controls.dart';
+import '../../shared/widgets/native_glass_preview.dart';
 import 'danmaku/danmaku_panel.dart';
 import 'danmaku/danmaku_match_sheet.dart';
 
@@ -2381,6 +2382,11 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
   void _panelActivityChanged() {
     if (mounted) {
       setState(() => _panelOpen = PlayerPanelActivity.depth.value > 0);
+      if (_panelOpen) {
+        _cancelAutoHide();
+      } else {
+        _scheduleAutoHide();
+      }
     }
   }
 
@@ -5121,17 +5127,17 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
 
   /// 重排自动隐藏：每次有操作（点按钮 / 唤出控制栏 / 状态变化）都重新计时。
   ///
-  /// 全屏闲置三秒淡出，暂停时同样生效；锁定、报错与无障碍导航保留操作出口。
+  /// 全屏闲置五秒淡出，暂停时同样生效；抽屉、锁定、报错与无障碍导航保留操作出口。
   void _scheduleAutoHide() {
     _autoHideTimer?.cancel();
-    if (!_fullscreen || _locked || _previewTarget != null) return;
+    if (!_fullscreen || _locked || _panelOpen || _previewTarget != null) return;
     if (_accessibleNavigation) return;
     if (!_settings.autoHideControls) return;
     if (_player?.snapshot.value.error != null) {
       return;
     }
     _autoHideTimer = Timer(PlayerLayout.controlsAutoHideDelay, () {
-      if (!mounted || !_fullscreen || _locked) return;
+      if (!mounted || !_fullscreen || _locked || _panelOpen) return;
       if (_accessibleNavigation) return;
       if (_player?.snapshot.value.error != null) {
         return;
@@ -5355,7 +5361,14 @@ class _ClassicVideoPlayerPageState extends State<ClassicVideoPlayerPage>
         Positioned.fill(
           child: IgnorePointer(
             child: AnimatedOpacity(
-              opacity: _overlayVisible && !_locked ? 1 : 0,
+              // Native control bars supply their own contrast. Keep the legacy
+              // full-screen scrim from darkening the glass and the video again.
+              opacity:
+                  _overlayVisible &&
+                      !_locked &&
+                      !NativeGlassPreview.enabledOf(context)
+                  ? 1
+                  : 0,
               duration: PlayerLayout.motion(context, 200),
               child: const DecoratedBox(
                 key: Key('fullscreen-control-gradient'),
