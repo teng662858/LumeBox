@@ -11,6 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
       position:(double)position;
 - (void)setProperty:(NSString *)name value:(NSString *)value;
 - (void)command:(NSArray<NSString *> *)arguments;
+- (void)seekTo:(double)seconds revision:(NSInteger)revision NS_SWIFT_NAME(seek(to:revision:));
 - (void)setRenderingEnabled:(BOOL)enabled;
 - (void)dispose:(void (^)(void))completion;
 @end

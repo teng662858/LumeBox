@@ -50,7 +50,7 @@ struct NativeVideoState {
   func load(_ item: NativeVideoItem)
   func play(rate: Double)
   func pause()
-  func seek(_ seconds: Double, completion: @escaping () -> Void)
+  func seek(_ seconds: Double, completion: @escaping (Bool) -> Void)
   func volume(_ value: Double)
   func rendering(_ enabled: Bool)
   func tracks(_ completion: @escaping ([[String: Any]]) -> Void)
@@ -122,7 +122,7 @@ struct NativeVideoState {
           self.state.ready = true
           if self.pendingResume > 0 {
             let resume = self.pendingResume; self.pendingResume = 0
-            self.seek(resume) { [weak self] in self?.resume() }
+            self.seek(resume) { _ in }
           } else { self.resume() }
           self.tick()
         }
@@ -165,15 +165,17 @@ struct NativeVideoState {
   }
   func play(rate: Double) { speed = rate; intent = true; state.ended = false; resume() }
   func pause() { intent = false; player?.pause(); tick() }
-  func seek(_ seconds: Double, completion: @escaping () -> Void) {
-    guard !disposed, let player else { completion(); return }
+  func seek(_ seconds: Double, completion: @escaping (Bool) -> Void) {
+    guard !disposed, let player else { completion(false); return }
     seeking = true
     seekRevision += 1; let revision = seekRevision
     let current = player.currentItem
-    player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600), toleranceBefore: CMTime(seconds: 0.25, preferredTimescale: 600), toleranceAfter: CMTime(seconds: 0.25, preferredTimescale: 600)) { [weak self] _ in
+    player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600), toleranceBefore: CMTime(seconds: 0.25, preferredTimescale: 600), toleranceAfter: CMTime(seconds: 0.25, preferredTimescale: 600)) { [weak self] finished in
       DispatchQueue.main.async {
-        guard let self, !self.disposed, self.seekRevision == revision, self.player?.currentItem === current else { completion(); return }
-        self.seeking = false; self.state.ended = false; self.resume(); self.tick(); completion()
+        guard let self, !self.disposed, self.seekRevision == revision, self.player?.currentItem === current else { completion(false); return }
+        self.seeking = false
+        if finished { self.state.ended = false }
+        self.resume(); self.tick(); completion(finished)
       }
     }
   }
@@ -249,6 +251,8 @@ struct NativeVideoState {
   private var disposed = false, desiredPlay = false
   private var speed = 1.0
   private var pendingResume = 0.0
+  private var seekRevision = 0
+  private var seekCompletion: ((Bool) -> Void)?
   #if DEBUG
   // The native smoke fixture has a red top stripe and a blue bottom stripe.
   // Inspect decoded pixels, rather than treating an advancing clock as upright video.
@@ -279,6 +283,11 @@ struct NativeVideoState {
         self.bridge?.setProperty("pause", value: "no")
       }
       self.changed?(self.state)
+      if let revision = data["seekRevision"] as? Int, revision == self.seekRevision {
+        let complete = self.seekCompletion
+        self.seekCompletion = nil
+        complete?(data["seekSucceeded"] as? Bool == true)
+      }
     }, frame: { [weak self] sample in
       guard let self, !self.disposed else { return }
       #if DEBUG
@@ -312,8 +321,12 @@ struct NativeVideoState {
     if state.ready { bridge?.setProperty("pause", value: "no") }
   }
   func pause() { desiredPlay = false; bridge?.setProperty("pause", value: "yes") }
-  func seek(_ seconds: Double, completion: @escaping () -> Void) {
-    bridge?.command(["seek", String(max(0, seconds)), "absolute+exact"]); completion()
+  func seek(_ seconds: Double, completion: @escaping (Bool) -> Void) {
+    guard !disposed, let bridge else { completion(false); return }
+    seekCompletion?(false)
+    seekRevision += 1
+    seekCompletion = completion
+    bridge.seek(to: max(0, seconds), revision: seekRevision)
   }
   func volume(_ value: Double) { bridge?.setProperty("volume", value: String(value * 100)) }
   func rendering(_ enabled: Bool) { bridge?.setRenderingEnabled(enabled) }
@@ -332,6 +345,7 @@ struct NativeVideoState {
   func dispose(_ completion: @escaping () -> Void) {
     guard !disposed else { completion(); return }
     disposed = true; changed = nil; surface.videoLayer.flushAndRemoveImage()
+    seekCompletion?(false); seekCompletion = nil
     let pending = bridge; bridge = nil
     // GL resources cannot be destroyed in the background either. Audio pauses
     // immediately; keep the resource owner until foreground cleanup is legal.

@@ -75,6 +75,8 @@ import UniformTypeIdentifiers
   private var state = NativeVideoState()
   private var kernel: String
   private var generation = 0, requestGeneration = 0
+  private var pendingSeek: Double?
+  private var seekRevision = 0
   private var wantsPlay = true, closing = false, switching = false, resolving = false
   private var handledEnd = false
   private var speed = 1.0, volume = 1.0, fill = false, locked = false, scrubbing = false
@@ -241,7 +243,8 @@ import UniformTypeIdentifiers
     kernel = selected == "mpv" ? "mpv" : "avplayer"
     if kernel == "mpv" { subtitles = NativeVideoSubtitles() }
     loadStarted = CACurrentMediaTime()
-    let at = resume ?? state.position
+    let at = resume ?? pendingSeek ?? state.position
+    pendingSeek = nil
     let previous = engine; engine = nil
     previous?.pause(); previous?.view.removeFromSuperview(); fatalMessage = nil; toastMessage = nil
     handledEnd = false; state = NativeVideoState(); renderState()
@@ -335,18 +338,24 @@ import UniformTypeIdentifiers
     if switching { return }
     if wantsPlay {
       if state.error != nil { resolve("retry"); return }
-      if state.ended { engine?.seek(0) {} }
+      if state.ended { commitSeek(0) }
       engine?.play(rate: speed)
     } else { engine?.pause() }
     renderState(); emit("progress")
   }
-  private func seekBy(_ delta: Double) { commitSeek(state.position + delta) }
-  private func commitSeek(_ seconds: Double) {
-    guard !closing, !switching, state.ready else { return }
+  private func seekBy(_ delta: Double) { commitSeek((pendingSeek ?? state.position) + delta) }
+  private func commitSeek(_ seconds: Double, completion: @escaping () -> Void = {}) {
+    guard !closing, !switching, state.ready, let engine else { completion(); return }
     let target = max(0, state.duration > 0 ? min(state.duration - 0.05, seconds) : seconds)
     let revision = generation
-    engine?.seek(target) { [weak self] in
-      guard let self, self.generation == revision else { return }; self.emit("seek")
+    seekRevision += 1
+    let seek = seekRevision
+    pendingSeek = target
+    engine.seek(target) { [weak self] finished in
+      defer { completion() }
+      guard let self, self.generation == revision, self.seekRevision == seek else { return }
+      self.pendingSeek = nil
+      if finished { self.emit("seek") }
     }
     danmakuPosition = -100; bullets.subviews.forEach { $0.removeFromSuperview() }
   }
@@ -359,6 +368,7 @@ import UniformTypeIdentifiers
     guard !closing, let request else { return }
     guard !switching else { toast("正在切换播放内核，请稍候"); return }
     requestGeneration += 1; let revision = requestGeneration
+    let seekAtRequest = seekRevision, wasSeeking = pendingSeek != nil
     toastMessage = nil
     resolving = true; chromeVisible = true; emit("progress"); renderState()
     request(action, arguments) { [weak self] response in
@@ -387,7 +397,13 @@ import UniformTypeIdentifiers
           self.speed = rate
         }
         self.wantsPlay = automatic || action == "episode" || action == "next" || action == "previous" ? true : self.wantsPlay
-        self.switchEngine(selected, resume: self.item.position, emitProgress: false)
+        let carriesPosition = ["retry", "quality", "line", "kernel"].contains(action)
+        var resume = next.position
+        if carriesPosition && (wasSeeking || self.seekRevision != seekAtRequest || self.pendingSeek != nil) {
+          resume = self.pendingSeek ?? self.state.position
+          self.emit("seek", extra: ["position": resume])
+        }
+        self.switchEngine(selected, resume: resume, emitProgress: false)
         if self.danmakuEnabled { self.loadDanmaku() }
       } catch { self.showResolutionError(error.localizedDescription) }
     }
@@ -544,8 +560,7 @@ import UniformTypeIdentifiers
   func pictureInPictureControllerIsPlaybackPaused(_ pictureInPictureController: AVPictureInPictureController) -> Bool { !state.playing }
   func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
   func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
-    engine?.seek(max(0, state.position + skipInterval.seconds), completion: completionHandler)
-    if engine == nil { completionHandler() }
+    commitSeek((pendingSeek ?? state.position) + skipInterval.seconds, completion: completionHandler)
   }
 
   private func installLifecycle() {

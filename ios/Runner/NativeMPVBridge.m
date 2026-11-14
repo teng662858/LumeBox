@@ -42,6 +42,8 @@ static id NativeMPVNode(mpv_node *node) {
   CVPixelBufferPoolRef _pool;
   int _width, _height, _poolWidth, _poolHeight;
   BOOL _software, _ready, _fileLoaded, _ended;
+  NSInteger _seekRevision;
+  BOOL _seekAccepted;
   atomic_bool _closing, _framePending, _renderEnabled, _initialized;
   atomic_uintptr_t _publishedCore;
   NSString *_error;
@@ -166,12 +168,30 @@ static void *NativeMPVProc(void *context, const char *name) { return dlsym(RTLD_
   id eof = [self property:"eof-reached"];
   if ([eof isKindOfClass:NSNumber.class]) _ended = [eof boolValue];
   BOOL paused = [self number:"pause"] != 0, buffering = [self number:"paused-for-cache"] != 0 || !_fileLoaded;
+  BOOL seekFinished = _seekRevision && (!_seekAccepted || _error || !_fileLoaded || ![self number:"seeking"]);
   NSMutableDictionary *snapshot = [@{@"position": @([self number:"time-pos"]), @"duration": @([self number:"duration"]),
     @"playing": @(!paused && !_ended && _fileLoaded), @"buffering": @(buffering), @"ready": @(_fileLoaded),
     @"ended": @(_ended), @"width": @(width), @"height": @(height),
     @"buffered": @([self number:"demuxer-cache-duration"]), @"tracks": [self property:"track-list"] ?: @[]} mutableCopy];
   if (_error) snapshot[@"error"] = _error;
+  if (seekFinished) {
+    snapshot[@"seekRevision"] = @(_seekRevision);
+    snapshot[@"seekSucceeded"] = @(_seekAccepted && !_error && _fileLoaded);
+    _seekRevision = 0;
+  }
   [self emit:snapshot];
+}
+- (void)seekTo:(double)seconds revision:(NSInteger)revision {
+  dispatch_async(_control, ^{
+    if (atomic_load(&self->_closing) || !self->_mpv) return;
+    NSString *position = [@(seconds) stringValue];
+    const char *args[] = {"seek", position.UTF8String, "absolute+exact", NULL};
+    // Execute on the control queue so an older queued snapshot cannot
+    // acknowledge a new seek before libmpv has actually processed it.
+    self->_seekAccepted = mpv_command(self->_mpv, args) >= 0;
+    self->_seekRevision = revision;
+    [self poll];
+  });
 }
 - (void)openURL:(NSString *)url headers:(NSDictionary<NSString *,NSString *> *)headers position:(double)position {
   dispatch_async(_control, ^{

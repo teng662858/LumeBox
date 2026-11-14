@@ -7,6 +7,7 @@ extension NativeVideoScreen {
   }
   fileprivate var displayedSubtitle: String? { caption.text }
   fileprivate var displayedStatus: String? { statusLabel.text }
+  fileprivate func retryTestMedia() { resolve("retry") }
 }
 
 @main @MainActor final class NativeVideoSmokeApp: UIResponder, UIApplicationDelegate {
@@ -15,6 +16,7 @@ extension NativeVideoScreen {
   private var timer: Timer?
   private var caseIndex = 0, phase = 0, swaps = 0
   private var nextRequests = 0
+  private var seekEvents: [Double] = []
   private let captionURL = FileManager.default.temporaryDirectory.appendingPathComponent("native-smoke.vtt")
   private var started = Date(), pausedAt = Date(), pausedPosition = 0.0
   private let cases = [("avplayer", "smoke.mp4"), ("avplayer", "smoke.m3u8"), ("mpv", "smoke.mp4"), ("mpv", "smoke.m3u8")]
@@ -35,8 +37,19 @@ extension NativeVideoScreen {
     do {
       let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)"])
       let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": test.1 == "smoke.mp4", "headlessAudio": true])
+      view.event = { [weak self] data in
+        if data["type"] as? String == "seek", let position = data["position"] as? Double {
+          self?.seekEvents.append(position)
+        }
+      }
       view.request = { [weak self] action, _, completion in
         if action == "previous" { completion(["error": "上一集取址失败"]); return }
+        if action == "retry" {
+          var refreshed = item.payload
+          refreshed["position"] = 5.0
+          completion(["media": refreshed])
+          return
+        }
         guard let self, action == "next" else { completion([:]); return }
         if self.caseIndex == 0 && self.phase == 2 {
           var next = item.payload
@@ -104,6 +117,23 @@ extension NativeVideoScreen {
           screen.importTestSubtitle(captionURL)
         } catch { check(false, "write invalid subtitle fixture: \(error)") }
       }
+      seekEvents.removeAll()
+      screen.debugAction(["action": "seek", "position": 5.0])
+      screen.debugAction(["action": "seek", "position": 0.0])
+      phase = 11
+    } else if phase == 11 && !seekEvents.isEmpty {
+      check(seekEvents.count == 1 && seekEvents[0] < 0.26, "only the final paused seek is saved, at the start")
+      check(position < 0.26 && state["wantsPlay"] as? Bool == false, "paused seek updates the decoder clock")
+      if cases[caseIndex].0 == "mpv" {
+        screen.debugAction(["action": "seek", "position": 1.5])
+        screen.retryTestMedia()
+        phase = 12
+        return
+      }
+      screen.debugAction(["action": "seek", "position": 3.0])
+      screen.debugAction(["action": "tap", "control": "play"]); phase = 2
+    } else if phase == 12 && state["firstFrame"] as? Bool == true && abs(position - 1.5) < 0.26 {
+      check(state["wantsPlay"] as? Bool == false, "retry preserves pending seek and pause")
       screen.debugAction(["action": "seek", "position": 3.0])
       screen.debugAction(["action": "tap", "control": "play"]); phase = 2
     } else if phase == 2 && position > 3.3 {
