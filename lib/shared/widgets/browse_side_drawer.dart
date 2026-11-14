@@ -65,7 +65,7 @@ Future<T?> _showBrowseSideDrawer<T>({
   required bool useRootNavigator,
 }) async {
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
-  final top = DrawerGeometry.top(context);
+  final top = DrawerGeometry.browseTop(context);
   final reduceMotion = MediaQuery.disableAnimationsOf(context);
   final label = MaterialLocalizations.of(context).modalBarrierDismissLabel;
   final themes = InheritedTheme.capture(from: context, to: navigator.context);
@@ -129,7 +129,10 @@ Future<T?> _showBrowseSideDrawer<T>({
                           child: SafeArea(
                             top: false,
                             bottom: false,
-                            child: Builder(builder: builder),
+                            child: BrowseDrawerGeometry(
+                              top: top,
+                              child: Builder(builder: builder),
+                            ),
                           ),
                         ),
                       ),
@@ -282,7 +285,10 @@ class _BrowseDrawerRoute<T> extends PopupRoute<T> {
               child: SafeArea(
                 top: false,
                 bottom: false,
-                child: Builder(builder: builder),
+                child: BrowseDrawerGeometry(
+                  top: top,
+                  child: Builder(builder: builder),
+                ),
               ),
             ),
             builder: (context, child) => Listener(

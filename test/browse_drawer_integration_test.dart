@@ -71,7 +71,7 @@ void main() {
       await tester.dragFrom(const Offset(389, 400), const Offset(-270, 0));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('browse-right-drawer')), findsOneWidget);
-      await tester.tapAt(const Offset(8, 50));
+      await tester.tapAt(const Offset(8, 2));
       await tester.pumpAndSettle();
       expect(a.homeCalls, 1);
       await tester.dragFrom(const Offset(1, 400), const Offset(270, 0));

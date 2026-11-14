@@ -31,60 +31,62 @@ void main() {
     await root.delete(recursive: true);
   });
   for (final height in [667.0, 844.0]) {
-    testWidgets('favorites/history match classification height at $height', (
-      tester,
-    ) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = Size(390, height);
-      tester.view.padding = const FakeViewPadding(top: 59, bottom: 34);
-      tester.view.viewPadding = const FakeViewPadding(top: 59, bottom: 34);
-      addTearDown(tester.view.reset);
-      late BuildContext page;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
-            builder: (context) {
-              page = context;
-              return const Scaffold();
-            },
+    testWidgets(
+      'classification reaches the island while history retains its existing height at $height',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = Size(390, height);
+        tester.view.padding = const FakeViewPadding(top: 59, bottom: 34);
+        tester.view.viewPadding = const FakeViewPadding(top: 59, bottom: 34);
+        addTearDown(tester.view.reset);
+        late BuildContext page;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Builder(
+              builder: (context) {
+                page = context;
+                return const Scaffold();
+              },
+            ),
           ),
-        ),
-      );
-      unawaited(
-        showBrowseFilters(
-          context: page,
-          categories: const [SourceCategory(id: 'all', title: '全部')],
-          groups: const [],
-          category: null,
-          filters: const {},
-        ),
-      );
-      await tester.pumpAndSettle();
-      final bounds = tester.getRect(
-        find.byKey(const Key('classification-drawer-frame')),
-      );
-      Navigator.pop(page);
-      await tester.pumpAndSettle();
-      for (final tab in HistoryDrawerTab.values) {
+        );
         unawaited(
-          showReadingHistorySheet(
+          showBrowseFilters(
             context: page,
-            section: Section.video,
-            library: library,
-            initialTab: tab,
-            onResume: (_, progress) {},
+            categories: const [SourceCategory(id: 'all', title: '全部')],
+            groups: const [],
+            category: null,
+            filters: const {},
           ),
         );
         await tester.pumpAndSettle();
-        final history = tester.getRect(
-          find.byKey(const Key('history-drawer-frame')),
+        final bounds = tester.getRect(
+          find.byKey(const Key('classification-drawer-frame')),
         );
-        expect(history.top, bounds.top);
-        expect(history.bottom, bounds.bottom);
-        expect(tester.takeException(), isNull);
+        expect(bounds.top, 63);
         Navigator.pop(page);
         await tester.pumpAndSettle();
-      }
-    });
+        for (final tab in HistoryDrawerTab.values) {
+          unawaited(
+            showReadingHistorySheet(
+              context: page,
+              section: Section.video,
+              library: library,
+              initialTab: tab,
+              onResume: (_, progress) {},
+            ),
+          );
+          await tester.pumpAndSettle();
+          final history = tester.getRect(
+            find.byKey(const Key('history-drawer-frame')),
+          );
+          expect(history.top, greaterThan(bounds.top));
+          expect(history.bottom, bounds.bottom);
+          expect(tester.takeException(), isNull);
+          Navigator.pop(page);
+          await tester.pumpAndSettle();
+        }
+      },
+    );
   }
 }

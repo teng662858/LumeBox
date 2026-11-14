@@ -5,11 +5,16 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
-/// All bottom drawers share the home search button's lower edge.
+/// Bottom sheets follow the search anchor; source/filter drawers use safe top.
 class DrawerGeometry {
   static final Map<Size, double> _searchEdges = {};
   static double top(BuildContext context) {
     final media = MediaQuery.of(context);
+    final browse = context
+        .dependOnInheritedWidgetOfExactType<BrowseDrawerGeometry>();
+    if (browse != null) {
+      return browse.top.clamp(0.0, media.size.height);
+    }
     return (_searchEdges[media.size] ?? (media.viewPadding.top + 84)).clamp(
       media.viewPadding.top,
       media.size.height,
@@ -18,6 +23,29 @@ class DrawerGeometry {
 
   static double height(BuildContext context) =>
       math.max(0, MediaQuery.sizeOf(context).height - top(context));
+
+  /// SafeArea may have consumed the page's padding. The Flutter view still
+  /// reports the system cutout, so source/filter panels never cover the island.
+  static double browseTop(BuildContext context) {
+    final media = MediaQuery.of(context), view = View.of(context);
+    final safeTop = math.max(
+      media.viewPadding.top,
+      view.viewPadding.top / view.devicePixelRatio,
+    );
+    return (safeTop + 4).clamp(0.0, media.size.height);
+  }
+}
+
+class BrowseDrawerGeometry extends InheritedWidget {
+  const BrowseDrawerGeometry({
+    super.key,
+    required this.top,
+    required super.child,
+  });
+  final double top;
+  @override
+  bool updateShouldNotify(BrowseDrawerGeometry oldWidget) =>
+      top != oldWidget.top;
 }
 
 /// Measures the home search control in screen coordinates, without changing layout.
