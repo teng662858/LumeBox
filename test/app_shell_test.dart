@@ -45,13 +45,14 @@ void main() {
     matching: find.text(text),
   );
 
-  testWidgets('移动端：底部 Dock 四项，顺序为 漫画 / 视频 / 音乐 / 设置', (tester) async {
+  testWidgets('移动端：底部 Dock 五项，顺序为 漫画 / 视频 / 音乐 / 设置 / 搜索', (tester) async {
     await pumpShell(tester, desktopRail: false);
 
     expect(find.byKey(AppShell.dockKey), findsOneWidget);
     expect(find.byKey(AppShell.railKey), findsNothing);
+    expect(find.byKey(const ValueKey('global-search-button')), findsNothing);
 
-    const expected = <String>['漫画', '视频', '音乐', '设置'];
+    const expected = <String>['漫画', '视频', '音乐', '设置', '搜索'];
     for (final label in expected) {
       expect(inDock(label), findsOneWidget, reason: 'Dock 缺少页签：$label');
     }
@@ -69,7 +70,7 @@ void main() {
     }
   });
 
-  testWidgets('各板块底部右侧打开同一个全局搜索，返回后保留原页面', (tester) async {
+  testWidgets('各板块胶囊内搜索打开全局搜索，返回后保留原页面', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: AppShell(
@@ -82,16 +83,23 @@ void main() {
     );
     await tester.pumpAndSettle();
     final comic = tester.element(find.text('content-comic'));
-    expect(inDock('搜索'), findsNothing);
+    expect(inDock('搜索'), findsOneWidget);
     for (final label in ['漫画', '视频', '音乐', '设置']) {
       await tester.tap(inDock(label));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('global-search-button')));
+      final selected = tester
+          .widget<ShellDockBar>(find.byType(ShellDockBar))
+          .activeId;
+      await tester.tap(inDock('搜索'));
       await tester.pumpAndSettle();
       expect(find.widgetWithText(AppBar, '全局搜索'), findsOneWidget);
       expect(find.widgetWithText(ChoiceChip, '全部'), findsOneWidget);
       tester.state<NavigatorState>(find.byType(Navigator).first).pop();
       await tester.pumpAndSettle();
+      expect(
+        tester.widget<ShellDockBar>(find.byType(ShellDockBar)).activeId,
+        selected,
+      );
     }
     await tester.tap(inDock('漫画'));
     await tester.pumpAndSettle();

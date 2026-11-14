@@ -7,7 +7,7 @@ private final class SmokeMessenger: NSObject, FlutterBinaryMessenger {
   private var connection: Int64 = 0
 
   func send(onChannel channel: String, message: Data?) {
-    if (channel.hasPrefix("lumebox/system_tab_bar_") || channel.hasPrefix("lumebox/system_search_button_")), let data = message {
+    if channel.hasPrefix("lumebox/system_tab_bar_"), let data = message {
       received.append(FlutterStandardMethodCodec.sharedInstance().decodeMethodCall(data))
     }
   }
@@ -39,7 +39,6 @@ final class SystemTabBarSmoke: UIResponder, UIApplicationDelegate {
   var window: UIWindow?
   private let messenger = SmokeMessenger()
   private var platformView: FlutterPlatformView?
-  private var searchView: FlutterPlatformView?
   private func checkpoint(_ phase: String, detail: String = "") {
     let status: [String: Any] = ["phase": phase, "detail": detail]
     let output = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Documents/native-tab-bar-status.json")
@@ -97,19 +96,6 @@ final class SystemTabBarSmoke: UIResponder, UIApplicationDelegate {
                           width: window.bounds.width - 32, height: height)
       view.layoutIfNeeded()
       self.verify(view)
-      let size: CGFloat = 60
-      view.frame.size.width -= size + 10
-      view.layoutIfNeeded()
-      let search = LumeSystemSearchFactory(messenger: self.messenger).create(
-        withFrame: CGRect(x: window.bounds.width - 16 - size, y: view.frame.midY - size / 2, width: size, height: size),
-        viewIdentifier: 2, arguments: ["brightness": "light", "tintColor": 0xFF7C5CFF, "materialOpacity": 0.6])
-      self.searchView = search
-      controller.view.addSubview(search.view())
-      let button = search.view() as! UIButton
-      self.require(button.configuration?.cornerStyle == .capsule && button.configuration?.image != nil, "Search must be a circular UIKit button")
-      self.require(!view.frame.intersects(button.frame), "Search must sit beside the navigation capsule")
-      button.sendActions(for: .touchUpInside)
-      self.require(self.messenger.received.contains { $0.method == "pressed" }, "Native search press must reach Flutter")
       self.checkpoint("verified")
       DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -172,12 +158,12 @@ final class SystemTabBarSmoke: UIResponder, UIApplicationDelegate {
     _ = messenger.update(configuration)
     require(bar.items?.count == 2 && bar.items?.first?.accessibilityIdentifier == "shell.tab.settings",
                  "Invalid duplicate IDs must leave the previous native navigation intact")
-    configuration["entries"] = [["id": "comic", "label": "漫画"], ["id": "video", "label": "视频"], ["id": "music", "label": "音乐"], ["id": "settings", "label": "设置"]]
+    configuration["entries"] = [["id": "comic", "label": "漫画"], ["id": "video", "label": "视频"], ["id": "music", "label": "音乐"], ["id": "settings", "label": "设置"], ["id": "search", "label": "搜索"]]
     configuration["iconSize"] = 24
     _ = messenger.update(configuration)
     view.layoutIfNeeded()
-    require(bar.items?.map { $0.accessibilityIdentifier ?? "" } == ["shell.tab.comic", "shell.tab.video", "shell.tab.music", "shell.tab.settings"],
-            "The native bar must accept and display all four production tabs")
+    require(bar.items?.map { $0.accessibilityIdentifier ?? "" } == ["shell.tab.comic", "shell.tab.video", "shell.tab.music", "shell.tab.settings", "shell.tab.search"],
+            "The native bar must accept and display all five production entries")
     require(bar.items?.allSatisfy { $0.image != nil && $0.selectedImage != nil } == true,
             "Every production tab, including music, must have a native symbol")
   }

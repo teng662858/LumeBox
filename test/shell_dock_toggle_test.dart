@@ -502,7 +502,7 @@ void main() {
 
       final capsule = tester.getRect(dockCapsule());
       expect(capsule.left, closeTo(32, .01));
-      expect(capsule.width, closeTo(390 - 64 - 70, .01));
+      expect(capsule.width, closeTo(390 - 64, .01));
       expect(capsule.height, closeTo(60, .01));
       expect(844 - capsule.bottom, closeTo(10, .01));
 
@@ -521,7 +521,7 @@ void main() {
 
     testWidgets('默认四项导航都在', (tester) async {
       await pumpShell(tester);
-      expect(dockLabels(tester), <String>['漫画', '视频', '音乐', '设置']);
+      expect(dockLabels(tester), <String>['漫画', '视频', '音乐', '设置', '搜索']);
     });
 
     testWidgets('隐藏一个页签：底部立刻少一个（实时生效，无需重启）', (tester) async {
@@ -534,6 +534,7 @@ void main() {
         '视频',
         '音乐',
         '设置',
+        '搜索',
       ], reason: '隐藏后底部不该还有「漫画」');
     });
 
@@ -645,7 +646,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(AppShell.dockKey), findsOneWidget);
-      expect(dockLabels(tester), <String>['漫画']);
+      expect(dockLabels(tester), <String>['漫画', '搜索']);
     });
 
     testWidgets('隐藏设置 → 走恢复入口 → 在设置页里改配置：不被弹出去', (tester) async {
@@ -700,7 +701,7 @@ void main() {
       await ShellSettingsController.instance.restoreDefaults();
       await tester.pumpAndSettle();
 
-      expect(dockLabels(tester), <String>['漫画', '视频', '音乐', '设置']);
+      expect(dockLabels(tester), <String>['漫画', '视频', '音乐', '设置', '搜索']);
     });
   });
 
