@@ -51,6 +51,8 @@ python3 - "$DEVICE" <<'PY' 2>&1 | tee out/native-video/test.log
 import subprocess,sys
 subprocess.run(['xcrun','simctl','launch','--console-pty','--terminate-running-process',sys.argv[1],'com.lumebox.native-video-check'], timeout=240, check=True)
 PY
+CONTAINER=$(xcrun simctl get_app_container "$DEVICE" com.lumebox.native-video-check data)
+cp "$CONTAINER"/Documents/player-*.png out/native-video/
 kill "$HTTP_PID" || true
 grep -q NATIVE_VIDEO_ALL_OK out/native-video/test.log
 echo 'Production UIKit video session and AVPlayer/libmpv checks passed (no IPA)'

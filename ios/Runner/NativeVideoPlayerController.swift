@@ -143,7 +143,7 @@ import UniformTypeIdentifiers
       surface.layer.cornerRadius = 22; surface.layer.cornerCurve = .continuous
       surface.clipsToBounds = true
       #if compiler(>=6.2)
-      if #available(iOS 26.0, *) { surface.cornerConfiguration = .fixed(22) }
+      if #available(iOS 26.0, *) { surface.cornerConfiguration = .corners(radius: .fixed(22)) }
       #endif
       chrome.addSubview(surface)
     }

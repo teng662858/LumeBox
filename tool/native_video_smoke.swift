@@ -29,6 +29,11 @@ extension NativeVideoScreen {
     chromeVisible = false; renderState()
     precondition(topMaterial.isHidden && bottomMaterial.isHidden, "materials hide with controls")
     chromeVisible = wasVisible; renderState()
+    let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    let preview = UIGraphicsImageRenderer(bounds: view.bounds).image { _ in
+      view.drawHierarchy(in: view.bounds, afterScreenUpdates: true)
+    }
+    try? preview.pngData()?.write(to: directory.appendingPathComponent("player-\(Int(view.bounds.width))x\(Int(view.bounds.height)).png"))
   }
   fileprivate func checkPreviousRequest() { resolve("previous") }
 
