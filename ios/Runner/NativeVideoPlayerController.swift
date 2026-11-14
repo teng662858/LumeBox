@@ -88,6 +88,8 @@ import UniformTypeIdentifiers
   private var lastEvent = 0.0, scrubOrigin = 0.0, panVolume = 1.0, panBrightness = 0.5
   private var loadStarted = CACurrentMediaTime()
   private var fatalMessage: String?
+  private var toastMessage: String?
+  private var toastTimer: Timer?
   private var subtitles = NativeVideoSubtitles()
   private var subtitleRevision = 0
   private var subtitlePickerGeneration: Int?
@@ -241,7 +243,7 @@ import UniformTypeIdentifiers
     loadStarted = CACurrentMediaTime()
     let at = resume ?? state.position
     let previous = engine; engine = nil
-    previous?.pause(); previous?.view.removeFromSuperview(); fatalMessage = nil
+    previous?.pause(); previous?.view.removeFromSuperview(); fatalMessage = nil; toastMessage = nil
     handledEnd = false; state = NativeVideoState(); renderState()
     emit("load-start")
     let create = { [weak self] in
@@ -296,10 +298,10 @@ import UniformTypeIdentifiers
     }
     duration.text = Self.clock(state.duration)
     controls["play"]?.setImage(UIImage(systemName: wantsPlay ? "pause.fill" : "play.fill"), for: .normal)
-    if let error = state.error { spinner.stopAnimating(); statusLabel.text = "\(error)\n点此重试"; chromeVisible = true }
+    if let error = state.error { spinner.stopAnimating(); statusLabel.text = toastMessage ?? "\(error)\n点此重试"; chromeVisible = true }
     else if resolving { spinner.startAnimating(); statusLabel.text = "正在解析播放地址…" }
-    else if switching || state.buffering { spinner.startAnimating(); statusLabel.text = state.ready ? "缓冲中…" : "正在打开 \(kernel == "mpv" ? "MPV" : "系统播放器")…" }
-    else { spinner.stopAnimating(); statusLabel.text = nil }
+    else if switching || state.buffering { spinner.startAnimating(); statusLabel.text = toastMessage ?? (state.ready ? "缓冲中…" : "正在打开 \(kernel == "mpv" ? "MPV" : "系统播放器")…") }
+    else { spinner.stopAnimating(); statusLabel.text = toastMessage }
     // Controls are siblings of the native picture; no UIKit platform view can cover them.
     top.isHidden = !chromeVisible || locked; bottom.isHidden = !chromeVisible || locked
     lockButton.isHidden = !chromeVisible && !locked
@@ -357,19 +359,18 @@ import UniformTypeIdentifiers
     guard !closing, let request else { return }
     guard !switching else { toast("正在切换播放内核，请稍候"); return }
     requestGeneration += 1; let revision = requestGeneration
+    toastMessage = nil
     resolving = true; chromeVisible = true; emit("progress"); renderState()
     request(action, arguments) { [weak self] response in
       guard let self, !self.closing, self.requestGeneration == revision else { return }
       self.resolving = false
       if let error = response?["error"] as? String {
-        // Failure to resolve the next episode does not invalidate this item.
-        if automatic { self.renderState(); self.toast(error) }
-        else { self.showError(error) }
+        self.showResolutionError(error)
         return
       }
       guard let payload = response?["media"] as? [String: Any] else {
         if action == "retry" { self.switchEngine(self.kernel); return }
-        self.renderState(); self.toast(response?["message"] as? String ?? "没有可播放的下一项"); return
+        self.toast(response?["message"] as? String ?? "没有可播放的下一项"); return
       }
       do {
         // Flush the previous episode with its own identity before replacing it.
@@ -388,8 +389,12 @@ import UniformTypeIdentifiers
         self.wantsPlay = automatic || action == "episode" || action == "next" || action == "previous" ? true : self.wantsPlay
         self.switchEngine(selected, resume: self.item.position, emitProgress: false)
         if self.danmakuEnabled { self.loadDanmaku() }
-      } catch { self.showError(error.localizedDescription) }
+      } catch { self.showResolutionError(error.localizedDescription) }
     }
+  }
+  private func showResolutionError(_ message: String) {
+    // Until replacement media is accepted, the current engine still owns playback.
+    if state.error != nil { showError(message) } else { toast(message) }
   }
   private func choices(_ action: String) {
     guard let request, !closing else { return }
@@ -725,9 +730,12 @@ import UniformTypeIdentifiers
     }
   }
   private func toast(_ text: String) {
-    statusLabel.text = text
-    let revision = generation
-    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in if self?.generation == revision { self?.renderState() } }
+    toastTimer?.invalidate()
+    toastMessage = text
+    renderState()
+    toastTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: false) { [weak self] _ in
+      MainActor.assumeIsolated { self?.toastMessage = nil; self?.renderState() }
+    }
   }
   static func clock(_ seconds: Double) -> String {
     guard seconds.isFinite, seconds >= 0, seconds < Double(Int.max) else { return "00:00" }
@@ -737,7 +745,7 @@ import UniformTypeIdentifiers
   func finish(dismiss: Bool = true, completion: @escaping () -> Void = {}) {
     guard !closing else { completion(); return }
     emit("progress"); closing = true; generation += 1; requestGeneration += 1; pendingEngine = nil
-    timeout?.invalidate(); autoHide?.invalidate(); sleepTimer?.invalidate(); resetPip()
+    timeout?.invalidate(); autoHide?.invalidate(); sleepTimer?.invalidate(); toastTimer?.invalidate(); resetPip()
     notifications.forEach { NotificationCenter.default.removeObserver($0) }; notifications.removeAll()
     for (command, target) in remoteTargets { command.removeTarget(target) }; remoteTargets.removeAll()
     if UserDefaults.standard.string(forKey: "lumebox.mediaOwner") == mediaOwner {

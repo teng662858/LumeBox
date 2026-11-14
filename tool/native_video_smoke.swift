@@ -6,6 +6,7 @@ extension NativeVideoScreen {
     documentPicker(UIDocumentPickerViewController(forOpeningContentTypes: [.data]), didPickDocumentsAt: [url])
   }
   fileprivate var displayedSubtitle: String? { caption.text }
+  fileprivate var displayedStatus: String? { statusLabel.text }
 }
 
 @main @MainActor final class NativeVideoSmokeApp: UIResponder, UIApplicationDelegate {
@@ -35,6 +36,7 @@ extension NativeVideoScreen {
       let item = try NativeVideoItem(["url": "http://127.0.0.1:18765/protected/\(test.1)", "headers": ["X-Lume-Test": "ticket=a,b\\c"], "title": "\(test.0) \(test.1)", "identity": "native-check-\(caseIndex)"])
       let view = NativeVideoScreen(session: "native-check", item: item, options: ["kernel": test.0, "autoNext": test.1 == "smoke.mp4", "headlessAudio": true])
       view.request = { [weak self] action, _, completion in
+        if action == "previous" { completion(["error": "上一集取址失败"]); return }
         guard let self, action == "next" else { completion([:]); return }
         if self.caseIndex == 0 && self.phase == 2 {
           var next = item.payload
@@ -64,6 +66,11 @@ extension NativeVideoScreen {
       check(state["playHitTest"] as? Bool == true, "UIKit play button hit test")
       check(state["closeHitTest"] as? Bool == true, "UIKit close button hit test")
       check(state["viewAttached"] as? Bool == true, "visible native picture")
+      screen.debugAction(["action": "tap", "control": "previous"])
+      screen.debugAction([:]) // A decoder update redraws the controls.
+      check(screen.debugState["error"] == nil && screen.debugState["wantsPlay"] as? Bool == true,
+            "failed episode request keeps the current video playing")
+      check(screen.displayedStatus == "上一集取址失败", "resolution error survives a redraw")
       if cases[caseIndex].0 == "mpv" {
         check(state["frameUpright"] as? Bool == true, "decoded red-top/blue-bottom fixture is upright")
       }
@@ -87,6 +94,9 @@ extension NativeVideoScreen {
     } else if phase == 1 && Date().timeIntervalSince(pausedAt) > 0.9 {
       check(abs(position - pausedPosition) < 0.6, "explicit pause must hold the clock")
       check(state["wantsPlay"] as? Bool == false, "pause intent")
+      screen.debugAction(["action": "tap", "control": "previous"])
+      check(screen.debugState["error"] == nil && screen.debugState["wantsPlay"] as? Bool == false,
+            "failed episode request keeps the current video paused")
       if caseIndex == 0 {
         check(screen.displayedSubtitle == "<captions>", "external captions appear while paused")
         do {
