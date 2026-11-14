@@ -2,9 +2,10 @@ import Foundation
 
 func checkNativeMPVState() {
   var state = NativeVideoState()
-  var snapshot: [String: Any] = ["position": 47.0, "duration": 120.0, "buffered": 8.0,
+  // NSDictionary callbacks import as AnyHashable keys, not String keys.
+  var snapshot: [AnyHashable: Any] = ["position": 47.0, "duration": 120.0, "buffered": 8.0,
     "ready": true, "playing": true, "buffering": false, "ended": false,
-    "width": 1920, "height": 1080, "tracks": [["type": "audio", "id": 1]]]
+    "width": 1920, "height": 1080, "tracks": [["type": "audio", "id": 1]], 1: "ignored"]
   state.updateFromMPV(snapshot)
   state.firstFrame = true
   precondition(state.position == 47 && state.playing && state.ready)

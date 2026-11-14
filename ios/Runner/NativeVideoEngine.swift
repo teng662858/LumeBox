@@ -32,7 +32,7 @@ struct NativeVideoState {
   var width = 0, height = 0
   var error: String?
   var tracks: [[String: Any]] = []
-  mutating func updateFromMPV(_ data: [String: Any]) {
+  mutating func updateFromMPV(_ data: [AnyHashable: Any]) {
     if let message = data["error"] as? String {
       // Failure notifications may contain no timing fields, or zeroed fields
       // after libmpv unloads the file. Keep the last usable resume position.
