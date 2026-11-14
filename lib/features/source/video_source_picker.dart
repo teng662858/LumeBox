@@ -988,6 +988,14 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
 
   @override
   Widget build(BuildContext context) {
+    // Classification reads saved preferences. Reuse it across count/filter/group
+    // passes in this build instead of querying storage for every pass.
+    final categories = <String, SourceContentCategory>{};
+    SourceContentCategory categoryOf(SourceDescriptor source) =>
+        categories.putIfAbsent(
+          source.id,
+          () => SourceContentCategories.forSource(source),
+        );
     final showOrdinary = [
       VideoSourceType.all,
       VideoSourceType.ordinary,
@@ -1026,7 +1034,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
             .where(
               (source) =>
                   SourceContentCategories.appliesTo(source) &&
-                  SourceContentCategories.forSource(source) == category,
+                  categoryOf(source) == category,
             )
             .length,
     };
@@ -1036,9 +1044,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
     );
     if (type == VideoSourceType.ordinary &&
         content != SourceContentCategory.all) {
-      ordinary.removeWhere(
-        (source) => SourceContentCategories.forSource(source) != content,
-      );
+      ordinary.removeWhere((source) => categoryOf(source) != content);
     }
     final originalOrder = sources.map((s) => s.id).toList();
     final compareOrder = SourceOrder.comparator(Section.video, originalOrder);
@@ -1161,7 +1167,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                   : kind == VideoSourceType.ordinary
                   ? (SourcePreferences.read(Section.video, s.id).pinned
                         ? '已置顶'
-                        : SourceContentCategories.forSource(s).label)
+                        : categoryOf(s).label)
                   : '${s.isAudio
                         ? '音频'
                         : s.isKazumi
@@ -1206,8 +1212,7 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                 if (type == VideoSourceType.all) heading(title, entries.length),
                 for (final category in SourceContentCategory.groups)
                   if (entries.any(
-                    (source) =>
-                        SourceContentCategories.forSource(source) == category,
+                    (source) => categoryOf(source) == category,
                   )) ...[
                     if (type == VideoSourceType.all ||
                         content == SourceContentCategory.all)
@@ -1218,21 +1223,13 @@ class _VideoSourcePickerState extends State<VideoSourcePicker> {
                         child: heading(
                           category.label,
                           entries
-                              .where(
-                                (source) =>
-                                    SourceContentCategories.forSource(source) ==
-                                    category,
-                              )
+                              .where((source) => categoryOf(source) == category)
                               .length,
                         ),
                       ),
                     sourceGrid(
                       entries
-                          .where(
-                            (source) =>
-                                SourceContentCategories.forSource(source) ==
-                                category,
-                          )
+                          .where((source) => categoryOf(source) == category)
                           .toList(),
                       kind,
                     ),
