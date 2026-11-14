@@ -33,7 +33,6 @@ void main() {
         center.tasks.add(task);
         final directory = Directory(center.folder(task));
         await Directory('${directory.path}/video').create(recursive: true);
-        await Directory('${directory.path}/audio').create();
         Future<String> ffmpeg(List<String> args) async {
           final result = await Process.run('ffmpeg', [
             '-hide_banner',
@@ -46,6 +45,14 @@ void main() {
           return '${result.stdout}';
         }
 
+        Future<void> audioFixture(String folder, int frequency) async {
+          await Directory('${directory.path}/$folder').create(recursive: true);
+          await ffmpeg([
+            '-f', 'lavfi', '-i', 'sine=frequency=$frequency:sample_rate=48000',
+            '-t', '2', '-c:a', 'aac', '-f', 'hls', '-hls_time', '1',
+            '-hls_playlist_type', 'vod', '${directory.path}/$folder/index.m3u8',
+          ]);
+        }
         await ffmpeg([
           '-f',
           'lavfi',
@@ -67,25 +74,11 @@ void main() {
           'vod',
           '${directory.path}/video/index.m3u8',
         ]);
-        await ffmpeg([
-          '-f',
-          'lavfi',
-          '-i',
-          'sine=frequency=440:sample_rate=48000',
-          '-t',
-          '2',
-          '-c:a',
-          'aac',
-          '-f',
-          'hls',
-          '-hls_time',
-          '1',
-          '-hls_playlist_type',
-          'vod',
-          '${directory.path}/audio/index.m3u8',
-        ]);
+        await audioFixture('audio', 440);
+        await audioFixture('dub', 880);
         await File('${directory.path}/index.m3u8').writeAsString(
-          '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Original",DEFAULT=YES,URI="audio/index.m3u8"\n'
+          '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English: director\'s cut",LANGUAGE="en",DEFAULT=NO,URI="audio/index.m3u8"\n'
+          '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Mandarin",LANGUAGE="zh-Hans",DEFAULT=YES,URI="dub/index.m3u8"\n'
           '#EXT-X-STREAM-INF:BANDWIDTH=200000,AUDIO="audio"\nvideo/index.m3u8\n',
         );
         Future<List<String>> frameHashes(String path) async {
@@ -161,10 +154,12 @@ void main() {
         }
         expect(requests, containsAll(['/video/index.m3u8', '/audio/index.m3u8']));
         expect(requests, isNot(contains('/low.m3u8')));
-        Future<String> audioHash(String path) => ffmpeg([
-          '-i', path, '-map', '0:a:0', '-c:a', 'pcm_s16le', '-f', 'hash', '-',
+        Future<String> audioHash(String path, [int index = 0]) => ffmpeg([
+          '-i', path, '-map', '0:a:$index', '-c:a', 'pcm_s16le', '-f', 'hash', '-',
         ]);
         final originalAudio = await audioHash('${directory.path}/audio/index.m3u8');
+        final dubbedAudio = await audioHash('${directory.path}/dub/index.m3u8');
+        expect(dubbedAudio, isNot(originalAudio));
         for (final task in remote.tasks) {
           final downloaded = remote.localFile(task);
           expect(await frameHashes(downloaded.path), original);
@@ -195,6 +190,11 @@ void main() {
         ]);
         expect(probe.exitCode, 0);
         final metadata = jsonDecode('${probe.stdout}') as Map;
+        final tracks = (metadata['streams'] as List).where((s) => s['codec_type'] == 'audio');
+        expect(tracks.map((s) => [s['tags']['language'], s['tags']['handler_name'], s['disposition']['default']]),
+            [['eng', "English: director's cut", 0], ['zho', 'Mandarin', 1]]);
+        expect(await audioHash(output.path, 0), originalAudio);
+        expect(await audioHash(output.path, 1), dubbedAudio);
         expect(
           (metadata['streams'] as List).map((s) => s['codec_type']),
           containsAll(['video', 'audio']),

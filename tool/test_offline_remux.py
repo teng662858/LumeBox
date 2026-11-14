@@ -62,13 +62,21 @@ check(fragmented)
 separate = root / 'separate'
 (separate / 'video').mkdir(parents=True)
 (separate / 'audio').mkdir()
+(separate / 'dub').mkdir()
 run(*base, *video, '-t', '4', *codec, '-an', *hls, str(separate / 'video/index.m3u8'))
 run(*base, *audio, '-t', '4', '-c:a', 'aac', *hls, str(separate / 'audio/index.m3u8'))
+run(*base, '-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000',
+    '-t', '4', '-c:a', 'aac', *hls, str(separate / 'dub/index.m3u8'))
 (separate / 'index.m3u8').write_text(
-    '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="original",'
-    'DEFAULT=YES,URI="audio/index.m3u8"\n'
+    '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Original",'
+    'LANGUAGE="en",DEFAULT=NO,URI="audio/index.m3u8"\n'
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Mandarin",'
+    'LANGUAGE="zh-Hans",DEFAULT=YES,URI="dub/index.m3u8"\n'
     '#EXT-X-STREAM-INF:BANDWIDTH=200000,AUDIO="audio"\nvideo/index.m3u8\n')
 check(separate)
+tracks = [s for s in probe(separate / 'merged.mp4.part')['streams'] if s['codec_type'] == 'audio']
+assert [(s['tags']['language'], s['tags']['handler_name'], s['disposition']['default']) for s in tracks] == [
+    ('eng', 'Original', 0), ('zho', 'Mandarin', 1)], tracks
 
 encrypted = root / 'encrypted'
 encrypted.mkdir()

@@ -238,6 +238,18 @@ final class OfflineVideoRemuxer: @unchecked Sendable {
       added.pointee.time_base = stream.pointee.time_base
       added.pointee.disposition = stream.pointee.disposition
       av_dict_copy(&added.pointee.metadata, stream.pointee.metadata, 0)
+      if type == AVMEDIA_TYPE_AUDIO && fragmentSequence == nil {
+        // The HLS demuxer publishes the rendition name in "comment".
+        // MP4 uses a handler name and a three-letter media language.
+        if let name = av_dict_get(stream.pointee.metadata, "comment", nil, 0)?.pointee.value {
+          av_dict_set(&added.pointee.metadata, "handler_name", name, 0)
+        }
+        if let tag = av_dict_get(stream.pointee.metadata, "language", nil, 0)?.pointee.value,
+           let primary = String(cString: tag).split(separator: "-").first,
+           let code = Locale.LanguageCode(String(primary)).identifier(.alpha3) {
+          av_dict_set(&added.pointee.metadata, "language", code, 0)
+        }
+      }
       mapping[Int32(index)] = added.pointee.index
       counts[Int32(index)] = 0
     }
