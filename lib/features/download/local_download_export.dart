@@ -6,6 +6,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import '../../core/player/hls_attributes.dart';
 
 /// Exports an actual local file without loading a movie into a platform-channel byte buffer.
 abstract final class LocalDownloadExport {
@@ -76,8 +77,7 @@ abstract final class LocalDownloadExport {
               for (final line in await file.readAsLines()) {
                 final refs = <String>[
                   if (line.isNotEmpty && !line.startsWith('#')) line,
-                  for (final match in RegExp(r'URI="([^"]+)"').allMatches(line))
-                    match.group(1)!,
+                  for (final attribute in hlsUriAttributes(line)) attribute.value,
                 ];
                 for (final ref in refs) {
                   if (Uri.parse(ref).hasScheme || p.isAbsolute(ref)) {

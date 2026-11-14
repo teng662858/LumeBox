@@ -2077,7 +2077,10 @@ void main() {
     final dir = await Directory('${root.path}/offline').create();
     await Directory('${dir.path}/segments').create();
     await File('${dir.path}/index.m3u8')
-        .writeAsString('#EXTM3U\n#EXTINF:1,\nsegments/a.ts\n#EXT-X-ENDLIST\n');
+        .writeAsString('#EXTM3U\n# comment URI="resume.json"\n'
+            '#EXT-X-KEY:METHOD=AES-128,URI="segments/media.key"\n'
+            '#EXTINF:1,title URI="missing.txt"\nsegments/a.ts\n#EXT-X-ENDLIST\n');
+    await File('${dir.path}/segments/media.key').writeAsBytes(List.filled(16, 42));
     await File('${dir.path}/segments/a.ts').writeAsBytes([1, 2, 3]);
     await File('${dir.path}/resume.json').writeAsString('private');
     final saved = await LocalDownloadExport.directory(
@@ -2087,7 +2090,7 @@ void main() {
         final archive = ZipDecoder().decodeBytes(await file.readAsBytes());
         expect(
           archive.files.map((f) => f.name),
-          containsAll(['index.m3u8', 'segments/a.ts']),
+          containsAll(['index.m3u8', 'segments/a.ts', 'segments/media.key']),
         );
         expect(
           archive.files.map((f) => f.name),

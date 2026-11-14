@@ -90,10 +90,9 @@ class HighestHls {
       var line = lines[i];
       if (line.startsWith('#EXT-X-I-FRAME-STREAM-INF:')) continue;
       if (line.startsWith('#')) {
-        line = line.replaceAllMapped(
-          RegExp(r'URI="([^"]+)"'),
-          (match) => 'URI="${base.resolve(match[1]!)}"',
-        );
+        for (final ref in hlsUriAttributes(line).toList().reversed) {
+          line = line.replaceRange(ref.start, ref.end, base.resolve(ref.value).toString());
+        }
       } else if (line.isNotEmpty) {
         line = base.resolve(line).toString();
       }

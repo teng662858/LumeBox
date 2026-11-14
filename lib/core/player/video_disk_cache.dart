@@ -1799,9 +1799,7 @@ class VideoDiskCache extends ChangeNotifier {
             }
           } else {
             var result = line;
-            for (final m in RegExp(
-              r'URI="([^"]+)"',
-            ).allMatches(line).toList().reversed) {
+            for (final ref in hlsUriAttributes(line).toList().reversed) {
               final tag = line.split(':').first;
               var attributeSuffix = switch (tag) {
                 '#EXT-X-KEY' || '#EXT-X-SESSION-KEY' => _keySuffix(line),
@@ -1822,7 +1820,7 @@ class VideoDiskCache extends ChangeNotifier {
               if (tag == '#EXT-X-MAP') {
                 segmentSuffix = '.m4s';
                 if (subtitles) {
-                  final child = childMedia(m[1]!);
+                  final child = childMedia(ref.value);
                   if (child != null) {
                     final suffix = _mediaSuffix(child.uri);
                     final format = const {'.mp4', '.m4s', '.vtt', '.webvtt'}.contains(suffix)
@@ -1835,9 +1833,9 @@ class VideoDiskCache extends ChangeNotifier {
                 }
               }
               result = result.replaceRange(
-                m.start,
-                m.end,
-                'URI="${await rewrite(m[1]!, attributeSuffix)}"',
+                ref.start,
+                ref.end,
+                await rewrite(ref.value, attributeSuffix),
               );
             }
             lines.add(result);

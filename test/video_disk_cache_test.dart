@@ -280,7 +280,8 @@ void main() {
         return;
       }
       if (request.uri.path == '/live/master.m3u8') {
-        request.response.write('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=50000\nvideo?sig=a%2Fb+z&tag=x&tag=y&_HLS_msn=7\n');
+        request.response.write('#EXTM3U\n# comment URI="do-not-fetch"\n'
+            '#EXT-X-STREAM-INF:BANDWIDTH=50000\nvideo?sig=a%2Fb+z&tag=x&tag=y&_HLS_msn=7\n');
         await request.response.close();
         return;
       }
@@ -787,6 +788,7 @@ void main() {
       ), appleHls: apple);
       final manifest = utf8.decode((await get(master.uri)).$2);
       final variant = Uri.parse(const LineSplitter().convert(manifest).last);
+      expect(manifest, contains('# comment URI="do-not-fetch"'));
       final results = await Future.wait([
         for (final sequence in [8, 9])
           get(variant.replace(query: '_HLS_msn=$sequence&_HLS_part=1&_HLS_skip=v2&sig=override&x=extra')),

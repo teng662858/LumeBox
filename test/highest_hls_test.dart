@@ -109,6 +109,8 @@ void main() {
     final result = HighestHls.singleRendition('''#EXTM3U
 #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="sound",URI="audio/main.m3u8"
 #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",URI="subs/main.m3u8"
+# A comment mentioning URI="leave-this-alone"
+#EXT-X-DATERANGE:ID="intro",START-DATE="2025-01-01T00:00:00Z",X-LABEL="文字,URI=metadata",X-ASSET-URI="break,a.json",X-ALT-URI="break,b.json"
 #EXT-X-SESSION-KEY:METHOD=AES-128,URI="key.bin"
 #EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=1280x720,AUDIO="sound"
 low.m3u8
@@ -126,6 +128,10 @@ medium.m3u8
     );
     expect(result, contains('URI="https://cdn.example/folder/subs/main.m3u8"'));
     expect(result, contains('URI="https://cdn.example/folder/key.bin"'));
+    expect(result, contains('# A comment mentioning URI="leave-this-alone"'));
+    expect(result, contains('X-LABEL="文字,URI=metadata",'
+        'X-ASSET-URI="https://cdn.example/folder/break,a.json",'
+        'X-ALT-URI="https://cdn.example/folder/break,b.json"'));
   });
   test('无分辨率按带宽选择，单线路与媒体清单不改写', () {
     final base = Uri.parse('https://cdn.example/master.m3u8');
