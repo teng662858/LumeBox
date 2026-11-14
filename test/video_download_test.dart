@@ -516,6 +516,51 @@ void main() {
     });
   }
 
+  for (final (path, mime) in [
+    ('movie.mpd', 'application/dash+xml'),
+    ('play?sig=token', 'application/octet-stream'),
+  ]) {
+    test('a DASH manifest at $path is never published as a completed video', () async {
+      server.listen((r) async {
+        r.response.headers.set('Content-Type', mime);
+        r.response.write('<?xml version="1.0"?><MPD><Period><AdaptationSet>'
+            '<Representation><BaseURL>movie.mp4</BaseURL></Representation>'
+            '</AdaptationSet></Period></MPD>');
+        await r.response.close();
+      });
+      final c = await center(path);
+      await enqueue(c);
+      final task = c.tasks.single;
+      await until(() => ['done', 'failed'].contains(task.state));
+      await c.flush();
+      expect(task.state, 'failed');
+      expect(task.error, contains('DASH'));
+      expect(await c.completedPlayback('fixture', 'movie', 'episode'), isNull);
+    });
+  }
+
+  test('previously downloaded DASH XML cannot shadow the online video after restart', () async {
+    final c = await center('movie.mpd');
+    const xml = '<?xml version="1.0"?><MPD><Period/></MPD>';
+    final task = VideoDownloadTask(
+      id: VideoDownloadCenter.identity('fixture', 'movie', 'episode'),
+      sourceId: 'fixture',
+      itemId: 'movie',
+      chapterId: 'episode',
+      title: 'Movie',
+      chapterTitle: 'Episode',
+      state: 'done',
+      fileName: 'media.mp4',
+      bytes: xml.length,
+    );
+    await Directory(c.folder(task)).create();
+    await c.localFile(task).writeAsString(xml);
+    await File('${c.root.path}/tasks.json').writeAsString(jsonEncode([task.toJson()]));
+    final restored = await center('movie.mpd');
+    expect(restored.tasks.single.canPlayOffline, isFalse);
+    expect(await restored.playbackIfAvailable('fixture', 'movie', 'episode'), isNull);
+  });
+
   test('a missing completed file can be downloaded again after restart', () async {
     server.listen((r) async {
       r.response.add(List.filled(32, 1));

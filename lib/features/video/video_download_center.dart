@@ -263,7 +263,7 @@ class VideoDownloadCenter extends ChangeNotifier {
           encryptedCapture: capture,
         );
         if ((fileName.isNotEmpty || task.state != 'paused') &&
-            await checkedLocalFile(task) == null) {
+            await checkedLocalFile(task, inspectLegacy: true) == null) {
           task.fileName = '';
           task.state = 'paused';
           task.bytes = task.totalBytes = task.completed = task.total = 0;
@@ -282,7 +282,7 @@ class VideoDownloadCenter extends ChangeNotifier {
   File localFile(VideoDownloadTask task) =>
       File(p.join(folder(task), task.fileName));
 
-  Future<File?> checkedLocalFile(VideoDownloadTask task) async {
+  Future<File?> checkedLocalFile(VideoDownloadTask task, {bool inspectLegacy = false}) async {
     if (task.fileName.isEmpty) return null;
     final file = localFile(task);
     // HLS counts bytes across the package, not just the entry playlist.
@@ -292,6 +292,14 @@ class VideoDownloadCenter extends ChangeNotifier {
         stat.size == 0 ||
         expected > 0 && stat.size != expected) {
       return null;
+    }
+    // Older downloads could publish a DASH manifest as a progressive movie.
+    if (inspectLegacy && task.fileName.startsWith('media.')) {
+      try {
+        if (await VideoDiskCache.detectFileFormat(file) == '.mpd') return null;
+      } on FileSystemException {
+        return null;
+      }
     }
     return file;
   }
@@ -981,7 +989,12 @@ class VideoDownloadCenter extends ChangeNotifier {
         .where(known.contains)
         .firstOrNull;
     var suffix = extension ?? '.mp4';
-    if (suffix != '.webm' && await VideoDiskCache.isMatroskaFile(partial)) {
+    final format = await VideoDiskCache.detectFileFormat(partial);
+    if (format == '.mpd') {
+      await partial.delete();
+      throw StateError('DASH 清单暂不支持离线下载');
+    }
+    if (suffix != '.webm' && format == '.mkv') {
       suffix = '.mkv';
     }
     _check(task);
@@ -1068,6 +1081,10 @@ class VideoDownloadCenter extends ChangeNotifier {
     }
     if (response.statusCode != 200 && response.statusCode != 206) {
       throw StateError('下载请求失败：HTTP ${response.statusCode}');
+    }
+    if (response.headers.contentType?.mimeType == 'application/dash+xml') {
+      await response.listen(null).cancel();
+      throw StateError('DASH 清单暂不支持离线下载');
     }
     if (response.statusCode == 200) offset = 0;
     var etag =

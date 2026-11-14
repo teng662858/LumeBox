@@ -180,7 +180,7 @@ class NativeVideoSourceSession {
       return false;
     }
     try {
-      return await VideoDiskCache.isMatroskaFile(File.fromUri(media.uri));
+      return await VideoDiskCache.detectFileFormat(File.fromUri(media.uri)) == '.mkv';
     } on FileSystemException {
       return false;
     }

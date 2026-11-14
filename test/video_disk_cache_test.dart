@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:xml/xml.dart';
 import 'package:lume_box/core/net/http_byte_range.dart';
 import 'package:lume_box/core/player/player_settings.dart';
 import 'package:lume_box/core/player/player_stats.dart';
@@ -137,6 +138,20 @@ void main() {
     server.listen((request) async {
       calls++;
       paths.add(request.uri.path);
+      if (request.uri.path.startsWith('/dash/')) {
+        if (request.headers.value('authorization') != 'Bearer fixture') {
+          request.response.statusCode = 403;
+        } else if (request.uri.path.endsWith('.m4s')) {
+          request.response.add([1, 2, 3]);
+        } else {
+          request.response.headers.set('Content-Type', 'application/dash+xml');
+          request.response.write('<MPD><Period><AdaptationSet><Representation id="1">'
+              '<SegmentList><SegmentURL media="video/1.m4s"/></SegmentList>'
+              '</Representation></AdaptationSet></Period></MPD>');
+        }
+        await request.response.close();
+        return;
+      }
       if (request.uri.path.startsWith('/rotate/')) {
         if (request.uri.path.endsWith('.m3u8')) {
           final tag = request.uri.queryParameters['tag'] ?? 'KEY';
@@ -505,6 +520,71 @@ void main() {
     final response = await request.close();
     return (response, await response.expand((b) => b).toList());
   }
+
+  for (final name in ['manifest.mpd', 'play?sig=token']) {
+    test('DASH relative segments keep their origin and request headers for $name', () async {
+      final media = PlayerMedia(uri: upstream.resolve('/dash/$name'),
+          headers: const {'Authorization': 'Bearer fixture'});
+      final wrapped = await cache.wrap(media, inspect: true);
+      Future<HttpClientResponse> fetch(Uri uri) async {
+        final request = await client.getUrl(uri);
+        wrapped.headers?.forEach(request.headers.set);
+        return request.close();
+      }
+      final response = await fetch(wrapped.uri);
+      final manifest = await utf8.decoder.bind(response).join();
+      final relative = RegExp(r'<SegmentURL media="([^"]+)"').firstMatch(manifest)![1]!;
+      final base = RegExp(r'<BaseURL>([^<]+)</BaseURL>').firstMatch(manifest)?[1];
+      final segment = await fetch(wrapped.uri.resolve(base ?? '').resolve(relative));
+      expect(segment.statusCode, 200);
+      expect(await segment.expand((b) => b).toList(), [1, 2, 3]);
+      expect(paths, contains('/dash/video/1.m4s'));
+      await expectLater(cache.wrap(media, inspect: true, appleHls: true), throwsUnsupportedError);
+    });
+  }
+
+  test('DASH keeps signed paths, nested CDN bases and manifest refresh credentials scoped', () async {
+    final cdn = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final originServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => cdn.close(force: true));
+    addTearDown(() => originServer.close(force: true));
+    final origin = Uri.parse('http://127.0.0.1:${originServer.port}/');
+    final foreign = Uri.parse('http://127.0.0.1:${cdn.port}/');
+    final cdnHeaders = <String?>[];
+    cdn.listen((r) async {
+      cdnHeaders.add(r.headers.value('authorization'));
+      r.response.write(r.uri.path.endsWith('.mpd') ? '<MPD/>' : 'foreign');
+      await r.response.close();
+    });
+    final requested = <String>[];
+    originServer.listen((r) async {
+      requested.add(r.uri.toString());
+      if (r.headers.value('authorization') != 'Bearer fixture') {
+        r.response.statusCode = 403;
+      } else if (r.uri.path == '/main.mpd') {
+        r.response.write('<MPD><BaseURL>local/</BaseURL><Location>${foreign}live.mpd</Location>'
+            '<Period><AdaptationSet><SegmentTemplate media="/chunks/\$Number%05d\$.m4s?sig=a%2Fb"/>'
+            '<Representation><BaseURL>${foreign}other/</BaseURL>'
+            '<SegmentList><SegmentURL media="/foreign.m4s"/></SegmentList></Representation>'
+            '</AdaptationSet></Period></MPD>');
+      } else {
+        r.response.write('local');
+      }
+      await r.response.close();
+    });
+    final wrapped = await cache.wrap(PlayerMedia(uri: origin.resolve('main.mpd'),
+        headers: const {'Authorization': 'Bearer fixture'}));
+    final root = XmlDocument.parse(utf8.decode((await get(wrapped.uri)).$2));
+    final template = root.findAllElements('SegmentTemplate').single.getAttribute('media')!;
+    final part = Uri.parse(template.replaceFirst(r'$Number%05d$', '00001'));
+    expect(utf8.decode((await get(part)).$2), 'local');
+    expect(requested, contains('/chunks/00001.m4s?sig=a%2Fb'));
+    final external = root.findAllElements('SegmentURL').single.getAttribute('media')!;
+    expect(utf8.decode((await get(Uri.parse(external))).$2), 'foreign');
+    final refresh = Uri.parse(root.findAllElements('Location').single.innerText);
+    expect(utf8.decode((await get(refresh)).$2), contains('<MPD>'));
+    expect(cdnHeaders, [null, null]);
+  });
 
   for (final apple in [true, false]) {
     test('signed WebVTT subtitle cues retain their media type during playback and seeking (apple=$apple)', () async {

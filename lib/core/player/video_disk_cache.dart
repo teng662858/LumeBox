@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:xml/xml.dart';
 
 import 'abstract_player.dart';
 import 'hls_ad_filter.dart';
@@ -171,7 +172,8 @@ class VideoDiskCache extends ChangeNotifier {
         '当前内核无法打开该媒体：${suffix.substring(1).toUpperCase()} 封装需要 MPV',
       );
     }
-    if (!force && !enabled && !_loopback(media.uri) && suffix != '.m3u8') {
+    if (!force && !enabled && !_loopback(media.uri) &&
+        suffix != '.m3u8' && suffix != '.mpd') {
       return media;
     }
     return _ticket(
@@ -193,10 +195,17 @@ class VideoDiskCache extends ChangeNotifier {
         await response.listen(null).cancel();
         return '';
       }
-      final format = await _inspectFormat(
-        _completeBody(response).timeout(const Duration(seconds: 3)),
-        response.header('content-encoding'),
-      );
+      final type = response.header('content-type')?.split(';').first.trim().toLowerCase();
+      final String format;
+      if (type == 'application/dash+xml') {
+        await response.listen(null).cancel();
+        format = '.mpd';
+      } else {
+        format = await _inspectFormat(
+          _completeBody(response).timeout(const Duration(seconds: 3)),
+          response.header('content-encoding'),
+        );
+      }
       if (format.isNotEmpty) {
         if (_detectedFormats.length >= 128) {
           _detectedFormats.remove(_detectedFormats.keys.first);
@@ -225,10 +234,10 @@ class VideoDiskCache extends ChangeNotifier {
     return detectFormat(prefix.takeBytes());
   }
 
-  static Future<bool> isMatroskaFile(File file) async {
+  static Future<String> detectFileFormat(File file) async {
     final input = await file.open();
     try {
-      return _matroskaPrefix(await input.read(4));
+      return detectFormat(await input.read(1024));
     } finally {
       await input.close();
     }
@@ -241,7 +250,6 @@ class VideoDiskCache extends ChangeNotifier {
       prefix[2] == 0xdf &&
       prefix[3] == 0xa3;
 
-  @visibleForTesting
   static String detectFormat(List<int> prefix) {
     if (_matroskaPrefix(prefix)) return '.mkv';
     final text = utf8
@@ -249,7 +257,8 @@ class VideoDiskCache extends ChangeNotifier {
         .replaceFirst('\uFEFF', '')
         .trimLeft();
     if (text.startsWith('#EXTM3U')) return '.m3u8';
-    if (RegExp(r'<(?:[A-Za-z0-9_]+:)?MPD(?:\s|>)').hasMatch(text)) {
+    if (text.startsWith('<') &&
+        RegExp(r'<(?:[A-Za-z0-9_.-]+:)?MPD(?:\s|/?>)').hasMatch(text)) {
       return '.mpd';
     }
     return '';
@@ -1341,27 +1350,140 @@ class VideoDiskCache extends ChangeNotifier {
     return PlayerMedia(uri: media.uri.replace(query: query), headers: media.headers);
   }
 
+  // Preserve the MPD's base directory while keeping the source's headers on
+  // same-origin requests. MPV expands SegmentTemplate variables itself.
+  Future<void> _serveDashManifest(HttpRequest request, PlayerMedia media) async {
+    final upstream = await _request(media, null);
+    if (upstream.statusCode != 200 && upstream.statusCode != 206) {
+      await upstream.listen(null).cancel();
+      throw _UpstreamStatus(upstream.statusCode);
+    }
+    final bytes = BytesBuilder(copy: false);
+    final body = _decodedBody(_completeBody(upstream), upstream.header('content-encoding'));
+    await for (final part in body.timeout(const Duration(seconds: 30))) {
+      if (bytes.length + part.length > 4 * blockBytes) {
+        throw const FormatException('DASH 清单过大');
+      }
+      bytes.add(part);
+    }
+    final document = XmlDocument.parse(utf8.decode(bytes.takeBytes()));
+    final root = document.rootElement;
+    if (root.name.local != 'MPD') throw const FormatException('DASH 清单无效');
+    final origin = upstream.uri.origin;
+    final ticket = await _ticket(
+      PlayerMedia(uri: Uri.parse('$origin/'), headers: upstream.requestHeaders),
+      '.dash-base',
+    );
+    final localRoot = ticket.uri.toString();
+    String route(Uri url) {
+      if (!url.hasAuthority ||
+          !const {'http', 'https'}.contains(url.scheme) ||
+          url.origin != origin) {
+        return url.toString();
+      }
+      return '$localRoot${url.path.isEmpty ? '/' : url.path}'
+          '${url.hasQuery ? '?${url.query}' : ''}${url.hasFragment ? '#${url.fragment}' : ''}';
+    }
+
+    // Absolute same-origin references otherwise bypass the proxy. A leading
+    // slash resolves against the enclosing BaseURL, which can be a different CDN.
+    void rewriteReferences(XmlElement element, Set<Uri> parents) {
+      final bases = element.childElements.where((e) => e.name.local == 'BaseURL').toList();
+      final resolved = <Uri>{};
+      String reference(String value, Iterable<Uri> bases) {
+        final uri = Uri.parse(value);
+        if (uri.hasScheme) return route(uri);
+        if (!value.startsWith('/')) return value;
+        final targets = bases.map((base) => base.resolveUri(uri)).toSet();
+        return targets.length == 1 ? route(targets.single) : value;
+      }
+      for (final base in bases) {
+        final value = base.innerText.trim();
+        final uri = Uri.parse(value);
+        if (!uri.hasScheme && !uri.hasAuthority) {
+          resolved.addAll(parents);
+        } else {
+          for (final parent in parents) {
+            final url = parent.resolveUri(uri);
+            if (const {'http', 'https'}.contains(url.scheme) && url.host.isNotEmpty) {
+              resolved.add(Uri.parse(url.origin));
+            }
+          }
+        }
+        base.innerText = identical(element, root)
+            ? route(upstream.uri.resolve(value))
+            : reference(value, parents);
+      }
+      final effective = bases.isEmpty ? parents : resolved;
+      final attributes = switch (element.name.local) {
+        'SegmentTemplate' => const ['media', 'initialization', 'index', 'bitstreamSwitching'],
+        'SegmentURL' => const ['media', 'index'],
+        'Initialization' || 'RepresentationIndex' || 'BitstreamSwitching' => const ['sourceURL'],
+        _ => const <String>[],
+      };
+      for (final name in attributes) {
+        final value = element.getAttribute(name);
+        if (value != null) element.setAttribute(name, reference(value, effective));
+      }
+      for (final child in element.childElements.where((e) => e.name.local != 'BaseURL')) {
+        rewriteReferences(child, effective);
+      }
+    }
+    rewriteReferences(root, {Uri.parse(origin)});
+    for (final location in root.childElements.where((e) => e.name.local == 'Location')) {
+      final url = upstream.uri.resolve(location.innerText.trim());
+      if (url.scheme != 'http' && url.scheme != 'https') continue;
+      final headers = Map<String, String>.of(upstream.requestHeaders);
+      if (url.origin != origin) headers.removeWhere((key, _) => isOriginBoundHttpHeader(key));
+      location.innerText = (await _ticket(PlayerMedia(uri: url, headers: headers), '.mpd')).uri.toString();
+    }
+    final bases = root.childElements.where((element) => element.name.local == 'BaseURL').toList();
+    if (bases.isEmpty) {
+      final base = XmlElement(XmlName.parts('BaseURL',
+          prefix: root.name.prefix, namespaceUri: root.name.namespaceUri));
+      base.innerText = route(upstream.uri);
+      root.children.insert(0, base);
+    }
+    serveHttpBytes(request, utf8.encode(document.toXmlString()), 'application/dash+xml');
+  }
+
   Future<void> _handle(HttpRequest request) async {
     final response = request.response;
     var streaming = false;
+    late final PlayerMedia media;
     try {
-      final ticket = _tickets[request.uri.path.substring(1)];
+      final path = request.uri.path;
+      final slash = path.indexOf('/', 1);
+      final name = path.substring(1, slash < 0 ? null : slash);
+      final ticket = _tickets[name];
       if (ticket == null) {
         response.statusCode = 404;
         return;
       }
-      final media = _playlistReload(ticket, request.uri);
       if (!['GET', 'HEAD'].contains(request.method)) {
         response.statusCode = 405;
         return;
       }
-      final path = request.uri.path;
-      if (path.endsWith('.identity.key')) {
+      if (slash >= 0 && name.endsWith('.dash-base')) {
+        final relative = path.substring(slash);
+        final uri = ticket.uri.replace(path: relative, query: request.uri.hasQuery ? request.uri.query : null);
+        media = PlayerMedia(uri: uri, headers: ticket.headers);
+      } else if (slash >= 0 || name.endsWith('.dash-base')) {
+        response.statusCode = 404;
+        return;
+      } else {
+        media = _playlistReload(ticket, request.uri);
+        if (name.endsWith('.mpd')) {
+          await _serveDashManifest(request, media);
+          return;
+        }
+      }
+      if (slash < 0 && path.endsWith('.identity.key')) {
         response.headers.set('Cache-Control', 'no-store');
         serveHttpBytes(request, await _identityKey(media), 'application/octet-stream');
         return;
       }
-      if (path.endsWith('.init.mp4') || path.endsWith('.frag.m4s')) {
+      if (slash < 0 && (path.endsWith('.init.mp4') || path.endsWith('.frag.m4s'))) {
         final sequence = int.tryParse(request.uri.queryParameters['n'] ?? '');
         if (sequence == null || sequence < 1 || sequence > 0x7fffffff) {
           response.statusCode = 400;
@@ -1635,7 +1757,6 @@ class VideoDiskCache extends ChangeNotifier {
         return;
       }
       // Non-seekable/large responses remain playable without a disk promise.
-      final media = _playlistReload(_tickets[request.uri.path.substring(1)]!, request.uri);
       final upstream = await _request(media, request.headers.value('range'));
       response.statusCode = upstream.statusCode;
       for (final name in [
