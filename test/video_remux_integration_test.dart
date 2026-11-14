@@ -81,12 +81,18 @@ void main() {
           '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="Mandarin",LANGUAGE="zh-Hans",DEFAULT=YES,URI="dub/index.m3u8"\n'
           '#EXT-X-STREAM-INF:BANDWIDTH=200000,AUDIO="audio"\nvideo/index.m3u8\n',
         );
-        Future<List<String>> frameHashes(String path) async {
+        await Directory('${directory.path}/side').create();
+        await ffmpeg([
+          '-i', '${directory.path}/video/index.m3u8', '-vf', 'negate',
+          '-c:v', 'libx264', '-g', '10', '-f', 'hls', '-hls_time', '1',
+          '-hls_playlist_type', 'vod', '${directory.path}/side/index.m3u8',
+        ]);
+        Future<List<String>> frameHashes(String path, [int index = 0]) async {
           final data = await ffmpeg([
             '-i',
             path,
             '-map',
-            '0:v:0',
+            '0:v:$index',
             '-f',
             'framemd5',
             '-',
@@ -99,6 +105,8 @@ void main() {
         }
 
         final original = await frameHashes('${directory.path}/index.m3u8');
+        final side = await frameHashes('${directory.path}/side/index.m3u8');
+        expect(side, isNot(original));
         // Exercise the download path before the local merge cleans these inputs.
         // The chosen stream points to audio, with its picture in a VIDEO group.
         HttpOverrides.global = null;
@@ -111,6 +119,11 @@ void main() {
                 '#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="hd",NAME="Original",DEFAULT=YES,URI="video/index.m3u8"\n'
                 '#EXT-X-STREAM-INF:BANDWIDTH=950000,RESOLUTION=48x32\nlow.m3u8\n'
                 '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=96x64,VIDEO="hd"\naudio/index.m3u8\n');
+          } else if (r.uri.path == '/angles.m3u8') {
+            r.response.write('#EXTM3U\n'
+                '#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="views",NAME="Side",DEFAULT=NO,URI="side/index.m3u8"\n'
+                '#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="views",NAME="Main",DEFAULT=YES,URI="video/index.m3u8"\n'
+                '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=96x64,VIDEO="views"\naudio/index.m3u8\n');
           } else if (r.uri.path == '/unlabelled.m3u8') {
             r.response.write('#EXTM3U\n'
                 '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="sound",NAME="Original",DEFAULT=YES,URI="audio/index.m3u8"\n'
@@ -140,6 +153,7 @@ void main() {
           await remote.enqueue(sourceId: 'source', itemId: 'movie', title: 'Movie',
               chapters: const [
                 SourceChapter(id: 'master', title: 'Separate video'),
+                SourceChapter(id: 'angles', title: 'Two camera angles'),
                 SourceChapter(id: 'unlabelled', title: 'Unlabelled video'),
                 SourceChapter(id: 'nested', title: 'Nested master'),
                 SourceChapter(id: 'nested-audio', title: 'Nested audio rendition'),
@@ -162,7 +176,20 @@ void main() {
         expect(dubbedAudio, isNot(originalAudio));
         for (final task in remote.tasks) {
           final downloaded = remote.localFile(task);
-          expect(await frameHashes(downloaded.path), original);
+          if (task.chapterId == 'angles') {
+            final probe = await Process.run('ffprobe', [
+              '-v', 'error', '-select_streams', 'v', '-show_streams', '-of', 'json', downloaded.path,
+            ]);
+            expect(probe.exitCode, 0);
+            final videos = jsonDecode('${probe.stdout}')['streams'] as List;
+            expect(videos, hasLength(2));
+            expect(videos.map((v) => v['disposition']['default']), unorderedEquals([0, 1]));
+            for (var i = 0; i < videos.length; i++) {
+              expect(await frameHashes(downloaded.path, i), videos[i]['disposition']['default'] == 1 ? original : side);
+            }
+          } else {
+            expect(await frameHashes(downloaded.path), original);
+          }
           expect(await audioHash(downloaded.path), originalAudio);
         }
         // Earlier downloads can also contain an already-written nested master.

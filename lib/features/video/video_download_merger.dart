@@ -55,7 +55,7 @@ class VideoDownloadMerger {
       '-i',
       entry.path,
       '-map',
-      '0:v:0',
+      '0:v',
       '-map',
       '0:a?',
       for (final tag in audioMetadata.entries) ...[
