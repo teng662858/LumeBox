@@ -39,12 +39,19 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
   bool _foreground = true;
   bool _episodePending = false;
   bool _ownsFocus = false;
+  bool _loadingPage = false;
   int _loadRevision = 0;
   static const _focusOwner = 'web_video';
+  static const _loadingPaused = '网页加载已暂停，点击刷新可重新打开。';
 
-  Future<void> _releasePlayback() async {
+  Future<void> _releasePlayback() => _stopPlayback(
+    '其他播放器已接管，已停止网页播放。点击刷新可重新打开。',
+  );
+
+  Future<void> _stopPlayback(String message) async {
     _loadRevision++;
     _booting = false;
+    _loadingPage = false;
     _ownsFocus = false;
     _stopSelection();
     _episodePending = false;
@@ -52,7 +59,7 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
     if (mounted) {
       setState(() {
         _ready = false;
-        _error = '其他播放器已接管，已停止网页播放。点击刷新可重新打开。';
+        _error = message;
       });
     }
     // Navigating away also stops players inside cross-origin frames.
@@ -148,10 +155,15 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
       await _controller.setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (_) {
-            if (current() && _ownsFocus) _stopSelection();
+            if (!current() || !_ownsFocus) return;
+            _stopSelection();
+            _loadingPage = true;
+            if (!_foreground) unawaited(_stopPlayback(_loadingPaused));
           },
           onPageFinished: (url) {
-            if (current()) _selectEpisode(url);
+            if (!current()) return;
+            _loadingPage = false;
+            _selectEpisode(url);
           },
           onNavigationRequest: (request) {
             final url = Uri.tryParse(request.url);
@@ -184,6 +196,7 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
         return;
       }
       _ownsFocus = true;
+      _loadingPage = true;
       await _controller.loadRequest(uri, headers: headers);
       if (current()) {
         setState(() {
@@ -193,6 +206,7 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
     } catch (_) {
       if (current()) {
         _ownsFocus = false;
+        _loadingPage = false;
         PlaybackFocus.unregister(_focusOwner, _releasePlayback);
         setState(() => _error = '网页播放初始化失败，请检查网络或更换线路');
       }
@@ -224,6 +238,10 @@ class _SourceWebPlayerPageState extends State<SourceWebPlayerPage>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       _foreground = false;
+      if (_booting || _loadingPage) {
+        unawaited(_stopPlayback(_loadingPaused));
+        return;
+      }
       _stopSelection();
       unawaited(
         _controller

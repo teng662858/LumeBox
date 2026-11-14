@@ -218,6 +218,49 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('退到后台取消未完成的网页加载，回前台必须显式刷新', (tester) async {
+    final loaded = Completer<void>();
+    platform.loadBarrier = loaded.future;
+    await open(tester, settle: false, selector: 'button.playbtn[data-id="74596"]');
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    loaded.complete();
+    platform.delegate.finished('https://play.example/watch/1');
+    await tester.pumpAndSettle();
+    expect(platform.controller.loads.last.toString(), 'about:blank');
+    expect(platform.views, 0);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('网页加载已暂停'), findsOneWidget);
+    expect(find.text('重试选集'), findsNothing);
+    await tester.tap(find.byTooltip('刷新'));
+    await tester.pumpAndSettle();
+    expect(platform.controller.loads.last.toString(), 'https://play.example/watch/1');
+    expect(platform.views, 1);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  for (final startsInBackground in [false, true]) {
+    testWidgets('导航${startsInBackground ? '在后台才开始' : '尚未结束'}时停止网页，不接受旧完成事件', (tester) async {
+      await open(tester);
+      const url = 'https://play.example/watch/1';
+      platform.delegate.finished(url);
+      if (!startsInBackground) platform.delegate.started(url);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      if (startsInBackground) platform.delegate.started(url);
+      platform.delegate.finished(url);
+      await tester.pumpAndSettle();
+      expect(platform.controller.loads.last.toString(), 'about:blank');
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(platform.disposedViews, 1);
+      expect(find.textContaining('网页加载已暂停'), findsOneWidget);
+      await tester.tap(find.byTooltip('刷新'));
+      await tester.pumpAndSettle();
+      expect(platform.controller.loads.last.toString(), url);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('指定集数加载后选择一次，刷新后重新选择，跨站页面不执行', (tester) async {
     await open(tester, selector: 'button.playbtn[data-id="74596"]');
     expect(platform.controller.scripts, isEmpty);
@@ -296,6 +339,7 @@ void main() {
   });
   testWidgets('进入后台暂停媒体，恢复前台不自动播放，退出停止页面', (tester) async {
     await open(tester);
+    platform.delegate.finished('https://play.example/watch/1');
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     await tester.pump();
     expect(platform.controller.scripts.last, contains('media.pause()'));
