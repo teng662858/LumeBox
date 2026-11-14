@@ -21,6 +21,10 @@ extension NativeVideoScreen {
   fileprivate var displayedStatus: String? { statusLabel.text }
   fileprivate func retryTestMedia() { resolve("retry") }
   fileprivate func pauseTestPlayback() { setPlaying(false) }
+  fileprivate func systemTestPlayback(_ playing: Bool) {
+    // AVPlayer-layer PiP changes the player directly, bypassing screen controls.
+    if playing { engine?.player?.play() } else { engine?.player?.pause() }
+  }
   fileprivate static func checkDanmakuTiming(_ item: NativeVideoItem) {
     let screen = NativeVideoScreen(session: "danmaku-check", item: item, options: [:])
     var replies: [([String: Any]?) -> Void] = []
@@ -188,10 +192,18 @@ extension NativeVideoScreen {
           screen.importTestSubtitle(invalidURL)
         } catch { check(false, "write invalid subtitle fixture: \(error)") }
       }
-      seekEvents.removeAll()
-      screen.debugAction(["action": "seek", "position": 5.0])
-      screen.debugAction(["action": "seek", "position": 0.0])
-      phase = 11
+      if cases[caseIndex].0 == "avplayer" {
+        pausedPosition = position; screen.systemTestPlayback(true); phase = 16
+      } else { checkPausedSeeks() }
+    } else if phase == 16 && state["playing"] as? Bool == true && position > pausedPosition + 0.2 {
+      check(state["wantsPlay"] as? Bool == true, "system play updates the screen intent")
+      screen.systemTestPlayback(false)
+      pausedAt = Date(); pausedPosition = position; phase = 17
+    } else if phase == 17 && Date().timeIntervalSince(pausedAt) > 0.9 {
+      check(state["wantsPlay"] as? Bool == false && state["playing"] as? Bool == false,
+            "system pause updates the screen and stays paused")
+      check(abs(position - pausedPosition) < 0.6, "buffer recovery must not undo system pause")
+      checkPausedSeeks()
     } else if phase == 11 && !seekEvents.isEmpty {
       check(seekEvents.count == 1 && seekEvents[0] < 0.26, "only the final paused seek is saved, at the start")
       check(position < 0.26 && state["wantsPlay"] as? Bool == false, "paused seek updates the decoder clock")
@@ -276,6 +288,12 @@ extension NativeVideoScreen {
     } else if phase == 8 && position > 0.2 && position < 2.5 && state["playing"] as? Bool == true {
       print("NATIVE_VIDEO_REPLAY_OK \(cases[caseIndex].0)"); complete()
     }
+  }
+  private func checkPausedSeeks() {
+    seekEvents.removeAll()
+    screen?.debugAction(["action": "seek", "position": 5.0])
+    screen?.debugAction(["action": "seek", "position": 0.0])
+    phase = 11
   }
   private func checkEnding() {
     phase = 4; screen?.debugAction(["action": "seek", "position": 11.0])

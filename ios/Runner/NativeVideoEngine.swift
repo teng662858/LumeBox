@@ -72,8 +72,10 @@ struct NativeVideoState {
   var view: UIView { surface }
   private(set) var state = NativeVideoState()
   var changed: ((NativeVideoState) -> Void)?
+  var playbackIntentChanged: ((Bool) -> Void)?
   private var observation: NSKeyValueObservation?
   private var endObserver: NSObjectProtocol?
+  private var rateObserver: NSObjectProtocol?
   private var timer: Timer?
   private var metadata: Task<Void, Never>?
   private var subtitleSelection: Task<Void, Never>?
@@ -94,12 +96,29 @@ struct NativeVideoState {
     player?.automaticallyWaitsToMinimizeStalling = false
     player?.allowsExternalPlayback = true
     player?.usesExternalPlaybackWhileExternalScreenIsActive = true
+    rateObserver = NotificationCenter.default.addObserver(forName: AVPlayer.rateDidChangeNotification, object: player, queue: .main) { [weak self] note in
+      MainActor.assumeIsolated {
+        self?.handleRateChange(note.userInfo?[AVPlayer.rateDidChangeReasonKey] as? AVPlayer.RateDidChangeReason)
+      }
+    }
+  }
+  private func handleRateChange(_ reason: AVPlayer.RateDidChangeReason?) {
+    // PiP controls the AVPlayer directly. A buffer underrun also sets rate to
+    // zero, but must retain the play intent so tick() can resume after refill.
+    guard !disposed, state.ready, reason == .setRateCalled, let player else { return }
+    let playing = player.rate != 0
+    guard intent != playing else { return }
+    intent = playing
+    if playing { state.ended = false }
+    tick()
+    playbackIntentChanged?(playing)
   }
   func load(_ media: NativeVideoItem) {
     guard !disposed, let player else { return }
     metadata?.cancel(); metadata = nil; groups.removeAll()
     observation = nil
     if let endObserver { NotificationCenter.default.removeObserver(endObserver) }; endObserver = nil
+    intent = false
     player.pause(); player.currentItem?.cancelPendingSeeks(); player.currentItem?.asset.cancelLoading()
     let asset = AVURLAsset(url: media.url, options: media.headers.isEmpty ? nil : ["AVURLAssetHTTPHeaderFieldsKey": media.headers])
     let item = AVPlayerItem(asset: asset)
@@ -157,13 +176,16 @@ struct NativeVideoState {
     }.max() ?? 0
     if state.ready && intent && !seeking && player.rate == 0 && state.buffered >= 0.25 { resume() }
     state.playing = intent && player.timeControlStatus == .playing && !seeking && !state.ended
-    state.buffering = state.error == nil && !state.ended && (!state.ready || seeking || (intent && player.timeControlStatus == .waitingToPlayAtSpecifiedRate))
+    state.buffering = state.error == nil && !state.ended && (!state.ready || seeking || (intent && player.timeControlStatus != .playing))
     changed?(state)
   }
   private func resume() {
     if intent && state.ready && !seeking && !disposed { player?.playImmediately(atRate: Float(speed)) }
   }
-  func play(rate: Double) { speed = rate; intent = true; state.ended = false; resume() }
+  func play(rate: Double) {
+    speed = rate; player?.defaultRate = Float(rate)
+    intent = true; state.ended = false; resume()
+  }
   func pause() { intent = false; player?.pause(); tick() }
   func seek(_ seconds: Double, completion: @escaping (Bool) -> Void) {
     guard !disposed, let player else { completion(false); return }
@@ -229,6 +251,8 @@ struct NativeVideoState {
     subtitleSelection?.cancel(); subtitleSelection = nil
     observation = nil
     if let endObserver { NotificationCenter.default.removeObserver(endObserver) }; endObserver = nil
+    if let rateObserver { NotificationCenter.default.removeObserver(rateObserver) }; rateObserver = nil
+    playbackIntentChanged = nil
     player?.pause(); player?.currentItem?.cancelPendingSeeks(); player?.currentItem?.asset.cancelLoading()
     player?.replaceCurrentItem(with: nil); surface.videoLayer.player = nil; changed = nil
     completion()

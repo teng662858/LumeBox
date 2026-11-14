@@ -265,6 +265,14 @@ import UniformTypeIdentifiers
         if let message = self.fatalMessage { self.state.error = message; self.state.buffering = false; self.state.playing = false }
         self.renderState()
       }
+      (next as? NativeAVEngine)?.playbackIntentChanged = { [weak self, weak next] playing in
+        guard let self, let next, !self.closing, self.generation == revision, self.engine === next else { return }
+        self.playIntentRevision += 1
+        self.resumeAfterInterruption = false
+        self.wantsPlay = playing
+        if playing { self.interrupted = false }
+        self.renderState(); self.emit("progress")
+      }
       do {
         var payload = self.item.payload; payload["position"] = at
         let media = try NativeVideoItem(payload)
